@@ -228,6 +228,25 @@ public:
             use_parallel_layout);
     }
 
+    /// `joinPipelinesByShards` clones one join per PK layer and never installs
+    /// `NonJoinedBlocksTransform`. A clone that still reports parallel non-joined
+    /// processing would skip unmatched right rows of a RIGHT/FULL join.
+    std::shared_ptr<IJoin> cloneNoParallel(
+        const std::shared_ptr<TableJoin> & table_join_,
+        SharedHeader,
+        SharedHeader right_sample_block_) const override
+    {
+        return std::make_shared<HashJoin>(
+            table_join_,
+            right_sample_block_,
+            any_take_last_row,
+            reserve_num,
+            instance_id,
+            StatsCollectingParams{},
+            /*max_threads=*/1,
+            /*use_parallel_layout=*/false);
+    }
+
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
