@@ -1030,6 +1030,8 @@ def test_remove_orphan_files_with_catalog(started_cluster):
         f"the uncommitted {uncommitted_key} is an orphan relative to the committed state "
         "and should have been deleted"
     )
+
+
 @pytest.mark.parametrize(
     "fields_to_remove",
     [

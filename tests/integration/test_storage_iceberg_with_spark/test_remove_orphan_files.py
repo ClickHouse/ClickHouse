@@ -757,6 +757,8 @@ def test_remove_orphan_files_stale_version_hint_keeps_committed_snapshot(
     # user-visible consequence directly: no rows may be missing.
     env.write_version_hint(newest)
     env.assert_data_intact()
+
+
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_insert_under_stale_version_hint_succeeds(
     started_cluster_iceberg_with_spark, storage_type
@@ -808,46 +810,57 @@ def test_remove_orphan_files_ignores_foreign_scheme_metadata(
     its N counts a different sequence and is not comparable with this table's `v<N>`
     versions. Ranking the two together can root the scan at a state that never contained
     the newest committed snapshot, and every object only that snapshot references is then
-    deleted. Which files are candidates is decided by the resolver, so one backend covers
-    it."""
+    deleted. The hint is what tells the two schemes apart, and it may spell its target with
+    a directory part, which the reader drops before reading, so both spellings have to reach
+    the same root. Which files are candidates is decided by the resolver, so one backend
+    covers it."""
     env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_foreign_scheme")
     env.populate(3, use_version_hint=True)
 
     newest = env.newest_metadata_version()
     assert newest >= 2, f"Need at least two metadata versions, got v{newest}"
 
-    # An earlier state of this table under a higher foreign version number: rooting there
-    # orphans whatever only v{newest} references, which is what makes the case lossy rather
-    # than merely wrong.
-    foreign_name = f"{newest + 1:05d}-{get_uuid_str()}.metadata.json"
-    env.copy_metadata_file(f"v{newest - 1}.metadata.json", foreign_name)
-    assert env.metadata_files_with_version(newest + 1) == [foreign_name], (
-        "Fixture did not produce a candidate outranking the committed metadata file, so a "
-        "resolver that considers foreign names would not pick it and the case is vacuous"
-    )
+    for hint in (str(newest), f"metadata/v{newest}.metadata.json"):
+        env.write_version_hint(hint)
+        assert env.read_version_hint() == hint, \
+            f"version-hint.text rewrite to {hint} did not take effect"
 
-    env.add_orphan("data", "orphan-foreign-scheme.parquet")
-    data_before = [f for f in env.list_files()
-                   if "/data/" in f and f.endswith(".parquet")
-                   and "orphan-foreign-scheme" not in f]
-    assert data_before, "Fixture produced no committed data files"
+        # An earlier state of this table under a higher foreign version number: rooting there
+        # orphans whatever only v{newest} references, which is what makes the case lossy rather
+        # than merely wrong.
+        foreign_name = f"{newest + 1:05d}-{get_uuid_str()}.metadata.json"
+        env.copy_metadata_file(f"v{newest - 1}.metadata.json", foreign_name)
+        assert env.metadata_files_with_version(newest + 1) == [foreign_name], (
+            "Fixture did not produce a candidate outranking the committed metadata file, so a "
+            f"resolver that considers foreign names would not pick it under hint {hint} and the "
+            "case is vacuous"
+        )
 
-    time.sleep(2)
-    env.remove_orphans(older_than=env.now_ts())
+        orphan_name = f"orphan-foreign-scheme-{get_uuid_str()}.parquet"
+        env.add_orphan("data", orphan_name)
+        data_before = [f for f in env.list_files()
+                       if "/data/" in f and f.endswith(".parquet")
+                       and orphan_name not in f]
+        assert data_before, "Fixture produced no committed data files"
 
-    data_after = [f for f in env.list_files()
-                  if "/data/" in f and f.endswith(".parquet")
-                  and "orphan-foreign-scheme" not in f]
-    assert sorted(data_after) == sorted(data_before), (
-        "remove_orphan_files deleted data files of the committed snapshot after rooting at "
-        f"a foreign-scheme metadata file.\n  Before: {sorted(data_before)}\n  After:  {sorted(data_after)}"
-    )
-    assert env.exists("metadata", f"v{newest}.metadata.json"), (
-        f"remove_orphan_files deleted v{newest}.metadata.json, the committed metadata file"
-    )
-    # Both of these show the command ran and classified rather than bailing out.
-    assert not env.exists("metadata", foreign_name), \
-        "The foreign-scheme file is unreachable from this table, so it should be removed"
-    assert not env.exists("data", "orphan-foreign-scheme.parquet"), \
-        "The planted orphan should still have been deleted"
-    env.assert_data_intact()
+        time.sleep(2)
+        env.remove_orphans(older_than=env.now_ts())
+
+        data_after = [f for f in env.list_files()
+                      if "/data/" in f and f.endswith(".parquet")
+                      and orphan_name not in f]
+        assert sorted(data_after) == sorted(data_before), (
+            "remove_orphan_files deleted data files of the committed snapshot after rooting at "
+            f"a foreign-scheme metadata file under hint {hint}.\n"
+            f"  Before: {sorted(data_before)}\n  After:  {sorted(data_after)}"
+        )
+        assert env.exists("metadata", f"v{newest}.metadata.json"), (
+            f"remove_orphan_files deleted v{newest}.metadata.json, the committed metadata "
+            f"file, under hint {hint}"
+        )
+        # Both of these show the command ran and classified rather than bailing out.
+        assert not env.exists("metadata", foreign_name), \
+            "The foreign-scheme file is unreachable from this table, so it should be removed"
+        assert not env.exists("data", orphan_name), \
+            "The planted orphan should still have been deleted"
+        env.assert_data_intact()

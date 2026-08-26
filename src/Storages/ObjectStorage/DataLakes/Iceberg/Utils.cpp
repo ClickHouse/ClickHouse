@@ -183,14 +183,16 @@ static bool isVersionHintCommitScheme(const String & file_name)
 }
 
 /// The file name a hint's content addresses, resolved the way the reader resolves it: a bare
-/// version number can only address `v<N>`, and any other content names a file directly.
+/// version number can only address `v<N>`, any other content names a file directly, and a
+/// directory part is dropped because the reader reads the name alone under `metadata/`.
 static std::optional<String> versionHintTargetName(const String & hint_content)
 {
     if (hint_content.empty())
         return {};
     if (std::all_of(hint_content.begin(), hint_content.end(), isdigit))
         return "v" + hint_content + ".metadata.json";
-    return hint_content.ends_with(".metadata.json") ? hint_content : hint_content + ".metadata.json";
+    String named = hint_content.ends_with(".metadata.json") ? hint_content : hint_content + ".metadata.json";
+    return String(std::filesystem::path(named).filename());
 }
 
 /// Parse an all-digit version string into Int32, mapping overflow/garbage to BAD_ARGUMENTS.
@@ -1200,18 +1202,12 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
             && !(table_uuid.has_value() && use_table_uuid_for_metadata_file_selection))
         {
+            /// A hint that cannot be read leaves the scheme unknown, and guessing it here would
+            /// widen what a destructive caller may delete, so the read is allowed to throw.
             String hint_content;
-            try
-            {
-                StoredObject version_hint(std::filesystem::path(table_path) / "metadata" / "version-hint.text");
-                auto buf = object_storage->readObject(version_hint, ReadSettings{});
-                readString(hint_content, *buf);
-            }
-            catch (...)
-            {
-                /// A hint that cannot be read declares nothing, and the reader fails on it anyway.
-                LOG_DEBUG(log, "Could not read the version hint of table {}: {}", table_path, getCurrentExceptionMessage(false));
-            }
+            StoredObject version_hint(std::filesystem::path(table_path) / "metadata" / "version-hint.text");
+            auto buf = object_storage->readObject(version_hint, ReadSettings{});
+            readString(hint_content, *buf);
             if (auto target = versionHintTargetName(hint_content))
             {
                 const bool version_numbered = isVersionHintCommitScheme(*target);
