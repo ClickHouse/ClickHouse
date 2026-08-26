@@ -1,0 +1,138 @@
+<test>
+    <substitutions>
+        <substitution>
+           <name>codec</name>
+           <values>
+               <value>none</value>
+               <value>bitpacking</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE t_text_index_merge_{codec}
+        (
+            id UInt64,
+            s String,
+            INDEX idx_s (s) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = '{codec}')
+        )
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_text_index_merge_intersecting_{codec}
+        (
+            id UInt64,
+            s String,
+            INDEX idx_s (s) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = '{codec}')
+        )
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_text_index_merge_vocabulary_{codec}
+        (
+            id UInt64,
+            s String,
+            INDEX idx_s (s) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = '{codec}')
+        )
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_text_index_merge_vocabulary_intersecting_{codec}
+        (
+            id UInt64,
+            s String,
+            INDEX idx_s (s) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = '{codec}')
+        )
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_text_index_merge_multiblock_{codec}
+        (
+            id UInt64,
+            s String,
+            INDEX idx_s (s) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = '{codec}', posting_list_block_size = 8192)
+        )
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_text_index_merge_multiblock_intersecting_{codec}
+        (
+            id UInt64,
+            s String,
+            INDEX idx_s (s) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = '{codec}', posting_list_block_size = 8192)
+        )
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES t_text_index_merge_{codec}</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_text_index_merge_intersecting_{codec}</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_text_index_merge_vocabulary_{codec}</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_text_index_merge_vocabulary_intersecting_{codec}</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_text_index_merge_multiblock_{codec}</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_text_index_merge_multiblock_intersecting_{codec}</fill_query>
+
+    <fill_query>INSERT INTO t_text_index_merge_{codec} SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(0, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_{codec} SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(100000, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_{codec} SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(200000, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_{codec} SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(300000, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_{codec} SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(400000, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_{codec} SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(500000, 100000)</fill_query>
+
+    <!-- Every part takes every sixth primary key, so the six parts intersect over the whole range. -->
+    <fill_query>INSERT INTO t_text_index_merge_intersecting_{codec} SELECT number * 6 + 0 AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id) FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_intersecting_{codec} SELECT number * 6 + 1 AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id) FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_intersecting_{codec} SELECT number * 6 + 2 AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id) FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_intersecting_{codec} SELECT number * 6 + 3 AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id) FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_intersecting_{codec} SELECT number * 6 + 4 AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id) FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_intersecting_{codec} SELECT number * 6 + 5 AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id) FROM numbers(100000)</fill_query>
+
+    <!-- 15 tokens per row out of a vocabulary of 2048, so every token has about 4400 postings. -->
+    <fill_query>INSERT INTO t_text_index_merge_vocabulary_intersecting_{codec} SELECT number * 6 + 0 AS id, arrayStringConcat(arrayMap(x -> toString(rand(id * 15 + x) % 2048), range(15)), ' ') FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_vocabulary_intersecting_{codec} SELECT number * 6 + 1 AS id, arrayStringConcat(arrayMap(x -> toString(rand(id * 15 + x) % 2048), range(15)), ' ') FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_vocabulary_intersecting_{codec} SELECT number * 6 + 2 AS id, arrayStringConcat(arrayMap(x -> toString(rand(id * 15 + x) % 2048), range(15)), ' ') FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_vocabulary_intersecting_{codec} SELECT number * 6 + 3 AS id, arrayStringConcat(arrayMap(x -> toString(rand(id * 15 + x) % 2048), range(15)), ' ') FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_vocabulary_intersecting_{codec} SELECT number * 6 + 4 AS id, arrayStringConcat(arrayMap(x -> toString(rand(id * 15 + x) % 2048), range(15)), ' ') FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_vocabulary_intersecting_{codec} SELECT number * 6 + 5 AS id, arrayStringConcat(arrayMap(x -> toString(rand(id * 15 + x) % 2048), range(15)), ' ') FROM numbers(100000)</fill_query>
+
+    <!-- The same rows split into parts by ranges of the primary key, so only the layout differs. -->
+    <fill_query>INSERT INTO t_text_index_merge_vocabulary_{codec} SELECT * FROM t_text_index_merge_vocabulary_intersecting_{codec} WHERE id &lt; 100000</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_vocabulary_{codec} SELECT * FROM t_text_index_merge_vocabulary_intersecting_{codec} WHERE id &gt;= 100000 AND id &lt; 200000</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_vocabulary_{codec} SELECT * FROM t_text_index_merge_vocabulary_intersecting_{codec} WHERE id &gt;= 200000 AND id &lt; 300000</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_vocabulary_{codec} SELECT * FROM t_text_index_merge_vocabulary_intersecting_{codec} WHERE id &gt;= 300000 AND id &lt; 400000</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_vocabulary_{codec} SELECT * FROM t_text_index_merge_vocabulary_intersecting_{codec} WHERE id &gt;= 400000 AND id &lt; 500000</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_vocabulary_{codec} SELECT * FROM t_text_index_merge_vocabulary_intersecting_{codec} WHERE id &gt;= 500000</fill_query>
+
+    <!-- Token 'v{x}' occurs in each row with (id + x) % 5 != 0: 240000 postings per token per part. -->
+    <fill_query>INSERT INTO t_text_index_merge_multiblock_{codec} SELECT number AS id, arrayStringConcat(arrayMap(x -> 'v' || toString(x), arrayFilter(x -> (id + x) % 5 != 0, range(8))), ' ') FROM numbers(0, 300000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_multiblock_{codec} SELECT number AS id, arrayStringConcat(arrayMap(x -> 'v' || toString(x), arrayFilter(x -> (id + x) % 5 != 0, range(8))), ' ') FROM numbers(300000, 300000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_multiblock_{codec} SELECT number AS id, arrayStringConcat(arrayMap(x -> 'v' || toString(x), arrayFilter(x -> (id + x) % 5 != 0, range(8))), ' ') FROM numbers(600000, 300000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_multiblock_{codec} SELECT number AS id, arrayStringConcat(arrayMap(x -> 'v' || toString(x), arrayFilter(x -> (id + x) % 5 != 0, range(8))), ' ') FROM numbers(900000, 300000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_multiblock_{codec} SELECT number AS id, arrayStringConcat(arrayMap(x -> 'v' || toString(x), arrayFilter(x -> (id + x) % 5 != 0, range(8))), ' ') FROM numbers(1200000, 300000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_multiblock_{codec} SELECT number AS id, arrayStringConcat(arrayMap(x -> 'v' || toString(x), arrayFilter(x -> (id + x) % 5 != 0, range(8))), ' ') FROM numbers(1500000, 300000)</fill_query>
+
+    <fill_query>INSERT INTO t_text_index_merge_multiblock_intersecting_{codec} SELECT number * 6 + 0 AS id, arrayStringConcat(arrayMap(x -> 'v' || toString(x), arrayFilter(x -> (id + x) % 5 != 0, range(8))), ' ') FROM numbers(300000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_multiblock_intersecting_{codec} SELECT number * 6 + 1 AS id, arrayStringConcat(arrayMap(x -> 'v' || toString(x), arrayFilter(x -> (id + x) % 5 != 0, range(8))), ' ') FROM numbers(300000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_multiblock_intersecting_{codec} SELECT number * 6 + 2 AS id, arrayStringConcat(arrayMap(x -> 'v' || toString(x), arrayFilter(x -> (id + x) % 5 != 0, range(8))), ' ') FROM numbers(300000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_multiblock_intersecting_{codec} SELECT number * 6 + 3 AS id, arrayStringConcat(arrayMap(x -> 'v' || toString(x), arrayFilter(x -> (id + x) % 5 != 0, range(8))), ' ') FROM numbers(300000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_multiblock_intersecting_{codec} SELECT number * 6 + 4 AS id, arrayStringConcat(arrayMap(x -> 'v' || toString(x), arrayFilter(x -> (id + x) % 5 != 0, range(8))), ' ') FROM numbers(300000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_multiblock_intersecting_{codec} SELECT number * 6 + 5 AS id, arrayStringConcat(arrayMap(x -> 'v' || toString(x), arrayFilter(x -> (id + x) % 5 != 0, range(8))), ' ') FROM numbers(300000)</fill_query>
+
+    <query>OPTIMIZE TABLE t_text_index_merge_{codec} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0'</query>
+    <query>OPTIMIZE TABLE t_text_index_merge_intersecting_{codec} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0'</query>
+    <query>OPTIMIZE TABLE t_text_index_merge_vocabulary_{codec} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0'</query>
+    <query>OPTIMIZE TABLE t_text_index_merge_vocabulary_intersecting_{codec} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0'</query>
+    <query>OPTIMIZE TABLE t_text_index_merge_multiblock_{codec} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0'</query>
+    <query>OPTIMIZE TABLE t_text_index_merge_multiblock_intersecting_{codec} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0'</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_text_index_merge_{codec}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_text_index_merge_intersecting_{codec}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_text_index_merge_vocabulary_{codec}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_text_index_merge_vocabulary_intersecting_{codec}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_text_index_merge_multiblock_{codec}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_text_index_merge_multiblock_intersecting_{codec}</drop_query>
+</test>
