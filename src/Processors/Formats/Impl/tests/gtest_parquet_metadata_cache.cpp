@@ -1,5 +1,9 @@
 #include <gtest/gtest.h>
 
+#include "config.h"
+
+#if USE_PARQUET
+
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 
 namespace DB
@@ -29,3 +33,5 @@ TEST(ParquetMetadataCache, SharesImmutableMetadataAndKeepsItAliveAfterEviction)
 }
 
 }
+
+#endif
