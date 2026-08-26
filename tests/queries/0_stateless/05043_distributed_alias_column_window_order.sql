@@ -219,13 +219,15 @@ SELECT 'parallel replicas';
 -- work instead of duplicating rows, so each arm returns the same rows as its single-replica oracle.
 -- Every setting a task-based parallel read requires is pinned per statement, including the analyzer:
 -- a server whose profile disables it refuses the parallel plan outright, and the rows alone do not
--- say which plan produced them, so each arm asserts below that replicas were really used.
+-- say which plan produced them, so each arm asserts below that replicas were really used. Only the
+-- query-based path reads at that boundary, so the plan-based one is pinned off too: it splits the read
+-- later in the plan, and the assertion below is positive either way.
 SELECT al AS category, cur, row_number() OVER (PARTITION BY a ORDER BY dt DESC) AS rn
 FROM loc_win ORDER BY rn
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
          parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1,
-         automatic_parallel_replicas_mode = 0, enable_analyzer = 1,
+         automatic_parallel_replicas_mode = 0, parallel_replicas_plan_based = 0, enable_analyzer = 1,
          log_comment = '05043_pr_alias';
 SELECT al AS category, cur, row_number() OVER (PARTITION BY a ORDER BY dt DESC) AS rn
 FROM loc_win ORDER BY rn SETTINGS enable_parallel_replicas = 0;
@@ -235,7 +237,7 @@ FROM loc_win ORDER BY rn
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
          parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1,
-         automatic_parallel_replicas_mode = 0, enable_analyzer = 1,
+         automatic_parallel_replicas_mode = 0, parallel_replicas_plan_based = 0, enable_analyzer = 1,
          log_comment = '05043_pr_upper_alias';
 SELECT upper_al AS category, cur, row_number() OVER (ORDER BY a) AS rn
 FROM loc_win ORDER BY rn SETTINGS enable_parallel_replicas = 0;
@@ -299,7 +301,8 @@ SELECT * FROM (
 SELECT * FROM (
     SELECT l.al AS la, r.al AS ra, row_number() OVER (ORDER BY l.a) AS rn
     FROM loc_jl AS l INNER JOIN loc_jr AS r ON l.a = r.a
-) ORDER BY rn;
+) ORDER BY rn
+SETTINGS enable_parallel_replicas = 0;
 -- A plain JOIN of the two distributed sources reaches the same boundary.
 SELECT * FROM (
     SELECT l.al AS la, r.al AS ra, row_number() OVER (ORDER BY l.a) AS rn
@@ -309,7 +312,8 @@ SELECT * FROM (
 SELECT * FROM (
     SELECT l.al AS la, r.al AS ra, row_number() OVER (ORDER BY l.a) AS rn
     FROM loc_jl AS l INNER JOIN loc_jr AS r ON l.a = r.a
-) ORDER BY rn;
+) ORDER BY rn
+SETTINGS enable_parallel_replicas = 0;
 DROP TABLE loc_jl;
 DROP TABLE loc_jr;
 -- A same-body ALIAS pair collapses to one shard column, so a duplicate is already recorded when a later
