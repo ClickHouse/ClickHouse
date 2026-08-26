@@ -7,22 +7,22 @@ SET query_plan_direct_read_from_text_index = 1;
 SET query_plan_text_index_add_hint = 1;
 SET query_plan_merge_filters = 1;
 
-DROP TABLE IF EXISTS t_stream_text_index;
+DROP TABLE IF EXISTS t_stream_watermark_push_down;
 
-CREATE TABLE t_stream_text_index
+CREATE TABLE t_stream_watermark_push_down
 (
-    id UInt64,
+    ts DateTime64(3),
     map Map(String, String),
     INDEX idx_map_keys mapKeys(map) TYPE text(tokenizer = 'array') GRANULARITY 1,
     INDEX idx_map_values mapValues(map) TYPE text(tokenizer = 'array') GRANULARITY 1
 )
-ENGINE = MergeTree ORDER BY id
+ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
 
-INSERT INTO t_stream_text_index SELECT number, map('env', if(number < 3, 'prod', 'staging')) FROM numbers(100);
+INSERT INTO t_stream_watermark_push_down SELECT toDateTime64('2020-01-01 00:00:00', 3) + number, map('env', if(number < 3, 'prod', 'staging')) FROM numbers(100);
 
-SELECT id FROM (SELECT id FROM t_stream_text_index STREAM PREWHERE ('prod') IN (map[materialize('env')]) LIMIT 3) ORDER BY id
-SETTINGS log_comment = '04235_streaming_queries_text_index_direct_read';
+SELECT ts FROM (SELECT ts FROM t_stream_watermark_push_down STREAM BOUNDED WATERMARK FOR ts AS ts - toIntervalSecond(5) PREWHERE ('prod') IN (map[materialize('env')])) ORDER BY ts
+SETTINGS log_comment = '05042_streaming_queries_watermark_filter_push_down';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -31,6 +31,4 @@ FROM system.query_log
 WHERE event_date >= yesterday()
     AND current_database = currentDatabase()
     AND type = 'QueryFinish'
-    AND log_comment = '04235_streaming_queries_text_index_direct_read';
-
-DROP TABLE t_stream_text_index;
+    AND log_comment = '05042_streaming_queries_watermark_filter_push_down';
