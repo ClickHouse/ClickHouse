@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Regression: when the Parquet footer is served from the shared metadata
-# cache, the bloom-filter and dictionary pruning paths must not read the
-# by-value file_metadata member that the cached flow never populates.
-# Before the fix, the second (cache-hit) read of each file threw
-# std::out_of_range in makeColumnDescriptor.
-#
-# The first read of each file populates the metadata cache, the second
-# read gets the footer from the cache and exercises the pruning path.
+# Regression: a cache-hit footer left the by-value file_metadata member
+# empty, and the bloom/dictionary pruning paths read it (std::out_of_range
+# in makeColumnDescriptor). The second read of each file gets the footer
+# from the cache and must produce the same rows as the first.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

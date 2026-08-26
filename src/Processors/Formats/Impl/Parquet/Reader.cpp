@@ -876,6 +876,8 @@ static parquet::ColumnDescriptor makeColumnDescriptor(const parq::FileMetaData &
 
 void Reader::prepareBloomFilterCondition()
 {
+    const auto & parquet_metadata = getFileMetadata();
+
     /// Index in output block -> arrow column info.
     std::vector<std::optional<std::pair</*primitive_idx*/ size_t, parquet::ColumnDescriptor>>>
         bf_eligible_columns(extended_sample_block.columns());
@@ -917,7 +919,7 @@ void Reader::prepareBloomFilterCondition()
         if (!any_row_group_eligible)
             continue;
 
-        parquet::ColumnDescriptor desc = makeColumnDescriptor(getFileMetadata(), column_info);
+        parquet::ColumnDescriptor desc = makeColumnDescriptor(parquet_metadata, column_info);
         bf_eligible_columns[column_info.idx_in_output_block].emplace(primitive_idx, std::move(desc));
         dict_filter_eligible_columns[column_info.idx_in_output_block] = any_row_group_dict_eligible;
         any_column_eligible_for_bf = true;
