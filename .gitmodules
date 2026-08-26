@@ -76,6 +76,9 @@
 [submodule "contrib/fastops"]
 	path = contrib/fastops
 	url = https://github.com/ClickHouse/fastops
+[submodule "contrib/orc"]
+	path = contrib/orc
+	url = https://github.com/ClickHouse/orc
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11
@@ -143,6 +146,9 @@
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
+[submodule "contrib/NuRaft"]
+	path = contrib/NuRaft
+	url = https://github.com/ClickHouse/NuRaft
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
 	url = https://github.com/apache/datasketches-cpp
@@ -203,6 +209,9 @@
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
 	url = https://github.com/ClickHouse/vectorscan.git
+[submodule "contrib/llvm-project"]
+	path = contrib/llvm-project
+	url = https://github.com/ClickHouse/llvm-project
 [submodule "contrib/corrosion"]
 	path = contrib/corrosion
 	url = https://github.com/corrosion-rs/corrosion
@@ -260,6 +269,9 @@
 [submodule "contrib/aws-c-sdkutils"]
 	path = contrib/aws-c-sdkutils
 	url = https://github.com/awslabs/aws-c-sdkutils
+[submodule "contrib/aws-c-http"]
+	path = contrib/aws-c-http
+	url = https://github.com/awslabs/aws-c-http
 [submodule "contrib/aws-c-s3"]
 	path = contrib/aws-c-s3
 	url = https://github.com/awslabs/aws-c-s3
@@ -306,6 +318,9 @@
 [submodule "contrib/google-cloud-cpp"]
 	path = contrib/google-cloud-cpp
 	url = https://github.com/ClickHouse/google-cloud-cpp.git
+[submodule "contrib/rust_vendor"]
+	path = contrib/rust_vendor
+	url = https://github.com/ClickHouse/rust_vendor.git
 [submodule "contrib/openssl"]
 	path = contrib/openssl
 	url = https://github.com/ClickHouse/openssl.git
@@ -342,6 +357,9 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
+[submodule "contrib/chdig"]
+	path = contrib/chdig
+	url = https://github.com/azat/chdig.git
 [submodule "contrib/ai-sdk-cpp"]
 	path = contrib/ai-sdk-cpp
 	url = https://github.com/ClickHouse/ai-sdk-cpp
