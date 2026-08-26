@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnReplicated.h>
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
@@ -60,7 +61,7 @@ MutableColumnPtr DataTypeNullable::createColumn(const ISerialization & serializa
         return ColumnReplicated::create(createColumn(*replicated->getNested()), ColumnUInt8::create());
 
     if (const auto * detached = typeid_cast<const SerializationDetached *>(current_serialization))
-        return createColumn(*detached->getNested());
+        return ColumnBLOB::create(createColumn(*detached->getNested()));
 
     if (const auto * nullable = typeid_cast<const SerializationNullable *>(current_serialization))
         return ColumnNullable::create(nested_data_type->createColumn(*nullable->getNested()), ColumnUInt8::create());
