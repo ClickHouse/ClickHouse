@@ -220,6 +220,7 @@
                 "concepts/features/interfaces/overview",
                 "concepts/features/interfaces/http",
                 "concepts/features/interfaces/tcp",
+                "concepts/features/interfaces/adbc",
                 "concepts/features/interfaces/jdbc",
                 "concepts/features/interfaces/mysql",
                 { "$ref": "features/interfaces/odbc/navigation.json" },
@@ -236,6 +237,7 @@
             "concepts/features/interfaces/web-sql",
             "concepts/features/interfaces/web-ui-color-coding",
             "concepts/features/interfaces/web-ui-pinned-columns",
+            "concepts/features/interfaces/web-ui-result-shaping",
             "concepts/features/interfaces/web-terminal",
             {
               "group": "Third-party clients",
