@@ -7,21 +7,28 @@ from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import mysql_pass, pg_pass
 from helpers.postgres_utility import get_postgres_conn
 
-# The MySQL and PostgreSQL database engines record "this table is detached/dropped" as the
+# The `MySQL` and `PostgreSQL` database engines record "this table is detached/dropped" as the
 # existence of an empty marker file in the database metadata directory. The marker mutation
-# must fsync its parent directory (under fsync_metadata), otherwise an acknowledged
-# DETACH/DROP/ATTACH can be lost on power loss and the table silently changes visibility on
-# restart. We cannot cut power in a test, so assert the DirectorySync ProfileEvent fires for
-# the DDL query (>= 1 with fsync_metadata=1, 0 with fsync_metadata=0), the same technique as
-# 02361_fsync_profile_events.sh.
+# must fsync its parent directory (under `fsync_metadata`), otherwise an acknowledged
+# `DETACH`/`DROP`/`ATTACH` can be lost on power loss and the table silently changes visibility
+# on restart. We cannot cut power in a test, so assert the `DirectorySync` ProfileEvent fires
+# for the DDL query (`>= 1` with `fsync_metadata = 1`, `0` with `fsync_metadata = 0`), the same
+# technique as `02361_fsync_profile_events.sh`.
+#
+# The counter is incremented before the syscall and `LocalDirectorySyncGuard` logs and swallows
+# a failure, so it proves the sync is issued on the path, not that it returned success.
+# `DirectorySyncElapsedMicroseconds` would discriminate that, but it is incremented by a
+# truncated microsecond count that is `0` for a fast sync, which is why
+# `02361_fsync_profile_events.sh` retries up to 100 times; a DDL statement cannot be retried
+# the same way.
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     with_mysql8=True,
     with_postgres=True,
-    # An object-storage database disk does not fsync directories (DiskObjectStorage does not
-    # override getDirectorySyncGuard), so the DirectorySync oracle is meaningless there.
+    # An object-storage database disk does not fsync directories (`DiskObjectStorage` does not
+    # override `getDirectorySyncGuard`), so the `DirectorySync` oracle is meaningless there.
     with_remote_database_disk=False,
 )
 
@@ -71,10 +78,11 @@ def marker_files(ch_db, instance=node):
 
 
 def set_immutable(ch_db, immutable, instance=node):
-    """Make the metadata directory reject `unlink`, so the marker removal throws `EPERM`.
+    """Make the metadata directory reject `unlink` and `create`, so a marker mutation throws
+    `EPERM`.
 
-    This is the only fault this harness can inject into the marker-removal path, and it hits
-    exactly the step whose failure the statement order has to survive.
+    This is the only fault this harness can inject into the marker path, and it hits exactly
+    the step whose failure the statement order has to survive.
     """
     flag = "+i" if immutable else "-i"
     instance.exec_in_container(
@@ -136,7 +144,7 @@ def test_mysql_database_marker_fsync(started_cluster):
     try:
         assert "t" in node.query(f"SHOW TABLES FROM {ch_db}")
 
-        # The marker is created by DETACH TABLE ... PERMANENTLY and removed by ATTACH TABLE.
+        # The marker is created by `DETACH TABLE ... PERMANENTLY` and removed by `ATTACH TABLE`.
         assert run(f"DETACH TABLE {ch_db}.t PERMANENTLY", 1) >= 1
         assert "t" not in node.query(f"SHOW TABLES FROM {ch_db}")
         assert run(f"ATTACH TABLE {ch_db}.t", 1) >= 1
@@ -147,8 +155,8 @@ def test_mysql_database_marker_fsync(started_cluster):
         assert run(f"ATTACH TABLE {ch_db}.t", 0) == 0
         assert "t" in node.query(f"SHOW TABLES FROM {ch_db}")
 
-        # A plain (non-permanent) DETACH writes no marker, so the ATTACH unlink is a no-op
-        # and the guard is deliberately skipped even with fsync_metadata = 1.
+        # A plain (non-permanent) `DETACH` writes no marker, so the `ATTACH` unlink is a
+        # no-op and the guard is deliberately skipped even with `fsync_metadata = 1`.
         node.query(f"DETACH TABLE {ch_db}.t")
         assert "t" not in node.query(f"SHOW TABLES FROM {ch_db}")
         assert run(f"ATTACH TABLE {ch_db}.t", 1) == 0
@@ -183,7 +191,7 @@ def test_postgresql_database_marker_fsync(started_cluster):
     try:
         assert "t" in node.query(f"SHOW TABLES FROM {ch_db}")
 
-        # The marker is created by DROP TABLE and removed by ATTACH TABLE.
+        # The marker is created by `DROP TABLE` and removed by `ATTACH TABLE`.
         assert run(f"DROP TABLE {ch_db}.t", 1) >= 1
         assert "t" not in node.query(f"SHOW TABLES FROM {ch_db}")
         assert run(f"ATTACH TABLE {ch_db}.t", 1) >= 1
@@ -194,14 +202,14 @@ def test_postgresql_database_marker_fsync(started_cluster):
         assert run(f"ATTACH TABLE {ch_db}.t", 0) == 0
         assert "t" in node.query(f"SHOW TABLES FROM {ch_db}")
 
-        # DETACH TABLE ... PERMANENTLY writes the same marker from its own call site.
+        # `DETACH TABLE ... PERMANENTLY` writes the same marker from its own call site.
         assert run(f"DETACH TABLE {ch_db}.t PERMANENTLY", 1) >= 1
         node.query(f"ATTACH TABLE {ch_db}.t")
         assert run(f"DETACH TABLE {ch_db}.t PERMANENTLY", 0) == 0
         node.query(f"ATTACH TABLE {ch_db}.t")
 
-        # A plain (non-permanent) DETACH writes no marker, so the ATTACH unlink is a no-op
-        # and the guard is deliberately skipped even with fsync_metadata = 1.
+        # A plain (non-permanent) `DETACH` writes no marker, so the `ATTACH` unlink is a
+        # no-op and the guard is deliberately skipped even with `fsync_metadata = 1`.
         node.query(f"DETACH TABLE {ch_db}.t")
         assert "t" not in node.query(f"SHOW TABLES FROM {ch_db}")
         assert run(f"ATTACH TABLE {ch_db}.t", 1) == 0
@@ -228,6 +236,17 @@ def test_mysql_attach_failure_keeps_table_detached(started_cluster):
         f"CREATE DATABASE {ch_db} ENGINE = MySQL('mysql80:3306', '{mysql_db}', 'root', '{mysql_pass}')"
     )
     try:
+        # A failed marker write leaves the table attached: the detached state is rolled back,
+        # so the statement is retryable.
+        set_immutable(ch_db, True)
+        try:
+            with pytest.raises(Exception):
+                node.query(f"DETACH TABLE {ch_db}.t PERMANENTLY")
+            assert marker_files(ch_db) == []
+            assert "t" in node.query(f"SHOW TABLES FROM {ch_db}")
+        finally:
+            set_immutable(ch_db, False)
+
         node.query(f"DETACH TABLE {ch_db}.t PERMANENTLY")
         assert marker_files(ch_db) == ["t.remove_flag"]
 
@@ -264,6 +283,21 @@ def test_postgresql_attach_failure_keeps_table_detached(started_cluster):
         f"CREATE DATABASE {ch_db} ENGINE = PostgreSQL('postgres1:5432', '{pg_db}', 'postgres', '{pg_pass}')"
     )
     try:
+        # A failed marker write leaves the table attached: the detached state is rolled back,
+        # so the statement is retryable. Both call sites that write the marker are covered.
+        set_immutable(ch_db, True)
+        try:
+            for write in ("DROP TABLE", "DETACH TABLE"):
+                stmt = f"{write} {ch_db}.t"
+                if write == "DETACH TABLE":
+                    stmt += " PERMANENTLY"
+                with pytest.raises(Exception):
+                    node.query(stmt)
+                assert marker_files(ch_db) == []
+                assert "t" in node.query(f"SHOW TABLES FROM {ch_db}")
+        finally:
+            set_immutable(ch_db, False)
+
         node.query(f"DROP TABLE {ch_db}.t")
         assert marker_files(ch_db) == ["t.removed"]
 
