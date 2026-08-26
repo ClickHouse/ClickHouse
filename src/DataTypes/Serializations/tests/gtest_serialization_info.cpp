@@ -470,6 +470,9 @@ TEST(SerializationInfoByName, DowngradesWithoutEligibleSubcolumns)
 
 TEST(SerializationInfoObject, RejectsUnexpectedSerialization)
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
+#else
     auto object_type = DataTypeFactory::instance().get("JSON(x String, max_dynamic_paths=0)");
     auto string_type = DataTypeFactory::instance().get("String");
 
@@ -486,6 +489,7 @@ TEST(SerializationInfoObject, RejectsUnexpectedSerialization)
             }
         },
         DB::Exception);
+#endif
 }
 
 TEST(SerializationInfoObject, NativeRevisionGate)
