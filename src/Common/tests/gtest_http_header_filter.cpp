@@ -195,3 +195,25 @@ TEST(HTTPHeaderFilter, EmptyConfigForbidsNothing)
     HTTPHeaderFilter filter;
     EXPECT_FALSE(isForbidden(filter, "Authorization"));
 }
+
+/// A bare CR or LF in a header name or value terminates the header line, so it could smuggle an
+/// extra header into the request. Both must be rejected (not only LF), for names and values,
+/// independently of the http_forbid_headers blocklist.
+TEST(HTTPHeaderFilter, RejectsCarriageReturnAndNewline)
+{
+    HTTPHeaderFilter filter;
+
+    auto rejects = [&](const std::string & name, const std::string & value)
+    {
+        HTTPHeaderEntries entries{{name, value}};
+        try { filter.checkAndNormalizeHeaders(entries); }
+        catch (const Exception &) { return true; }
+        return false;
+    };
+
+    EXPECT_TRUE(rejects("Authorization", "Bearer token\rX-Injected: evil"));
+    EXPECT_TRUE(rejects("Authorization", "Bearer token\nX-Injected: evil"));
+    EXPECT_TRUE(rejects("Authorization", "Bearer token\r\nX-Injected: evil"));
+    EXPECT_TRUE(rejects("Bad\rName", "value"));
+    EXPECT_FALSE(rejects("Authorization", "Bearer good-token"));
+}
