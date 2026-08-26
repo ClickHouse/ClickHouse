@@ -3,9 +3,9 @@
 
 -- A search column whose real storage name contains a dot (e.g. a `Nested` component `n.vec`) must be
 -- resolved as-is. Stripping everything before the first dot unconditionally would turn `n.vec` into
--- `vec` and bind the query to the index of an unrelated column, producing wrong results.
+-- `vec` and bind the query to the index of an unrelated column, producing wrong results. The name is
+-- unqualified with the old analyzer, so the check is run with both analyzers.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_05043;
@@ -18,6 +18,9 @@ ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 4;
 -- `vec` grows along the first dimension, `n.vec` along the second one, so the nearest neighbour of
 -- [0, 63] differs between the two columns: `n.vec` gives id 63, `vec` would give id 0.
 INSERT INTO t_05043 SELECT number, [toFloat32(number), 0.], [0., toFloat32(number)] FROM numbers(64);
+
+SELECT 'the analyzer';
+SET enable_analyzer = 1;
 
 SELECT 'nearest neighbour of the dotted search column, with rescoring';
 SELECT id FROM t_05043 ORDER BY L2Distance(`n.vec`, [0., 63.]) LIMIT 1
@@ -38,13 +41,32 @@ SELECT count() > 0 FROM (
         SETTINGS vector_search_with_rescoring = 0)
 WHERE explain LIKE '%_distance%';
 
-SELECT 'the index of the dotted search column is used';
-SELECT trimLeft(explain) FROM (
+SELECT 'the index of the dotted search column is used, not the one of `vec`';
+SELECT countIf(explain LIKE '%Name: idx_n_vec%'), countIf(explain LIKE '%Name: idx_vec%') FROM (
     EXPLAIN indexes = 1
-    SELECT id FROM t_05043 ORDER BY L2Distance(`n.vec`, [0., 63.]) LIMIT 1)
-WHERE explain LIKE '%Name: idx%';
+    SELECT id FROM t_05043 ORDER BY L2Distance(`n.vec`, [0., 63.]) LIMIT 1);
 
 -- The plain column must keep working next to the dotted one.
+SELECT 'nearest neighbour of the plain search column';
+SELECT id FROM t_05043 ORDER BY L2Distance(vec, [0., 63.]) LIMIT 1
+    SETTINGS vector_search_with_rescoring = 0;
+
+SELECT 'the old analyzer';
+SET enable_analyzer = 0;
+
+SELECT 'nearest neighbour of the dotted search column, with rescoring';
+SELECT id FROM t_05043 ORDER BY L2Distance(`n.vec`, [0., 63.]) LIMIT 1
+    SETTINGS vector_search_with_rescoring = 1;
+
+SELECT 'nearest neighbour of the dotted search column, without rescoring';
+SELECT id FROM t_05043 ORDER BY L2Distance(`n.vec`, [0., 63.]) LIMIT 1
+    SETTINGS vector_search_with_rescoring = 0;
+
+SELECT 'the index of the dotted search column is used, not the one of `vec`';
+SELECT countIf(explain LIKE '%Name: idx_n_vec%'), countIf(explain LIKE '%Name: idx_vec%') FROM (
+    EXPLAIN indexes = 1
+    SELECT id FROM t_05043 ORDER BY L2Distance(`n.vec`, [0., 63.]) LIMIT 1);
+
 SELECT 'nearest neighbour of the plain search column';
 SELECT id FROM t_05043 ORDER BY L2Distance(vec, [0., 63.]) LIMIT 1
     SETTINGS vector_search_with_rescoring = 0;

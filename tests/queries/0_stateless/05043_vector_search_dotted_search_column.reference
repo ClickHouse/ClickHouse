@@ -1,3 +1,4 @@
+the analyzer
 nearest neighbour of the dotted search column, with rescoring
 63
 nearest neighbour of the dotted search column, without rescoring
@@ -6,7 +7,16 @@ the same as the exact scan
 63
 the dotted search column is replaced by `_distance`
 1
-the index of the dotted search column is used
-Name: idx_n_vec
+the index of the dotted search column is used, not the one of `vec`
+1	0
+nearest neighbour of the plain search column
+0
+the old analyzer
+nearest neighbour of the dotted search column, with rescoring
+63
+nearest neighbour of the dotted search column, without rescoring
+63
+the index of the dotted search column is used, not the one of `vec`
+1	0
 nearest neighbour of the plain search column
 0
