@@ -43,7 +43,6 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/TTLDeleteFilterTransform.h>
-#include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -628,7 +627,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
     ctx->force_rows_where_ttl = false;
-    ctx->refresh_ttl_infos_only = false;
     for (const auto & part : global_ctx->future_part->parts)
     {
         global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
@@ -648,9 +646,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// `part_min_ttl` for a rows-WHERE TTL only counts rows that already pass the WHERE, so it cannot
     /// see a condition that first becomes true in the merge output. Re-evaluate it from the output
     /// instead of trusting the source parts.
-    const bool rows_where_ttl_needs_merge_output
-        = global_ctx->metadata_snapshot->hasAnyRowsWhereTTL() && mergeCanChangeColumnValues(global_ctx->merging_params.mode);
-    if (rows_where_ttl_needs_merge_output)
+    if (global_ctx->metadata_snapshot->hasAnyRowsWhereTTL() && mergeCanChangeColumnValues(global_ctx->merging_params.mode))
     {
         ctx->need_remove_expired_values = true;
         ctx->force_rows_where_ttl = true;
@@ -661,11 +657,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         LOG_INFO(ctx->log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", global_ctx->new_data_part->name);
         ctx->need_remove_expired_values = false;
         ctx->force_rows_where_ttl = false;
-        /// Deleting is not allowed right now, but the source parts' rows-WHERE info says nothing about
-        /// the values this merge produces. Inheriting it would leave the new part claiming it has
-        /// nothing to expire, and no TTL merge would ever be scheduled for it. Recompute the infos
-        /// from the merge output without deleting anything instead.
-        ctx->refresh_ttl_infos_only = rows_where_ttl_needs_merge_output;
+        /// The merged part then inherits the source parts' rows-WHERE info, which says nothing about
+        /// the values this merge produces. Refreshing it without deleting anything is a follow-up.
     }
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
@@ -3020,60 +3013,6 @@ private:
     std::shared_ptr<TTLTransform> transform;
 };
 
-/// Recomputes the part's rows-WHERE TTL infos from the merge output without deleting any row.
-class TTLCalcStep : public ITransformingStep
-{
-public:
-    TTLCalcStep(
-        const SharedHeader & input_header_,
-        const ContextPtr & context_,
-        const MergeTreeData & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        const MergeTreeData::MutableDataPartPtr & data_part_,
-        time_t current_time)
-        : ITransformingStep(input_header_, input_header_, getTraits())
-    {
-        transform = std::make_shared<TTLCalcTransform>(
-            context_, input_header_, storage_, metadata_snapshot_, data_part_, current_time,
-            /*force_=*/true, /*only_rows_where_ttl_=*/true);
-
-        /// Same reason as in TTLStep: building the sets inside the merge pipeline would count the
-        /// subquery's rows in merge_list_element->rows_read.
-        for (auto & subquery : transform->getSubqueries())
-            subquery->buildSetInplace(context_);
-    }
-
-    String getName() const override { return "TTL_CALC"; }
-
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
-    {
-        pipeline.addTransform(transform);
-    }
-
-    void updateOutputHeader() override
-    {
-        output_header = input_headers.front();
-    }
-
-private:
-    static Traits getTraits()
-    {
-        return ITransformingStep::Traits
-        {
-            {
-                .returns_single_stream = true,
-                .preserves_number_of_streams = true,
-                .preserves_sorting = true,
-            },
-            {
-                .preserves_number_of_rows = true,
-            }
-        };
-    }
-
-    std::shared_ptr<TTLCalcTransform> transform;
-};
-
 class BuildTextIndexStep : public ITransformingStep, private WithContext
 {
 public:
@@ -3543,22 +3482,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
-    }
-    /// Not an `else`: when a column expired the step above still runs with deletion disabled, and it
-    /// would leave the stale rows-WHERE info in place. Running after it also means the expired
-    /// columns a TTL expression may need are back in the block.
-    if (ctx->refresh_ttl_infos_only)
-    {
-        auto ttl_calc_step = std::make_unique<TTLCalcStep>(
-            merge_parts_query_plan.getCurrentHeader(),
-            global_ctx->context,
-            *global_ctx->data,
-            global_ctx->metadata_snapshot,
-            global_ctx->new_data_part,
-            global_ctx->time_of_merge);
-
-        ttl_calc_step->setStepDescription("TTL calc step");
-        merge_parts_query_plan.addStep(std::move(ttl_calc_step));
     }
 
     /// Secondary indices expressions

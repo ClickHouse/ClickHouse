@@ -311,7 +311,6 @@ private:
         bool need_remove_expired_values{false};
         bool force_ttl{false};
         bool force_rows_where_ttl{false};
-        bool refresh_ttl_infos_only{false};
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes{};
 

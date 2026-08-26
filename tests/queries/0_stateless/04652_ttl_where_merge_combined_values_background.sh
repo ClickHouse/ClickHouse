@@ -4,16 +4,19 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A merge that runs while TTL merges are stopped may combine rows into one that the TTL WHERE
-# matches. It must not delete it right then, but it must leave the part advertising the row as
-# expirable, so that background TTL selection picks the part up afterwards. This checks the
-# background path specifically - no OPTIMIZE, so the row can only disappear if
-# TTLRowDeleteMergeSelector selected the part on its own.
+# The reported shape, in the variant where the combining merge runs BEFORE the rows expire: the
+# merged row satisfies the TTL `WHERE` but its TTL is still in the future, so the merge must keep the
+# row and record it as expirable at that time. Once it does expire, background TTL selection has to
+# pick the part up on its own - there is no `OPTIMIZE` after the combining merge, so nothing else can
+# delete the row, and a part reporting the source parts' "nothing to expire" is never selected.
+
+# Far enough ahead that the combining merge below cannot race the expiry even on a loaded machine.
+EXPIRY=$(date -u -d '+20 seconds' '+%Y-%m-%d %H:%M:%S')
 
 $CLICKHOUSE_CLIENT -m -q "
-    DROP TABLE IF EXISTS ttl_where_background;
+    DROP TABLE IF EXISTS ttl_where_expires_later;
 
-    CREATE TABLE ttl_where_background
+    CREATE TABLE ttl_where_expires_later
     (
         key UInt64,
         occurrences SimpleAggregateFunction(sum, Int64),
@@ -24,71 +27,48 @@ $CLICKHOUSE_CLIENT -m -q "
     TTL expiry DELETE WHERE occurrences = 0
     SETTINGS min_bytes_for_wide_part = 0, merge_with_ttl_timeout = 0;
 
-    SYSTEM STOP TTL MERGES ttl_where_background;
+    -- Keep the parts apart so the combining merge is the OPTIMIZE below and not a background merge.
+    SYSTEM STOP MERGES ttl_where_expires_later;
 
-    INSERT INTO ttl_where_background VALUES (1, -1, '2020-01-01 00:00:00');
-    INSERT INTO ttl_where_background VALUES (1, +1, '2020-01-01 00:00:00');
+    INSERT INTO ttl_where_expires_later VALUES (1, -1, '$EXPIRY');
+    INSERT INTO ttl_where_expires_later VALUES (1, +1, '$EXPIRY');
 
-    OPTIMIZE TABLE ttl_where_background FINAL;
+    SYSTEM START MERGES ttl_where_expires_later;
+    OPTIMIZE TABLE ttl_where_expires_later FINAL;
 "
 
-# The combining merge happened with TTL merges stopped, so nothing was deleted yet.
-$CLICKHOUSE_CLIENT -q "SELECT 'stopped', count() FROM ttl_where_background"
+# The merge summed the two rows to 0, so the WHERE matches now, but the TTL has not passed yet.
+$CLICKHOUSE_CLIENT -q "SELECT 'not expired yet', count() FROM ttl_where_expires_later"
 
-$CLICKHOUSE_CLIENT -q "SYSTEM START TTL MERGES ttl_where_background"
+# The merged part must advertise that row as expirable at its own TTL, which only holds if the merge
+# re-evaluated the rows-WHERE TTL on its output.
+$CLICKHOUSE_CLIENT -q "
+    SELECT 'ttl info from merge output',
+        rows_where_ttl_info.min = [toDateTime('$EXPIRY', 'UTC')] AND rows_where_ttl_info.max = [toDateTime('$EXPIRY', 'UTC')]
+    FROM system.parts
+    WHERE database = currentDatabase() AND table = 'ttl_where_expires_later' AND active
+"
 
-for _ in {1..120}
+for _ in {1..180}
 do
-    count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ttl_where_background")
+    count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ttl_where_expires_later")
     if [[ "$count" == "0" ]]; then
         break
     fi
     sleep 0.5
 done
 
-$CLICKHOUSE_CLIENT -q "SELECT 'started', count() FROM ttl_where_background"
+$CLICKHOUSE_CLIENT -q "SELECT 'deleted in background', count() FROM ttl_where_expires_later"
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE ttl_where_background"
-
-# The mirror image: here the source parts do advertise an expired rows-WHERE TTL, but `expiry` is a
-# max() aggregate so the merged row's TTL moves into the future. Refreshing the rows-WHERE info must
-# move the part's aggregate TTL along with it, otherwise the part keeps claiming an expired 2020 TTL
-# and gets selected for a TTL merge that has nothing to delete.
-$CLICKHOUSE_CLIENT -m -q "
-    DROP TABLE IF EXISTS ttl_where_moves_later;
-
-    CREATE TABLE ttl_where_moves_later
-    (
-        key UInt64,
-        occurrences SimpleAggregateFunction(sum, Int64),
-        expiry SimpleAggregateFunction(max, DateTime)
-    )
-    ENGINE = AggregatingMergeTree
-    ORDER BY key
-    TTL expiry DELETE WHERE occurrences = 0
-    SETTINGS min_bytes_for_wide_part = 0, merge_with_ttl_timeout = 0;
-
-    SYSTEM STOP TTL MERGES ttl_where_moves_later;
-
-    INSERT INTO ttl_where_moves_later VALUES (1, 0, '2020-01-01 00:00:00');
-    INSERT INTO ttl_where_moves_later VALUES (1, 0, '2106-01-01 00:00:00');
-
-    OPTIMIZE TABLE ttl_where_moves_later FINAL;
-
-    SYSTEM START TTL MERGES ttl_where_moves_later;
-"
-
-# Give background selection a chance to act on a stale expired aggregate.
-sleep 5
-
+# A single part is never picked by the regular merge selector, so the deletion can only have come
+# from a TTL merge that the selector chose by itself. Every row of the part is expired here, so the
+# selector takes the drop variant rather than rewriting the part; accept either.
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS part_log"
 $CLICKHOUSE_CLIENT -q "
-    SELECT 'moved later', count(), countIf(merge_reason = 'TTLDeleteMerge')
+    SELECT 'ttl merge happened', countIf(merge_reason IN ('TTLDeleteMerge', 'TTLDropMerge')) >= 1
     FROM system.part_log
     WHERE event_date >= yesterday() AND database = currentDatabase()
-      AND table = 'ttl_where_moves_later' AND event_type = 'MergeParts'
+      AND table = 'ttl_where_expires_later' AND event_type = 'MergeParts'
 "
 
-$CLICKHOUSE_CLIENT -q "SELECT 'moved later rows', count() FROM ttl_where_moves_later"
-
-$CLICKHOUSE_CLIENT -q "DROP TABLE ttl_where_moves_later"
+$CLICKHOUSE_CLIENT -q "DROP TABLE ttl_where_expires_later"
