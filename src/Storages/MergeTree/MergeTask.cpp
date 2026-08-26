@@ -1066,8 +1066,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         return true;
     };
 
+    /// Patches are applied by the merge itself, so a part's own `ttl_infos` cannot prove expiry once
+    /// there are any: a lightweight UPDATE may set the rows-TTL column to a value that keeps rows alive.
     const bool can_short_circuit_fully_expired_merge =
         global_ctx->metadata_snapshot->hasOnlyRowsTTL()
+        && global_ctx->future_part->patch_parts.empty()
         && (global_ctx->future_part->merge_type == MergeType::TTLDrop || all_source_parts_fully_expired());
 
     if (can_short_circuit_fully_expired_merge)

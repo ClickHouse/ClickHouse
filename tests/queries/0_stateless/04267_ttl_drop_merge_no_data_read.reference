@@ -23,3 +23,6 @@ TTLDropMerge	100	200
 -- Case 8: Regular merge over fully expired parts
 RegularMerge	0	0
 0
+-- Case 9: pending patch part disables the short-circuit
+100
+10
