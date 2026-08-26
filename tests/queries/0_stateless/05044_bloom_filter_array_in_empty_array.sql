@@ -92,14 +92,19 @@ SELECT count() FROM t_bf_array_in_tuple_one_index WHERE (x, y) IN (([1], 2), ([2
 
 DROP TABLE t_bf_array_in_tuple_one_index;
 
--- An absent value is still pruned away, so the index keeps working.
+-- A set with no empty array still reaches the index and still prunes granules for an absent value.
+-- How many granules survive is not asserted: that is a false positive draw over a granule count
+-- that `index_granularity_bytes` randomizes.
 DROP TABLE IF EXISTS t_bf_array_in_pruning;
 
 CREATE TABLE t_bf_array_in_pruning (x Array(UInt32), y UInt32, INDEX idx_x x TYPE bloom_filter GRANULARITY 1)
 ENGINE = MergeTree ORDER BY y SETTINGS index_granularity = 8192;
 INSERT INTO t_bf_array_in_pruning SELECT [number, number + 1000000], number FROM numbers(200000);
 
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT sum(y) FROM t_bf_array_in_pruning WHERE x IN ([999999999, 999999998]))
-WHERE explain ILIKE '%Granules: 0/%';
+SELECT countIf(explain LIKE '%Name: idx_x%') > 0 AND countIf(toUInt64OrZero(g[1]) < toUInt64OrZero(g[2])) > 0
+FROM (
+    SELECT explain, splitByChar('/', extract(explain, 'Granules: ([0-9]+/[0-9]+)')) AS g
+    FROM (EXPLAIN indexes = 1 SELECT sum(y) FROM t_bf_array_in_pruning WHERE x IN ([999999999, 999999998]))
+);
 
 DROP TABLE t_bf_array_in_pruning;
