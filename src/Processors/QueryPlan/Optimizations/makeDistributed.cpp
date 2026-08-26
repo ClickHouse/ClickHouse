@@ -253,8 +253,14 @@ std::optional<PreformattedMessage> hasAggregationUnsupportedStepForDistributed(Q
     if (!aggregating_step)
         return {};
 
+    /// Shuffle scatters by the full key set, so GROUPING SETS subtotals (over key subsets) would be
+    /// produced in several buckets and duplicated. Partial aggregation has no such problem: every
+    /// worker produces partial states for every grouping set over its share of the data, tagged with
+    /// `__grouping_set`, and the merge combines them per set - the same split the shard-based
+    /// distributed path uses. Shuffle is impossible here, so
+    /// `distributed_plan_force_shuffle_aggregation` cannot apply either.
 
-    if (aggregating_step && (aggregating_step->inOrder() || aggregating_step->explicitSortingRequired()))
+    if (aggregating_step->inOrder() || aggregating_step->explicitSortingRequired())
     {
         return PreformattedMessage::create("make_distributed_plan does not support in-order aggregation");
     }
@@ -266,9 +272,11 @@ std::optional<PreformattedMessage> hasAggregationUnsupportedStepForDistributed(Q
     if (aggregating_step->getParams().max_rows_to_group_by != 0)
         return PreformattedMessage::create("A global GROUP BY limit can't be enforced once aggregation is split per bucket.");
 
+    // Since aggregating_step is not in order and explicit sort is not required, we can use partial aggregation
     if (aggregating_step->isGroupingSets())
-         return PreformattedMessage::create(
-            "make_distributed_plan does not support GROUPING SETS aggregation");
+    {
+        LOG_TRACE(getLogger("optimizer"), "make_distributed_plan expected to use partial aggregation");
+    }
 
     return {};
 }
@@ -703,10 +711,6 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
     /// `distributed_plan_force_shuffle_aggregation` cannot apply either.
     if (aggregating_step->isGroupingSets())
     {
-        //TODO(antoniofilipovic) new
-        if (!can_use_partial_aggregation)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "make_distributed_plan does not support GROUPING SETS aggregation in order");
         strategy = PartialAggregation;
     }
 
