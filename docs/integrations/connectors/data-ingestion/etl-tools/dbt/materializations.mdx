@@ -296,11 +296,13 @@ There are important caveats to using this strategy:
 - It operates directly on the affected table without creating any intermediate or temporary tables, so if there is an
   issue during the operation, the data in the incremental model is likely to be in an invalid state.
 - It requires the ClickHouse setting `allow_nondeterministic_mutations`. The adapter enables it automatically for its
-  own sessions when possible; if the setting is read-only for your dbt user and can't be enabled, the adapter falls
-  back to the legacy strategy (or fails if `use_lw_deletes` is set). In some very rare cases using non-deterministic
-  `incremental_predicates` this could result in a race condition for the updated/deleted items. To ensure consistent
-  results, the incremental predicates should only include sub-queries on data that will not be modified during the
-  incremental materialization.
+  own sessions when possible. When it can't be enabled (for example, it's read-only for your dbt user), the behavior
+  depends on how the strategy was chosen: models relying on the default strategy silently fall back to the legacy
+  strategy, models that explicitly set `delete+insert` or `microbatch` fail at runtime, and `use_lw_deletes: true` in
+  the profile fails at connection time.
+- In some very rare cases, using non-deterministic `incremental_predicates` could result in a race condition for the
+  updated/deleted items. To ensure consistent results, the incremental predicates should only include sub-queries on
+  data that will not be modified during the incremental materialization.
 
 #### The Microbatch Strategy (Requires dbt-core >= 1.9) {#microbatch-strategy}
 

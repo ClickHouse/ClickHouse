@@ -182,10 +182,7 @@ Some operations may take longer than expected due to specific ClickHouse queries
 
 ### Correlating dbt runs with ClickHouse queries {#query-id-tracking}
 
-For server-side detail, starting with dbt-clickhouse 1.10.1, every query executed by the adapter is assigned a unique query ID (a UUID4), which is forwarded to ClickHouse. This makes it possible to correlate a dbt model run with the queries it executed on the server:
-
-- The query ID is returned in the `adapter_response` of each dbt result, so it's available in dbt artifacts such as [`run_results.json`](https://docs.getdbt.com/reference/artifacts/run-results-json).
-- On the ClickHouse side, you can look up the same ID in the [`system.query_log`](/reference/system-tables/query_log) table to inspect the timing and resource usage of the queries behind a model.
+For server-side detail, starting with dbt-clickhouse 1.10.1, every statement executed by the adapter is assigned its own query ID (a UUID4), which is forwarded to ClickHouse. The ID of a model's main statement is returned in the `adapter_response` of its dbt result, so it's available in dbt artifacts such as [`run_results.json`](https://docs.getdbt.com/reference/artifacts/run-results-json). You can look it up in the [`system.query_log`](/reference/system-tables/query_log) table to inspect that statement's timing and resource usage:
 
 ```sql
 SELECT query_id, query, query_duration_ms, read_rows, memory_usage
@@ -194,7 +191,9 @@ WHERE query_id = '<query_id from run_results.json>'
   AND type = 'QueryFinish'
 ```
 
-This also enables observability tools that consume dbt artifacts (for example, Elementary) to link dbt model runs to entries in `system.query_log` automatically.
+Note that a materialization usually runs several statements per model (DDL, inserts, etc.), each with its own query ID; the one in `run_results.json` identifies only the model's main statement. To find every statement behind a run, filter `system.query_log` by the [dbt query comment](https://docs.getdbt.com/reference/project-configs/query-comment) embedded in each query's text instead.
+
+The query ID also enables observability tools that consume dbt artifacts (for example, Elementary) to link dbt model runs to entries in `system.query_log` automatically.
 
 ## Limitations {#limitations}
 
