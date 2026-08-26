@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/checkAggregateStateCanBeFinalized.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/typeid_cast.h>
@@ -56,12 +57,15 @@ public:
         return type->getReturnType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         auto column = arguments.at(0).column;
-        if (!typeid_cast<const ColumnAggregateFunction *>(column.get()))
+        const auto * column_aggregate_function = typeid_cast<const ColumnAggregateFunction *>(column.get());
+        if (!column_aggregate_function)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                     arguments.at(0).column->getName(), getName());
+
+        checkAggregateStateCanBeFinalized(*column_aggregate_function, result_type, getName());
 
         /// Column is copied here, because there is no guarantee that we own it.
         auto mut_column = IColumn::mutate(std::move(column));

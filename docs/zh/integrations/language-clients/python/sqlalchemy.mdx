@@ -1,19 +1,25 @@
 ---
 sidebarTitle: 'SQLAlchemy'
-keywords: ['clickhouse', 'python', 'sqlalchemy', '集成']
-description: 'ClickHouse SQLAlchemy 支持'
+keywords: ['clickhouse', 'python', 'sqlalchemy', 'alembic', '集成']
+description: 'ClickHouse SQLAlchemy 和 Alembic 支持'
 slug: /integrations/language-clients/python/sqlalchemy
 title: 'SQLAlchemy 支持'
 doc_type: 'reference'
 ---
 
-ClickHouse Connect 内置了一个基于核心驱动构建的 SQLAlchemy 方言 (`clickhousedb`) 。它面向 SQLAlchemy Core API，支持 SQLAlchemy 1.4.40+ 和 2.0.x。
+ClickHouse Connect 内置了一个基于核心驱动构建的 `clickhousedb` SQLAlchemy 方言。它支持 SQLAlchemy 1.4.40 及更高版本 (包括 SQLAlchemy 2.x) ，重点关注 Core 查询、ClickHouse DDL、反射以及简单的 ORM 插入。
+
+通过包扩展安装 SQLAlchemy 依赖项：
+
+```bash
+pip install "clickhouse-connect[sqlalchemy]"
+```
 
 <div id="sqlalchemy-connect">
-  ## 通过 SQLAlchemy 连接
+  ## 使用 SQLAlchemy 进行连接
 </div>
 
-使用 `clickhousedb://` 或 `clickhousedb+connect://` URL 创建引擎。查询参数会映射为 ClickHouse 设置、客户端选项以及 HTTP/TLS 传输选项。
+使用 `clickhousedb://` 或 `clickhousedb+connect://` 这两种 URL 格式之一创建引擎：
 
 ```python
 from sqlalchemy import create_engine, text
@@ -22,24 +28,69 @@ engine = create_engine(
     "clickhousedb://user:password@host:8123/mydb?compression=zstd"
 )
 
-with engine.begin() as conn:
-    rows = conn.execute(text("SELECT version()"))
-    print(rows.scalar())
+with engine.connect() as conn:
+    version = conn.execute(text("SELECT version()")).scalar_one()
+    print(version)
 ```
 
-关于 URL/查询参数的说明：
+URL 查询参数可以包含 ClickHouse 设置、ClickHouse Connect 客户端选项 (例如 `compression`、`query_limit` 和超时设置) ，或 HTTP/TLS 选项 (例如 `ca_cert`) 。如有需要，可为 ClickHouse 设置添加 `ch_` 前缀，以强制将其识别为服务器设置，例如 `ch_http_max_field_name_size=99999`。
 
-* ClickHouse 设置：作为查询参数传入 (例如，`use_skip_indexes=0`) 。
-* 客户端选项：`compression` (`compress` 的别名) 、`query_limit`、超时等。
-* HTTP/TLS 选项：用于 HTTP 连接池和 TLS 的选项 (例如，`ch_http_max_field_name_size=99999`、`ca_cert=certifi`) 。
+可用的客户端选项请参见[连接参数和设置](/zh/integrations/language-clients/python/driver-api#connection-arguments)。
 
-如需查看受支持选项的完整列表，请参阅下方各节中的 [连接参数和设置](/zh/integrations/language-clients/python/driver-api#connection-arguments)。这些选项也可以通过 SQLAlchemy DSN 传入。
+<div id="sqlalchemy-per-query-settings">
+  ### 每个查询的设置
+</div>
+
+通过 SQLAlchemy 的执行选项传递 ClickHouse 设置。可以在引擎、连接或语句上设置这些参数。对于相同的键，语句上的值优先于连接或引擎上的值。
+
+```python
+from sqlalchemy import text
+
+stmt = text("SELECT getSetting('max_threads')").execution_options(
+    settings={"max_threads": 2}
+)
+
+with engine.connect() as conn:
+    value = conn.execute(stmt).scalar_one()
+```
+
+<div id="sqlalchemy-per-query-read-formats">
+  ### 按查询设置读取格式
+</div>
+
+通过 SQLAlchemy 的执行选项 `query_formats`，可为引擎、连接或语句设置 ClickHouse 读取格式。语句级格式会优先应用，并覆盖匹配的连接级或引擎级键及通配符。
+
+```python
+from sqlalchemy import text
+
+stmt = text("SELECT user_uuid FROM users").execution_options(
+    query_formats={"UUID": "string"}
+)
+
+with engine.connect() as conn:
+    rows = conn.execute(stmt).all()
+```
+
+<div id="sqlalchemy-server-side-parameters">
+  ### 服务器端参数
+</div>
+
+SQLAlchemy 通常会在客户端渲染参数。创建引擎时，可选择启用 ClickHouse 服务器端参数：
+
+```python
+engine = create_engine(
+    "clickhousedb://user:password@host:8123/mydb",
+    server_side_params=True,
+)
+```
+
+在此模式下，每个绑定值都必须具有与 ClickHouse 兼容的 SQLAlchemy 类型。受支持的 `IN` 列表会变为带类型的 ClickHouse `Array` 参数。如果编译器无法推导出兼容的类型，或无法安全地处理绑定值，就会引发 `CompileError`。
 
 <div id="sqlalchemy-core-queries">
   ## Core 查询
 </div>
 
-该方言支持 SQLAlchemy Core `SELECT` 查询，可使用 JOIN、过滤器、排序、LIMIT/OFFSET 以及 `DISTINCT`。
+该方言支持 SQLAlchemy Core `SELECT` 查询，可使用 JOIN、过滤器、排序、LIMIT 和 OFFSET 以及 `DISTINCT`。
 
 ```python
 from sqlalchemy import MetaData, Table, select
@@ -47,49 +98,204 @@ from sqlalchemy import MetaData, Table, select
 metadata = MetaData(schema="mydb")
 users = Table("users", metadata, autoload_with=engine)
 orders = Table("orders", metadata, autoload_with=engine)
+events = Table("events", metadata, autoload_with=engine)
 
-# 基本 SELECT
-with engine.begin() as conn:
-    rows = conn.execute(select(users.c.id, users.c.name).order_by(users.c.id).limit(10)).fetchall()
+stmt = (
+    select(users.c.name, orders.c.product)
+    .select_from(users.join(orders, users.c.id == orders.c.user_id))
+    .order_by(users.c.name)
+    .limit(10)
+)
 
-# JOIN（INNER/LEFT OUTER/FULL OUTER/CROSS）
-with engine.begin() as conn:
-    stmt = (
-        select(users.c.name, orders.c.product)
-        .select_from(users.join(orders, users.c.id == orders.c.user_id))
-    )
-    rows = conn.execute(stmt).fetchall()
+with engine.connect() as conn:
+    rows = conn.execute(stmt).all()
 ```
 
-支持必须带有 `WHERE` 子句的轻量级 `DELETE`：
+支持轻量级 `DELETE`，并且需要显式 `WHERE` 子句：
 
 ```python
 from sqlalchemy import delete
 
-with engine.begin() as conn:
-    conn.execute(delete(users).where(users.c.name.like("%temp%")))
+stmt = delete(users).where(users.c.name.like("%temporary%"))
+with engine.connect() as conn:
+    conn.execute(stmt)
 ```
 
-<div id="sqlalchemy-ddl-reflection">
-  ## DDL 和反射
+<div id="sqlalchemy-json-subcolumns">
+  ### JSON 子列
 </div>
 
-你可以使用提供的 DDL 辅助工具以及 type/引擎 构造来创建数据库和表。支持表反射 (包括列类型和 引擎) 。
+对于声明为或映射为 ClickHouse `JSON` 的列，请使用方括号逐段选择由存储支持的子列路径：
+
+```python
+from sqlalchemy import Column, MetaData, Table, select
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
+
+events = Table(
+    "events",
+    MetaData(),
+    Column("payload", JSON),
+)
+
+request_id = events.c.payload["context"]["request"].subcolumn(
+    "id",
+    type_=UInt32,
+)
+
+stmt = select(
+    events.c.payload["severity"].label("severity"),
+    request_id.label("request_id"),
+)
+```
+
+`payload["severity"]` 会被编译为 ClickHouse 的点分标识符语法。每个部分都会分别加引号，例如 `` `events`.`payload`.`severity` ``。它读取 ClickHouse 存储的 JSON 子列，不会调用 `getSubcolumn`。对路径中的每个分段依次使用 `[]` 或 `.subcolumn()`。每个分段都必须是非空字符串。
+
+向 `.subcolumn()` 传入 `type_` 会将点分路径包装为 SQL `CAST`，并将该类型赋予 SQLAlchemy 表达式。未传入 `type_` 时，`.subcolumn("segment")` 的行为与 `["segment"]` 相同。
+
+未指定类型的路径具有 ClickHouse 的 `Dynamic` 类型。ClickHouse 不允许在 `ORDER BY` 或 `GROUP BY` 中直接使用 `Dynamic` 值。当在这些位置使用子列时，请传入 `type_`。
+
+对于静态类型代码，请从 `clickhouse_connect.cc_sqlalchemy` 导入 `json_subcolumn`。该辅助函数同样每次只接受一个分段，并保留 `type_` 指定的 Python 结果类型：
+
+```python
+from clickhouse_connect.cc_sqlalchemy import json_subcolumn
+
+context = json_subcolumn(events.c.payload, "context")
+request = json_subcolumn(context, "request")
+request_id = json_subcolumn(request, "id", type_=UInt32)
+```
+
+在此示例中，类型检查器会将 `request_id` 识别为 `ColumnElement[int]`。
+
+每个片段都会分别加引号，包括包含空格或反引号的名称。对于 ClickHouse JSON 路径处理，反引号不会使点号成为字面量。启用 `json_type_escape_dots_in_keys` 后，键名中的字面点号应使用 ClickHouse 的 `%2E` 编码。对于名为 `a.b` 的键，应通过 `payload["a%2Eb"]` 而非 `payload["a.b"]` 访问。
+
+<div id="sqlalchemy-query-extensions">
+  ### ClickHouse 查询扩展
+</div>
+
+从 `clickhouse_connect.cc_sqlalchemy` 导入 `select`，即可向静态类型检查器公开带类型的 ClickHouse 方法。标准的 `sqlalchemy.select` 在运行时也提供这些方法。
+
+```python
+from clickhouse_connect.cc_sqlalchemy import select
+
+stmt = (
+    select(events.c.user_id, events.c.event_type)
+    .final()
+    .prewhere(events.c.event_date >= "2026-01-01")
+    .sample(0.1)
+    .limit_by([events.c.user_id], 3)
+)
+```
+
+ClickHouse `Select` 方法如下：
+
+| 方法                                       | SQL 特性                                                                  |
+| ---------------------------------------- | ----------------------------------------------------------------------- |
+| `.final()`                               | 表的 `FINAL`                                                              |
+| `.sample(value)`                         | `SAMPLE`，使用比例、行数或表达式                                                    |
+| `.prewhere(expression)`                  | `PREWHERE`；多次调用时会用 `AND` 组合                                             |
+| `.limit_by(columns, limit, offset=None)` | `LIMIT ... BY`                                                          |
+| `.array_join(...)`                       | `ARRAY JOIN`                                                            |
+| `.left_array_join(...)`                  | `LEFT ARRAY JOIN`                                                       |
+| `.ch_join(...)`                          | 带有 `strictness`、`distribution`、`using` 和 `cross` 选项的 ClickHouse JOIN 操作 |
+| `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                       |
+
+例如，ClickHouse `GLOBAL ANY LEFT JOIN` 可以链式调用，无需嵌套自定义 `FromClause`：
+
+```python
+stmt = (
+    select(events.c.id, users.c.name)
+    .select_from(events)
+    .ch_join(
+        users,
+        events.c.user_id == users.c.id,
+        isouter=True,
+        strictness="ANY",
+        distribution="GLOBAL",
+    )
+)
+```
+
+对 ClickHouse 高阶函数，请使用显式的 `Lambda` 构造：
+
+```python
+from sqlalchemy import column, func
+
+from clickhouse_connect.cc_sqlalchemy import Lambda, select
+
+stmt = select(
+    func.arrayMap(
+        Lambda("x", column("x") * 2),
+        events.c.metrics,
+    ).label("doubled")
+)
+```
+
+标准的 SQLAlchemy `values()` 构造会被编译为 ClickHouse 的 `VALUES` 表函数语法，包括在公共表表达式中使用时。CTE 形式需要 SQLAlchemy 2.0.42 或更高版本，其中新增了 `Values.cte()`。
+
+<div id="sqlalchemy-materialized-ctes">
+  ### Materialized CTE
+</div>
+
+默认情况下，ClickHouse 会内联公共表表达式，因此被多次引用的 CTE 的主体会针对每次引用执行一次。向 `.cte()` 传入 `materialized=True`，即可生成 `WITH <name> AS MATERIALIZED (...)`，使主体只计算一次：
+
+```python
+from sqlalchemy import func
+
+from clickhouse_connect.cc_sqlalchemy import select
+
+ranked = (
+    select(book.c.book_id, func.row_number().over(order_by=book.c.score.desc()).label("result_rank"))
+    .where(book.c.genre == "sci-fi")
+    .order_by(book.c.score.desc())
+    .limit(100)
+    .cte("ranked", materialized=True)
+)
+
+stmt = (
+    select(book.c.book_id, ranked.c.result_rank)
+    .select_from(book)
+    .ch_join(ranked, book.c.book_id == ranked.c.book_id, strictness="ANY")
+    .where(book.c.book_id.in_(select(ranked.c.book_id)))
+    .execution_options(settings={"enable_materialized_cte": 1, "enable_analyzer": 1})
+)
+```
+
+仅当指定该关键字、`enable_materialized_cte=1` 且启用 analyzer 时，服务器 才会 materialize CTE。如[每个查询的设置](#sqlalchemy-per-query-settings)所示，可在语句、连接 或 引擎 上设置 `enable_materialized_cte`。在所有支持此功能的服务器 上，analyzer 默认启用，因此显式设置 `enable_analyzer=1` 是一种防御性措施。`enable_materialized_cte` 是一项 Experimental ClickHouse 设置。使用 `enable_materialized_cte=0` 或 `enable_analyzer=0` 时，查询仍会成功执行并返回相同的行。ClickHouse 会静默忽略 `MATERIALIZED` 并重新内联 CTE，因此漏设该选项只会影响性能，不会报错。Materialized CTEs 需要 ClickHouse 26.3 或更高版本。旧版服务器 会将该关键字视为语法错误而拒绝。
+
+对于使用标准 `sqlalchemy.select` 构建的语句，请改用模块级的 `cte()`。它将语句 作为第一个 argument，其他行为与 `Select.cte()` 一致：
+
+```python
+from sqlalchemy import select as sa_select
+
+from clickhouse_connect.cc_sqlalchemy import cte
+
+ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
+```
+
+该关键字仅在 ClickHouse 方言下生效，因此与其他后端共享的语句在该方言下可原样编译。
+
+ClickHouse 不支持递归 materialized CTE。若同时设置 `recursive=True` 和 `materialized=True`，SQLAlchemy helpers 将引发 `ValueError`。
+
+<div id="sqlalchemy-ddl-reflection">
+  ## DDL 与反射
+</div>
+
+ClickHouse Connect 提供 ClickHouse 数据类型、表引擎、字典结构、数据库 DDL 和表反射功能。
 
 ```python
 import sqlalchemy as db
 from sqlalchemy import MetaData
-from clickhouse_connect.cc_sqlalchemy.ddl.custom import CreateDatabase, DropDatabase
-from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
-from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import UInt32, String, DateTime64
 
-with engine.begin() as conn:
-    # 数据库
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import DateTime64, String, UInt32
+from clickhouse_connect.cc_sqlalchemy.ddl.custom import CreateDatabase
+from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
+
+with engine.connect() as conn:
     conn.execute(CreateDatabase("example_db", exists_ok=True))
 
-    # 表
     metadata = MetaData(schema="example_db")
-    table = db.Table(
+    events = db.Table(
         "events",
         metadata,
         db.Column("id", UInt32, primary_key=True),
@@ -97,53 +303,90 @@ with engine.begin() as conn:
         db.Column("created_at", DateTime64(3)),
         MergeTree(order_by="id"),
     )
-    table.create(conn)
+    events.create(conn)
 
-    # 反射
-    reflected = db.Table("events", metadata, autoload_with=engine)
+    reflected = db.Table("events", MetaData(schema="example_db"), autoload_with=conn)
     assert reflected.engine is not None
 ```
 
-反映出的列会在服务器上存在相关信息时，包含方言特有的属性，例如 `clickhousedb_default_type`、`clickhousedb_codec_expression` 和 `clickhousedb_ttl_expression`。
+反射出的列会为 `DEFAULT` 表达式带上 `server_default`，并在存在时包含方言特有的属性，例如 `clickhouse_codec`、`clickhouse_ttl`、`clickhouse_materialized` 和 `clickhouse_alias`。
+
+MergeTree 键参数 (如 `order_by`、`partition_by`、`primary_key`、`sample_by` 和 `ttl`) 既接受 SQLAlchemy 列和 SQL 表达式，也接受普通字符串。
 
 <div id="sqlalchemy-inserts">
-  ## 插入 (Core 和基本 ORM)
+  ## 插入和基本 ORM 用法
 </div>
 
-为了方便起见，既可以通过 SQLAlchemy Core 进行插入，也可以使用简单的 ORM 模型。
+支持 Core 插入以及简单的 ORM 模型。对于批量数据路径，优先使用 Core 插入。
 
 ```python
-# 核心插入
-with engine.begin() as conn:
-    conn.execute(table.insert().values(id=1, user="joe"))
+with engine.connect() as conn:
+    conn.execute(
+        events.insert(),
+        [
+            {"id": 13, "user": "user_1"},
+            {"id": 79, "user": "user_2"},
+        ],
+    )
+```
 
-# 基本 ORM 插入
-from sqlalchemy.orm import declarative_base, Session
+```python
+import sqlalchemy as db
+from sqlalchemy import MetaData
+from sqlalchemy.orm import Session, declarative_base
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import String, UInt32
+from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
 
 Base = declarative_base(metadata=MetaData(schema="example_db"))
+
 
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (MergeTree(order_by=["id"]),)
+
     id = db.Column(UInt32, primary_key=True)
     name = db.Column(String)
+
 
 Base.metadata.create_all(engine)
 
 with Session(engine) as session:
-    session.add(User(id=1, name="Alice"))
-    session.bulk_save_objects([User(id=2, name="Bob")])
+    session.add(User(id=13, name="user_1"))
+    session.bulk_save_objects([User(id=79, name="user_2")])
     session.commit()
 ```
 
-<div id="scope-and-limitations">
-  ## 范围与限制
+<div id="sqlalchemy-alembic">
+  ## Alembic 迁移
 </div>
 
-* 核心关注点：支持 SQLAlchemy Core 功能，例如带 `JOIN` (`INNER`、`LEFT OUTER`、`FULL OUTER`、`CROSS`) 的 `SELECT`，以及 `WHERE`、`ORDER BY`、`LIMIT`/`OFFSET` 和 `DISTINCT`。
-* 仅支持带 `WHERE` 的 `DELETE`：该方言支持 轻量级 `DELETE`，但要求显式指定 `WHERE` 子句，以避免误删整张表。如需清空表，请使用 `TRUNCATE TABLE`。
-* 不支持 `UPDATE`：ClickHouse 针对追加写入进行了优化。该方言未实现 `UPDATE`。如果需要修改数据，请在上游完成转换后重新插入，或自行承担风险使用显式文本 SQL (例如 `ALTER TABLE ... UPDATE`) 。
-* DDL 和反射：支持创建数据库和表，反射会返回列类型和表引擎元数据。传统的主键/外键/索引元数据不存在，因为 ClickHouse 不会强制执行这些约束。
-* ORM 范围：为方便起见，支持声明式模型以及通过 `Session.add(...)`/`bulk_save_objects(...)` 进行插入。不支持高级 ORM 功能 (关系管理、工作单元更新、级联、预加载/懒加载语义) 。
-* 主键语义：SQLAlchemy 中的 `Column(..., primary_key=True)` 仅用于对象标识，不会在 ClickHouse 中创建服务端约束。请通过表引擎定义 `ORDER BY` (以及可选的 `PRIMARY KEY`)  (例如 `MergeTree(order_by=...)`) 。
-* 事务和服务端功能：不支持两阶段事务、序列、`RETURNING` 和高级隔离级别。`engine.begin()` 提供了一个用于将语句分组的 Python 上下文管理器，但不会执行任何实际的事务控制 (commit/rollback 均为空操作) 。
+ClickHouse Connect 提供了适用于 ClickHouse schema 迁移的 Alembic 集成。使用以下命令安装：
+
+```bash
+pip install "clickhouse-connect[alembic]"
+```
+
+在 Alembic 的 `env.py` 中导入 `clickhouse_connect.cc_sqlalchemy.alembic`，以注册方言集成。自动生成支持常见的表结构变更，包括创建和删除表、添加/修改/删除列、默认值以及注释。表和列的重命名请使用手动操作。在应用每个生成的迁移之前，都应先进行审查。
+
+ClickHouse 特有的 `op.*` 辅助方法涵盖：
+
+* 数据跳过索引，包括添加、物化和删除操作。
+* 投影，包括添加、物化和删除操作。
+* MergeTree 表设置的修改与重置。
+* materialized view 的创建与删除。
+* 字典的创建、删除和重新加载。
+
+ClickHouse 数据跳过索引不是 SQLAlchemy 索引。`Index`、`Column(index=True)`、`op.create_index` 和 `op.drop_index` 都会被拒绝，以避免生成不完整或不正确的 DDL。请使用 `op.add_clickhouse_index` 和 `op.drop_clickhouse_index`。
+
+请参阅完整的 [Alembic 示例](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md)。从 `clickhouse-sqlalchemy` 迁移的用户还应阅读[迁移指南](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md)。
+
+<div id="scope-and-limitations">
+  ## 范围和限制
+</div>
+
+* ClickHouse 不通过此 HTTP 方言提供传统事务。`engine.begin()` 和 `Session.commit()` 用于组织 Python 端的工作，但 commit 和 rollback 在服务器端都是空操作。
+* 该方言未实现 `UPDATE`、两阶段事务、序列、`RETURNING` 以及高级隔离级别。需要执行服务器端变更时，请显式使用 ClickHouse SQL。
+* `Column(..., primary_key=True)` 提供的是 SQLAlchemy 的对象标识。它不会创建服务器端的唯一性约束。请通过表引擎定义排序和可选的主键表达式。
+* 传统的外键、唯一约束以及标准索引元数据不可用，因为 ClickHouse 不会强制执行这些约束。
+* ORM 关系管理、工作单元更新、级联，以及立即或延迟的关系加载，不属于受支持的 ORM 范围。

@@ -646,6 +646,42 @@ ORDER BY test, check_start_time
     return f"{base}#{Utils.to_base64(query)}"
 
 
+def build_check_results_children(tests_result, check_name_pattern):
+    """Per-query rows for "Check Results": one row per slower/unstable query.
+
+    Rows carry compare.sh's verdict, which the report renderer classifies
+    natively. They cannot affect the job status: the caller passes "Check
+    Results" an explicit status, and `Result.create_from` aggregates children
+    only when no status is given.
+    """
+    # compare.sh emits a row per side, but a truncated ci-checks.tsv can leave a
+    # query with either side alone, so group by query name and represent each
+    # group by its candidate side when it survived.
+    side_priority = {"::new": 0, "": 1, "::old": 2}
+    chosen = {}
+    for tr in tests_result.results:
+        if tr.status not in ("slower", "unstable"):
+            continue
+        side = next((s for s in ("::new", "::old") if tr.name.endswith(s)), "")
+        base = tr.name[: len(tr.name) - len(side)]
+        previous = chosen.get(base)
+        if previous is None or side_priority[side] < side_priority[previous[0]]:
+            chosen[base] = (side, tr)
+
+    children = []
+    for base, (_, tr) in chosen.items():
+        sub = Result(name=base, status=tr.status, duration=tr.duration)
+        sub.set_label(
+            "query history",
+            # The represented row's own name: CIDB's test_name keeps the side
+            # suffix, and the link filters on an exact match.
+            link=build_perf_query_history_link(tr.name, check_name_pattern),
+            hint="Performance history for this query on master",
+        )
+        children.append(sub)
+    return children
+
+
 def get_insert_metadata(info, compare_against_release):
     return {
         "ARCH": escape_sql_string(get_perf_arch()),
@@ -985,7 +1021,7 @@ class CHServer:
 
     @classmethod
     def run_test(
-        cls, test_file, runs=None, max_queries=0, results_path=f"{temp_dir}/perf_wd/"
+        cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/"
     ):
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
@@ -999,6 +1035,7 @@ class CHServer:
                 --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
                 {runs_arg} --max-queries {max_queries} \
                 --profile-seconds 10 \
+                --pr-number {pr_number} \
                 {test_file}",
             verbose=True,
             strip=False,
@@ -1085,6 +1122,105 @@ def too_many_slow(message):
     return (
         int(match.group(2).strip()) > SLOWER_QUERIES_FAIL_THRESHOLD if match else False
     )
+
+
+def read_ci_checks_results(path):
+    """Parse `ci-checks.tsv` (TSVWithNamesAndTypes).
+
+    Returns `(results, malformed, complete)`:
+      - `results`: valid `Result` rows;
+      - `malformed`: number of rows skipped because they were cut short;
+      - `complete`: whether both header lines AND at least one data row were
+        present, i.e. whether the file is worth importing at all. A file with no
+        data row is necessarily truncated: compare.sh's `upload_results` unions
+        an unconditional single-row summary select into every `ci-checks.tsv`,
+        so a run that legitimately produced only the two header lines does not
+        exist.
+
+    Never raises. compare.sh writes this file last, so a failure there (most
+    often a full disk) leaves an arbitrary byte prefix. Raising here would kill
+    the job before praktika uploads the artifacts, which is the failure this
+    parser exists to remove, so every shape of prefix is tolerated: a cut inside
+    a multi-byte character (hence the lenient decode, as in
+    `stress_job.read_test_results`), a cut header line (fewer field names than a
+    data row has cells), and a cut data row (`csv.DictReader` fills the missing
+    fields with `restval`, i.e. `None`).
+    """
+    results = []
+    malformed = 0
+    # Decode leniently: a byte prefix of a UTF-8 file can end inside a
+    # multi-byte sequence, which a strict decode rejects.
+    with open(path, "rb") as descriptor:
+        content = descriptor.read().decode("utf-8", errors="replace")
+    lines = content.split("\n")
+    # A complete file is newline-terminated: compare.sh writes it through a
+    # ClickHouse `File(TSVWithNamesAndTypes)` table, which terminates every row.
+    # So a non-empty trailing fragment is a line cut mid-write, and nothing in
+    # it can be trusted - not even the fields that happen to be present, since a
+    # number cut after its first digits still parses.
+    cut_line = lines.pop()
+    # Column names, column types, and at least the summary row compare.sh always
+    # emits: anything shorter is a prefix, not a completed run.
+    if len(lines) < 3:
+        return results, malformed, False
+    if cut_line:
+        malformed += 1
+    header = lines[0].strip().split("\t")
+    reader = csv.DictReader(lines[2:], delimiter="\t", fieldnames=header)
+    for row in reader:
+        name = row.get("test_name")
+        if name == "":
+            # The summary row carries the report message, not a test case.
+            continue
+        if (
+            name is None
+            or row.get("test_status") is None
+            or row.get("test_duration_ms") is None
+            # Require every column, not only the three consumed ones: a row
+            # missing any field was cut short.
+            or any(row.get(field) is None for field in header)
+        ):
+            malformed += 1
+            continue
+        try:
+            duration = float(row["test_duration_ms"]) / 1000
+        except (TypeError, ValueError):
+            malformed += 1
+            continue
+        results.append(
+            Result(name=name, status=row["test_status"], duration=duration)
+        )
+    return results, malformed, True
+
+
+def import_ci_checks_results(path, results):
+    """Import `ci-checks.tsv` rows into the previous subtask's results.
+
+    Returns True when the file was importable. A file with no data row at all -
+    empty, or only the header lines - is reported and left unimported. That
+    distinction is a diagnostic one, not a data-preserving one: every subtask
+    `main()` appends before this call is built without a `results=` argument, so
+    the assignment target's row list is empty either way and there is nothing an
+    empty assignment could destroy. A file that lost individual rows still
+    imports the intact ones and reports how many it skipped, because degrading
+    beats dying. An absent file is the atomic publish's own failure signal -
+    `upload_results` deliberately leaves the final path missing when the write
+    fails - so it must warn here rather than reach `open`, whose
+    `FileNotFoundError` would escape `main()` and kill the job before praktika
+    uploads the artifacts.
+    """
+    if not Path(path).is_file():
+        print("WARNING: compare.sh did not generate ci-checks.tsv file")
+        return False
+    test_results, malformed, complete = read_ci_checks_results(path)
+    if not complete:
+        print("WARNING: ci-checks.tsv is empty or truncated - skipping test case import")
+        return False
+    if malformed:
+        print(f"WARNING: ci-checks.tsv had {malformed} malformed row(s) - skipped")
+    # results[-2] is a previuos subtask
+    results[-2].results = test_results
+    return True
 
 
 def _perf_client(port):
@@ -1289,6 +1425,11 @@ def main():
             f"cp -r ./tests/performance/scripts/config/users.d {perf_right_config}/users.d",
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
             f"rm {perf_right_config}/config.d/storage_conf_local.xml",  # Avoid conflicts on the filesystem cache dirs
+            # The reference (left) binary is the master build, which predates settings this PR adds to
+            # keeper_port.xml and rejects them as UNKNOWN_SETTING, so it fails to start. Strip such
+            # settings; both sides must share an identical config anyway, and their values are
+            # irrelevant to query performance.
+            f"sed -i '/<log_readahead_commit_window_bytes>/d' {perf_right_config}/config.d/keeper_port.xml",
             f"chmod +x {ch_path}/clickhouse",
             # The reference build (left) is downloaded as a bare `clickhouse`
             # binary, but the patched build (right) was only symlinked under its
@@ -1536,6 +1677,7 @@ def main():
                 CHServer.run_test(
                     "./tests/performance/" + test,
                     max_queries=max_queries,
+                    pr_number=info.pr_number,
                     results_path=perf_wd,
                 )
                 cleanup_user_files()
@@ -1577,27 +1719,8 @@ def main():
             )
         )
 
-        if Path(f"{perf_wd}/ci-checks.tsv").is_file():
-            # insert test cases result generated by legacy script as tsv file into praktika Result object - so that they are written into DB later
-            test_results = []
-            with open(f"{perf_wd}/ci-checks.tsv", "r", encoding="utf-8") as f:
-                header = next(f).strip().split("\t")  # Read actual column headers
-                next(f)  # Skip type line (e.g. UInt32, String...)
-                reader = csv.DictReader(f, delimiter="\t", fieldnames=header)
-                for row in reader:
-                    if not row["test_name"]:
-                        continue
-                    test_results.append(
-                        Result(
-                            name=row["test_name"],
-                            status=row["test_status"],
-                            duration=float(row["test_duration_ms"]) / 1000,
-                        )
-                    )
-            # results[-2] is a previuos subtask
-            results[-2].results = test_results
-        else:
-            print("WARNING: compare.sh did not generate ci-checks.tsv file")
+        # insert test cases result generated by legacy script as tsv file into praktika Result object - so that they are written into DB later
+        import_ci_checks_results(f"{perf_wd}/ci-checks.tsv", results)
 
         res = results[-1].is_ok()
 
@@ -1816,23 +1939,9 @@ def main():
             # the stable baseline.  The CIDB check_name looks like
             # "Performance Comparison (arm_release, master_head, 1/6)".
             arch = get_perf_arch()
-            check_name_pattern = f"%Performance%{arch}%master_head%"
-            for tr in tests_result.results:
-                if tr.status in ("slower", "unstable"):
-                    sub = Result(
-                        name=tr.name,
-                        status=Result.Status.FAIL,
-                        info=tr.status,
-                        duration=tr.duration,
-                    )
-                    sub.set_label(
-                        "query history",
-                        link=build_perf_query_history_link(
-                            tr.name, check_name_pattern
-                        ),
-                        hint="Performance history for this query on master",
-                    )
-                    check_sub_results.append(sub)
+            check_sub_results = build_check_results_children(
+                tests_result, f"%Performance%{arch}%master_head%"
+            )
 
         results.append(
             Result(

@@ -175,7 +175,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     Int64 added_delete_files,
     Int64 num_deleted_rows,
     std::optional<Int64> user_defined_snapshot_id,
-    std::optional<Int64> user_defined_timestamp)
+    std::optional<Int64> user_defined_timestamp,
+    SnapshotOperation operation)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
 
@@ -219,7 +220,14 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
-    summary->set(Iceberg::f_operation, num_deleted_rows == 0 ? Iceberg::f_append : Iceberg::f_overwrite);
+    /// A merge-on-read DELETE writes position-delete files (num_deleted_rows != 0): per the Iceberg
+    /// spec that snapshot is an `overwrite`, not an `append`. Compaction passes `Replace` explicitly.
+    const char * operation_name = Iceberg::f_append;
+    if (operation == SnapshotOperation::Replace)
+        operation_name = Iceberg::f_replace;
+    else if (num_deleted_rows != 0)
+        operation_name = Iceberg::f_overwrite;
+    summary->set(Iceberg::f_operation, operation_name);
     summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
     summary->set(Iceberg::f_added_records, std::to_string(added_records));
     summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));

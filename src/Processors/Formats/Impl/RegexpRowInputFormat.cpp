@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <base/find_symbols.h>
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
@@ -111,7 +112,46 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
     ReadBuffer field_buf(const_cast<char *>(matched_field.data()), matched_field.size(), 0);
     try
     {
-        return deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, escaping_rule, format_settings);
+        bool read = false;
+        /// A capture group is a whole field with no delimiter, so a tab inside it belongs to the
+        /// value, while the `Raw` reader stops there. A field equal to the null representation keeps
+        /// that reader, which owns the rule's null token where a null-aware one is selected at all.
+        const bool null_token_is_live
+            = isNullableOrLowCardinalityNullable(type) || isVariant(type) || format_settings.null_as_default;
+        if (escaping_rule == FormatSettings::EscapingRule::Raw
+            && matched_field.contains('\t')
+            && !(null_token_is_live && matched_field == format_settings.tsv.null_representation))
+        {
+            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(
+                    *columns[index], field_buf, format_settings, serializations[index]);
+            else
+            {
+                serializations[index]->deserializeWholeText(*columns[index], field_buf, format_settings);
+                read = true;
+            }
+        }
+        else
+            read = deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, escaping_rule, format_settings);
+
+        /// A capture group is the whole field, so the value must consume it entirely: there is no
+        /// delimiter here whose parsing would otherwise reject the leftover. The `CSV` and `JSON`
+        /// rules permit whitespace after a value.
+        if (escaping_rule == FormatSettings::EscapingRule::CSV)
+        {
+            if (!format_settings.csv.allow_whitespace_or_tab_as_delimiter)
+                while (!field_buf.eof() && (*field_buf.position() == ' ' || *field_buf.position() == '\t'))
+                    ++field_buf.position();
+        }
+        else if (escaping_rule == FormatSettings::EscapingRule::JSON)
+            skipWhitespaceIfAny(field_buf);
+
+        if (!field_buf.eof())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Unexpected data '{}' after parsed value in the matched field '{}'",
+                String(field_buf.position(), field_buf.available()),
+                String(matched_field.data(), matched_field.size()));
+        return read;
     }
     catch (Exception & e)
     {
@@ -247,16 +287,16 @@ SELECT * FROM imp_regex_table;
 
 When working with the `Regexp` format, you can use the following settings:
 
-- `format_regexp` — [String](/sql-reference/data-types/string.md). Contains regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) format.
-- `format_regexp_escaping_rule` — [String](/sql-reference/data-types/string.md). The following escaping rules are supported:
+- `format_regexp` — [String](/reference/data-types/string). Contains regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) format.
+- `format_regexp_escaping_rule` — [String](/reference/data-types/string). The following escaping rules are supported:
 
-  - CSV (similarly to [CSV](/interfaces/formats/CSV)
-  - JSON (similarly to [JSONEachRow](/interfaces/formats/JSONEachRow)
-  - Escaped (similarly to [TSV](/interfaces/formats/TabSeparated)
-  - Quoted (similarly to [Values](/interfaces/formats/Values)
-  - Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](/interfaces/formats/TabSeparated)
+  - CSV (similarly to [CSV](/reference/formats/CSV/CSV)
+  - JSON (similarly to [JSONEachRow](/reference/formats/JSON/JSONEachRow)
+  - Escaped (similarly to [TSV](/reference/formats/TabSeparated/TabSeparated)
+  - Quoted (similarly to [Values](/reference/formats/Values)
+  - Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](/reference/formats/TabSeparated/TabSeparated)
 
-- `format_regexp_skip_unmatched` — [UInt8](/sql-reference/data-types/int-uint.md). Defines the need to throw an exception in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
+- `format_regexp_skip_unmatched` — [UInt8](/reference/data-types/int-uint). Defines the need to throw an exception in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
 )DOCS_MD"});
 }
 

@@ -50,7 +50,7 @@ namespace
 
     void requireContains(const String & str, const String & expected)
     {
-        if (str.find(expected) == String::npos)
+        if (!str.contains(expected))
         {
             std::cerr << "Expected to find " << expected << " in " << str << '\n';
             std::_Exit(1);
@@ -59,7 +59,7 @@ namespace
 
     void requireNotContains(const String & str, const String & unexpected)
     {
-        if (str.find(unexpected) != String::npos)
+        if (str.contains(unexpected))
         {
             std::cerr << "Did not expect to find " << unexpected << " in " << str << '\n';
             std::_Exit(1);
