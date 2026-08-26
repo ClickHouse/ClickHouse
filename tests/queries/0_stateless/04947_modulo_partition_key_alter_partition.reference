@@ -1,0 +1,9 @@
+drop partition	0
+delete in partition	0
+complex key	0
+wide key	0
+out of range	1
+partition id	20200523-37528
+unsigned column	0
+signed left operand	0
+no modulo	0
