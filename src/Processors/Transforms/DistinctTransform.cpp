@@ -14,6 +14,7 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
+#include <optional>
 #include <atomic>
 #include <condition_variable>
 #include <cstring>
@@ -361,8 +362,16 @@ void DistinctTransform::buildTwoLevelParallelFilter(
                 bucket_arena = arena_ptr.get();
             }
 
-            [[maybe_unused]] typename Method::State state(columns, key_sizes, nullptr);
+            /// Only the string families re-derive the key here, and building a `Method::State` is not
+            /// free: `HashMethodHashed` copies the key columns and fills a `FixedSizeKeySlices` cache in
+            /// its constructor. Constructing it unconditionally would pay that once per bucket - up to
+            /// `NUM_BUCKETS` times per chunk - for the non-string families, which read the key back from
+            /// the phase-A cache instead and never touch it.
+            std::optional<typename Method::State> state;
             [[maybe_unused]] Arena unused_pool;
+            if constexpr (std::is_same_v<KeyType, std::string_view>)
+                state.emplace(columns, key_sizes, nullptr);
+
             for (size_t w = 0; w < num_workers; ++w)
             {
                 const auto & rows_buf = scratch.local_rows[w * NUM_BUCKETS + bucket];
@@ -383,7 +392,7 @@ void DistinctTransform::buildTwoLevelParallelFilter(
                         /// `keyHolderPersistKey` (called by `emplace` on insert) and discards otherwise,
                         /// so a duplicate row adds no bytes and the arena stays proportional to the
                         /// distinct keys, matching the serial path.
-                        auto kh = state.getKeyHolder(row, unused_pool);
+                        auto kh = state->getKeyHolder(row, unused_pool);
                         KeyType key = keyHolderGetKey(kh);
                         ArenaKeyHolder key_holder{key, *bucket_arena};
                         impl.emplace(key_holder, it, inserted, hash_buf[j]);

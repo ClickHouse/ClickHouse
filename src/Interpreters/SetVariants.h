@@ -370,7 +370,7 @@ struct SetVariantsTemplate: public Variant
 {
     Arena string_pool;
 
-    #define APPLY_FOR_SET_VARIANTS(M) \
+    #define APPLY_FOR_SET_VARIANTS_SINGLE_LEVEL(M) \
         M(key8)                 \
         M(key16)                \
         M(key32)                \
@@ -383,7 +383,14 @@ struct SetVariantsTemplate: public Variant
         M(keys256)              \
         M(nullable_keys128)     \
         M(nullable_keys256)     \
-        M(hashed)               \
+        M(hashed)
+
+    /// Only `DistinctTransform` ever holds one of these: it is the only consumer that converts its set
+    /// (see `convertToTwoLevel`). They are listed separately so a consumer that cannot reach them does
+    /// not have to instantiate its per-variant template body for all eleven - which is not free, the
+    /// switches below expand to real work per case. Such a consumer keeps its switch exhaustive by
+    /// mapping this list to a plain `throw` instead, so `-Wswitch` still catches a newly added variant.
+    #define APPLY_FOR_SET_VARIANTS_TWO_LEVEL(M) \
         M(hashed_two_level)     \
         M(key32_two_level)      \
         M(key64_two_level)      \
@@ -395,6 +402,12 @@ struct SetVariantsTemplate: public Variant
         M(keys256_two_level)    \
         M(nullable_keys128_two_level) \
         M(nullable_keys256_two_level)
+
+    /// Every variant. For the `Type` enum, the member using-declarations, and the `SetVariantsTemplate`
+    /// methods that a two-level set really is asked for (`init`, `getTotalRowCount`, `getTotalByteCount`).
+    #define APPLY_FOR_SET_VARIANTS(M) \
+        APPLY_FOR_SET_VARIANTS_SINGLE_LEVEL(M) \
+        APPLY_FOR_SET_VARIANTS_TWO_LEVEL(M)
 
     /// key_string and key_fixed_string are convertible: their parallel build persists keys into
     /// per-bucket arenas (see phase B of `DistinctTransform::buildTwoLevelParallelFilter`).

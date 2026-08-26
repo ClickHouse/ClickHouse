@@ -6,16 +6,23 @@
 -- build now fires for these methods (`DistinctTwoLevelParallelFilterBuilds > 0`) and that its result
 -- matches the serial path (threshold 0 disables promotion). Booleans are emitted so no distinct-count
 -- magic constant is needed.
+-- The probes pin `max_block_size` and `distinct_two_level_parallel_build_min_rows`: the parallel build
+-- needs a chunk big enough for more than one worker, so a randomized smaller block would correctly
+-- take the serial path and the assertions would not be testing what they name.
 
 SET max_threads = 8;
 
 -- keys32: two UInt16 columns pack into 4 bytes -> Type::keys32
 SELECT DISTINCT (number % 60000)::UInt16 AS a, (number % 40000)::UInt16 AS b FROM numbers_mt(4000000)
-    FORMAT Null SETTINGS distinct_two_level_threshold = 1000, log_comment = '05042_distinct_keys32_probe';
+    FORMAT Null SETTINGS distinct_two_level_threshold = 1000, max_block_size = 65409,
+                         distinct_two_level_parallel_build_min_rows = 10000,
+                         log_comment = '05042_distinct_keys32_probe';
 
 -- keys64: two UInt32 columns pack into 8 bytes -> Type::keys64
 SELECT DISTINCT (number % 300000)::UInt32 AS a, (number % 200000)::UInt32 AS b FROM numbers_mt(4000000)
-    FORMAT Null SETTINGS distinct_two_level_threshold = 1000, log_comment = '05042_distinct_keys64_probe';
+    FORMAT Null SETTINGS distinct_two_level_threshold = 1000, max_block_size = 65409,
+                         distinct_two_level_parallel_build_min_rows = 10000,
+                         log_comment = '05042_distinct_keys64_probe';
 
 SYSTEM FLUSH LOGS query_log;
 

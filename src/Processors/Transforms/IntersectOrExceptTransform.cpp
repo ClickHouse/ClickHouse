@@ -1,8 +1,15 @@
 #include <Processors/Port.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
 
+#include <Common/Exception.h>
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// After visitor is applied, ASTSelectIntersectExcept always has two child nodes.
 IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Operator operator_)
@@ -251,7 +258,15 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
     case CountingSetVariants::Type::NAME: \
         addToCounts(*variants.NAME, column_ptrs, num_rows, variants); \
         break;
-            APPLY_FOR_SET_VARIANTS(M)
+            APPLY_FOR_SET_VARIANTS_SINGLE_LEVEL(M)
+            /// Never reached: only DISTINCT converts a set to two-level. Listed so the switch
+            /// stays exhaustive without instantiating the case body for each of them.
+            #define M_TWO_LEVEL(NAME) case CountingSetVariants::Type::NAME:
+            APPLY_FOR_SET_VARIANTS_TWO_LEVEL(M_TWO_LEVEL)
+            #undef M_TWO_LEVEL
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "A two-level set variant cannot appear in INTERSECT / EXCEPT");
 #undef M
         }
 
@@ -273,7 +288,15 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
     case SetVariants::Type::NAME: \
         addToSet(*data_set.NAME, column_ptrs, num_rows, data_set); \
         break;
-            APPLY_FOR_SET_VARIANTS(M)
+            APPLY_FOR_SET_VARIANTS_SINGLE_LEVEL(M)
+            /// Never reached: only DISTINCT converts a set to two-level. Listed so the switch
+            /// stays exhaustive without instantiating the case body for each of them.
+            #define M_TWO_LEVEL(NAME) case SetVariants::Type::NAME:
+            APPLY_FOR_SET_VARIANTS_TWO_LEVEL(M_TWO_LEVEL)
+            #undef M_TWO_LEVEL
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "A two-level set variant cannot appear in INTERSECT / EXCEPT");
 #undef M
     }
 }
@@ -315,7 +338,15 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
     case CountingSetVariants::Type::NAME: \
         new_rows_num = filterWithCounts(*variants.NAME, column_ptrs, row_filter, num_rows, variants); \
         break;
-            APPLY_FOR_SET_VARIANTS(M)
+            APPLY_FOR_SET_VARIANTS_SINGLE_LEVEL(M)
+            /// Never reached: only DISTINCT converts a set to two-level. Listed so the switch
+            /// stays exhaustive without instantiating the case body for each of them.
+            #define M_TWO_LEVEL(NAME) case CountingSetVariants::Type::NAME:
+            APPLY_FOR_SET_VARIANTS_TWO_LEVEL(M_TWO_LEVEL)
+            #undef M_TWO_LEVEL
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "A two-level set variant cannot appear in INTERSECT / EXCEPT");
 #undef M
         }
     }
@@ -337,7 +368,15 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
     case SetVariants::Type::NAME: \
         new_rows_num = buildFilter(*data_set.NAME, column_ptrs, row_filter, num_rows, data_set); \
         break;
-                APPLY_FOR_SET_VARIANTS(M)
+                APPLY_FOR_SET_VARIANTS_SINGLE_LEVEL(M)
+                /// Never reached: only DISTINCT converts a set to two-level. Listed so the switch
+                /// stays exhaustive without instantiating the case body for each of them.
+                #define M_TWO_LEVEL(NAME) case SetVariants::Type::NAME:
+                APPLY_FOR_SET_VARIANTS_TWO_LEVEL(M_TWO_LEVEL)
+                #undef M_TWO_LEVEL
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "A two-level set variant cannot appear in INTERSECT / EXCEPT");
 #undef M
         }
     }

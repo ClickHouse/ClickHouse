@@ -4,19 +4,25 @@
 -- than one worker busy (`distinct_two_level_parallel_build_min_rows`), and a single `LowCardinality`
 -- key column, whose dictionary first-occurrence mask only the serial build consumes. Promoting anyway
 -- pays the conversion rehash and buys nothing.
--- `distinct_two_level_threshold_bytes = 0` isolates the row-count path throughout.
+-- `distinct_two_level_threshold_bytes = 0` isolates the row-count path throughout, and every query pins
+-- `max_block_size` together with `distinct_two_level_parallel_build_min_rows`, since it is the ratio
+-- between them that decides how many workers a chunk gets and so whether it is promoted at all.
 
 SET max_threads = 8;
 
 -- Small chunks: one worker, so no promotion at all.
 SELECT DISTINCT number % 200000 AS k FROM numbers_mt(4000000)
     FORMAT Null SETTINGS max_block_size = 1000, distinct_two_level_threshold = 1000,
-                         distinct_two_level_threshold_bytes = 0, log_comment = '05044_small_chunks';
+                         distinct_two_level_threshold_bytes = 0,
+                         distinct_two_level_parallel_build_min_rows = 10000,
+                         log_comment = '05044_small_chunks';
 
--- Same query, default chunk size: promoted and built in parallel.
+-- Same query, blocks big enough for several workers: promoted and built in parallel.
 SELECT DISTINCT number % 200000 AS k FROM numbers_mt(4000000)
-    FORMAT Null SETTINGS distinct_two_level_threshold = 1000,
-                         distinct_two_level_threshold_bytes = 0, log_comment = '05044_big_chunks';
+    FORMAT Null SETTINGS max_block_size = 65409, distinct_two_level_threshold = 1000,
+                         distinct_two_level_threshold_bytes = 0,
+                         distinct_two_level_parallel_build_min_rows = 10000,
+                         log_comment = '05044_big_chunks';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -37,9 +43,9 @@ ORDER BY event_time_microseconds DESC LIMIT 1;
 -- Both chunk sizes must give the same distinct set.
 SELECT
 (
-    SELECT count() FROM (SELECT DISTINCT number % 200000 AS k FROM numbers_mt(4000000)) SETTINGS max_block_size = 1000, distinct_two_level_threshold = 1000
+    SELECT count() FROM (SELECT DISTINCT number % 200000 AS k FROM numbers_mt(4000000)) SETTINGS max_block_size = 1000, distinct_two_level_threshold = 1000, distinct_two_level_parallel_build_min_rows = 10000
 ) = (
-    SELECT count() FROM (SELECT DISTINCT number % 200000 AS k FROM numbers_mt(4000000)) SETTINGS distinct_two_level_threshold = 1000
+    SELECT count() FROM (SELECT DISTINCT number % 200000 AS k FROM numbers_mt(4000000)) SETTINGS max_block_size = 65409, distinct_two_level_threshold = 1000, distinct_two_level_parallel_build_min_rows = 10000
 );
 
 -- A single `LowCardinality` key column with a shared dictionary: the mask path, never promoted.
@@ -49,8 +55,10 @@ INSERT INTO t_05044_lc SELECT toLowCardinality(toString(number % 50000)) FROM nu
 OPTIMIZE TABLE t_05044_lc FINAL;
 
 SELECT DISTINCT lc FROM t_05044_lc
-    FORMAT Null SETTINGS distinct_two_level_threshold = 1000,
-                         distinct_two_level_threshold_bytes = 0, log_comment = '05044_lowcardinality';
+    FORMAT Null SETTINGS max_block_size = 65409, distinct_two_level_threshold = 1000,
+                         distinct_two_level_threshold_bytes = 0,
+                         distinct_two_level_parallel_build_min_rows = 10000,
+                         log_comment = '05044_lowcardinality';
 
 SYSTEM FLUSH LOGS query_log;
 

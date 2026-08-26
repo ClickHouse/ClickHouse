@@ -275,7 +275,15 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
         case ClearableSetVariants::Type::NAME: \
             has_new_data = buildFilter(*data.NAME, index_column_ptrs, filter, *pos, rows_read, data); \
             break;
-        APPLY_FOR_SET_VARIANTS(M)
+        APPLY_FOR_SET_VARIANTS_SINGLE_LEVEL(M)
+        /// Never reached: only DISTINCT converts a set to two-level. Listed so the switch
+        /// stays exhaustive without instantiating the case body for each of them.
+        #define M_TWO_LEVEL(NAME) case ClearableSetVariants::Type::NAME:
+        APPLY_FOR_SET_VARIANTS_TWO_LEVEL(M_TWO_LEVEL)
+        #undef M_TWO_LEVEL
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "A two-level set variant cannot appear in a set skipping index");
 #undef M
     }
 
@@ -359,7 +367,15 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
         case ClearableSetVariants::Type::NAME: \
             data.NAME->data.clear(); \
             break;
-        APPLY_FOR_SET_VARIANTS(M)
+        APPLY_FOR_SET_VARIANTS_SINGLE_LEVEL(M)
+        /// Never reached: only DISTINCT converts a set to two-level. Listed so the switch
+        /// stays exhaustive without instantiating the case body for each of them.
+        #define M_TWO_LEVEL(NAME) case ClearableSetVariants::Type::NAME:
+        APPLY_FOR_SET_VARIANTS_TWO_LEVEL(M_TWO_LEVEL)
+        #undef M_TWO_LEVEL
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "A two-level set variant cannot appear in a set skipping index");
 #undef M
     }
 
