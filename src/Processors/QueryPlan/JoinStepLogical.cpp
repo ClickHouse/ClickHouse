@@ -1526,8 +1526,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
         }
 
         /// A `StorageJoin` right side is a prebuilt join read by stored column name rather than a
-        /// stream, so no query-specific filter can be evaluated over it. Leaving such a condition in
-        /// the ON clause lets an inner-like join apply it after the join instead.
+        /// stream, so no query-specific filter can be evaluated over it. The other two terms negate
+        /// `build_mixed_join_expression` below, so such a condition becomes a post-join filter.
         const bool right_condition_is_applied_after_join
             = prepared_join_storage.storage_join && !is_disjunctive_condition && canPushDownFromOn(join_operator);
 

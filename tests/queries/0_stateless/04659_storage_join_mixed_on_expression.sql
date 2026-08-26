@@ -30,6 +30,7 @@ DROP TABLE IF EXISTS sj_semi_left;
 DROP TABLE IF EXISTS sj_anti_left;
 DROP TABLE IF EXISTS sj_any_inner;
 DROP TABLE IF EXISTS sj_all_inner;
+DROP TABLE IF EXISTS sj_all_inner_lc;
 DROP TABLE IF EXISTS sj_all_right;
 DROP TABLE IF EXISTS sj_all_full;
 DROP TABLE IF EXISTS mt_right;
@@ -64,6 +65,8 @@ CREATE TABLE sj_any_inner (key String, a UInt64) ENGINE = Join(ANY, INNER, key);
 INSERT INTO sj_any_inner VALUES ('k1', 10), ('k1', 20);
 CREATE TABLE sj_all_inner (key String, a UInt64) ENGINE = Join(ALL, INNER, key);
 INSERT INTO sj_all_inner VALUES ('k1', 10), ('k1', 20);
+CREATE TABLE sj_all_inner_lc (key LowCardinality(String), a UInt64) ENGINE = Join(ALL, INNER, key);
+INSERT INTO sj_all_inner_lc VALUES ('k1', 10), ('k1', 20);
 CREATE TABLE sj_all_right (key String, a UInt64) ENGINE = Join(ALL, RIGHT, key);
 INSERT INTO sj_all_right VALUES ('k1', 10), ('k1', 20);
 CREATE TABLE sj_all_full (key String, a UInt64) ENGINE = Join(ALL, FULL, key);
@@ -78,7 +81,7 @@ INSERT INTO mem_right VALUES ('k1', 10), ('k1', 20);
 CREATE TABLE sj_bool (key String, a UInt64, flag UInt8) ENGINE = Join(ALL, INNER, key);
 INSERT INTO sj_bool VALUES ('k1', 10, 0), ('k1', 20, 1);
 CREATE TABLE sj_bool_nullable (key String, a UInt64, flag Nullable(UInt8)) ENGINE = Join(ALL, INNER, key);
-INSERT INTO sj_bool_nullable VALUES ('k1', 10, 0), ('k1', 20, 1);
+INSERT INTO sj_bool_nullable VALUES ('k1', 10, 0), ('k1', 20, 1), ('k1', 30, NULL);
 
 SELECT '--- rejected: a mixed ON condition on a Join-engine table ---';
 
@@ -147,6 +150,15 @@ SELECT 'K12 derived', count() FROM t1 INNER JOIN sj_all_inner ON (t1.key = 'k1')
 SELECT 'K12 equals nodes on', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t1 INNER JOIN sj_all_inner ON (t1.key = 'k1') AND (t1.key = sj_all_inner.key) SETTINGS optimize_and_compare_chain = 1) WHERE explain ILIKE '%function_name: equals%';
 SELECT 'K12 equals nodes off', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t1 INNER JOIN sj_all_inner ON (t1.key = 'k1') AND (t1.key = sj_all_inner.key) SETTINGS optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: equals%';
 SELECT 'K13 right-only key', count() FROM t1 INNER JOIN sj_all_inner ON (t1.key = sj_all_inner.key) AND (sj_all_inner.key = 'k1');
+-- The miss direction: no right row has key 'k2', so an applied predicate yields nothing while an
+-- ignored one yields all six pairs. optimize_and_compare_chain is pinned off so the mirror-image
+-- left predicate is not derived, which would filter the left side to nothing and produce the same
+-- zero for the wrong reason.
+SELECT 'K13 right-only key miss', count() FROM t1 INNER JOIN sj_all_inner ON (t1.key = sj_all_inner.key) AND (sj_all_inner.key = 'k2') SETTINGS optimize_and_compare_chain = 0;
+-- A LowCardinality key makes the condition LowCardinality(UInt8), which does not take
+-- toBoolIfNeeded's UInt8 early return and so reaches the join as a computed column.
+SELECT 'K17 lc key', count() FROM t1_lc INNER JOIN sj_all_inner_lc ON (t1_lc.key = sj_all_inner_lc.key) AND (sj_all_inner_lc.key = 'k1');
+SELECT 'K17 lc key miss', count() FROM t1_lc INNER JOIN sj_all_inner_lc ON (t1_lc.key = sj_all_inner_lc.key) AND (sj_all_inner_lc.key = 'k2') SETTINGS optimize_and_compare_chain = 0;
 -- Discriminating (only the a = 20 right row qualifies), asserted against the Memory twin.
 SELECT 'K14 join', t1.a, sj_all_inner.a FROM t1 INNER JOIN sj_all_inner ON (t1.key = sj_all_inner.key) AND (sj_all_inner.a > 15) ORDER BY t1.a, sj_all_inner.a;
 SELECT 'K14 oracle', t1.a, mem_right.a FROM t1 INNER JOIN mem_right ON (t1.key = mem_right.key) AND (mem_right.a > 15) ORDER BY t1.a, mem_right.a;
@@ -184,6 +196,7 @@ DROP TABLE sj_semi_left;
 DROP TABLE sj_anti_left;
 DROP TABLE sj_any_inner;
 DROP TABLE sj_all_inner;
+DROP TABLE sj_all_inner_lc;
 DROP TABLE sj_all_right;
 DROP TABLE sj_all_full;
 DROP TABLE mt_right;

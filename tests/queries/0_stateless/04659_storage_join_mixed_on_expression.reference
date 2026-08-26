@@ -20,6 +20,9 @@ K12 derived	6
 K12 equals nodes on	3
 K12 equals nodes off	2
 K13 right-only key	6
+K13 right-only key miss	0
+K17 lc key	6
+K17 lc key miss	0
 K14 join	1	20
 K14 join	2	20
 K14 join	3	20
