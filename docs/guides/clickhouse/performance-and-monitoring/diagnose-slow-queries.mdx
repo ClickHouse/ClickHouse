@@ -243,6 +243,7 @@ FROM clusterAllReplicas('default', merge('system', '^query_log'))
 WHERE has(databases, 'nyc_taxi')
   AND type = 'QueryFinish'
   AND is_initial_query = 1
+  AND query_kind = 'Select'
   AND event_time >= now() - INTERVAL 2 DAY
   AND user NOT ILIKE '%internal%'
 ORDER BY memory_usage DESC
@@ -269,6 +270,7 @@ FROM merge('system', '^query_log')
 WHERE has(databases, 'nyc_taxi')
   AND type = 'QueryFinish'
   AND is_initial_query = 1
+  AND query_kind = 'Select'
   AND event_time >= now() - INTERVAL 2 DAY
   AND user NOT ILIKE '%internal%'
 ORDER BY memory_usage DESC
