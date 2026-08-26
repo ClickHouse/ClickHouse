@@ -24,7 +24,6 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/PODArray.h>
-#include <Functions/TimeSeries/TimeSeriesHistogramKernel.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/TimeSeries/TimeSeriesNativeHistograms.h>
@@ -571,51 +570,6 @@ protected:
         appendSpansToResultColumn(state.negative_spans_blob, bucket.negative_spans, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::NegativeSpans)));
         appendFloatsToResultColumn(state.negative_values_blob, bucket.negative_values, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::NegativeValues)));
         appendFloatsToResultColumn(state.custom_values_blob, bucket.custom_values, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::CustomValues)));
-    }
-
-    /// Decodes one sample record (see `TimeSeriesHistogramSamplesBucket`) into the kernel's `TimeSeriesFloatHistogram`,
-    /// validating the layout (fail-close on corrupt data). Shared by the rate-family derived classes.
-    static TimeSeriesFloatHistogram histogramFromRecord(const State & state, const TimeSeriesHistogramBucket<TimestampType> & record)
-    {
-        TimeSeriesFloatHistogram histogram;
-        histogram.counter_reset_hint = TimeSeriesFloatHistogram::counterResetHintFromFlags(record.flags);
-        histogram.schema = record.schema;
-        histogram.zero_threshold = record.zero_threshold;
-        histogram.count = record.count;
-        histogram.sum = record.sum;
-        histogram.zero_count = record.zero_count;
-
-        auto assign_slice = [](const auto & blob, TimeSeriesHistogramBlobRef ref, auto & out)
-        {
-            out.assign(blob.begin() + ref.offset, blob.begin() + ref.offset + ref.size);
-        };
-        assign_slice(state.positive_spans_blob, record.positive_spans, histogram.positive_spans);
-        assign_slice(state.positive_values_blob, record.positive_values, histogram.positive_buckets);
-        assign_slice(state.negative_spans_blob, record.negative_spans, histogram.negative_spans);
-        assign_slice(state.negative_values_blob, record.negative_values, histogram.negative_buckets);
-        assign_slice(state.custom_values_blob, record.custom_values, histogram.custom_values);
-
-        histogram.validateDecodedLayout();
-        return histogram;
-    }
-
-    /// Appends a computed rate-family histogram to the subcolumns of `tuple_to` (payload tuple layout); the counter reset
-    /// hint is re-encoded into the `flags` byte, all other flag bits 0 (a synthetic histogram, not a stored sample).
-    static void appendHistogramToResultColumns(const TimeSeriesFloatHistogram & result, ColumnTuple & tuple_to)
-    {
-        namespace Idx = TimeSeriesHistogramPayloadTupleIndex;
-        const UInt8 flags = static_cast<UInt8>(result.counter_reset_hint << TimeSeriesHistogramFlags::CounterResetHintShift);
-        typeid_cast<ColumnUInt8 &>(tuple_to.getColumn(Idx::Flags)).getData().push_back(flags);
-        typeid_cast<ColumnInt8 &>(tuple_to.getColumn(Idx::Schema)).getData().push_back(static_cast<Int8>(result.schema));
-        typeid_cast<ColumnFloat64 &>(tuple_to.getColumn(Idx::ZeroThreshold)).getData().push_back(result.zero_threshold);
-        typeid_cast<ColumnFloat64 &>(tuple_to.getColumn(Idx::Count)).getData().push_back(result.count);
-        typeid_cast<ColumnFloat64 &>(tuple_to.getColumn(Idx::Sum)).getData().push_back(result.sum);
-        typeid_cast<ColumnFloat64 &>(tuple_to.getColumn(Idx::ZeroCount)).getData().push_back(result.zero_count);
-        appendSpansVectorToResultColumn(result.positive_spans, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::PositiveSpans)));
-        appendFloatsVectorToResultColumn(result.positive_buckets, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::PositiveValues)));
-        appendSpansVectorToResultColumn(result.negative_spans, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::NegativeSpans)));
-        appendFloatsVectorToResultColumn(result.negative_buckets, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::NegativeValues)));
-        appendFloatsVectorToResultColumn(result.custom_values, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::CustomValues)));
     }
 
     /// Compute the grid timestamp `start_timestamp + grid_index * step` in unsigned 64-bit arithmetic: avoids signed overflow/UBSAN
@@ -1261,30 +1215,6 @@ private:
         }
         auto & offsets_to = array_to.getOffsets();
         offsets_to.push_back(offsets_to.empty() ? ref.size : offsets_to.back() + ref.size);
-    }
-
-    /// The std::vector sibling of `appendFloatsToResultColumn`/`appendSpansToResultColumn`: appends a
-    /// computed histogram's array field (not a blob slice) to the result column.
-    static void appendFloatsVectorToResultColumn(const std::vector<Float64> & values, ColumnArray & array_to) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
-    {
-        auto & data_to = typeid_cast<ColumnFloat64 &>(array_to.getData()).getData();
-        data_to.insert(values.begin(), values.end());
-        auto & offsets_to = array_to.getOffsets();
-        offsets_to.push_back(offsets_to.empty() ? values.size() : offsets_to.back() + values.size());
-    }
-
-    static void appendSpansVectorToResultColumn(const std::vector<TimeSeriesHistogramSpan> & spans, ColumnArray & array_to) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
-    {
-        auto & tuple_to = typeid_cast<ColumnTuple &>(array_to.getData());
-        auto & span_offsets_to = typeid_cast<ColumnInt32 &>(tuple_to.getColumn(0)).getData();
-        auto & span_lengths_to = typeid_cast<ColumnUInt32 &>(tuple_to.getColumn(1)).getData();
-        for (const auto & span : spans)
-        {
-            span_offsets_to.push_back(span.offset);
-            span_lengths_to.push_back(span.length);
-        }
-        auto & offsets_to = array_to.getOffsets();
-        offsets_to.push_back(offsets_to.empty() ? spans.size() : offsets_to.back() + spans.size());
     }
 
     /// Adds one sample to its bucket: the newest-sample bucket keeps the newest (a stale sample loses, ties are last-write-wins,
