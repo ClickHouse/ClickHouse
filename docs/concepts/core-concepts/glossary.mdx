@@ -42,7 +42,7 @@ export const glossaryMetadata = {
   'table-engine': { learnMore: '/engines/table-engines' },
   transaction: { learnMore: '/guides/developer/transactional' },
   ttl: { aliases: ['expiration', 'retention', 'data retention'], code: true, learnMore: '/concepts/features/operations/delete/ttl' },
-  update: { aliases: ['row update'], learnMore: '/updating-data/overview' },
+  update: { aliases: ['row update'], legacyIds: ['lightweight-update'], learnMore: '/updating-data/overview' },
   upsert: { aliases: ['ON CONFLICT', 'insert or update', 'MERGE statement'], learnMore: '/guides/replacing-merge-tree' },
   warehouse: { aliases: ['compute-compute separation', 'virtual warehouse', 'virtual warehouses'], learnMore: '/cloud/reference/warehouses' },
 }
@@ -67,7 +67,7 @@ In ClickHouse Cloud, customer-managed encryption keys (CMEK) allow a customer's 
 
 ## Delete {#delete}
 
-In ClickHouse, deleting rows can mean marking them as deleted with `DELETE FROM`, rewriting affected data parts with `ALTER TABLE ... DELETE`, or efficiently removing an entire partition. Lightweight deletes hide rows from subsequent queries before the data is physically removed during background merges.
+For `MergeTree`-family tables, deleting rows can mean marking them as deleted with `DELETE FROM`, rewriting affected data parts with `ALTER TABLE ... DELETE`, or efficiently removing an entire partition. Lightweight deletes hide rows from subsequent queries before the data is physically removed during background merges.
 
 ## Deduplication {#deduplication}
 
@@ -115,7 +115,7 @@ A `MergeTree` in ClickHouse is a table engine designed for high data ingest rate
 
 ## Mutation {#mutation}
 
-A mutation modifies or deletes existing data with commands such as `ALTER TABLE ... UPDATE` or `ALTER TABLE ... DELETE`. Unlike an OLTP row update, it rewrites affected data parts and normally proceeds asynchronously; parts are replaced as they become ready, so the operation isn't an atomic table-wide transaction.
+For `MergeTree`-family tables, a mutation modifies or deletes existing data with commands such as `ALTER TABLE ... UPDATE` or `ALTER TABLE ... DELETE`. Unlike an OLTP row update, it rewrites affected data parts and normally proceeds asynchronously; parts are replaced as they become ready, so the operation isn't an atomic table-wide transaction.
 
 ## Nullable column {#nullable-column}
 

@@ -27,12 +27,27 @@ export const Glossary = ({ children, metadata = {} }) => {
 
   const [query, setQuery] = useState('');
 
-  const normalizedQuery = query.trim().toLowerCase();
+  const searchForms = value => {
+    const text = String(value);
+    const lowercase = text.toLowerCase();
+    const words = text
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+    return [...new Set([lowercase, words])];
+  };
+
+  const queryForms = searchForms(query.trim()).filter(Boolean);
+  const matches = (value, exact = false) => searchForms(value)
+    .some(valueForm => queryForms.some(queryForm => exact
+      ? valueForm === queryForm
+      : valueForm.includes(queryForm)));
   const exactMatch = entry => [entry.term, ...(entry.aliases || [])]
-    .some(value => value.toLowerCase() === normalizedQuery);
-  const visibleEntries = normalizedQuery
+    .some(value => matches(value, true));
+  const visibleEntries = queryForms.length > 0
     ? entries.filter(entry => [entry.term, ...(entry.aliases || []), nodeText(entry.content)]
-        .some(value => value.toLowerCase().includes(normalizedQuery)))
+        .some(value => matches(value)))
         .sort((a, b) => Number(exactMatch(b)) - Number(exactMatch(a)))
     : entries;
 
@@ -65,10 +80,12 @@ export const Glossary = ({ children, metadata = {} }) => {
               key={entry.id}
               className="glossary-entry"
             >
-              <h2 className="glossary-entry-title">
+              <h2 id={entry.id} className="glossary-entry-title">
                 {entry.code ? <code>{entry.term}</code> : entry.term}
               </h2>
-              <span id={entry.id} className="glossary-entry-anchor" aria-hidden="true" />
+              {(entry.legacyIds || []).map(id => (
+                <span key={id} id={id} className="glossary-entry-legacy-anchor" aria-hidden="true" />
+              ))}
               <div className="glossary-entry-description">{entry.content}</div>
               {entry.learnMore && (
                 <a className="glossary-entry-link" href={entry.learnMore}>
@@ -97,9 +114,9 @@ export const Glossary = ({ children, metadata = {} }) => {
         .dark .glossary-count { color: #9ca3af; }
         .glossary-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: .85rem; }
         .glossary-entry { position: relative; padding: 1.15rem 1.25rem; background: var(--background-light, #fff); border: 1px solid rgb(156 163 175 / .3); border-radius: .65rem; }
-        .glossary-entry-anchor { position: absolute; top: -6rem; }
         .dark .glossary-entry { background: var(--background-dark, #151515); border-color: rgb(107 114 128 / .35); }
-        .glossary-entry-title { margin: 0 0 .55rem; font-size: 1.05rem; line-height: 1.35; }
+        .glossary-entry-title { margin: 0 0 .55rem; scroll-margin-top: 6rem; font-size: 1.05rem; line-height: 1.35; }
+        .glossary-entry-legacy-anchor { position: absolute; top: 0; scroll-margin-top: 6rem; }
         .glossary-entry-title code { font-size: .95em; }
         .glossary-entry-description { color: #4b5563; font-size: .9rem; line-height: 1.55; }
         .dark .glossary-entry-description { color: #d1d5db; }
