@@ -35,19 +35,6 @@ It is safe to truncate or drop this table at any time.
 
 ## Columns {#columns}
 
-- `hostname` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Hostname of the server executing the query.
-- `event_date` ([Date](/reference/data-types/date)) — Query end date.
-- `event_time` ([DateTime](/reference/data-types/datetime)) — Query end time.
-- `event_time_microseconds` ([DateTime64(6)](/reference/data-types/datetime64)) — Query end time with microseconds precision.
-- `query_start_time_microseconds` ([DateTime64(6)](/reference/data-types/datetime64)) — Query start time with microseconds precision.
-- `query_id` ([String](/reference/data-types/string)) — ID of the query.
-- `query_string` ([String](/reference/data-types/string)) — String of the query.
-- `query_duration_ms` ([UInt64](/reference/data-types/int-uint)) — Query duration in ms.
-- `normalized_query_hash` ([UInt64](/reference/data-types/int-uint)) — A numeric hash value, such as it is identical for queries differ only by values of literals.
-- `revision` ([UInt32](/reference/data-types/int-uint)) — ClickHouse revision.
-- `ascii_plan` ([String](/reference/data-types/string)) — The executed query plan rendered as text, with per-step runtime statistics: rows and bytes in and out, time, and parallelism.
-- `status` ([Enum8('QueryFinish' = 2, 'ExceptionBeforeStart' = 3, 'ExceptionWhileProcessing' = 4)](/reference/data-types/enum)) — Type of an event that occurred when executing the query. Values: `QueryFinish` — successful end of query execution, `ExceptionBeforeStart` — exception before the start of query execution, `ExceptionWhileProcessing` — exception during the query execution. The numbering is shared with `system.query_log.type`, so that the same event has the same value in both tables; `QueryStart` = 1 is absent here because no plan exists yet at that point.
-
 ## Example {#example}
 
 ```sql title="Query"

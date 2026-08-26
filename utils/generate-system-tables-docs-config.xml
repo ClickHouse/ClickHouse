@@ -29,6 +29,7 @@
     <backup_log><database>system</database><table>backup_log</table></backup_log>
     <blob_storage_log><database>system</database><table>blob_storage_log</table></blob_storage_log>
     <query_metric_log><database>system</database><table>query_metric_log</table></query_metric_log>
+    <query_plan_log><database>system</database><table>query_plan_log</table></query_plan_log>
     <dead_letter_queue><database>system</database><table>dead_letter_queue</table></dead_letter_queue>
     <zookeeper_connection_log><database>system</database><table>zookeeper_connection_log</table></zookeeper_connection_log>
     <aggregated_zookeeper_log><database>system</database><table>aggregated_zookeeper_log</table></aggregated_zookeeper_log>

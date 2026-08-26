@@ -69,25 +69,24 @@ void logQueryPlan(const ContextPtr & context,
                   const QueryLogElement & elem,
                   QueryLogElementType status)
 {
-
     chassert(context->getPlanProfiler());
 
     auto query_plan_log = context->getQueryPlanLog();
     if (!query_plan_log)
         return;
 
-    QueryPlanLogElement plan_elem;
-    plan_elem.event_time = elem.event_time;
-    plan_elem.event_time_microseconds = elem.event_time_microseconds;
-    plan_elem.query_start_time = elem.query_start_time_microseconds;
-    plan_elem.query_id = elem.client_info.current_query_id;
-    plan_elem.query_string = elem.query;
-    plan_elem.query_duration_ms = elem.query_duration_ms;
-    plan_elem.normalized_query_hash = elem.normalized_query_hash;
-    plan_elem.ascii_plan = context->getPlanProfiler()->getRenderedPlan();
-    plan_elem.status = status;
-
-    query_plan_log->add([&](QueryPlanLogElement & element) { element = std::move(plan_elem); });
+    query_plan_log->add([&](QueryPlanLogElement & element)
+    {
+        element.event_time = elem.event_time;
+        element.event_time_microseconds = elem.event_time_microseconds;
+        element.query_start_time = elem.query_start_time_microseconds;
+        element.query_id = elem.client_info.current_query_id;
+        element.query_string = elem.query;
+        element.query_duration_ms = elem.query_duration_ms;
+        element.normalized_query_hash = elem.normalized_query_hash;
+        element.ascii_plan = context->getPlanProfiler()->getRenderedPlan();
+        element.status = status;
+    });
 }
 
 }
