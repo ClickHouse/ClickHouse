@@ -9,6 +9,12 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool enable_automatic_use_uncompressed_cache;
+    extern const SettingsBool use_uncompressed_cache;
+}
+
 TEST(PartsRemoteFSInfo, EmptyPartsAreLocalAndNonRemote)
 {
     const auto result = analyzePartsOnRemoteFS(RangesInDataParts{});
