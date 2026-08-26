@@ -94,7 +94,7 @@ static void BM_filter_in_place(benchmark::State & state)
     const size_t rows = state.range(0);
     auto filter = createFilter(rows, pattern);
 
-    for (auto _ : state)
+    for ([[maybe_unused]] auto _ : state)
     {
         state.PauseTiming();
         auto column = createColumn<T>(rows);
