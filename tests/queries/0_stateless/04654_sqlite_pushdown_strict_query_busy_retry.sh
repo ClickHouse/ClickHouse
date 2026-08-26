@@ -53,4 +53,4 @@ wait "$LOCKER_PID"
 echo "Strict pushdown query over a locked database succeeds after the lock is released:"
 cat "$OUT_FILE"
 echo "Query sent to SQLite retains the pushed-down filter:"
-grep -oE 'Query: SELECT `x` FROM `t`( WHERE .*)?$' `$LOG_FILE`
+grep -oE 'Query: SELECT `x` FROM `t`( WHERE .*)?$' "$LOG_FILE"
