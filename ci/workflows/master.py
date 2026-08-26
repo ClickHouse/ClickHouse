@@ -35,6 +35,7 @@ workflow = Workflow.Config(
             )
             for job in JobConfigs.special_build_jobs
         ],
+        *JobConfigs.wasm_parser_build_jobs,
         *JobConfigs.unittest_jobs,
         *JobConfigs.unittest_llvm_coverage_job,
         JobConfigs.docker_server,
@@ -64,10 +65,12 @@ workflow = Workflow.Config(
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *clickhouse_binaries_with_tags,
+        *ArtifactConfigs.clickhouse_darwin_plain_binaries,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.clickhouse_wasm,
+        ArtifactConfigs.wasm_parser,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
         ArtifactConfigs.clickhouse_examples,
