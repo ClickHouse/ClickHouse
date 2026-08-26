@@ -23,7 +23,8 @@ DROP TABLE summing_final_hidden;
 -- A nested table whose name ends with `Map` is only merged with `sumMap` when the whole
 -- group is a valid map: at least two columns, an integer-like key and summable values.
 -- The groups below are rejected by the merge, which merely copies them, so a `FINAL` read
--- must not read those arrays either.
+-- must not read those arrays either. The read set is asserted on the pipeline instead of on
+-- `read_bytes`, so that the check needs neither a large table nor a byte threshold.
 
 DROP TABLE IF EXISTS summing_final_rejected_map;
 CREATE TABLE summing_final_rejected_map
@@ -36,34 +37,47 @@ CREATE TABLE summing_final_rejected_map
 ENGINE = SummingMergeTree ORDER BY k;
 SYSTEM STOP MERGES summing_final_rejected_map;
 
-INSERT INTO summing_final_rejected_map SELECT number, 1, range(50), range(50), arrayMap(x -> toDate('2020-01-01'), range(50)) FROM numbers(100000);
-INSERT INTO summing_final_rejected_map SELECT number, 1, range(50), range(50), arrayMap(x -> toDate('2020-01-01'), range(50)) FROM numbers(100000);
+INSERT INTO summing_final_rejected_map VALUES (1, 1, [1], [1], ['2020-01-01']);
+INSERT INTO summing_final_rejected_map VALUES (1, 1, [1], [1], ['2020-01-01']);
 
-SELECT count() FROM summing_final_rejected_map FINAL SETTINGS log_comment = '05024_rejected_map';
-
-SYSTEM FLUSH LOGS query_log;
-
--- Only `k` and `s` have to be read: the rejected map arrays alone are two orders of
--- magnitude larger than that.
-SELECT read_bytes < 20000000
-FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = '05024_rejected_map' AND type = 'QueryFinish';
+-- Only `k` and `s` are read; neither rejected group appears in the pipeline.
+SELECT count() FROM (EXPLAIN PIPELINE header = 1 SELECT count() FROM summing_final_rejected_map FINAL) WHERE explain ILIKE '%Map.%';
+SELECT count() FROM summing_final_rejected_map FINAL;
 
 -- A valid map group, in contrast, participates in the summation and has to be read.
 DROP TABLE IF EXISTS summing_final_valid_map;
 CREATE TABLE summing_final_valid_map (k UInt64, s Int64, GoodMap Nested(ID UInt32, V UInt64)) ENGINE = SummingMergeTree ORDER BY k;
 SYSTEM STOP MERGES summing_final_valid_map;
 
-INSERT INTO summing_final_valid_map SELECT number, 1, range(50), range(50) FROM numbers(100000);
-INSERT INTO summing_final_valid_map SELECT number, 1, range(50), range(50) FROM numbers(100000);
+INSERT INTO summing_final_valid_map VALUES (1, 1, [1], [1]);
+INSERT INTO summing_final_valid_map VALUES (1, 1, [1], [1]);
 
-SELECT count() FROM summing_final_valid_map FINAL SETTINGS log_comment = '05024_valid_map';
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT read_bytes > 20000000
-FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = '05024_valid_map' AND type = 'QueryFinish';
+SELECT count() > 0 FROM (EXPLAIN PIPELINE header = 1 SELECT count() FROM summing_final_valid_map FINAL) WHERE explain LIKE '%GoodMap.ID%';
+SELECT count() > 0 FROM (EXPLAIN PIPELINE header = 1 SELECT count() FROM summing_final_valid_map FINAL) WHERE explain LIKE '%GoodMap.V%';
+SELECT count() FROM summing_final_valid_map FINAL;
 
 DROP TABLE summing_final_rejected_map;
 DROP TABLE summing_final_valid_map;
+
+-- With `allow_tuple_element_aggregation`, the summed columns are the flattened tuple leaves.
+-- A query that already reads the whole tuple must not additionally request its leaves: the
+-- merge flattens the tuple on its own, so requesting both would read the same data twice.
+DROP TABLE IF EXISTS summing_final_tuple;
+CREATE TABLE summing_final_tuple (k UInt64, s Int64, tup Tuple(a Int64, b Int64))
+ENGINE = SummingMergeTree ORDER BY k SETTINGS allow_tuple_element_aggregation = 1;
+SYSTEM STOP MERGES summing_final_tuple;
+
+-- For key 1 the tuple sums to zero but `s` does not, so the row stays; for key 2 all sum to zero.
+INSERT INTO summing_final_tuple VALUES (1, 5, (3, 4)), (2, 5, (3, 4));
+INSERT INTO summing_final_tuple VALUES (1, 5, (-3, -4)), (2, -5, (-3, -4));
+
+SELECT count() FROM (EXPLAIN PIPELINE header = 1 SELECT tup FROM summing_final_tuple FINAL) WHERE explain LIKE '%tup.%';
+SELECT k, s, tup FROM summing_final_tuple FINAL ORDER BY k;
+SELECT tup FROM summing_final_tuple FINAL ORDER BY tup;
+SELECT count() FROM summing_final_tuple FINAL;
+
+SYSTEM START MERGES summing_final_tuple;
+OPTIMIZE TABLE summing_final_tuple FINAL;
+SELECT k, s, tup FROM summing_final_tuple ORDER BY k;
+
+DROP TABLE summing_final_tuple;
