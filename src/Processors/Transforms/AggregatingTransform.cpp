@@ -217,6 +217,12 @@ public:
         /// limit is checked against this running total.
         std::atomic<size_t> single_level_merged_rows = 0;
 
+        /// Groups the adaptive bucket-parallel merge has converted so far; the group limit is
+        /// checked against this running total because no producer-side count can enforce it:
+        /// the frozen tables are bounded and the staged keys' cardinality is unknown until the
+        /// merge. The buckets partition the key space, so the sum counts every group exactly once.
+        std::atomic<size_t> adaptive_merged_groups = 0;
+
         SharedData()
         {
             for (auto & flag : is_bucket_processed)
@@ -276,8 +282,13 @@ protected:
             params->aggregator.drainAdaptiveBucketForMerge(*data->at(0), bucket_arena, bucket_num, *adaptive_session, shared_data->is_cancelled);
         }
 
+        /// The bucket's group count is taken from the table rather than from the chunk: the
+        /// bucket-local Top-K conversion truncates the chunk to its n best groups, and the
+        /// group-by limit must be enforced against the true cardinality.
+        size_t full_group_count = 0;
         auto agg_chunk = params->aggregator.mergeAndConvertOneBucketToChunk(
-            *data, bucket_arena, params->final, bucket_num, shared_data->is_cancelled, updater);
+            *data, bucket_arena, params->final, bucket_num, shared_data->is_cancelled, updater,
+            adaptive_session ? &full_group_count : nullptr);
         Chunk chunk = convertToChunk(std::move(agg_chunk));
 
         /// Retire the bucket's working memory only after a successful conversion: the output
@@ -285,7 +296,16 @@ protected:
         /// cancelled bucket skips retirement and leaves everything to the ordinary destruction
         /// of the variants, which still owns every non-retired slot.
         if (adaptive_session && !shared_data->is_cancelled.load(std::memory_order_seq_cst))
+        {
+            /// The staged keys' true cardinality first materializes here, bucket by bucket, so
+            /// this is where the group-by limit catches the adaptive run: the producers' counts
+            /// never see it. Only the throw overflow mode is admitted, so this raises as soon
+            /// as the running total exceeds the limit.
+            bool no_more_keys = false;
+            const size_t total = shared_data->adaptive_merged_groups.fetch_add(full_group_count) + full_group_count;
+            params->aggregator.checkLimits(total, no_more_keys);
             params->aggregator.retireAdaptiveMergedBucket(*data->at(0), *adaptive_session, bucket_num);
+        }
 
         shared_data->is_bucket_processed[bucket_num] = true;
 
