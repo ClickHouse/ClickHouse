@@ -867,7 +867,19 @@ ASTPtr QueryFuzzer::getRandomColumnLike()
     }
 
     ASTPtr new_ast = column_like[fuzz_rand() % column_like.size()].second->clone();
-    return setIdentifierAliasOrNot(new_ast);
+    new_ast = setIdentifierAliasOrNot(new_ast);
+
+    /// Sometimes reach the column through a `{fuzz_param_N:Identifier}` placeholder instead. The
+    /// exact cast leaves ASTQueryParameter entries of the pool, already placeholders, alone.
+    if (fuzz_rand() % 100 == 0)
+    {
+        if (const auto * ident = typeid_cast<const ASTIdentifier *>(new_ast.get()))
+        {
+            if (auto param_ident = makeParameterizedIdentifier(*ident))
+                return param_ident;
+        }
+    }
+    return new_ast;
 }
 
 ASTPtr QueryFuzzer::makeFuzzedColumnTransformers()
@@ -3187,34 +3199,42 @@ String QueryFuzzer::pickFuzzedTableName(const String & full_name)
     return *std::next(it->second.begin(), fuzz_rand() % it->second.size());
 }
 
+/// The identifier is registered as a child, so both slots have to move together.
+static void setTableIdentifier(ASTTableExpression & table, ASTPtr new_identifier)
+{
+    auto & ch = table.children;
+    std::replace(ch.begin(), ch.end(), table.database_and_table_name, new_identifier);
+    table.database_and_table_name = std::move(new_identifier);
+}
+
 void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
 {
-    if (!table.database_and_table_name || fuzz_rand() % 3 == 0)
+    if (!table.database_and_table_name)
         return;
 
     const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
     if (!identifier)
         return;
 
-    auto table_id = identifier->getTableId();
-    if (table_id.empty())
-        return;
-
-    const auto new_table_name = pickFuzzedTableName(table_id.getTableName());
-    if (new_table_name.empty())
-        return;
-
-    ASTPtr new_identifier = make_intrusive<ASTTableIdentifier>(StorageID(table_id.database_name, new_table_name));
-    /// The identifier is registered as a child, so both slots have to move together.
-    for (auto & child : table.children)
+    /// Point the read at one of the table's live `__fuzz_N` clones
+    if (fuzz_rand() % 3 != 0)
     {
-        if (child == table.database_and_table_name)
+        const auto table_id = identifier->getTableId();
+        const auto new_table_name = table_id.empty() ? String{} : pickFuzzedTableName(table_id.getTableName());
+        if (!new_table_name.empty())
         {
-            child = new_identifier;
-            break;
+            setTableIdentifier(table, make_intrusive<ASTTableIdentifier>(StorageID(table_id.database_name, new_table_name)));
+            identifier = table.database_and_table_name->as<ASTTableIdentifier>();
         }
     }
-    table.database_and_table_name = std::move(new_identifier);
+
+    /// Sometimes name the table with `{fuzz_param_N:Identifier}` placeholders instead, so it only
+    /// reaches storage resolution after parameter substitution
+    if (fuzz_rand() % 200 == 0)
+    {
+        if (auto param_ident = makeParameterizedIdentifier(*identifier))
+            setTableIdentifier(table, std::move(param_ident));
+    }
 }
 
 void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
@@ -3500,6 +3520,41 @@ void QueryFuzzer::wrapTableAsMerge(ASTTableExpression & table)
         default: table_arg = make_intrusive<ASTLiteral>("^" + table_name + "$"); break;
     }
     ASTPtr wrapped = makeASTFunction("merge", db_arg, table_arg);
+    replaceTableExpressionWithFunction(table, table.database_and_table_name, std::move(wrapped));
+}
+
+/// Read a plain table through the parameterized-view call syntax `db.view(param = value, ...)`, which
+/// parses as a table function named after the table. Only a view whose body carries `{param:Type}`
+/// placeholders accepts it, so most of the time the server has to reject the call cleanly instead.
+void QueryFuzzer::callTableAsParameterizedView(ASTTableExpression & table)
+{
+    if (!table.database_and_table_name || table.table_function || fuzz_rand() % 100 != 0)
+        return;
+
+    const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
+    if (!identifier || identifier->isParam())
+        return;
+    const String table_name = identifier->name();
+    if (table_name.empty())
+        return;
+
+    /// `fuzz_param_N` are the names the literal-to-parameter rewrites use, so a view this fuzzer
+    /// turned into a parameterized one can actually be matched here.
+    static const Strings view_param_names = {"fuzz_param_0", "fuzz_param_1", "p", "param", "id", "n"};
+    auto arguments = make_intrusive<ASTExpressionList>();
+    const size_t nparams = (fuzz_rand() % 2) + 1;
+    for (size_t i = 0; i < nparams; i++)
+    {
+        arguments->children.emplace_back(makeASTFunction(
+            "equals",
+            make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, view_param_names)),
+            make_intrusive<ASTLiteral>(getRandomField(fuzz_rand() % 11))));
+    }
+
+    auto wrapped = make_intrusive<ASTFunction>();
+    wrapped->name = table_name;
+    wrapped->arguments = arguments;
+    wrapped->children.emplace_back(std::move(arguments));
     replaceTableExpressionWithFunction(table, table.database_and_table_name, std::move(wrapped));
 }
 
@@ -3870,16 +3925,15 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
                 /// optionally with APPLY/EXCEPT/REPLACE transformers attached.
                 if (fuzz_rand() % asterisk_prob == 0)
                     new_child = makeFuzzedAsteriskLikeMatcher();
-                else if (fuzz_rand() % 800 == 0 && param_counter < 10)
+                else if (fuzz_rand() % 800 == 0)
                 {
                     /// Inject a {fuzz_param_N:Type} in place of the literal, exercising
                     /// the query parameter substitution code path end-to-end.
                     const auto * lit = child->as<ASTLiteral>();
                     if (lit->value.getType() != Field::Types::Null)
                     {
-                        const String param_name = "fuzz_param_" + std::to_string(param_counter++);
-                        last_query_parameters[param_name] = generateParamValue();
-                        new_child = make_intrusive<ASTQueryParameter>(param_name, String(lit->value.getTypeName()));
+                        if (auto param = makeQueryParameter(String(lit->value.getTypeName()), generateParamValue()))
+                            new_child = std::move(param);
                     }
                 }
                 else if (fuzz_rand() % 13 == 0)
@@ -3890,6 +3944,14 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
                 /// Return a fuzzed asterisk/matcher: `*`, `* LIKE/ILIKE 'pattern'`, or `table.*`,
                 /// optionally with APPLY/EXCEPT/REPLACE transformers attached.
                 new_child = makeFuzzedAsteriskLikeMatcher();
+            }
+            else if (auto * pident = typeid_cast<ASTIdentifier *>(child.get());
+                     pident && !pident->isParam() && fuzz_rand() % 800 == 0)
+            {
+                /// Rewrite a column reference into `{fuzz_param_N:Identifier}`, the only parameter
+                /// type substituted as a name rather than as a literal
+                if (auto param_ident = makeParameterizedIdentifier(*pident))
+                    new_child = std::move(param_ident);
             }
             else if (auto * ident = typeid_cast<ASTIdentifier *>(child.get()); ident && !ident->isParam() && fuzz_rand() % 250 == 0)
             {
@@ -5894,6 +5956,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         fuzzTableName(*table_expr);
         wrapTableAsDistributed(*table_expr);
         wrapTableAsMerge(*table_expr);
+        callTableAsParameterizedView(*table_expr);
         fuzzTableFunctionName(table_expr->table_function);
 
         /// Fuzz SAMPLE clause
@@ -6666,7 +6729,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     /// Negative offsets exercise error-handling paths in the server.
                     auto val = fuzz_rand() % 2 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
                                                     : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-                    select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, make_intrusive<ASTLiteral>(val));
+                    select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, makeLimitExpression(val));
                 }
             }
         }
@@ -6675,7 +6738,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             /// Add a LIMIT clause (negative values half the time).
             auto val
                 = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001))) : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-            select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(val));
+            select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, makeLimitExpression(val));
         }
         /// Fuzz LIMIT BY offset/length
         if (select->limitBy())
@@ -7074,8 +7137,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * alter_query = typeid_cast<ASTAlterQuery *>(ast.get()))
     {
-        if (alter_query->alter_object == ASTAlterQuery::AlterObjectType::TABLE)
-            fuzzTableName(*alter_query);
+        fuzzTableName(*alter_query);
         if (alter_query->command_list)
         {
             auto & cmds = alter_query->command_list->children;
@@ -8604,6 +8666,85 @@ String QueryFuzzer::generateParamValue()
         case 2: return map_literal(); /// Map(K, V)
         default: return fieldToNumericString(getRandomField(fuzz_rand() % 11));
     }
+}
+
+ASTPtr QueryFuzzer::makeQueryParameter(const String & type, const String & value)
+{
+    /// A successful query becomes the base of the next iteration, so the AST can already carry
+    /// `fuzz_param_N` placeholders while param_counter restarts at 0. Reusing a name would overwrite
+    /// the value the existing placeholder needs. Every parameter is also shipped along with the
+    /// query, so keep their number bounded.
+    String param_name;
+    do
+    {
+        if (param_counter >= max_query_parameters)
+            return nullptr;
+        param_name = "fuzz_param_" + std::to_string(param_counter++);
+    } while (last_query_parameters.contains(param_name));
+
+    last_query_parameters[param_name] = value;
+    return make_intrusive<ASTQueryParameter>(param_name, type);
+}
+
+/// A LIMIT/OFFSET value: usually the given literal, occasionally a query parameter. A limit accepts
+/// any numeric type, so the parameter is mostly declared as one of those, keeping the limit
+/// reachable, and rarely as a random type the server has to reject.
+ASTPtr QueryFuzzer::makeLimitExpression(const Field & value)
+{
+    if (fuzz_rand() % 10 == 0)
+    {
+        static const Strings numeric_param_types
+            = {"UInt8", "UInt16", "UInt32", "UInt64", "Int8", "Int16", "Int32", "Int64", "Float32", "Float64", "Nullable(UInt64)"};
+        auto param = fuzz_rand() % 10 == 0
+            ? makeQueryParameter(getRandomType()->getName(), generateParamValue())
+            : makeQueryParameter(pickRandomly(fuzz_rand, numeric_param_types), std::to_string(fuzz_rand() % 1001));
+        if (param)
+            return param;
+    }
+    return make_intrusive<ASTLiteral>(value);
+}
+
+ASTPtr QueryFuzzer::makeParameterizedIdentifier(const ASTIdentifier & ident)
+{
+    /// `{name:Identifier}` is an ASTIdentifier whose parameterized name parts are empty strings,
+    /// carrying one ASTQueryParameter child per empty part, in order. Substituting each part with
+    /// its current name keeps the identifier resolvable, so the query still runs.
+    /// Every part needs its own parameter, so bail out before spending any of the budget on a
+    /// rewrite that cannot be finished
+    if (ident.isParam() || ident.name_parts.empty() || param_counter + ident.name_parts.size() > max_query_parameters)
+        return nullptr;
+
+    auto name_parts = ident.name_parts;
+    ASTs name_params;
+    for (auto & part : name_parts)
+    {
+        if (part.empty())
+            return nullptr;
+        auto param = makeQueryParameter("Identifier", part);
+        if (!param)
+            return nullptr;
+        name_params.emplace_back(std::move(param));
+        part.clear();
+    }
+
+    ASTPtr res;
+    /// A table name goes through ASTTableIdentifier, which the parser only builds with one or two
+    /// parts; anything longer is a column reference and stays a plain identifier.
+    const auto * table_ident = typeid_cast<const ASTTableIdentifier *>(&ident);
+    if (table_ident && name_parts.size() <= 2)
+    {
+        auto table_res = name_parts.size() == 1
+            ? make_intrusive<ASTTableIdentifier>(name_parts[0], std::move(name_params))
+            : make_intrusive<ASTTableIdentifier>(name_parts[0], name_parts[1], std::move(name_params));
+        table_res->uuid = table_ident->uuid;
+        table_res->has_uuid = table_ident->has_uuid;
+        res = std::move(table_res);
+    }
+    else
+        res = make_intrusive<ASTIdentifier>(std::move(name_parts), false, std::move(name_params));
+
+    res->setAlias(ident.tryGetAlias());
+    return res;
 }
 
 /*
