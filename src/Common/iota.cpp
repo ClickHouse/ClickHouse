@@ -9,11 +9,18 @@ namespace DB
 /// 64-byte boundary crossing, causing ~5% regression on modern CPUs. As a
 /// separate function the compiler aligns the loop independently.
 /// (Previously the multi-target dispatch mechanism achieved this implicitly.)
+///
+/// LLVM defaults AArch64's `MaxInterleaveFactor` to 2 and Neoverse-N1/V1 do not raise it, so on
+/// Linux aarch64 these fills need an explicit interleave hint to get the four accumulators that
+/// x86-64-v3 and Apple silicon already choose.
 
 template <iota_supported_types T>
 void NO_INLINE iota(T * begin, size_t count, T first_value)
 {
     T value = first_value;
+#if defined(__aarch64__) && !defined(OS_DARWIN)
+#pragma clang loop interleave_count(4)
+#endif
     for (size_t i = 0; i < count; i++)
     {
         *(begin + i) = value;
@@ -25,6 +32,9 @@ template <iota_supported_types T>
 void NO_INLINE iotaWithStep(T * begin, size_t count, T first_value, T step)
 {
     T value = first_value;
+#if defined(__aarch64__) && !defined(OS_DARWIN)
+#pragma clang loop interleave_count(4)
+#endif
     for (size_t i = 0; i < count; i++)
     {
         *(begin + i) = value;
