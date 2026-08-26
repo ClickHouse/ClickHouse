@@ -27,9 +27,9 @@ Markers draw on time-series tiles whose source is a log or trace source. [Alert 
 
 By default, ClickStack reads `ResourceAttributes['service.version']`, the OpenTelemetry resource attribute. If your services follow the [service resource semantic conventions](https://opentelemetry.io/docs/specs/semconv/registry/attributes/service/), markers work with no setup.
 
-To read the version from somewhere else, set **Service Version Expression** on the log or trace source. Edit the source under **Team Settings → Sources**, expand **Configure Optional Fields**, and fill in the field.
+To read the version from somewhere else, set **Service Version Expression** on the log or trace source. Edit the source under **Team Settings → Sources**. On a log source the field sits behind **Configure Optional Fields**; on a trace source it appears directly in the form, below **Service Name Expression**.
 
-<Image img="/images/clickstack/dashboards/service-version-expression.webp" alt="Service Version Expression field in the source optional fields, showing the default placeholder ResourceAttributes['service.version']" size="lg"/>
+<Image img="/images/clickstack/dashboards/service-version-expression.webp" alt="Service Version Expression field in a log source's optional fields, showing the default placeholder ResourceAttributes['service.version']" size="lg"/>
 
 The value is a SQL expression, not an attribute name, which covers two common cases:
 
@@ -62,9 +62,9 @@ The releases query runs against the tile's own source with the tile's own predic
 | :-------------------------------- | :------------------------------------------------------------------ |
 | Filtered to one service           | That service's releases                                             |
 | Grouped by service                | Every charted service's releases, each tinted to match its own line |
-| Aggregate line over many services | None                                                                |
+| Aggregate line over many services | None, unless every release in the window came from one service       |
 
-In the third case the releases belong to services that have no line on the chart, so no markers are drawn.
+In the third case a marker's service has no line to match on the chart, so markers are dropped. If every release in the window came from a single service, they are drawn instead, in the default marker color.
 
 ## Read markers on a busy chart {#reading-markers}
 
