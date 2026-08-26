@@ -3048,8 +3048,6 @@ std::optional<KeyCondition::TupleElementSubcolumn> KeyCondition::tryParseTupleEl
     {
         String column_name = name.substr(0, pos);
         String element_name = name.substr(pos + 1);
-        if (element_name.empty())
-            continue;
 
         auto it = key_columns.find(column_name);
         if (it == key_columns.end() || !sample_block.has(column_name))
@@ -3060,24 +3058,9 @@ std::optional<KeyCondition::TupleElementSubcolumn> KeyCondition::tryParseTupleEl
         if (!tuple_type)
             continue;
 
-        std::optional<size_t> element_position;
-        bool is_numeric = std::all_of(element_name.begin(), element_name.end(), [](char c) { return c >= '0' && c <= '9'; });
-        if (is_numeric && element_name.size() <= 5)
-        {
-            /// The positional form is 1-based, e.g. "coord.1".
-            UInt64 index = 0;
-            for (char c : element_name)
-                index = index * 10 + (c - '0');
-            if (index >= 1 && index <= tuple_type->getElements().size())
-                element_position = index - 1;
-        }
-        else
-        {
-            /// On an unnamed tuple the implicit element names are "1", "2", ..., which the
-            /// numeric branch above already covered, so this resolves explicit names only.
-            element_position = tuple_type->tryGetPositionByName(element_name);
-        }
-
+        /// Positional access resolves through the implicit element names ('1', '2', ...)
+        /// of an unnamed tuple; explicit names resolve directly.
+        std::optional<size_t> element_position = tuple_type->tryGetPositionByName(element_name);
         if (!element_position)
             continue;
 
