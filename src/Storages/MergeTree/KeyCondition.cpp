@@ -594,22 +594,6 @@ bool typeMayHideNaN(const DataTypePtr & type)
     return false;
 }
 
-/// A NaN can sit nested inside a `Tuple` constant, where it is not a top-level `Field::isNaN()`.
-static bool fieldMayContainNaN(const Field & field)
-{
-    if (field.isNaN())
-        return true;
-
-    if (field.getType() == Field::Types::Tuple)
-    {
-        for (const auto & element : field.safeGet<Tuple>())
-            if (fieldMayContainNaN(element))
-                return true;
-    }
-
-    return false;
-}
-
 /// Comparison ops whose `not(op)` rewrite via `inverse_relations` is invalid when an operand can be NaN:
 /// `not(NaN > c)` is true while `NaN <= c` is false. `=` / `!=` do stay complements under NaN and are
 /// covered only to keep one rule for every comparison. A finite float constant is safe.
@@ -631,7 +615,7 @@ static bool isFloatComparison(const String & name, const ActionsDAG::NodeRawCons
 
         /// Constant: only a NaN blocks the rewrite.
         const Field field = (*child->column)[0];
-        if (fieldMayContainNaN(field))
+        if (field.isNaN())
             return true;
     }
     return false;
@@ -1616,8 +1600,24 @@ bool KeyCondition::isRelaxed() const
     });
 }
 
-/// Whether any element of an already-materialized set column is a NaN. A packed `Tuple` key keeps the
-/// mapped set column as a `ColumnTuple`, so the element can be a tuple holding the NaN.
+/// A packed `Tuple` key keeps the mapped set column as a `ColumnTuple`, so an extracted element is a
+/// tuple rather than a top-level NaN.
+static bool fieldMayContainNaN(const Field & field)
+{
+    if (field.isNaN())
+        return true;
+
+    if (field.getType() == Field::Types::Tuple)
+    {
+        for (const auto & element : field.safeGet<Tuple>())
+            if (fieldMayContainNaN(element))
+                return true;
+    }
+
+    return false;
+}
+
+/// Whether any element of an already-materialized set column is a NaN.
 static bool columnContainsNaN(const IColumn & column)
 {
     Field field;
