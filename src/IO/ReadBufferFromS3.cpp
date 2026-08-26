@@ -221,7 +221,11 @@ bool ReadBufferFromS3::nextImpl()
         }
         catch (...)
         {
-            if (!processException(getPosition(), attempt) || last_attempt)
+            if (!processException(getPosition(), attempt))
+                throw;
+
+            CurrentThread::checkIfNotCancelled();
+            if (last_attempt)
                 throw;
 
             /// Pause before next attempt.
@@ -335,7 +339,11 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
         {
             observe_request_metrics();
 
-            if (!processException(range_begin, attempt) || last_attempt)
+            if (!processException(range_begin, attempt))
+                throw;
+
+            CurrentThread::checkIfNotCancelled();
+            if (last_attempt)
                 throw;
 
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
@@ -354,7 +362,8 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
 
 bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) const
 {
-    CurrentThread::checkIfNotCancelled();
+    /// Cancellation is checked by callers only after this function classifies the caught exception
+    /// as retryable. This preserves a real non-retryable S3 error if cancellation races with unwinding.
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
     LOG_DEBUG(
