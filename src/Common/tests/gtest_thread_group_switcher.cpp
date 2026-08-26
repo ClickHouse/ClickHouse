@@ -2,8 +2,10 @@
 
 #include <gtest/gtest.h>
 
+#include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
+#include <Common/PerCPUMemory.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
@@ -149,6 +151,13 @@ TEST(ThreadGroupAttach, PreAttachUntrackedMemoryIsNotChargedToTheGroup)
     {
         ThreadStatus ts;
         auto group = std::make_shared<ThreadGroup>(getContext().context, 0);
+
+        /// Any allocation between the seeding below and `setParent` can commit the balance through
+        /// the shared per-CPU budget, whose occupancy other threads control. Lifting the budget
+        /// leaves the per-thread cap asserted below as the only trigger that can commit it.
+        const Int64 saved_budget = per_cpu_memory.budgetCapacity();
+        per_cpu_memory.setBudgetCapacity(PerCPUMemory::UNLIMITED_BUDGET);
+        SCOPE_EXIT({ per_cpu_memory.setBudgetCapacity(saved_budget); });
 
         const auto group_events_before = group->performance_counters[ProfileEvents::MemoryAllocatedWithoutCheck];
         const auto group_bytes_before = group->performance_counters[ProfileEvents::MemoryAllocatedWithoutCheckBytes];
