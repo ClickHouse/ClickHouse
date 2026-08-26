@@ -7,37 +7,37 @@
       "versionId": "0f23b810c23b3ee7309ff014f04287afdac364f185c5d2dcb663e2c1107f55cd",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-26T10:35:10.130Z",
+          "updatedAt": "2026-08-26T15:01:17.628Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-26T10:35:10.408Z",
+          "updatedAt": "2026-08-26T15:01:17.860Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-26T10:35:10.618Z",
+          "updatedAt": "2026-08-26T15:01:18.040Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-26T10:35:10.838Z",
+          "updatedAt": "2026-08-26T15:01:18.229Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-26T10:35:11.051Z",
+          "updatedAt": "2026-08-26T15:01:18.418Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-26T10:35:11.239Z",
+          "updatedAt": "2026-08-26T15:01:18.601Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-26T10:35:11.408Z",
+          "updatedAt": "2026-08-26T15:01:18.791Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-26T10:35:11.608Z",
+          "updatedAt": "2026-08-26T15:01:19.011Z",
           "fileName": "docs.json",
-          "postProcessHash": "bcfc28dd6a1c8303030dbfbfc6f90f3a5bb8203f3c3c6f6033ac2a80b05b93e6"
+          "postProcessHash": "d3c901fc94d0815215757d47c33db93208d275532b6fb993b729210a1a4e4757"
         }
       },
       "fileName": "docs.json"
@@ -18770,47 +18770,47 @@
     },
     {
       "fileId": "03269930710b60391038a710069f9245ad02fbc26507d108ee656a57636dc58b",
-      "versionId": "64de8555c7c657521effabb5373d1173606134526e49d40de53da4cec3633964",
+      "versionId": "e08057dd67170ded182aa1ea5dd3f89b378b754540c2566039891dc653cb83d8",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T08:10:26.007Z",
-          "fileName": "es/reference/statements/grant.mdx",
-          "postProcessHash": "6c590ca5118e1045fb128ce72f5d88b2eca9957157f31d044b345ff8230cdac2"
+        "ko": {
+          "updatedAt": "2026-08-26T15:01:25.262Z",
+          "fileName": "ko/reference/statements/grant.mdx",
+          "postProcessHash": "315cae395015a8750a954faa65b2a16ab4e20323d010bc6dcbcd8a5a52bbc6a4"
         },
         "ja": {
-          "updatedAt": "2026-08-26T08:10:26.008Z",
+          "updatedAt": "2026-08-26T15:01:25.263Z",
           "fileName": "ja/reference/statements/grant.mdx",
-          "postProcessHash": "97ac14750d9db248fdec680c8bf1d826b9799dfd4b3383e1ca2917c7baeeece9"
+          "postProcessHash": "13e3cc4512561e56e5353198737b107a55a95cf7ff5fd2c21eddb79d5c70b893"
         },
-        "ko": {
-          "updatedAt": "2026-08-26T08:10:26.008Z",
-          "fileName": "ko/reference/statements/grant.mdx",
-          "postProcessHash": "374f6b9cf3088dd6e850fc34066199545ffd485ca203c2f4da5dc1e45e86506b"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:26.009Z",
-          "fileName": "pt-BR/reference/statements/grant.mdx",
-          "postProcessHash": "b1f93a7297432c7a9df8e3089f5f54ac589c4fa499a395917af4b0590de6ae9a"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T08:10:26.009Z",
-          "fileName": "ru/reference/statements/grant.mdx",
-          "postProcessHash": "6f45964950deaf85ee94fc82b517e2fa2c8e2ea95c9bad575023ccc5f7d3566f"
+        "es": {
+          "updatedAt": "2026-08-26T15:01:25.266Z",
+          "fileName": "es/reference/statements/grant.mdx",
+          "postProcessHash": "a5f248a93bc3d6bf2301481c73d8bfa108aa70423e6ab6ce6e0222c5134bfec6"
         },
         "zh": {
-          "updatedAt": "2026-08-26T08:10:26.010Z",
+          "updatedAt": "2026-08-26T15:01:25.267Z",
           "fileName": "zh/reference/statements/grant.mdx",
-          "postProcessHash": "d4faa2d1f0981683fdc0eb5008d8c9d53b7dda810d99ebce327a68d6af40bf7b"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T08:10:26.011Z",
-          "fileName": "ar/reference/statements/grant.mdx",
-          "postProcessHash": "6e7069c8fb7648a529c17ad3d32865968bcac1e72792a96898dc3f60c71c0ab9"
+          "postProcessHash": "254cc130b91a34f796d6137bbdcf986309f4d2d82fa298eb8d717b90f2d12116"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:26.011Z",
+          "updatedAt": "2026-08-26T15:01:25.268Z",
           "fileName": "fr/reference/statements/grant.mdx",
-          "postProcessHash": "85ba8952de1b14455cde12bde39b80c424a02fef32f4d2a166d536b7ba1d6db3"
+          "postProcessHash": "d5df5157bc985dec0ea6a42b5af9d4dba3be175fbc9e1fb52b89d3e3cee8a374"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T15:01:25.268Z",
+          "fileName": "ar/reference/statements/grant.mdx",
+          "postProcessHash": "568e05fa7ccde2692b10ec4ed927aedcf3738eac0cd4720745fa43d146ba603f"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-26T15:01:25.270Z",
+          "fileName": "pt-BR/reference/statements/grant.mdx",
+          "postProcessHash": "5be1aeda593ebf42f123c7f8b6f0e73de2b33215f6879bb22db9484594d6a070"
+        },
+        "ru": {
+          "updatedAt": "2026-08-26T15:01:25.276Z",
+          "fileName": "ru/reference/statements/grant.mdx",
+          "postProcessHash": "2a9020067837fa8ecf3ba878834f37e3d078db84e677833e28e2b5cc7443dd57"
         }
       },
       "fileName": "reference/statements/grant.mdx"
@@ -19382,47 +19382,47 @@
     },
     {
       "fileId": "a4a2a7edb7a72a38b5c2444d433e4b486ecc28035c762a280ad70fabf8c1e3a7",
-      "versionId": "afd32d291b2018c78a5ddc5171cc74cb5f4bdcf6d5ed7089511d8cab35096af6",
+      "versionId": "9879dba6ec4e2bd0ca6b05c6228df0eefce23c614f77ff1a1caf59b4232b79bb",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-26T08:10:26.072Z",
+          "updatedAt": "2026-08-26T15:01:25.222Z",
           "fileName": "es/reference/statements/system.mdx",
-          "postProcessHash": "7438c18bfde849f39c5b95d2cfdcbcae35fafe4db55562df9d369de102acb07e"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T08:10:26.073Z",
-          "fileName": "ja/reference/statements/system.mdx",
-          "postProcessHash": "ec994e4f64f3adeed14ab7d10d6024ad40b62df1f82ab80997c588d547eb7d29"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T08:10:26.073Z",
-          "fileName": "ko/reference/statements/system.mdx",
-          "postProcessHash": "2472971194b46d421f1a209d66ebd39142f5f7c93a1a96b6016d531914a8ae3d"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:26.074Z",
-          "fileName": "pt-BR/reference/statements/system.mdx",
-          "postProcessHash": "dd39621e9a99b0707b869c36365af7988789d05e137233b9579523ddaff2f8fb"
+          "postProcessHash": "ff0af08b33fd731b57ab64d2634b1c9f7bb5af0e59467a5d6a2df8ca42dfd268"
         },
         "ru": {
-          "updatedAt": "2026-08-26T08:10:26.075Z",
+          "updatedAt": "2026-08-26T15:01:25.224Z",
           "fileName": "ru/reference/statements/system.mdx",
-          "postProcessHash": "166614afaf370394d6f7f1c26e0ca5c5c6ed7eb1cb97637a4dc3acf8eeb17358"
+          "postProcessHash": "29d820e451de730c4925074b56b0a5be1b556d129a21ec50892e8172a82bd5de"
         },
-        "zh": {
-          "updatedAt": "2026-08-26T08:10:26.076Z",
-          "fileName": "zh/reference/statements/system.mdx",
-          "postProcessHash": "13811639c0a1b7ffefaa9e786e58d4d33bcf92c3b049399ceafe953e2f37c505"
+        "pt-BR": {
+          "updatedAt": "2026-08-26T15:01:25.227Z",
+          "fileName": "pt-BR/reference/statements/system.mdx",
+          "postProcessHash": "c3a190787c25f54c9707c068184f34356d954a8131181a11140703d7e07b0d7f"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T15:01:25.230Z",
+          "fileName": "ja/reference/statements/system.mdx",
+          "postProcessHash": "7f7ef0eb890929c240da1820bf37e202fc0063691c915fa553866ee33eddf057"
         },
         "ar": {
-          "updatedAt": "2026-08-26T08:10:26.076Z",
+          "updatedAt": "2026-08-26T15:01:25.231Z",
           "fileName": "ar/reference/statements/system.mdx",
-          "postProcessHash": "13f538c68fd70c8872c0c0c287e692acb7041c3404855426ccafffb9fdea8d0c"
+          "postProcessHash": "1ed05bf7bd23833a026edc4a13b5ebc225c509cb241d73b265722dc5b92658ff"
+        },
+        "zh": {
+          "updatedAt": "2026-08-26T15:01:25.233Z",
+          "fileName": "zh/reference/statements/system.mdx",
+          "postProcessHash": "2f86ce44568f56f9d0d59e8630aa528178c493c659aa9717819b0377934d2e88"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:26.077Z",
+          "updatedAt": "2026-08-26T15:01:25.234Z",
           "fileName": "fr/reference/statements/system.mdx",
-          "postProcessHash": "ab77bf94ae2216a6a5ef186bfb061b4497be298bf83f4981e1c9e5b63b7fb554"
+          "postProcessHash": "6c99e3749a6f1abe50ef352c07b49724c19e292f67aa09834cd600a733112120"
+        },
+        "ko": {
+          "updatedAt": "2026-08-26T15:01:25.235Z",
+          "fileName": "ko/reference/statements/system.mdx",
+          "postProcessHash": "c342efe58c4f5c34a59a2a2ea74a7b3f55b6a5640ce12ef2de18614c1b9308ba"
         }
       },
       "fileName": "reference/statements/system.mdx"
@@ -42820,99 +42820,97 @@
     },
     {
       "fileId": "fd1fdeaf129852c165f53a273938117d1e841876b897cfb6eb29a1975fdddd13",
-      "versionId": "d5c828c041bd06ab704c920cb050ddbd8376e88db72dbe82a07a02f2cbb17293",
+      "versionId": "332989c169c36244c55bd94141dda813694fcf8229981e6b7d5456c49b0b93e1",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.653Z",
-          "fileName": "es/products/bring-your-own-cloud/onboarding/customization-aws.mdx",
-          "postProcessHash": "e39246d3eba5487afe1005cf1399235a182ab8d74f04606a83431a3d83a92e25"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.653Z",
-          "fileName": "ja/products/bring-your-own-cloud/onboarding/customization-aws.mdx",
-          "postProcessHash": "5c961e8837b20d3c3d888e8e20cc18c031d886095a10ef0aa488ea8e28fd5c46"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.653Z",
-          "fileName": "ko/products/bring-your-own-cloud/onboarding/customization-aws.mdx",
-          "postProcessHash": "4cb3934234cf330e7f67250ee6e462b2bcc2a7f0fbe1b8eb24f6a6680ca23776"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.653Z",
-          "fileName": "pt-BR/products/bring-your-own-cloud/onboarding/customization-aws.mdx",
-          "postProcessHash": "7df936e30e37c8866ca69fef86f4350fafb3aaa474bd432e9f3a7dfc283805f3"
-        },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:06.653Z",
+          "updatedAt": "2026-08-26T15:01:25.246Z",
           "fileName": "ru/products/bring-your-own-cloud/onboarding/customization-aws.mdx",
-          "postProcessHash": "15033bb6355e89fb84ea28713a812cdb73f1ece55eaf1f8c517e60fe3257c364"
+          "postProcessHash": "3564e594299d3b927dcd84df1b12e845773e01f6167fd914fd94eb1e4ed2d1ac"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:06.653Z",
+          "updatedAt": "2026-08-26T15:01:25.247Z",
           "fileName": "zh/products/bring-your-own-cloud/onboarding/customization-aws.mdx",
-          "postProcessHash": "cd67ca6adfa8e0f992d4023dcab1bdf720800172ee9de7637b17b95e51eb2534"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.653Z",
-          "fileName": "ar/products/bring-your-own-cloud/onboarding/customization-aws.mdx",
-          "postProcessHash": "66e7c863a3f7b5b56fc04409591593a42db658dd7f50d8fd2792dfb89a0c1f09"
+          "postProcessHash": "ccae5c9a773168d88745bb27b315b0ece0c9736e200257492fb0587f82a7254f"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.653Z",
+          "updatedAt": "2026-08-26T15:01:25.248Z",
           "fileName": "fr/products/bring-your-own-cloud/onboarding/customization-aws.mdx",
-          "postProcessHash": "f6907c68d0c13f82e035af2faabc8c5defe60e799bebca934b7de0940e8f0021"
+          "postProcessHash": "a1e692f4290bdf811e531fdab2694d3bc8e4ffed7f6a33005faac1667c4a9be9"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-26T15:01:25.249Z",
+          "fileName": "pt-BR/products/bring-your-own-cloud/onboarding/customization-aws.mdx",
+          "postProcessHash": "d53e8b90b6df5dea8ffb72432633542a1bfde785d3ca2a22b343c32a2bba05b0"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T15:01:25.251Z",
+          "fileName": "es/products/bring-your-own-cloud/onboarding/customization-aws.mdx",
+          "postProcessHash": "c680c85bb687b9c57efdce3fdf3073b319e48d4d88eea7f30b1d190e615ad058"
+        },
+        "ko": {
+          "updatedAt": "2026-08-26T15:01:25.256Z",
+          "fileName": "ko/products/bring-your-own-cloud/onboarding/customization-aws.mdx",
+          "postProcessHash": "8cfbf2091fa19675f47f6eafa4dd4f68672fa3c40036b05b24403ba240e5418a"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T15:01:25.258Z",
+          "fileName": "ja/products/bring-your-own-cloud/onboarding/customization-aws.mdx",
+          "postProcessHash": "013f4961e3cccefdc4081b71b4a070887610347c7d17c95d51dafba9247ae866"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T15:01:25.265Z",
+          "fileName": "ar/products/bring-your-own-cloud/onboarding/customization-aws.mdx",
+          "postProcessHash": "318f14454d8dfe0697ad4d1ec7ab8ab3f0b962fe2b4551a7c8f29c8bd7cf5899"
         }
       },
-      "fileName": "products/bring-your-own-cloud/onboarding/customization-aws.mdx",
-      "staged": false
+      "fileName": "products/bring-your-own-cloud/onboarding/customization-aws.mdx"
     },
     {
       "fileId": "041e686a701f7ecc39b0a7f55d05cb7dc8bfba651d53543de79641da83207083",
-      "versionId": "0ef6281bf7d8778a3d6d00d25fe80b68d30bada3b7d8ee2c920676c4d6904cb0",
+      "versionId": "e28f519dc5973915fafd3ddbefecd495cc9bfe37415814c9cca97190e96aca06",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.654Z",
-          "fileName": "es/products/bring-your-own-cloud/onboarding/customization-gcp.mdx",
-          "postProcessHash": "05277fcf377585f722f41871870f55caab9cd07b6cdd886a7de7c041a470ad0e"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.654Z",
-          "fileName": "ja/products/bring-your-own-cloud/onboarding/customization-gcp.mdx",
-          "postProcessHash": "b1cb87067222d5883966abf6e815a5b907fac04c79c5888d4770fa555290b94f"
+        "pt-BR": {
+          "updatedAt": "2026-08-26T15:01:25.248Z",
+          "fileName": "pt-BR/products/bring-your-own-cloud/onboarding/customization-gcp.mdx",
+          "postProcessHash": "e3a16db9f2296b82f829a0ea8367fad3d4fba0634e709ec49964d350ec4fc28b"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:06.654Z",
+          "updatedAt": "2026-08-26T15:01:25.249Z",
           "fileName": "ko/products/bring-your-own-cloud/onboarding/customization-gcp.mdx",
-          "postProcessHash": "4e70ddddecd5e706f49dbd2388978c6220d1bd69ba539e79e33d58c31698d078"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.654Z",
-          "fileName": "pt-BR/products/bring-your-own-cloud/onboarding/customization-gcp.mdx",
-          "postProcessHash": "9249f059a22f2f1d4ca7ef9c8b0afba7330d624c97e37ba0b41dcc756295ef02"
+          "postProcessHash": "819070914fa991885b1ed2a4514b5e61b02eef19357b8755230158206f86647e"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:06.654Z",
+          "updatedAt": "2026-08-26T15:01:25.250Z",
           "fileName": "ru/products/bring-your-own-cloud/onboarding/customization-gcp.mdx",
-          "postProcessHash": "c31b0bed26a08b6a16aabeeb290472d3b1144c073235c45d1fe4a4366e904355"
+          "postProcessHash": "febd731e13b9ca3b8b0d0daab632f96f1c850e3bec32138e7cb18318bc4134f0"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T15:01:25.250Z",
+          "fileName": "es/products/bring-your-own-cloud/onboarding/customization-gcp.mdx",
+          "postProcessHash": "925c43ae1b9ccd1b248bd39dd4e71739a4eace5656075bb5f50c779bd30f895f"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:06.654Z",
+          "updatedAt": "2026-08-26T15:01:25.255Z",
           "fileName": "zh/products/bring-your-own-cloud/onboarding/customization-gcp.mdx",
-          "postProcessHash": "2c4b05a32aa1f1998b5258ed71ccb9e373aca78201c3e7fe38ffc2cf3af3fcb9"
+          "postProcessHash": "989580aeb9189b0f24881e50a29cc25ebace8e67edbab15f5ff2e45175d09586"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T15:01:25.260Z",
+          "fileName": "ja/products/bring-your-own-cloud/onboarding/customization-gcp.mdx",
+          "postProcessHash": "a2665907ae229f914a1ae5cf628f21c4564759ee5d2ff89302f09f5ec98267fe"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.654Z",
+          "updatedAt": "2026-08-26T15:01:25.261Z",
           "fileName": "ar/products/bring-your-own-cloud/onboarding/customization-gcp.mdx",
-          "postProcessHash": "b5b3c34661cab061b2ad61012462f88e231bf149951c986989e22f63d498fba4"
+          "postProcessHash": "0db88016b698cd0533ddc8713f01aa88d603a566d83f7249ffbfbdc6d2803bb4"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.654Z",
+          "updatedAt": "2026-08-26T15:01:25.264Z",
           "fileName": "fr/products/bring-your-own-cloud/onboarding/customization-gcp.mdx",
-          "postProcessHash": "13865f892870c3949a3d92be621da44f2d7f2adbfaeb533ef18e4bee1524c88a"
+          "postProcessHash": "063f363f58700384954d3ddeada48a35a56c96e5793bdc412fa7d4daed1a0f06"
         }
       },
-      "fileName": "products/bring-your-own-cloud/onboarding/customization-gcp.mdx",
-      "staged": false
+      "fileName": "products/bring-your-own-cloud/onboarding/customization-gcp.mdx"
     },
     {
       "fileId": "a9f4e60d18535da7516db936115ece7edcc221e2a184178e81386f1aed761997",
@@ -43108,51 +43106,50 @@
     },
     {
       "fileId": "87b0a4465dd2680ba1d5f5a4a5377ee18650b7469faa860e0bd32908e4148f1f",
-      "versionId": "9cba4049e5127654b6c0997418bd1ca8dd3043f80c296f05cf7e886bfca794e3",
+      "versionId": "cf6353ad540c9719fa7e05386bfa9f123c755e4558540e79233e824e58bccf4f",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.660Z",
-          "fileName": "es/products/bring-your-own-cloud/onboarding/standard.mdx",
-          "postProcessHash": "14e0c444d1e80cde2572b0a9b04f1879ab02f025c92ebe57cd793ef171349942"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.661Z",
-          "fileName": "ja/products/bring-your-own-cloud/onboarding/standard.mdx",
-          "postProcessHash": "c2fd505e674f5875bdcbe506712f50e3d44e4b704310ccb370c53bdf0817c5c0"
-        },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:06.661Z",
+          "updatedAt": "2026-08-26T15:01:25.246Z",
           "fileName": "ko/products/bring-your-own-cloud/onboarding/standard.mdx",
-          "postProcessHash": "60680e7ffb78aa0a517ea025650cf2c7b70220fdfb9b4d8c3626118ea9ec1cd4"
+          "postProcessHash": "e8e690422f6da27c4d3a18a80cb45c31ae07125047b29c031cf58a07f514e8e5"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.661Z",
+          "updatedAt": "2026-08-26T15:01:25.256Z",
           "fileName": "pt-BR/products/bring-your-own-cloud/onboarding/standard.mdx",
-          "postProcessHash": "4578e9a979d7a965f80f99e1421aab77bd281280452f5a1992611679f434b2a9"
+          "postProcessHash": "6737c7eace61bd67421aaa1c54ab2ec8645838968578fbb002d30c326b97ed95"
         },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.661Z",
-          "fileName": "ru/products/bring-your-own-cloud/onboarding/standard.mdx",
-          "postProcessHash": "05c58a33943304ab2f51158e37b0ec6c48cd8d0e007c0aac5f9803724748f79b"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.661Z",
-          "fileName": "zh/products/bring-your-own-cloud/onboarding/standard.mdx",
-          "postProcessHash": "502f925071235d00f8183e54153c99e6d1a0987742f87dfaee89ebf31349f255"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.662Z",
-          "fileName": "ar/products/bring-your-own-cloud/onboarding/standard.mdx",
-          "postProcessHash": "0ae45621ec0df828f5328a722e2d42e9fce6a4c86bdd024c393736513275d56d"
+        "ja": {
+          "updatedAt": "2026-08-26T15:01:25.257Z",
+          "fileName": "ja/products/bring-your-own-cloud/onboarding/standard.mdx",
+          "postProcessHash": "c653026adc5aaaae9de92bb9feb5cf5a7e74dbf55fdc85c7fdd741063ba064be"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.662Z",
+          "updatedAt": "2026-08-26T15:01:25.258Z",
           "fileName": "fr/products/bring-your-own-cloud/onboarding/standard.mdx",
-          "postProcessHash": "be4e974e29a1e745a8646c0d84cb288f89a5aab64e592c74012ef91710859b9c"
+          "postProcessHash": "88c3a06f1fd2d663d9488dcd7779597db6fa76c1b970ea4e8068b747ba9d3323"
+        },
+        "zh": {
+          "updatedAt": "2026-08-26T15:01:25.259Z",
+          "fileName": "zh/products/bring-your-own-cloud/onboarding/standard.mdx",
+          "postProcessHash": "a663f99957aa761b2d4ea7db34f5dd1bb4c42c9432c784027776ea28a95bceb7"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T15:01:25.260Z",
+          "fileName": "es/products/bring-your-own-cloud/onboarding/standard.mdx",
+          "postProcessHash": "0e04bda83bc0e9b284640d4cda015df40485c2672c97dbb0e5c37bd9623f5fa5"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T15:01:25.261Z",
+          "fileName": "ar/products/bring-your-own-cloud/onboarding/standard.mdx",
+          "postProcessHash": "ca29dc7555ce4bed6b20ff46d410c5ae611d8de194c9da1fa6cb4d57c4ac2cd1"
+        },
+        "ru": {
+          "updatedAt": "2026-08-26T15:01:25.266Z",
+          "fileName": "ru/products/bring-your-own-cloud/onboarding/standard.mdx",
+          "postProcessHash": "8129e647597ff94e1665be43b36ec52cf4e0669560333b97ce5fcbbe78d60e98"
         }
       },
-      "fileName": "products/bring-your-own-cloud/onboarding/standard.mdx",
-      "staged": false
+      "fileName": "products/bring-your-own-cloud/onboarding/standard.mdx"
     },
     {
       "fileId": "d5e69bb96cccdc346dfebf173721a8faa5aa159e53bcd99b2da3420ce4d20d71",
@@ -62013,47 +62010,47 @@
     },
     {
       "fileId": "9e591a7e130040b5ce9084c7f1d4cb648968ad056bbf8d62ddd5e476ac2b7fa0",
-      "versionId": "7001a5b9160d79c480a16489a63d0c28283f72e7f8571dd8f0d57473d67089bc",
+      "versionId": "ad12bf19879a0cd5dae931797098862d92323cf1dc2f766936bb4922fb4e9929",
       "translations": {
-        "fr": {
-          "updatedAt": "2026-08-26T10:35:17.490Z",
-          "fileName": "fr/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "21317828ed7a60e23f9f089daad2445b998683d5309cec7c046378be1cdf2791"
-        },
-        "es": {
-          "updatedAt": "2026-08-26T10:35:17.492Z",
-          "fileName": "es/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "1abe24a0307bf880a7ffc2b8b5ababb0266760983c060daf9369fc3b18f63c17"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T10:35:17.497Z",
-          "fileName": "pt-BR/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "e2b1f9854e69ec8b635e7afb24fd15cd04799c0fc76b2830c708444144117727"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T10:35:17.499Z",
-          "fileName": "ja/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "15b045504a5258983bee68d9d6cb078c1a28a14f8b0f91faac0b702d73138a7c"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T10:35:17.512Z",
-          "fileName": "zh/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "4472542a32fbb6f55a51169f2b1732aad3ee4a209af9e87d6a84c741003bf63e"
-        },
         "ko": {
-          "updatedAt": "2026-08-26T10:35:17.517Z",
+          "updatedAt": "2026-08-26T15:01:25.220Z",
           "fileName": "ko/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "0619f77c4584e360cab5380edd1a37132838e764c4396b9b313843e00e5b52b6"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T10:35:17.543Z",
-          "fileName": "ar/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "ab0c62ef4c0fb2b41068ef24d4c72710ccea8d362b283c14d72858026ea235c4"
+          "postProcessHash": "84fda0774292bf75612a2b0222d46116ad12b8eea99b09bcc7580045a5096ed9"
         },
         "ru": {
-          "updatedAt": "2026-08-26T10:35:17.575Z",
+          "updatedAt": "2026-08-26T15:01:25.228Z",
           "fileName": "ru/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "0c91cb37289c61219a2ee769449daee6e9c2008a6872809822f52fa0c40b49d4"
+          "postProcessHash": "8228953e748343dbdc3e8f9305ef843f5a04f794e892b52441dc16f60ed34975"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T15:01:25.236Z",
+          "fileName": "es/reference/functions/regular-functions/other-functions.mdx",
+          "postProcessHash": "2f1970d4677d51b557c39797b56ead371ff0d9798637f726e93672c566a82f75"
+        },
+        "fr": {
+          "updatedAt": "2026-08-26T15:01:25.239Z",
+          "fileName": "fr/reference/functions/regular-functions/other-functions.mdx",
+          "postProcessHash": "fa05046b1920fa9656029148ed4c600e95db5eeb0f1f9de9ab7ef0466f54e0ca"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T15:01:25.240Z",
+          "fileName": "ja/reference/functions/regular-functions/other-functions.mdx",
+          "postProcessHash": "9f7c02105c03cb5fa2d060a49e545e77181e4a3688c4dfcc4e3b49cba814fab5"
+        },
+        "zh": {
+          "updatedAt": "2026-08-26T15:01:25.242Z",
+          "fileName": "zh/reference/functions/regular-functions/other-functions.mdx",
+          "postProcessHash": "81f10415baeb977dc9bb255480c439c4032159e4c7849cd35cbc89bad1aaa25d"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-26T15:01:25.243Z",
+          "fileName": "pt-BR/reference/functions/regular-functions/other-functions.mdx",
+          "postProcessHash": "899c02ec2fb084a5748a006ea0e0303cf6e04ea97055b45b7c335cd9f00bd960"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T15:01:25.245Z",
+          "fileName": "ar/reference/functions/regular-functions/other-functions.mdx",
+          "postProcessHash": "6218bf3ffafc3e3a0b16ee5c95314e8ed8927b4553ac448f5e7d1c4b1812eaed"
         }
       },
       "fileName": "reference/functions/regular-functions/other-functions.mdx"
@@ -70186,51 +70183,50 @@
     },
     {
       "fileId": "e8979a71f738bd93536a8e75543357c5b786077e74ba46da77b43728ef5d8c0a",
-      "versionId": "12056d643c122a0060e8bc52b8ec7e5a26bda7ba95eb7d508cbbcfdfd79134de",
+      "versionId": "49eecc697fcb3d5e803adcb22802e9f9f2ecba27a65445c0201a71a1d532b96c",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:07.777Z",
-          "fileName": "es/resources/changelogs/oss/2026.mdx",
-          "postProcessHash": "85052c82d476e60848371301dbb37b1308d821e70da51b0c2eaa58fa4e4f84f0"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:07.779Z",
-          "fileName": "ja/resources/changelogs/oss/2026.mdx",
-          "postProcessHash": "c5ac74563fd5e17a0e2e4af5ff65dbef14d5ce2dfd1aa782cbcf3be4fb83d6c5"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:07.782Z",
-          "fileName": "ko/resources/changelogs/oss/2026.mdx",
-          "postProcessHash": "9bdac6bb368bade4574bc654db2f1de7f5ab14649e5535eb98ac9b98c796a839"
-        },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.784Z",
+          "updatedAt": "2026-08-26T15:01:25.286Z",
           "fileName": "pt-BR/resources/changelogs/oss/2026.mdx",
-          "postProcessHash": "eda7849c40689aa3b787bb08357a8e3fd2c7f380241e3c6b30cec510694e1b46"
+          "postProcessHash": "1439d361ff68d81f52a77bb610fa5aa86ded75b547540ee0d84f25725c28f3f8"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T15:01:25.293Z",
+          "fileName": "es/resources/changelogs/oss/2026.mdx",
+          "postProcessHash": "3d73a93e2a4e773d1baac06ec88b62d8c52975c0987043ec588a91f550544abb"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:07.788Z",
+          "updatedAt": "2026-08-26T15:01:25.302Z",
           "fileName": "ru/resources/changelogs/oss/2026.mdx",
-          "postProcessHash": "5d53e7b71fb767c1bf0ff1e4783646fead13292cbdd248fbc60785791f8f5627"
+          "postProcessHash": "76419f6e4c1b73a792096bcf797da399d830c3275967640aa4d8eae52d84a307"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:07.790Z",
+          "updatedAt": "2026-08-26T15:01:25.308Z",
           "fileName": "zh/resources/changelogs/oss/2026.mdx",
-          "postProcessHash": "dee0e2b010c267bef5b4e634124b3adb5d4f936d219eefdb96cbe15459e6d6f1"
+          "postProcessHash": "38e2949d17298133d032ce506e43fda65d604b6b5baaca64a50f95e0fb51e0e7"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:07.793Z",
-          "fileName": "ar/resources/changelogs/oss/2026.mdx",
-          "postProcessHash": "5ee3cf64748fe1cfe6fa22d644816b00224af9a2917a9d80293b6f552ee22870"
+        "ko": {
+          "updatedAt": "2026-08-26T15:01:25.314Z",
+          "fileName": "ko/resources/changelogs/oss/2026.mdx",
+          "postProcessHash": "5c40f2f799b97d202a3669289953eb1adc24886ee96481fb9cd2e96a5f1648a8"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T15:01:25.320Z",
+          "fileName": "ja/resources/changelogs/oss/2026.mdx",
+          "postProcessHash": "d037cb2a07c80b3c821486fc905225f4cd900e72e0118e67db4ae0d7f907191a"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:07.796Z",
+          "updatedAt": "2026-08-26T15:01:25.328Z",
           "fileName": "fr/resources/changelogs/oss/2026.mdx",
-          "postProcessHash": "16c997fd93dd71cdd26fcac19d5009a18d66dddfd6666e6ef29b66336bbbd3e6"
+          "postProcessHash": "ab47ca7d6b7c573ec03335c4291057195b1ee86f12d063302040c2b267d18423"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T15:01:25.335Z",
+          "fileName": "ar/resources/changelogs/oss/2026.mdx",
+          "postProcessHash": "38b50a296e9d538bf54dd3023341ba1377ed65f626958ed1c5c66c37f9ff9c4e"
         }
       },
-      "fileName": "resources/changelogs/oss/2026.mdx",
-      "staged": false
+      "fileName": "resources/changelogs/oss/2026.mdx"
     },
     {
       "fileId": "51ac6a75828ea232d13ae5ebd3115a16383b89390b51cbcfdc952745b5339fdc",
@@ -72200,99 +72196,97 @@
     },
     {
       "fileId": "2dec9f0273a6f96dab0638673281086f112fa201b99aebebda20d4f755a6206f",
-      "versionId": "5b13611f925e06491c3cd9af95b698a233f5358f9591ca5119c45772fe657824",
+      "versionId": "af24dc8d86c04e76b4b3c77cd20945b7c1d4c0050526900b916f67872c928663",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:07.834Z",
+          "updatedAt": "2026-08-26T15:01:25.264Z",
           "fileName": "es/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "a33c045d527e625c71a88195c6c42fee2a7f02bf91c690d8486cd2aa6a09d6ac"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:07.834Z",
-          "fileName": "ja/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "14f0a3b7f3d1a83ef3074a4b8fcaa8bd7b1cec13bb37aa834a0ad0637a5505e8"
+          "postProcessHash": "33679aca8bd56f739e9238ce10e8d09227668e09596d2982e6e790ac69f5dfd8"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:07.834Z",
+          "updatedAt": "2026-08-26T15:01:25.271Z",
           "fileName": "ko/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "f43eddc90228d057ad8e3673e2822ad39029580d8d0a1a10f5787b75956c29c9"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.834Z",
-          "fileName": "pt-BR/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "39d0076488d83ce8468bba918bfa5db88119eee35148b8c1c2a1c724ab7ce423"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:07.835Z",
-          "fileName": "ru/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "aa872f5b6583e9bc4a927f2eed26236e164ee77e3c118aeedcdc5c9e31919482"
+          "postProcessHash": "1d061342027aa943663da80bf3c9fb6562fcfc9453fe162459464855f7373e59"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:07.835Z",
+          "updatedAt": "2026-08-26T15:01:25.272Z",
           "fileName": "zh/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "73c3cd74ed05bfc1a7420185b9345d217b76b9b3a03925f3fbd7f354d9b8935f"
+          "postProcessHash": "7ee15a07f23cb37131905aa45878f78d1d5ecf1489805d591883a83fd62db348"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:07.835Z",
-          "fileName": "ar/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "b9c0b9cbfc223b28b255d5f6bc462534b9744371a11fb05c6b4e3beb5527636e"
+        "pt-BR": {
+          "updatedAt": "2026-08-26T15:01:25.273Z",
+          "fileName": "pt-BR/concepts/features/configuration/server-config/storing-data.mdx",
+          "postProcessHash": "f77b9d273cd83c15a37c336ddc75576fa3797da39b79390c976a53d34e14c3dd"
+        },
+        "ru": {
+          "updatedAt": "2026-08-26T15:01:25.274Z",
+          "fileName": "ru/concepts/features/configuration/server-config/storing-data.mdx",
+          "postProcessHash": "81e7d5d42e161f448d83bba53fa22afd34514da08c1f9506a284544f4940ef37"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:07.835Z",
+          "updatedAt": "2026-08-26T15:01:25.277Z",
           "fileName": "fr/concepts/features/configuration/server-config/storing-data.mdx",
-          "postProcessHash": "8a755b06e45b907f3081aece27cf2d7f8b0f126cd10c80b11f60f01c1da33bfe"
+          "postProcessHash": "290912046dced9f0c1e1adda49000563f778b2506129174ba69f58d1d41ee3d7"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T15:01:25.278Z",
+          "fileName": "ja/concepts/features/configuration/server-config/storing-data.mdx",
+          "postProcessHash": "34a0e6a58b35c5bb0dd5b188f7a1b0ce3840492e944f5e2750bc39c0e302867f"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T15:01:25.280Z",
+          "fileName": "ar/concepts/features/configuration/server-config/storing-data.mdx",
+          "postProcessHash": "68cf4c70ef061d815f6c36337b4c7a1d8ca5cacfedbe6fbfa275000c89684d39"
         }
       },
-      "fileName": "concepts/features/configuration/server-config/storing-data.mdx",
-      "staged": false
+      "fileName": "concepts/features/configuration/server-config/storing-data.mdx"
     },
     {
       "fileId": "969e0f9553959710975c69eaf4a3f200b31677aa81405eecf50acde9d374ee98",
-      "versionId": "ffce81b5eeeabd4de5b4db7b6293c1a1041d43673085e2db6bce6bab0434ba4c",
+      "versionId": "007904b002a2fc011ad1af3745f1796f61b60fc1e92bf283a1f2669ff077d71f",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:07.835Z",
-          "fileName": "es/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "aa6e1dc9a5d5ca6de485ee939cfe21178157840e5e445f58267bd641cfc01d1d"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:07.836Z",
-          "fileName": "ja/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "dc094b0fc4e9c6704c46dd231a09b03a2dd692f6e698e02a2d3b0db7d0110302"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:07.836Z",
-          "fileName": "ko/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "ccffe86e1a609311999ffb7ac264704efccff796074fd2bd1da050d6e7854bcf"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.836Z",
-          "fileName": "pt-BR/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "a7f12fa2b9b6ad17b551ae7b89df5b3c186d3d9bcbcafdf6e18237a14dc91a0d"
+        "fr": {
+          "updatedAt": "2026-08-26T15:01:23.571Z",
+          "fileName": "fr/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "4243a7f5edd798d09e14a7265e69dd98c0d3c6b27217b4ce34d120cc9a3ddc17"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:07.836Z",
+          "updatedAt": "2026-08-26T15:01:25.221Z",
           "fileName": "ru/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "c1ed5f62b1e9841de2ef67d823e588455b90a7b736ba85d8924dfaf8d0a7c569"
+          "postProcessHash": "dc3fdde25c313e36f28bd4eb009cc43c4f7370529ae7b0b87d234c8f71110d90"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:07.836Z",
-          "fileName": "zh/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "3030629e23c4e269e13746784f672bd2d934ee0aae6cddb8d1ff11aaf3005e5d"
+        "pt-BR": {
+          "updatedAt": "2026-08-26T15:01:25.223Z",
+          "fileName": "pt-BR/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "fa6f31d8c9d06bf119c4798d76139557e899baa204e51f17fedbae43e5376d36"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:07.837Z",
+          "updatedAt": "2026-08-26T15:01:25.225Z",
           "fileName": "ar/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "03b22de83918a9a0f0dcaf32724cc89d7a45cc913895a64f684fbb3c70a5f548"
+          "postProcessHash": "13a6870ee38c3afabf418939e5e6c67c6ef53b85964f1a4fccf50adf68548dd6"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:07.837Z",
-          "fileName": "fr/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "d62826d2ca6fee2ee5b3c6eee11d1f8b1635388b9ea966a009ac4667865accbb"
+        "ko": {
+          "updatedAt": "2026-08-26T15:01:25.226Z",
+          "fileName": "ko/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "c6f23c1bf913d7b2497931fa1470f641fe3135d0429cf6ea6431a7056a9a8735"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T15:01:25.229Z",
+          "fileName": "ja/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "57d21b9b356be56d92525c86e1c7a626c5f812945bdd5c21d428bb3530fa1575"
+        },
+        "zh": {
+          "updatedAt": "2026-08-26T15:01:25.231Z",
+          "fileName": "zh/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "e0471b6c0d05112fafcfb67fe7b3008f6ace56448c4bb1ae0559039aee147089"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T15:01:25.232Z",
+          "fileName": "es/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "9ff6763aba79d67fe555d20d014bbf0ccca1be176ecadf456c344ed0b8fc5b49"
         }
       },
-      "fileName": "concepts/features/configuration/server-config/workload-scheduling.mdx",
-      "staged": false
+      "fileName": "concepts/features/configuration/server-config/workload-scheduling.mdx"
     },
     {
       "fileId": "e7479f386bb46108d1f1b396c95250670a45e33912a88dcdc9957b559f704186",
@@ -136825,6 +136819,53 @@
         }
       },
       "fileName": "snippets/components/McpGuideGrid/McpGuideGrid.jsx"
+    },
+    {
+      "fileId": "b63755faaa0622aa7bbb0ee8f86b7bb3df206686a2bbbecaa991f705431091a2",
+      "versionId": "5a7c3daa823fdc12f25d5d09fca932165b2e64583e7fd7730ab877038bbe473e",
+      "translations": {
+        "fr": {
+          "updatedAt": "2026-08-26T15:01:25.269Z",
+          "fileName": "fr/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
+          "postProcessHash": "d998865c07ffc8e1b4203dcc686c50faa1d82f4acf2c135ca7a310bc59daaf4c"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-26T15:01:25.271Z",
+          "fileName": "pt-BR/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
+          "postProcessHash": "bc8ff3430725d1db3c96d08f9b517fbea8feed1bc58d6a56ab29c4ca092ebd28"
+        },
+        "ru": {
+          "updatedAt": "2026-08-26T15:01:25.272Z",
+          "fileName": "ru/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
+          "postProcessHash": "6335e9b8f5c0686d65730a6849b3cb495b17c6e375206a0d4bed4904f2a63c94"
+        },
+        "ko": {
+          "updatedAt": "2026-08-26T15:01:25.275Z",
+          "fileName": "ko/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
+          "postProcessHash": "1e5cf7e9117dc4e401fc52f6c005cbf03bc2bfb85ad4aee54a3e2ffb957d94bb"
+        },
+        "zh": {
+          "updatedAt": "2026-08-26T15:01:25.277Z",
+          "fileName": "zh/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
+          "postProcessHash": "cb31b6de10edcbc2820535654c08bd2a0267b3b75195248ae40fafa07e59e8be"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T15:01:25.278Z",
+          "fileName": "ja/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
+          "postProcessHash": "958ebb1c0cf5778f79a0569b02772f73f503ac55b1b4dec1a70b2699ebd7afb5"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T15:01:25.279Z",
+          "fileName": "es/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
+          "postProcessHash": "7001a46e513be8434d1662a93053dc4b433c3a8993cf24466cf9095eb6d663ab"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T15:01:25.279Z",
+          "fileName": "ar/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
+          "postProcessHash": "41f7c200acbb901e884eaeb8669674fa3958c65504b6fbb61cf0511c1daa7cc4"
+        }
+      },
+      "fileName": "integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx"
     }
   ]
 }

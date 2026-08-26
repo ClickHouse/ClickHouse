@@ -1087,7 +1087,6 @@
         "es/reference/system-tables/merges",
         "es/reference/system-tables/metric_log",
         "es/reference/system-tables/metrics",
-        "es/reference/system-tables/models",
         "es/reference/system-tables/moves",
         "es/reference/system-tables/mutations",
         "es/reference/system-tables/named_collections",

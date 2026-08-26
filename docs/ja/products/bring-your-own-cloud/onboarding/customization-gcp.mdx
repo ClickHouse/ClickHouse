@@ -33,6 +33,10 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
   </Step>
 
   <Step title="BYOC インフラストラクチャを設定する" id="set-up-byoc-infrastructure">
+    <Note>
+      **Set up Infrastructure** をクリックすると、ClickHouse Cloud はプロビジョニング前に自動的に[事前検証](/ja/products/bring-your-own-cloud/onboarding/standard#preflight-validation)を実行し、管理サービスアカウントに必要な権限があること、および必要な Google Cloud API が有効になっていることを確認します。bring-your-own VPC の自動検証はまだ GCP の事前チェックには含まれていないため、開始前に VPC が上記の[ネットワーク要件](#configure-existing-vpc)を満たしていることを確認してください。
+    </Note>
+
     ClickHouse Cloud console で、新しいインフラストラクチャを設定する際に以下を構成します。
 
     1. **VPC configuration** で、**Use existing VPC** を選択します。

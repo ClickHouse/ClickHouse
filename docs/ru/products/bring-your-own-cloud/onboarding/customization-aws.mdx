@@ -78,6 +78,10 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   </Step>
 
   <Step title="Настройте инфраструктуру BYOC" id="set-up-byoc-infrastructure">
+    <Note>
+      При нажатии **Set up Infrastructure** ClickHouse Cloud автоматически выполняет [предварительную проверку](/ru/products/bring-your-own-cloud/onboarding/standard#preflight-validation) перед подготовкой инфраструктуры. Если ваша пользовательская VPC или аккаунт не соответствуют требованиям, настройка будет остановлена с указанием конкретных проблем, которые необходимо устранить.
+    </Note>
+
     В консоли ClickHouse Cloud при настройке новой инфраструктуры укажите следующее:
 
     1. В разделе **VPC configuration** выберите **Use existing VPC**.

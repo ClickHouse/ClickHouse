@@ -75,35 +75,6 @@ La requête `SYSTEM UNLOAD DICTIONARIES` décharge de la mémoire tous les dicti
 SYSTEM UNLOAD DICTIONARIES
 ```
 
-<div id="reload-models">
-  ## SYSTEM RELOAD MODELS
-</div>
-
-<Note>
-  Cette instruction et `SYSTEM RELOAD MODEL` se contentent de décharger les modèles CatBoost de clickhouse-library-bridge. La fonction `catboostEvaluate()`
-  charge un modèle lors du premier accès s&#39;il n&#39;est pas encore chargé.
-</Note>
-
-Décharge tous les modèles CatBoost.
-
-**Syntaxe**
-
-```sql
-SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
-```
-
-<div id="reload-model">
-  ## SYSTEM RELOAD MODEL
-</div>
-
-Décharge le modèle CatBoost situé à `model_path`.
-
-**Syntaxe**
-
-```sql
-SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
-```
-
 <div id="reload-functions">
   ## SYSTEM RELOAD FUNCTIONS
 </div>

@@ -33,6 +33,10 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 
   <Step title="设置 BYOC 基础设施" id="set-up-byoc-infrastructure">
+    <Note>
+      当您点击 **Set up Infrastructure** 时，ClickHouse Cloud 会在预配前自动运行[预检验证](/zh/products/bring-your-own-cloud/onboarding/standard#preflight-validation)，检查管理服务账号是否具有所需权限，以及是否已启用所需的 Google Cloud API。自带 VPC 的自动验证尚未纳入 GCP 预检流程，因此开始前请确保您的 VPC 满足上述[网络要求](#configure-existing-vpc)。
+    </Note>
+
     在 ClickHouse Cloud 控制台中，设置新基础设施时请配置以下内容：
 
     1. 在 **VPC configuration** 下，选择 **Use existing VPC**。

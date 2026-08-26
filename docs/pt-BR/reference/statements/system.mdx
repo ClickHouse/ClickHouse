@@ -75,35 +75,6 @@ A consulta `SYSTEM UNLOAD DICTIONARIES` descarrega todos os dicionários com sta
 SYSTEM UNLOAD DICTIONARIES
 ```
 
-<div id="reload-models">
-  ## SYSTEM RELOAD MODELS
-</div>
-
-<Note>
-  Este comando e `SYSTEM RELOAD MODEL` apenas removem os modelos CatBoost da memória do clickhouse-library-bridge. A função `catboostEvaluate()`
-  carrega um modelo no primeiro acesso, caso ele ainda não esteja carregado.
-</Note>
-
-Remove da memória todos os modelos CatBoost.
-
-**Sintaxe**
-
-```sql
-SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
-```
-
-<div id="reload-model">
-  ## SYSTEM RELOAD MODEL
-</div>
-
-Descarrega um modelo CatBoost em `model_path`.
-
-**Sintaxe**
-
-```sql
-SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
-```
-
 <div id="reload-functions">
   ## SYSTEM RELOAD FUNCTIONS
 </div>

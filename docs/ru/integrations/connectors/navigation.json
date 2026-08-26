@@ -203,6 +203,7 @@
         "ru/integrations/connectors/tools/data-integration-index",
         "ru/integrations/connectors/data-integrations/integrations/retool",
         "ru/integrations/connectors/data-integrations/integrations/easypanel",
+        "ru/integrations/connectors/data-integrations/integrations/microsoft-fabric",
         "ru/integrations/connectors/data-integrations/integrations/middleware",
         "ru/integrations/connectors/data-integrations/integrations/notion",
         "ru/integrations/connectors/data-integrations/integrations/splunk"
