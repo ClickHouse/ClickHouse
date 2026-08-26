@@ -109,6 +109,31 @@ SELECT count() FROM vv_force_index_pr
 WHERE value = 1
 SETTINGS force_index_by_date = 1; -- { serverError INDEX_NOT_USED }
 
+-- Negative: an explicit `parallel_replicas_filter_pushdown` value must keep winning over the auto-enable
+-- above. With the pushdown explicitly turned off, a covered view predicate falls back to the pre-fix
+-- behaviour and still throws. This pins the `isChanged` guard as load-bearing: if the fix ever became an
+-- unconditional "set it to 1", every positive above would stay green while this explicit opt-out silently
+-- stopped being honoured.
+SELECT count() FROM v_force_index_pr
+WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
+SETTINGS force_index_by_date = 1, force_primary_key = 1,
+         parallel_replicas_filter_pushdown = 0; -- { serverError INDEX_NOT_USED }
+
+-- Same for each guard on its own.
+SELECT count() FROM v_force_index_pr
+WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
+SETTINGS force_index_by_date = 1, parallel_replicas_filter_pushdown = 0; -- { serverError INDEX_NOT_USED }
+
+SELECT count() FROM v_force_index_pr
+WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
+SETTINGS force_primary_key = 1, parallel_replicas_filter_pushdown = 0; -- { serverError INDEX_NOT_USED }
+
+-- An explicit `parallel_replicas_filter_pushdown = 1` is the same value the fix would pick, so the covered
+-- predicate passes through the view exactly as in the positives above.
+SELECT count() FROM v_force_index_pr
+WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
+SETTINGS force_index_by_date = 1, force_primary_key = 1, parallel_replicas_filter_pushdown = 1;
+
 DROP VIEW va_force_index_pr;
 DROP VIEW vv_force_index_pr;
 DROP VIEW v_force_index_pr;
