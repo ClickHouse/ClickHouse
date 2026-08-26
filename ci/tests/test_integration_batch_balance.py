@@ -14,7 +14,7 @@ model only ~69% of the wall-clock mass, and the unmodelled remainder landed unev
 to push one shard past the session timeout while its siblings finished with 20 minutes to
 spare. Coverage, not the packing algorithm, is the thing that has to be kept up.
 
-See ClickHouse/ClickHouse#116596.
+See ClickHouse/ClickHouse#116591.
 """
 
 import os
