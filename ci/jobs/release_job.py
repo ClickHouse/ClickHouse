@@ -262,6 +262,7 @@ def main():
                 " || { echo 'ERROR: geesefs, createrepo_c and reprepro 5.4+ must be"
                 " installed for a release' >&2; exit 1; }",
                 strict=True,
+                verbose=True,
             )
 
         step(
@@ -409,11 +410,24 @@ def main():
             workdir=REPO_PATH,
         )
 
+    def changelog_absent(release_tag):
+        # Absent iff the changelog isn't on master yet; on a dry run, proxied by is_tag_pushed.
+        if args.dry_run:
+            with open(RELEASE_INFO_FILE) as f:
+                return not json.load(f)["is_tag_pushed"]
+        path = f"docs/changelogs/{release_tag}.md"
+        return not Shell.get_output(
+            f"git ls-tree --name-only origin/master -- {shlex.quote(path)}"
+        ).strip()
+
     if args.release_type == "patch":
 
         def bump_docker_changelog_security():
             with open(RELEASE_INFO_FILE) as f:
                 release_tag = json.load(f)["release_tag"]
+            if not changelog_absent(release_tag):
+                print(f"ChangeLog for {release_tag} already on master — skipping")
+                return
             uid = os.getuid()
             gid = os.getgid()
             for cmd in [
@@ -442,7 +456,7 @@ def main():
                 " > SECURITY.md",
                 "git diff HEAD",
             ]:
-                Shell.check(cmd, strict=True)
+                Shell.check(cmd, strict=True, verbose=True)
 
         step(
             name="Bump Docker Versions, Changelog, Security",
@@ -458,6 +472,9 @@ def main():
                 return
             with open(RELEASE_INFO_FILE) as f:
                 release_tag = json.load(f)["release_tag"]
+            if not changelog_absent(release_tag):
+                print(f"ChangeLog for {release_tag} already on master — skipping")
+                return
             commit_msg = f"Update version_date.tsv and changelogs after {release_tag}"
             Shell.check(
                 "git config user.email robot-clickhouse@users.noreply.github.com"
@@ -678,7 +695,7 @@ def main():
                 " --driver-opt network=host --use",
                 "docker buildx inspect --bootstrap",
             ]:
-                Shell.check(cmd, strict=True)
+                Shell.check(cmd, strict=True, verbose=True)
 
         step(
             name="Set up Docker buildx (multi-arch)",
