@@ -769,6 +769,14 @@ bool objectExists(std::shared_ptr<QueryExecutor> executor, const String & object
     return !output.empty() && output[0] == '1';
 }
 
+Int64 countMatchedRows(const String & select_query, std::shared_ptr<QueryExecutor> executor)
+{
+    auto output = executor->execute(fmt::format("SELECT count() FROM ({}) FORMAT TSV", select_query));
+
+    /// A ClickHouse table is free to hold more rows than an `int32` can count.
+    return std::stoll(output);
+}
+
 Header makeResponseHeader(Header request_header, Int32 message_size, Int32 response_id)
 {
     Header result;

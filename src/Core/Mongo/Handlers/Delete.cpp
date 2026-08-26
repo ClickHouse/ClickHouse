@@ -34,7 +34,33 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
     /// silently widened into deleteMany.
     /// Every spec is translated first, and only then executed: a malformed filter has to be an
     /// error whether the collection exists or not.
+    /// A ClickHouse mutation is asynchronous and says nothing about the rows it will remove, so
+    /// the documents a spec matches are counted with the very same filter, translated as a `find`,
+    /// before the mutation is submitted. Without it the reply would claim that a successful
+    /// `deleteMany` removed nothing.
+    auto translate = [&](const String & mongo_dialect_query)
+    {
+        auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
+        auto ast = Mongo::parseMongoQuery(
+            parser,
+            mongo_dialect_query.data(),
+            mongo_dialect_query.data() + mongo_dialect_query.size(),
+            "",
+            10000,
+            10000,
+            10000,
+            collection.database);
+
+        String sql_query;
+        {
+            WriteBufferFromString sql_buffer(sql_query);
+            ast->format(sql_buffer, IAST::FormatSettings(true));
+        }
+        return sql_query;
+    };
+
     std::vector<String> sql_queries;
+    std::vector<String> select_queries;
     for (const auto & delete_spec : documents[1].documents)
     {
         String serialized_filter;
@@ -58,39 +84,28 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
         }
         serialized_filter = modifyFilter(serialized_filter);
 
-        auto mongo_dialect_query = fmt::format("db.{}.deleteMany({})", collection.collection, serialized_filter);
-
-        auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
-        auto ast = Mongo::parseMongoQuery(
-            parser,
-            mongo_dialect_query.data(),
-            mongo_dialect_query.data() + mongo_dialect_query.size(),
-            "",
-            10000,
-            10000,
-            10000,
-            collection.database);
-
-        String sql_query;
-        {
-            WriteBufferFromString sql_buffer(sql_query);
-            ast->format(sql_buffer, IAST::FormatSettings(true));
-        }
-
-        sql_queries.push_back(std::move(sql_query));
+        sql_queries.push_back(translate(fmt::format("db.{}.deleteMany({})", collection.collection, serialized_filter)));
+        select_queries.push_back(translate(fmt::format("db.{}.find({})", collection.collection, serialized_filter)));
     }
 
     /// A delete from a collection that does not exist matches no document, which Mongo reports as
     /// a delete of zero documents rather than an error.
+    Int64 deleted = 0;
     if (objectExists(executor, "TABLE", collection.getQualifiedName()))
     {
-        for (const auto & sql_query : sql_queries)
-            executor->execute(sql_query);
+        for (size_t i = 0; i < sql_queries.size(); ++i)
+        {
+            deleted += countMatchedRows(select_queries[i], executor);
+            executor->execute(sql_queries[i]);
+        }
     }
 
     bson_t * bson_doc = bson_new();
 
-    BSON_APPEND_INT32(bson_doc, "n", 0);
+    if (deleted <= INT32_MAX)
+        BSON_APPEND_INT32(bson_doc, "n", static_cast<int32_t>(deleted));
+    else
+        BSON_APPEND_INT64(bson_doc, "n", deleted);
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;

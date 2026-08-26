@@ -153,7 +153,7 @@ A collection that does not exist reads as empty, as it does in MongoDB: `find` r
 ### Limitations {#limitations}
 
 - An `update` is translated into `ALTER TABLE ... UPDATE`, which is asynchronous: the new value does not have to be visible to the next `find`.
-- The number of documents affected by `update` and `delete` is always reported as `0`.
+- The number of documents an `update` and a `delete` report is the number of documents their filter matches, counted before the mutation is submitted; counting them costs a read of the matching rows. The reply of an `update` carries no `nModified`: a mutation is asynchronous and rewrites a matched row whether or not the assigned value differs from the one it already holds, so the number of documents that actually change is unknown here and is left unsaid rather than reported as a number that would not be true. A driver reports it as "not said" - `None` in `pymongo` - rather than as zero.
 - Cursors are not implemented, so the whole result of a `find` or an `aggregate` is returned in the first batch. A result whose reply would exceed the advertised `maxBsonObjectSize` (16 MiB) is an error rather than an oversized reply: ask for less at a time, with a filter, a projection, `limit` and `skip`. The replies to `distinct`, `listCollections` and `listDatabases` have the same bound.
 - A `Float32` or `Float64` column that holds `NaN` or an infinity reads back as a BSON double with that value, but such a value cannot be inserted over the wire protocol: BSON extended JSON has no plain-JSON form for it here, so the insert is an error.
 - An explicitly inserted `null` becomes a `Dynamic` column when it is the first value of its field, and the default of the column type otherwise: a typed column always has a value.

@@ -1354,7 +1354,8 @@ def test_mutations_on_a_missing_collection_are_noops(started_cluster):
 
     result = collection.update_many({"x": 1}, {"$set": {"y": 1}})
     assert result.matched_count == 0
-    assert result.modified_count == 0
+    # The reply carries no `nModified`, which `pymongo` reports as "the server did not say".
+    assert result.modified_count is None
 
     assert collection.delete_many({"x": 1}).deleted_count == 0
 
@@ -1362,6 +1363,32 @@ def test_mutations_on_a_missing_collection_are_noops(started_cluster):
         collection.update_many({"x": 1}, {"$typo": {"y": 1}})
     with pytest.raises(pymongo.errors.OperationFailure):
         collection.delete_many({"x": {"$typo": 1}})
+
+
+def test_write_command_reply_counts_are_truthful(started_cluster):
+    """`update` and `delete` report the number of documents their filter matches, so a client
+    that branches on `matched_count` / `deleted_count` takes the same branch it would take
+    against MongoDB. `nModified` is not known here, so it is omitted rather than reported as
+    zero, and `pymongo` reads a missing one as `None`."""
+    client = make_client()
+    collection = client["db"]["truthful_write_counts"]
+
+    collection.drop()
+    collection.insert_many([{"id": i, "k": i % 2, "v": 0} for i in range(6)])
+
+    result = collection.update_many({"k": 1}, {"$set": {"v": 1}})
+    assert result.matched_count == 3
+    assert result.modified_count is None
+    assert wait_for(lambda: collection.count_documents({"v": 1}) == 3)
+
+    # A filter that matches nothing still reports zero.
+    assert collection.update_many({"k": 7}, {"$set": {"v": 2}}).matched_count == 0
+
+    assert collection.delete_many({"k": 1}).deleted_count == 3
+    assert wait_for(lambda: collection.count_documents({}) == 3)
+
+    assert collection.delete_many({"k": 7}).deleted_count == 0
+    assert collection.delete_many({}).deleted_count == 3
 
 
 def test_oversized_incoming_document_is_an_error(started_cluster):

@@ -83,6 +83,12 @@ std::vector<Document> makeEmptyCursorReply(const CollectionRef & collection);
   */
 bool objectExists(std::shared_ptr<QueryExecutor> executor, const String & object_kind, const String & name);
 
+/** The number of rows a translated `find` returns, i.e. the number of documents a filter matches.
+  * A mutation of ClickHouse is asynchronous and reports nothing about the rows it will rewrite,
+  * so a write command counts the matched documents itself before submitting the mutation.
+  */
+Int64 countMatchedRows(const String & select_query, std::shared_ptr<QueryExecutor> executor);
+
 struct IHandler
 {
     virtual std::vector<String> getIdentifiers() const = 0;
