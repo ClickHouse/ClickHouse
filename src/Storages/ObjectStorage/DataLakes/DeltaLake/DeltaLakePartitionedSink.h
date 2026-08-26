@@ -91,6 +91,7 @@ private:
     const std::optional<FormatSettings> format_settings;
     const size_t data_file_max_rows;
     const size_t data_file_max_bytes;
+    const bool accurate_write_cast;
     const std::unique_ptr<IPartitionStrategy> partition_strategy;
     const DeltaLake::WriteTransactionPtr delta_transaction;
     const Block format_header;

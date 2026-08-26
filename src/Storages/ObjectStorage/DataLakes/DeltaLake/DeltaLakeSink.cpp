@@ -18,6 +18,7 @@ namespace Setting
 {
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_rows_in_data_file;
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_bytes_in_data_file;
+    extern const SettingsBool delta_lake_accurate_write_cast;
 }
 
 namespace FailPoints
@@ -46,8 +47,9 @@ SharedHeader makeWriteHeader(const Block & sample, const DB::NamesAndTypesList &
     return std::make_shared<const Block>(std::move(header));
 }
 
-/// Cast each column of `chunk` (typed by `in_header`) to the corresponding `out_header` type.
-Chunk castChunkToWriteSchema(const Chunk & chunk, const Block & in_header, const Block & out_header)
+/// Cast each column of `chunk` (typed by `in_header`) to the corresponding `out_header` type. With
+/// `accurate`, a value that does not fit the target type throws instead of being silently truncated.
+Chunk castChunkToWriteSchema(const Chunk & chunk, const Block & in_header, const Block & out_header, bool accurate)
 {
     const auto & in_columns = chunk.getColumns();
     Columns out_columns;
@@ -59,7 +61,10 @@ Chunk castChunkToWriteSchema(const Chunk & chunk, const Block & in_header, const
         if (from.type->equals(*to_type))
             out_columns.push_back(in_columns[i]);
         else
-            out_columns.push_back(castColumn({in_columns[i], from.type, from.name}, to_type));
+            out_columns.push_back(
+                accurate
+                    ? castColumnAccurate({in_columns[i], from.type, from.name}, to_type)
+                    : castColumn({in_columns[i], from.type, from.name}, to_type));
     }
     return Chunk(std::move(out_columns), chunk.getNumRows());
 }
@@ -83,6 +88,7 @@ DeltaLakeSink::DeltaLakeSink(
     , write_header(makeWriteHeader(*sample_block_, delta_transaction_->getWriteSchema()))
     , data_file_max_rows(context_->getSettingsRef()[Setting::delta_lake_insert_max_rows_in_data_file])
     , data_file_max_bytes(context_->getSettingsRef()[Setting::delta_lake_insert_max_bytes_in_data_file])
+    , accurate_write_cast(context_->getSettingsRef()[Setting::delta_lake_accurate_write_cast])
     , write_format(format)
     , write_compression_method(compression_method)
 {
@@ -141,7 +147,7 @@ void DeltaLakeSink::consume(Chunk & chunk)
         return;
 
     /// Cast to the Delta write schema so the data files match the Delta log (e.g. `UInt8` -> `short`).
-    Chunk write_chunk = castChunkToWriteSchema(chunk, *sample_block, *write_header);
+    Chunk write_chunk = castChunkToWriteSchema(chunk, *sample_block, *write_header, accurate_write_cast);
 
     if (data_files.empty()
         || data_files.back().written_bytes >= data_file_max_bytes

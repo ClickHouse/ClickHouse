@@ -8074,6 +8074,9 @@ Defines a rows limit for a single inserted data file in delta lake.
     DECLARE(NonZeroUInt64, delta_lake_insert_max_bytes_in_data_file, 1_GiB, R"(
 Defines a bytes limit for a single inserted data file in delta lake.
 )", 0) \
+    DECLARE(Bool, delta_lake_accurate_write_cast, true, R"(
+When writing to a DeltaLake table, cast each value to the Delta write-schema type with an accurate cast that throws when a value does not fit the target type, instead of a plain cast that silently truncates it (e.g. `300` written into a Delta `byte` column). Set to `false`, or use a `compatibility` setting for an earlier version, to restore the silent-truncation behaviour.
+)", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_delta_lake_writes, false, R"(
 Enables delta-kernel writes feature.
 )", BETA, allow_delta_lake_writes) \

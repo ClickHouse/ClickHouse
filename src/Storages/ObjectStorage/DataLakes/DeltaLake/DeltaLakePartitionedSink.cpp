@@ -39,6 +39,7 @@ namespace Setting
 {
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_rows_in_data_file;
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_bytes_in_data_file;
+    extern const SettingsBool delta_lake_accurate_write_cast;
 }
 
 namespace FailPoints
@@ -66,8 +67,9 @@ namespace
         return std::make_shared<const Block>(std::move(header));
     }
 
-    /// Cast each column of `chunk` (typed by `in_header`) to the corresponding `out_header` type.
-    Chunk castChunkToWriteSchema(const Chunk & chunk, const Block & in_header, const Block & out_header)
+    /// Cast each column of `chunk` (typed by `in_header`) to the corresponding `out_header` type. With
+    /// `accurate`, a value that does not fit the target type throws instead of being silently truncated.
+    Chunk castChunkToWriteSchema(const Chunk & chunk, const Block & in_header, const Block & out_header, bool accurate)
     {
         const auto & in_columns = chunk.getColumns();
         Columns out_columns;
@@ -79,7 +81,10 @@ namespace
             if (from.type->equals(*to_type))
                 out_columns.push_back(in_columns[i]);
             else
-                out_columns.push_back(castColumn({in_columns[i], from.type, from.name}, to_type));
+                out_columns.push_back(
+                    accurate
+                        ? castColumnAccurate({in_columns[i], from.type, from.name}, to_type)
+                        : castColumn({in_columns[i], from.type, from.name}, to_type));
         }
         return Chunk(std::move(out_columns), chunk.getNumRows());
     }
@@ -199,6 +204,7 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     , format_settings(format_settings_)
     , data_file_max_rows(context_->getSettingsRef()[Setting::delta_lake_insert_max_rows_in_data_file])
     , data_file_max_bytes(context_->getSettingsRef()[Setting::delta_lake_insert_max_bytes_in_data_file])
+    , accurate_write_cast(context_->getSettingsRef()[Setting::delta_lake_accurate_write_cast])
     , partition_strategy(createPartitionStrategy(partition_columns, getHeader(), context_))
     , delta_transaction(delta_transaction_)
     , format_header(partition_strategy->getFormatHeader())
@@ -391,7 +397,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
         }
         auto & data_file = data_files.back();
         /// Cast to the Delta write schema so the data files match the Delta log (e.g. `UInt8` -> `short`).
-        Chunk write_chunk = castChunkToWriteSchema(partition_chunk, format_header, *write_format_header);
+        Chunk write_chunk = castChunkToWriteSchema(partition_chunk, format_header, *write_format_header, accurate_write_cast);
         data_file.written_bytes += write_chunk.bytes();
         data_file.written_rows += write_chunk.getNumRows();
         data_file.sink->consume(write_chunk);

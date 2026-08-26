@@ -58,6 +58,7 @@ private:
     const SharedHeader write_header;
     const size_t data_file_max_rows;
     const size_t data_file_max_bytes;
+    const bool accurate_write_cast;
     const String write_format;
     const String write_compression_method;
 
