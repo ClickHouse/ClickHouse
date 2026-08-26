@@ -21,8 +21,10 @@ SELECT normalizedQueryHashUnordered('SELECT (a, b) FROM t') = normalizedQueryHas
 SELECT normalizedQueryHashUnordered('SELECT count() FROM t GROUP BY a, b WITH ROLLUP') = normalizedQueryHashUnordered('SELECT count() FROM t GROUP BY b, a WITH ROLLUP');
 SELECT normalizedQueryHashUnordered('SELECT a FROM t1 UNION ALL SELECT b FROM t2') = normalizedQueryHashUnordered('SELECT b FROM t2 UNION ALL SELECT a FROM t1');
 
--- a lambda is hashed from the AST, so its rendering plays no part
+-- x -> 1 is lambda(tuple(x), 1), so sorting its arguments loses the same way any other function does
 SELECT normalizedQueryHashUnordered('SELECT arrayMap(x -> x + 1, a) FROM t') = normalizedQueryHashUnordered('SELECT arrayMap(x -> x + 2, a) FROM t');
+SELECT normalizedQueryHashUnordered('SELECT arrayMap(x -> 1, a) FROM t') = normalizedQueryHashUnordered('SELECT arrayMap(lambda(1, tuple(x)), a) FROM t');
+SELECT normalizedQueryHashUnordered('SELECT arrayMap(x -> 1, a) FROM t') = normalizedQueryHashUnordered('SELECT arrayMap(y -> 1, a) FROM t');
 
 -- only what the lexer erases is erased, and every name part is judged on its own
 SELECT normalizedQueryHashUnordered('SELECT NULL FROM t') = normalizedQueryHashUnordered('SELECT 1 FROM t');
