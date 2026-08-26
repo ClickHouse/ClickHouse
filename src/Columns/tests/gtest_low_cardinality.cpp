@@ -3,8 +3,6 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
-
 #include <gtest/gtest.h>
 #include <Common/Exception.h>
 

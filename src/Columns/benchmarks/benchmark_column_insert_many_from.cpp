@@ -1,5 +1,4 @@
 #include <cstddef>
-#include <Columns/ColumnLowCardinality.h>
 #include <random>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
@@ -65,6 +64,7 @@ static NO_INLINE void insertManyFrom(IColumn & dst, const IColumn & src)
     size_t size = src.size();
     dst.insertManyFrom(src, size / 2, size);
 }
+
 
 template <const std::string & str_type>
 static void BM_insertManyFrom(benchmark::State & state)
