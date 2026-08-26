@@ -22,6 +22,7 @@ CREATE TABLE mod_wide (c0 Int128) ENGINE = MergeTree ORDER BY tuple() PARTITION 
 INSERT INTO mod_wide VALUES (167682982);
 ALTER TABLE mod_wide DROP PARTITION 37528;
 SELECT 'wide key', count() FROM mod_wide;
+DROP TABLE mod_wide;
 
 -- A value outside the range of the partition key type addresses no partition and is rejected.
 CREATE TABLE mod_range (c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (c0 % 37528);
@@ -34,7 +35,7 @@ CREATE TABLE mod_id (d Date, c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTI
 INSERT INTO mod_id VALUES ('2020-05-23', 167682982);
 SELECT 'partition id', partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'mod_id' AND active;
 
--- Keys whose two `modulo` operand types agree in signedness, and keys with no `modulo` at all.
+-- Keys where the result signedness is the same either way, and keys with no `modulo` at all.
 CREATE TABLE mod_unsigned (c0 UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (37528 % c0);
 INSERT INTO mod_unsigned VALUES (167682982);
 ALTER TABLE mod_unsigned DROP PARTITION 37528;
