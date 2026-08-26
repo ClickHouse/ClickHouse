@@ -203,7 +203,7 @@ if (OS_LINUX AND ARCH_AARCH64)
     # compile time and must not be smaller than the kernel page size, otherwise jemalloc fails to
     # boot. 64KiB runs everywhere, at the cost of a higher memory footprint on smaller-page kernels
     # (page-sized slabs, page-granular purging); pick a smaller size when the target kernel is known.
-    set (JEMALLOC_AARCH64_PAGE_SIZE_KIB 4 CACHE STRING "jemalloc page size on aarch64, in KiB (4, 16 or 64). Must not be less than the kernel page size.")
+    set (JEMALLOC_AARCH64_PAGE_SIZE_KIB 16 CACHE STRING "jemalloc page size on aarch64, in KiB (4, 16 or 64). Must not be less than the kernel page size.")
     if (JEMALLOC_AARCH64_PAGE_SIZE_KIB EQUAL 4)
         set (JEMALLOC_LG_PAGE 12)
     elseif (JEMALLOC_AARCH64_PAGE_SIZE_KIB EQUAL 16)
