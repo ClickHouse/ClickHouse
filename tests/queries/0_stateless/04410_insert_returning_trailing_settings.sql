@@ -105,6 +105,25 @@ RETURNING (SELECT count() FROM t_ret_settings SETTINGS database = 'default'); --
 
 SELECT count() FROM t_ret_settings;
 
+-- Source trailing construction settings are currently rejected fail-close.
+SELECT 'source trailing construction settings are rejected';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT number FROM numbers(5)
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS limit = 2; -- { serverError NOT_IMPLEMENTED }
+
+SELECT count() FROM t_ret_settings;
+
+-- Inherited/session construction settings are currently rejected fail-close for delayed RETURNING.
+SELECT 'session construction settings are rejected in returning';
+TRUNCATE TABLE t_ret_settings;
+SET limit = 2;
+INSERT INTO t_ret_settings VALUES (1)
+RETURNING (SELECT number FROM numbers(5) ORDER BY number); -- { serverError NOT_IMPLEMENTED }
+SET limit = DEFAULT;
+
+SELECT count() FROM t_ret_settings;
+
 -- Source-only custom settings must not leak into RETURNING settings context.
 SELECT 'source custom setting does not leak into returning';
 TRUNCATE TABLE t_ret_settings;

@@ -353,6 +353,16 @@ static void rejectUnsupportedSourceInsertReturningSettings(const ASTPtr & source
         "reserve_memory",
         "temporary_files_codec",
         "temporary_files_buffer_size",
+        /// Query-construction settings for the source `SELECT` are not materialized from
+        /// `source_select_settings_*` in delayed `INSERT ... RETURNING`; reject them in source
+        /// `SETTINGS` instead of silently accepting and ignoring.
+        "select",
+        "filter",
+        "order",
+        "sort",
+        "limit",
+        "offset",
+        "page",
         "use_query_cache",
         "enable_reads_from_query_cache",
         "enable_writes_to_query_cache",

@@ -24,6 +24,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
+#include <array>
 #include <functional>
 #include <string_view>
 #include <unordered_set>
@@ -88,6 +89,22 @@ namespace
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Setting 'use_query_cache' is not supported for INSERT ... RETURNING");
+
+        /// The delayed RETURNING path does not run the query-construction rewriting pipeline
+        /// (`applyQueryConstructionSettings` / `wrapNestedConstructionSettings`). For standalone
+        /// `SELECT`, these settings shape the result, so inherited non-default values (session/profile/
+        /// outer query context) must be rejected fail-close here.
+        static constexpr std::array<std::string_view, 7> unsupported_construction_settings = {
+            "select", "filter", "order", "sort", "limit", "offset", "page"};
+
+        for (const auto setting_name : unsupported_construction_settings)
+        {
+            if (settings.isChanged(setting_name))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting '{}' is not supported for INSERT ... RETURNING because delayed RETURNING does not apply query-construction rewrites",
+                    setting_name);
+        }
     }
 
     /// The INSERT and RETURNING phases share one query, one `ProcessListElement`, one thread-group `MemoryTracker`,

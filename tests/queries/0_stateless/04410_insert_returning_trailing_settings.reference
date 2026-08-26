@@ -43,6 +43,10 @@ returning construction settings are rejected
 1
 returning database setting is rejected
 1
+source trailing construction settings are rejected
+0
+session construction settings are rejected in returning
+1
 source custom setting does not leak into returning
 unset
 1
