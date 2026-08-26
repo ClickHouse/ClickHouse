@@ -169,19 +169,27 @@ std::vector<String> Client::loadWarningMessages()
 
     std::vector<String> messages;
 
-    /// Only the compression knobs: the rest of the session settings must not leak into this
-    /// client-issued helper query. See `networkCompressionSettings`. `showWarnings` swallows any
-    /// exception from here, so a session setting that makes this plain SQL probe fail - a non-default
-    /// `dialect`, or a compatibility-derived network setting pinned read-only by a profile - would
-    /// silently stop warnings from being displayed at all.
-    const Settings compression_settings = networkCompressionSettings(client_context->getSettingsRef());
+    /// Unlike `\h`, autocomplete and the AI metadata query, this probe is not settings-agnostic: it
+    /// reads `system.warnings`, and part of that table is derived from the settings the server sees for
+    /// this query - a changed obsolete setting produces a warning of its own. So send what an ordinary
+    /// query sends (which also keeps a compatibility-derived value from being serialized as an explicit
+    /// change, and thus from tripping a profile that pins it read-only), rather than only the
+    /// compression knobs of `networkCompressionSettings`.
+    ///
+    /// The one setting that has to be overridden is `dialect`: the probe below is ClickHouse SQL, so a
+    /// session that switched to another dialect could not parse it. `showWarnings` swallows any
+    /// exception from here, so that failure would not be an error the user sees, but server warnings
+    /// silently never being displayed.
+    Settings probe_settings = settingsWithoutCompatibilityDerived().value_or(client_context->getSettingsRef());
+    if (probe_settings[Setting::dialect] != Dialect::clickhouse)
+        probe_settings.set("dialect", String("clickhouse"));
 
     connection->sendQuery(connection_parameters.timeouts,
                           "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
                           {} /* query_parameters */,
                           "" /* query_id */,
                           QueryProcessingStage::Complete,
-                          &compression_settings,
+                          &probe_settings,
                           &client_context->getClientInfo(), false, {}, {});
     while (true)
     {
