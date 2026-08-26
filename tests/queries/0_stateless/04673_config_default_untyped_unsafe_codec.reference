@@ -1,3 +1,6 @@
 create_inherited_rejected
 override	1000
+cannot use the codec SZ3 because it is lossy
+override_lossy	1000
+cannot use the codec SZ3 because it is lossy
 safe	1000

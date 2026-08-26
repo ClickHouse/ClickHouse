@@ -99,6 +99,13 @@ public:
     /// `primary_key_compression_codec`, `default_compression_codec`). The suspicious-codec sanity checks do not apply to this form.
     void validateCodecString(const String & compression_codec, const CodecValidationSettings & validation_settings) const;
 
+    /// Throw if `compression_codec` can never work on data whose column type is unknown, i.e. if
+    /// `getReasonUnsafeForUntypedData` classifies it as unsafe. `validateCodecString` alone is not enough
+    /// for the codec-valued MergeTree settings: it validates with the sanity checks disabled, so it rejects
+    /// a codec that requires the column type (`T64`) but accepts a lossy one (`SZ3`), which would then only
+    /// fail later, at the first mark / primary key / part write. `setting_name` is only used in the message.
+    void checkCodecStringSafeForUntypedData(const String & compression_codec, std::string_view setting_name) const;
+
     /// Get codec by AST and possible column_type. Some codecs can use
     /// information about type to improve inner settings, but every codec should
     /// be able to work without information about type. Also AST can contain

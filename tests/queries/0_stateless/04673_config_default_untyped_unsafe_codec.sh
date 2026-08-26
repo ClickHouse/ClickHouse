@@ -31,6 +31,23 @@ cat > "${WORKING_FOLDER}/unsafe.xml" <<EOF
 </clickhouse>
 EOF
 
+# The same holds for a lossy codec (`SZ3`): it can only be applied to a floating-point column, so it
+# can never work on the untyped mark / primary key / part-default streams. Unlike `T64` it is not
+# rejected by the `requiresColumnTypeToCompress` check, and the codec-valued settings are validated
+# with the suspicious-codec sanity checks disabled, so it needs its own guard.
+cat > "${WORKING_FOLDER}/unsafe_lossy.xml" <<EOF
+<clickhouse>
+    <merge_tree>
+        <marks_compression_codec>SZ3</marks_compression_codec>
+    </merge_tree>
+    <profiles>
+        <default>
+            <allow_experimental_codecs>1</allow_experimental_codecs>
+        </default>
+    </profiles>
+</clickhouse>
+EOF
+
 cat > "${WORKING_FOLDER}/safe.xml" <<EOF
 <clickhouse>
     <merge_tree>
@@ -59,6 +76,29 @@ INSERT INTO t_override SELECT number FROM numbers(1000);
 SELECT 'override', count() FROM t_override;
 ALTER TABLE t_override RESET SETTING marks_compression_codec; -- { serverError BAD_ARGUMENTS }
 "
+
+# `SZ3` is experimental, so it has to be enabled first - otherwise it never reaches the lossy check.
+# `clickhouse-local` does not apply `<profiles>`, so the opt-in goes on the command line; the codec
+# then passes the experimental gate and must still be rejected for being lossy.
+SZ3_OPT_IN=(--allow_experimental_codecs=1 --enable_sz3_codec=1)
+
+${CLICKHOUSE_LOCAL} --config-file="${WORKING_FOLDER}/unsafe_lossy.xml" "${SZ3_OPT_IN[@]}" --multiquery "
+CREATE TABLE t_inherited_lossy (x UInt32) ENGINE = MergeTree ORDER BY tuple();
+" 2>&1 | grep -o -m1 'cannot use the codec SZ3 because it is lossy'
+
+# An explicit safe override keeps working, and `RESET SETTING` - which puts the lossy config default
+# back - is rejected.
+${CLICKHOUSE_LOCAL} --config-file="${WORKING_FOLDER}/unsafe_lossy.xml" "${SZ3_OPT_IN[@]}" --multiquery "
+CREATE TABLE t_override_lossy (x UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS marks_compression_codec = 'LZ4';
+INSERT INTO t_override_lossy SELECT number FROM numbers(1000);
+SELECT 'override_lossy', count() FROM t_override_lossy;
+ALTER TABLE t_override_lossy RESET SETTING marks_compression_codec; -- { serverError BAD_ARGUMENTS }
+"
+
+${CLICKHOUSE_LOCAL} --config-file="${WORKING_FOLDER}/safe.xml" "${SZ3_OPT_IN[@]}" --multiquery "
+CREATE TABLE t_modify_lossy (x UInt32) ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE t_modify_lossy MODIFY SETTING marks_compression_codec = 'SZ3';
+" 2>&1 | grep -o -m1 'cannot use the codec SZ3 because it is lossy'
 
 # A safe config default keeps working, both on CREATE and after a RESET SETTING.
 ${CLICKHOUSE_LOCAL} --config-file="${WORKING_FOLDER}/safe.xml" --multiquery "

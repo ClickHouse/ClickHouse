@@ -959,7 +959,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     /// runs along with it, so that a fresh definition rejects such a codec CREATE-like
                     /// instead of `MergeTreeData` silently dropping the setting on the sanitize path.
                     if (is_fresh_definition)
+                    {
                         CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
+                        CompressionCodecFactory::instance().checkCodecStringSafeForUntypedData(codec, name);
+                    }
                 }
                 else
                 {
@@ -967,8 +970,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     /// will never look at it. This is the only place that rejects a codec which can never work
                     /// on an untyped stream (e.g. `T64`, via `requiresColumnTypeToCompress`), so that part of
                     /// the validation runs here as well; the experimental part must hold for both the session
-                    /// and the default profile, because only the latter survives a restart.
+                    /// and the default profile, because only the latter survives a restart. `validateCodecString`
+                    /// runs with the sanity checks disabled, so the lossy-on-untyped case (`SZ3`) needs the
+                    /// explicit `checkCodecStringSafeForUntypedData` predicate next to it.
                     CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
+                    CompressionCodecFactory::instance().checkCodecStringSafeForUntypedData(codec, name);
 
                     if (!default_profile_settings)
                         default_profile_settings = context->getGlobalContext()->getDefaultProfileSettings();

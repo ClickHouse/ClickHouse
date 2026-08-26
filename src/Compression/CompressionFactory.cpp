@@ -113,6 +113,14 @@ String CompressionCodecFactory::getReasonUnsafeForUntypedData(const String & com
     return getReasonUnsafeForUntypedData(ast);
 }
 
+void CompressionCodecFactory::checkCodecStringSafeForUntypedData(
+    const String & compression_codec, std::string_view setting_name) const
+{
+    if (auto reason = getReasonUnsafeForUntypedData(compression_codec); !reason.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Setting '{}' cannot use the codec {} because {}", setting_name, compression_codec, reason);
+}
+
 bool CompressionCodecFactory::isDefaultCodecAlias(const ASTPtr & codec_ast)
 {
     if (!codec_ast)

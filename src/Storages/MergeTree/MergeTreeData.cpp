@@ -5409,7 +5409,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
                 const auto & codec = value.safeGet<String>();
                 if (!codec.empty())
+                {
                     CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(settings));
+                    CompressionCodecFactory::instance().checkCodecStringSafeForUntypedData(codec, setting_name);
+                }
             }
             else if (command.settings_resets.contains(setting_name))
             {
@@ -5424,8 +5427,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 /// This is the only place that rejects a codec which can never work on an untyped stream
                 /// (e.g. `T64`, via `requiresColumnTypeToCompress`), so that part of the validation has to
                 /// run here as well; the experimental part must hold for both the session and the default
-                /// profile, because only the latter survives a restart.
+                /// profile, because only the latter survives a restart. `validateCodecString` runs with the
+                /// sanity checks disabled, so the lossy-on-untyped case (`SZ3`) needs the explicit
+                /// `checkCodecStringSafeForUntypedData` predicate next to it.
                 CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(settings));
+                CompressionCodecFactory::instance().checkCodecStringSafeForUntypedData(codec, setting_name);
 
                 if (!default_profile_settings)
                     default_profile_settings = local_context->getGlobalContext()->getDefaultProfileSettings();
