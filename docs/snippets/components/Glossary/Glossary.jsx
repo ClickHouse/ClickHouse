@@ -43,12 +43,15 @@ export const Glossary = ({ children, metadata = {} }) => {
     .some(valueForm => queryForms.some(queryForm => exact
       ? valueForm === queryForm
       : valueForm.includes(queryForm)));
-  const exactMatch = entry => [entry.term, ...(entry.aliases || [])]
-    .some(value => matches(value, true));
+  const matchRank = entry => {
+    if (matches(entry.term, true)) return 2;
+    if ((entry.aliases || []).some(value => matches(value, true))) return 1;
+    return 0;
+  };
   const visibleEntries = queryForms.length > 0
     ? entries.filter(entry => [entry.term, ...(entry.aliases || []), nodeText(entry.content)]
         .some(value => matches(value)))
-        .sort((a, b) => Number(exactMatch(b)) - Number(exactMatch(a)))
+        .sort((a, b) => matchRank(b) - matchRank(a))
     : entries;
 
   return (
