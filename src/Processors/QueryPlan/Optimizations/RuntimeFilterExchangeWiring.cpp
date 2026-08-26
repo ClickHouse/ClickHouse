@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <limits>
 #include <map>
-#include <ranges>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -132,8 +131,10 @@ struct FilterConsumerSite
     String key_column;
 };
 
-/// Same three admission gates as before, on one apply site. `geometry` is the (possibly
-/// upsized) transport budget; the step is updated only if a stage ships.
+/// Same three admission gates as before, on one apply site. A build key set at least
+/// as large as the site's key set (or its whole row count) is not expected to prune,
+/// so shipping it only costs. `geometry` is the (possibly upsized) transport budget;
+/// the step is updated only if a stage ships.
 bool siteAdmitsRuntimeFilterTransport(
     const FilterConsumerSite & site,
     const BuildRuntimeFilterStep & producer,
@@ -322,19 +323,19 @@ void wireRuntimeFilterExchangeTopology(
             if (stageDependsOnTransitively(distributed_plan.stage_depends_on, producer.stage, stage_name))
                 continue;
 
-            /// Cost check on every apply site in the stage. Ship once if any site would have
-            /// shipped: a tiny or stats-less first site must not veto a sibling that prunes.
-            /// Both gates assume the usual join-key containment: a build key set at least as
-            /// large as the site's key set (or its whole row count) is not expected to prune
-            /// anything, so shipping it only costs. A filter with an upsized budget is only
-            /// sent where the row estimate confirmed the site outweighs it. With no estimates
-            /// at all, transport stays as it always was.
+            /// Ship the stage if any apply site passes. A tiny or stats-less first site must
+            /// not veto a sibling that would prune. No estimates at all -> transport as before.
             if (estimated_keys)
             {
-                const bool admitted = std::ranges::any_of(
-                    sites,
-                    [&](const FilterConsumerSite & site)
-                    { return siteAdmitsRuntimeFilterTransport(site, *producer.step, *estimated_keys, budget_is_upsized, geometry); });
+                bool admitted = false;
+                for (const auto & site : sites)
+                {
+                    if (siteAdmitsRuntimeFilterTransport(site, *producer.step, *estimated_keys, budget_is_upsized, geometry))
+                    {
+                        admitted = true;
+                        break;
+                    }
+                }
                 if (!admitted)
                     continue;
             }

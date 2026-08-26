@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <set>
+#include <vector>
 
 using namespace DB;
 using namespace DB::QueryPlanOptimizations;
@@ -176,9 +177,14 @@ void addUnionConsumerStage(DistributedQueryPlan & plan, const String & name, siz
     SharedHeaders headers;
     headers.emplace_back(dataHeader());
     headers.emplace_back(dataHeader());
+    std::vector<QueryPlanPtr> union_plans;
+    union_plans.reserve(2);
+    union_plans.push_back(std::move(first));
+    union_plans.push_back(std::move(second));
+
     DistributedQueryStage stage;
     QueryPlan fragment;
-    fragment.unitePlans(std::make_unique<UnionStep>(std::move(headers)), {std::move(first), std::move(second)});
+    fragment.unitePlans(std::make_unique<UnionStep>(std::move(headers)), std::move(union_plans));
     stage.query_plan_fragment = std::move(fragment);
     for (size_t task = 0; task < num_tasks; ++task)
         stage.tasks.push_back(makeTask(name, task));
