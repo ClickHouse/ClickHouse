@@ -179,7 +179,7 @@ void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns
             CompressionCodecPtr tmp;
             try
             {
-                tmp = it.second.creator({}, nullptr);
+                tmp = it.second({}, nullptr);
             }
             catch (const Exception & e)
             {
@@ -210,12 +210,12 @@ VectorWithMemoryTracking<std::pair<String, Documentation>> CompressionCodecFacto
 {
     VectorWithMemoryTracking<std::pair<String, Documentation>> result;
     result.reserve(family_name_with_codec.size());
-    for (const auto & [name, entry] : family_name_with_codec)
+    for (const auto & [name, creator] : family_name_with_codec)
     {
         CompressionCodecPtr codec;
         try
         {
-            codec = entry.creator({}, nullptr);
+            codec = creator({}, nullptr);
         }
         catch (const Exception & e)
         {
@@ -231,7 +231,8 @@ VectorWithMemoryTracking<std::pair<String, Documentation>> CompressionCodecFacto
         documentation.description = codec->getDescription();
         /// The codec carries its description through `getDescription` rather than a `Documentation` object, so the
         /// source is not captured automatically; use the registration site recorded in `registerCompressionCodec*`.
-        documentation.source = entry.source;
+        if (auto it = family_name_with_source.find(name); it != family_name_with_source.end())
+            documentation.source = it->second;
         result.emplace_back(name, std::move(documentation));
     }
     return result;
@@ -242,12 +243,12 @@ CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name,
     if (family_name == "Multiple")
         throw Exception(ErrorCodes::UNKNOWN_CODEC, "Codec Multiple cannot be specified directly");
 
-    const auto family_and_entry = family_name_with_codec.find(family_name);
+    const auto family_and_creator = family_name_with_codec.find(family_name);
 
-    if (family_and_entry == family_name_with_codec.end())
+    if (family_and_creator == family_name_with_codec.end())
         throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", family_name);
 
-    return family_and_entry->second.creator(arguments, column_type);
+    return family_and_creator->second(arguments, column_type);
 }
 
 void CompressionCodecFactory::registerCompressionCodecWithType(
@@ -260,8 +261,10 @@ void CompressionCodecFactory::registerCompressionCodecWithType(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressionCodecFactory: "
                         "the codec family {} has been provided a null constructor", family_name);
 
-    if (!family_name_with_codec.emplace(family_name, CodecEntry{creator, source.file_name()}).second)
+    if (!family_name_with_codec.emplace(family_name, creator).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressionCodecFactory: the codec family name '{}' is not unique", family_name);
+
+    family_name_with_source.emplace(family_name, source.file_name());
 
     if (byte_code)
         if (!family_code_with_codec.emplace(*byte_code, creator).second)

@@ -61,13 +61,7 @@ protected:
     using CreatorWithType = std::function<CompressionCodecPtr(const ASTPtr & parameters, const IDataType * column_type)>;
     using SimpleCreator = std::function<CompressionCodecPtr()>;
 
-    struct CodecEntry
-    {
-        CreatorWithType creator;
-        const char * source = nullptr;
-    };
-
-    using CompressionCodecsDictionary = UnorderedMapWithMemoryTracking<String, CodecEntry>;
+    using CompressionCodecsDictionary = UnorderedMapWithMemoryTracking<String, CreatorWithType>;
     using CompressionCodecsCodeDictionary = UnorderedMapWithMemoryTracking<uint8_t, CreatorWithType>;
 
 public:
@@ -155,6 +149,8 @@ private:
 
     CompressionCodecsDictionary family_name_with_codec;
     CompressionCodecsCodeDictionary family_code_with_codec;
+    /// The source file where each codec family was registered, keyed by family name. See `getCodecDocumentations`.
+    UnorderedMapWithMemoryTracking<String, const char *> family_name_with_source;
     CompressionCodecPtr default_codec;
 
     CompressionCodecFactory();
