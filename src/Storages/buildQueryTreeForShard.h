@@ -63,6 +63,9 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
   * shard, which deduplicated those keys before computing its two-level bucket numbers - and reconstruct the duplicate
   * key columns after merging. Without this the initiator would bucket by more key columns than the shard did, so equal
   * groups coming from different shards could land in different buckets and never merge (wrong results).
+  *
+  * `duplicate_to_representative` is written only when an `ActionsDAG` is returned; it is left empty on `std::nullopt`.
+  * A caller that stores it unconditionally therefore never applies a collapse the returned plan does not perform.
   */
 std::optional<ActionsDAG> buildShardCollapseFanOut(
     const QueryTreeNodePtr & query_tree,

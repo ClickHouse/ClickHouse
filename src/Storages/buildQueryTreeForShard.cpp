@@ -1203,6 +1203,23 @@ private:
     std::unordered_map<String, QueryTreeNodePtr> & alias_expressions;
 };
 
+/// Collect the identifier-based action name of every `COLUMN` leaf of an already-inlined expression. These are the
+/// names `PlannerActionsVisitor` will look up when it builds the expression, so they are what has to resolve to the
+/// shard header's columns.
+void collectLeafColumnActionNames(
+    const QueryTreeNodePtr & node, const PlannerContext & planner_context, std::unordered_set<String> & leaf_names)
+{
+    if (node->getNodeType() == QueryTreeNodeType::COLUMN)
+    {
+        leaf_names.emplace(calculateActionNodeName(node, planner_context, /*use_column_identifier_as_action_node_name=*/true));
+        return;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            collectLeafColumnActionNames(child, planner_context, leaf_names);
+}
+
 /// Collect the set of genuine column-name tails of analyzer-generated table qualifiers in the query tree. A real
 /// qualifier in a column identifier has the form `__tableN.<tail>`, where `__tableN` is the alias
 /// `createUniqueAliasesIfNecessary` assigns to a table expression and `<tail>` is the rendered column name
@@ -1461,12 +1478,17 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
 
     ActionsDAG dag;
     std::vector<const ActionsDAG::Node *> shard_input_nodes;
+    std::unordered_set<std::string_view> shard_column_names;
     shard_input_nodes.reserve(shard_header.columns());
+    shard_column_names.reserve(shard_header.columns());
     for (size_t i = 0; i < shard_header.columns(); ++i)
     {
         const auto & column = shard_header.getByPosition(i);
         shard_input_nodes.push_back(&dag.addInput(column.name, column.type));
+        shard_column_names.emplace(shard_input_nodes.back()->result_name);
     }
+    /// Leaf names already aliased onto a shard column by an earlier computed expression, so the alias is added once.
+    std::unordered_set<String> renamed_leaves;
 
     ActionsDAG::NodeRawConstPtrs outputs;
     outputs.reserve(expected_header.columns());
@@ -1474,6 +1496,9 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     /// mapping onto the same shard column is a duplicate of that representative. Report those duplicates so a downstream
     /// aggregation merge can bucket by only the representative key columns (matching the shard's collapsed bucketing).
     std::unordered_map<size_t, String> representative_for_shard_index;
+    /// Collected locally and published to `duplicate_to_representative` only on the successful return, so that a
+    /// declining return always leaves the caller's map empty however many decline paths there are.
+    std::unordered_map<String, String> duplicates;
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
     for (size_t i = 0; i < expected_header.columns(); ++i)
     {
@@ -1483,8 +1508,23 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
 
         if (shard_index == computed_from_expression)
         {
-            /// Evaluating the body over `dag` reads the shard columns it needs as existing inputs, because the body was
-            /// inlined with the same rule that names the shard header.
+            /// The body's leaves are named by the initiator's column identifiers, while the shard header carries the
+            /// shard's own independently renumbered qualifiers (see `normalizeGenuineQualifiers`). Where the two differ
+            /// only by that number, alias the shard column under the initiator's name so the expression resolves onto
+            /// the existing input instead of introducing an input the shard header does not have.
+            std::unordered_set<String> leaf_names;
+            collectLeafColumnActionNames(expression_for_expected[i], *planner_context, leaf_names);
+            for (const auto & leaf_name : leaf_names)
+            {
+                /// Already resolvable: the leaf names a shard column directly, or an earlier expression aliased it.
+                if (shard_column_names.contains(leaf_name) || !renamed_leaves.emplace(leaf_name).second)
+                    continue;
+                auto leaf_it = shard_normalized_to_index.find(normalizeGenuineQualifiers(leaf_name, genuine_qualifier_tails));
+                if (leaf_it == shard_normalized_to_index.end())
+                    continue;
+                dag.addAlias(*shard_input_nodes[leaf_it->second], leaf_name);
+            }
+
             PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, /*use_column_identifier_as_action_node_name=*/true);
             auto [expression_outputs, correlated_subtrees] = actions_visitor.visit(dag, expression_for_expected[i]);
             if (correlated_subtrees.notEmpty() || expression_outputs.size() != 1)
@@ -1505,9 +1545,16 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
         {
             auto [it, inserted] = representative_for_shard_index.emplace(shard_index, expected_name);
             if (!inserted && it->second != expected_name)
-                duplicate_to_representative->emplace(expected_name, it->second);
+                duplicates.emplace(expected_name, it->second);
         }
     }
+
+    /// The resulting DAG runs on the shard header, so every input it reads must be a column of that header. Building a
+    /// computed expression adds an input for any leaf that did not resolve above, and such a DAG would throw
+    /// `NOT_FOUND_COLUMN_IN_BLOCK` while the plan is built. Decline instead and let the caller reconcile.
+    for (const auto * input : dag.getInputs())
+        if (!shard_column_names.contains(input->result_name))
+            return {};
 
     /// Every shard column must be accounted for: either it feeds an expected column directly, or a computed expression
     /// above reads it. A leftover column means the mapping does not explain this header, so fall back to be safe.
@@ -1528,6 +1575,9 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
             if (!shard_column_used[i] && !reachable.contains(shard_input_nodes[i]))
                 return {};
     }
+
+    if (duplicate_to_representative)
+        *duplicate_to_representative = std::move(duplicates);
 
     dag.getOutputs() = std::move(outputs);
     return dag;

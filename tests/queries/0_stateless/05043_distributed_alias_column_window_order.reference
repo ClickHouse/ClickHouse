@@ -42,10 +42,42 @@ Empty	Empty	EMPTY	USD	1
 distributed engine table
 Empty	USD	1
 Empty	USD	2
+Empty	USD	1
 Empty	Empty	2024-01-01 00:00:00	1
 Empty	Empty	2024-01-01 00:00:00	2
+Empty	Empty	2024-01-01 00:00:00	1
 Empty	USD	1
 Empty	USD	2
+Empty	USD	1
+nested subquery
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+EMPTY	USD	1
+EMPTY	USD	2
+EMPTY	USD	1
+Empty	Empty	1
+Empty	Empty	2
+Empty	Empty	1
+2
+2
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+deduplicated alias pair
+7	7	7	1
+7	7	7	2
+7	7	7	1
+7	7	1
+7	7	2
+7	7	1
+7	7	7	1
+7	7	7	2
+7	7	7	1
+7	7	2
+7	7	2
+7	7	7	2
+7	7	7	2
 window clauses
 Empty	USD	2
 Empty	USD	2
