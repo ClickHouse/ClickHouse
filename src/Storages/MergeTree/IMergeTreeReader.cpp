@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
@@ -420,7 +421,7 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
         return serialization;
     }
 
-    if (isObject(column_in_part->getTypeInStorage()))
+    if (containsObjectType(*column_in_part->getTypeInStorage()))
         return data_part_info_for_read->getSerialization(*column_in_part);
 
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())

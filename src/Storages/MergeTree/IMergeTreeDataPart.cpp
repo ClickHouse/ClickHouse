@@ -13,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/PackedFilesReader.h>
@@ -970,7 +971,7 @@ SerializationPtr LoadedMergeTreeDataPartInfoForReader::getSerialization(const Na
     if (auto serialization = data_part->tryGetSerialization(column.name))
         return serialization;
 
-    if (isObject(column.getTypeInStorage()) && column.isSubcolumn())
+    if (column.isSubcolumn() && containsObjectType(*column.getTypeInStorage()))
         return column.getTypeInStorage()->getSubcolumnSerialization(
             column.getSubcolumnName(), data_part->getSerialization(column.getNameInStorage()));
     return data_part->getSerialization(column.name);

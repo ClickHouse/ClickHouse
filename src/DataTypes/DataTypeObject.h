@@ -105,4 +105,6 @@ private:
     size_t max_dynamic_types;
 };
 
+bool containsObjectType(const IDataType & type);
+
 }
