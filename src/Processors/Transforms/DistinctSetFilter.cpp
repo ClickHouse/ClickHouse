@@ -122,8 +122,8 @@ std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(const
         state.seen_indices.resize_fill(dict_size);
     }
 
-    /// If we've already seen all dictionary indices for this dictionary,
-    /// then no row in this chunk (and also other chunks with the same dictionary) can produce a new distinct value.
+    /// If we've already seen all dictionary indices for this dictionary, then no row in this chunk
+    /// (and also other chunks with the same dictionary) can produce a new distinct value.
     if (state.seen_count == dict_size)
         return {{}, 0}; /// empty mask == no candidates
 
