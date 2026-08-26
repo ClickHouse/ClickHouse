@@ -374,6 +374,8 @@ public:
             case Types::Object:
             case Types::CustomType:
             case Types::AggregateFunctionState:
+            /// A NumberLiteral holds unparsed literal text and throws on comparison.
+            case Types::Number:
                 return false;
         }
         UNREACHABLE();
