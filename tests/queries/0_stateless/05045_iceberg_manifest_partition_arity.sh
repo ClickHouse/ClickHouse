@@ -100,7 +100,8 @@ min_max_pruned() { # min_max_pruned <table> <tag>
     ${CLICKHOUSE_CLIENT} --query "
         SELECT max(ProfileEvents['IcebergMinMaxIndexPrunedFiles']) > 0
         FROM system.query_log
-        WHERE log_comment = '${CLICKHOUSE_DATABASE}_$2' AND type = 'QueryFinish'"
+        WHERE log_comment = '${CLICKHOUSE_DATABASE}_$2' AND type = 'QueryFinish'
+        SETTINGS enable_parallel_replicas = 0"
 }
 
 echo '--- A0 spec arity matches the partition tuple ---'
