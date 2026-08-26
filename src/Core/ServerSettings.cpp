@@ -1826,8 +1826,19 @@ modifying individual port configurations. Can be positive or negative. The resul
 must be in range 1-65535, otherwise the server will refuse to start.
 A port configured as `0` (an OS-assigned, ephemeral port) is never offset. An explicit
 client-side `port` setting (for example `--port` of `clickhouse-client`) is not affected.
-For stateless-worker distributed plans, configure each worker's actual shifted
-`streaming_exchange_port` explicitly in the worker cluster configuration.
+
+The offset applies to the ports this server *listens* on, and to the addresses it advertises
+to its peers (cluster discovery, distributed DDL host IDs, replica endpoints, `tcpPort`).
+It is not applied to the default port used to *connect* to other ClickHouse servers when a
+query or configuration omits one - `remote`, `ENGINE = Remote` and ClickHouse dictionary
+sources keep defaulting to the configured `tcp_port` / `tcp_port_secure`, since the
+destination is a different server whose offset is unknown.
+
+Ports of remote servers are derived from the local configuration only where the cluster
+entry does not specify them, which assumes a uniformly configured cluster. In a cluster
+where nodes use different offsets, configure the actual port of every node explicitly - for
+stateless-worker distributed plans, each worker's shifted `streaming_exchange_port` in the
+worker cluster configuration.
 
 **Example**
 

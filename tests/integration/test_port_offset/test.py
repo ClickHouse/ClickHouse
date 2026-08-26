@@ -202,3 +202,30 @@ def test_port_offset_all_protocols(start_cluster):
         assert (
             actual_offset == offset_port
         ), f"Offset node {port_name}: expected {offset_port}, got {actual_offset}"
+
+
+def test_port_offset_does_not_shift_outbound_default_port(start_cluster):
+    """`port_offset` shifts the local listeners, not the default port of *other* servers.
+
+    `remote()` without a port (and `ENGINE = Remote`, ClickHouse dictionary sources)
+    defaults to the configured `tcp_port` of the local server. That default addresses a
+    different machine, whose offset is unknown, so it must stay unshifted: on the offset
+    node the implicit port is the configured base `8900`, not the listener port `9000`.
+    """
+    # Explicit port always works and is never rewritten.
+    assert (
+        node_offset.query("SELECT * FROM remote('node_default:9000', system.one)").strip()
+        == "0"
+    )
+
+    # Implicit port on the offset node is the *configured* 8900, where nothing listens.
+    error = node_offset.query_and_get_error(
+        "SELECT * FROM remote('node_default', system.one)"
+    )
+    assert "8900" in error, error
+
+    # The unshifted node keeps reaching the offset node on the port it advertises (9000).
+    assert (
+        node_default.query("SELECT * FROM remote('node_offset', system.one)").strip()
+        == "0"
+    )

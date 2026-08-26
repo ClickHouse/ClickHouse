@@ -1373,10 +1373,22 @@ public:
     bool resolveReadThroughDistributedCache() const;
     bool resolveWriteThroughDistributedCache() const;
 
-    /// The port that the server listens for executing SQL queries.
+    /// The configured `tcp_port` / `tcp_port_secure`, without `port_offset` applied.
+    /// These are also used as the default port for *other* ClickHouse servers when the
+    /// user omitted one (`remote`, `ENGINE=Remote`, ClickHouse dictionary sources), so a
+    /// local listener shift must not leak into them. Use `getBoundTCPPort` /
+    /// `getBoundTCPPortSecure` when the port this server actually listens on is needed.
     UInt16 getTCPPort() const;
 
     std::optional<UInt16> getTCPPortSecure() const;
+
+    /// The port this server actually listens on for executing SQL queries: the configured
+    /// port shifted by `port_offset`. Use it wherever the server advertises itself to peers
+    /// (cluster discovery, DDL host IDs, replica endpoints) or answers "which port do I
+    /// listen on".
+    UInt16 getBoundTCPPort() const;
+
+    std::optional<UInt16> getBoundTCPPortSecure() const;
 
     /// Register a server listener port. May be called concurrently from
     /// `SYSTEM START LISTEN` at runtime (in `clickhouse-local`); re-registering

@@ -6414,21 +6414,30 @@ const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
 UInt16 Context::getTCPPort() const
 {
     const auto & config = getConfigRef();
-    UInt16 port = static_cast<UInt16>(config.getInt("tcp_port", DBMS_DEFAULT_PORT));
-    Int32 offset = static_cast<Int32>(config.getInt64("port_offset", 0));
-    return applyPortOffset(port, offset);
+    return static_cast<UInt16>(config.getInt("tcp_port", DBMS_DEFAULT_PORT));
 }
 
 std::optional<UInt16> Context::getTCPPortSecure() const
 {
     const auto & config = getConfigRef();
     if (config.has("tcp_port_secure"))
-    {
-        UInt16 port = static_cast<UInt16>(config.getInt("tcp_port_secure"));
-        Int32 offset = static_cast<Int32>(config.getInt64("port_offset", 0));
-        return applyPortOffset(port, offset);
-    }
+        return config.getInt("tcp_port_secure");
     return {};
+}
+
+UInt16 Context::getBoundTCPPort() const
+{
+    const auto & config = getConfigRef();
+    return applyPortOffset(getTCPPort(), static_cast<Int32>(config.getInt64("port_offset", 0)));
+}
+
+std::optional<UInt16> Context::getBoundTCPPortSecure() const
+{
+    const auto & config = getConfigRef();
+    auto port = getTCPPortSecure();
+    if (!port)
+        return {};
+    return applyPortOffset(*port, static_cast<Int32>(config.getInt64("port_offset", 0)));
 }
 
 void Context::registerServerPort(String port_name, UInt16 port)
