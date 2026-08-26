@@ -13,6 +13,7 @@
 #include <fmt/core.h>
 
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 #include "config.h"
@@ -20,6 +21,9 @@
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
 #    include <Common/Jemalloc.h>
+#    include <Common/JemallocCacheArena.h>
+#    include <Common/JemallocJITArena.h>
+#    include <Common/JemallocMergeTreeArena.h>
 #endif
 
 
@@ -80,8 +84,9 @@ JemallocBinsGeometry getJemallocBinsGeometry()
 }
 
 /// One row per bin; stats are read merged over all arenas when `arena` is empty,
-/// from the single arena otherwise (then also written as the leading column).
-void fillJemallocBinsRows(MutableColumns & res_columns, const JemallocBinsGeometry & geometry, std::optional<UInt64> arena)
+/// from the single arena otherwise (then `arena` and `purpose` are also written
+/// as the leading columns).
+void fillJemallocBinsRows(MutableColumns & res_columns, const JemallocBinsGeometry & geometry, std::optional<UInt64> arena, const char * purpose = "")
 {
     const std::string arena_key = arena ? fmt::format("{}", *arena) : fmt::format("{}", MALLCTL_ARENAS_ALL);
 
@@ -96,7 +101,10 @@ void fillJemallocBinsRows(MutableColumns & res_columns, const JemallocBinsGeomet
 
         size_t col_num = 0;
         if (arena)
+        {
             res_columns.at(col_num++)->insert(*arena);
+            res_columns.at(col_num++)->insert(purpose);
+        }
         res_columns.at(col_num++)->insert(bin_index);
         res_columns.at(col_num++)->insert(0);
         res_columns.at(col_num++)->insert(geometry.small_bins[bin].size);
@@ -117,7 +125,10 @@ void fillJemallocBinsRows(MutableColumns & res_columns, const JemallocBinsGeomet
 
         size_t col_num = 0;
         if (arena)
+        {
             res_columns.at(col_num++)->insert(*arena);
+            res_columns.at(col_num++)->insert(purpose);
+        }
         res_columns.at(col_num++)->insert(bin_index);
         res_columns.at(col_num++)->insert(1);
         res_columns.at(col_num++)->insert(geometry.lextent_sizes[bin]);
@@ -147,6 +158,17 @@ static void fillJemallocBins(MutableColumns & res_columns, bool per_arena)
         return;
     }
 
+    /// Dedicated arenas for long-lived state hold old allocations by design; the label
+    /// lets fragmentation reports exclude them. Only already-created arenas are labeled:
+    /// this is a read-only path and must not materialize the lazily-created ones.
+    std::unordered_map<UInt64, const char *> purposes;
+    for (unsigned index : JemallocMergeTreeArena::getArenaIndices())
+        purposes[index] = "mergetree";
+    if (auto index = JemallocJITArena::tryGetCreatedArenaIndex())
+        purposes[*index] = "jit";
+    if (auto index = JemallocCacheArena::tryGetCreatedArenaIndex())
+        purposes[*index] = "cache";
+
     auto narenas = getJeMallocValue("arenas.narenas");
     for (UInt64 arena = 0; arena < narenas; ++arena)
     {
@@ -154,7 +176,8 @@ static void fillJemallocBins(MutableColumns & res_columns, bool per_arena)
         if (!Jemalloc::tryGetValue(fmt::format("arena.{}.initialized", arena).c_str(), initialized) || !initialized)
             continue;
 
-        fillJemallocBinsRows(res_columns, geometry, arena);
+        auto purpose = purposes.find(arena);
+        fillJemallocBinsRows(res_columns, geometry, arena, purpose == purposes.end() ? "" : purpose->second);
     }
 }
 
@@ -190,7 +213,10 @@ ColumnsDescription StorageSystemJemallocBins::getColumnsDescription(bool per_are
 {
     ColumnsDescription description;
     if (per_arena)
+    {
         description.add({ "arena", std::make_shared<DataTypeUInt32>(), "Index of the arena. Joins to `system.jemalloc_sampled_allocations.arena`."});
+        description.add({ "purpose", std::make_shared<DataTypeString>(), "Purpose of a dedicated long-lived arena: 'mergetree' (part and table metadata), 'jit', 'cache'. Empty for general-purpose arenas. Dedicated arenas hold long-lived allocations by design; fragmentation reports usually exclude them."});
+    }
 
     auto common = ColumnsDescription
     {

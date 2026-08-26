@@ -19,3 +19,8 @@ FROM
 -- (No assertions relating two live counters: they are separate mallctl reads
 -- and can come from different stats epochs.)
 SELECT countIf(slab_size != 0 OR nonfull_slabs != 0 OR waste != 0) = 0 FROM system.jemalloc_arena_bins WHERE large;
+
+-- Dedicated long-lived arenas are labeled, and the label is constant within an arena.
+SELECT
+    (SELECT countIf(purpose NOT IN ('', 'mergetree', 'jit', 'cache')) FROM system.jemalloc_arena_bins) = 0,
+    (SELECT countIf(purposes != 1) FROM (SELECT arena, uniqExact(purpose) AS purposes FROM system.jemalloc_arena_bins GROUP BY arena)) = 0;
