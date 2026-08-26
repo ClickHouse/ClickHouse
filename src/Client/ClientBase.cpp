@@ -2608,18 +2608,31 @@ void ClientBase::resetOutput(std::optional<Int32> signals_before_teardown)
     /// indication on a live terminal and are dropped after a short wait on a stuck one. Only tty_buf
     /// is budgeted; the real output through std_out (including the format footer) keeps its
     /// responsive cancellation hook, so nothing already produced is lost. The armed in-query path
-    /// (the inner resetOutput()) keeps its responsive hook and is left unchanged.
-    const bool bound_teardown_tty_writes = tty_buf && !query_interrupt_handler.isRunning();
+    /// The same treatment is needed while the handler is still armed but a stage-one interrupt
+    /// has already been counted before this teardown started - the exceptional teardown paths
+    /// (onReceiveExceptionFromServer() and the receiveResult() cleanup catch) reach here in
+    /// exactly that state with `partial_result_on_first_cancel`. The baseline taken above
+    /// deliberately does not latch that earlier signal (the partial result it asked for still has
+    /// to be published through std_out), so the responsive hook on tty_buf stays quiet for it and
+    /// a stuck terminal could hold the decorative clears until a second Ctrl+C. onEndOfStream()
+    /// bounds its own progress clear for this very reason; there is nothing to lose here either,
+    /// because tty_buf only ever carries the progress indication, never result data.
+    const bool bound_teardown_tty_writes
+        = tty_buf && (!query_interrupt_handler.isRunning() || query_interrupt_handler.interruptedWhileRunning());
+    /// onEndOfStream() may have installed a budget already and still needs it after this call
+    /// returns, so restore the previous value instead of dropping the budget outright.
+    std::optional<UInt64> previous_tty_flush_budget;
     if (bound_teardown_tty_writes)
     {
         std::unique_lock lock(tty_mutex);
+        previous_tty_flush_budget = tty_buf->getBestEffortFlushBudget();
         tty_buf->setBestEffortFlushBudget(1000);
     }
     SCOPE_EXIT({
         if (bound_teardown_tty_writes)
         {
             std::unique_lock lock(tty_mutex);
-            tty_buf->setBestEffortFlushBudget(std::nullopt);
+            tty_buf->setBestEffortFlushBudget(previous_tty_flush_budget);
         }
     });
 

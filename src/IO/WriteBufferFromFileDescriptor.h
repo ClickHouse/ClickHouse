@@ -88,6 +88,12 @@ public:
         best_effort_flush_budget_ms = timeout_ms;
     }
 
+    /// The currently installed budget, so that a nested scope can restore it instead of dropping it.
+    std::optional<UInt64> getBestEffortFlushBudget() const
+    {
+        return best_effort_flush_budget_ms;
+    }
+
 protected:
     void nextImpl() override;
 
