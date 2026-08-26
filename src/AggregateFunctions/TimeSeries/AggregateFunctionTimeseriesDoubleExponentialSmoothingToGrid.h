@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <optional>
 #include <utility>
@@ -128,9 +127,9 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
 /// smoothing) of time series values over a sliding window on a regular time grid. It takes two extra scalar
 /// parameters: the smoothing factor and the trend factor, both in the open interval (0, 1).
 template <typename TimestampType_, typename IntervalType_, typename ValueType_>
-class AggregateFunctionTimeseriesDoubleExponentialSmoothing final :
+class AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesDoubleExponentialSmoothing<TimestampType_, IntervalType_, ValueType_>,
+        AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid<TimestampType_, IntervalType_, ValueType_>,
         AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits<TimestampType_, IntervalType_, ValueType_>>
 {
 public:
@@ -141,9 +140,9 @@ public:
     using ValueType = typename Traits::ValueType;
     using Aggregator = typename Traits::Aggregator;
 
-    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesDoubleExponentialSmoothing, Traits>;
+    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid, Traits>;
 
-    explicit AggregateFunctionTimeseriesDoubleExponentialSmoothing(const DataTypes & argument_types_, const Array & parameters_,
+    explicit AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid(const DataTypes & argument_types_, const Array & parameters_,
         TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_,
         Float64 smoothing_factor_, Float64 trend_factor_)
         : Base(argument_types_, parameters_, start_timestamp_, end_timestamp_, step_, window_, timestamp_scale_)
@@ -164,9 +163,5 @@ protected:
     const Float64 smoothing_factor{};   /// smoothing factor (sf), in (0, 1)
     const Float64 trend_factor{};       /// trend factor (tf), in (0, 1)
 };
-
-template <typename TimestampType, typename IntervalType, typename ValueType>
-using AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid =
-    AggregateFunctionTimeseriesDoubleExponentialSmoothing<TimestampType, IntervalType, ValueType>;
 
 }
