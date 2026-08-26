@@ -275,7 +275,7 @@ sem autenticação e ignoram a configuração. Handlers com um usuário fixo (a 
 dentro de `handler` de uma regra `http_handlers`, ou a chave `user` dentro de `handler`
 de uma regra `prometheus.handlers`) autenticam as solicitações como o usuário configurado e também ignoram a configuração — em
 particular, um `default_session_user` vazio não os rejeita. Ela não pode ser usada com o
-protocolo `interserver`: as conexões interserver são autenticadas pelo Secret do cluster
+protocolo `interservidor`: as conexões interservidor são autenticadas pelo Secret do cluster
 e pelo usuário inicial e nunca usam o usuário de sessão padrão.
 
 <div id="some-modules-can-contain-specific-for-its-layer-parameters">

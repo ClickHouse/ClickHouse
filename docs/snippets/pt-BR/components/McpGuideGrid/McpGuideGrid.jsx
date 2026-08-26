@@ -1,3 +1,10 @@
+const localizeHref = (href) => {
+  if (/^\/(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/.test(href)) return href;
+  if (typeof window === 'undefined') return href;
+  const match = window.location.pathname.match(/^\/(?:docs\/)?(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/);
+  return match ? `/${match[1]}${href}` : href;
+};
+
 export const McpGuideGrid = ({ variant = "guides" }) => {
   const clients = [
     { name: "Claude Code", logo: "/images/logo-claudecode-color.svg" },
@@ -8,32 +15,40 @@ export const McpGuideGrid = ({ variant = "guides" }) => {
   ]
 
   const guides = [
-    { name: "Streamlit", logo: "/images/mcp-integrations/streamlit.svg", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit" },
-    { name: "LangChain and LangGraph", logo: "/images/integrations/logos/langchain.svg", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain", lightInvert: true },
-    { name: "LlamaIndex", logo: "/images/mcp-integrations/llamaindex.png", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex" },
-    { name: "PydanticAI", logo: "/images/mcp-integrations/pydantic-ai.png", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai" },
-    { name: "SlackBot", logo: "/images/mcp-integrations/slack.png", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot" },
-    { name: "Agno", logo: "/images/mcp-integrations/agno.png", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno" },
-    { name: "Chainlit", logo: "/images/mcp-integrations/chainlit.svg", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit" },
-    { name: "Claude Agent SDK", logo: "/images/logo-claude.svg", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk" },
-    { name: "CopilotKit", logo: "/images/mcp-integrations/copilotkit.svg", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit" },
-    { name: "CrewAI", logo: "/images/mcp-integrations/crewai.png", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai" },
-    { name: "DSPy", logo: "/images/mcp-integrations/dspy.svg", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy" },
-    { name: "mcp-agent", logo: "/images/mcp-integrations/mcp-agent.png", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent" },
-    { name: "Microsoft Agent Framework", logo: "/images/mcp-integrations/microsoft-agent-framework.png", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework" },
-    { name: "Upsonic", logo: "/images/mcp-integrations/upsonic.jpg", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic" },
-    { name: "OpenAI Agents SDK", logo: "/images/logo-codex.svg", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents" },
-    { name: "Ollama", logo: "/images/mcp-integrations/ollama.svg", href: "/pt-BR/guides/use-cases/ai-ml/MCP/ollama" },
-    { name: "AnythingLLM", logo: "/images/mcp-integrations/anythingllm.png", href: "/pt-BR/guides/use-cases/ai-ml/MCP/anythingllm" },
-    { name: "Jan.ai", logo: "/images/mcp-integrations/jan.svg", href: "/pt-BR/guides/use-cases/ai-ml/MCP/janai" },
-    { name: "LibreChat", logo: "/images/mcp-integrations/librechat.svg", href: "/pt-BR/guides/use-cases/ai-ml/MCP/librechat" },
-    { name: "Open WebUI", logo: "/images/mcp-integrations/open-webui.svg", href: "/pt-BR/guides/use-cases/ai-ml/MCP/open-webui" }
+    { name: "Streamlit", logo: "/images/mcp-integrations/streamlit.svg", href: localizeHref("/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit") },
+    { name: "LangChain and LangGraph", logo: "/images/integrations/logos/langchain.svg", href: localizeHref("/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain"), lightInvert: true },
+    { name: "LlamaIndex", logo: "/images/mcp-integrations/llamaindex.png", href: localizeHref("/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex") },
+    { name: "PydanticAI", logo: "/images/mcp-integrations/pydantic-ai.png", href: localizeHref("/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai") },
+    { name: "SlackBot", logo: "/images/mcp-integrations/slack.png", href: localizeHref("/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot") },
+    { name: "Agno", logo: "/images/mcp-integrations/agno.png", href: localizeHref("/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno") },
+    { name: "Chainlit", logo: "/images/mcp-integrations/chainlit.svg", href: localizeHref("/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit") },
+    { name: "Claude Agent SDK", logo: "/images/logo-claude.svg", href: localizeHref("/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk") },
+    { name: "CopilotKit", logo: "/images/mcp-integrations/copilotkit.svg", href: localizeHref("/guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit") },
+    { name: "CrewAI", logo: "/images/mcp-integrations/crewai.png", href: localizeHref("/guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai") },
+    { name: "DSPy", logo: "/images/mcp-integrations/dspy.svg", href: localizeHref("/guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy") },
+    { name: "mcp-agent", logo: "/images/mcp-integrations/mcp-agent.png", href: localizeHref("/guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent") },
+    {
+      name: "Microsoft Agent Framework",
+      logo: "/images/mcp-integrations/microsoft-agent-framework.png",
+      href: localizeHref("/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework")
+    },
+    { name: "Upsonic", logo: "/images/mcp-integrations/upsonic.jpg", href: localizeHref("/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic") },
+    { name: "OpenAI Agents SDK", logo: "/images/logo-codex.svg", href: localizeHref("/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents") },
+    { name: "Ollama", logo: "/images/mcp-integrations/ollama.svg", href: localizeHref("/guides/use-cases/ai-ml/MCP/ollama") },
+    { name: "AnythingLLM", logo: "/images/mcp-integrations/anythingllm.png", href: localizeHref("/guides/use-cases/ai-ml/MCP/anythingllm") },
+    { name: "Jan.ai", logo: "/images/mcp-integrations/jan.svg", href: localizeHref("/guides/use-cases/ai-ml/MCP/janai") },
+    { name: "LibreChat", logo: "/images/mcp-integrations/librechat.svg", href: localizeHref("/guides/use-cases/ai-ml/MCP/librechat") },
+    { name: "Open WebUI", logo: "/images/mcp-integrations/open-webui.svg", href: localizeHref("/guides/use-cases/ai-ml/MCP/open-webui") }
   ]
 
   if (variant === "clients") {
     return (
       <div className="card not-prose contents">
-        <a href="/pt-BR/guides/use-cases/ai-ml/MCP/claude-desktop" className="block no-underline focus:no-underline focus-visible:no-underline" style={{ textDecoration: "none", outline: "none" }}>
+        <a
+          href={localizeHref("/guides/use-cases/ai-ml/MCP/claude-desktop")}
+          className="block no-underline focus:no-underline focus-visible:no-underline"
+          style={{ textDecoration: "none", outline: "none" }}
+        >
           <div className="flex min-h-[112px] flex-col items-center gap-5 rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-[#282828] md:flex-row md:justify-between">
             <div className="text-center md:text-left">
               <div className="text-base font-semibold text-black dark:text-white">Configure o ClickHouse MCP server</div>

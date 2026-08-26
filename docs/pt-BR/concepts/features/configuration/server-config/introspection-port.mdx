@@ -43,8 +43,8 @@ A flag `introspection` é uma propriedade do endpoint — a entrada que contém 
 
 A stack deve terminar em uma camada `tcp`, pois a semântica descrita abaixo é implementada pelo handler do protocolo nativo. A marcação de um endpoint cuja stack contém uma camada `http`, `mysql`, `postgres`, `prometheus` ou `interserver` é rejeitada com `INVALID_CONFIG_PARAMETER` na inicialização, em vez de resultar em uma porta que deixa de responder justamente quando é necessária.
 
-| Chave           | Descrição                                                                                |
-| --------------- | ---------------------------------------------------------------------------------------- |
+| Chave           | Descrição                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------ |
 | `introspection` | Marca um endpoint de protocolo componível como uma porta de introspecção. Padrão: `false`. |
 
 <div id="behavior">

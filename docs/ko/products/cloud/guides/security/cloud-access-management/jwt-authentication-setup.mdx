@@ -52,7 +52,7 @@ ClickHouse Cloud 콘솔의 **설정 → 보안**에서 서비스별로 JWKS 제�
 
 1. ClickHouse는 토큰의 `kid`(key ID) header를 읽고 문서에서 일치하는 key를 선택합니다.
 2. 해당 공개 키로 토큰 서명을 검증하고, `iss`(issuer) 및 `aud`(audience) 클레임을 provider 구성과 대조합니다.
-3. 검증에 성공하면 연결은 ephemeral user로 실행됩니다. 이 사용자의 접근 권한은 토큰의 `clickhouse:grants` 및 `clickhouse:roles` 클레임에서 가져오며, permission limit(`default` 사용자)을 초과할 수 없습니다. 자세한 내용은 [접근 권한](/ko/concepts/features/security/external-authenticators/jwt#access-rights)을 참조하십시오.
+3. 검증에 성공하면 연결은 임시 사용자로 실행됩니다. 이 사용자의 접근 권한은 토큰의 `clickhouse:grants` 및 `clickhouse:roles` 클레임에서 가져오며, permission limit(`default` 사용자)을 초과할 수 없습니다. 자세한 내용은 [접근 권한](/ko/concepts/features/security/external-authenticators/jwt#access-rights)을 참조하십시오.
 
 ClickHouse는 provider를 추가하거나 업데이트할 때 JWKS URL을 검증하고 가져옵니다. 따라서 구성이 잘못되었거나 연결할 수 없는 URL은 사전에 거부됩니다.
 
