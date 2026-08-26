@@ -261,6 +261,8 @@ The `/prometheus/api/v1/metadata` endpoint returns the metric metadata stored in
 | `limit` | Limit the number of returned metric families. A negative value means no limit; zero returns no metric families. |
 | `limit_per_metric` | Limit the number of metadata objects returned for each metric family. Zero and negative values mean no limit. |
 
+The default `Metrics` target table is a `ReplacingMergeTree` ordered by the metric family name: it keeps the most recently written metadata entry for each metric family. Several entries per family are returned only while the target table stores them — before its parts are merged, or when the table is defined with an engine that preserves them.
+
 ```bash
 curl --user default:<password> --get \
   "https://clickhouse.example.com:8443/prometheus/api/v1/metadata" \
