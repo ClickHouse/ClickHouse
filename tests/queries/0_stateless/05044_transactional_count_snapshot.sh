@@ -61,7 +61,7 @@ tx 3 "BEGIN TRANSACTION"
 # assert that it is applied exactly when `enable_analyzer` is on. That keeps the check meaningful in both
 # configurations and the expected output identical. If the rewrite is ever implemented for the old analyzer
 # this assertion starts failing, which is the right signal rather than a false alarm.
-echo 'the plain optimization must be applied inside the transaction, the sparsity one when it's available'
+echo 'the plain optimization must be applied inside the transaction, the sparsity one when it is available'
 tx 3 "SELECT countIf(explain LIKE '%Optimized trivial count%') > 0 FROM (EXPLAIN SELECT count() FROM txn_count_snapshot SETTINGS optimize_trivial_count_query = 1)"
 tx 3 "SELECT toUInt8((countIf(explain LIKE '%Optimized trivial count with sparsity filter%') > 0) = getSetting('enable_analyzer')) FROM (EXPLAIN SELECT count() FROM txn_count_snapshot WHERE s = 0 SETTINGS optimize_trivial_count_query = 1, optimize_trivial_count_with_sparsity_filter = 1)"
 
