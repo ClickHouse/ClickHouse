@@ -85,6 +85,11 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (!filter_actions_dag || query_info.isFinal())
         return;
 
+    /// The read step neither consults nor populates the cache for such filters (see the comment at
+    /// the declaration), so don't tag the filter step either.
+    if (ReadFromMergeTree::filterDependsOnNonDeterministicVirtuals(read_from_merge_tree->getStorageMetadata()->virtuals, query_info))
+        return;
+
     const auto & outputs = filter_actions_dag->getOutputs();
 
     /// Restrict to the case that ActionsDAG has a single output. This isn't technically necessary but de-risks
