@@ -668,7 +668,7 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
     bool is_dot_nl = options & RE_DOT_NL;
 
     number_of_subpatterns = 0;
-    if (!is_trivial)
+    if (!is_trivial && !isAnchoredLiteral())
     {
         /// re2 patterns can be machine-generated and huge; bound them in error messages.
         /// Truncate on a UTF-8 code point boundary so a multi-byte character is not cut in half.
