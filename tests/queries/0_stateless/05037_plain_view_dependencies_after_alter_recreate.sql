@@ -5,6 +5,12 @@
 -- the view under the same name and altering it again removes the node as a name
 -- conflict, silently losing the ordinary views that depend on it.
 
+-- Dropping and recreating a table that is still referenced leaves a node with a stale UUID in
+-- the `ReferentialDeps` and `ViewDeps` graphs, so the next update of that node logs a name
+-- conflict. That is pre-existing behaviour of `TablesDependencyGraph`, unrelated to what this
+-- test checks, and it is reproducible with two materialized views on an unpatched server.
+SET send_logs_level = 'error';
+
 DROP TABLE IF EXISTS plain_view_recreate_source;
 DROP VIEW IF EXISTS plain_view_recreate_v1;
 DROP VIEW IF EXISTS plain_view_recreate_v2;
