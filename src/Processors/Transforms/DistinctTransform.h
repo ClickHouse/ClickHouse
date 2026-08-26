@@ -18,6 +18,31 @@
 namespace DB
 {
 
+/// Type-erased body of one phase of the two-level parallel build. It lives on the caller's stack for
+/// the phase's duration, so handing it to the workers costs no allocation - a `std::function` would
+/// heap-allocate twice per chunk, since the captures exceed its small-buffer size.
+struct TwoLevelPhaseBody
+{
+    virtual void run(size_t index) = 0;
+    virtual ~TwoLevelPhaseBody() = default;
+};
+
+template <typename F>
+class TwoLevelPhaseBodyOf final : public TwoLevelPhaseBody
+{
+public:
+    explicit TwoLevelPhaseBodyOf(F & f_) : f(f_) {}
+    void run(size_t index) override { f(index); }
+
+private:
+    F & f;
+};
+
+/// Workers of the two-level parallel build, started once and reused for every chunk. Defined in the
+/// implementation file.
+class TwoLevelBuildWorkers;
+
+
 /// The LowCardinality optimization in DistinctTransform tracks seen dictionary
 /// indices in a bitmap and skips hash table insertions for rows whose index was
 /// already seen. This helps when many rows share few dictionary entries, but
@@ -186,6 +211,13 @@ private:
         std::array<std::unique_ptr<Arena>, two_level_num_fine_buckets> bucket_arenas;
     };
     mutable TwoLevelScratch two_level_scratch;
+
+    /// Started on the first parallel build and reused for every later chunk. Declared after `pool`, so
+    /// that it is destroyed - which stops and joins the workers - before the pool they run on.
+    mutable std::unique_ptr<TwoLevelBuildWorkers> two_level_workers;
+
+    /// The worker set, creating it on first use. `num_workers` of it are active per chunk.
+    TwoLevelBuildWorkers & twoLevelWorkers(ThreadPool & thread_pool) const;
 
     using LCDictionaryKey = ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKey;
     using LCDictionaryKeyHash = ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKeyHash;

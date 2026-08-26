@@ -10,9 +10,14 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
+#include <Common/Exception.h>
+
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <cstring>
+#include <exception>
+#include <mutex>
 #include <vector>
 
 namespace CurrentMetrics
@@ -46,49 +51,6 @@ namespace
 /// `max_threads` to avoid spawning threads that only add scheduling and allocator contention.
 constexpr size_t MAX_TWO_LEVEL_BUILD_THREADS = 16;
 
-/// Run `body(worker_idx)` once per worker with deterministic worker_idx, no block stealing.
-/// Use when each worker owns a fixed slice of the input that must match across phases.
-template <typename Body>
-void parallelPerWorker(
-    ThreadPool & pool,
-    ThreadName name,
-    size_t num_workers,
-    Body && body)
-{
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, name);
-    for (size_t w = 0; w < num_workers; ++w)
-        runner.enqueueAndKeepTrack([&, w] { body(w); }, Priority{});
-    runner.waitForAllToFinishAndRethrowFirstError();
-}
-
-/// Run `body(item_idx)` for every item in [0, total) with `num_workers` tasks pulling work
-/// via an atomic counter. Used to dispatch one task per bucket.
-template <typename Body>
-void parallelDispatch(
-    ThreadPool & pool,
-    ThreadName name,
-    size_t num_workers,
-    size_t total,
-    Body && body)
-{
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, name);
-    std::atomic<size_t> next{0};
-    for (size_t w = 0; w < num_workers; ++w)
-    {
-        runner.enqueueAndKeepTrack([&]
-        {
-            while (true)
-            {
-                const size_t i = next.fetch_add(1, std::memory_order_relaxed);
-                if (i >= total)
-                    return;
-                body(i);
-            }
-        }, Priority{});
-    }
-    runner.waitForAllToFinishAndRethrowFirstError();
-}
-
 /// Mark rows whose `LowCardinality` index is the dictionary's NULL entry with 0 in `keep`, allocating
 /// the filter lazily on the first such row.
 void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Filter & keep, size_t num_rows)
@@ -120,6 +82,197 @@ void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Fi
     }
 }
 
+}
+
+/// Workers of the two-level parallel build, started once on the first parallel chunk and reused for
+/// every later one.
+///
+/// The build used to enqueue `num_workers` thread-pool jobs for each of its two phases, so the job
+/// count grew with the number of chunks rather than with the query's data - a 50M-row `DISTINCT`
+/// enqueued about 9000 of them. Every pool job wraps its callback in a `ThreadGroupSwitcher`, whose
+/// attach snapshots the ~1500-entry `ProfileEvents::Counters` array and reads `/proc/thread-self/*`,
+/// so that per-job cost dominated the build's fixed overhead. The aggregation path never pays it,
+/// because it fans out once, at merge time. Here the fan-out happens once too: the workers stay on
+/// their pool jobs for the transform's lifetime and are handed each chunk's phases through a
+/// condition variable, which leaves two rendezvous per chunk instead of `2 * num_workers` jobs.
+///
+/// A parked worker holds a pool job but consumes no CPU. The set is sized to the pool, so the jobs
+/// always have a thread to run on and a phase cannot wait on a job that was never scheduled.
+class TwoLevelBuildWorkers
+{
+public:
+    TwoLevelBuildWorkers(ThreadPool & pool_, ThreadName thread_name_, size_t max_workers_)
+        : max_workers(max_workers_), runner(pool_, thread_name_)
+    {
+    }
+
+    ~TwoLevelBuildWorkers()
+    {
+        {
+            std::lock_guard lock(mutex);
+            stop = true;
+        }
+        work_available.notify_all();
+        try
+        {
+            runner.waitForAllToFinishAndRethrowFirstError();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    /// `body(w)` once for each of the first `active` workers, with its own index. Use when each worker
+    /// owns a fixed slice of the input that has to line up across phases.
+    void runPerWorker(TwoLevelPhaseBody & phase_body, size_t active)
+    {
+        runPhase(phase_body, PhaseKind::PerWorker, active, 0);
+    }
+
+    /// `body(i)` for every i in [0, total), the first `active` workers pulling through an atomic cursor.
+    void runDispatch(TwoLevelPhaseBody & phase_body, size_t active, size_t total)
+    {
+        runPhase(phase_body, PhaseKind::Dispatch, active, total);
+    }
+
+private:
+    enum class PhaseKind : uint8_t
+    {
+        PerWorker,
+        Dispatch,
+    };
+
+    /// Start workers up to `needed`, so a query whose chunks only ever use a few of them never parks
+    /// the whole pool. Called only from the main thread, which is the only writer of `started_workers`.
+    void ensureStarted(size_t needed)
+    {
+        for (; started_workers < needed; ++started_workers)
+            runner.enqueueAndKeepTrack([this, w = started_workers] { workerLoop(w); }, Priority{});
+    }
+
+    void runPhase(TwoLevelPhaseBody & phase_body, PhaseKind phase_kind, size_t active, size_t total)
+    {
+        chassert(active <= max_workers);
+        ensureStarted(active);
+
+        {
+            std::lock_guard lock(mutex);
+            body = &phase_body;
+            kind = phase_kind;
+            active_workers = active;
+            dispatch_total = total;
+            cursor.store(0, std::memory_order_relaxed);
+            done_count = 0;
+            ++phase_seq;
+        }
+        work_available.notify_all();
+
+        std::unique_lock lock(mutex);
+        phase_finished.wait(lock, [this] { return done_count == active_workers; });
+        body = nullptr;
+
+        if (first_error)
+        {
+            auto error = first_error;
+            first_error = {};
+            std::rethrow_exception(error);
+        }
+    }
+
+    void workerLoop(size_t worker_index)
+    {
+        size_t seen_seq = 0;
+        while (true)
+        {
+            TwoLevelPhaseBody * phase_body = nullptr;
+            PhaseKind phase_kind = PhaseKind::PerWorker;
+            size_t total = 0;
+            {
+                std::unique_lock lock(mutex);
+                work_available.wait(lock, [this, &seen_seq] { return stop || phase_seq != seen_seq; });
+                if (stop)
+                    return;
+                seen_seq = phase_seq;
+
+                /// Not taking part in this phase: back to waiting, without counting towards it.
+                if (worker_index >= active_workers)
+                    continue;
+
+                phase_body = body;
+                phase_kind = kind;
+                total = dispatch_total;
+            }
+
+            try
+            {
+                if (phase_kind == PhaseKind::PerWorker)
+                {
+                    phase_body->run(worker_index);
+                }
+                else
+                {
+                    while (true)
+                    {
+                        const size_t i = cursor.fetch_add(1, std::memory_order_relaxed);
+                        if (i >= total)
+                            break;
+                        phase_body->run(i);
+                    }
+                }
+            }
+            catch (...)
+            {
+                std::lock_guard lock(mutex);
+                if (!first_error)
+                    first_error = std::current_exception();
+            }
+
+            {
+                std::lock_guard lock(mutex);
+                ++done_count;
+                if (done_count == active_workers)
+                {
+                    /// Notify with the lock held: the waiter's predicate reads `done_count`.
+                    phase_finished.notify_one();
+                }
+            }
+        }
+    }
+
+    /// Upper bound on the workers, and so on the pool jobs this may hold: sized to the pool, so a
+    /// started worker always has a thread and a phase never waits on a job the pool could not run.
+    const size_t max_workers;
+    ThreadPoolCallbackRunnerLocal<void> runner;
+    size_t started_workers = 0;
+
+    std::mutex mutex;
+    std::condition_variable work_available;
+    std::condition_variable phase_finished;
+
+    /// Bumped by the main thread for every published phase; a worker compares it against the last
+    /// phase it ran to tell a new phase from a spurious wake-up.
+    size_t phase_seq = 0;
+    size_t done_count = 0;
+    size_t active_workers = 0;
+    size_t dispatch_total = 0;
+    TwoLevelPhaseBody * body = nullptr;
+    PhaseKind kind = PhaseKind::PerWorker;
+    std::atomic<size_t> cursor{0};
+    bool stop = false;
+    std::exception_ptr first_error;
+};
+
+TwoLevelBuildWorkers & DistinctTransform::twoLevelWorkers(ThreadPool & thread_pool) const
+{
+    if (!two_level_workers)
+    {
+        /// Size the set to the pool, so every worker's job has a thread and a phase never waits on a
+        /// job that the pool could not schedule. Only `num_workers` of them are active per chunk.
+        const size_t size = std::min<size_t>(thread_pool.getMaxThreads(), two_level_num_fine_buckets);
+        two_level_workers = std::make_unique<TwoLevelBuildWorkers>(thread_pool, ThreadName::DISTINCT_FINAL, size);
+    }
+    return *two_level_workers;
 }
 
 void LCOptimizationController::update(size_t num_rows, size_t new_indices_in_chunk)
@@ -340,9 +493,10 @@ void DistinctTransform::buildTwoLevelParallelFilter(
         return std::pair{lo, hi};
     };
 
+    auto & workers = twoLevelWorkers(thread_pool);
+
     /// Phase A: hash + partition each worker's row-slice into its own per-bucket buffers.
-    parallelPerWorker(thread_pool, ThreadName::DISTINCT_FINAL, num_workers,
-        [&](size_t w)
+    auto phase_a = [&](size_t w)
         {
             typename Method::State state(columns, key_sizes, nullptr);
             Arena unused_pool;
@@ -364,11 +518,12 @@ void DistinctTransform::buildTwoLevelParallelFilter(
                     keys_buf[b].insert(key_bytes, key_bytes + sizeof(KeyType));
                 }
             }
-        });
+        };
+    TwoLevelPhaseBodyOf<decltype(phase_a)> phase_a_body{phase_a};
+    workers.runPerWorker(phase_a_body, num_workers);
 
     /// Phase B: one task per bucket, emplacing every worker's slice for that bucket.
-    parallelDispatch(thread_pool, ThreadName::DISTINCT_FINAL, num_workers, NUM_BUCKETS,
-        [&](size_t bucket)
+    auto phase_b = [&](size_t bucket)
         {
             auto & impl = method.data.impls[bucket];
             typename BucketData::Impl::LookupResult it;
@@ -421,7 +576,9 @@ void DistinctTransform::buildTwoLevelParallelFilter(
                     filter[row] = inserted;
                 }
             }
-        });
+        };
+    TwoLevelPhaseBodyOf<decltype(phase_b)> phase_b_body{phase_b};
+    workers.runDispatch(phase_b_body, num_workers, NUM_BUCKETS);
 }
 
 std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows)
