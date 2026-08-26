@@ -551,7 +551,7 @@ def main():
                         f"rm -rf {smoke_dir} && mkdir -p {smoke_dir}",
                         f"cp {build_dir}/programs/clickhouse.js {build_dir}/programs/clickhouse.wasm {smoke_dir}/",
                         "node --version",
-                        f'cd {smoke_dir} || exit 1; node clickhouse.js local --multiquery "{smoke_query}" > smoke.out 2> smoke.err & pid=$!; '
+                        f'cd {smoke_dir} || exit 1; node clickhouse.js local --tmp --multiquery "{smoke_query}" > smoke.out 2> smoke.err & pid=$!; '
                         "found=0; for i in $(seq 1 300); do "
                         "grep -qx 1000-499500-999 smoke.out 2>/dev/null && { found=1; break; }; "
                         'kill -0 "$pid" 2>/dev/null || break; sleep 1; done; '
