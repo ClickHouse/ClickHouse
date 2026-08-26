@@ -1,0 +1,6 @@
+--- the row number of a rendered row is the offset of its page plus its index within the page
+createTextNode(this._rowNumberOffset() + this._row_idx)
+--- the offset is the number of rows the server skipped for the page: size * (page - 1)
+        return size * (page - 1);
+--- no page selected is the unpaginated first page, which starts at 1 (a zero offset)
+        if (!(page >= 1) || !(size >= 1)) { return 0; }

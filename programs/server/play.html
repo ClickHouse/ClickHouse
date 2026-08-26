@@ -4615,7 +4615,8 @@ class QueryResultElement extends HTMLElement
 
         let td = document.createElement('td');
         td.className = 'row-number';
-        td.appendChild(document.createTextNode(this._row_idx));
+        /// Numbered within the whole result, not within the page (see `_rowNumberOffset`).
+        td.appendChild(document.createTextNode(this._rowNumberOffset() + this._row_idx));
         tr.appendChild(td);
 
         for (const column of this._header)
@@ -5480,6 +5481,18 @@ class QueryResultElement extends HTMLElement
         const columns = Array.isArray(this._header) ? this._header.length : 0;
         if (columns <= 0) { return 0; }
         return Math.max(1, Math.min(this._max_rows, Math.floor(this._max_cells / columns)));
+    }
+
+    /// How many rows of the result come before the page being shown: the offset the server skipped for
+    /// it, `size * (page - 1)` (see `shapeUrlParams`). The row-number column counts from it, so the
+    /// numbers name the rows' positions in the whole result and stay the same rows' numbers on whatever
+    /// page they are shown - rather than restarting at 1 on every page. Zero while no page is selected,
+    /// which is the unpaginated first page.
+    _rowNumberOffset()
+    {
+        const { page, size } = this._pagination;
+        if (!(page >= 1) || !(size >= 1)) { return 0; }
+        return size * (page - 1);
     }
 
     /// (Re)render the pager under the table.
