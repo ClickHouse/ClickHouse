@@ -86,7 +86,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     {
         .version = index_format.version,
         .condition = condition_text.get(),
-        .part = *data_part,
+        .part_info = *data_part_info_for_read,
         .index = *index.index,
         .readable_ranges = nullptr,
         .skip_postings_deserialization = false,

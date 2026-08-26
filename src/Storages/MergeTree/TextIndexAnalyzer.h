@@ -70,7 +70,7 @@ public:
 
     void addMissingToken(std::string_view token);
     void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
-    void addPostings(std::string_view token, PostingListPtr postings);
+    void addPostings(std::string_view token, const PostingList & postings);
 
     /// Pushes the row ranges still readable after the analysis of the primary key and prior skip indexes.
     void setReadableRows(std::vector<RowsRange> readable_ranges);
