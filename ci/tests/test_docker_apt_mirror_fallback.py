@@ -60,7 +60,7 @@ def _buildx_failure(step, body):
         f" > [linux/arm64 stage-0 4/6] RUN {step}:\n"
         + "".join(f"61.2 {line}\n" for line in body)
         + "------\n"
-        f"ERROR: failed to solve: {run}\n"
+        f"ERROR: failed to build: failed to solve: {run}\n"
     )
 
 
@@ -92,6 +92,9 @@ def test_only_the_step_the_build_stopped_on_decides():
     assert not is_apt_mirror_failure(RECOVERED_UPDATE + BROKEN_PACKAGE_NAME)
     # The premise of the arm: the ignored warning really is in the text being matched.
     assert "Failed to fetch" in RECOVERED_UPDATE
+    # And that the fixture ends the way buildx really ends a failed build, since that
+    # sentence is what locates the terminal step.
+    assert "ERROR: failed to build: failed to solve:" in MIRROR_WITHHELD_FILE
 
 
 def test_apt_severity_decides_inside_the_failing_step_too():

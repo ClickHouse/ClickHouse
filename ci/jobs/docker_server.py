@@ -291,7 +291,7 @@ APT_MIRROR_ERRORS = [
 # stopped on, and apt's own `E:` severity, which distinguishes "could not get the
 # file" from a miss apt recovered from.
 BUILDX_FAILURE_FENCE = "------"
-BUILDX_SOLVE_ERROR = "ERROR: failed to solve:"
+BUILDX_SOLVE_ERROR = "failed to solve:"
 APT_ERROR_SEVERITY = "E: "
 
 
