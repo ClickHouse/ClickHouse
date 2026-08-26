@@ -33,42 +33,43 @@ info_running() {
 # number of times; a permanent Fail means trace was never delivered alongside a running
 # information-level query.
 #
-# The information query reads a named pipe held open by the writer below, so it blocks
-# until that writer closes. That makes the window end when the trace verdict is in rather
-# than when a timer expires, so a slow trace attempt cannot outlive the query it is
-# supposed to race.
+# The information query reads a named pipe held open by this shell, so it blocks until
+# this shell closes it. That makes the window end when the trace verdict is in rather than
+# when a timer expires, so a slow trace attempt cannot outlive the query it races.
 trace_check() {
-    local info_out info_qid info_pid trace_ok info_ready pipe hold_pid opened
+    local info_out info_qid info_pid trace_ok info_ready pipe hold_fd
     info_out=$(mktemp "${WORKDIR}/out_XXXXXX")
     pipe="${WORKDIR}/pipe_${BASHPID}"
-    opened="${WORKDIR}/opened_${BASHPID}"
-    trap 'rm -f "$info_out" "$pipe" "$opened"' RETURN
+    trap 'rm -f "$info_out" "$pipe"' RETURN
     for _ in {1..3}; do
-        rm -f "$pipe" "$opened"
+        rm -f "$pipe"
         mkfifo "$pipe" || break
-        # Hold the write end open for the whole window, opened before any reader. Opening a
-        # pipe for reading blocks while it has no writer, and an interrupted open is not
-        # restarted, so a signal reaching a server thread parked there fails the query with
-        # CANNOT_OPEN_FILE; with a writer already present that open returns at once and the
-        # query parks in a read instead, which is retried. Closing this descriptor ends the
-        # window, and opening the write end only completes once the reader has opened too,
-        # so the marker below is what proves closing it will be seen as end of file.
-        ( exec 3>"$pipe"; : > "$opened"; printf 'x\n' >&3; exec sleep 300 ) &
-        hold_pid=$!
+        # Opening a pipe read-write does not block, so this holds both ends while there is
+        # still no reader: the query's own open then returns at once instead of parking until
+        # a writer appears. That matters because an interrupted open is not restarted, so a
+        # thread parked in one fails the query with CANNOT_OPEN_FILE, while a read is retried.
+        # Let bash pick the descriptor, since fd 3 carries bash xtrace under CI.
+        exec {hold_fd}<>"$pipe"
+        printf 'x\n' >&"$hold_fd"
         info_qid="00965_info_${CLICKHOUSE_DATABASE}_${BASHPID}_${RANDOM}"
+        # Closing this descriptor is what ends the window, so the client must not keep a copy
+        # of it alive: end of file needs every write end gone, not just this one.
         ${CLICKHOUSE_CLIENT_BINARY} --send_logs_level="information" --query_id="$info_qid" \
             --query="SELECT count() FROM file('$pipe', 'TSV', 'a String') FORMAT Null;" \
-            > "$info_out" 2>&1 &
+            > "$info_out" 2>&1 {hold_fd}>&- &
         info_pid=$!
         trace_ok=""
         info_ready=""
-        # The information query cannot pass through the registered state while unobserved,
-        # so the budget only has to cover getting there. It is spent in elapsed time, not in
-        # a number of probes, so a host on which each probe is slow waits no longer. The
-        # query registers before it opens the pipe, so the marker is required as well.
+        # The budget is spent in elapsed time, not in a number of probes, so a host on which
+        # each probe is slow waits no longer. The byte written above is gone only once the
+        # query has opened the pipe and read from it, so requiring that as well as
+        # registration keeps the close below from preceding the query's own open.
         SECONDS=0
         while [ "$SECONDS" -lt 3 ]; do
-            [ -e "$opened" ] && info_running "$info_qid" && { info_ready=1; break; }
+            if ! read -t 0 -u "$hold_fd" && info_running "$info_qid"; then
+                info_ready=1
+                break
+            fi
             sleep 0.1
         done
         if [ -n "$info_ready" ]; then
@@ -85,23 +86,21 @@ trace_check() {
             # information query reach end of file and finish on its own, so its whole
             # lifetime is covered; its exit status is asserted too, since a client that fails
             # without printing would otherwise satisfy the negative check by emitting nothing.
-            kill "$hold_pid" 2>/dev/null
-            wait "$hold_pid" 2>/dev/null
+            exec {hold_fd}>&-
             wait "$info_pid" || echo "information query failed"
             grep '<Debug>\|<Trace>' "$info_out"
             echo "OK"
             return
         fi
         # Nothing is asserted over an abandoned window, so end the attempt instead of
-        # waiting out a client that may still be starting up. Unlinking before the writer
+        # waiting out a client that may still be starting up. Unlinking before the write end
         # goes away leaves no instant at which the pipe is still reachable by name with no
-        # writer left to release it, so a server that opens it late fails at once rather
-        # than parking: by then the name is gone.
+        # writer left to release it, so a query that opens it late fails at once rather than
+        # parking: by then the name is gone.
         kill "$info_pid" 2>/dev/null
         wait "$info_pid" 2>/dev/null
-        rm -f "$pipe" "$opened"
-        kill "$hold_pid" 2>/dev/null
-        wait "$hold_pid" 2>/dev/null
+        rm -f "$pipe"
+        exec {hold_fd}>&-
     done
     echo "Fail"
 }
