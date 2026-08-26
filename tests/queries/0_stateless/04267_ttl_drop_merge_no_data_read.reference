@@ -26,3 +26,5 @@ RegularMerge	0	0
 -- Case 9: pending patch part disables the short-circuit
 RegularMerge	0	100
 0
+-- Case 10: STOP TTL MERGES suppresses the short-circuit
+200

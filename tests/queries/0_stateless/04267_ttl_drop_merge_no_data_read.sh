@@ -524,3 +524,44 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patched;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patched;"
+
+# -------------------------------------------------------------------
+# Case 10: SYSTEM STOP TTL MERGES still suppresses row removal
+#
+# OPTIMIZE ... FINAL assigns MergeType::Regular, so it reaches the shortcut
+# through the proven-expiry arm rather than the TTLDrop one. The operator has
+# stopped TTL merges, so this merge must not drop the rows -- the pipeline
+# would not, because the same flag also gates its TTL step.
+# -------------------------------------------------------------------
+echo "-- Case 10: STOP TTL MERGES suppresses the short-circuit"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_stopped
+    (
+        id UInt64,
+        value String,
+        event_time DateTime DEFAULT now() - INTERVAL 2 DAY
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time + INTERVAL 1 DAY
+    SETTINGS
+        ttl_only_drop_parts = 1,
+        merge_with_ttl_timeout = 0,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_stopped;
+    SYSTEM STOP TTL MERGES t_ttl_stopped;
+
+    INSERT INTO t_ttl_stopped (id, value) SELECT number, randomString(100) FROM numbers(100);
+    INSERT INTO t_ttl_stopped (id, value) SELECT number, randomString(100) FROM numbers(100);
+
+    -- Only ordinary merges are re-enabled; TTL merges stay stopped.
+    SYSTEM START MERGES t_ttl_stopped;
+
+    OPTIMIZE TABLE t_ttl_stopped FINAL;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_stopped;"
+${CLICKHOUSE_CLIENT} -q "SYSTEM START TTL MERGES t_ttl_stopped;"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_stopped;"
