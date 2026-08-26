@@ -22,7 +22,7 @@ namespace
 
 /// A special internal function that calculates the partition id of patch part.
 /// Arguments: string column with the part name; const string column with hash of column names in the patch part.
-class FunctionPatchPartitionID final : public IFunction
+class FunctionPatchPartitionID : public IFunction
 {
 public:
     static constexpr auto name = "__patchPartitionID";

@@ -15,10 +15,9 @@ class ObjectStorageQueuePostProcessor : public WithContext
 public:
     struct AfterProcessingSettings
     {
-        UInt32 after_processing_retries{};
+        UInt32 after_processing_retries;
         String after_processing_move_uri;
         String after_processing_move_prefix;
-        bool after_processing_move_preserve_path = false;
         String after_processing_move_access_key_id;
         String after_processing_move_secret_access_key;
         String after_processing_move_connection_string;
@@ -45,7 +44,7 @@ private:
     void doWithRetries(std::function<void()> action) const;
 
     /// Move processed objects to another prefix
-    void moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path) const;
+    void moveWithinBucket(const StoredObjects & objects, const String & move_prefix) const;
     /// Move processed S3 objects, possibly to another S3 storage
     void moveS3Objects(const StoredObjects & objects) const;
     /// Move processed Azure blobs, possibly to another Azure storage
