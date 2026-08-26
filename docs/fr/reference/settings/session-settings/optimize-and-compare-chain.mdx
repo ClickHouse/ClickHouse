@@ -21,7 +21,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Nouveau paramètre"}]}]} />
 
-Propage les comparaisons avec des constantes dans les chaînes AND afin d&#39;améliorer le filtrage. Prend en charge les opérateurs `<`, `<=`, `>`, `>=`, `=` ainsi que leurs combinaisons. Par exemple, `(a < b) AND (b < c) AND (c < 5)` deviendrait `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
+Propage les comparaisons avec des constantes dans les chaînes AND afin d&#39;améliorer le filtrage. Prend en charge les opérateurs `<`, `<=`, `>`, `>=`, `=` ainsi que leurs combinaisons. Par exemple, `(a < b) AND (b < c) AND (c < 5)` deviendrait `(a < b) AND (b < c) AND (c < 5) AND indexHint(b < 5) AND indexHint(a < 5)`. Les comparaisons dérivées sont encapsulées dans `indexHint` : elles participent à l&#39;analyse des index (clé primaire, clé de partition, index de saut) et réduisent l&#39;ensemble de données lu, mais n&#39;ont aucun coût par ligne et n&#39;affectent pas PREWHERE. Une comparaison dérivée via des expressions de tables différentes reste exécutable (`(t1.a < t2.b) AND (t2.b < 5)` dérive la condition simple `t1.a < 5`) : c&#39;est la seule condition pouvant être poussée sous la jointure, où elle filtre une entrée de jointure que la chaîne d&#39;origine ne peut pas atteindre. Les comparaisons dérivées qui contredisent une condition existante sont également ajoutées comme conditions simples, de sorte que le `AND` se réduit à `false`.
 
 <div id="optimize_and_compare_chain_max_hash_work">
   ## optimize_and_compare_chain_max_hash_work
