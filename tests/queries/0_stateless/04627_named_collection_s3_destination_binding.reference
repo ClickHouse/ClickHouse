@@ -43,6 +43,14 @@ key-on-the-wire
 refused
 --- the same rule reaches DatabaseS3, where an absent url means every table name is a full url
 refused
+--- the replay exemption cannot hand that shape back: with no prefix to grandfather, load anonymously
+loaded
+no-key-on-the-wire
+--- control: a database whose collection does declare a url prefix still reads with its keys
+payload
+--- control: a grandfathered database whose stored prefix does name a destination keeps its keys
+loaded
+payload
 --- a fresh credentialed cross-origin CREATE is refused for both S3 engines
 refused
 refused

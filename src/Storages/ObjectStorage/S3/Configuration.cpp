@@ -243,7 +243,7 @@ namespace
     }
 }
 
-void validateS3CollectionDestinationBinding(
+bool validateS3CollectionDestinationBinding(
     const NamedCollection & collection,
     const S3::S3AuthSettings & effective_auth,
     const String & effective_url,
@@ -254,10 +254,10 @@ void validateS3CollectionDestinationBinding(
     /// `false` as the default because `findOverrideForbiddingKey` accepts the override on the strength of
     /// `allow_named_collection_override_by_default` alone and passes no signal on about which of the two it was.
     if (collection.isOverridable("url", /*default_value=*/false))
-        return;
+        return false;
 
     if (!effective_auth.hasEffectiveCredentials() || !hasCollectionDerivedSecret(collection, effective_auth))
-        return;
+        return false;
 
     /// The authorised destination is whatever the collection's own definition names, which is the value a
     /// query override replaced rather than the override itself. `markQueryOverridden` records a before-value
@@ -280,11 +280,11 @@ void validateS3CollectionDestinationBinding(
         /// compare an effective origin against.
         const auto declared = declaredOrigin(stored_url, context);
         if (!declared)
-            return;
+            return false;
 
         const auto effective = declaredOrigin(effective_url, context);
         if (effective && *effective == *declared)
-            return;
+            return false;
         reason = fmt::format("the collection declares the origin {}", declared->toString());
     }
 
@@ -302,7 +302,7 @@ void validateS3CollectionDestinationBinding(
             "s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.",
             maskedForLog(effective_url),
             reason);
-        return;
+        return true;
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for 'url'");

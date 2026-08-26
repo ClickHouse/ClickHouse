@@ -346,6 +346,40 @@ h '--- the same rule reaches DatabaseS3, where an absent url means every table n
 # changelog names this shape because it used to be accepted.
 run "CREATE DATABASE ${CLICKHOUSE_DATABASE}_kodb ENGINE = S3($(c keysonly))"
 
+h '--- the replay exemption cannot hand that shape back: with no prefix to grandfather, load anonymously'
+# The upgrade shape for a database: created while the collection declared its own origin, replayed after
+# the collection lost it. `no-key-on-the-wire` is the load-bearing value, because it needs a request to
+# have reached the listener - a fixture that broke earlier reads as NO-REQUEST instead of passing.
+stmt "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_replaydb"
+stmt "DROP NAMED COLLECTION IF EXISTS $(c droppedurl)"
+stmt "CREATE NAMED COLLECTION $(c droppedurl) AS url = '$OWN/',
+        access_key_id = 'AKIAIOSFODNN7EXAMPLE', secret_access_key = 'testtest'"
+stmt "CREATE DATABASE ${CLICKHOUSE_DATABASE}_replaydb ENGINE = S3($(c droppedurl))"
+stmt "ALTER NAMED COLLECTION $(c droppedurl) DELETE url"
+stmt "DETACH DATABASE ${CLICKHOUSE_DATABASE}_replaydb"
+push loaded "ATTACH DATABASE ${CLICKHOUSE_DATABASE}_replaydb"
+capture_must_not_leak AKIAIOSFODNN7EXAMPLE \
+    "SELECT * FROM ${CLICKHOUSE_DATABASE}_replaydb.\`__CAPTURE__/test/$DATA\`"
+
+h '--- control: a database whose collection does declare a url prefix still reads with its keys'
+# The row is in a bucket an anonymous client cannot read, so `payload` is what separates "the keys are
+# still attached" from "everything credentialed now loads anonymously".
+stmt "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_bounddb"
+stmt "CREATE DATABASE ${CLICKHOUSE_DATABASE}_bounddb ENGINE = S3($(c keys))"
+allowed_reads "SELECT * FROM ${CLICKHOUSE_DATABASE}_bounddb.\`$DATA\`"
+
+h '--- control: a grandfathered database whose stored prefix does name a destination keeps its keys'
+# The same upgrade shape as above but with a prefix persisted in the statement, so one destination is
+# grandfathered and there is something to grandfather it to.
+stmt "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_pinneddb"
+stmt "DROP NAMED COLLECTION IF EXISTS $(c pinnedurl)"
+stmt "CREATE NAMED COLLECTION $(c pinnedurl) AS url = '$OTHER/'"
+stmt "CREATE DATABASE ${CLICKHOUSE_DATABASE}_pinneddb ENGINE = S3($(c pinnedurl), url = '$OWN/')"
+stmt "ALTER NAMED COLLECTION $(c pinnedurl) SET access_key_id = 'test', secret_access_key = 'testtest'"
+stmt "DETACH DATABASE ${CLICKHOUSE_DATABASE}_pinneddb"
+push loaded "ATTACH DATABASE ${CLICKHOUSE_DATABASE}_pinneddb"
+allowed_reads "SELECT * FROM ${CLICKHOUSE_DATABASE}_pinneddb.\`$DATA\`"
+
 h '--- a fresh credentialed cross-origin CREATE is refused for both S3 engines'
 # Each engine reaches the check through its own creator, so the replay predicate each one reads needs its
 # own arm; the exemption arms below would otherwise be the only thing exercising either.
@@ -516,6 +550,9 @@ ${CLICKHOUSE_CLIENT} -q "
     DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_db;
     DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_wrapped;
     DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_wrapsink;
+    DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_replaydb;
+    DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_bounddb;
+    DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_pinneddb;
     DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.replay;
     DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t;
     DROP NAMED COLLECTION IF EXISTS $(c keys);
@@ -535,4 +572,6 @@ ${CLICKHOUSE_CLIENT} -q "
     DROP NAMED COLLECTION IF EXISTS $(c userinfo);
     DROP NAMED COLLECTION IF EXISTS $(c effuserinfo);
     DROP NAMED COLLECTION IF EXISTS $(c dflt);
+    DROP NAMED COLLECTION IF EXISTS $(c droppedurl);
+    DROP NAMED COLLECTION IF EXISTS $(c pinnedurl);
     DROP NAMED COLLECTION IF EXISTS $(c presigned)"

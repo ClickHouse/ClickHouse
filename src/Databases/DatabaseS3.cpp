@@ -255,7 +255,19 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
         auth[S3AuthSetting::secret_access_key] = result.secret_access_key.value_or("");
         auth[S3AuthSetting::no_sign_request] = result.no_sign_request;
         auth[S3AuthSetting::use_environment_credentials] = result.use_environment_credentials;
-        validateS3CollectionDestinationBinding(collection, auth, result.url_prefix, context_, is_metadata_replay);
+        const bool grandfathered
+            = validateS3CollectionDestinationBinding(collection, auth, result.url_prefix, context_, is_metadata_replay);
+
+        /// Without a url prefix `getFullUrl` returns the queried table name verbatim, so every lookup names its
+        /// own destination and there is no single stored one to grandfather. Load anonymously instead, which is
+        /// what `s3_load_table_anonymously_if_credentials_restricted` grants elsewhere.
+        if (grandfathered && result.url_prefix.empty())
+        {
+            result.access_key_id.reset();
+            result.secret_access_key.reset();
+            result.use_environment_credentials = false;
+            result.no_sign_request = true;
+        }
     }
     else
     {
