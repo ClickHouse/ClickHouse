@@ -55,7 +55,7 @@ def test_array_evolved_with_struct(
 
     execute_spark_query(
         f"""
-            INSERT INTO {TABLE_NAME} VALUES (ARRAY(named_struct('name', 'Singapore', 'zip', 12345), named_struct('name', 'Moscow', 'zip', 54321)), ARRAY(1,2));
+            INSERT INTO {TABLE_NAME} VALUES (ARRAY(named_struct('city', 'Singapore', 'zip', 12345), named_struct('city', 'Moscow', 'zip', 54321)), ARRAY(1,2));
         """
     )
 

@@ -2044,6 +2044,7 @@ The command returns a table with two columns (`metric_name String`, `metric_valu
 | `deleted_manifest_files_count` | Number of manifest files deleted |
 | `deleted_manifest_lists_count` | Number of manifest list files deleted |
 | `deleted_statistics_files_count` | Number of statistics files deleted (always 0 currently) |
+| `failed_deletions_count` | Number of expired files that could not be deleted from the object storage. Such files are leaked: the metadata no longer references them, so a later `expire_snapshots` does not retry them |
 | `dry_run` | `1` for dry-run mode, `0` for normal execution |
 
 The command performs the following steps:

@@ -28,6 +28,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 namespace DB
 {
@@ -45,7 +46,8 @@ public:
         const ActionsDAG * filter_dag_,
         TableStateSnapshotPtr table_snapshot_,
         IcebergDataSnapshotPtr data_snapshot_,
-        PersistentTableComponents persistent_components);
+        PersistentTableComponents persistent_components,
+        std::shared_ptr<SecondaryStorages> secondary_storages_);
 
     ~SingleThreadIcebergKeysIterator();
 
@@ -61,6 +63,8 @@ private:
     Iceberg::IcebergDataSnapshotPtr data_snapshot;
     PersistentTableComponents persistent_components;
     LoggerPtr log;
+
+    std::shared_ptr<SecondaryStorages> secondary_storages;
 
     size_t manifest_file_index = 0;
     Iceberg::ManifestIteratorPtr current_manifest_file_iterator;
@@ -88,7 +92,8 @@ public:
         IDataLakeMetadata::FileProgressCallback callback_,
         Iceberg::TableStateSnapshotPtr table_snapshot_,
         Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-        Iceberg::PersistentTableComponents persistent_components);
+        Iceberg::PersistentTableComponents persistent_components,
+        std::shared_ptr<SecondaryStorages> secondary_storages_);
 
     ObjectInfoPtr next(size_t) override;
 
@@ -119,6 +124,7 @@ private:
     std::exception_ptr deletes_exception TSA_GUARDED_BY(deletes_mutex);
     std::exception_ptr exception;
     std::mutex exception_mutex;
+    std::shared_ptr<SecondaryStorages> secondary_storages;  // Sometimes data or manifests can be located on another storage
 };
 }
 
