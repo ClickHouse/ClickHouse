@@ -194,7 +194,11 @@ ${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=INSERT%20INTO%20t%20VALUES%20(
 echo "--- deferred HTTP 100 Continue without a body still inserts (expect: 139 9) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
-printf '' | ${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=INSERT%20INTO%20t%20VALUES%20(15)" "${defer_headers[@]}" -H 'Transfer-Encoding: chunked' --data-binary @-
+# `-T -` uploads from stdin with an unknown size, which is what makes `curl` chunk-encode the
+# request and emit the terminating chunk. Setting `Transfer-Encoding: chunked` by hand instead only
+# relabels a request whose body `curl` still sends unencoded, and older `curl` then never sends that
+# terminating chunk, so the server waits for a body that never arrives.
+${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=INSERT%20INTO%20t%20VALUES%20(15)" "${defer_headers[@]}" -T - < /dev/null
 echo "--- deferred chunked HTTP 100 Continue without a body still inserts (expect: 154 10) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
