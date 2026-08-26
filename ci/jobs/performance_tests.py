@@ -1021,7 +1021,7 @@ class CHServer:
 
     @classmethod
     def run_test(
-        cls, test_file, runs=None, max_queries=0, results_path=f"{temp_dir}/perf_wd/"
+        cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/"
     ):
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
@@ -1036,6 +1036,7 @@ class CHServer:
                 {runs_arg} --max-queries {max_queries} \
                 --profile-seconds 10 \
                 --allow-settings-version-skew \
+                --pr-number {pr_number} \
                 {test_file}",
             verbose=True,
             strip=False,
@@ -1677,6 +1678,7 @@ def main():
                 CHServer.run_test(
                     "./tests/performance/" + test,
                     max_queries=max_queries,
+                    pr_number=info.pr_number,
                     results_path=perf_wd,
                 )
                 cleanup_user_files()
