@@ -49,3 +49,42 @@ def test_deduplication_with_mixed_metadata_storage_policy(start_cluster):
     assert node.query("SELECT sum(c0) FROM t0") == "3\n"
 
     node.query("DROP TABLE t0 SYNC")
+
+
+def test_deduplication_drop_part_with_mixed_metadata_storage_policy(start_cluster):
+    # Companion to the test above, covering the `dropPart()` half of the same fix.
+    # `ALTER TABLE ... DROP PARTITION` reaches `MergeTreeDeduplicationLog::dropPart`,
+    # which used to assert `current_writer != nullptr` as well; the assertion was
+    # reported from that path too in
+    # https://github.com/ClickHouse/ClickHouse/issues/86189.
+    node.query("DROP TABLE IF EXISTS t1 SYNC")
+    node.query(
+        """
+        CREATE TABLE t1 (c0 Int) ENGINE = MergeTree() PARTITION BY c0 ORDER BY tuple()
+        SETTINGS non_replicated_deduplication_window = 2, storage_policy = 'mixed_metadata_policy'
+        """
+    )
+
+    node.query("INSERT INTO t1 (c0) VALUES (1)")
+    node.query("INSERT INTO t1 (c0) VALUES (2)")
+    assert node.query("SELECT count() FROM t1") == "2\n"
+
+    # Restart so that the deduplication log is reopened from scratch and the first
+    # operation touching the writer is a drop rather than an insert.
+    node.restart_clickhouse()
+
+    # This used to fail with Logical error: 'current_writer != nullptr'.
+    node.query("ALTER TABLE t1 DROP PARTITION 1")
+    assert node.query("SELECT count() FROM t1") == "1\n"
+
+    # The deduplication record for the dropped block is gone, so the same block can be
+    # inserted again instead of being deduplicated away.
+    node.query("INSERT INTO t1 (c0) VALUES (1)")
+    assert node.query("SELECT count() FROM t1") == "2\n"
+    assert node.query("SELECT sum(c0) FROM t1") == "3\n"
+
+    # A block that was not dropped is still deduplicated.
+    node.query("INSERT INTO t1 (c0) VALUES (2)")
+    assert node.query("SELECT count() FROM t1") == "2\n"
+
+    node.query("DROP TABLE t1 SYNC")
