@@ -14,6 +14,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Common/RemoteAsyncCapability.h> /// CH_FIBERS_SUPPORTED
 #if defined(OS_LINUX)
 #include <Client/HedgedConnectionsFactory.h>
 #include <Common/Epoll.h>
@@ -258,7 +259,10 @@ public:
         , context(std::move(context_))
         , logger(getLogger("DistributedIndexAnalysis"))
         , settings(context->getSettingsRef())
-#if defined(OS_LINUX)
+/// Both flags stay false without fibers, so `establishConnections` and `executeRemoteAnalysis`
+/// select their synchronous counterparts. Gating here rather than in `establishConnectionsAsync`
+/// or `executeRemoteAnalysisAsync`: those have throwing `#else` branches, not sync fallbacks.
+#if defined(OS_LINUX) && CH_FIBERS_SUPPORTED
         , use_hedged_requests(settings[Setting::use_hedged_requests])
         , use_async_reading(settings[Setting::async_socket_for_remote])
 #endif
@@ -345,7 +349,7 @@ private:
     /// so that subsequent queries can deprioritize replicas that failed during this analysis.
     void propagateErrorCounts()
     {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && CH_FIBERS_SUPPORTED
         if (hedged_factory.has_value())
         {
             /// Reset the factory so its destructor propagates error counts into remote_pool via updateSharedError.
@@ -367,12 +371,14 @@ private:
     /// Returns connections[remote_replicas], nullptr for unavailable.
     std::vector<Connection *> establishConnections(const ConnectionTimeouts & timeouts)
     {
+#if CH_FIBERS_SUPPORTED
         if (use_hedged_requests)
             return establishConnectionsAsync(timeouts);
+#endif
         return establishConnectionsSync(timeouts);
     }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && CH_FIBERS_SUPPORTED
     std::vector<Connection *> establishConnectionsAsync(const ConnectionTimeouts & timeouts)
     {
         std::vector<Connection *> connections(remote_replicas, nullptr);
@@ -414,7 +420,8 @@ private:
 
         return connections;
     }
-#else
+/// Where fibers are unsupported `establishConnections` drops the call, so no stub is needed.
+#elif CH_FIBERS_SUPPORTED
     std::vector<Connection *> establishConnectionsAsync(const ConnectionTimeouts &)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Hedged connections are not supported on this platform");
@@ -589,13 +596,17 @@ private:
         const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
     {
+#if CH_FIBERS_SUPPORTED
         if (use_async_reading)
+        {
             executeRemoteAnalysisAsync(active_remote_indexes, connections, remote_parts, remote_marks, remote_rows, res);
-        else
-            executeRemoteAnalysisSync(active_remote_indexes, connections, remote_parts, remote_marks, remote_rows, res);
+            return;
+        }
+#endif
+        executeRemoteAnalysisSync(active_remote_indexes, connections, remote_parts, remote_marks, remote_rows, res);
     }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && CH_FIBERS_SUPPORTED
     void executeRemoteAnalysisAsync(
         const std::vector<size_t> & active_remote_indexes,
         const std::vector<Connection *> & connections,
@@ -734,7 +745,8 @@ private:
         if (cancellation_exception)
             std::rethrow_exception(cancellation_exception);
     }
-#else
+/// Where fibers are unsupported `executeRemoteAnalysis` drops the call, so no stub is needed.
+#elif CH_FIBERS_SUPPORTED
     void executeRemoteAnalysisAsync(
         const std::vector<size_t> &,
         const std::vector<Connection *> &,
@@ -834,8 +846,9 @@ private:
 
     LoggerPtr logger;
     const Settings & settings;
-    bool use_hedged_requests = false;
-    bool use_async_reading = false;
+    /// Read only by the fiber-backed selectors, which are compiled out where fibers are unsupported.
+    [[maybe_unused]] bool use_hedged_requests = false;
+    [[maybe_unused]] bool use_async_reading = false;
     size_t total_replicas;
     size_t remote_replicas;
     size_t max_active_replicas;
@@ -860,7 +873,7 @@ private:
     /// Keep `ConnectionPool::Entry` objects alive for the sync path.
     std::vector<ConnectionPool::Entry> connection_entries;
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && CH_FIBERS_SUPPORTED
     /// Keep `HedgedConnectionsFactory` alive for the async path.
     std::optional<HedgedConnectionsFactory> hedged_factory;
 #endif

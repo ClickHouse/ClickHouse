@@ -9,6 +9,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ProfileEvents.h>
+#include <Common/RemoteAsyncCapability.h>
 #include <Core/Settings.h>
 
 #include <IO/ConnectionTimeouts.h>
@@ -253,7 +254,7 @@ ConnectionPoolWithFailover::tryGetEntry(
         const QualifiedTableName * table_to_check,
         [[maybe_unused]] AsyncCallback async_callback)
 {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && CH_FIBERS_SUPPORTED
     if (async_callback)
     {
         ConnectionEstablisherAsync connection_establisher_async(pool, &timeouts, settings, log, table_to_check);

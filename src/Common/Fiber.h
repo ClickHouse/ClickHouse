@@ -1,6 +1,7 @@
 #pragma once
 /// BOOST_USE_ASAN, BOOST_USE_MSAN, BOOST_USE_TSAN and BOOST_USE_UCONTEXT are defined via CMake for sanitizer builds.
 #include <base/defines.h>
+#include <Common/RemoteAsyncCapability.h> /// CH_FIBERS_SUPPORTED
 #include <boost/context/fiber.hpp>
 #include <map>
 

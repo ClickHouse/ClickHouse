@@ -8,6 +8,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
+#include <Common/RemoteAsyncCapability.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Core/Protocol.h>
@@ -298,7 +299,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         const Settings & current_settings = context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && CH_FIBERS_SUPPORTED
         if (current_settings[Setting::use_hedged_requests])
         {
             std::shared_ptr<QualifiedTableName> table_to_check = nullptr;
@@ -569,7 +570,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
 int RemoteQueryExecutor::sendQueryAsync()
 {
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if CH_REMOTE_ASYNC_IO
     LockAndBlocker lock(was_cancelled_mutex);
     if (was_cancelled)
         return -1;
@@ -660,7 +661,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 {
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if CH_REMOTE_ASYNC_IO
     if (!read_context)
     {
         LockAndBlocker lock(was_cancelled_mutex);
@@ -1243,7 +1244,9 @@ void RemoteQueryExecutor::reportShardSkipped()
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 {
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+/// Without the asynchronous path `read_context` is never created, and this function dereferences
+/// it unguarded.
+#if CH_REMOTE_ASYNC_IO
 
     if (!read_context->readPacketTypeSeparately())
         return false;
