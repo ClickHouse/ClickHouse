@@ -16,12 +16,12 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/InstrumentationManager.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 
 #include <base/EnumReflection.h>
 
 #include <algorithm>
-#include <cmath>
 #include <limits>
 
 
@@ -1081,24 +1081,14 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     res->instrumentation_arguments.emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
                 }
                 else if (value_type == Field::Types::Float64)
-                {
-                    /// The argument is stored as Int64 or Float64. An integer-valued float is stored as
-                    /// Int64 so it formats and re-parses as the same value; a fractional float keeps its
-                    /// decimal point and round-trips as Float64. A value outside Int64 range (e.g. 1e20)
-                    /// is rejected, so it can't format back as plain digits and re-parse as a wide integer.
-                    const Float64 f = value.safeGet<Float64>();
-                    if (!std::isfinite(f)
-                        || f < static_cast<Float64>(std::numeric_limits<Int64>::min())
-                        || f > static_cast<Float64>(std::numeric_limits<Int64>::max()))
-                    {
-                        expected.add(pos, "numeric literal within Int64 range");
-                        return false;
-                    }
-                    if (f == std::trunc(f))
-                        res->instrumentation_arguments.emplace_back(static_cast<Int64>(f));
-                    else
-                        res->instrumentation_arguments.emplace_back(f);
-                }
+                    res->instrumentation_arguments.emplace_back(value.safeGet<Float64>());
+                else if (value_type == Field::Types::UInt128 || value_type == Field::Types::Int128
+                         || value_type == Field::Types::UInt256 || value_type == Field::Types::Int256)
+                    /// A wide integer only shows up when a large float argument is re-parsed: `1e20`
+                    /// is stored as Float64 and formats back as plain digits (100000000000000000000)
+                    /// that parse as a wide integer. Coerce it back to the same Float64, otherwise the
+                    /// formatted query no longer parses and the debug-build AST consistency check aborts.
+                    res->instrumentation_arguments.emplace_back(applyVisitor(FieldVisitorConvertToNumber<Float64>(), value));
                 else
                 {
                     expected.add(pos, "string, integer, or float literal argument");
