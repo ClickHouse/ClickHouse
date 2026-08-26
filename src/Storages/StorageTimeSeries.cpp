@@ -177,16 +177,6 @@ StorageTimeSeries::StorageTimeSeries(
 StorageTimeSeries::~StorageTimeSeries() = default;
 
 
-std::vector<ViewTarget::Kind> StorageTimeSeries::getTargetKinds() const
-{
-    std::vector<ViewTarget::Kind> kinds;
-    kinds.reserve(targets.size());
-    for (const auto & target : targets)
-        kinds.push_back(target.kind);
-    return kinds;
-}
-
-
 const StorageTimeSeries::Target * StorageTimeSeries::tryGetTarget(ViewTarget::Kind target_kind) const
 {
     for (const auto & target : targets)

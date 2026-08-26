@@ -61,9 +61,6 @@ public:
         return {ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics, ViewTarget::RecentSamples, ViewTarget::Histograms};
     }
 
-    /// Returns the kinds of the targets of this table: Samples, Tags, Metrics, and the optional targets that are enabled.
-    std::vector<ViewTarget::Kind> getTargetKinds() const;
-
     void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
