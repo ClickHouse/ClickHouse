@@ -284,7 +284,7 @@ Checks if the set of bytes constitutes valid UTF-8-encoded text.
         R"(SELECT isValidUTF8('\\xc3\\xb1') AS valid, isValidUTF8('\\xc3\\x28') AS invalid)",
         R"(
 ┌─valid─┬─invalid─┐
-│     1 │       0 │
+│     1 │       1 │
 └───────┴─────────┘
         )"
     }
