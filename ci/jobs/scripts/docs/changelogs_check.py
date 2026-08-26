@@ -28,8 +28,7 @@ def generated_paths(docs_root: Path, scopes: set[str]) -> list[Path]:
     if "cloud" in scopes:
         paths.extend(CLOUD_GENERATED_PATHS)
 
-    if scopes == set(SCOPES):
-        paths.extend(SHARED_GENERATED_PATHS)
+    paths.extend(SHARED_GENERATED_PATHS)
 
     if "oss" in scopes:
         changelog_path = docs_root.parent / "CHANGELOG.md"

@@ -335,15 +335,12 @@ def find_navigation_nodes(node, key: str, value: str) -> list[dict]:
     return matches
 
 
-def update_navigation(
-    docs_root: Path,
+def update_cloud_navigation(
+    navigation: object,
     grouped: dict[int, list[Release]],
     current_cloud_changelog: AnnualChangelog,
     cloud_archive: list[AnnualChangelog],
-    oss_year: int,
 ) -> None:
-    navigation_path = docs_root / "resources/changelogs/navigation.json"
-    navigation = json.loads(navigation_path.read_text(encoding="utf-8"))
     cloud_dropdowns = find_navigation_nodes(
         navigation, "dropdown", CLOUD_DROPDOWN
     )
@@ -374,6 +371,12 @@ def update_navigation(
         },
     ]
 
+
+def update_oss_navigation(
+    navigation: object,
+    docs_root: Path,
+    oss_year: int,
+) -> None:
     oss_dropdowns = find_navigation_nodes(navigation, "dropdown", OSS_DROPDOWN)
     if len(oss_dropdowns) != 1:
         raise ValueError(
@@ -401,6 +404,9 @@ def update_navigation(
         SECURITY_CHANGELOG,
     ]
 
+
+def write_navigation(docs_root: Path, navigation: object) -> None:
+    navigation_path = docs_root / "resources/changelogs/navigation.json"
     navigation_path.write_text(
         json.dumps(navigation, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
@@ -579,36 +585,35 @@ def main(argv: list[str] | None = None) -> int:
 
     scopes = set(args.scopes or SCOPES)
     try:
-        if scopes == {"cloud"}:
-            grouped, _, _ = update_cloud_changelogs(docs_root)
-            count = sum(len(releases) for releases in grouped.values())
-            print(
-                f"Updated {count} Cloud release notes across "
-                f"{len(grouped)} year groups"
-            )
-        elif scopes == {"oss"}:
-            oss_year, oss_release_count = update_oss_changelog(docs_root)
-            print(
-                f"Updated {oss_release_count} Open source {oss_year} releases"
-            )
-        else:
+        navigation_path = docs_root / "resources/changelogs/navigation.json"
+        navigation = json.loads(navigation_path.read_text(encoding="utf-8"))
+        updates = []
+
+        if "cloud" in scopes:
             grouped, current_cloud_changelog, cloud_archive = (
                 update_cloud_changelogs(docs_root)
             )
-            oss_year, oss_release_count = update_oss_changelog(docs_root)
-            update_navigation(
-                docs_root,
+            update_cloud_navigation(
+                navigation,
                 grouped,
                 current_cloud_changelog,
                 cloud_archive,
-                oss_year,
             )
             count = sum(len(releases) for releases in grouped.values())
-            print(
-                f"Updated {count} Cloud release notes across "
-                f"{len(grouped)} year groups and {oss_release_count} "
-                f"Open source {oss_year} releases"
+            updates.append(
+                f"{count} Cloud release notes across "
+                f"{len(grouped)} year groups"
             )
+
+        if "oss" in scopes:
+            oss_year, oss_release_count = update_oss_changelog(docs_root)
+            update_oss_navigation(navigation, docs_root, oss_year)
+            updates.append(
+                f"{oss_release_count} Open source {oss_year} releases"
+            )
+
+        write_navigation(docs_root, navigation)
+        print("Updated " + " and ".join(updates))
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
