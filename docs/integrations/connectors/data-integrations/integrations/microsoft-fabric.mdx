@@ -245,7 +245,7 @@ The ClickHouse workload is in public preview. The limitations below are the curr
 ### Data movement {#data-movement}
 
 * **Copies are point-in-time snapshots.** There is no scheduled or continuous replication yet. To refresh a table with the latest OneLake data, re-run the sync. Updates and deletes in the source table are not propagated to the ClickHouse copy.
-* **Lakehouse tables only.** Sync reads Delta tables from a Lakehouse in the same workspace. Other Fabric items (Warehouse, KQL databases, mirrored databases) are not yet supported as sources.
+* **Lakehouse tables only.** Sync reads tables from a Lakehouse in the same workspace. 
 * **No write-back to OneLake.** Data flows one way, from OneLake into ClickHouse. Writing query results back to OneLake is planned.
 
 ### Service management {#service-management}
