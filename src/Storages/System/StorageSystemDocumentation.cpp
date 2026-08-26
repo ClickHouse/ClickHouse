@@ -29,7 +29,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -1057,8 +1057,14 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                 makeRepoRelative(value.source));
     }
 
-    /// SQL statements are documented by the parsers which parse them; the registry is filled by `registerStatements`.
-    addDocumented(res_columns, EntityType::Statement, StatementFactory::instance());
+    /// SQL statements are documented by the parsers which parse them. They have no registry of their own: the
+    /// documentation is kept by `InterpreterFactory` and the registration is done by `registerStatements`.
+    const auto & interpreter_factory = InterpreterFactory::instance();
+    for (const auto & name : interpreter_factory.getAllStatementNames())
+    {
+        const auto documentation = interpreter_factory.getStatementDocumentation(name);
+        addRow(res_columns, EntityType::Statement, name, renderDoc(documentation), makeRepoRelative(documentation.source));
+    }
 
     /// System tables document themselves with their table comment, authored at the attachment site.
     if (const auto system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE))

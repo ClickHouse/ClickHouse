@@ -13,7 +13,7 @@
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 #include <Common/typeid_cast.h>
 
@@ -383,7 +383,7 @@ bool ParserInsertElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 namespace DB
 {
 
-void registerStatementInsert(StatementFactory & factory)
+void registerStatementInsert(InterpreterFactory & factory)
 {
     factory.registerStatement("INSERT INTO",
     {

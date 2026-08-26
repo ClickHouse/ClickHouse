@@ -3,7 +3,7 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 
 
@@ -50,7 +50,7 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 namespace DB
 {
 
-void registerStatementUnion(StatementFactory & factory)
+void registerStatementUnion(InterpreterFactory & factory)
 {
     factory.registerStatement("UNION",
     {

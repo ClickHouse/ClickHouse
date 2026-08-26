@@ -5,7 +5,7 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 
 
@@ -137,7 +137,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 namespace DB
 {
 
-void registerStatementOptimize(StatementFactory & factory)
+void registerStatementOptimize(InterpreterFactory & factory)
 {
     factory.registerStatement("OPTIMIZE",
     {

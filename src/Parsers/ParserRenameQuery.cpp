@@ -4,7 +4,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 
 
@@ -115,7 +115,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-void registerStatementRename(StatementFactory & factory)
+void registerStatementRename(InterpreterFactory & factory)
 {
     factory.registerStatement("RENAME",
     {

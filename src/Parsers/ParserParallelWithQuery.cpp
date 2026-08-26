@@ -2,7 +2,7 @@
 
 #include <Parsers/ASTParallelWithQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 
 
@@ -50,7 +50,7 @@ bool ParserParallelWithQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 namespace DB
 {
 
-void registerStatementParallelWith(StatementFactory & factory)
+void registerStatementParallelWith(InterpreterFactory & factory)
 {
     factory.registerStatement("PARALLEL WITH",
     {

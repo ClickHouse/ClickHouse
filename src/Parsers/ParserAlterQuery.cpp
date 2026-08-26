@@ -13,7 +13,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 #include <Common/typeid_cast.h>
 
@@ -1271,7 +1271,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-void registerStatementAlter(StatementFactory & factory)
+void registerStatementAlter(InterpreterFactory & factory)
 {
     factory.registerStatement("ALTER",
     {

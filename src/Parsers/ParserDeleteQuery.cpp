@@ -4,7 +4,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserPartition.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 
 
@@ -100,7 +100,7 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-void registerStatementDelete(StatementFactory & factory)
+void registerStatementDelete(InterpreterFactory & factory)
 {
     factory.registerStatement("DELETE",
     {

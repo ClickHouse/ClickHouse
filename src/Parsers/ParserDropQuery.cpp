@@ -3,7 +3,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 
 namespace DB
@@ -207,7 +207,7 @@ bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-void registerStatementDrop(StatementFactory & factory)
+void registerStatementDrop(InterpreterFactory & factory)
 {
     factory.registerStatement("DROP",
     {

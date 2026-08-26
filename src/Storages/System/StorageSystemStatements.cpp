@@ -5,7 +5,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 
 #include <boost/algorithm/string/trim.hpp>
 
@@ -26,11 +26,12 @@ ColumnsDescription StorageSystemStatements::getColumnsDescription()
 
 void StorageSystemStatements::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    const auto & factory = StatementFactory::instance();
+    /// SQL statements have no registry of their own; their documentation is kept by `InterpreterFactory`.
+    const auto & factory = InterpreterFactory::instance();
 
-    for (const auto & name : factory.getAllRegisteredNames())
+    for (const auto & name : factory.getAllStatementNames())
     {
-        const auto documentation = factory.getDocumentation(name);
+        const auto documentation = factory.getStatementDocumentation(name);
 
         size_t i = 0;
         res_columns[i++]->insert(name);

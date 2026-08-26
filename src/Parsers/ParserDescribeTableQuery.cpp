@@ -8,7 +8,7 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 
 #include <Common/typeid_cast.h>
@@ -170,7 +170,7 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 namespace DB
 {
 
-void registerStatementDescribeTable(StatementFactory & factory)
+void registerStatementDescribeTable(InterpreterFactory & factory)
 {
     factory.registerStatement("DESCRIBE TABLE",
     {

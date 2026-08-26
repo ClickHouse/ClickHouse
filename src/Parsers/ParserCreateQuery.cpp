@@ -26,7 +26,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTOrderByElement.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 #include <Core/UUID.h>
 
@@ -2089,7 +2089,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-void registerStatementCreate(StatementFactory & factory)
+void registerStatementCreate(InterpreterFactory & factory)
 {
     factory.registerStatement("CREATE",
     {

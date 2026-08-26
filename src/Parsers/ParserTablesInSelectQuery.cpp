@@ -13,7 +13,7 @@
 #include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserStreamSettings.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 #include <Core/Joins.h>
 
@@ -397,7 +397,7 @@ bool ParserTablesInSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 namespace DB
 {
 
-void registerStatementTablesInSelect(StatementFactory & factory)
+void registerStatementTablesInSelect(InterpreterFactory & factory)
 {
     factory.registerStatement("FROM",
     {
