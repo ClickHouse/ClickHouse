@@ -12,6 +12,15 @@
 -- a disjunction over two columns still uses both indexes
 16
 16
+-- a negated atom in a disjunction leaves only that index unused
+64
+64
+64
+-- a positive disjunction still prunes by combining both indexes
+8
+-- a doubly negated condition folds back to a positive atom and still uses the index
+0
+0
 -- results are unchanged
 64
 64

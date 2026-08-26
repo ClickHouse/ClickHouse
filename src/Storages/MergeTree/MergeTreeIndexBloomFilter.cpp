@@ -497,8 +497,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     if (functionIsInOrGlobalInOperator(function_name))
     {
         /// A bloom filter only answers "may be present", so a negated set atom holds for any granule
-        /// that has one other value and can never skip one. Declining it here also avoids building
-        /// the set for a condition the index cannot use.
+        /// that has one other value and can never skip one.
         if (function_name == "notIn" || function_name == "globalNotIn")
             return false;
 

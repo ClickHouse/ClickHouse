@@ -48,6 +48,22 @@ SELECT '-- a disjunction over two columns still uses both indexes';
 SELECT count() FROM t_bf_neg WHERE v = 3 OR w = 5 SETTINGS force_data_skipping_indices = 'idx_v';
 SELECT count() FROM t_bf_neg WHERE v = 3 OR w = 5 SETTINGS force_data_skipping_indices = 'idx_w';
 
+SELECT '-- a negated atom in a disjunction leaves only that index unused';
+SELECT count() FROM t_bf_neg WHERE v != 100 OR w = 5 SETTINGS force_data_skipping_indices = 'idx_v'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_bf_neg WHERE v != 100 OR w = 5 SETTINGS force_data_skipping_indices = 'idx_w';
+SELECT count() FROM t_bf_neg WHERE v != 100 OR w = 5;
+SELECT count() FROM t_bf_neg WHERE v != 100 OR w = 5 SETTINGS use_skip_indexes = 0;
+
+SELECT '-- a positive disjunction still prunes by combining both indexes';
+SELECT argMax(toUInt64(extract(explain, 'Granules: (\\d+)/')), rowNumberInAllBlocks())
+FROM (EXPLAIN indexes = 1 SELECT sum(id) FROM t_bf_neg WHERE v = 3 OR w = 100)
+WHERE explain LIKE '%Granules:%'
+SETTINGS use_skip_indexes_for_disjunctions = 1, use_skip_indexes_on_data_read = 0;
+
+SELECT '-- a doubly negated condition folds back to a positive atom and still uses the index';
+SELECT count() FROM t_bf_neg WHERE NOT (v != 100) SETTINGS force_data_skipping_indices = 'idx_v';
+SELECT count() FROM t_bf_neg WHERE NOT (v NOT IN (100, 101)) SETTINGS force_data_skipping_indices = 'idx_v';
+
 SELECT '-- results are unchanged';
 SELECT count() FROM t_bf_neg WHERE v != 100;
 SELECT count() FROM t_bf_neg WHERE v != 100 SETTINGS use_skip_indexes = 0;
