@@ -67,6 +67,13 @@ public:
 
     bool supportsRightBoundedReads() const override { return true; }
 
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
+
+    /// Enables `ParallelReadBuffer` to split one large object across `max_download_threads` ranged
+    /// reads, which is what reading a whole object -- the `gcs` table function, or a Parquet or ORC
+    /// file -- goes through. Without it such a read is served by a single stream.
+    bool supportsReadAt() override { return true; }
+
     String getFileName() const override { return bucket + "/" + key; }
 
 private:

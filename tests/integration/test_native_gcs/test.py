@@ -451,3 +451,57 @@ def test_profile_events_table_function_is_not_counted_as_disk(started_cluster):
 
     assert event("GCSGetObject") > 0
     assert event("DiskGCSGetObject") == 0
+
+
+def test_parallel_download_of_one_object(started_cluster):
+    """A whole-object read must be split across `max_download_threads` ranged requests.
+
+    `ParallelReadBuffer` only engages when the underlying buffer reports `supportsReadAt`, so without
+    it a single large file is fetched by one stream no matter what `max_download_threads` says -- the
+    S3-compatibility path issues `max_download_threads` requests for the same file and finishes
+    sooner. `FormatFactory::wrapReadBufferIfNeeded` additionally requires the file to be at least
+    twice `max_download_buffer_size`, which is why that setting is lowered here instead of writing a
+    20 MiB fixture.
+    """
+    node = started_cluster.instances["node"]
+    url = gcs_url("parallel/data.tsv")
+    num_rows = 50000
+
+    node.query(
+        f"INSERT INTO FUNCTION gcs('{url}', NOSIGN, 'TSV', 'a UInt64') "
+        f"SELECT number FROM numbers({num_rows}) SETTINGS use_native_gcs = 1"
+    )
+
+    def read(query_id, threads):
+        return int(
+            node.query(
+                f"SELECT count() FROM gcs('{url}', NOSIGN, 'TSV', 'a UInt64')",
+                query_id=query_id,
+                settings={
+                    "use_native_gcs": 1,
+                    "max_download_threads": threads,
+                    "max_download_buffer_size": 16384,
+                    "input_format_parallel_parsing": 0,
+                },
+            )
+        )
+
+    def gets(query_id):
+        return int(
+            node.query(
+                "SELECT ProfileEvents['GCSGetObject'] FROM system.query_log "
+                f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+
+    serial_id = f"gcs_serial_{uuid.uuid4()}"
+    parallel_id = f"gcs_parallel_{uuid.uuid4()}"
+
+    assert num_rows == read(serial_id, 1)
+    assert num_rows == read(parallel_id, 4)
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    # One stream when parallelism is off, several ranged requests when it is on.
+    assert gets(serial_id) == 1
+    assert gets(parallel_id) > 1
