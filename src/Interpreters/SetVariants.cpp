@@ -62,6 +62,23 @@ size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
     return bytes;
 }
 
+/// Only the single-level types that can be converted are reported. A two-level table's capacity is
+/// spread over 256 independently growing sub-tables, so a single number would not say anything about
+/// an upcoming rehash; `key8` / `key16` are `FixedHashSet`-s, which never grow and are never converted.
+template <typename Variant>
+size_t SetVariantsTemplate<Variant>::getBufferSizeInCells() const
+{
+    switch (type)
+    {
+    #define M(NAME) \
+        case Type::NAME: return (NAME)->data.getBufferSizeInCells();
+        APPLY_FOR_SET_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+    #undef M
+        default:
+            return 0;
+    }
+}
+
 template <typename Variant>
 typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes)
 {

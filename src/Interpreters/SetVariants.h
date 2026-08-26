@@ -426,6 +426,11 @@ struct SetVariantsTemplate: public Variant
     size_t getTotalRowCount() const;
     /// Counts the size in bytes of the Set buffer and the size of the `string_pool`
     size_t getTotalByteCount() const;
+    /// Capacity of the hash table buffer in cells (not bytes, and not the element count). A single-level
+    /// table grows once its element count passes half of this, so the caller can tell that the next
+    /// insertions are about to trigger a rehash. Returns 0 for `EMPTY` and for the two-level types,
+    /// whose capacity is spread over independently growing sub-tables and so has no single meaning here.
+    size_t getBufferSizeInCells() const;
 
     void convertToTwoLevel();
     bool isTwoLevel() const;

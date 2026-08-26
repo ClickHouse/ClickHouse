@@ -616,30 +616,50 @@ void DistinctTransform::transform(Chunk & chunk)
     if (data->empty())
         data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
-    /// Promote single-level → two-level once the set crosses the row-count OR byte threshold, which
-    /// unlocks the per-bucket parallel build below. The bound already includes the current chunk, so
-    /// the chunk that first crosses the threshold is itself built through the two-level path (deciding
-    /// on the pre-chunk size would promote one chunk late, and never at all for a query whose whole
-    /// result arrives in a single large block). The row bound is exact because deduplication only
-    /// lowers it; the byte bound adds the key columns' size of this chunk, an over-estimate that never
-    /// under-promotes. A threshold of 0 disables that trigger; both 0 disables promotion entirely. A
-    /// pool only exists for the final deduplication (see the constructor), so its presence already
-    /// restricts promotion to that case.
-    if (pool && SetVariants::isConvertibleToTwoLevel(data->type))
+    /// Promote single-level -> two-level, which unlocks the per-bucket parallel build below.
+    ///
+    /// The trigger is aligned to the single-level table's own growth. `HashTable::resize` rehashes every
+    /// cell into the enlarged buffer, and building the two-level table rehashes every cell into the 256
+    /// sub-tables - the same amount of work. So converting *instead of* resizing costs approximately
+    /// nothing: the extra rehash is paid for by the resize it replaces. Converting at an arbitrary set
+    /// size would instead add a full O(set size) rehash on top, which is pure overhead for a query whose
+    /// set stops growing shortly afterwards - the case that made a `DISTINCT` over exactly
+    /// `distinct_two_level_threshold` keys slower than the single-level path.
+    ///
+    /// A single-level table grows once its element count passes half of its cell capacity
+    /// (`HashTableGrower::maxFill`), so `rows_in_set + num_rows > cells / 2` says this chunk is about to
+    /// push it over. `num_rows` over-estimates the insertions, since duplicate rows do not insert, so the
+    /// conversion can fire one chunk early; that is harmless, because the rehash it pays still scales
+    /// with the current set size and the resize is still skipped.
+    ///
+    /// `two_level_threshold` is a minimum set size, not the trigger: below it the set holds too little
+    /// data to be worth spreading over 256 sub-tables. `two_level_threshold_bytes` stays an independent
+    /// trigger - it fires early for expensive keys, where a set of few but long keys crosses it while the
+    /// table itself is still small, and the parallel build already pays off. A threshold of 0 disables
+    /// that trigger; both 0 disables promotion entirely.
+    ///
+    /// A pool only exists for the final deduplication (see the constructor), so its presence already
+    /// restricts promotion to that case. A live `lc_mask` is excluded: only the serial build consumes the
+    /// `LowCardinality` first-occurrence mask, so a promoted set would never reach the parallel build and
+    /// the conversion would be pure cost (see the dispatch below).
+    if (pool && !lc_mask && SetVariants::isConvertibleToTwoLevel(data->type))
     {
-        const bool cross_rows = two_level_threshold != 0
-            && data->getTotalRowCount() + num_rows >= two_level_threshold;
+        const size_t rows_in_set = data->getTotalRowCount();
 
-        bool cross_bytes = false;
-        if (two_level_threshold_bytes != 0)
+        /// About to rehash anyway: fold the two-level split into the growth it replaces.
+        bool convert = two_level_threshold != 0
+            && rows_in_set + num_rows >= two_level_threshold
+            && rows_in_set + num_rows > data->getBufferSizeInCells() / 2;
+
+        if (!convert && two_level_threshold_bytes != 0)
         {
             size_t projected_bytes = data->getTotalByteCount();
             for (const auto * col : column_ptrs)
                 projected_bytes += col->byteSize();
-            cross_bytes = projected_bytes >= two_level_threshold_bytes;
+            convert = projected_bytes >= two_level_threshold_bytes;
         }
 
-        if (cross_rows || cross_bytes)
+        if (convert)
         {
             data->convertToTwoLevel();
             ProfileEvents::increment(ProfileEvents::DistinctHashTablesInitializedAsTwoLevel);
