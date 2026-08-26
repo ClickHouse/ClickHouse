@@ -163,8 +163,7 @@ RefreshTask::RefreshTask(
     : view(view_)
     , refresh_schedule(strategy)
     , initial_dependencies(std::move(initial_dependencies_))
-    , refresh_append(strategy.append)
-    , refresh_incremental(strategy.incremental)
+    , refresh_mode(strategy.mode)
     , start_paused(start_paused_)
 {
     createLogger(view->getStorageID());
@@ -316,14 +315,14 @@ OwnedRefreshTask RefreshTask::create(
 
 bool RefreshTask::canCreateOrDropOtherTables() const
 {
-    return !refresh_append;
+    return !isAppend();
 }
 
 void RefreshTask::startup()
 {
     if (start_paused || view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
-    auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
+    auto inner_table_id = isAppend() ? std::nullopt : std::make_optional(view->getTargetTableId());
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
 
     std::lock_guard guard(mutex);
@@ -448,7 +447,7 @@ void RefreshTask::rename(StorageID new_id, StorageID new_inner_table_id)
         if (set_handle)
         {
             old_id = set_handle.getID();
-            set_handle.rename(new_id, refresh_append ? std::nullopt : std::make_optional(new_inner_table_id));
+            set_handle.rename(new_id, isAppend() ? std::nullopt : std::make_optional(new_inner_table_id));
         }
         if (view)
             context = view->getContext();
@@ -470,10 +469,8 @@ void RefreshTask::checkAlterIsPossible(const DB::ASTRefreshStrategy & new_strate
         s.applyChanges(new_strategy.settings->changes);
     if (s[RefreshSetting::all_replicas] != refresh_settings[RefreshSetting::all_replicas])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Altering setting 'all_replicas' is not supported.");
-    if (new_strategy.append != refresh_append)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Adding or removing APPEND is not supported.");
-    if (new_strategy.incremental != refresh_incremental)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Adding or removing INCREMENTAL is not supported.");
+    if (new_strategy.mode != refresh_mode)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Changing APPEND or INCREMENTAL is not supported.");
 }
 
 void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy)
@@ -682,14 +679,14 @@ void RefreshTask::wait(const ContextPtr & context)
 
     lock.unlock();
 
-    if (coordination.coordinated && !refresh_append)
+    if (coordination.coordinated && !isAppend())
         waitForLatestTargetTable(context);
 }
 
 void RefreshTask::waitForLatestTargetTable(const ContextPtr & context)
 {
     chassert(coordination.coordinated);
-    chassert(!refresh_append);
+    chassert(!isAppend());
 
     UInt64 backoff_ms = 100;
     const UInt64 max_backoff_ms = 1000;
@@ -1312,11 +1309,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
     {
         refresh_context = view->createRefreshContext(log_comment);
 
-        const bool incremental = refresh_incremental;
-        if (incremental && !refresh_append)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "REFRESH ... INCREMENTAL requires APPEND");
-        const RefreshMode refresh_mode = incremental ? RefreshMode::Incremental
-            : refresh_append ? RefreshMode::Append : RefreshMode::Replace;
+        const bool incremental = isIncremental();
 
         /// For incremental refresh, resume the source stream from the last persisted cursor and attach a
         /// holder that the reading source fills with the new cursor (read back after the query succeeds).
@@ -1324,12 +1317,14 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         if (incremental)
         {
             stream_cursor = execution.znode.cursor;
-            refresh_context->enableStreamingCursor();
+            auto cursor = std::make_shared<StreamingCursor>();
+            cursor->tree = std::make_shared<CursorTreeNode>();
+            refresh_context->setStreamingCursor(std::move(cursor));
         }
 
         syncDependenciesForRefresh(deps, refresh_context);
 
-        if (!refresh_append)
+        if (!isAppend())
         {
             refresh_context->setParentTable(view_storage_id.uuid);
             refresh_context->setDDLQueryCancellation(execution.cancel_ddl_queries.get_token());
@@ -1442,7 +1437,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         });
 
         /// Exchange tables.
-        if (!refresh_append)
+        if (!isAppend())
         {
             /// The executor is gone once its block above returns, so interruptExecution() is a no-op
             /// past this point. The exchange is the destructive coordinated step, so re-check the
@@ -1504,7 +1499,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         view->dropTempTable(table_to_drop.value(), refresh_context, out_error_message);
 
     /// Incremental refresh: read the cursor the streaming source advanced to and persist it (Part C).
-    out_cursor = refresh_context->getStreamingCursor();
+    if (auto cursor = refresh_context->getStreamingCursor())
+        out_cursor = cursor->tree;
 
     return new_table_id.uuid;
 }
@@ -1954,7 +1950,7 @@ void RefreshTask::syncForDependentRefresh(const ContextPtr & context)
     if (!coordination.coordinated)
         return;
 
-    if (refresh_append)
+    if (isAppend())
     {
         /// Do a SYNC REPLICA to make sure dependent refresh sees the rows appended by the latest dependency refresh.
 

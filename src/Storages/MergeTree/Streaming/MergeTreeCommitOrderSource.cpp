@@ -267,18 +267,13 @@ IProcessor::Status MergeTreeCommitOrderSource::handleBoundedReconfiguration(cons
 
 void MergeTreeCommitOrderSource::surfaceFinalCursor()
 {
-    if (!reading_context.context->getStreamingCursor())
+    auto cursor = reading_context.context->getStreamingCursor();
+    if (!cursor)
         return;
 
-    auto cursors = std::make_shared<CursorTreeNode>();
-    for (const auto & [partition_id, position] : read_state.getPartitionCursors())
-    {
-        auto & subtree = cursors->getSubtreeOrCreate(partition_id);
-        subtree->setValue("block_number", position.block_number);
-        subtree->setValue("block_offset", position.block_offset);
-    }
-
-    reading_context.context->mergeStreamingCursor(cursors);
+    auto local = mergeTreeCursorToCursorTree(read_state.getPartitionCursors());
+    std::lock_guard lock(cursor->mutex);
+    mergeCursors(cursor->tree, local);
 }
 
 bool MergeTreeCommitOrderSource::needToEmitGlobalIdle(const ClassifiedPartitions & partitions, bool subscription_updated)

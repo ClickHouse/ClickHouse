@@ -8,19 +8,13 @@
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MaterializedView/RefreshTask.h>
+#include <Parsers/ASTRefreshStrategy.h>
 
 namespace DB
 {
 
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
-
-enum class RefreshMode : uint8_t
-{
-    Replace,     /// Recompute the whole query and replace the target table.
-    Append,      /// Append the query result to the target.
-    Incremental, /// Append only the rows committed to the single source since the previous refresh.
-};
 
 class StorageMaterializedView final : public StorageWithCommonVirtualColumns, WithMutableContext
 {

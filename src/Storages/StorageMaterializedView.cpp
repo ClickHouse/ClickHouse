@@ -274,7 +274,7 @@ StorageMaterializedView::StorageMaterializedView(
 
     const bool is_fresh_definition = mode == LoadingStrictnessLevel::CREATE
         || (mode == LoadingStrictnessLevel::ATTACH && !query.attach_short_syntax);
-    if (query.refresh_strategy && query.refresh_strategy->incremental && is_fresh_definition)
+    if (query.refresh_strategy && query.refresh_strategy->isIncremental() && is_fresh_definition)
         validateIncrementalDefinition(select.select_query, mv_db_context);
 
     storage_metadata.setSelectQuery(select);
@@ -297,7 +297,7 @@ StorageMaterializedView::StorageMaterializedView(
 
     if (query.refresh_strategy)
     {
-        fixed_uuid = query.refresh_strategy->append;
+        fixed_uuid = query.refresh_strategy->isAppend();
 
         /// The temporary view of a CREATE OR REPLACE shares the target with the view being replaced.
         /// Start its refresh paused so it cannot touch the target before the rename commits.
@@ -758,7 +758,7 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
     const CursorTreeNodePtr & stream_cursor) const
 {
     const bool append = mode != RefreshMode::Replace;
-    const bool incremental = mode == RefreshMode::Incremental;
+    const bool incremental = mode == RefreshMode::AppendIncremental;
 
     auto inner_table_id = getTargetTableId();
     StorageID target_table = inner_table_id;
@@ -976,7 +976,7 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
             const auto metadata = IStorage::getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
             const auto * refresh_strategy = metadata->refresh ? metadata->refresh->as<ASTRefreshStrategy>() : nullptr;
             /// The incremental cursor is keyed to the current source, so changing the query would leave it stale.
-            if (refresh_strategy && refresh_strategy->incremental)
+            if (refresh_strategy && refresh_strategy->isIncremental())
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "MODIFY QUERY is not supported for incremental refreshable materialized views");
             continue;

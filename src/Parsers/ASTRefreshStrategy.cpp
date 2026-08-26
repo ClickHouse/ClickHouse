@@ -74,9 +74,9 @@ void ASTRefreshStrategy::formatImpl(
         ostr << " SETTINGS ";
         settings->format(ostr, f_settings, state, frame);
     }
-    if (append)
+    if (isAppend())
         ostr << " APPEND";
-    if (incremental)
+    if (isIncremental())
         ostr << " INCREMENTAL";
 }
 
@@ -89,9 +89,9 @@ void ASTRefreshStrategy::writeJSON(WriteBuffer & out) const
     w.writeChild("spread", spread);
     w.writeChild("settings", settings);
     w.writeChild("dependencies", dependencies);
-    if (append)
+    if (isAppend())
         w.writeBool("append", true);
-    if (incremental)
+    if (isIncremental())
         w.writeBool("incremental", true);
 }
 
@@ -130,8 +130,9 @@ void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
                     "`RefreshStrategy` 'dependencies' must contain only table identifiers during AST JSON deserialization");
         set(dependencies, dependencies_child);
     }
-    append = r.getBool("append");
-    incremental = r.getBool("incremental");
+    const bool append = r.getBool("append");
+    const bool incremental = r.getBool("incremental");
+    mode = incremental ? RefreshMode::AppendIncremental : append ? RefreshMode::AppendFull : RefreshMode::Replace;
 
     /// Mirror `ParserRefreshStrategy`'s schedule-shape invariants. `REFRESH EVERY <interval>` always
     /// carries a period. `REFRESH AFTER <interval>` carries a period, but the `REFRESH DEPENDS ON ...`

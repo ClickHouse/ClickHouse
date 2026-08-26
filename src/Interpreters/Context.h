@@ -316,6 +316,12 @@ using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHold
 class QueryMetadataCache;
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
+
+struct StreamingCursor
+{
+    std::mutex mutex;
+    CursorTreeNodePtr tree;
+};
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
 
@@ -737,11 +743,9 @@ protected:
 
     std::shared_ptr<BackupsInMemoryHolder> backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
 
-    /// Final streaming cursor produced by a `STREAM [BOUNDED]` read; merged into by every reading source.
-    /// The mutex is a shared_ptr so it stays shared across `Context::createCopy` (each source runs on a
-    /// copied context) and can serialize concurrent merges from parallel streams into the one tree.
-    CursorTreeNodePtr streaming_cursor;
-    std::shared_ptr<std::mutex> streaming_cursor_mutex;
+    /// Final `STREAM [BOUNDED]` cursor holder (tree + its mutex), shared across `Context::createCopy` so
+    /// parallel reading streams serialize their merges into the one tree.
+    std::shared_ptr<StreamingCursor> streaming_cursor;
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -1284,11 +1288,10 @@ public:
     std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
     std::shared_ptr<const BackupsInMemoryHolder> getBackupsInMemory() const;
 
-    /// Enable collection of the final `STREAM [BOUNDED]` cursor; reading sources merge into it, the outer
-    /// query reads it back. `mergeStreamingCursor` is thread-safe so parallel streams can merge concurrently.
-    void enableStreamingCursor();
-    void mergeStreamingCursor(const CursorTreeNodePtr & from) const;
-    CursorTreeNodePtr getStreamingCursor() const;
+    /// The outer query sets an empty holder before a `STREAM [BOUNDED]` read; the reading sources merge into
+    /// it (under its mutex), and the outer query reads it back.
+    void setStreamingCursor(std::shared_ptr<StreamingCursor> cursor);
+    std::shared_ptr<StreamingCursor> getStreamingCursor() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(

@@ -39,7 +39,6 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
-#include <Core/Streaming/CursorTree.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Databases/IDatabase.h>
@@ -1425,7 +1424,6 @@ ContextData::ContextData(const ContextData &o) :
     merge_tree_transaction(o.merge_tree_transaction),
     merge_tree_transaction_holder(o.merge_tree_transaction_holder),
     streaming_cursor(o.streaming_cursor),
-    streaming_cursor_mutex(o.streaming_cursor_mutex),
     remote_read_query_throttler(o.remote_read_query_throttler),
     remote_write_query_throttler(o.remote_write_query_throttler),
     local_read_query_throttler(o.local_read_query_throttler),
@@ -4350,22 +4348,13 @@ std::shared_ptr<const BackupsInMemoryHolder> Context::getBackupsInMemory() const
     return const_cast<Context *>(this)->getBackupsInMemory();
 }
 
-void Context::enableStreamingCursor()
+void Context::setStreamingCursor(std::shared_ptr<StreamingCursor> cursor)
 {
-    std::lock_guard lock(mutex);
-    streaming_cursor = std::make_shared<CursorTreeNode>();
-    streaming_cursor_mutex = std::make_shared<std::mutex>();
+    streaming_cursor = std::move(cursor);
 }
 
-void Context::mergeStreamingCursor(const CursorTreeNodePtr & from) const
+std::shared_ptr<StreamingCursor> Context::getStreamingCursor() const
 {
-    std::lock_guard lock(*streaming_cursor_mutex);
-    mergeCursors(streaming_cursor, from);
-}
-
-CursorTreeNodePtr Context::getStreamingCursor() const
-{
-    std::lock_guard lock(mutex);
     return streaming_cursor;
 }
 

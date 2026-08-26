@@ -3,6 +3,7 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshSchedule.h>
 #include <Storages/MaterializedView/RefreshSettings.h>
+#include <Parsers/ASTRefreshStrategy.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/StopToken.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
@@ -24,7 +25,6 @@ class PipelineExecutor;
 class QueryStatus;
 
 class StorageMaterializedView;
-class ASTRefreshStrategy;
 struct OwnedRefreshTask;
 
 class CursorTreeNode;
@@ -350,8 +350,9 @@ private:
     RefreshSchedule refresh_schedule;
     RefreshSettings refresh_settings;
     std::vector<StorageID> initial_dependencies;
-    const bool refresh_append;
-    const bool refresh_incremental;
+    const RefreshMode refresh_mode;
+    bool isAppend() const { return refresh_mode != RefreshMode::Replace; }
+    bool isIncremental() const { return refresh_mode == RefreshMode::AppendIncremental; }
     /// Start with refreshing paused. Used for the temporary view of CREATE OR REPLACE, which is
     /// resumed after the rename so it cannot refresh the target before the replacement is committed.
     const bool start_paused;
