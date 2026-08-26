@@ -16,10 +16,12 @@ servers are stopped:
   - the accumulated data is pushed by the server itself with a single
     `INSERT INTO FUNCTION remoteSecure(...) SELECT <extra columns>, *` query.
 
-The extra columns are the same as in the other checks. `node_name`
-distinguishes the two servers ('left' is the reference build, 'right' is the
-patched one), `commit_sha` carries each server's own build commit, and
-`test_name` is left empty (the whole batch is exported at once).
+The extra columns are exactly the same as in the other checks, so that the
+structure hash - and therefore the destination table - is shared with them.
+There is no dedicated column for the server, so the two servers are told apart
+by a suffix in `check_name`: '<job name> (left)' is the reference build and
+'<job name> (right)' is the patched one. `commit_sha` carries each server's own
+build commit as well.
 
 The export is best effort: any failure is logged and never fails the job.
 
@@ -43,13 +45,11 @@ import time
 EXTRA_COLUMNS = (
     "repo LowCardinality(String), pull_request_number UInt32, commit_sha String, "
     "check_start_time DateTime('UTC'), check_name LowCardinality(String), "
-    "test_name LowCardinality(String), node_name LowCardinality(String), "
     "instance_type LowCardinality(String), instance_id String, "
     "INDEX ix_repo (repo) TYPE set(100), INDEX ix_pr (pull_request_number) TYPE set(100), "
     "INDEX ix_commit (commit_sha) TYPE set(100), INDEX ix_check_time (check_start_time) TYPE minmax, "
-    "INDEX ix_test (test_name) TYPE set(100), "
 )
-EXTRA_ORDER_BY_COLUMNS = "check_name, test_name"
+EXTRA_ORDER_BY_COLUMNS = "check_name"
 
 # Returns one row per system log table: its name, the structure hash of the
 # destination table, the multi-line CREATE statement and the number of rows.
@@ -221,14 +221,15 @@ def _escape_sql_string(value):
 def _extra_columns_expression(repo, pr_number, commit_sha, check_start_time, check_name, node_name, instance_type, instance_id):
     # NOTE: the expressions must go in the same order as EXTRA_COLUMNS: the
     # INSERT SELECT into the remote table function maps columns by position.
+    # There is no separate column for the server, so it is encoded in
+    # `check_name`, see the module docstring.
+    check_name = f"{check_name} ({node_name})"
     return (
         f"toLowCardinality('{_escape_sql_string(repo)}') AS repo, "
         f"CAST({int(pr_number)} AS UInt32) AS pull_request_number, "
         f"'{_escape_sql_string(commit_sha)}' AS commit_sha, "
         f"toDateTime('{_escape_sql_string(check_start_time)}', 'UTC') AS check_start_time, "
         f"toLowCardinality('{_escape_sql_string(check_name)}') AS check_name, "
-        f"toLowCardinality('') AS test_name, "
-        f"toLowCardinality('{_escape_sql_string(node_name)}') AS node_name, "
         f"toLowCardinality('{_escape_sql_string(instance_type)}') AS instance_type, "
         f"'{_escape_sql_string(instance_id)}' AS instance_id"
     )
