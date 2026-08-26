@@ -1,16 +1,18 @@
 -- Tags: distributed
 
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/116333
--- A window function forces a Distributed read to stop at WithMergeableState, and such a boundary
--- carries no projection step, so its columns are ordered by first mention in the shard's
+-- A window function forces a read to stop at WithMergeableState, reached both by a Distributed or
+-- remote() read of two or more shards and by a parallel-replicas read of a plain table. Such a
+-- boundary carries no projection step, so its columns are ordered by first mention in the shard's
 -- ALIAS-inlined query tree. That order differs from the order the initiator expects, and an ALIAS
 -- column whose declared type differs from its body's type is not present on the shard at all (it
 -- inlines to a _CAST over the raw column the shard does send). Reconciling those two headers
 -- positionally silently returned values in the wrong columns, or raised
 -- NUMBER_OF_COLUMNS_DOESNT_MATCH / CANNOT_PARSE_DATETIME.
 --
--- Every distributed query below is paired with the equivalent local query: the local result is the
--- oracle, so a wrong-column result fails even though it raises no error.
+-- An arm with a comparable single-node equivalent is followed by it as the oracle, so a result in
+-- the wrong columns fails even though it raises no error. The negative controls and the
+-- expected-error arm have none.
 
 DROP TABLE IF EXISTS loc_win;
 DROP TABLE IF EXISTS dist_win;
@@ -219,7 +221,8 @@ SELECT al AS category, cur, row_number() OVER (PARTITION BY a ORDER BY dt DESC) 
 FROM loc_win ORDER BY rn
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-         parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1;
+         parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1,
+         automatic_parallel_replicas_mode = 0;
 SELECT al AS category, cur, row_number() OVER (PARTITION BY a ORDER BY dt DESC) AS rn
 FROM loc_win ORDER BY rn SETTINGS enable_parallel_replicas = 0;
 -- The same over an expression-bodied ALIAS, whose body is computed on the initiator.
@@ -227,7 +230,8 @@ SELECT upper_al AS category, cur, row_number() OVER (ORDER BY a) AS rn
 FROM loc_win ORDER BY rn
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-         parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1;
+         parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1,
+         automatic_parallel_replicas_mode = 0;
 SELECT upper_al AS category, cur, row_number() OVER (ORDER BY a) AS rn
 FROM loc_win ORDER BY rn SETTINGS enable_parallel_replicas = 0;
 
