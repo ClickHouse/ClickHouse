@@ -386,46 +386,47 @@ def test_selected_rows_not_double_counted(started_cluster, cluster):
     # parametrized runs independent.
     file_name = f"distr_counters_{cluster}.bin"
     query_id = f"116301_distfmt_{cluster}"
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"mkdir -p /var/lib/clickhouse/user_files && cp {path}/1.bin /var/lib/clickhouse/user_files/{file_name}",
-        ],
-        privileged=True,
-        user="root",
-    )
+    try:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"mkdir -p /var/lib/clickhouse/user_files && cp {path}/1.bin /var/lib/clickhouse/user_files/{file_name}",
+            ],
+            privileged=True,
+            user="root",
+        )
 
-    node.query(
-        f"select * from file('{file_name}', 'Distributed') format Null",
-        query_id=query_id,
-        settings={
-            # The server-side AST fuzzer would re-run this read as extra queries.
-            "ast_fuzzer_runs": "0",
-        },
-    )
-    node.query("system flush logs query_log")
+        node.query(
+            f"select * from file('{file_name}', 'Distributed') format Null",
+            query_id=query_id,
+            settings={
+                # The server-side AST fuzzer would re-run this read as extra queries.
+                "ast_fuzzer_runs": "0",
+            },
+        )
+        node.query("system flush logs query_log")
 
-    read_rows, read_bytes, selected_rows, selected_bytes = node.query(
-        f"""
-        select read_rows, read_bytes,
-               ProfileEvents['SelectedRows'], ProfileEvents['SelectedBytes']
-        from system.query_log
-        where query_id = '{query_id}' and type = 'QueryFinish'
-        order by event_time_microseconds desc limit 1
-        """
-    ).split()
+        read_rows, read_bytes, selected_rows, selected_bytes = node.query(
+            f"""
+            select read_rows, read_bytes,
+                   ProfileEvents['SelectedRows'], ProfileEvents['SelectedBytes']
+            from system.query_log
+            where query_id = '{query_id}' and type = 'QueryFinish'
+            order by event_time_microseconds desc limit 1
+            """
+        ).split()
 
-    # The read amounts are pinned as well, so a query that stops reading the spool file cannot
-    # satisfy the equalities with both sides at zero.
-    assert read_rows == "3", (read_rows, read_bytes)
-    assert read_bytes != "0", (read_rows, read_bytes)
-    assert selected_rows == read_rows, (selected_rows, read_rows)
-    assert selected_bytes == read_bytes, (selected_bytes, read_bytes)
-
-    node.exec_in_container(
-        ["bash", "-c", f"rm -f /var/lib/clickhouse/user_files/{file_name}"],
-        privileged=True,
-        user="root",
-    )
-    node.query("drop table test.distr_counters sync")
+        # The read amounts are pinned as well, so a query that stops reading the spool file cannot
+        # satisfy the equalities with both sides at zero.
+        assert read_rows == "3", (read_rows, read_bytes)
+        assert read_bytes != "0", (read_rows, read_bytes)
+        assert selected_rows == read_rows, (selected_rows, read_rows)
+        assert selected_bytes == read_bytes, (selected_bytes, read_bytes)
+    finally:
+        node.exec_in_container(
+            ["bash", "-c", f"rm -f /var/lib/clickhouse/user_files/{file_name}"],
+            privileged=True,
+            user="root",
+        )
+        node.query("drop table test.distr_counters sync")

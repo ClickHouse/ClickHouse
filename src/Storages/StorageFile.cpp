@@ -1925,7 +1925,6 @@ Chunk StorageFileSource::generate()
             });
 
             pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
-            /// Is accounted by the outer source in progress below.
             pipeline->disableProfileEventUpdate();
             reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 

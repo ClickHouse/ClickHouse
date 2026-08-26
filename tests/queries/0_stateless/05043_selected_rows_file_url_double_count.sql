@@ -1,7 +1,5 @@
--- Tags: no-fasttest, no-parallel-replicas
+-- Tags: no-fasttest
 -- no-fasttest: uses the S3 mock server on localhost:11111
--- no-parallel-replicas: s3 and url are rewritten to their Cluster variants, and the initiator
--- then reports both counters from one remote progress packet, so the equality holds on either arm
 
 -- The File, URL and object storage engines read their format through an inner pipeline and
 -- report the rows again from the outer source, so `SelectedRows` and `SelectedBytes` must not be
@@ -58,14 +56,21 @@ SELECT * FROM t_file_engine
 SETTINGS log_queries = 1, log_comment = '05043_file_engine', ast_fuzzer_runs = 0
 FORMAT Null;
 
+-- url() and s3() are the two cells rewritten to their Cluster variants once parallel replicas
+-- are enabled. The initiator then takes both counters from one remote progress packet, so those
+-- two cells would report `ok` with the fix reverted; the rest of the test stays meaningful, so
+-- the setting is pinned here instead of tagging the whole test.
+
 -- url() table function
 SELECT * FROM url('http://localhost:8123/?query=SELECT+number+FROM+numbers(50000)', 'TSV', 'x UInt64')
-SETTINGS log_queries = 1, log_comment = '05043_url_function', ast_fuzzer_runs = 0
+SETTINGS log_queries = 1, log_comment = '05043_url_function', ast_fuzzer_runs = 0,
+    enable_parallel_replicas = 0
 FORMAT Null;
 
 -- s3() table function; the same source serves every other object storage, azureBlobStorage included
 SELECT * FROM s3('http://localhost:11111/test/05043_' || currentDatabase() || '.tsv', 'test', 'testtest', 'TSV', 'x UInt64')
-SETTINGS log_queries = 1, log_comment = '05043_s3_function', ast_fuzzer_runs = 0
+SETTINGS log_queries = 1, log_comment = '05043_s3_function', ast_fuzzer_runs = 0,
+    enable_parallel_replicas = 0
 FORMAT Null;
 
 -- Row count served from the schema cache, which reads through a separate inner pipeline over
