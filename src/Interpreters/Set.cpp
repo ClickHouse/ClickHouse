@@ -88,6 +88,8 @@ void NO_INLINE Set::insertFromBlockImplCase(
     [[maybe_unused]] ColumnUInt8::Container * out_filter)
 {
     typename Method::State state(key_columns, key_sizes, nullptr);
+    if constexpr (ColumnsHashing::uses_precomputed_keys<typename Method::State>)
+        state.tryPrecomputeKeys(0, rows);
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
@@ -587,6 +589,8 @@ void NO_INLINE Set::executeImplCase(
 {
     Arena pool;
     typename Method::State state(key_columns, key_sizes, nullptr);
+    if constexpr (ColumnsHashing::uses_precomputed_keys<typename Method::State>)
+        state.tryPrecomputeKeys(0, rows);
 
     /// Clustered key columns (e.g. a primary key prefix) arrive in runs of equal consecutive
     /// rows. The consecutive-keys optimization in ColumnsHashing handles them inside `findKey`:

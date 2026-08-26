@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Common/ColumnsHashingImpl.h>
+#include <Common/ColumnsHashing/HashedKeys.h>
+#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <bit>
@@ -681,6 +683,10 @@ private:
     bool usable = false;
 };
 
+/// Whether a key getter takes the selected rows and precomputes their keys in one batch.
+template <typename Method>
+concept uses_precomputed_keys = requires(Method & method) { method.precomputed_keys; };
+
 /// For the case when the key is a 128-bit hash of all key columns (the fallback method for
 /// keys with no fixed-width packed representation, e.g. a `Tuple` column).
 template <typename Value, typename Mapped, bool use_cache = true, bool need_offset = false>
@@ -707,6 +713,8 @@ struct HashMethodHashed
     static constexpr size_t no_last_row = std::numeric_limits<size_t>::max();
     size_t last_row = no_last_row;
 
+    HashedKeysPtr precomputed_keys;
+
     HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
         : key_columns(std::move(key_columns_))
     {
@@ -716,6 +724,8 @@ struct HashMethodHashed
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
     {
+        if (precomputed_keys)
+            return (*precomputed_keys)[row];
         return hash128(row, key_columns.size(), key_columns);
     }
 
@@ -744,6 +754,20 @@ struct HashMethodHashed
                 last_row = row;
         }
         return Base::findKey(data, row, pool);
+    }
+
+    /// Pre-computation is disabled if the hashing of clustered rows can be skipped.
+    void tryPrecomputeKeys(size_t begin, size_t count)
+    {
+        if (count == 0 || key_slices.isUsable())
+            return;
+        auto keys = std::make_shared<PaddedPODArray<UInt128>>(begin + count);
+        std::vector<SipHash> states(count);
+        for (const auto * column : key_columns)
+            column->updateHashBatch(begin, count, states.data());
+        for (size_t i = 0; i < count; ++i)
+            (*keys)[begin + i] = states[i].get128();
+        precomputed_keys = std::move(keys);
     }
 };
 

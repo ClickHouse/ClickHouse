@@ -4,6 +4,7 @@
 #include <Columns/ColumnReplicated.h>
 #include <Core/Block.h>
 #include <base/defines.h>
+#include <Common/ColumnsHashing/HashedKeys.h>
 #include <Common/PODArray.h>
 
 #include <Poco/Logger.h>
@@ -190,6 +191,8 @@ struct ScatteredBlock : private boost::noncopyable
     using Selector = detail::Selector;
     using Indexes = Selector::Indexes;
     using IndexesPtr = Selector::IndexesPtr;
+    /// Precomputed keys of the block's rows, one entry per join clause.
+    using HashedKeysPerClause = std::vector<ColumnsHashing::HashedKeysPtr>;
 
     ScatteredBlock() = default;
 
@@ -197,9 +200,21 @@ struct ScatteredBlock : private boost::noncopyable
 
     ScatteredBlock(Block block_, IndexesPtr && selector_) : block(std::move(block_)), selector(std::move(selector_)) { }
 
+    /// The keys of the block's rows precomputed by the hash-scatter dispatch in `ConcurrentHashJoin` (hashed-type joins only).
+    ScatteredBlock(Block block_, IndexesPtr && selector_, ColumnsHashing::HashedKeysPtr precomputed_keys_)
+        : block(std::move(block_)), selector(std::move(selector_)), precomputed_keys{std::move(precomputed_keys_)}
+    {
+    }
+
     ScatteredBlock(Block block_, Selector selector_) : block(std::move(block_)), selector(std::move(selector_)) { }
 
-    ScatteredBlock(ScatteredBlock && other) noexcept : block(std::move(other.block)), selector(std::move(other.selector))
+    ScatteredBlock(Block block_, Selector selector_, HashedKeysPerClause precomputed_keys_)
+        : block(std::move(block_)), selector(std::move(selector_)), precomputed_keys(std::move(precomputed_keys_))
+    {
+    }
+
+    ScatteredBlock(ScatteredBlock && other) noexcept
+        : block(std::move(other.block)), selector(std::move(other.selector)), precomputed_keys(std::move(other.precomputed_keys))
     {
         other.block.clear();
         other.selector = {};
@@ -211,6 +226,7 @@ struct ScatteredBlock : private boost::noncopyable
         {
             block = std::move(other.block);
             selector = std::move(other.selector);
+            precomputed_keys = std::move(other.precomputed_keys);
 
             other.block.clear();
             other.selector = {};
@@ -224,7 +240,14 @@ struct ScatteredBlock : private boost::noncopyable
     Block && getSourceBlock() && { return std::move(block); }
 
     const auto & getSelector() const { return selector; }
+    HashedKeysPerClause & getPrecomputedKeys() { return precomputed_keys; }
     std::pair<Block, Selector> detachData() && { return {std::move(block), std::move(selector)}; }
+
+    std::tuple<Block, Selector, ColumnsHashing::HashedKeysPtr> detachDataWithPrecomputedKeys() &&
+    {
+        auto keys = precomputed_keys.empty() ? nullptr : std::move(precomputed_keys.front());
+        return {std::move(block), std::move(selector), std::move(keys)};
+    }
 
     bool empty() const { return block.empty(); }
 
@@ -364,6 +387,7 @@ struct ScatteredBlock : private boost::noncopyable
 private:
     Block block;
     Selector selector;
+    HashedKeysPerClause precomputed_keys;
 };
 
 using ScatteredBlocks = std::vector<ScatteredBlock>;

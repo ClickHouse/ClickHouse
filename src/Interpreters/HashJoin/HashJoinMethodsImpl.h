@@ -55,6 +55,42 @@ ALWAYS_INLINE size_t selectorIndexAt(const Selector & selector, size_t k)
         return selector.first + k;
 }
 
+/// The hashed key getter precomputes the keys of all the rows the join loop is going to visit
+/// in one batch, or adopts the keys already computed for the block by the scatter dispatch.
+template <typename KeyGetter, typename Selector>
+KeyGetter constructKeyGetter(
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    const Selector & selector,
+    ColumnsHashing::HashedKeysPtr precomputed_keys = nullptr)
+{
+    KeyGetter key_getter(key_columns, key_sizes, nullptr);
+    if constexpr (ColumnsHashing::uses_precomputed_keys<KeyGetter>)
+    {
+        /// The keys for hash-scattered rows are always precomputed for the whole source block in `ConcurrentHashJoin`.
+        if (precomputed_keys)
+            key_getter.precomputed_keys = std::move(precomputed_keys);
+        else if constexpr (!std::is_same_v<Selector, ScatteredBlock::Indexes>)
+            key_getter.tryPrecomputeKeys(selector.first, selector.second - selector.first);
+    }
+    return key_getter;
+}
+
+template <typename KeyGetter>
+KeyGetter constructKeyGetter(
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    const ScatteredBlock::Selector & selector,
+    ColumnsHashing::HashedKeysPtr precomputed_keys = nullptr)
+{
+    if constexpr (!ColumnsHashing::uses_precomputed_keys<KeyGetter>)
+        return KeyGetter(key_columns, key_sizes, nullptr);
+    else if (selector.isContinuousRange())
+        return constructKeyGetter<KeyGetter>(key_columns, key_sizes, selector.getRange(), std::move(precomputed_keys));
+    else
+        return constructKeyGetter<KeyGetter>(key_columns, key_sizes, selector.getIndexes(), std::move(precomputed_keys));
+}
+
 /// Drives the adaptive software prefetch logic in the hash join probe loop.
 template <typename PrefetchAction>
 struct JoinPrefetcher
@@ -96,6 +132,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
     const Sizes & key_sizes,
     UInt32 stored_block_no,
     const ScatteredBlock::Selector & selector,
+    ColumnsHashing::HashedKeysPtr precomputed_keys,
     ConstNullMapPtr null_map,
     const JoinCommon::JoinMask & join_mask,
     Arena & pool,
@@ -109,11 +146,11 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
         if (selector.isContinuousRange()) \
             insertFromBlockImplTypeCase< \
                 typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-                join, *maps.TYPE, key_columns, key_sizes, stored_block_no, selector.getRange(), null_map, join_mask, pool, is_inserted, all_values_unique); \
+                join, *maps.TYPE, key_columns, key_sizes, stored_block_no, selector.getRange(), std::move(precomputed_keys), null_map, join_mask, pool, is_inserted, all_values_unique); \
         else \
             insertFromBlockImplTypeCase< \
                 typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-                join, *maps.TYPE, key_columns, key_sizes, stored_block_no, selector.getIndexes(), null_map, join_mask, pool, is_inserted, all_values_unique); \
+                join, *maps.TYPE, key_columns, key_sizes, stored_block_no, selector.getIndexes(), std::move(precomputed_keys), null_map, join_mask, pool, is_inserted, all_values_unique); \
         break;
 
             APPLY_FOR_JOIN_VARIANTS(M)
@@ -185,7 +222,11 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     else
         added_columns.reserve(join_features.need_replication);
 
-    size_t processed_rows = switchJoinRightColumns(maps_, added_columns, block.getSelector(), join.data->type, *join.used_flags, join.data->key_range);
+    auto & precomputed_keys = block.getPrecomputedKeys();
+    precomputed_keys.resize(onexprs.size());
+
+    size_t processed_rows = switchJoinRightColumns(
+        maps_, added_columns, block.getSelector(), precomputed_keys, join.data->type, *join.used_flags, join.data->key_range);
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
 
@@ -202,10 +243,11 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     std::optional<ScatteredBlock> next_scattered_block;
     if (0 < processed_rows && processed_rows < block.rows())
     {
+        auto keys = block.getPrecomputedKeys();
         auto [raw_block, raw_selector] = std::move(block).detachData();
         auto split_selector = raw_selector.split(processed_rows);
-        block = ScatteredBlock(raw_block, std::move(split_selector.first));
-        next_scattered_block = ScatteredBlock(std::move(raw_block), std::move(split_selector.second));
+        block = ScatteredBlock(raw_block, std::move(split_selector.first), keys);
+        next_scattered_block = ScatteredBlock(std::move(raw_block), std::move(split_selector.second), std::move(keys));
     }
 
     auto join_result = std::make_unique<HashJoinResult>(
@@ -235,8 +277,13 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <typename KeyGetter, bool is_asof_join>
-KeyGetter HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range)
+template <typename KeyGetter, bool is_asof_join, typename Selector>
+KeyGetter HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::createKeyGetter(
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    const Selector & selector,
+    ColumnsHashing::HashedKeysPtr precomputed_keys,
+    HashJoin::RightTableData::KeyRange key_range)
 {
     KeyGetter getter = [&]()
     {
@@ -246,10 +293,10 @@ KeyGetter HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::createKeyGetter(const
             auto key_size_copy = key_sizes;
             key_column_copy.pop_back();
             key_size_copy.pop_back();
-            return KeyGetter(key_column_copy, key_size_copy, nullptr);
+            return constructKeyGetter<KeyGetter>(key_column_copy, key_size_copy, selector, std::move(precomputed_keys));
         }
         else
-            return KeyGetter(key_columns, key_sizes, nullptr);
+            return constructKeyGetter<KeyGetter>(key_columns, key_sizes, selector, std::move(precomputed_keys));
     }();
 
     if constexpr (ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
@@ -270,6 +317,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
     const Sizes & key_sizes,
     UInt32 stored_block_no,
     const Selector & selector,
+    ColumnsHashing::HashedKeysPtr precomputed_keys,
     ConstNullMapPtr null_map,
     const JoinCommon::JoinMask & join_mask,
     Arena & pool,
@@ -290,7 +338,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
         asof_inequality = join.getAsofInequality();
     }
 
-    auto key_getter = createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
+    auto key_getter = createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes, selector, std::move(precomputed_keys));
 
     /// For ALL and ASOF join always insert values
     is_inserted = !mapped_one || is_asof_join;
@@ -348,6 +396,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
     const std::vector<const MapsTemplate *> & mapv,
     AddedColumns & added_columns,
     const ScatteredBlock::Selector & selector,
+    ScatteredBlock::HashedKeysPerClause & precomputed_keys,
     HashJoin::Type type,
     JoinStuff::JoinUsedFlags & used_flags,
     HashJoin::RightTableData::KeyRange key_range)
@@ -365,8 +414,10 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
         { \
             const auto & join_on_key = added_columns.join_on_keys[d]; \
             a_map_type_vector[d] = mapv[d]->TYPE.get(); \
-            key_getter_vector.push_back( \
-                std::move(createKeyGetter<KeyGetter, is_asof_join>(join_on_key.key_columns, join_on_key.key_sizes, key_range))); \
+            key_getter_vector.push_back(std::move(createKeyGetter<KeyGetter, is_asof_join>( \
+                join_on_key.key_columns, join_on_key.key_sizes, selector, precomputed_keys[d], key_range))); \
+            if constexpr (ColumnsHashing::uses_precomputed_keys<KeyGetter>) \
+                precomputed_keys[d] = key_getter_vector.back().precomputed_keys; \
         } \
         return joinRightColumnsSwitchNullability<KeyGetter>(std::move(key_getter_vector), a_map_type_vector, added_columns, selector, used_flags); \
     }

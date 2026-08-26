@@ -70,6 +70,13 @@ void ColumnVector<T>::skipSerializedInArena(ReadBuffer & in) const
 }
 
 template <typename T>
+void ColumnVector<T>::updateHashBatch(size_t begin, size_t n, SipHash * hashes) const
+{
+    for (size_t i = 0; i < n; ++i)
+        updateHashWithValue(begin + i, hashes[i]);
+}
+
+template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n]);
