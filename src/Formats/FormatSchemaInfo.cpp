@@ -25,6 +25,7 @@
 #include <Common/SipHash.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 namespace DB
 {
@@ -275,7 +276,9 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
         fs::create_directory(dir_path);
     }
 
-    auto temp_path = fs::path(file_path.string() + ".tmp");
+    /// The final file name is a hash of the schema source, so every writer of one schema targets
+    /// the same path; a shared temporary name would let them overwrite and delete each other's files.
+    auto temp_path = fs::path(file_path.string() + "." + getRandomASCIIString(8) + ".tmp");
 
     try
     {
