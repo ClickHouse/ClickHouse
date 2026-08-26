@@ -71,6 +71,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Storages/MergeTree/MarkRange.h>
@@ -1381,10 +1382,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 auto name_in_storage = filter_input.getNameInStorage();
                 if (!header_after_transform.has(name_in_storage))
                     continue;
-                if (header_after_transform.getByName(name_in_storage).type->equals(*filter_input.getTypeInStorage()))
+                const auto & type_in_block = header_after_transform.getByName(name_in_storage).type;
+                /// A schema may declare a column required that an older file of the same table wrote
+                /// as optional, so the target keeps the column's own nullability: dropping the null
+                /// map would fail on such a row instead of letting the filter decide it.
+                auto type_to_align_to = filter_input.getTypeInStorage();
+                if (isNullableOrLowCardinalityNullable(type_in_block))
+                    type_to_align_to = makeNullableOrLowCardinalityNullableSafe(type_to_align_to);
+                if (type_in_block->equals(*type_to_align_to))
                     continue;
                 if (aligned_names.emplace(name_in_storage).second)
-                    columns_to_align.emplace_back(name_in_storage, filter_input.getTypeInStorage());
+                    columns_to_align.emplace_back(name_in_storage, type_to_align_to);
             }
 
             if (!synthesized_columns.empty() || !columns_to_align.empty())
