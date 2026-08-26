@@ -594,15 +594,20 @@ struct HashMethodSerialized
     ///
     /// Laying the keys out pays for itself as soon as the probe misses, at any width: from 13
     /// thousand keys on it is worth 20-50% out to 1024 bytes per row. Against a table small enough
-    /// to stay in cache it buys only the batch serialization, and writing a wide row out and reading
-    /// it back costs more than that once a row grows past about 500 bytes - measured at a thousand
-    /// keys on Zen5 and Granite Rapids, one to eight threads, the layout still gains at 464 bytes
-    /// per row, breaks even at 528 and is worth -2 to -30% to skip at 656 and beyond. Both bounds
-    /// have to hold before it is worth skipping.
+    /// to stay in cache it buys only the batch serialization, and past some row width writing the
+    /// row out and reading it back costs more than that.
+    ///
+    /// Where that width lies is the machine's answer, not ours: at a thousand keys, Zen5 and Granite
+    /// Rapids still gain at 464 bytes per row and only lose past 528, while the machine the
+    /// performance tests run on loses 11-19% already at 144 (`group_by_multiple_strings`, its 64
+    /// character keys, at one to thirty-two threads). The bound is set where the machines agree
+    /// rather than where the fastest of them would have it, which is the same 128 bytes the
+    /// whole-block layout is bounded by: a cache-resident table keeps the layout only while its rows
+    /// are narrow enough that nobody disputes it.
     void enableKeyRegion(size_t table_bytes)
     {
         static constexpr size_t cache_resident_table_max_bytes = 256 * 1024;
-        static constexpr size_t cache_resident_max_row_size = 512;
+        static constexpr size_t cache_resident_max_row_size = 128;
         if (table_bytes <= cache_resident_table_max_bytes && avg_row_size >= cache_resident_max_row_size)
             return;
 
