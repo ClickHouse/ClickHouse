@@ -93,11 +93,17 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
         optimization_settings.read_in_order_through_join,
-        optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
+        optimization_settings.enable_group_by_top_k_optimization,
+        optimization_settings.top_k_optimization_observation_rows,
+        optimization_settings.is_explain,
+        optimization_settings.max_block_size,
         optimization_settings.parallel_replicas_filter_pushdown,
+        optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
         optimization_settings.push_down_limit_through_array_join,
+        optimization_settings.serialize_query_plan,
+        optimization_settings.short_circuit_function_evaluation_disabled,
     };
 
     while (!stack.empty())
@@ -219,11 +225,16 @@ void optimizeTreeSecondPass(
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
         optimization_settings.read_in_order_through_join,
-        optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
+        optimization_settings.enable_group_by_top_k_optimization,
+        optimization_settings.top_k_optimization_observation_rows,
+        optimization_settings.is_explain,
+        optimization_settings.max_block_size,
         optimization_settings.parallel_replicas_filter_pushdown,
+        optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
         optimization_settings.push_down_limit_through_array_join,
+        optimization_settings.serialize_query_plan,
     };
 
     Stack stack;
@@ -355,13 +366,13 @@ void optimizeTreeSecondPass(
     const bool make_distributed_plan = optimization_settings.make_distributed_plan
         && !planContainsLogicalExchange(root);
 
-    /// WITH TOTALS / ROLLUP / CUBE / extremes produce extra streams the exchange protocol does not
-    /// carry, and PASTE JOIN pairs rows by position, which exchanges do not preserve, so such plans
-    /// cannot be distributed. make_distributed_plan is explicit, so fail rather than silently
-    /// running single-node.
+    /// WITH TOTALS / extremes produce extra streams the exchange protocol does not carry, and
+    /// PASTE JOIN pairs rows by position, which exchanges do not preserve, so such plans cannot
+    /// be distributed. make_distributed_plan is explicit, so fail rather than silently running
+    /// single-node.
     if (make_distributed_plan && planHasUnsupportedDistributedStep(root))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE, extremes or PASTE JOIN");
+            "make_distributed_plan does not support WITH TOTALS, extremes or PASTE JOIN");
     /// An in-order aggregation (from `force_aggregation_in_order`) relies on its input order,
     /// which the exchanges do not preserve.
     if (make_distributed_plan && planHasInOrderAggregation(root))
@@ -494,11 +505,20 @@ void optimizeTreeSecondPass(
             if (optimization_settings.distinct_partitions_independently)
                 optimizeDistinctPerPartition(frame_node, nodes, optimization_settings);
 
+            if (optimization_settings.creating_set_partitions_independently)
+                optimizeCreatingSetPerPartition(frame_node, nodes, optimization_settings);
+
             /// Skip when Cascades is enabled: it treats sorting as a physical property and
             /// strips `SortingStep::Full`, which this heuristic would otherwise rewrite to
             /// `FinishSorting` first.
             if (optimization_settings.read_in_order && !cascades_active)
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
+
+            /// After `optimizeReadInOrder`: a window sorting converted to `FinishSorting` (see
+            /// `query_plan_reuse_storage_ordering_for_window_functions`) merges to a single stream and
+            /// must not request per-partition reading.
+            if (optimization_settings.window_partitions_independently)
+                optimizeWindowPerPartition(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.distinct_in_order && !cascades_active)
                 optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
@@ -550,8 +570,6 @@ void optimizeTreeSecondPass(
                 const QueryPlanOptimizationSettings subquery_optimization_settings(local_context);
                 local_optimization_settings.read_in_order = subquery_optimization_settings.read_in_order;
                 local_optimization_settings.read_in_order_through_join = subquery_optimization_settings.read_in_order_through_join;
-                local_optimization_settings.read_in_order_through_spilling_join
-                    = subquery_optimization_settings.read_in_order_through_spilling_join;
                 local_optimization_settings.aggregation_in_order = subquery_optimization_settings.aggregation_in_order;
                 local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
                 local_optimization_settings.reuse_storage_ordering_for_window_functions
@@ -783,6 +801,14 @@ void optimizeTreeSecondPass(
         optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
+
+    /// Run after every optimization that can rewrite aggregation, sorting, projections,
+    /// distributed fragments, or parallel replicas. This placement makes the pass a pure
+    /// admission check: no later optimization needs to retract the heap or its synthetic sort.
+    if (optimization_settings.enable_group_by_top_k_optimization)
+    {
+        traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeGroupByTopK(&frame_node, nodes, extra_settings); });
+    }
 }
 
 void addStepsToBuildSets(

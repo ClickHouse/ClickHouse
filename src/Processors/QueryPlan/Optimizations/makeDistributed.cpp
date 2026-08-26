@@ -15,8 +15,6 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/RollupStep.h>
-#include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
@@ -143,9 +141,9 @@ String dumpQueryPlanShort(const QueryPlan & query_plan);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
 
 /// Returns true if the plan contains a step the distributed pipeline cannot handle yet: WITH TOTALS
-/// (TotalsHaving) needs a separate totals stream that the exchange protocol does not carry,
-/// ROLLUP/CUBE feed subtotals from a step the exchanges do not support, and a PASTE join pairs
-/// rows by position, which no exchange preserves. Such plans stay single-node.
+/// (TotalsHaving) and extremes need a separate stream that the exchange protocol does not carry,
+/// and a PASTE join pairs rows by position, which no exchange preserves. Such plans stay
+/// single-node.
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
 {
     std::vector<const QueryPlan::Node *> stack = {&root};
@@ -154,11 +152,9 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
         const auto * node = stack.back();
         stack.pop_back();
         const auto * step = node->step.get();
-        /// These steps produce non-Main pipe streams (totals/extremes) or rely on a single-node
-        /// aggregation shape; exchanges only carry the Main stream, so keep such plans local.
+        /// These steps produce non-Main pipe streams (totals/extremes); exchanges only carry the
+        /// Main stream, so keep such plans local.
         if (typeid_cast<const TotalsHavingStep *>(step)
-            || typeid_cast<const RollupStep *>(step)
-            || typeid_cast<const CubeStep *>(step)
             || typeid_cast<const ExtremesStep *>(step))
             return true;
         /// A PASTE join pairs rows by position. An exchange below it (e.g. a gather over a
@@ -592,10 +588,18 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         strategy = Shuffle;
 
     /// Shuffle scatters by the full key set, so GROUPING SETS subtotals (over key subsets) would be
-    /// produced in several buckets and duplicated.
+    /// produced in several buckets and duplicated. Partial aggregation has no such problem: every
+    /// worker produces partial states for every grouping set over its share of the data, tagged with
+    /// `__grouping_set`, and the merge combines them per set - the same split the shard-based
+    /// distributed path uses. Shuffle is impossible here, so
+    /// `distributed_plan_force_shuffle_aggregation` cannot apply either.
     if (aggregating_step->isGroupingSets())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan does not support GROUPING SETS aggregation");
+    {
+        if (!can_use_partial_aggregation)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan does not support GROUPING SETS aggregation in order");
+        strategy = PartialAggregation;
+    }
 
     if (strategy == PartialAggregation)
     {
@@ -616,10 +620,20 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         const bool memory_bound_merging_of_aggregation_results_enabled = aggregating_step->usingMemoryBoundMerging();
         const bool original_step_was_final = aggregating_step->getFinal();   /// Save whether the original AggregatingStep was final or partial
 
-        /// Convert Aggregation step to partial aggregation
+        /// The memory-efficient merge does not support grouping sets.
+        const bool use_memory_efficient_merge = optimization_settings.distributed_aggregation_memory_efficient && !has_grouping_sets;
+
+        /// The memory-efficient merge consumes each input as a stream of buckets in ascending
+        /// order, so the partial aggregation must produce its result in bucket order; without
+        /// that its multi-stream output would reach the exchange in arbitrary order and the
+        /// merge would emit duplicated groups for buckets that arrive late.
         auto & partial_aggregation_node = nodes.emplace_back();
         partial_aggregation_node.step = aggregating_step->clone();
-        typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get())->setFinal(false);
+        auto * partial_aggregation_step = typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get());
+        partial_aggregation_step->setFinal(false);
+        /// Keep the bucket order when the original step already promised it to its consumer.
+        partial_aggregation_step->setProduceResultsInBucketOrder(
+            should_produce_results_in_order_of_bucket_number || use_memory_efficient_merge);
         partial_aggregation_node.step->setStepDescription("partial");
         partial_aggregation_node.children = {&exchange_scatter_node};
 
@@ -629,14 +643,13 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         gather_node.children = {&partial_aggregation_node};
 
         /// Replace original aggregation step with MergingAggregated step
-        aggregator_params.only_merge = true;    /// Merge partial aggregation results
+        aggregator_params.only_merge = true; /// Merge partial aggregation results
         QueryPlanStepPtr final_aggregation_step = std::make_unique<MergingAggregatedStep>(
             gather_node.step->getOutputHeader(),
             aggregator_params,
             grouping_sets_params,
             /* final */ original_step_was_final,
-            /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
-            optimization_settings.distributed_aggregation_memory_efficient && !has_grouping_sets,
+            use_memory_efficient_merge,
             aggregating_step->getTemporaryDataMergeThreads(),
             should_produce_results_in_order_of_bucket_number,
             aggregating_step->getMaxBlockSize(),
@@ -831,11 +844,14 @@ void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node)
     node->children = std::move(node->children[0]->children);
 }
 
-/// True if `column_name` is produced by `dag` as the unchanged input column of the same name (only
-/// possibly aliased). Such a column keeps its value, so a merge by it stays sort-preserving.
+/// True if `column_name` reaches the step's output with its value unchanged, so a merge by it stays
+/// sort-preserving. A column the `dag` does not mention is preserved: the step forwards it untouched.
+/// A column the `dag` does mention is preserved only if it is the input column of the same name.
 static bool isSortColumnPreserved(const ActionsDAG & dag, const String & column_name)
 {
-    const auto * node = &dag.findInOutputs(column_name);
+    const auto * node = dag.tryFindInOutputs(column_name);
+    if (!node)
+        return true;
     while (node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.front();
     return node->type == ActionsDAG::ActionType::INPUT && node->result_name == column_name;

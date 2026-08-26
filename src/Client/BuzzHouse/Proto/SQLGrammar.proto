@@ -2390,11 +2390,11 @@ message UnlockSnapshot {
 }
 
 message SystemCommand {
+    reserved 4; // was: reload_models
     optional Cluster cluster = 1;
     oneof system_cmd_oneof {
         bool reload_embedded_dictionaries = 2;
         bool reload_dictionaries = 3;
-        bool reload_models = 4;
         bool reload_functions = 5;
         SQLIdentifier reload_function = 6;
         bool reload_asynchronous_metrics = 7;
@@ -2736,6 +2736,7 @@ message ExplainOption {
         empirical = 24;
         compact_repeated_processor_chains = 25;
         processors = 26;
+        single_record = 27;
     }
     required ExplainOpt opt = 1;
     required uint32 val = 2;
