@@ -104,6 +104,12 @@ public:
 
     void onBuildPhaseFinish() override;
 
+    /// See `HashJoin::keepRightBlocksForAnotherAlgorithm`.
+    void keepRightBlocksForAnotherAlgorithm()
+    {
+        std::ranges::for_each(hash_joins, [](auto & hash_join) { hash_join->data->keepRightBlocksForAnotherAlgorithm(); });
+    }
+
     /// See `HashJoin::dropRightBlocksKeptForAnotherAlgorithm`.
     void dropRightBlocksKeptForAnotherAlgorithm()
     {

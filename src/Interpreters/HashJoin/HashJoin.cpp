@@ -563,11 +563,12 @@ bool HashJoin::canUseSetMaps() const
 }
 
 /// A set map holds no reference into a right block, so the blocks it was built from are not needed - but
-/// another algorithm may still take them back out of this join with `releaseJoinedBlocks`, and then they
-/// have to be there.
+/// the algorithm wrapping this join may still take them back out with `releaseJoinedBlocks`, and then
+/// they have to be there. Only the wrapper knows, and it says so; `join_algorithm` does not, because it
+/// lists what may be chosen rather than what was.
 bool HashJoin::mustKeepRightBlocks() const
 {
-    return isUsedByAnotherAlgorithm();
+    return right_blocks_may_be_taken;
 }
 
 /// The blocks a set map keeps only for another algorithm are needed while that algorithm can still
@@ -1729,6 +1730,14 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
 
 BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
 {
+    /// A set map stores the right blocks only for the algorithm that says it may take them. Asking
+    /// for them without having said so would hand back an empty list and silently lose the right
+    /// side, so say plainly that the join was built for a different contract.
+    if (getMapsKind() == JoinMapsKind::Set && !right_blocks_may_be_taken)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Right blocks of a key-only join were asked for, but no algorithm said it would take them");
+
     LOG_TRACE(
         log, "{}Join data is being released, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
 

@@ -687,7 +687,13 @@ private:
 public:
     bool mustKeepRightBlocks() const;
 
-    /// Called once no other algorithm can take the right blocks back out of this join. A join that
+    /// Called by the algorithm that wraps this join, before it feeds it anything, when it may take
+    /// the right blocks back out with `releaseJoinedBlocks`. Off by default: a join nobody wraps
+    /// keeps no block a set map does not need, and whether some algorithm merely appears in
+    /// `join_algorithm` says nothing about what was instantiated.
+    void keepRightBlocksForAnotherAlgorithm() { right_blocks_may_be_taken = true; }
+
+    /// Called once that algorithm can no longer take them - it has settled on this join. A join that
     /// stores only the keys reads nothing from them, so they can go.
     void dropRightBlocksKeptForAnotherAlgorithm();
 
@@ -697,6 +703,10 @@ private:
     JoinMapsKind getMapsKind() const;
 
     bool isUsedByAnotherAlgorithm() const;
+
+    /// Whether a wrapping algorithm said it may take the right blocks. See
+    /// `keepRightBlocksForAnotherAlgorithm`.
+    bool right_blocks_may_be_taken = false;
     bool canRemoveColumnsFromLeftBlock() const;
 
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);

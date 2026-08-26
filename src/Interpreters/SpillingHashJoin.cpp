@@ -39,6 +39,8 @@ SpillingHashJoin::SpillingHashJoin(
     hash_join = std::make_shared<HashJoin>(
         table_join, right_sample_block_, any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
         /*use_two_level_maps_=*/false, stats_collecting_params_);
+    /// Until the build phase ends this join may have to hand its right blocks to `GraceHashJoin`.
+    hash_join->keepRightBlocksForAnotherAlgorithm();
 }
 
 SpillingHashJoin::SpillingHashJoin(
@@ -68,6 +70,8 @@ SpillingHashJoin::SpillingHashJoin(
         stats_collecting_params_,
         any_take_last_row,
         max_bytes_before_external_join);
+    /// As above: the slots' blocks go to `GraceHashJoin` if the switch happens.
+    concurrent_join->keepRightBlocksForAnotherAlgorithm();
     supports_parallel_non_joined_blocks_processing = concurrent_join->supportParallelNonJoinedBlocksProcessing();
 }
 
