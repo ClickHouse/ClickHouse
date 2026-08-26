@@ -36,7 +36,9 @@ SELECT min([NULL, CAST(number % 3 AS Nullable(UInt8))]) FROM numbers(50);
 -- The `anyHeavy` arm pins that equality over a container of aggregate states still works. The `min`
 -- arm pins that such a type is still refused while the aggregate function is constructed, before any
 -- row is compared, so it never reaches `Field` ordering. That equality-versus-ordering contract is
--- asserted in src/Core/tests/gtest_field.cpp instead.
+-- asserted in src/Core/tests/gtest_field.cpp instead. Both arms read the state from a subquery so
+-- that `min` does not nest one aggregate function inside another, which a separate check refuses
+-- before the argument type is examined.
 SELECT arrayMap(x -> finalizeAggregation(x), anyHeavy(arr))
 FROM (SELECT [sumState(toUInt64(6))] AS arr FROM numbers(3) GROUP BY number);
-SELECT min([sumState(toUInt64(6))]) FROM numbers(3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT min(arr) FROM (SELECT [sumState(toUInt64(6))] AS arr FROM numbers(3) GROUP BY number); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
