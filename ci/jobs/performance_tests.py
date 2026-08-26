@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 import traceback
 import urllib.parse
@@ -1149,8 +1150,9 @@ _PERF_SUMMARY_PART_RE = re.compile(r"^\d+ (too long|faster|slower|unstable)$")
 def is_perf_summary_message(message):
     """Return True when a lowercased result message is a normal perf summary
     that can serve as a slower-count baseline."""
-    # A previous run of this job appends "; delta vs prev master run (...)"
-    # to its own summary - ignore everything after the first ";".
+    # A previous run of this job appends "; release base ...; delta vs prev
+    # master run (...)" to its own summary - ignore everything after the
+    # first ";".
     summary = message.split(";")[0].strip()
     if summary == "see the report":
         return True
@@ -1158,17 +1160,77 @@ def is_perf_summary_message(message):
     return all(_PERF_SUMMARY_PART_RE.match(p) for p in parts)
 
 
+# The marker a `release_base` run appends to its own result message so that the
+# next master run can tell which release baseline the count was measured
+# against. `release_base` is cumulative since the release branch point, so the
+# counts of two runs are comparable only when both used the same baseline.
+_RELEASE_BASE_MARKER = "release base"
+_RELEASE_BASE_RE = re.compile(rf"{_RELEASE_BASE_MARKER} ([0-9a-f]+)")
+
+
+def format_release_base_marker(release_base_sha):
+    return f"; {_RELEASE_BASE_MARKER} {release_base_sha[:12]}"
+
+
+def parse_release_base(message):
+    """Return the release baseline sha recorded in a lowercased result message,
+    or None when the message carries no marker (a run that predates it)."""
+    match = _RELEASE_BASE_RE.search(message)
+    return match.group(1) if match else None
+
+
 def too_many_slow(message):
     return parse_slower_count(message) > SLOWER_QUERIES_FAIL_THRESHOLD
 
 
-def find_prev_master_slower_count(job_name, commits):
+# Outcomes of fetching one previous result artifact from S3.
+FETCH_OK = "ok"
+FETCH_MISSING = "missing"
+FETCH_ERROR = "error"
+
+
+def fetch_prev_master_result(link):
+    """Fetch a previous run's `result_*.json` from S3.
+
+    Returns `(FETCH_OK, body)` for an existing object, `(FETCH_MISSING, None)`
+    when the object does not exist, and `(FETCH_ERROR, None)` for a transport
+    failure. The distinction matters: a missing object just means this commit
+    is a merged side-branch commit that never ran the job, while a timeout or
+    a TLS error says nothing about the commit, and silently treating it as a
+    miss would compare the current run against an older baseline."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        body_file = Path(tmp_dir) / "result.json"
+        http_code = Shell.get_output(
+            f'curl -s --compressed --max-time 60 -o {body_file} '
+            f'-w "%{{http_code}}" "{link}"'
+        ).strip()
+        # `Shell.get_output` returns an empty string when curl exits non-zero,
+        # and curl reports "000" when no response was received at all.
+        if http_code in ("", "000"):
+            print(f"WARNING: transport failure while fetching [{link}]")
+            return FETCH_ERROR, None
+        if http_code in ("403", "404"):
+            return FETCH_MISSING, None
+        if http_code != "200":
+            print(f"WARNING: unexpected HTTP {http_code} for [{link}]")
+            return FETCH_ERROR, None
+        return FETCH_OK, body_file.read_text(encoding="utf-8")
+
+
+def find_prev_master_slower_count(job_name, commits, release_base_sha):
     """Find the "slower" query count reported by the most recent valid run of
     this job on a predecessor master commit. Returns (count, sha), or
-    (None, None) when no valid previous run is found. Runs that produced no
-    report or whose message is not a normal perf summary (errors, sentinel
-    messages like "No status in report.") are skipped: their counts would
-    distort the delta of the current run.
+    (None, None) when no usable previous run is found and the caller has to
+    fall back to the absolute gate. Runs that produced no report are skipped:
+    they say nothing about the commit.
+
+    The walk stops - rather than skipping to an older commit - as soon as a
+    predecessor is found whose result cannot be used as a baseline: a
+    transport failure, a malformed body, a non-summary message (errors,
+    sentinels like "No status in report."), or a run measured against a
+    different release baseline. Skipping such a commit would silently compare
+    the current run against an older one, so red would no longer blame the
+    commit that introduced the regression.
 
     `commits` on master runs is the raw GitHub `/commits` listing, which
     interleaves merged PR side-branch commits with the first-parent chain, so
@@ -1178,21 +1240,33 @@ def find_prev_master_slower_count(job_name, commits):
     result_file_name = f"result_{Utils.normalize_string(job_name)}.json"
     for sha in commits:
         link = f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/{sha}/{result_file_name}"
-        out = Shell.get_output(f"curl -sf --compressed --max-time 60 {link}")
-        if not out:
+        state, out = fetch_prev_master_result(link)
+        if state == FETCH_MISSING:
             continue
+        if state == FETCH_ERROR:
+            return None, None
         try:
             prev_message = json.loads(out).get("info", "")
         except Exception:
             print(f"WARNING: failed to parse previous run result [{link}]")
-            continue
-        if not prev_message or not is_perf_summary_message(prev_message.lower()):
+            return None, None
+        prev_message = prev_message.lower()
+        if not prev_message or not is_perf_summary_message(prev_message):
             print(
                 f"WARNING: previous run result for {sha} is not a usable perf "
-                f"summary, skipping: {prev_message!r}"
+                f"summary: {prev_message!r}"
             )
-            continue
-        return parse_slower_count(prev_message.lower()), sha
+            return None, None
+        prev_release_base = parse_release_base(prev_message)
+        if not prev_release_base or not release_base_sha.startswith(
+            prev_release_base
+        ):
+            print(
+                f"WARNING: previous run {sha} was measured against release "
+                f"baseline {prev_release_base!r}, not {release_base_sha!r}"
+            )
+            return None, None
+        return parse_slower_count(prev_message), sha
     return None, None
 
 
@@ -1989,13 +2063,25 @@ def main():
                 # delta against the previous master run instead of the
                 # absolute count (see SLOWER_QUERIES_DELTA_FAIL_THRESHOLD).
                 cur_slower = parse_slower_count(message.lower())
-                prev_slower, prev_sha = find_prev_master_slower_count(
-                    info.job_name,
-                    info.get_kv_data("master_track_commits_sha") or [],
-                )
+                release_base_sha = (
+                    info.get_kv_data("release_branch_base_sha_with_predecessors")
+                    or [""]
+                )[0]
+                prev_slower, prev_sha = (None, None)
+                if release_base_sha:
+                    # Record the baseline this count was measured against, so
+                    # that the next master run can tell whether its own count
+                    # is comparable (a release cut moves the baseline and
+                    # resets the counts).
+                    message += format_release_base_marker(release_base_sha)
+                    prev_slower, prev_sha = find_prev_master_slower_count(
+                        info.job_name,
+                        info.get_kv_data("master_track_commits_sha") or [],
+                        release_base_sha,
+                    )
                 if prev_slower is None:
                     print(
-                        "WARNING: no valid previous master run found, "
+                        "WARNING: no usable previous master run found, "
                         "falling back to the absolute slower-count gate"
                     )
                     if too_many_slow(message.lower()):
