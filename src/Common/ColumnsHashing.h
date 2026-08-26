@@ -18,6 +18,7 @@
 
 #include <Core/Defines.h>
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <Common/HashTable/Hash.h>
 
@@ -404,10 +405,16 @@ struct HashMethodSerialized
     /// Filled lazily on the first emplace/find call (because we need access to `Data::hash`).
     /// Only used when `can_precompute_hashes` is true.
     PaddedPODArray<size_t> precomputed_hashes;
-    /// `precomputed_hashes_initialized` starts `true` by default so the hot path skips the lazy-init
-    /// gate when precomputation is statically disabled. It is set to `false` in the constructor only
-    /// when we actually plan to precompute hashes (and is flipped back to `true` after the first call).
-    bool precomputed_hashes_initialized = true;
+    /// The half-open row window `[precomputed_hashes_from, precomputed_hashes_from + precomputed_hashes_count)`
+    /// for which `precomputed_hashes` currently holds valid values. `precomputed_hashes_count` starts
+    /// at `max()` so the hot path skips the lazy-init gate when precomputation is statically disabled;
+    /// the constructor sets it to `0` only when we actually plan to precompute hashes. Hashes are
+    /// filled one chunk at a time, so the window advances as the block is consumed.
+    size_t precomputed_hashes_from = 0;
+    size_t precomputed_hashes_count = std::numeric_limits<size_t>::max();
+    /// Whether `initPrecomputedHashes` has already run its one-time part (the size threshold check
+    /// and the look-ahead calibration point).
+    bool precomputed_hashes_started = false;
     bool can_precompute_hashes = false;
 
     /// Skip the precomputed-hash prefetch path when the hash table's buffer is below this size,
@@ -499,7 +506,7 @@ struct HashMethodSerialized
             if (use_batch_serialize && hash_serialized_context->settings.enable_prefetch)
             {
                 can_precompute_hashes = true;
-                precomputed_hashes_initialized = false;
+                precomputed_hashes_count = 0;
                 min_bytes_for_prefetch = hash_serialized_context->settings.min_bytes_for_prefetch;
                 prefetching = std::make_unique<PrefetchingHelper>();
             }
@@ -507,27 +514,42 @@ struct HashMethodSerialized
     }
 
     /// Compute per-row canonical hashes from `serialized_keys` using `Data::hash`.
-    /// Called once on the first `emplaceKey`/`findKey`, when `Data` becomes known.
-    /// Also applies the `min_bytes_for_prefetch` size-threshold contract: skip the precomputed-hash
-    /// + prefetch path when the hash table is small enough to fit in caches. Matches
-    /// `Aggregator::executeImpl`'s `prefetch` gate.
+    /// Called from `emplaceKey`/`findKey` whenever the requested row is outside the already hashed
+    /// window, which is when `Data` becomes known. Only a chunk of
+    /// `columns_hashing_impl::precomputed_hashes_chunk_rows` rows is hashed at a time, so a caller
+    /// that consumes only a prefix of the block does not pay for the rows it never looks up.
+    /// The first call also applies the `min_bytes_for_prefetch` size-threshold contract: skip the
+    /// precomputed-hash + prefetch path when the hash table is small enough to fit in caches.
+    /// Matches `Aggregator::executeImpl`'s `prefetch` gate.
     template <typename Data>
     NO_INLINE void initPrecomputedHashes(const Data & data, size_t first_row)
         requires prealloc
     {
-        precomputed_hashes_initialized = true;
-        calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
+        const size_t rows = serialized_keys.size();
 
-        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes_for_prefetch)
+        if (!precomputed_hashes_started)
         {
-            can_precompute_hashes = false;
-            return;
+            precomputed_hashes_started = true;
+            calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
+
+            if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes_for_prefetch)
+            {
+                can_precompute_hashes = false;
+                /// Never re-enter this cold path for the rest of the block.
+                precomputed_hashes_from = 0;
+                precomputed_hashes_count = std::numeric_limits<size_t>::max();
+                return;
+            }
+
+            precomputed_hashes.resize(rows);
         }
 
-        const size_t rows = serialized_keys.size();
-        precomputed_hashes.resize(rows);
-        for (size_t i = 0; i < rows; ++i)
+        const size_t chunk_end = std::min(rows, first_row + columns_hashing_impl::precomputed_hashes_chunk_rows);
+        for (size_t i = first_row; i < chunk_end; ++i)
             precomputed_hashes[i] = data.hash(serialized_keys[i]);
+
+        precomputed_hashes_from = first_row;
+        precomputed_hashes_count = chunk_end - first_row;
     }
 
     bool shouldUseBatchSerialize() const

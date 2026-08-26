@@ -449,7 +449,14 @@ template <>
 struct HashMethodKeysFixedPrecomputedHashState<true>
 {
     PaddedPODArray<size_t> precomputed_hashes;
-    bool precomputed_hashes_initialized = true;
+    /// The half-open row window `[precomputed_hashes_from, precomputed_hashes_from + precomputed_hashes_count)`
+    /// for which `precomputed_hashes` currently holds valid values. `precomputed_hashes_count` starts
+    /// at `max()` so the hot path skips the lazy-init gate when precomputation is disabled; hashes are
+    /// filled one chunk at a time, so the window advances as the block is consumed.
+    size_t precomputed_hashes_from = 0;
+    size_t precomputed_hashes_count = std::numeric_limits<size_t>::max();
+    /// Whether `initPrecomputedHashes` has already run its one-time part.
+    bool precomputed_hashes_started = false;
     bool can_precompute_hashes = false;
     size_t min_bytes_for_prefetch = 0;
     std::unique_ptr<PrefetchingHelper> prefetching;
@@ -658,7 +665,7 @@ struct HashMethodKeysFixed
             if (settings_context && !prepared_keys.empty() && settings_context->settings.enable_fixed_key_prefetch)
             {
                 this->can_precompute_hashes = true;
-                this->precomputed_hashes_initialized = false;
+                this->precomputed_hashes_count = 0;
                 this->min_bytes_for_prefetch = settings_context->settings.min_bytes_for_prefetch;
                 this->prefetching = std::make_unique<PrefetchingHelper>();
             }
@@ -666,28 +673,46 @@ struct HashMethodKeysFixed
     }
 
     /// Compute per-row canonical hashes from `prepared_keys` using `Data::hash`.
-    /// Called once on the first `emplaceKey`/`findKey`, when `Data` becomes known.
-    /// Also applies the `min_bytes_for_prefetch` size-threshold contract: skip the
+    /// Called from `emplaceKey`/`findKey` whenever the requested row falls outside the already
+    /// hashed window, which is when `Data` becomes known. Only a chunk of
+    /// `columns_hashing_impl::precomputed_hashes_chunk_rows` rows is hashed at a time: a caller may
+    /// consume only a prefix of the block - `Aggregator::executeImplUntilAdaptiveFreeze` aggregates
+    /// slice by slice and hands the tail over to `executeFrozen` or to a fresh baseline state - and
+    /// hashing rows that are never looked up would be a regression against the pre-existing
+    /// per-row look-ahead.
+    /// The first call also applies the `min_bytes_for_prefetch` size-threshold contract: skip the
     /// precomputed-hash + prefetch path while the hash table still fits into caches.
     /// Matches `Aggregator::executeImpl`'s `prefetch` gate.
     template <typename Data>
     NO_INLINE void initPrecomputedHashes(const Data & data, size_t first_row)
         requires has_pre_computed_hashes
     {
-        this->precomputed_hashes_initialized = true;
-        this->calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
+        const size_t rows = prepared_keys.size();
 
-        if (this->min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= this->min_bytes_for_prefetch)
+        if (!this->precomputed_hashes_started)
         {
-            this->can_precompute_hashes = false;
-            return;
+            this->precomputed_hashes_started = true;
+            this->calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
+
+            if (this->min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= this->min_bytes_for_prefetch)
+            {
+                this->can_precompute_hashes = false;
+                /// Never re-enter this cold path for the rest of the block.
+                this->precomputed_hashes_from = 0;
+                this->precomputed_hashes_count = std::numeric_limits<size_t>::max();
+                return;
+            }
+
+            this->precomputed_hashes.resize(rows);
         }
 
-        const size_t rows = prepared_keys.size();
-        this->precomputed_hashes.resize(rows);
-        for (size_t i = 0; i < rows; ++i)
+        const size_t chunk_end = std::min(rows, first_row + columns_hashing_impl::precomputed_hashes_chunk_rows);
+        for (size_t i = first_row; i < chunk_end; ++i)
             this->precomputed_hashes[i] = data.hash(prepared_keys[i]);
-        ProfileEvents::increment(ProfileEvents::AggregationPrecomputedFixedKeyHashes, rows);
+
+        this->precomputed_hashes_from = first_row;
+        this->precomputed_hashes_count = chunk_end - first_row;
+        ProfileEvents::increment(ProfileEvents::AggregationPrecomputedFixedKeyHashes, chunk_end - first_row);
     }
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const

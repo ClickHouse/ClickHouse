@@ -89,6 +89,13 @@ concept HasPrefetchByHashMemberFunc = requires(const Data & data, size_t hash)
     data.isEmptyCell(hash);
 };
 
+/// Precomputed per-row hashes are filled in chunks of this many rows instead of in one pass over
+/// the whole block: a caller may consume only a prefix of the block (for example
+/// `Aggregator::executeImplUntilAdaptiveFreeze` aggregates slice by slice and hands the tail over
+/// to a different state), and hashing rows that are never looked up is pure overhead. The chunk
+/// matches the adaptive learning slice, so that path pays for exactly the rows it consumes.
+static constexpr size_t precomputed_hashes_chunk_rows = 4096;
+
 struct LastElementCacheBase
 {
     bool empty = true;
@@ -274,10 +281,11 @@ public:
         auto key_holder = derived.getKeyHolder(row, pool);
         if constexpr (Derived::has_pre_computed_hashes && HasPrefetchByHashMemberFunc<Data>)
         {
-            /// Single gate in the hot path: `precomputed_hashes_initialized` is set to `true`
-            /// after the first call (regardless of whether hashes were actually computed), so
-            /// subsequent rows only do the one `can_precompute_hashes` check below.
-            if (!derived.precomputed_hashes_initialized) [[unlikely]]
+            /// Single gate in the hot path: the unsigned difference is `>= count` both when the
+            /// hashes for `row` have not been computed yet and when precomputation is disabled
+            /// (`count` stays at its `max()` default), so subsequent rows of an already hashed
+            /// chunk only do the one `can_precompute_hashes` check below.
+            if (row - derived.precomputed_hashes_from >= derived.precomputed_hashes_count) [[unlikely]]
                 derived.initPrecomputedHashes(data, row);
 
             if (derived.can_precompute_hashes)
@@ -285,8 +293,9 @@ public:
                 if (row == derived.calibration_row)
                     derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
                 const auto & hashes = derived.precomputed_hashes;
-                if (row + derived.prefetch_look_ahead < hashes.size())
-                    data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
+                const size_t prefetch_row = row + derived.prefetch_look_ahead;
+                if (prefetch_row - derived.precomputed_hashes_from < derived.precomputed_hashes_count)
+                    data.prefetchByHash(hashes[prefetch_row]);
                 return emplaceImpl<false>(key_holder, data, hashes[row]);
             }
         }
@@ -322,8 +331,8 @@ public:
         auto & derived = static_cast<Derived &>(*this);
         if constexpr (Derived::has_pre_computed_hashes && HasPrefetchByHashMemberFunc<Data>)
         {
-            /// See note in `emplaceKey`: single gate via `precomputed_hashes_initialized`.
-            if (!derived.precomputed_hashes_initialized) [[unlikely]]
+            /// See note in `emplaceKey`: single gate via the `precomputed_hashes_from` window.
+            if (row - derived.precomputed_hashes_from >= derived.precomputed_hashes_count) [[unlikely]]
                 derived.initPrecomputedHashes(data, row);
 
             if (derived.can_precompute_hashes)
@@ -331,8 +340,9 @@ public:
                 if (row == derived.calibration_row)
                     derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
                 const auto & hashes = derived.precomputed_hashes;
-                if (row + derived.prefetch_look_ahead < hashes.size())
-                    data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
+                const size_t prefetch_row = row + derived.prefetch_look_ahead;
+                if (prefetch_row - derived.precomputed_hashes_from < derived.precomputed_hashes_count)
+                    data.prefetchByHash(hashes[prefetch_row]);
 
                 if constexpr (consecutive_keys_optimization)
                 {
