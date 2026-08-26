@@ -31,7 +31,8 @@ namespace Setting
     extern const SettingsBool use_statistics;
 }
 
-namespace {
+namespace
+{
 
 /// Conditions like "x = N" are considered good if abs(N) > threshold.
 /// This is used to assume that condition is likely to have good selectivity.
@@ -754,10 +755,17 @@ double MergeTreeWhereOptimizer::approximateBytesPerRowAndColumn(const String & c
     if (auto column_in_storage = storage_metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, column))
         return approximateBytesPerValueForType(*column_in_storage->type);
 
-    if (auto virtual_column = storage_metadata->virtuals.tryGet(column, VirtualsKind::All, VirtualsMaterializationPlace::All))
-        return approximateBytesPerValueForType(*virtual_column->type);
+    const auto * virtual_column = storage_metadata->virtuals.tryGetDescription(column, VirtualsKind::All, VirtualsMaterializationPlace::All);
+    if (!virtual_column)
+        return 0;
 
-    return 0;
+    /// An ephemeral virtual column with no default expression is synthesized from part metadata
+    /// (`_part`, `_partition_id`, `_part_offset`), so reading it costs nothing. One with a default
+    /// expression (`__text_index_*`) may have to be computed, and a persistent one is stored data.
+    if (virtual_column->isEphemeral() && !virtual_column->default_desc.expression)
+        return 0;
+
+    return approximateBytesPerValueForType(*virtual_column->type);
 }
 
 bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) const
