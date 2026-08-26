@@ -76,6 +76,8 @@ private:
     bool compress_empty = true;
     bool header_written = false;
     std::string filename;
+    /// Number of compression passes whose output has been written to the nested buffer.
+    size_t passes_written = 0;
     uint64_t check = crc32_z(0L, Z_NULL, 0);
     uintmax_t ulen = 0;
 

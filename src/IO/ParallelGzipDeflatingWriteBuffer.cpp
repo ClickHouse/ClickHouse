@@ -22,6 +22,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char parallel_gzip_compression_fail[];
+    extern const char parallel_gzip_compression_late_fail[];
 }
 
 void ParallelGzipDeflatingWriteBuffer::nextImpl()
@@ -35,13 +36,20 @@ void ParallelGzipDeflatingWriteBuffer::nextImpl()
 
 void ParallelGzipDeflatingWriteBuffer::cancelImpl() noexcept
 {
-    /// If no output has been produced yet (the gzip header is always the first byte written) and the
-    /// nested buffer belongs to the caller, cancel only this buffer and leave the nested one usable.
-    /// The HTTP response path relies on this: when the first compression pass fails, the never-started
-    /// response body can still be replaced with a clean, uncompressed exception message instead of
-    /// tearing down the connection. (The decorator's cancel would cancel the nested buffer as well;
-    /// there is nothing to release in this buffer itself, the base `cancelImpl` is a no-op.)
-    if (!header_written && !owning_holder)
+    /// If the nested buffer has not sent anything yet and it belongs to the caller, cancel only this
+    /// buffer and leave the nested one usable. The HTTP response path relies on this: as long as no
+    /// byte of the compressed body has left the response buffer, it can still be discarded and
+    /// replaced with a clean, uncompressed exception message instead of tearing down the connection.
+    /// (The decorator's cancel would cancel the nested buffer as well; there is nothing to release in
+    /// this buffer itself, the base `cancelImpl` is a no-op.)
+    ///
+    /// The condition keys off the nested buffer's sent state, not off `header_written`: a compression
+    /// pass writes into the nested buffer, so the header is committed as soon as the first pass
+    /// succeeds, while `WriteBufferFromHTTPServerResponse` keeps buffering until its own working
+    /// buffer overflows. A pass that fails in between is still fully recoverable. This is exactly the
+    /// same predicate `WriteBufferFromHTTPServerResponse::cancelWithException` uses to decide whether
+    /// the already-written body can be discarded.
+    if ((out->count() == out->offset()) && !owning_holder)
         return;
 
     WriteBufferWithOwnMemoryDecorator::cancelImpl();
@@ -189,6 +197,7 @@ void ParallelGzipDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, 
             CompressedBuf result = compressBlock(in_buf, in_len, true);
             ensureHeaderWritten();
             out->write(result.mem->data(), result.len);
+            ++passes_written;
         }
         return;
     }
@@ -201,6 +210,12 @@ void ParallelGzipDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, 
 
     fiu_do_on(FailPoints::parallel_gzip_compression_fail,
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure of parallel gzip compression"));
+
+    /// Fails only from the second pass on, when the gzip header is already committed to the nested
+    /// buffer but, on the HTTP path, nothing has been sent to the client yet.
+    if (passes_written > 0)
+        fiu_do_on(FailPoints::parallel_gzip_compression_late_fail,
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure of a later parallel gzip compression pass"));
 
     /// Schedule deflation of every block of this pass on the shared IO thread pool. The number of
     /// blocks per pass is bounded by the staging buffer size (~num_threads blocks).
@@ -265,6 +280,8 @@ void ParallelGzipDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, 
 
     for (size_t i = 0; i < scheduled; ++i)
         out->write(results[i].mem->data(), results[i].len);
+
+    ++passes_written;
 }
 
 }
