@@ -42,6 +42,12 @@ INSERT INTO t_minmax_nan_mixed VALUES (4, 100.0), (5, 150.0), (6, 200.0);
 SELECT count() FROM t_minmax_nan_mixed WHERE NOT ((val >= 0.) AND (val <= 3.));
 SELECT count() FROM t_minmax_nan_mixed WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
 
+-- The pair above reads the same value when the index kept the granule and when the index was dropped from
+-- the plan altogether, so assert this layer is still there: an index whose condition is unusable never
+-- enters useful_indices and its whole Skip block, this token included, disappears.
+SELECT countIf(explain LIKE '%Description: minmax GRANULARITY 1%')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_minmax_nan_mixed WHERE NOT ((val >= 0.) AND (val <= 3.)));
+
 -- A positive range is decided by intersection alone, and a hidden NaN satisfies no comparison, so it
 -- can never make one true: both granules are pruned for val > 500.
 SELECT count() FROM t_minmax_nan_mixed WHERE val > 500;
@@ -126,6 +132,10 @@ SELECT count() FROM t_set_idx_nan WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTIN
 SELECT count() FROM t_set_idx_nan WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS secondary_indices_enable_bulk_filtering = 0;
 SELECT count() FROM t_set_idx_nan WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS secondary_indices_enable_bulk_filtering = 1;
 
+-- Same liveness assertion for this layer, on its own negated predicate and its own index type.
+SELECT countIf(explain LIKE '%Description: set GRANULARITY 1%')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_set_idx_nan WHERE NOT ((val >= 0.) AND (val <= 3.)));
+
 DROP TABLE t_set_idx_nan;
 
 -- Tuple comparison is built from its elements' scalar comparisons, so a NaN element makes an ordering
@@ -143,8 +153,8 @@ INSERT INTO t_minmax_nan_tuple VALUES (4, (100., 100.)), (5, (150., 150.)), (6, 
 SELECT count() FROM t_minmax_nan_tuple WHERE NOT (t <= (100., 100.));
 SELECT count() FROM t_minmax_nan_tuple WHERE NOT (t <= (100., 100.)) SETTINGS use_skip_indexes = 0;
 
--- A NaN inside a tuple constant is reached through the column operand's type here, which is already
--- NaN-hiding, so this pair does not distinguish the type test from a walk of the constant.
+-- A tuple constant holding a NaN: the column operand's own type is already NaN-hiding, so it is what
+-- triggers the guard here.
 SELECT count() FROM t_minmax_nan_tuple WHERE NOT (t < (nan, 1.));
 SELECT count() FROM t_minmax_nan_tuple WHERE NOT (t < (nan, 1.)) SETTINGS use_skip_indexes = 0;
 

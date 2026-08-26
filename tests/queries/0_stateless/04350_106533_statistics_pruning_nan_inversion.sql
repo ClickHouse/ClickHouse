@@ -1,4 +1,3 @@
--- Tags: no-random-settings, no-random-merge-tree-settings
 -- The auto minmax/basic statistics built at insert time (materialize_statistics_on_insert = 1) aggregate
 -- their bounds the same way getExtremes does, so a part mixing finite floats with a NaN stores a finite
 -- [min, max] that hides it. This is a third pruning layer with the same hazard, and it is reached even
@@ -6,6 +5,14 @@
 
 SET materialize_statistics_on_insert = 1;
 SET allow_experimental_statistics = 1;
+
+-- The statistics pruner is the layer under test, so its two gates are pinned rather than randomized.
+SET use_statistics = 1;
+SET use_statistics_for_part_pruning = 1;
+
+-- The cache is keyed on the condition and not on the settings, so without this the second arm of each
+-- pair would reuse the first arm's part verdict and stop being an independent oracle.
+SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS t_106533_stats;
 
