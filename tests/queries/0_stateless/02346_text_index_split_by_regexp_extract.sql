@@ -1,10 +1,7 @@
 -- Tags: no-parallel-replicas
 
--- Tests the `extract` argument of the `splitByRegexp` tokenizer for text indexes: instead of splitting on
--- the regular expression, each match contributes at most one token - capture group 1 of the match, or the
--- whole match if the pattern has no capture groups. Verifies index-backed search (`hasAnyTokens` /
--- `hasAllTokens`) returns exactly the expected rows. `force_data_skipping_indices` makes the queries fail
--- unless the text index is actually used, so every search below is served by the index.
+-- Tests the `extract` argument of the `splitByRegexp` tokenizer for text indexes.
+-- `force_data_skipping_indices` ensures every search below is actually served by the index.
 
 -- 1. Capture group 1 becomes the token; the 'tag:' prefix is not indexed.
 

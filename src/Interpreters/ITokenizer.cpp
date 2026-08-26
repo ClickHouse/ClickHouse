@@ -318,26 +318,12 @@ String SplitByStringTokenizer::getDescription() const
     return result + "])";
 }
 
-namespace
-{
-
-/// Capture groups are tracked only in `extract` mode, which reads group 1. Otherwise only the whole
-/// match (group 0) is ever read, and tracking capture groups would just waste work (a larger `MatchVec`
-/// resized on every match).
-std::shared_ptr<OptimizedRegularExpression> compileSplitByRegexp(const String & regexp_, bool extract_)
-{
-    if (extract_)
-        return std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, /*no_capture=*/ false, false>(regexp_));
-    return std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, /*no_capture=*/ true, false>(regexp_));
-}
-
-}
-
 SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_, bool extract_)
     : ITokenizerHelper(Type::SplitByRegexp)
     , regexp_str(regexp_)
     , extract(extract_)
-    , regexp(compileSplitByRegexp(regexp_, extract_))
+    /// Capture groups are tracked in both modes for simplicity, though only `extract` mode reads them.
+    , regexp(std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, /*no_capture=*/ false, false>(regexp_)))
     /// A pattern with capture groups is never "trivial" (a plain substring search), so whenever
     /// `getNumberOfSubpatterns()` is non-zero the RE2 path runs and fills `number_of_subpatterns + 1`
     /// entries - i.e. index 1 is always populated. See the `chassert` in `nextInStringImpl`.
