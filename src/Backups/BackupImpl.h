@@ -5,10 +5,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
-#include <Common/Logger_fwd.h>
-#include <atomic>
 #include <map>
-#include <memory>
 #include <mutex>
 
 
@@ -20,9 +17,6 @@ class IBackupWriter;
 class SeekableReadBuffer;
 class IArchiveReader;
 class IArchiveWriter;
-#if CLICKHOUSE_CLOUD && USE_SSL
-class BackupEncryptionSidecar;
-#endif
 
 /// Implementation of IBackup.
 /// Along with passed files it also stores backup metadata - a single file named ".backup" in XML format
@@ -30,17 +24,6 @@ class BackupEncryptionSidecar;
 /// whether the base backup should be used for each entry.
 class BackupImpl : public IBackup
 {
-#if CLICKHOUSE_CLOUD
-    /// Reopens a destination this backup already owns, which needs the writer, the lock file and the
-    /// helpers below that claim and release it.
-    friend class BackupResumer;
-#endif
-#if CLICKHOUSE_CLOUD && USE_SSL
-    /// Owns `encryption_config.json` in the destination, which needs the writer, the reader and the
-    /// archive name.
-    friend class BackupEncryptionSidecar;
-#endif
-
 public:
     struct ArchiveParams
     {
@@ -49,7 +32,6 @@ public:
         String compression_method;
         int compression_level = 0;
         size_t max_volume_size = 0;
-        size_t adaptive_buffer_max_size = 8 * DBMS_DEFAULT_BUFFER_SIZE;
     };
 
     using SnapshotReaderCreator = std::function<std::shared_ptr<IBackupReader>(const String &, const String &)>;
@@ -71,16 +53,15 @@ public:
     BackupImpl(
         const BackupInfo & backup_info_,
         const ArchiveParams & archive_params_,
-        std::shared_ptr<IBackupReader> reader_);
+        std::shared_ptr<IBackupReader> reader_,
+        std::shared_ptr<IBackupWriter> lightweight_snapshot_writer_);
 
     ~BackupImpl() override;
 
     const String & getNameForLogging() const override { return backup_name_for_logging; }
     OpenMode getOpenMode() const override { return open_mode; }
-    std::map<String, String> getEngineSettings() const override;
     time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
-    const String & getBackupId() const override { return backup_id; }
     BackupPtr getBaseBackup() const override;
     size_t getNumFiles() const override;
     UInt64 getTotalSize() const override;
@@ -103,15 +84,11 @@ public:
     size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const override;
     size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
-#if CLICKHOUSE_CLOUD && USE_SSL
-    /// See `getBackupEncryptionKeyInfos`, which is how the rest of the code reaches it.
-    BackupEncryptionSidecar & getEncryptionSidecar() const { return *encryption_sidecar; }
-#endif
     bool supportsWritingInMultipleThreads() const override { return !use_archive; }
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
-    void setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept override;
+    bool tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept override;
 
 private:
     void open();
@@ -122,10 +99,6 @@ private:
 
     /// Writes the file ".backup" containing backup's metadata.
     void writeBackupMetadata() TSA_REQUIRES(mutex);
-#if CLICKHOUSE_CLOUD
-    /// Reached only while continuing an interrupted backup, whose manifest is already published.
-    void recalculateMetadataCounters() TSA_REQUIRES(mutex);
-#endif
     void readBackupMetadata() TSA_REQUIRES(mutex);
 
 #if CLICKHOUSE_CLOUD
@@ -150,9 +123,7 @@ private:
     /// Thus it will not be allowed to put any other backup to the same place (even if the BACKUP command is executed on a different node).
     void createLockFile();
     bool checkLockFile(bool throw_if_failed) const;
-    /// Both return true only when the destination no longer holds this backup's lock file.
-    bool removeLockFile();
-    bool tryRemoveOwnLockFile() noexcept;
+    void removeLockFile();
 
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
@@ -172,12 +143,11 @@ private:
     std::shared_ptr<IBackupReader> reader;
     /// Only used for lightweight backup, we read data from original object storage so the endpoint may be different from the backup files.
     std::shared_ptr<IBackupReader> lightweight_snapshot_reader;
+    std::shared_ptr<IBackupWriter> lightweight_snapshot_writer;
     SnapshotReaderCreator lightweight_snapshot_reader_creator;
     String original_endpoint; /// endpoint of source disk, we need to write it to metafile to restore a snapshot.
     String original_namespace; /// namespace of source disk, we need to write it to metafile to restore a snapshot.
 
-    BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::FirstFileName;
-    size_t data_file_name_prefix_length = 3;
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;
@@ -190,7 +160,6 @@ private:
     std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
 
     std::optional<UUID> uuid;
-    String backup_id; /// Set from params on write, from the manifest on read; empty for legacy backups without the field.
     time_t timestamp = 0;
     size_t num_files = 0;
     UInt64 total_size = 0;
@@ -200,7 +169,7 @@ private:
     UInt64 compressed_size = 0;
     mutable size_t num_read_files = 0;
     mutable UInt64 num_read_bytes = 0;
-    int version{};
+    int version;
     mutable std::optional<BackupInfo> base_backup_info;
     mutable std::shared_ptr<const IBackup> base_backup;
     mutable std::optional<UUID> base_backup_uuid;
@@ -209,20 +178,10 @@ private:
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;
-#if CLICKHOUSE_CLOUD && USE_SSL
-    /// `encryption_config.json` next to the backup, if this one holds files of KMS-encrypted disks.
-    /// It keeps the keys and its own size, which the sizes reported here include.
-    std::unique_ptr<BackupEncryptionSidecar> encryption_sidecar;
-#endif
-    String lock_file_contents;
     std::atomic<bool> lock_file_before_first_file_checked = false;
 
     bool writing_finalized = false;
     bool corrupted = false;
-    /// Outcome of the one own-lock cleanup a failed `open` performs; see `tryRemoveOwnLockFile`.
-    std::optional<bool> own_lock_cleanup_result;
-    /// Whether this `open` wrote the destination lock, which is what makes it ours to take back.
-    bool created_own_lock_file = false;
     const LoggerPtr log;
 };
 

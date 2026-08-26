@@ -2,7 +2,6 @@
 #include <Common/logger_useful.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
-#include <QueryPipeline/BlockIO.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -11,17 +10,10 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 
-#include <Core/Settings.h>
-
 
 namespace DB
 {
 static const UInt64 max_block_size = 8192;
-
-namespace Setting
-{
-    extern const SettingsBool cloud_mode;
-}
 
 namespace ErrorCodes
 {
@@ -54,7 +46,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 }
 
 
-BlockIO FileDictionarySource::loadAll()
+QueryPipeline FileDictionarySource::loadAll()
 {
     LOG_TRACE(getLogger("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
@@ -62,9 +54,7 @@ BlockIO FileDictionarySource::loadAll()
     source->addBuffer(std::move(in_ptr));
     last_modification = getLastModification();
 
-    BlockIO io;
-    io.pipeline = QueryPipeline(std::move(source));
-    return io;
+    return QueryPipeline(std::move(source));
 }
 
 
@@ -80,7 +70,6 @@ Poco::Timestamp FileDictionarySource::getLastModification() const
 }
 
 
-void registerDictionarySourceFile(DictionarySourceFactory & factory);
 void registerDictionarySourceFile(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -92,9 +81,6 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
-        if (global_context->getSettingsRef()[Setting::cloud_mode])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `file` is disabled");
-
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `file` does not support attribute expressions");
 
@@ -106,53 +92,7 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
         return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context, created_from_ddl);
     };
 
-    factory.registerSource("file", create_table_source, Documentation{
-        .description = R"DOCS_MD(
-# Local File dictionary source
-
-The local file source loads dictionary data from a file on the local filesystem. This is useful for small, static lookup tables that can be stored as flat files in formats such as TSV, CSV, or any other [supported format](/reference/formats/index).
-
-Example of settings:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<source>
-  <file>
-    <path>/opt/dictionaries/os.tsv</path>
-    <format>TabSeparated</format>
-  </file>
-</source>
-```
-
-</Tab>
-</Tabs>
-
-<br/>
-
-Setting fields:
-
-| Setting | Description |
-|---------|-------------|
-| `path` | The absolute path to the file. |
-| `format` | The file format. All the formats described in [Formats](/reference/formats/index) are supported. |
-
-When a dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in the `user_files` directory to prevent DB users from accessing arbitrary files on the ClickHouse node.
-
-**See Also**
-
-- [Dictionary function](/reference/functions/table-functions/dictionary)
-)DOCS_MD",
-        .syntax = "SOURCE(FILE(path '/path/to/file' format 'CSV'))",
-        .related = {"executable", "http"}});
+    factory.registerSource("file", create_table_source);
 }
 
 }

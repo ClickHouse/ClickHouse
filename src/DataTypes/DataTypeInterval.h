@@ -24,7 +24,7 @@ public:
 
     explicit DataTypeInterval(IntervalKind kind_) : kind(kind_) {}
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
+    SerializationPtr doGetDefaultSerialization() const override;
     std::string doGetName() const override { return fmt::format("Interval{}", kind.toString()); }
     const char * getFamilyName() const override { return "Interval"; }
     TypeIndex getTypeId() const override { return TypeIndex::Interval; }

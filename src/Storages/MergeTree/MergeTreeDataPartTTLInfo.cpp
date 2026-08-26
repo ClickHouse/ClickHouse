@@ -1,11 +1,9 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
-#include <Compression/CompressionFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/quoteString.h>
 #include <algorithm>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/TTLDescription.h>
 
@@ -39,20 +37,19 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
     for (const auto & [name, ttl_info] : other_infos.columns_ttl)
     {
         columns_ttl[name].update(ttl_info);
-        updatePartMinMaxTTL(ttl_info);
+        updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
     }
 
     for (const auto & [name, ttl_info] : other_infos.rows_where_ttl)
     {
         rows_where_ttl[name].update(ttl_info);
-        updatePartMinMaxTTL(ttl_info);
+        updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
     }
 
     for (const auto & [name, ttl_info] : other_infos.group_by_ttl)
     {
-        const MergeTreeDataPartTTLInfo not_finished_ttl_info{ .min = ttl_info.min, .max = ttl_info.max, .ttl_finished = false };
-        group_by_ttl[name].update(not_finished_ttl_info);
-        updatePartMinMaxTTL(not_finished_ttl_info);
+        group_by_ttl[name].update(ttl_info);
+        updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
     }
 
     for (const auto & [name, ttl_info] : other_infos.recompression_ttl)
@@ -62,7 +59,7 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
         moves_ttl[expression].update(ttl_info);
 
     table_ttl.update(other_infos.table_ttl);
-    updatePartMinMaxTTL(table_ttl);
+    updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
 }
 
 
@@ -88,7 +85,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
             String name = col["name"].getString();
             columns_ttl.emplace(name, ttl_info);
 
-            updatePartMinMaxTTL(ttl_info);
+            updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
         }
     }
     if (json.has("table"))
@@ -100,7 +97,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
         if (table.has("finished"))
             table_ttl.ttl_finished = table["finished"].getUInt();
 
-        updatePartMinMaxTTL(table_ttl);
+        updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
     }
 
     auto fill_ttl_info_map = [this](const JSON & json_part, TTLInfoMap & ttl_info_map, bool update_min_max)
@@ -118,7 +115,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
             ttl_info_map.emplace(expression, ttl_info);
 
             if (update_min_max)
-                updatePartMinMaxTTL(ttl_info);
+                updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
         }
     };
 
@@ -250,13 +247,14 @@ bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedTTLs() const
     auto has_non_finished_ttl = [] (const TTLInfoMap & map) -> bool
     {
         for (const auto & [name, info] : map)
-            if (info.initialized() && !info.finished())
+        {
+            if (!info.finished())
                 return true;
-
+        }
         return false;
     };
 
-    if (table_ttl.initialized() && !table_ttl.finished())
+    if (!table_ttl.finished())
         return true;
 
     if (has_non_finished_ttl(columns_ttl))
@@ -315,7 +313,7 @@ std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescripti
                 continue;
         }
 
-        time_t ttl_time = 0;
+        time_t ttl_time;
 
         if (use_max)
             ttl_time = ttl_info_it->second.max;
@@ -334,12 +332,5 @@ std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescripti
     return best_ttl_time ? *best_entry_it : std::optional<TTLDescription>();
 }
 
-bool isExplicitRecompression(
-    const TTLDescriptions & recompression_ttl_entries, const TTLInfoMap & recompression_ttl_info, time_t current_time)
-{
-    auto best_ttl_entry
-        = selectTTLDescriptionForTTLInfos(recompression_ttl_entries, recompression_ttl_info, current_time, /*use_max=*/true);
-    return best_ttl_entry && !CompressionCodecFactory::isDefaultCodec(best_ttl_entry->recompression_codec);
-}
 
 }

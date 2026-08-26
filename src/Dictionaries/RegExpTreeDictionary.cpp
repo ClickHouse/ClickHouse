@@ -1,22 +1,21 @@
 #include <optional>
 #include <string_view>
 
+#include <unordered_map>
 #include <base/defines.h>
 
 #include <Poco/Logger.h>
 #include <Poco/RegularExpression.h>
 
-#include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Settings.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Context.h>
 #include <Common/ArenaUtils.h>
 #include <Common/Exception.h>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/OptimizedRegularExpression.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/logger_useful.h>
+#include <Common/OptimizedRegularExpression.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/Regexps.h>
 #include <Functions/checkHyperscanRegexp.h>
@@ -84,7 +83,7 @@ namespace
     {
         ReadBufferFromString buffer(raw);
         auto col = data_type->createColumn();
-        auto serialization = data_type->getDefaultSerialization();
+        auto serialization = data_type->getSerialization(ISerialization::Kind::DEFAULT);
         serialization->deserializeWholeText(*col, buffer, FormatSettings{});
         return (*col)[0];
     }
@@ -124,7 +123,7 @@ struct ExternalRegexpQueryBuilder final : public ExternalQueryBuilder
 
 struct RegExpTreeDictionary::RegexTreeNode
 {
-    VectorWithMemoryTracking<UInt64> children;
+    std::vector<UInt64> children;
     UInt64      id;
     UInt64      parent_id;
     std::string regex;
@@ -141,18 +140,18 @@ struct RegExpTreeDictionary::RegexTreeNode
     struct AttributeValue
     {
         Field field;
-        VectorWithMemoryTracking<StringPiece> pieces;
+        std::vector<StringPiece> pieces;
         String original_value;
 
         constexpr bool containsBackRefs() const { return !pieces.empty(); }
     };
 
-    UnorderedMapWithMemoryTracking<String, AttributeValue> attributes;
+    std::unordered_map<String, AttributeValue> attributes;
 };
 
-VectorWithMemoryTracking<StringPiece> createStringPieces(const String & value, int num_captures, const String & regex, LoggerPtr logger)
+std::vector<StringPiece> createStringPieces(const String & value, int num_captures, const String & regex, LoggerPtr logger)
 {
-    VectorWithMemoryTracking<StringPiece> result;
+    std::vector<StringPiece> result;
     String literal;
     for (size_t i = 0; i < value.size(); ++i)
     {
@@ -291,7 +290,7 @@ void RegExpTreeDictionary::initGraph()
         else
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Unknown parent id {} in regexp tree dictionary", pid);
     }
-    SetWithMemoryTracking<UInt64> visited;
+    std::set<UInt64> visited;
     UInt64 topology_id = 0;
     for (const auto & [id, value]: regex_nodes)
         if (value->parent_id == 0) // this is root node.
@@ -301,7 +300,7 @@ void RegExpTreeDictionary::initGraph()
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "The regexp tree is cyclical. Please check your config.");
 }
 
-void RegExpTreeDictionary::initTopologyOrder(UInt64 node_idx, SetWithMemoryTracking<UInt64> & visited, UInt64 & topology_id)
+void RegExpTreeDictionary::initTopologyOrder(UInt64 node_idx, std::set<UInt64> & visited, UInt64 & topology_id)
 {
     visited.insert(node_idx);
     for (UInt64 child_idx : regex_nodes[node_idx]->children)
@@ -317,20 +316,15 @@ void RegExpTreeDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        BlockIO io = source_ptr->loadAll();
+        QueryPipeline pipeline(source_ptr->loadAll());
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
 
-        io.executeWithCallbacks([&]()
+        Block block;
+        while (executor.pull(block))
         {
-            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-            io.pipeline.setConcurrencyControl(false);
-
-            Block block;
-            while (executor.pull(block))
-            {
-                initRegexNodes(block);
-            }
-        });
-
+            initRegexNodes(block);
+        }
         initGraph();
         if (simple_regexps.empty() && complex_regexp_nodes.empty())
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are no available regular expression. Please check your config");
@@ -342,9 +336,9 @@ void RegExpTreeDictionary::loadData()
             return;
 
 #if USE_VECTORSCAN
-        VectorWithMemoryTracking<const char *> patterns;
-        VectorWithMemoryTracking<unsigned int> flags;
-        VectorWithMemoryTracking<size_t> lengths;
+        std::vector<const char *> patterns;
+        std::vector<unsigned int> flags;
+        std::vector<size_t> lengths;
 
         // Notes:
         // - Always set HS_FLAG_SINGLEMATCH because we only care about whether a pattern matches at least once
@@ -363,7 +357,7 @@ void RegExpTreeDictionary::loadData()
         }
 
         hs_database_t * db = nullptr;
-        hs_compile_error_t * compile_error = nullptr;
+        hs_compile_error_t * compile_error;
 
         std::unique_ptr<unsigned int[]> ids;
         ids.reset(new unsigned int[patterns.size()]);
@@ -437,7 +431,7 @@ RegExpTreeDictionary::RegExpTreeDictionary(
 
 // Thin wrapper around unordered_map<String, Field> that manages the collection of attribute values subject to the
 // behavior specified by collect_values_limit
-class RegExpTreeDictionary::AttributeCollector : public UnorderedMapWithMemoryTracking<String, Field>
+class RegExpTreeDictionary::AttributeCollector : public std::unordered_map<String, Field>
 {
 private:
     std::optional<size_t> collect_values_limit; // std::nullopt means single-value mode, i.e. don't collect
@@ -452,7 +446,7 @@ public:
     constexpr bool collecting() const { return collect_values_limit != std::nullopt; }
 
     // Add a name-value pair to the collection if there's space
-    void add(const String & attr_name, Field field, UnorderedSetWithMemoryTracking<String> * const defaults = nullptr)
+    void add(const String & attr_name, Field field, std::unordered_set<String> * const defaults = nullptr)
     {
         if (collect_values_limit)
         {
@@ -475,9 +469,9 @@ public:
     }
 
     // Just occupy a space
-    void addDefault(const String & attr_name, UnorderedSetWithMemoryTracking<String> * const defaults)
+    void addDefault(const String & attr_name, std::unordered_set<String> * const defaults)
     {
-        chassert(!collect_values_limit);
+        assert (!collect_values_limit);
         if (!this->contains(attr_name) && !defaults->contains(attr_name))
         {
             defaults->insert(attr_name);
@@ -486,7 +480,7 @@ public:
     }
 
     // Checks if no more values can be added for a given attribute
-    bool full(const String & attr_name, UnorderedSetWithMemoryTracking<String> * const defaults = nullptr) const
+    bool full(const String & attr_name, std::unordered_set<String> * const defaults = nullptr) const
     {
         if (collect_values_limit)
         {
@@ -503,7 +497,7 @@ public:
     size_t attributesFull() const { return n_full_attributes; }
 };
 
-std::pair<String, bool> processBackRefs(const String & data, const re2::RE2 & searcher, const VectorWithMemoryTracking<StringPiece> & pieces)
+std::pair<String, bool> processBackRefs(const String & data, const re2::RE2 & searcher, const std::vector<StringPiece> & pieces)
 {
     std::string_view matches[10];
     String result;
@@ -527,9 +521,9 @@ bool RegExpTreeDictionary::setAttributes(
     UInt64 id,
     AttributeCollector & attributes_to_set,
     const String & data,
-    UnorderedSetWithMemoryTracking<UInt64> & visited_nodes,
-    const UnorderedMapWithMemoryTracking<String, const DictionaryAttribute &> & attributes,
-    const UnorderedMapWithMemoryTracking<String, ColumnPtr> & defaults,
+    std::unordered_set<UInt64> & visited_nodes,
+    const std::unordered_map<String, const DictionaryAttribute &> & attributes,
+    const std::unordered_map<String, ColumnPtr> & defaults,
     size_t key_index) const
 {
 
@@ -577,9 +571,9 @@ bool RegExpTreeDictionary::setAttributesShortCircuit(
     UInt64 id,
     AttributeCollector & attributes_to_set,
     const String & data,
-    UnorderedSetWithMemoryTracking<UInt64> & visited_nodes,
-    const UnorderedMapWithMemoryTracking<String, const DictionaryAttribute &> & attributes,
-    UnorderedSetWithMemoryTracking<String> * defaults) const
+    std::unordered_set<UInt64> & visited_nodes,
+    const std::unordered_map<String, const DictionaryAttribute &> & attributes,
+    std::unordered_set<String> * defaults) const
 {
     if (visited_nodes.contains(id))
         return attributes_to_set.attributesFull() == attributes.size();
@@ -621,29 +615,28 @@ bool RegExpTreeDictionary::setAttributesShortCircuit(
 /// a temp struct to store all the matched result.
 struct MatchContext
 {
-    SetWithMemoryTracking<UInt64> matched_idx_set;
-    VectorWithMemoryTracking<std::pair<UInt64, UInt64>> matched_idx_sorted_list;
+    std::set<UInt64> matched_idx_set;
+    std::vector<std::pair<UInt64, UInt64>> matched_idx_sorted_list;
 
-    const VectorWithMemoryTracking<UInt64> & regexp_ids ;
-    const UnorderedMapWithMemoryTracking<UInt64, UInt64> & topology_order;
+    const std::vector<UInt64> & regexp_ids ;
+    const std::unordered_map<UInt64, UInt64> & topology_order;
     const char * data;
     size_t length;
-    const MapWithMemoryTracking<UInt64, RegExpTreeDictionary::RegexTreeNodePtr> & regex_nodes;
+    const std::map<UInt64, RegExpTreeDictionary::RegexTreeNodePtr> & regex_nodes;
 
     size_t pre_match_counter = 0;
     size_t match_counter = 0;
 
     MatchContext(
-        const VectorWithMemoryTracking<UInt64> & regexp_ids_,
-        const UnorderedMapWithMemoryTracking<UInt64, UInt64> & topology_order_,
-        const char * data_,
-        size_t length_,
-        const MapWithMemoryTracking<UInt64, RegExpTreeDictionary::RegexTreeNodePtr> & regex_nodes_)
-        : regexp_ids(regexp_ids_)
-        , topology_order(topology_order_)
-        , data(data_)
-        , length(length_)
-        , regex_nodes(regex_nodes_)
+        const std::vector<UInt64> & regexp_ids_,
+        const std::unordered_map<UInt64, UInt64> & topology_order_,
+        const char * data_, size_t length_,
+        const std::map<UInt64, RegExpTreeDictionary::RegexTreeNodePtr> & regex_nodes_)
+        : regexp_ids(regexp_ids_),
+        topology_order(topology_order_),
+        data(data_),
+        length(length_),
+        regex_nodes(regex_nodes_)
     {
     }
 
@@ -682,15 +675,15 @@ struct MatchContext
     }
 };
 
-UnorderedMapWithMemoryTracking<String, ColumnPtr> RegExpTreeDictionary::match(
+std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
     const ColumnString::Chars & keys_data,
     const ColumnString::Offsets & keys_offsets,
-    const UnorderedMapWithMemoryTracking<String, const DictionaryAttribute &> & attributes,
+    const std::unordered_map<String, const DictionaryAttribute &> & attributes,
     DefaultMapOrFilter default_or_filter,
     std::optional<size_t> collect_values_limit) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    chassert(is_short_circuit || std::holds_alternative<RefDefaultMap>(default_or_filter));
+    assert(is_short_circuit || std::holds_alternative<RefDefaultMap>(default_or_filter));
 
 #if USE_VECTORSCAN
     hs_scratch_t * scratch = nullptr;
@@ -707,7 +700,7 @@ UnorderedMapWithMemoryTracking<String, ColumnPtr> RegExpTreeDictionary::match(
     MultiRegexps::ScratchPtr smart_scratch(scratch);
 #endif
 
-    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> columns;
+    std::unordered_map<String, MutableColumnPtr> columns;
 
     size_t input_rows_count = keys_offsets.size();
 
@@ -781,7 +774,7 @@ UnorderedMapWithMemoryTracking<String, ColumnPtr> RegExpTreeDictionary::match(
         match_result.sort();
         /// Walk through the regex tree util all attributes are set;
         AttributeCollector attributes_to_set{collect_values_limit};
-        UnorderedSetWithMemoryTracking<UInt64> visited_nodes;
+        std::unordered_set<UInt64> visited_nodes;
 
         /// Some node matches but its parents cannot match. In this case we must regard this node unmatched.
         auto is_valid = [&](UInt64 id)
@@ -799,7 +792,7 @@ UnorderedMapWithMemoryTracking<String, ColumnPtr> RegExpTreeDictionary::match(
 
         if (is_short_circuit)
         {
-            UnorderedSetWithMemoryTracking<String> defaults;
+            std::unordered_set<String> defaults;
 
             for (auto item : match_result.matched_idx_sorted_list)
             {
@@ -861,7 +854,7 @@ UnorderedMapWithMemoryTracking<String, ColumnPtr> RegExpTreeDictionary::match(
         curr_offset = next_offset;
     }
 
-    UnorderedMapWithMemoryTracking<String, ColumnPtr> result;
+    std::unordered_map<String, ColumnPtr> result;
     for (auto & [name_, mutable_ptr] : columns)
         result.emplace(name_, std::move(mutable_ptr));
 
@@ -890,8 +883,8 @@ Pipe RegExpTreeDictionary::read(const Names & , size_t max_block_size, size_t) c
             const auto & node = it->second;
             col_pid->insert(node->parent_id);
             col_regex->insert(node->regex);
-            VectorWithMemoryTracking<Field> keys;
-            VectorWithMemoryTracking<Field> values;
+            std::vector<Field> keys;
+            std::vector<Field> values;
             for (const auto & [key, attr] : node->attributes)
             {
                 keys.push_back(key);
@@ -924,7 +917,7 @@ Columns RegExpTreeDictionary::getColumnsImpl(
     std::optional<size_t> collect_values_limit) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
-    chassert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
     /// valid check
     if (key_columns.size() != 1)
@@ -933,8 +926,8 @@ Columns RegExpTreeDictionary::getColumnsImpl(
     }
     structure.validateKeyTypes(key_types);
 
-    UnorderedMapWithMemoryTracking<String, const DictionaryAttribute &> attributes;
-    UnorderedMapWithMemoryTracking<String, ColumnPtr> defaults;
+    std::unordered_map<String, const DictionaryAttribute &> attributes;
+    std::unordered_map<String, ColumnPtr> defaults;
 
     for (size_t i = 0; i < attribute_names.size(); i++)
     {
@@ -976,7 +969,6 @@ Columns RegExpTreeDictionary::getColumnsImpl(
     return result;
 }
 
-void registerDictionaryRegExpTree(DictionaryFactory & factory);
 void registerDictionaryRegExpTree(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & /*name*/,
@@ -1020,220 +1012,7 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
             context->getSettingsRef()[Setting::regexp_dict_flag_dotall]);
     };
 
-    factory.registerLayout("regexp_tree", create_layout, true, true, Documentation{
-        .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-# Regular expression tree dictionary layout
-
-## Overview {#overview}
-The `regexp_tree` dictionary lets you map keys to values based on hierarchical regular-expression patterns.
-It's optimized for pattern-match lookups (e.g. classifying strings like user agent strings by matching regex patterns) rather than exact key matching.
-
-<Frame>
-<iframe src="https://www.youtube.com/embed/ESlAhUJMoz8?si=sY2OVm-zcuxlDRaX" title="An intro to ClickHouse regex tree dictionaries" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-</Frame>
-
-## Use the regular expression tree dictionary with YAMLRegExpTree source {#use-regular-expression-tree-dictionary-in-clickhouse-open-source}
-
-<CloudNotSupportedBadge/>
-
-Regular expression tree dictionaries are defined in ClickHouse open-source using the [`YAMLRegExpTree`](/reference/statements/create/dictionary/sources/yamlregexptree) source which is provided the path to a YAML file containing the regular expression tree.
-
-```sql title="Query"
-CREATE DICTIONARY regexp_dict
-(
-    regexp String,
-    name String,
-    version String
-)
-PRIMARY KEY(regexp)
-SOURCE(YAMLRegExpTree(PATH '/var/lib/clickhouse/user_files/regexp_tree.yaml'))
-LAYOUT(regexp_tree)
-...
-```
-
-The dictionary source [`YAMLRegExpTree`](/reference/statements/create/dictionary/sources/yamlregexptree) represents the structure of a regexp tree. For example:
-
-```yaml
-- regexp: 'Linux/(\d+[\.\d]*).+tlinux'
-  name: 'TencentOS'
-  version: '\1'
-
-- regexp: '\d+/tclwebkit(?:\d+[\.\d]*)'
-  name: 'Android'
-  versions:
-    - regexp: '33/tclwebkit'
-      version: '13'
-    - regexp: '3[12]/tclwebkit'
-      version: '12'
-    - regexp: '30/tclwebkit'
-      version: '11'
-    - regexp: '29/tclwebkit'
-      version: '10'
-```
-
-This config consists of a list of regular expression tree nodes. Each node has the following structure:
-
-- **regexp**: the regular expression of the node.
-- **attributes**: a list of user-defined dictionary attributes. In this example, there are two attributes: `name` and `version`. The first node defines both attributes. The second node only defines attribute `name`. Attribute `version` is provided by the child nodes of the second node.
-  - The value of an attribute may contain **back references**, referring to capture groups of the matched regular expression. In the example, the value of attribute `version` in the first node consists of a back-reference `\1` to capture group `(\d+[\.\d]*)` in the regular expression. Back-reference numbers range from 1 to 9 and are written as `$1` or `\1` (for number 1). The back reference is replaced by the matched capture group during query execution.
-- **child nodes**: a list of children of a regexp tree node, each of which has its own attributes and (potentially) children nodes. String matching proceeds in a depth-first fashion. If a string matches a regexp node, the dictionary checks if it also matches the nodes' child nodes. If that is the case, the attributes of the deepest matching node are assigned. Attributes of a child node overwrite equally named attributes of parent nodes. The name of child nodes in YAML files can be arbitrary, e.g. `versions` in above example.
-
-Regexp tree dictionaries only allow access using the functions `dictGet`, `dictGetOrDefault`, and `dictGetAll`. For example:
-
-```sql title="Query"
-SELECT dictGet('regexp_dict', ('name', 'version'), '31/tclwebkit1024');
-```
-
-```text title="Response"
-┌─dictGet('regexp_dict', ('name', 'version'), '31/tclwebkit1024')─┐
-│ ('Android','12')                                                │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-In this case, we first match the regular expression `\d+/tclwebkit(?:\d+[\.\d]*)` in the top layer's second node.
-The dictionary then continues to look into the child nodes and finds that the string also matches `3[12]/tclwebkit`.
-As a result, the value of attribute `name` is `Android` (defined in the first layer) and the value of attribute `version` is `12` (defined in the child node).
-
-With a sophisticated YAML configuration file, you can use a regexp tree dictionaries as a user agent string parser.
-ClickHouse supports [uap-core](https://github.com/ua-parser/uap-core) and you can see how to use it in the functional test [02504_regexp_dictionary_ua_parser](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/02504_regexp_dictionary_ua_parser.sh)
-
-### Collecting attribute values {#collecting-attribute-values}
-
-Sometimes it is useful to return values from multiple regular expressions that matched, rather than just the value of a leaf node. In these cases, the specialized [`dictGetAll`](/reference/functions/regular-functions/ext-dict-functions#dictGetAll) function can be used. If a node has an attribute value of type `T`, `dictGetAll` will return an `Array(T)` containing zero or more values.
-
-By default, the number of matches returned per key is unbounded. A bound can be passed as an optional fourth argument to `dictGetAll`. The array is populated in _topological order_, meaning that child nodes come before parent nodes, and sibling nodes follow the ordering in the source.
-
-Example:
-
-```sql
-CREATE DICTIONARY regexp_dict
-(
-    regexp String,
-    tag String,
-    topological_index Int64,
-    captured Nullable(String),
-    parent String
-)
-PRIMARY KEY(regexp)
-SOURCE(YAMLRegExpTree(PATH '/var/lib/clickhouse/user_files/regexp_tree.yaml'))
-LAYOUT(regexp_tree)
-LIFETIME(0)
-```
-
-```yaml
-# /var/lib/clickhouse/user_files/regexp_tree.yaml
-- regexp: 'clickhouse\.com'
-  tag: 'ClickHouse'
-  topological_index: 1
-  paths:
-    - regexp: 'clickhouse\.com/docs(.*)'
-      tag: 'ClickHouse Documentation'
-      topological_index: 0
-      captured: '\1'
-      parent: 'ClickHouse'
-
-- regexp: '/docs(/|$)'
-  tag: 'Documentation'
-  topological_index: 2
-
-- regexp: 'github.com'
-  tag: 'GitHub'
-  topological_index: 3
-  captured: 'NULL'
-```
-
-```sql title="Query"
-CREATE TABLE urls (url String) ENGINE=MergeTree ORDER BY url;
-INSERT INTO urls VALUES ('clickhouse.com'), ('clickhouse.com/docs/en'), ('github.com/clickhouse/tree/master/docs');
-SELECT url, dictGetAll('regexp_dict', ('tag', 'topological_index', 'captured', 'parent'), url, 2) FROM urls;
-```
-
-```text title="Response"
-┌─url────────────────────────────────────┬─dictGetAll('regexp_dict', ('tag', 'topological_index', 'captured', 'parent'), url, 2)─┐
-│ clickhouse.com                         │ (['ClickHouse'],[1],[],[])                                                            │
-│ clickhouse.com/docs/en                 │ (['ClickHouse Documentation','ClickHouse'],[0,1],['/en'],['ClickHouse'])              │
-│ github.com/clickhouse/tree/master/docs │ (['Documentation','GitHub'],[2,3],[NULL],[])                                          │
-└────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Matching modes {#matching-modes}
-
-Pattern matching behavior can be modified with certain dictionary settings:
-- `regexp_dict_flag_case_insensitive`: Use case-insensitive matching (defaults to `false`). Can be overridden in individual expressions with `(?i)` and `(?-i)`.
-- `regexp_dict_flag_dotall`: Allow '.' to match newline characters (defaults to `false`).
-
-## Use regular expression tree dictionary in ClickHouse Cloud {#use-regular-expression-tree-dictionary-in-clickhouse-cloud}
-
-The [`YAMLRegExpTree`](/reference/statements/create/dictionary/sources/yamlregexptree) source works in ClickHouse Open Source but not in ClickHouse Cloud.
-To use regexp tree dictionaries in ClickHouse Cloud, first create a regexp tree dictionary from a YAML file locally in ClickHouse Open Source, then dump this dictionary into a CSV file using the `dictionary` table function and the [INTO OUTFILE](/reference/statements/select/into-outfile) clause.
-
-```sql
-SELECT * FROM dictionary(regexp_dict) INTO OUTFILE('regexp_dict.csv')
-```
-
-The content of csv file is:
-
-```text
-1,0,"Linux/(\d+[\.\d]*).+tlinux","['version','name']","['\\1','TencentOS']"
-2,0,"(\d+)/tclwebkit(\d+[\.\d]*)","['comment','version','name']","['test $1 and $2','$1','Android']"
-3,2,"33/tclwebkit","['version']","['13']"
-4,2,"3[12]/tclwebkit","['version']","['12']"
-5,2,"3[12]/tclwebkit","['version']","['11']"
-6,2,"3[12]/tclwebkit","['version']","['10']"
-```
-
-The schema of dumped file is:
-
-- `id UInt64`: the id of the RegexpTree node.
-- `parent_id UInt64`: the id of the parent of a node.
-- `regexp String`: the regular expression string.
-- `keys Array(String)`: the names of user-defined attributes.
-- `values Array(String)`: the values of user-defined attributes.
-
-To create the dictionary in ClickHouse Cloud, first create a table `regexp_dictionary_source_table` with below table structure:
-
-```sql
-CREATE TABLE regexp_dictionary_source_table
-(
-    id UInt64,
-    parent_id UInt64,
-    regexp String,
-    keys   Array(String),
-    values Array(String)
-) ENGINE=Memory;
-```
-
-Then update the local CSV by
-
-```bash
-clickhouse client \
-    --host MY_HOST \
-    --secure \
-    --password MY_PASSWORD \
-    --query "
-    INSERT INTO regexp_dictionary_source_table
-    SELECT * FROM input ('id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
-    FORMAT CSV" < regexp_dict.csv
-```
-
-You can see how to [Insert Local Files](/integrations/connectors/data-ingestion/insert-local-files) for more details. After we initialize the source table, we can create a RegexpTree by table source:
-
-```sql
-CREATE DICTIONARY regexp_dict
-(
-    regexp String,
-    name String,
-    version String
-PRIMARY KEY(regexp)
-SOURCE(CLICKHOUSE(TABLE 'regexp_dictionary_source_table'))
-LIFETIME(0)
-LAYOUT(regexp_tree);
-```
-)DOCS_MD",
-        .syntax = "LAYOUT(REGEXP_TREE())",
-        .related = {}});
+    factory.registerLayout("regexp_tree", create_layout, true);
 }
 
 }

@@ -9,30 +9,24 @@ namespace ErrorCodes
 }
 
 MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
-    bool has_hard_limit_below_one_block_,
-    bool has_soft_limit_below_one_block_,
+    bool has_limit_below_one_block_,
     MergeTreeReadType read_type_,
     RangesInDataParts parts_,
     MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
-    const IndexReadTasks & index_read_tasks_,
     const StorageSnapshotPtr & storage_snapshot_,
-    const FilterDAGInfoPtr & row_level_filter_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const PoolSettings & settings_,
     const MergeTreeReadTask::BlockSizeParams & params_,
-    const ContextPtr & context_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    const ContextPtr & context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
         std::move(mutations_snapshot_),
         std::move(shared_virtual_fields_),
-        index_read_tasks_,
         storage_snapshot_,
-        row_level_filter_,
         prewhere_info_,
         actions_settings_,
         reader_settings_,
@@ -40,10 +34,8 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
         settings_,
         params_,
         context_)
-    , has_hard_limit_below_one_block(has_hard_limit_below_one_block_)
-    , has_soft_limit_below_one_block(has_soft_limit_below_one_block_)
+    , has_limit_below_one_block(has_limit_below_one_block_)
     , read_type(read_type_)
-    , updater(std::move(updater_))
 {
     per_part_mark_ranges.reserve(parts_ranges.size());
     for (const auto & part_with_ranges : parts_ranges)
@@ -58,42 +50,28 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
             task_idx, per_part_infos.size());
 
     auto & all_mark_ranges = per_part_mark_ranges[task_idx];
+    if (all_mark_ranges.empty())
+        return nullptr;
 
-    /// A cut may be fully dropped by the ranges refiner; in that case take the next one.
-    while (!all_mark_ranges.empty())
+    MarkRanges mark_ranges_for_task;
+    if (read_type == MergeTreeReadType::InReverseOrder)
     {
-        MarkRanges mark_ranges_for_task;
-        if (read_type == MergeTreeReadType::InReverseOrder)
-        {
-            /// Read ranges from right to left.
-            mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.back()));
-            all_mark_ranges.pop_back();
-        }
-        else if (has_hard_limit_below_one_block || (has_soft_limit_below_one_block && !previous_task))
-        {
-            /// If we need to read few rows, set one range per task to reduce number of read data.
-            /// With a hard limit (no filter) reading stops exactly at the limit, so always emit
-            /// single-range tasks. With a soft limit (filter + LIMIT) the estimation may be off,
-            /// so apply this only to the first task: if it didn't reach the limit, the filter is
-            /// likely selective and we should continue with regular block size.
-            mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.front()));
-            all_mark_ranges.pop_front();
-        }
-        else
-        {
-            mark_ranges_for_task = std::move(all_mark_ranges);
-            /// Reinitialize explicitly: the loop condition reads it on the next iteration.
-            all_mark_ranges = MarkRanges{};
-        }
-
-        mark_ranges_for_task = refineReadRanges(*per_part_infos[task_idx], std::move(mark_ranges_for_task));
-        if (mark_ranges_for_task.empty())
-            continue;
-
-        return createTask(per_part_infos[task_idx], std::move(mark_ranges_for_task), previous_task, updater);
+        /// Read ranges from right to left.
+        mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.back()));
+        all_mark_ranges.pop_back();
+    }
+    else if (has_limit_below_one_block)
+    {
+        /// If we need to read few rows, set one range per task to reduce number of read data.
+        mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.front()));
+        all_mark_ranges.pop_front();
+    }
+    else
+    {
+        mark_ranges_for_task = std::move(all_mark_ranges);
     }
 
-    return nullptr;
+    return createTask(per_part_infos[task_idx], std::move(mark_ranges_for_task), previous_task);
 }
 
 }

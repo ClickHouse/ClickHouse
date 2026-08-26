@@ -1,6 +1,5 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
-#include <Common/checkStackSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Common/logger_useful.h>
@@ -26,17 +25,6 @@ static void append(std::vector<String> & to, const std::vector<String> & what, s
         return;
     }
 
-    /// The caller feeds every ordinary character as a single-element set; rebuilding
-    /// the whole product would make the parsing quadratic in the description length.
-    if (what.size() == 1)
-    {
-        if (to.size() > max_addresses)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'remote': first argument generates too many result addresses");
-        for (auto & elem_to : to)
-            elem_to += what.front();
-        return;
-    }
-
     if (what.size() * to.size() > max_addresses)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'remote': first argument generates too many result addresses");
     std::vector<String> res;
@@ -57,7 +45,7 @@ static bool parseNumber(const String & description, size_t l, size_t r, size_t &
         if (!isNumericASCII(description[pos]))
             return false;
         res = res * 10 + description[pos] - '0';
-        if (static_cast<double>(res) > 1e15)
+        if (res > 1e15)
             return false;
     }
     return true;
@@ -67,10 +55,6 @@ static bool parseNumber(const String & description, size_t l, size_t r, size_t &
 std::vector<String> parseRemoteDescription(
     const String & description, size_t l, size_t r, char separator, size_t max_addresses, const String & func_name)
 {
-    /// Nested braces are parsed recursively, and `max_addresses` bounds the number of generated
-    /// addresses, not the nesting depth: `{{{{...,...}}}}` recurses once per level.
-    checkStackSize();
-
     std::vector<String> res;
     std::vector<String> cur;
 
@@ -88,7 +72,7 @@ std::vector<String> parseRemoteDescription(
         {
             ssize_t cnt = 1;
             ssize_t last_dot = -1; /// The rightmost pair of points, remember the index of the right of the two
-            size_t m = 0;
+            size_t m;
             std::vector<String> buffer;
             bool have_splitter = false;
 
@@ -111,8 +95,8 @@ std::vector<String> parseRemoteDescription(
             /// The presence of a dot - numeric interval
             if (last_dot != -1)
             {
-                size_t left = 0;
-                size_t right = 0;
+                size_t left;
+                size_t right;
                 if (description[last_dot - 1] != '.')
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -199,7 +183,7 @@ std::vector<std::pair<String, uint16_t>> parseRemoteDescriptionForExternalDataba
     for (const auto & address : addresses)
     {
         const size_t close_bracket = address.rfind(']');
-        size_t colon = 0;
+        size_t colon;
         std::string host;
         if (address.length() > 2 && address[0] == '[' && close_bracket != String::npos)
         {

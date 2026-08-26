@@ -220,7 +220,7 @@ CREATE USER u1_01292 IDENTIFIED WITH plaintext_password BY 'qwe123' HOST LOCAL;
 CREATE USER u2_01292 NOT IDENTIFIED HOST LIKE '%.%.myhost.com' DEFAULT ROLE NONE;
 CREATE USER u3_01292 IDENTIFIED BY 'qwe123' HOST IP '192.168.0.0/16', '192.169.1.1', '::1' DEFAULT ROLE r1_01292;
 CREATE USER u4_01292 IDENTIFIED WITH double_sha1_password BY 'qwe123' HOST ANY DEFAULT ROLE ALL EXCEPT r1_01292;
-SELECT name, if(storage = 'replicated', 'local_directory', storage), auth_type, auth_params, host_ip, host_names, host_names_regexp, host_names_like, default_roles_all, default_roles_list, default_roles_except FROM system.users WHERE name LIKE 'u%\_01292' ORDER BY name;
+SELECT name, storage, auth_type, auth_params, host_ip, host_names, host_names_regexp, host_names_like, default_roles_all, default_roles_list, default_roles_except FROM system.users WHERE name LIKE 'u%\_01292' ORDER BY name;
 DROP USER u1_01292, u2_01292, u3_01292, u4_01292;
 
 SELECT '-- system.settings_profile_elements';
@@ -244,7 +244,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT query
 FROM system.query_log
 WHERE
-    query NOT LIKE '%query_log%' AND event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND
+    query NOT LIKE '%query_log%' AND event_date >= yesterday() AND current_database = currentDatabase() AND
     (query LIKE '%qwe123%' OR query LIKE '%123qwe%' OR
     query LIKE '%18138372FAD4B94533CD4881F03DC6C69296DD897234E0CEE83F727E2E6B1F63%' OR
     query LIKE '%8DCDD69CE7D121DE8013062AEAEB2A148910D50E%' OR

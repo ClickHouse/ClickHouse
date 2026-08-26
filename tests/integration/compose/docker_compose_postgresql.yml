@@ -12,4 +12,3 @@ services:
     environment:
       POSTGRES_HOST_AUTH_METHOD: "trust"
     stop_grace_period: 5s
-    cpus: 3
