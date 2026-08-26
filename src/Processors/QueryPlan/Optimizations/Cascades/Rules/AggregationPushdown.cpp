@@ -519,9 +519,9 @@ bool pushedKeysHaveReliableCardinality(const ExpressionStatistics & input_statis
 /// below the input to compensate.
 constexpr Float64 MIN_GUARANTEED_REDUCTION = 2.0;
 
-/// The product of the pushed keys' NDVs (each clamped to the input row count first, mirroring
-/// `deriveAggregatingStatistics`'s own clamping) is a proven upper bound on the partial's output
-/// row count. The memo will later price the alternative optimistically, by the max of the keys'
+/// The product of the pushed keys' NDVs (each clamped to the input estimate, keeping the whole
+/// comparison in estimated-row space) is a proven upper bound on the partial's output row count.
+/// The memo will later price the alternative optimistically, by the max of the keys'
 /// NDVs rather than this composite, so requiring the composite to guarantee at least
 /// `MIN_GUARANTEED_REDUCTION` below the input compensates: a key set that provably does not
 /// shrink the input is rejected even though the max-of-NDVs estimate alone would look profitable.

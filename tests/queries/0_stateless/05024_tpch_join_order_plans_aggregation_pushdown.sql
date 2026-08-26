@@ -3,16 +3,19 @@
 -- execution, which is ~50x slower in debug builds; the flaky check's repeated runs exceed its budget.
 -- Verifies the join order and distributed execution strategy of `Q18` (`rewrite_in_to_join`) with
 -- `cascades_aggregation_pushdown` on, using SF100 cardinalities injected via
--- `_internal_join_table_stat_hints`.
+-- `_internal_join_table_stat_hints`; also pins a customer/nation query that genuinely gets pushed
+-- under the same SF100 hints, as a regression canary for the rule's reliable-cardinality gate
+-- (see `AggregationPushdown::buildPushdownAlternative`) actually firing when it honestly should.
 
 -- Pushdown-enabled twin of `03836_tpch_join_order_plans`, trimmed to `Q18`
 -- (`rewrite_in_to_join`): it used to be the only TPC-H query whose plan legitimately differed
--- with `cascades_aggregation_pushdown` on. The rule's reliable-cardinality gate (see
--- `AggregationPushdown::buildPushdownAlternative`) now rejects that pushdown too: the outer
+-- with `cascades_aggregation_pushdown` on. The gate now rejects that pushdown too: the outer
 -- aggregation's widened `GROUP BY` key set (`c_name`, `c_custkey`, `o_orderkey`, `o_orderdate`,
 -- `o_totalprice`) is, at SF100, close to cardinality-unique - the proven composite bound on its
 -- output offers no guaranteed shrinkage, so the plan below is now identical whether the setting
--- is on or off; kept as a plan-shape regression pin, not as a pushdown-vs-off demonstration.
+-- is on or off; kept as a plan-shape regression pin for the gate's conservatism, not as a
+-- pushdown-vs-off demonstration (see the customer/nation query near the end of this file for
+-- that role instead).
 -- Every other TPC-H query is already asserted pushdown-off by `03836`; their pushdown-on shapes
 -- turned out to sit on near-ties in the Cascades cost model that resolve differently per build
 -- flavor/machine, so asserting them here produced environment-flaky failures rather than
@@ -194,6 +197,32 @@ WHERE o_orderkey IN (SELECT l_orderkey FROM lineitem GROUP BY l_orderkey HAVING 
 GROUP BY c_name, c_custkey, o_orderkey, o_orderdate, o_totalprice
 ORDER BY o_totalprice DESC, o_orderdate LIMIT 100
 SETTINGS rewrite_in_to_join = 1;
+
+-- Regression canary: the gate does let a genuinely shrinking pushdown through at SF100 scale.
+-- Restore the general SF100 hints above - `Q18`'s block narrowed them to just its own columns.
+SET param__internal_join_table_stat_hints = '{
+    "lineitem": { "cardinality": 600037902, "avg_row_bytes": 128, "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_suppkey": 1000000, "l_linenumber": 7, "l_returnflag": 3, "l_linestatus": 2, "l_shipdate": 2526, "l_commitdate": 2466, "l_receiptdate": 2554, "l_quantity": 50, "l_discount": 11, "l_shipmode": 7, "l_shipinstruct": 4 } },
+    "orders":   { "cardinality": 150000000, "avg_row_bytes": 80,  "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000, "o_orderdate": 2406, "o_orderstatus": 3, "o_orderpriority": 5, "o_clerk": 1000 } },
+    "customer": { "cardinality": 15000000,  "avg_row_bytes": 120, "distinct_keys": { "c_custkey": 15000000, "c_nationkey": 25, "c_mktsegment": 5, "c_acctbal": 14975000, "c_phone": 14999997 } },
+    "part":     { "cardinality": 20000000,  "avg_row_bytes": 90,  "distinct_keys": { "p_partkey": 20000000, "p_type": 150, "p_brand": 25, "p_size": 50, "p_container": 40, "p_name": 19999999 } },
+    "supplier": { "cardinality": 1000000,   "avg_row_bytes": 110, "distinct_keys": { "s_suppkey": 1000000, "s_nationkey": 25, "s_acctbal": 999990 } },
+    "partsupp": { "cardinality": 80000000,  "avg_row_bytes": 40,  "distinct_keys": { "ps_partkey": 20000000, "ps_suppkey": 1000000, "ps_availqty": 9999, "ps_supplycost": 99865 } },
+    "nation":   { "cardinality": 25,        "avg_row_bytes": 60,  "distinct_keys": { "n_nationkey": 25, "n_regionkey": 5, "n_name": 25 } },
+    "region":   { "cardinality": 5,         "avg_row_bytes": 50,  "distinct_keys": { "r_regionkey": 5, "r_name": 5 } }
+}';
+
+-- `c_nationkey` is both the join key and the sole `GROUP BY` key, so the pushed keys are not
+-- extended by the join condition (see the condition-extension step in
+-- `AggregationPushdown::buildPushdownAlternative`): composite NDV = 25 (`customer.c_nationkey`,
+-- itself a foreign key into the 25-row `nation` table, so genuinely low-cardinality even though
+-- `customer` is huge), input estimate = 15,000,000 (`customer`'s SF100 cardinality). Gate:
+-- 25 * 2 = 50 <= 15,000,000 - comfortably (by 5-6 orders of magnitude) over the required 2x.
+SELECT '-- customer distribution by nation: pushed (variant A) under the same SF100 hints';
+EXPLAIN
+SELECT c_nationkey, count() AS num_customers, sum(c_acctbal) AS total_balance
+FROM customer JOIN nation ON c_nationkey = n_nationkey
+GROUP BY c_nationkey
+ORDER BY c_nationkey;
 
 DROP TABLE lineitem;
 DROP TABLE orders;
