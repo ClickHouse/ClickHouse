@@ -1,0 +1,12 @@
+statistics on disk	1
+same part names	1
+loaded once for any branch count	1	1	1	1	1	1
+the limit is enforced	1	1	1
+keyed on the column set	1	1	1	1	1	1
+│  a[100000] ⋈ b[700]
+│  a[100000] ⋈ b[700]
+│  pd_a[25000] ⋈ pd_b[700]
+│  pn_a[25000] ⋈ pn_b[700]
+│  ps_a[25000] ⋈ ps_b[25000]
+the join path reuses	1	1	1
+one row per query	1	1
