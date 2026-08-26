@@ -29,6 +29,22 @@ def preserved_coverage_lines(section: str) -> str:
     return "\n".join(kept).strip()
 
 
+def parse_paginated_arrays(output: str) -> list:
+    """Flatten the output of `gh api --paginate --jq '[...]'`, which emits one
+    JSON array per page, concatenated - a single json.loads breaks on page 2."""
+    decoder = json.JSONDecoder()
+    items = []
+    text = (output or "").strip()
+    idx = 0
+    while idx < len(text):
+        page, end = decoder.raw_decode(text, idx)
+        items.extend(page)
+        idx = end
+        while idx < len(text) and text[idx].isspace():
+            idx += 1
+    return items
+
+
 def current_coverage_section(repo: str, pr: int) -> str:
     """The coverage section of the existing updateable PR comment, "" if absent."""
     cmd = (
@@ -37,8 +53,8 @@ def current_coverage_section(repo: str, pr: int) -> str:
     )
     output = GH.get_output_with_retries(cmd, verbose=False)
     try:
-        bodies = json.loads(output) if output else []
-    except json.JSONDecodeError:
+        bodies = parse_paginated_arrays(output)
+    except (json.JSONDecodeError, TypeError):
         return ""
     for body in bodies:
         if _COVERAGE_TAG_START in body and _COVERAGE_TAG_END in body:

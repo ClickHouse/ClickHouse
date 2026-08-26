@@ -107,4 +107,6 @@ if __name__ == "__main__":
             if not os.path.exists(merged_file):
                 print(f"ERROR: coverage merge produced no profile:\n{merge_output}")
 
-    R.complete_job()
+    # Failing unit tests are still a complete coverage measurement, and the runner
+    # uploads `provides` artifacts on failure only when this flag is set.
+    R.complete_job(do_not_block_pipeline_on_failure="llvm_coverage" in job_name)

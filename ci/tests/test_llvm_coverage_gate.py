@@ -1320,3 +1320,27 @@ def test_ut_gate_suppresses_the_profile_when_the_binary_died():
         snippet, R=_ErrorableResultStub(False), profraw_files=["a.profraw"]
     )
     assert ns["profraw_files"] == ["a.profraw"]
+
+
+def test_ut_coverage_job_uploads_its_profile_despite_failing_tests():
+    # complete_job exits 1 on FAIL; the runner uploads `provides` artifacts on a
+    # failed job only when do_not_block_pipeline_on_failure is set, so without it
+    # a failing-but-complete unit run would strand its merged profile locally.
+    src = open("ci/jobs/unit_tests_job.py", encoding="utf-8").read()
+    assert (
+        'R.complete_job(do_not_block_pipeline_on_failure="llvm_coverage" in job_name)'
+        in src
+    )
+
+
+def test_paginated_gh_output_is_flattened_across_pages():
+    from ci.jobs.scripts.job_hooks.llvm_coverage_hook import parse_paginated_arrays
+
+    # gh api --paginate emits one JSON array per page, concatenated.
+    assert parse_paginated_arrays('["a", "b"]') == ["a", "b"]
+    assert parse_paginated_arrays('["a"]\n["b", "c"]') == ["a", "b", "c"]
+    assert parse_paginated_arrays('["a"]["b"]') == ["a", "b"]
+    assert parse_paginated_arrays("") == []
+    assert parse_paginated_arrays(None) == []
+    with pytest.raises(ValueError):
+        parse_paginated_arrays("not json")
