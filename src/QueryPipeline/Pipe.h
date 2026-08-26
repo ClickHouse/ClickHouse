@@ -2,7 +2,7 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
-#include <Processors/IProcessor.h>
+#include <Processors/IProcessor_fwd.h>
 
 #include <functional>
 
@@ -100,6 +100,9 @@ public:
     /// Like resize, but uses GradualResizeProcessor that starts with 1 active output and activates more as data grows.
     /// Falls back to regular resize when both min_rows and min_bytes are 0.
     void resizeGradual(size_t num_streams, size_t min_rows_per_output, size_t min_bytes_per_output, UInt64 min_outstreams_per_resize_after_split = 0);
+
+    /// Watermark-aware pair to resize. Adds CalibrateWatermarksProcessor.
+    void calibrateWatermarks(size_t num_streams);
 
     using Transformer = std::function<Processors(const OutputPortRawPtrs & ports)>;
 
