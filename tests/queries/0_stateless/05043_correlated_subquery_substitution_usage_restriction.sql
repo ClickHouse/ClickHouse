@@ -110,3 +110,34 @@ SELECT format('plan: fallback_arms={}',
               toString(countIf(explain LIKE '%ReadFromCommonBuffer%')))
 FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_38 AS o WHERE EXISTS (SELECT 1 FROM (SELECT x FROM t_inner_38a AS i WHERE i.x = o.x UNION ALL SELECT x FROM t_inner_38b AS i WHERE i.x = o.x) AS u WHERE intDiv(1, 2 - o.x) >= 0));
 SELECT x FROM t_outer_38 AS o WHERE EXISTS (SELECT 1 FROM (SELECT x FROM t_inner_38a AS i WHERE i.x = o.x UNION ALL SELECT x FROM t_inner_38b AS i WHERE i.x = o.x) AS u WHERE intDiv(1, 2 - o.x) >= 0) ORDER BY x;
+
+SELECT '-- Case 39: an n-ary UNION must decorrelate every arm — the handler previously rebuilt the union from only the first and last child, silently dropping middle arms';
+CREATE TABLE t_outer_39 (x Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_39a (x Nullable(Int32)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_39b (x Nullable(Int32)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_39c (x Nullable(Int32)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_39 VALUES (1), (2), (3);
+INSERT INTO t_inner_39a VALUES (1);
+INSERT INTO t_inner_39b VALUES (2);
+INSERT INTO t_inner_39c VALUES (3);
+
+SELECT format('plan: fallback_arms={}',
+              toString(countIf(explain LIKE '%ReadFromCommonBuffer%')))
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_39 AS o WHERE EXISTS (SELECT 1 FROM t_inner_39a AS i WHERE i.x = o.x UNION ALL SELECT 1 FROM t_inner_39b AS i WHERE i.x = o.x UNION ALL SELECT 1 FROM t_inner_39c AS i WHERE i.x = o.x));
+SELECT x FROM t_outer_39 AS o WHERE EXISTS (SELECT 1 FROM t_inner_39a AS i WHERE i.x = o.x UNION ALL SELECT 1 FROM t_inner_39b AS i WHERE i.x = o.x UNION ALL SELECT 1 FROM t_inner_39c AS i WHERE i.x = o.x) ORDER BY x;
+
+-- Only the middle arm can match — this returned no rows before the fix.
+SELECT x FROM t_outer_39 AS o WHERE o.x = 2 AND EXISTS (SELECT 1 FROM t_inner_39a AS i WHERE i.x = o.x UNION ALL SELECT 1 FROM t_inner_39b AS i WHERE i.x = o.x UNION ALL SELECT 1 FROM t_inner_39c AS i WHERE i.x = o.x) ORDER BY x;
+
+-- The middle arm uses the correlated column beyond the equality, so only it falls back; its
+-- intDiv canary — inner value 2 — would throw if that arm were wrongly substituted; the outer
+-- domain excludes 2 so the retained fallback conjunct never divides by zero.
+CREATE TABLE t_outer_39m (x Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_39d (x Nullable(Int32)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_39m VALUES (1), (3);
+INSERT INTO t_inner_39d VALUES (2), (3);
+
+SELECT format('plan: fallback_arms={}',
+              toString(countIf(explain LIKE '%ReadFromCommonBuffer%')))
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_39m AS o WHERE EXISTS (SELECT 1 FROM t_inner_39a AS i WHERE i.x = o.x UNION ALL SELECT 1 FROM t_inner_39d AS i WHERE i.x = o.x AND intDiv(1, 2 - o.x) <= 1 UNION ALL SELECT 1 FROM t_inner_39c AS i WHERE i.x = o.x));
+SELECT x FROM t_outer_39m AS o WHERE EXISTS (SELECT 1 FROM t_inner_39a AS i WHERE i.x = o.x UNION ALL SELECT 1 FROM t_inner_39d AS i WHERE i.x = o.x AND intDiv(1, 2 - o.x) <= 1 UNION ALL SELECT 1 FROM t_inner_39c AS i WHERE i.x = o.x) ORDER BY x;

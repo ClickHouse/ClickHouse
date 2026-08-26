@@ -738,14 +738,17 @@ QueryPlan decorrelateQueryPlan(
             return decorrelated_isolated_plan;
         };
 
-        auto decorrelated_lhs_plan = process_isolated_subplan(context, node->children.front());
-        auto decorrelated_rhs_plan = process_isolated_subplan(context, node->children.back());
-
-        SharedHeaders query_plans_headers{ decorrelated_lhs_plan.getCurrentHeader(), decorrelated_rhs_plan.getCurrentHeader() };
-
+        /// A UnionStep can have any number of inputs; every arm must be decorrelated.
+        SharedHeaders query_plans_headers;
         std::vector<QueryPlanPtr> child_plans;
-        child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_lhs_plan)));
-        child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_rhs_plan)));
+        query_plans_headers.reserve(node->children.size());
+        child_plans.reserve(node->children.size());
+        for (auto * child : node->children)
+        {
+            auto decorrelated_child_plan = process_isolated_subplan(context, child);
+            query_plans_headers.push_back(decorrelated_child_plan.getCurrentHeader());
+            child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_child_plan)));
+        }
 
         Block union_common_header = buildCommonHeaderForUnion(
             query_plans_headers,

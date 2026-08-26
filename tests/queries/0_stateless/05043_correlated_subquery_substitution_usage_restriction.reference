@@ -21,3 +21,12 @@ plan: fallback_arms=1
 -- Case 38: shared ancestor above the union; both arms are guarded by the inherited usage set (two ReadFromCommonBuffer); before the restriction the substituted arms fed the inner value 2 to the ancestor intDiv and threw
 plan: fallback_arms=2
 1
+-- Case 39: an n-ary UNION must decorrelate every arm — the handler previously rebuilt the union from only the first and last child, silently dropping middle arms
+plan: fallback_arms=0
+1
+2
+3
+2
+plan: fallback_arms=1
+1
+3
