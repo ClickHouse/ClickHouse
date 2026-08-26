@@ -1161,9 +1161,8 @@ private:
 };
 
 /// Collect, for every `ALIAS` column in the query tree, the inlined clone of its defining expression, keyed by the
-/// column's identifier-based action name (the name `expected_header` uses). The clone is inlined exactly as
-/// `actionNameAfterAliasInlining` inlines it, so the action names of its leaves are the names the shard header
-/// carries and the expression can be evaluated on top of that header.
+/// column's identifier-based action name (the name `expected_header` uses). Nested `ALIAS` columns are inlined in the
+/// clone as well, so its `COLUMN` leaves are named as the shard header names them and it can be built on that header.
 class CollectInlinedAliasExpressionsVisitor : public InDepthQueryTreeVisitor<CollectInlinedAliasExpressionsVisitor>
 {
 public:
@@ -1449,10 +1448,9 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
             continue;
         }
 
-        /// An `ALIAS` column whose declared type differs from its body's type inlines to `_CAST(<body>, '<Type>')`,
-        /// and one declared over an expression inlines to that expression. Neither is a column the shard emits at a
-        /// mergeable-state boundary: the shard sends the raw columns the body reads. The value is still recoverable,
-        /// because the body's leaves are those raw columns, so evaluate the body here instead of looking it up.
+        /// An `ALIAS` whose declared type differs from its body's inlines to `_CAST(<body>, '<Type>')`, and one over an
+        /// expression to that expression; neither is a column the shard emits at a mergeable-state boundary. The body's
+        /// leaves are raw columns the shard does send, so evaluate the body here instead of looking the column up.
         auto alias_it = identifier_to_alias_expression.find(expected_name);
         if (alias_it == identifier_to_alias_expression.end())
             return {}; /// Cannot explain this column; let the caller fall back to its default reconciliation.
@@ -1509,9 +1507,8 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
         if (shard_index == computed_from_expression)
         {
             /// The body's leaves are named by the initiator's column identifiers, while the shard header carries the
-            /// shard's own independently renumbered qualifiers (see `normalizeGenuineQualifiers`). Where the two differ
-            /// only by that number, alias the shard column under the initiator's name so the expression resolves onto
-            /// the existing input instead of introducing an input the shard header does not have.
+            /// shard's own independently renumbered qualifiers (see `normalizeGenuineQualifiers`). Aliasing the shard
+            /// column under the initiator's name resolves the expression onto an existing input instead of adding one.
             std::unordered_set<String> leaf_names;
             collectLeafColumnActionNames(expression_for_expected[i], *planner_context, leaf_names);
             for (const auto & leaf_name : leaf_names)
