@@ -188,10 +188,7 @@ function run()
 
     # A timeout longer than the hold must wait for the lock and then be granted it, for a plain and
     # for a very large value. The waiter is confirmed to be inside the wait before the release, so a
-    # grant that took more than one attempt orders the two events without timing either. Values near
-    # INT64_MAX / 1e6 are deliberately not used: the outer table lock converts the same setting to a
-    # nanosecond deadline (RWLock.cpp) and overflows first, which is a pre-existing limitation of
-    # every lock_acquire_timeout consumer and outside the scope of this change.
+    # grant that took more than one attempt orders the two events without timing either.
     for arm in "60000 60" "huge-timeout 1000000"
     do
         read -r label timeout_s <<< "$arm"
