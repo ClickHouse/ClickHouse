@@ -714,6 +714,11 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageOb
              data_files.size(), partition_columns.size(), schema.toString());
 }
 
+static bool supportsDeltaKernel(ObjectStorageType storage_type)
+{
+    return storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Azure || storage_type == ObjectStorageType::Local;
+}
+
 ReadFromFormatInfo DeltaLakeMetadata::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
@@ -728,6 +733,12 @@ ReadFromFormatInfo DeltaLakeMetadata::prepareReadingFromFormat(
     /// database or an explicit column list in `CREATE TABLE`. The data files store physical
     /// names, so reading a logical name would silently return only NULLs; fail instead.
     /// A schema taken from the log is already physical, so it is not a key of the map.
+    /// Suggest `allow_delta_kernel_rs` only when the kernel reader can actually take over.
+#if USE_DELTA_KERNEL_RS
+    const bool delta_kernel_available = supportsDeltaKernel(object_storage->getType());
+#else
+    const bool delta_kernel_available = false;
+#endif
     for (const auto & column : info.requested_columns)
     {
         auto it = physical_names_map.find(column.getNameInStorage());
@@ -735,9 +746,11 @@ ReadFromFormatInfo DeltaLakeMetadata::prepareReadingFromFormat(
             throw Exception(
                 ErrorCodes::UNSUPPORTED_METHOD,
                 "Table uses column mapping: column '{}' is stored under the physical name '{}', "
-                "and the legacy DeltaLake reader does not translate column names. "
-                "Enable the setting `allow_delta_kernel_rs`, or create the table without an explicit column list",
-                column.getNameInStorage(), it->second);
+                "and the legacy DeltaLake reader does not translate column names. {}",
+                column.getNameInStorage(), it->second,
+                delta_kernel_available
+                    ? "Enable the setting `allow_delta_kernel_rs`, or create the table without an explicit column list"
+                    : "Create the table without an explicit column list, or use a build with DeltaKernel support");
     }
 
     return info;
@@ -745,8 +758,7 @@ ReadFromFormatInfo DeltaLakeMetadata::prepareReadingFromFormat(
 
 static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_type)
 {
-    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Azure || storage_type == ObjectStorageType::Local;
-    return supports_delta_kernel && context->getSettingsRef()[Setting::allow_delta_kernel_rs] ;
+    return supportsDeltaKernel(storage_type) && context->getSettingsRef()[Setting::allow_delta_kernel_rs];
 }
 
 bool DeltaLakeMetadata::supportsTotalRows(ContextPtr context, ObjectStorageType storage_type)
