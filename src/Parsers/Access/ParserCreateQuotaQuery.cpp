@@ -12,7 +12,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseIntervalKind.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 #include <base/insertAtEnd.h>
 #include <base/range.h>
@@ -413,7 +413,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 namespace DB
 {
 
-void registerStatementQuota(StatementFactory & factory)
+void registerStatementQuota(InterpreterFactory & factory)
 {
     factory.registerStatement("CREATE QUOTA",
     {

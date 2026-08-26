@@ -1,6 +1,6 @@
 #include <Parsers/registerStatements.h>
 
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 
 
 namespace DB
@@ -8,7 +8,7 @@ namespace DB
 
 void registerStatements()
 {
-    auto & factory = StatementFactory::instance();
+    auto & factory = InterpreterFactory::instance();
 
     registerStatementAlter(factory);
     registerStatementAlterNamedCollection(factory);

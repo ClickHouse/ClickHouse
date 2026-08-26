@@ -4,7 +4,7 @@
 #include <Parsers/Access/ASTCheckGrantQuery.h>
 #include <Parsers/Access/parseAccessRightsElements.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 
 
@@ -34,7 +34,7 @@ bool ParserCheckGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 namespace DB
 {
 
-void registerStatementCheckGrant(StatementFactory & factory)
+void registerStatementCheckGrant(InterpreterFactory & factory)
 {
     factory.registerStatement("CHECK GRANT",
     {

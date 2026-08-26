@@ -7,7 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 #include <base/insertAtEnd.h>
 
@@ -167,7 +167,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 namespace DB
 {
 
-void registerStatementRole(StatementFactory & factory)
+void registerStatementRole(InterpreterFactory & factory)
 {
     factory.registerStatement("CREATE ROLE",
     {

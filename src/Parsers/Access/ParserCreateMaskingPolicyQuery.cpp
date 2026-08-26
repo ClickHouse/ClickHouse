@@ -10,7 +10,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 #include <Access/IAccessStorage.h>
 
@@ -234,7 +234,7 @@ bool ParserCreateMaskingPolicy::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 namespace DB
 {
 
-void registerStatementMaskingPolicy(StatementFactory & factory)
+void registerStatementMaskingPolicy(InterpreterFactory & factory)
 {
     factory.registerStatement("CREATE MASKING POLICY",
     {

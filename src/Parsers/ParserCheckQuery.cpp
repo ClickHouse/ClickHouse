@@ -6,7 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserPartition.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 
 
@@ -98,7 +98,7 @@ bool ParserCheckQuery::parseCheckDatabase(Pos & pos, ASTPtr & node, Expected & e
 namespace DB
 {
 
-void registerStatementCheck(StatementFactory & factory)
+void registerStatementCheck(InterpreterFactory & factory)
 {
     factory.registerStatement("CHECK TABLE",
     {

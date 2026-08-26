@@ -10,7 +10,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSystemQuery.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 
 namespace DB
@@ -196,7 +196,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 namespace DB
 {
 
-void registerStatementExplain(StatementFactory & factory)
+void registerStatementExplain(InterpreterFactory & factory)
 {
     factory.registerStatement("EXPLAIN",
     {

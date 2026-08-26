@@ -20,7 +20,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTWithElement.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 
 
@@ -818,7 +818,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-void registerStatementSelect(StatementFactory & factory)
+void registerStatementSelect(InterpreterFactory & factory)
 {
     factory.registerStatement("SELECT",
     {

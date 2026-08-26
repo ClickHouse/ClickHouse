@@ -115,6 +115,27 @@ void InterpreterFactory::registerInterpreter(const std::string & name, CreatorFn
         throw Exception(ErrorCodes::LOGICAL_ERROR, "InterpreterFactory: the interpreter name '{}' is not unique", name);
 }
 
+void InterpreterFactory::registerStatement(const String & name, Documentation documentation)
+{
+    if (!statements.emplace(name, std::move(documentation)).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "InterpreterFactory: the statement name '{}' is not unique", name);
+}
+
+std::vector<String> InterpreterFactory::getAllStatementNames() const
+{
+    std::vector<String> result;
+    for (const auto & [name, _] : statements)
+        result.push_back(name);
+    return result;
+}
+
+Documentation InterpreterFactory::getStatementDocumentation(const String & name) const
+{
+    if (auto it = statements.find(name); it != statements.end())
+        return it->second;
+    return {};
+}
+
 InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
     ProfileEvents::increment(ProfileEvents::Query);

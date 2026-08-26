@@ -3,7 +3,7 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ParserRolesOrUsersSet.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/StatementFactory.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/registerStatements.h>
 
 
@@ -90,7 +90,7 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 namespace DB
 {
 
-void registerStatementSetRole(StatementFactory & factory)
+void registerStatementSetRole(InterpreterFactory & factory)
 {
     factory.registerStatement("SET ROLE",
     {
