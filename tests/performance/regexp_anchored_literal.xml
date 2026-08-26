@@ -1,0 +1,18 @@
+<!-- These functions use the single-string `OptimizedRegularExpression::match` overloads, which match `^lit`,
+     `lit$` and `^lit$` by comparison; `match` and `LIKE` over a column use `MatchImpl` instead. -->
+<test>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https://'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '\\.html$'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^http://smeshariki\\.ru/$'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(Referer, '^https://'))</query>
+
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(countMatches(URL, '^https://'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(countMatches(URL, '\\.html$'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(regexpPosition(URL, '\\.html$'))</query>
+
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https://')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '\\.html$')) SETTINGS max_threads = 1</query>
+
+    <!-- An unanchored literal keeps using the substring search; here to catch a regression on that path. -->
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, 'html'))</query>
+</test>
