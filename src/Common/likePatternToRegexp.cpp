@@ -575,4 +575,25 @@ String similarToPatternWithCustomEscapeToSimilarToPattern(std::string_view patte
     return res;
 }
 
+bool likePatternHasUnknownBackslashEscape(std::string_view pattern)
+{
+    const char * pos = pattern.data();
+    const char * const end = pattern.data() + pattern.size();
+
+    while (pos < end)
+    {
+        if (*pos == '\\')
+        {
+            ++pos;
+            if (pos == end)
+                return true;
+            if (*pos != '%' && *pos != '_' && *pos != '\\')
+                return true;
+        }
+        ++pos;
+    }
+
+    return false;
+}
+
 }

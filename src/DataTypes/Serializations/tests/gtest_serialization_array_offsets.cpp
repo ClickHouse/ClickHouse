@@ -30,7 +30,7 @@ String absoluteOffsets(const std::vector<UInt64> & offsets)
 
 /// Read `limit` offsets into `offsets_column`, the way `MergeTreeIndexGranuleSet::deserializeBinary` does.
 /// `data` is a reference so that a temporary passed by the caller outlives the non-owning `in`.
-void readOffsets(ColumnPtr & offsets_column, const String & data, size_t limit, bool position_independent_encoding = false)
+void readOffsets(IColumn & offsets_column, const String & data, size_t limit, bool position_independent_encoding = false)
 {
     ReadBufferFromString in(data);
     ISerialization::DeserializeBinaryBulkSettings settings;
@@ -39,7 +39,7 @@ void readOffsets(ColumnPtr & offsets_column, const String & data, size_t limit, 
     SerializationArray::deserializeOffsetsBinaryBulk(offsets_column, limit, settings, nullptr);
 }
 
-ColumnPtr emptyOffsets()
+MutableColumnPtr emptyOffsets()
 {
     return ColumnArray::ColumnOffsets::create();
 }
@@ -59,15 +59,15 @@ ColumnPtr readArrayColumn(const String & offsets_data, const String & elements_d
     };
 
     auto serialization = SerializationArray::create(SerializationNumber<UInt8>::create());
-    ColumnPtr column = ColumnArray::create(ColumnUInt8::create());
+    auto column = ColumnArray::create(ColumnUInt8::create());
     ISerialization::DeserializeBinaryBulkStatePtr state;
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, limit, settings, state, nullptr);
+    serialization->deserializeBinaryBulkWithMultipleStreams(*column, limit, settings, state, nullptr);
     return column;
 }
 
-const ColumnArray::Offsets & offsetValues(const ColumnPtr & column)
+const ColumnArray::Offsets & offsetValues(const IColumn & column)
 {
-    return assert_cast<const ColumnArray::ColumnOffsets &>(*column).getData();
+    return assert_cast<const ColumnArray::ColumnOffsets &>(column).getData();
 }
 
 }
@@ -79,7 +79,7 @@ TEST(SerializationArrayOffsets, RejectsDecreasingAbsoluteOffsets)
     auto offsets_column = emptyOffsets();
     try
     {
-        readOffsets(offsets_column, absoluteOffsets({2, 1, 3}), 3);
+        readOffsets(*offsets_column, absoluteOffsets({2, 1, 3}), 3);
         FAIL() << "Expected INCORRECT_DATA for decreasing offsets";
     }
     catch (const Exception & e)
@@ -91,8 +91,8 @@ TEST(SerializationArrayOffsets, RejectsDecreasingAbsoluteOffsets)
 TEST(SerializationArrayOffsets, AcceptsNonDecreasingAbsoluteOffsets)
 {
     auto offsets_column = emptyOffsets();
-    readOffsets(offsets_column, absoluteOffsets({0, 2, 2, 5}), 4);
-    ASSERT_EQ(offsetValues(offsets_column), (ColumnArray::Offsets{0, 2, 2, 5}));
+    readOffsets(*offsets_column, absoluteOffsets({0, 2, 2, 5}), 4);
+    ASSERT_EQ(offsetValues(*offsets_column), (ColumnArray::Offsets{0, 2, 2, 5}));
 }
 
 /// Offsets accumulate across range reads, so each call only verifies what it appended. The scan still
@@ -100,12 +100,12 @@ TEST(SerializationArrayOffsets, AcceptsNonDecreasingAbsoluteOffsets)
 TEST(SerializationArrayOffsets, RejectsDecreaseAcrossRangeBoundary)
 {
     auto offsets_column = emptyOffsets();
-    readOffsets(offsets_column, absoluteOffsets({1, 4}), 2);
-    ASSERT_EQ(offsetValues(offsets_column), (ColumnArray::Offsets{1, 4}));
+    readOffsets(*offsets_column, absoluteOffsets({1, 4}), 2);
+    ASSERT_EQ(offsetValues(*offsets_column), (ColumnArray::Offsets{1, 4}));
 
     try
     {
-        readOffsets(offsets_column, absoluteOffsets({3, 7}), 2);
+        readOffsets(*offsets_column, absoluteOffsets({3, 7}), 2);
         FAIL() << "Expected INCORRECT_DATA for an offset lower than the last one already read";
     }
     catch (const Exception & e)
@@ -117,9 +117,9 @@ TEST(SerializationArrayOffsets, RejectsDecreaseAcrossRangeBoundary)
 TEST(SerializationArrayOffsets, AcceptsNonDecreasingAcrossRangeBoundary)
 {
     auto offsets_column = emptyOffsets();
-    readOffsets(offsets_column, absoluteOffsets({1, 4}), 2);
-    readOffsets(offsets_column, absoluteOffsets({4, 6}), 2);
-    ASSERT_EQ(offsetValues(offsets_column), (ColumnArray::Offsets{1, 4, 4, 6}));
+    readOffsets(*offsets_column, absoluteOffsets({1, 4}), 2);
+    readOffsets(*offsets_column, absoluteOffsets({4, 6}), 2);
+    ASSERT_EQ(offsetValues(*offsets_column), (ColumnArray::Offsets{1, 4, 4, 6}));
 }
 
 /// Sizes are accumulated with a non-negative step, so that encoding cannot produce decreasing offsets
@@ -127,8 +127,8 @@ TEST(SerializationArrayOffsets, AcceptsNonDecreasingAcrossRangeBoundary)
 TEST(SerializationArrayOffsets, SizesEncodingIsMonotonicByConstruction)
 {
     auto offsets_column = emptyOffsets();
-    readOffsets(offsets_column, absoluteOffsets({2, 1, 3}), 3, /*position_independent_encoding=*/true);
-    ASSERT_EQ(offsetValues(offsets_column), (ColumnArray::Offsets{2, 3, 6}));
+    readOffsets(*offsets_column, absoluteOffsets({2, 1, 3}), 3, /*position_independent_encoding=*/true);
+    ASSERT_EQ(offsetValues(*offsets_column), (ColumnArray::Offsets{2, 3, 6}));
 }
 
 /// A monotonic absolute-offsets stream whose elements stream is empty declares elements that were never
@@ -168,8 +168,8 @@ TEST(SerializationArrayOffsets, AccumulatesAcrossManyReads)
         std::vector<UInt64> chunk;
         for (size_t i = 0; i < 16; ++i)
             chunk.push_back(++offset);
-        readOffsets(offsets_column, absoluteOffsets(chunk), chunk.size());
+        readOffsets(*offsets_column, absoluteOffsets(chunk), chunk.size());
     }
-    ASSERT_EQ(offsetValues(offsets_column).size(), 64u * 16u);
-    ASSERT_EQ(offsetValues(offsets_column).back(), 64u * 16u);
+    ASSERT_EQ(offsetValues(*offsets_column).size(), 64u * 16u);
+    ASSERT_EQ(offsetValues(*offsets_column).back(), 64u * 16u);
 }

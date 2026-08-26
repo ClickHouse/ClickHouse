@@ -48,4 +48,8 @@ String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char e
 /// then translates to re2.
 String similarToPatternWithCustomEscapeToSimilarToPattern(std::string_view pattern, char escape_char);
 
+/// Checks if a LIKE pattern contains a backslash which does not form a valid escape sequence,
+/// i.e. a backslash followed by a byte other than '%', '_' or '\', or a trailing backslash.
+bool likePatternHasUnknownBackslashEscape(std::string_view pattern);
+
 }

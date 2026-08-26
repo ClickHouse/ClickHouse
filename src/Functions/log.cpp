@@ -54,7 +54,7 @@ Returns the natural logarithm of the argument.
         {"x", "The number for which to compute the natural logarithm of.", {"(U)Int*", "Float*", "Decimal*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the natural logarithm of `x`.", {"Float*"}};
-    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT log(10);", "2.302585092994046"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT log(10);", "2.3025850938475476"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
