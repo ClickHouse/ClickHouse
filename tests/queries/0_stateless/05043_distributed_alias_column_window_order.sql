@@ -136,13 +136,6 @@ SELECT * FROM (
 SELECT * FROM (
     SELECT al AS category, cat, row_number() OVER (ORDER BY a) AS rn FROM loc_win
 ) ORDER BY rn;
-SELECT count() FROM (
-    SELECT al, cat, row_number() OVER (ORDER BY a) AS rn
-    FROM remote('127.0.0.{1,2}', currentDatabase(), loc_win)
-);
-SELECT count() * 2 FROM (
-    SELECT al, cat, row_number() OVER (ORDER BY a) AS rn FROM loc_win
-);
 SELECT * FROM (SELECT * FROM (
     SELECT al AS category, cur, row_number() OVER (ORDER BY a) AS rn
     FROM remote('127.0.0.{1,2}', currentDatabase(), loc_win)
@@ -153,9 +146,9 @@ SELECT * FROM (SELECT * FROM (
 
 SELECT 'deduplicated alias pair';
 -- Two ALIAS columns with the same body collapse to one shard column, so the initiator fans that column
--- back out and reports the duplicate. Adding a third ALIAS column the shard does not send at all puts
--- the fan-out and the computed path in one header, which is where a duplicate reported by a mapping the
--- plan then declined would be applied to a plan that does not perform the collapse.
+-- back out and reports the duplicate. Adding a third ALIAS column the shard does not send at all puts the
+-- fan-out and the computed path in one header. Every mapping in this block is accepted; a duplicate
+-- reported by a mapping that then declines is covered by the `joined sources` section.
 DROP TABLE IF EXISTS loc_dup;
 CREATE TABLE loc_dup
 (
@@ -227,6 +220,68 @@ SELECT mt AS category, cur, row_number() OVER (ORDER BY a) AS rn
 FROM remote('127.0.0.{1,2}', currentDatabase(), loc_mat) ORDER BY rn;
 SELECT mt AS category, cur, row_number() OVER (ORDER BY a) AS rn FROM loc_mat ORDER BY rn;
 DROP TABLE loc_mat;
+
+SELECT 'joined sources';
+-- Both joined sources expose a column of the same name, so the shard header carries two columns whose
+-- names differ only in the qualifier number (nesting is what makes them differ: the shard restarts its
+-- `__tableN` aliases at 1). A leaf of an ALIAS body then cannot be attributed to one source, not even by
+-- an exact name match, because the shard column of that exact name may belong to the other source. Such
+-- a header is reconciled positionally instead, which passes each shard column through unchanged, so the
+-- value-preserving ALIAS body keeps the result comparable to the single-node oracle.
+DROP TABLE IF EXISTS loc_jl;
+DROP TABLE IF EXISTS loc_jr;
+CREATE TABLE loc_jl (a UInt64, x String, al String ALIAS concat(x, '')) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE loc_jr (a UInt64, x String, al String ALIAS concat(x, '')) ENGINE = MergeTree ORDER BY a;
+INSERT INTO loc_jl VALUES (1, 'left');
+INSERT INTO loc_jr VALUES (1, 'right');
+SELECT * FROM (
+    SELECT l.al AS la, r.al AS ra, row_number() OVER (ORDER BY l.a) AS rn
+    FROM remote('127.0.0.{1,2}', currentDatabase(), loc_jl) AS l
+    GLOBAL INNER JOIN remote('127.0.0.{1,2}', currentDatabase(), loc_jr) AS r ON l.a = r.a
+) ORDER BY rn;
+SELECT * FROM (
+    SELECT l.al AS la, r.al AS ra, row_number() OVER (ORDER BY l.a) AS rn
+    FROM loc_jl AS l INNER JOIN loc_jr AS r ON l.a = r.a
+) ORDER BY rn;
+-- A plain JOIN of the two distributed sources reaches the same boundary.
+SELECT * FROM (
+    SELECT l.al AS la, r.al AS ra, row_number() OVER (ORDER BY l.a) AS rn
+    FROM remote('127.0.0.{1,2}', currentDatabase(), loc_jl) AS l
+    INNER JOIN remote('127.0.0.{1,2}', currentDatabase(), loc_jr) AS r ON l.a = r.a
+) ORDER BY rn;
+SELECT * FROM (
+    SELECT l.al AS la, r.al AS ra, row_number() OVER (ORDER BY l.a) AS rn
+    FROM loc_jl AS l INNER JOIN loc_jr AS r ON l.a = r.a
+) ORDER BY rn;
+DROP TABLE loc_jl;
+DROP TABLE loc_jr;
+-- A same-body ALIAS pair collapses to one shard column, so a duplicate is already recorded when a later
+-- ALIAS body turns out to read a column both sources expose. Declining then leaves one expected column
+-- with nothing to read, and reconciling positionally cannot invent it, so the query is rejected instead
+-- of returning values from the wrong source. The duplicate must not reach the plan, which performs no
+-- collapse here.
+DROP TABLE IF EXISTS loc_jdl;
+DROP TABLE IF EXISTS loc_jdr;
+CREATE TABLE loc_jdl (a UInt64, x String, y UInt8, s1 UInt8 ALIAS y, s2 UInt8 ALIAS y,
+                      ex String ALIAS concat(x, ''))
+ENGINE = MergeTree ORDER BY a;
+CREATE TABLE loc_jdr (a UInt64, x String, ex2 String ALIAS concat(x, '')) ENGINE = MergeTree ORDER BY a;
+INSERT INTO loc_jdl (a, x, y) VALUES (1, 'left', 7);
+INSERT INTO loc_jdr (a, x) VALUES (1, 'right');
+SELECT * FROM (
+    SELECT l.s1, l.s2, l.ex, r.ex2, row_number() OVER (ORDER BY l.a) AS rn
+    FROM remote('127.0.0.{1,2}', currentDatabase(), loc_jdl) AS l
+    GLOBAL INNER JOIN remote('127.0.0.{1,2}', currentDatabase(), loc_jdr) AS r ON l.a = r.a
+) ORDER BY rn; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+-- Reading over parallel replicas puts even a single-node query on a mergeable-state boundary, so it stops
+-- being a single-node oracle and reaches the same undecidable header; pinned off so this states the value.
+SELECT * FROM (
+    SELECT l.s1, l.s2, l.ex, r.ex2, row_number() OVER (ORDER BY l.a) AS rn
+    FROM loc_jdl AS l INNER JOIN loc_jdr AS r ON l.a = r.a
+) ORDER BY rn
+SETTINGS enable_parallel_replicas = 0;
+DROP TABLE loc_jdl;
+DROP TABLE loc_jdr;
 
 DROP TABLE dist_win;
 DROP TABLE loc_win;

@@ -1516,10 +1516,15 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
             collectLeafColumnActionNames(expression_for_expected[i], *planner_context, leaf_names);
             for (const auto & leaf_name : leaf_names)
             {
+                /// Two shard columns share this name, so which one the leaf reads is undecidable. An exact-name hit
+                /// does not settle it either: the shard column of that exact name may belong to the other source.
+                auto normalized_leaf_name = normalizeGenuineQualifiers(leaf_name, genuine_qualifier_tails);
+                if (ambiguous_shard_names.contains(normalized_leaf_name))
+                    return {};
                 /// Already resolvable: the leaf names a shard column directly, or an earlier expression aliased it.
                 if (shard_column_names.contains(leaf_name) || !renamed_leaves.emplace(leaf_name).second)
                     continue;
-                auto leaf_it = shard_normalized_to_index.find(normalizeGenuineQualifiers(leaf_name, genuine_qualifier_tails));
+                auto leaf_it = shard_normalized_to_index.find(normalized_leaf_name);
                 if (leaf_it == shard_normalized_to_index.end())
                     continue;
                 dag.addAlias(*shard_input_nodes[leaf_it->second], leaf_name);

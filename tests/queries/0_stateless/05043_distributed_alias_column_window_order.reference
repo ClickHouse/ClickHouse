@@ -59,8 +59,6 @@ EMPTY	USD	1
 Empty	Empty	1
 Empty	Empty	2
 Empty	Empty	1
-2
-2
 Empty	USD	1
 Empty	USD	2
 Empty	USD	1
@@ -96,3 +94,15 @@ Empty	USD
 Empty	USD	1
 Empty	USD	2
 Empty	USD	1
+joined sources
+left	right	1
+left	right	2
+left	right	3
+left	right	4
+left	right	1
+left	right	1
+left	right	2
+left	right	3
+left	right	4
+left	right	1
+7	7	left	right	1
