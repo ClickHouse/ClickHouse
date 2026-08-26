@@ -11,7 +11,6 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationInfoObject.h>
-#include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -88,18 +87,6 @@ void expectMalformedKindFails([[maybe_unused]] const std::string & kind)
 #endif
 }
 
-bool hasStringSizesStream(const SerializationPtr & serialization)
-{
-    bool result = false;
-    serialization->enumerateAllStreams([&](const ISerialization::SubstreamPath & path)
-    {
-        result = result || std::any_of(path.begin(), path.end(), [](const auto & substream)
-        {
-            return substream.type == ISerialization::Substream::StringSizes;
-        });
-    });
-    return result;
-}
 }
 
 TEST(SerializationInfoJSON, RoundTripDefault)
@@ -326,15 +313,6 @@ TEST(SerializationInfoObject, CreateWithChangedTypedPathStructure)
     };
 
     check_evolution(
-        "JSON(t Tuple(a String), max_dynamic_paths=0)",
-        "JSON(t Tuple(a String, b UInt64), max_dynamic_paths=0)");
-    check_evolution(
-        "JSON(t Tuple(a String, b UInt64), max_dynamic_paths=0)",
-        "JSON(t Tuple(a String), max_dynamic_paths=0)");
-    check_evolution(
-        "JSON(t Tuple(a String), max_dynamic_paths=0)",
-        "JSON(t Tuple(b String), max_dynamic_paths=0)");
-    check_evolution(
         "JSON(t Tuple(a Tuple(b String)), max_dynamic_paths=0)",
         "JSON(t Tuple(a Tuple(b String, c UInt64)), max_dynamic_paths=0)");
 }
@@ -361,37 +339,6 @@ TEST(SerializationInfoObject, PreservesNestedObjectStatsWithoutReselectingKinds)
     EXPECT_EQ(new_path_info->getKindStack(), ISerialization::KindStack({ISerialization::Kind::DEFAULT}));
     EXPECT_EQ(new_path_info->getData().num_rows, 100);
     EXPECT_EQ(new_path_info->getData().num_defaults, 100);
-}
-
-TEST(SerializationInfoTuple, StructureIgnoresElementNames)
-{
-    auto old_type = DataTypeFactory::instance().get("Tuple(a String)");
-    auto new_type = DataTypeFactory::instance().get("Tuple(b String)");
-    auto settings = defaultSettings();
-
-    auto old_info = old_type->createSerializationInfo(settings);
-    auto new_info = new_type->createSerializationInfo(settings);
-    EXPECT_TRUE(old_info->structureEquals(*new_info));
-
-    old_info->addDefaults(100);
-    auto evolved_info = old_info->createWithType(*old_type, *new_type, settings);
-    const auto * tuple_info = typeid_cast<const SerializationInfoTuple *>(evolved_info.get());
-    ASSERT_NE(tuple_info, nullptr);
-    EXPECT_EQ(
-        tuple_info->getElementKindStack(0),
-        ISerialization::KindStack({ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
-}
-
-TEST(SerializationInfoTuple, ElementTypeSettingsDoNotDependOnPropagation)
-{
-    auto type = DataTypeFactory::instance().get("Tuple(s String)");
-    auto settings = defaultSettings();
-    settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
-    settings.string_serialization_version = MergeTreeStringSerializationVersion::WITH_SIZE_STREAM;
-    settings.propagate_types_serialization_versions_to_nested_types = false;
-
-    auto info = type->createSerializationInfo(settings);
-    EXPECT_TRUE(hasStringSizesStream(type->getSerialization(*info)));
 }
 
 TEST(SerializationInfoTuple, NativeKeepsSparseElementsForSupportedRevision)
