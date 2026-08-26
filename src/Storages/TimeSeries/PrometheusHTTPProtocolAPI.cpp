@@ -8,10 +8,14 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageTimeSeriesSelector.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/PrometheusQueryResultType.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
@@ -549,40 +553,67 @@ void PrometheusHTTPProtocolAPI::getMetadata(
     Int64 limit_per_metric,
     QueryFinishCallback query_finish_callback)
 {
-    auto metrics_table_id = time_series_storage->getTargetTableID(ViewTarget::Metrics, getContext());
+    const auto time_series_storage_id = time_series_storage->getStorageID();
 
     /// The Metrics target table may declare its columns as String, LowCardinality(String) or Nullable(String),
     /// so normalize them to plain strings with NULL meaning an empty string.
-    auto normalize_column = [](const char * column_name) { return fmt::format("ifNull(toString({}), '')", column_name); };
-    String metric_family = normalize_column(TimeSeriesColumnNames::MetricFamilyName);
+    auto normalize_column = [](const char * column_name)
+    {
+        return makeASTFunction(
+            "ifNull",
+            makeASTFunction("toString", make_intrusive<ASTIdentifier>(column_name)),
+            make_intrusive<ASTLiteral>(String{}));
+    };
 
     /// groupUniqArray() deduplicates the metadata entries of each metric family: the Metrics target table typically
     /// contains duplicate rows until they're merged. With `limit_per_metric` set it also caps the number of entries
     /// per family, choosing an arbitrary subset like Prometheus does. arraySort() and ORDER BY make the result deterministic.
-    String group_uniq_array = (limit_per_metric > 0) ? fmt::format("groupUniqArray({})", limit_per_metric) : "groupUniqArray";
-    String metadata_entries = fmt::format(
-        "arraySort({}(tuple({}, {}, {})))",
-        group_uniq_array,
-        normalize_column(TimeSeriesColumnNames::Type),
-        normalize_column(TimeSeriesColumnNames::Help),
-        normalize_column(TimeSeriesColumnNames::Unit));
+    auto group_uniq_array = makeASTFunction(
+        "groupUniqArray",
+        makeASTFunction(
+            "tuple",
+            normalize_column(TimeSeriesColumnNames::Type),
+            normalize_column(TimeSeriesColumnNames::Help),
+            normalize_column(TimeSeriesColumnNames::Unit)));
+    if (limit_per_metric > 0)
+        group_uniq_array = addParametersToAggregateFunction(std::move(group_uniq_array), make_intrusive<ASTLiteral>(limit_per_metric));
 
-    String sql_query = fmt::format(
-        "SELECT {} AS metric_family, {} AS metadata FROM {}", metric_family, metadata_entries, metrics_table_id.getFullTableName());
+    auto metric_family = normalize_column(TimeSeriesColumnNames::MetricFamilyName);
+    metric_family->setAlias("metric_family");
+    auto metadata_entries = makeASTFunction("arraySort", std::move(group_uniq_array));
+    metadata_entries->setAlias("metadata");
+
+    /// SELECT ifNull(toString(metric_family_name), '') AS metric_family, arraySort(groupUniqArray(...)) AS metadata
+    /// FROM timeSeriesMetrics(database, table) [WHERE metric_family_name = metric]
+    /// GROUP BY ... ORDER BY ... [LIMIT limit]
+    PrometheusQueryToSQL::SelectQueryBuilder builder;
+    builder.select_list.push_back(std::move(metric_family));
+    builder.select_list.push_back(std::move(metadata_entries));
+    builder.from_table_function = makeASTFunction(
+        "timeSeriesMetrics",
+        make_intrusive<ASTLiteral>(time_series_storage_id.getDatabaseName()),
+        make_intrusive<ASTLiteral>(time_series_storage_id.getTableName()));
 
     /// Filter on the raw column so the primary key of the Metrics target table can be used.
     if (!metric_param.empty())
-        sql_query += fmt::format(" WHERE {} = {}", TimeSeriesColumnNames::MetricFamilyName, quoteString(metric_param));
+        builder.where = makeASTFunction(
+            "equals",
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName),
+            make_intrusive<ASTLiteral>(metric_param));
 
-    sql_query += fmt::format(" GROUP BY {0} ORDER BY {0}", metric_family);
+    builder.group_by.push_back(normalize_column(TimeSeriesColumnNames::MetricFamilyName));
+    builder.order_by.push_back(normalize_column(TimeSeriesColumnNames::MetricFamilyName));
+    builder.order_direction = 1;
 
     /// LIMIT 0 returns an empty result, matching how Prometheus handles `limit=0`.
     if (limit >= 0)
-        sql_query += fmt::format(" LIMIT {}", limit);
+        builder.limit = static_cast<size_t>(limit);
 
-    LOG_TRACE(log, "SQL query to execute:\n{}", sql_query);
+    auto sql_query = builder.getSelectQuery();
 
-    auto [ast, io] = executeQuery(sql_query, getContext(), {}, QueryProcessingStage::Complete);
+    LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
+
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
     try
     {
