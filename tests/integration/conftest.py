@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest  # pylint:disable=import-error; for style check
 
-from full_log_plugin import FullLogPlugin, full_log_path
 from helpers.cluster import run_and_check
 
 # This is a workaround for a problem with logging in pytest [1].
@@ -120,12 +119,8 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     os.environ["INTEGRATION_TESTS_RUN_ID"] = config.option.run_id
-    config.pluginmanager.register(
-        FullLogPlugin(full_log_path(config)), "full_log_plugin"
-    )
 
 
 if hasattr(pytest, "xdist_plugin"):
-
     def pytest_xdist_setupnodes(config, specs):
         pass
