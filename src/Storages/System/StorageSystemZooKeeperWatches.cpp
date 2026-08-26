@@ -111,6 +111,12 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "zookeeper_watches",
     .description = R"DOCS_MD(
 Shows currently active [watches](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches) registered by this ClickHouse server on ZooKeeper nodes (including auxiliary ZooKeepers). Each row represents one watch.
+
+<Info>
+**Availability**
+
+`system.zookeeper_watches` exists only when ClickHouse Keeper or ZooKeeper is configured. On servers without either configured, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`.
+</Info>
 )DOCS_MD",
     .get_columns = StorageSystemZooKeeperWatches::getColumnsDescription,
     .examples = R"DOCS_MD(

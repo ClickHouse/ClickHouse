@@ -451,6 +451,12 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "zookeeper_info",
     .description = R"DOCS_MD(
 This table outputs combined introspection about zookeeper and the nodes are taken from config.
+
+<Info>
+**Availability**
+
+`system.zookeeper_info` exists only when ClickHouse Keeper or ZooKeeper is configured. On servers without either configured, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`.
+</Info>
 )DOCS_MD",
     .get_columns = StorageSystemZooKeeperInfo::getColumnsDescription)
 
