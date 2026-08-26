@@ -63,6 +63,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
+#include <Parsers/registerStatements.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
@@ -1248,6 +1249,7 @@ try
     }
 
     registerInterpreters();
+    registerStatements();
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
