@@ -22,6 +22,15 @@ void JSONObjectWriter::writeAlias(const ASTWithAlias & node)
 
 static void writeFieldJSON(WriteBuffer & out, const FormatSettings & fs, const Field & field)
 {
+    /// A number literal keeps its original text until the type it is used with is known, which the
+    /// JSON encoding has no place for: it maps every value onto a concrete `Field` type that the
+    /// reader restores. Serialize the type and value the literal resolves to on its own.
+    if (field.getType() == Field::Types::Number)
+    {
+        writeFieldJSON(out, fs, field.resolveNumberLiteral());
+        return;
+    }
+
     out << "{\"field_type\":";
     writeJSONString(field.getTypeName(), out, fs);
 
