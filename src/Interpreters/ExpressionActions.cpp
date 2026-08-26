@@ -837,6 +837,10 @@ void ExpressionActions::executeAction(
 void ExpressionActions::execute(
     Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input, CheckCancelled check_cancelled) const
 {
+    /// Row-multiplying actions (`ARRAY JOIN`) change `execution_context.num_rows` in place, so the final
+    /// value is not the size of the block the actions were executed on. Remember the input size for profiling.
+    const size_t input_num_rows = num_rows;
+
     ExecutionContext execution_context
     {
         .inputs = block.data,
@@ -924,7 +928,7 @@ void ExpressionActions::execute(
     block.swap(res);
 
     num_rows = execution_context.num_rows;
-    finalizeBlockExecution(num_rows);
+    finalizeBlockExecution(input_num_rows);
 }
 
 std::vector<ssize_t> ExpressionActions::getInputPositions(const Block & header) const
@@ -976,6 +980,9 @@ Columns ExpressionActions::executeOnColumns(
         const auto & structure = header.getByPosition(i);
         inputs.emplace_back(std::move(columns[i]), structure.type, structure.name);
     }
+
+    /// See the note in the `Block`-based `execute` above: keep the pre-`ARRAY JOIN` size for profiling.
+    const size_t input_num_rows = num_rows;
 
     ExecutionContext execution_context
     {
@@ -1029,7 +1036,7 @@ Columns ExpressionActions::executeOnColumns(
     }
 
     num_rows = execution_context.num_rows;
-    finalizeBlockExecution(num_rows);
+    finalizeBlockExecution(input_num_rows);
     return res;
 }
 
@@ -1330,12 +1337,12 @@ size_t AdaptiveExpressionActions::getActionInputRows(size_t action_index) const
     return current_round_input_rows;
 }
 
-void AdaptiveExpressionActions::finalizeBlockExecution(size_t num_rows) const
+void AdaptiveExpressionActions::finalizeBlockExecution(size_t input_num_rows) const
 {
     /// Revisit the decisions only after enough rows were processed, otherwise the measurements are too noisy.
     static constexpr size_t update_on_every_rows = 20000;
 
-    current_round_input_rows += num_rows;
+    current_round_input_rows += input_num_rows;
     if (current_round_input_rows < update_on_every_rows)
         return;
 
