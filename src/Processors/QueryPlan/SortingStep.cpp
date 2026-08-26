@@ -210,6 +210,12 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
 
 void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
 {
+    /// `max_streams_per_hierarchical_merge` is not serialized, and the deserializing side resets it to `0`.
+    /// Validate the value here so that an invalid `1` is still rejected on the serialized-plan paths
+    /// (`serialize_query_plan`, distributed plans), where the full sort is rebuilt on a worker and
+    /// `checkMaxStreamsPerHierarchicalMerge` in `SortingStep::fullSort` would never see the user's value.
+    checkMaxStreamsPerHierarchicalMerge(max_streams_per_hierarchical_merge);
+
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
     settings[QueryPlanSerializationSetting::max_rows_to_sort] = size_limits.max_rows;
     settings[QueryPlanSerializationSetting::max_bytes_to_sort] = size_limits.max_bytes;

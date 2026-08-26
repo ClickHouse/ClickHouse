@@ -8583,7 +8583,7 @@ Possible values:
 - 0 - Hierarchical merging is disabled; streams produced by a full sort are merged by a single `MergingSortedTransform`.
 - 2 or more - Maximum number of inputs per merge node.
 
-The value 1 is not allowed: a merge node with a single input would not reduce the number of streams, so no tree could be built. Attempting to build a full-sort pipeline with this value throws `BAD_ARGUMENTS`. Note that the error is raised when the query pipeline is built, not when the setting is assigned, so `SET max_streams_per_hierarchical_merge = 1` itself succeeds.
+The value 1 is not allowed: a merge node with a single input would not reduce the number of streams, so no tree could be built. Attempting to build a full-sort pipeline with this value throws `BAD_ARGUMENTS`, and so does serializing a query plan with it, so that the value is rejected on distributed and `serialize_query_plan` paths as well. Note that the error is raised when the query pipeline is built, not when the setting is assigned, so `SET max_streams_per_hierarchical_merge = 1` itself succeeds.
 )", 0) \
     DECLARE(Bool, enable_add_distinct_to_in_subqueries, false, R"(
 Enable `DISTINCT` in `IN` subqueries. This is a trade-off setting: enabling it can greatly reduce the size of temporary tables transferred for distributed IN subqueries and significantly speed up data transfer between shards, by ensuring only unique values are sent.

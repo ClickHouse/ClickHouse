@@ -6,3 +6,8 @@
 10
 10
 10
+-- rejected on the serialized query plan path --
+-- the same for a full sorting merge join --
+-- 0 and values >= 2 are accepted on the serialized query plan path --
+10
+10
