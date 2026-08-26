@@ -1,0 +1,6 @@
+-- renamed logical name is rejected
+UNSUPPORTED_METHOD
+-- schema from the log: physical name still works
+0
+1
+2
