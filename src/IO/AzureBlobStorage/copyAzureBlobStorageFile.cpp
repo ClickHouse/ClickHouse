@@ -392,11 +392,10 @@ void copyDataToAzureBlobStorageFile(
     const String & dest_blob,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    BlobStorageLogWriterPtr blob_storage_log,
-    const String & dest_if_none_match)
+    BlobStorageLogWriterPtr blob_storage_log)
 {
     auto log = getLogger("copyDataToAzureBlobStorageFile");
-    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, std::move(blob_storage_log), log, dest_if_none_match};
+    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, std::move(blob_storage_log), log, /* dest_if_none_match= */ {}};
     helper.performCopy();
 }
 

@@ -1116,8 +1116,7 @@ void copyS3FileRange(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata,
-    const String & dest_if_none_match)
+    const std::optional<ObjectAttributes> & object_metadata)
 {
     copyS3FileImpl(
         std::move(src_s3_client),
@@ -1136,7 +1135,7 @@ void copyS3FileRange(
         fallback_file_reader,
         object_metadata,
         /* is_ranged_copy= */ true,
-        dest_if_none_match,
+        /* dest_if_none_match= */ {},
         /* source_headers= */ {},
         /* source_tags= */ {});
 }

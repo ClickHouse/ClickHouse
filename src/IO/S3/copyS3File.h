@@ -83,10 +83,7 @@ void copyS3FileRange(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
-    /// Precondition on the destination for the request that makes the object visible. Pass "*" to
-    /// make the copy fail with PreconditionFailed instead of overwriting an existing object.
-    const String & dest_if_none_match = {});
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
 
 /// Copies data from any seekable source to S3.
 /// The same functionality can be done by using the function copyData() and the class WriteBufferFromS3
