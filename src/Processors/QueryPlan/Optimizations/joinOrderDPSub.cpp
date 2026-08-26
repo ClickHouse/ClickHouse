@@ -95,7 +95,7 @@ private:
     };
     DPsubMaskData<UInt32> dpsub_data;
 
-    LoggerPtr log = getLogger("JoinOrderOptimizer");
+    LoggerPtr log = DB::getJoinOrderOptimizerLogger();
 };
 
 std::optional<UInt64> DPSubJoinOrderOptimizer::estimateCardinality(

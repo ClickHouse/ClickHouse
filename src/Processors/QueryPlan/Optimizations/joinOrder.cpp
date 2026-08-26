@@ -303,7 +303,7 @@ private:
     QueryGraph query_graph;
     const UInt64 max_searched_plans;
     const std::vector<JoinOrderAlgorithm> enabled_algorithms;
-    LoggerPtr log = getLogger("JoinOrderOptimizer");
+    LoggerPtr log = DB::getJoinOrderOptimizerLogger();
     QueryStatusPtr query_status;
     std::function<bool()> interactive_cancel_callback;
 };

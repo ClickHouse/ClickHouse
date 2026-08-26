@@ -36,7 +36,7 @@ private:
     QueryGraph & query_graph;
     SelectivityCache expression_selectivity;
     PlanMemo dp_table;
-    LoggerPtr log = getLogger("JoinOrderOptimizer");
+    LoggerPtr log = DB::getJoinOrderOptimizerLogger();
 };
 
 DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()

@@ -39,7 +39,7 @@ private:
     SelectivityCache expression_selectivity;
     size_t searched_plans = 0;
     const UInt64 max_searched_plans;
-    LoggerPtr log = getLogger("JoinOrderOptimizer");
+    LoggerPtr log = DB::getJoinOrderOptimizerLogger();
     QueryStatusPtr query_status;
     std::function<bool()> interactive_cancel_callback;
 };
