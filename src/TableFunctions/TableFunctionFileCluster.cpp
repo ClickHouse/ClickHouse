@@ -78,7 +78,7 @@ fileCluster(cluster_name, path[, format, structure, compression_method])
 | `path`               | The relative path to the file from [user_files_path](/reference/settings/server-settings/settings/user#user_files_path). Path to file also supports [globs](#globs-in-path). |
 | `format`             | [Format](/reference/formats/index) of the files. Type: [String](/reference/data-types/string).                                                                           |
 | `structure`          | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).                             |
-| `compression_method` | Compression method. Supported compression types are `gz`, `deflate`, `br`, `xz`, `zst`, `lz4`, `bz2`, and `snappy`.                                                                 |
+| `compression_method` | Compression method. Supported compression types are `gz`, `deflate`, `br`, `xz`, `zst`, `lz4`, `bz2`, and `snappy`. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default). |
 
 ## Returned value {#returned-value}
 
