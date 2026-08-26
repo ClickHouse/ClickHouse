@@ -35,9 +35,9 @@ Uses `CRC32` as a hash function.
         "Usage example",
         "SELECT sparseGrams('alice', 3)",
         R"(
-┌─sparseGrams('alice', 3)────────────┐
-│ ['ali','lic','lice','ice']         │
-└────────────────────────────────────┘
+┌─sparseGrams('alice', 3)────┐
+│ ['ali','lic','ice','lice'] │
+└────────────────────────────┘
         )"
     }
     };
@@ -57,9 +57,9 @@ Uses `CRC32` as a hash function.
         "Usage example",
         "SELECT sparseGramsUTF8('алиса', 3)",
         R"(
-┌─sparseGramsUTF8('алиса', 3)─┐
-│ ['али','лис','иса']         │
-└─────────────────────────────┘
+┌─sparseGramsUTF8('алиса', 3)────────┐
+│ ['али','лис','иса','лиса','алиса'] │
+└────────────────────────────────────┘
         )"
     }
     };
