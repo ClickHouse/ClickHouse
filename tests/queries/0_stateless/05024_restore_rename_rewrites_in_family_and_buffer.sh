@@ -15,8 +15,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #  * `ENGINE = Buffer(destination_database, destination_table, ...)` was not rewritten at all, so a
 #    write to a restored buffer flushed into the source database.
 #
-# Only an identifier on the right-hand side of the family is a table. A string there is ordinary data,
-# so rewriting one would corrupt a valid comparison; `v_literal` below is the control for that.
+# Only an identifier on the right-hand side of the family is a table, and only when nothing already in
+# scope claims its qualifier. A string there is ordinary data, and an identifier qualified by a table
+# alias is a column of that table; `v_literal` and `v_alias` below are the controls for those two.
 #
 # The oracles below are the user-visible consequences rather than the definition text alone: what the
 # restored views return, and which table a write to the restored buffer lands in.
@@ -52,9 +53,9 @@ ${CLICKHOUSE_CLIENT} -q "
 # `OPTIMIZE` below does, so which table the row lands in does not depend on timing.
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE \`$SRC\`"
 ${CLICKHOUSE_CLIENT} -q "
-    CREATE TABLE \`$SRC\`.t (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE \`$SRC\`.t (a UInt64, u Array(UInt64)) ENGINE = MergeTree ORDER BY a;
     CREATE TABLE \`$SRC\`.u (a UInt64) ENGINE = MergeTree ORDER BY a;
-    INSERT INTO \`$SRC\`.t VALUES (1), (2), (3);
+    INSERT INTO \`$SRC\`.t VALUES (1, [7]), (2, [7]), (3, [7]);
     INSERT INTO \`$SRC\`.u VALUES (1);
     CREATE VIEW \`$SRC\`.v_in       AS SELECT a FROM \`$SRC\`.t WHERE a IN \`$SRC\`.u;
     CREATE VIEW \`$SRC\`.v_notin    AS SELECT a FROM \`$SRC\`.t WHERE a NOT IN \`$SRC\`.u;
@@ -63,7 +64,8 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE VIEW \`$SRC\`.v_out      AS SELECT a FROM \`$SRC\`.t WHERE a NOT IN \`$OUT\`.u;
     CREATE VIEW \`$SRC\`.v_ignoreset AS SELECT a FROM \`$SRC\`.t WHERE inIgnoreSet(a, \`$SRC\`.u);
     CREATE VIEW \`$SRC\`.v_literal   AS SELECT '$SRC.u' NOT IN ('$SRC.u') AS r;
-    CREATE TABLE \`$SRC\`.buf     (a UInt64) ENGINE = Buffer('$SRC', 't',    1, 3600, 3600, 1000000, 1000000, 100000000, 100000000);
+    CREATE VIEW \`$SRC\`.v_alias     AS SELECT a FROM \`$SRC\`.t AS \`$SRC\` WHERE a NOT IN \`$SRC\`.u;
+    CREATE TABLE \`$SRC\`.buf     (a UInt64, u Array(UInt64)) ENGINE = Buffer('$SRC', 't',    1, 3600, 3600, 1000000, 1000000, 100000000, 100000000);
     CREATE TABLE \`$SRC\`.buf_out (a UInt64) ENGINE = Buffer('$OUT', 'dest', 1, 3600, 3600, 1000000, 1000000, 100000000, 100000000);
 "
 
@@ -93,7 +95,7 @@ for view in v_in v_notin v_globalin v_nullin v_out; do
 done
 
 echo "3. a write to the restored buffer lands in the restored destination:"
-${CLICKHOUSE_CLIENT} -q "INSERT INTO \`$DST\`.buf VALUES (999)"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO \`$DST\`.buf VALUES (999, [])"
 ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE \`$DST\`.buf"
 printf 'SRC.t\t'
 ${CLICKHOUSE_CLIENT} -q "SELECT arraySort(groupArray(a)) FROM \`$SRC\`.t"
@@ -118,10 +120,22 @@ printf 'definition\t'
 ${CLICKHOUSE_CLIENT} -q "SELECT extract(create_table_query, 'SELECT.*') FROM system.tables WHERE database = '$DST' AND name = 'v_literal' FORMAT TSV" \
 | sed -e "s/$SRC/SRC/g" -e "s/$DST/DST/g"
 
+# The table is aliased with its own database's name, so the right-hand side is the column `u` of that
+# alias and not the table `u` - the analyzer resolves a qualified identifier as an expression before it
+# tries it as a table. Both readings are valid here, which is what makes the arm sharp: as a column
+# every `a` is absent from `[7]` and the answer is all three rows, while as the table it would be
+# [2,3]. Renaming the identifier would silently pick the second reading.
+echo "4c. control, an identifier qualified by a table alias is a column, not a table:"
+printf 'v_alias\t'
+${CLICKHOUSE_CLIENT} -q "SELECT arraySort(groupArray(a)) FROM \`$DST\`.v_alias"
+printf 'definition\t'
+${CLICKHOUSE_CLIENT} -q "SELECT extract(create_table_query, 'FROM.*') FROM system.tables WHERE database = '$DST' AND name = 'v_alias' FORMAT TSV" \
+| sed -e "s/$SRC/SRC/g" -e "s/$DST/DST/g"
+
 echo "5. a table-level rename moves the buffer destination with it:"
 ${CLICKHOUSE_CLIENT} -q "BACKUP TABLE \`$SRC\`.t, TABLE \`$SRC\`.buf TO Disk('backups', '$BACKUP_TBL')" | grep -o "BACKUP_CREATED"
 ${CLICKHOUSE_CLIENT} -q "RESTORE TABLE \`$SRC\`.t AS \`$SRC\`.t2, TABLE \`$SRC\`.buf AS \`$SRC\`.buf2 FROM Disk('backups', '$BACKUP_TBL')" | grep -o "RESTORED"
-${CLICKHOUSE_CLIENT} -q "INSERT INTO \`$SRC\`.buf2 VALUES (555)"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO \`$SRC\`.buf2 VALUES (555, [])"
 ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE \`$SRC\`.buf2"
 printf 'SRC.t\t'
 ${CLICKHOUSE_CLIENT} -q "SELECT arraySort(groupArray(a)) FROM \`$SRC\`.t"
@@ -134,7 +148,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT arraySort(groupArray(a)) FROM \`$SRC\`.t2"
 # stale reference in an `IgnoreSet` variant, whose rows never differ.
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE \`$SRC\` SYNC"
 echo "6. the restored views still resolve once the source database is gone:"
-for view in v_in v_notin v_globalin v_nullin v_ignoreset v_literal v_out; do
+for view in v_in v_notin v_globalin v_nullin v_ignoreset v_literal v_alias v_out; do
     printf '%s\t' "$view"
     if ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM \`$DST\`.$view" > /dev/null 2>&1; then
         echo "resolves"

@@ -1,6 +1,7 @@
 BACKUP_CREATED
 RESTORED
 1. restored view definitions:
+v_alias	WHERE a NOT IN (SRC.u)
 v_globalin	WHERE a GLOBAL IN (DST.u)
 v_ignoreset	WHERE inIgnoreSet(a, DST.u)
 v_in	WHERE a IN (DST.u)
@@ -22,6 +23,9 @@ OUT.dest	[777]
 4b. control, a database.table-shaped string on the right-hand side is left alone:
 v_literal	0
 definition	SELECT \'SRC.u\' NOT IN (\'SRC.u\') AS r
+4c. control, an identifier qualified by a table alias is a column, not a table:
+v_alias	[1,2,3,999]
+definition	FROM DST.t AS SRC WHERE a NOT IN (SRC.u)
 5. a table-level rename moves the buffer destination with it:
 BACKUP_CREATED
 RESTORED
@@ -34,4 +38,5 @@ v_globalin	resolves
 v_nullin	resolves
 v_ignoreset	resolves
 v_literal	resolves
+v_alias	resolves
 v_out	resolves
