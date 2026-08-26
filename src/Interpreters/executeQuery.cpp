@@ -4,6 +4,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/Logger.h>
+#include <Common/saturatedDuration.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -25,6 +26,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
+#include <Processors/ProcessorsProfileLogInfo.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
@@ -279,6 +281,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 namespace FailPoints
@@ -701,7 +704,7 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
     /// opted in to caching via explicit SETTINGS use_query_cache = true even when the outer query doesn't use the cache.
     query_pipeline.finalizeWriteInQueryResultCache();
 
-    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
+    VectorWithMemoryTracking<ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
 
     String pipeline_dump;
     {
@@ -1214,6 +1217,28 @@ private:
 };
 
 using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactionControlExecutor>;
+
+
+/// The introspection port is open while the shared state is either not fully constructed or is being
+/// torn down, so anything that creates, changes or removes state is rejected there.
+static bool isAllowedOnIntrospectionPort(const IAST & ast)
+{
+    switch (ast.getQueryKind())
+    {
+        case IAST::QueryKind::Select:
+        case IAST::QueryKind::Show:
+        case IAST::QueryKind::Describe:
+        case IAST::QueryKind::Explain:
+        case IAST::QueryKind::Exists:
+        case IAST::QueryKind::KillQuery:
+        case IAST::QueryKind::System:
+        case IAST::QueryKind::Set:
+        case IAST::QueryKind::Use:
+            return true;
+        default:
+            return false;
+    }
+}
 
 
 /// Convert a comma-separated `sort` setting (identifiers / positional references with optional
@@ -2158,6 +2183,27 @@ static void applyQueryConstructionSettings(
 }
 
 
+static void checkQueryIsAllowedOnIntrospectionPort(const IAST & ast, const Context & context)
+{
+    if (!isAllowedOnIntrospectionPort(ast))
+        throw Exception(
+            ErrorCodes::QUERY_IS_PROHIBITED,
+            "Only diagnostic queries are allowed on the introspection port: "
+            "SELECT, SHOW, DESCRIBE, EXPLAIN, EXISTS, KILL QUERY, SYSTEM, SET and USE");
+
+    const auto * system_query = ast.as<ASTSystemQuery>();
+    if (system_query
+        && (system_query->type == ASTSystemQuery::Type::RELOAD_CONFIG
+            || system_query->type == ASTSystemQuery::Type::RELOAD_USERS)
+        && !context.isServerCompletelyStarted())
+        throw Exception(
+            ErrorCodes::QUERY_IS_PROHIBITED,
+            "SYSTEM {} is not allowed on the introspection port until the server is completely started, "
+            "because reloading the configuration may break the initialization order",
+            ASTSystemQuery::typeToString(system_query->type));
+}
+
+
 static BlockIO executeQueryImpl(
     const char * begin,
     const char * end,
@@ -2187,6 +2233,12 @@ static BlockIO executeQueryImpl(
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = internal ? nullptr : std::make_shared<OpenTelemetry::SpanHolder>("query");
     if (query_span && query_span->trace_id != UUID{})
         LOG_TRACE(getLogger("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
+
+    /// A trace started by sampling (`opentelemetry_start_trace_probability`) exists only in the thread-local context.
+    /// Write the sampled context back, so that everything that forwards `ClientInfo` to secondary queries (remote and distributed
+    /// queries, DDL entries) carries the trace even where the ambient context is not available.
+    if (query_span && query_span->isTraceEnabled() && context->getClientTraceContext().trace_id == UUID{})
+        context->setClientTraceContext(OpenTelemetry::CurrentContext());
 
     /// Used for logging query start time in system.query_log
     auto query_start_time = std::chrono::system_clock::now();
@@ -2570,6 +2622,9 @@ static BlockIO executeQueryImpl(
 
         if (out_ast)
         {
+            if (client_info.is_from_introspection_port)
+                checkQueryIsAllowedOnIntrospectionPort(*out_ast, *context);
+
             const bool run_query_in_background_before_settings_from_query = settings[Setting::run_query_in_background].value;
 
             /// Construction settings in a non-last `UNION` arm's own `SETTINGS` clause are per-arm;
@@ -2870,7 +2925,7 @@ static BlockIO executeQueryImpl(
 
                 if (settings[Setting::wait_for_async_insert])
                 {
-                    auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
+                    auto timeout = saturatedMilliseconds(settings[Setting::wait_for_async_insert_timeout].totalMilliseconds()).count();
                     auto source = std::make_shared<WaitForAsyncInsertSource>(
                         std::move(result.future),
                         timeout,
@@ -3072,7 +3127,7 @@ static BlockIO executeQueryImpl(
                     if (checkCanWriteQueryResultCache(out_ast, context))
                     {
                             auto created_at = std::chrono::system_clock::now();
-                            auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+                            auto expires_at = saturatedSecondsFrom(created_at, settings[Setting::query_cache_ttl].totalSeconds());
 
                             QueryResultCache::Key key(
                                 out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
