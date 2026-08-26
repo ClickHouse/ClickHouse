@@ -277,9 +277,12 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
     /// A preliminary DISTINCT may shed its set under memory pressure only when the final DISTINCT is
     /// able to spill for the same columns (otherwise shedding just moves the memory to an in-memory
-    /// final DISTINCT).
+    /// final DISTINCT). A sorted pre-distinct does not take the threshold: its transform deduplicates
+    /// by ranges and holds no growing set.
     const UInt64 pass_through_threshold
-        = (pre_distinct && canUseExternalDistinct(*pipeline.getSharedHeader(), columns)) ? external_threshold : 0;
+        = (pre_distinct && distinct_sort_desc.empty() && canUseExternalDistinct(*pipeline.getSharedHeader(), columns))
+        ? external_threshold
+        : 0;
 
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
