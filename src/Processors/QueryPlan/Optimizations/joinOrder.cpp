@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderBitSet.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderDP.h>
 #include <Processors/QueryPlan/Optimizations/joinEnum.h>
 #include <Common/CurrentThread.h>
 
@@ -360,15 +361,6 @@ private:
     /// Try to build the best join plan between left_rels and right_rels.
     /// Updates dp_table if a better plan is found.
     void tryJoin(const BitSet & left_rels, const BitSet & right_rels);
-
-    /// Core plan-building logic shared by DPsize and DPhyp.
-    /// Computes selectivity and cost for the given predicates, and updates dp_table if this plan is better.
-    /// Returns the new entry if dp_table was updated, nullptr otherwise.
-    DPJoinEntryPtr evaluateJoin(
-        const DPJoinEntryPtr & left,
-        const DPJoinEntryPtr & right,
-        JoinKind join_kind,
-        std::vector<JoinActionRef *> & predicates);
 
     /// DPhyp helpers
     void buildHyperedges();
@@ -840,14 +832,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
     return components.at(0);
 }
 
-
-/// Checks if predicate has sources from both left and right sets
-static bool connects(const JoinActionRef * predicate, const BitSet & left, const BitSet & right)
-{
-    const auto & participating = predicate->getSourceRelations();
-    return areIntersecting(participating, left) && areIntersecting(participating, right);
-}
-
 template <typename DPTable, std::unsigned_integral TUInt>
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable & dptable, const TUInt & S) const
 {
@@ -1041,7 +1025,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                     if (!connected)
                         continue;
 
-                    auto new_entry = evaluateJoin(left, right, *join_kind, edge);
+                    auto new_entry = evaluateJoin(query_graph, dp_table, expression_selectivity, left, right, *join_kind, edge, log);
                     if (new_entry)
                         components[component_size][new_entry->relations] = new_entry;
                 }
@@ -1107,40 +1091,7 @@ void JoinOrderOptimizer::tryJoin(const BitSet & left_rels, const BitSet & right_
         && !query_graph.areTransitivelyConnected(left_rels, right_rels))
         return;
 
-    evaluateJoin(left_entry->second, right_entry->second, *join_kind, connecting_predicates);
-}
-
-DPJoinEntryPtr JoinOrderOptimizer::evaluateJoin(
-    const DPJoinEntryPtr & left,
-    const DPJoinEntryPtr & right,
-    JoinKind join_kind,
-    std::vector<JoinActionRef *> & predicates)
-{
-    auto selectivity = computeSelectivity(query_graph, dp_table, expression_selectivity, predicates, left->relations, right->relations);
-    auto new_cost = computeJoinCost(left, right, selectivity);
-
-    const BitSet combined_rels = left->relations | right->relations;
-    auto current_best = dp_table.find(combined_rels);
-    if (current_best != dp_table.end() && new_cost >= current_best->second->cost)
-        return nullptr;
-
-    /// Transitively connected pairs are inner joins; their predicate is synthesized later.
-    bool connected = !predicates.empty()
-        || query_graph.areTransitivelyConnected(left->relations, right->relations);
-    auto effective_kind = (connected && join_kind == JoinKind::Cross) ? JoinKind::Inner : join_kind;
-    auto cardinality = estimateJoinCardinality(left, right, selectivity, effective_kind);
-    JoinOperator join_operator(
-        effective_kind, JoinStrictness::All, JoinLocality::Unspecified,
-        std::ranges::to<std::vector>(predicates | std::views::transform([](const auto * p) { return *p; })));
-    auto new_entry = std::make_shared<DPJoinEntry>(left, right, new_cost, cardinality, std::move(join_operator));
-
-    LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
-        new_entry->dump(), left->dump(), right->dump(),
-        new_entry->cost, new_entry->estimated_rows ? toString(*new_entry->estimated_rows) : "unknown",
-        new_entry->join_operator.dump());
-
-    dp_table[combined_rels] = new_entry;
-    return new_entry;
+    evaluateJoin(query_graph, dp_table, expression_selectivity, left_entry->second, right_entry->second, *join_kind, connecting_predicates, log);
 }
 
 /// Build the hyperedge representation of the join graph used by DPhyp.

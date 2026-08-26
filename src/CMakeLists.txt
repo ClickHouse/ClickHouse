@@ -493,6 +493,7 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" AND ARCH_AMD64)
     set_source_files_properties(
         Processors/QueryPlan/Optimizations/joinOrder.cpp
         Processors/QueryPlan/Optimizations/joinOrderBitSet.cpp
+        Processors/QueryPlan/Optimizations/joinOrderDP.cpp
         PROPERTIES COMPILE_FLAGS "-O2")
 endif()
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
