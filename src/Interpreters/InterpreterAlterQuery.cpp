@@ -28,6 +28,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
@@ -522,7 +523,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     validateReplicatedDatabaseSegments(segments, database);
 
     if (auto lightweight_result = tryRewriteToLightweightUpdate(segments, table, getContext(), query_ptr))
+    {
+        /// The patch part is committed while the pipeline runs, so the share lock must outlive this
+        /// function: otherwise a concurrent DROP can clear the data parts index under the sink.
+        QueryPlanResourceHolder update_resources;
+        update_resources.table_locks.emplace_back(std::move(table_lock));
+        lightweight_result->pipeline.addResources(std::move(update_resources));
         return std::move(lightweight_result.value());
+    }
 
     return runCommandSegments(segments, table, getContext());
 }
@@ -762,6 +770,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::ADD_PROJECTION:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_PROJECTION, database, table);
+            break;
+        }
+        case ASTAlterCommand::MODIFY_PROJECTION:
+        {
+            required_access.emplace_back(AccessType::ALTER_MODIFY_PROJECTION, database, table);
             break;
         }
         case ASTAlterCommand::DROP_PROJECTION:
