@@ -17,7 +17,7 @@ namespace StreamingExchangeProtocol
 {
     /// Wire-format version, exchanged in SourceHello/SinkHello and required to match
     /// exactly on both ends. Bumped on any change to packet layouts. Version 3 carries a
-    /// `jwt_token` in `SourceHelloBody` for authenticating the connecting source (empty
+    /// `auth_token` in `SourceHelloBody` for authenticating the connecting source (empty
     /// when authentication is not used).
     static constexpr UInt64 PROTOCOL_VERSION = 3;
 
@@ -62,8 +62,8 @@ namespace StreamingExchangeProtocol
         UInt64 source_version = 0;
         String query_id;
         String stream_name;
-        /// Bearer JWT for authenticating the source; empty when the source has no token.
-        String jwt_token;
+        /// Auth token for authenticating the source; empty when the source has none.
+        String auth_token;
 
         static UInt64 readVersion(ReadBuffer & in);
         void readAfterVersion(ReadBuffer & in);

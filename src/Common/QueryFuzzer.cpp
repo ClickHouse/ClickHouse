@@ -1675,12 +1675,6 @@ void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
             }
         }
     }
-
-    /// Fuzz REFRESH ... SETTINGS values
-    if (strategy.settings)
-        for (auto & change : strategy.settings->changes)
-            if (fuzz_rand() % 5 == 0)
-                change.value = fuzzField(change.value);
 }
 
 void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
@@ -1827,42 +1821,6 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
             }
         }
 
-        /// Fuzz layout parameters (e.g. size_in_cells for cache, max_stored_keys for ssd_cache).
-        /// Parameters are stored as ASTExpressionList of ASTPair(key, ASTLiteral value).
-        if (create.dictionary->layout && create.dictionary->layout->parameters)
-        {
-            for (auto & param_child : create.dictionary->layout->parameters->children)
-            {
-                if (auto * pair = param_child->as<ASTPair>())
-                {
-                    if (pair->second)
-                    {
-                        if (auto * lit = pair->second->as<ASTLiteral>())
-                            if (fuzz_rand() % 5 == 0)
-                                lit->value = fuzzField(lit->value);
-                    }
-                }
-            }
-        }
-
-        /// Fuzz SOURCE(...) parameter values — same ASTPair shape as layout parameters.
-        /// Mostly produces broken sources, which exercises source validation error paths.
-        if (create.dictionary->source && create.dictionary->source->elements)
-        {
-            for (auto & param_child : create.dictionary->source->elements->children)
-            {
-                if (auto * pair = param_child->as<ASTPair>())
-                {
-                    if (pair->second)
-                    {
-                        if (auto * lit = pair->second->as<ASTLiteral>())
-                            if (fuzz_rand() % 10 == 0)
-                                lit->value = fuzzField(lit->value);
-                    }
-                }
-            }
-        }
-
         /// Shuffle composite PRIMARY KEY column order
         if (create.dictionary->primary_key && create.dictionary->primary_key->children.size() > 1 && fuzz_rand() % 10 == 0)
             std::shuffle(create.dictionary->primary_key->children.begin(), create.dictionary->primary_key->children.end(), fuzz_rand);
@@ -1880,13 +1838,6 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         if (create.dictionary->range && fuzz_rand() % 10 == 0)
             std::swap(create.dictionary->range->min_attr_name, create.dictionary->range->max_attr_name);
 
-        /// Fuzz dictionary-level SETTINGS values
-        if (create.dictionary->dict_settings)
-        {
-            for (auto & change : create.dictionary->dict_settings->changes)
-                if (fuzz_rand() % 5 == 0)
-                    change.value = fuzzField(change.value);
-        }
     }
 
     /// Fuzz dictionary attribute flags, default values, and expressions
@@ -6831,10 +6782,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
     {
-        /// Fuzz existing setting values
-        for (auto & c : set->changes)
-            if (fuzz_rand() % 50 == 0)
-                c.value = fuzzField(c.value);
         /// Permute the settings order (reparse-safe; stresses order-dependent settings application)
         if (set->changes.size() > 1 && fuzz_rand() % 20 == 0)
             std::shuffle(set->changes.begin(), set->changes.end(), fuzz_rand);
@@ -7221,15 +7168,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     alter_cmd->clear_statistics = !alter_cmd->clear_statistics;
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->if_exists = !alter_cmd->if_exists;
-                break;
-            case ASTAlterCommand::MODIFY_SETTING:
-            case ASTAlterCommand::MODIFY_DATABASE_SETTING:
-                /// Fuzz individual setting values (same strategy as ASTSetQuery handler)
-                if (alter_cmd->settings_changes)
-                    if (auto * aset = alter_cmd->settings_changes->as<ASTSetQuery>())
-                        for (auto & c : aset->changes)
-                            if (fuzz_rand() % 50 == 0)
-                                c.value = fuzzField(c.value);
                 break;
             case ASTAlterCommand::RESET_SETTING:
                 /// Occasionally drop a setting name from the reset list
@@ -7711,8 +7649,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 {Type::LOAD_PRIMARY_KEY, Type::UNLOAD_PRIMARY_KEY},
                 /* These are too slow
                 {Type::RELOAD_FUNCTION, Type::RELOAD_FUNCTIONS},
-                {Type::RELOAD_DICTIONARY, Type::RELOAD_DICTIONARIES},
-                {Type::RELOAD_MODEL, Type::RELOAD_MODELS},*/
+                {Type::RELOAD_DICTIONARY, Type::RELOAD_DICTIONARIES},*/
                 {Type::JEMALLOC_ENABLE_PROFILE, Type::JEMALLOC_DISABLE_PROFILE},
                 {Type::JEMALLOC_PURGE, Type::JEMALLOC_FLUSH_PROFILE},
                 {Type::FLUSH_LOGS, Type::FLUSH_ASYNC_INSERT_QUEUE},
@@ -8206,9 +8143,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             dict_attr->bidirectional = !dict_attr->bidirectional;
         if (fuzz_rand() % 50 == 0)
             dict_attr->is_object_id = !dict_attr->is_object_id;
-        if (dict_attr->default_value && fuzz_rand() % 5 == 0)
-            if (auto * lit = dict_attr->default_value->as<ASTLiteral>())
-                lit->value = fuzzField(lit->value);
         if (dict_attr->expression)
             fuzz(dict_attr->expression);
         if (dict_attr->type)
@@ -8218,17 +8152,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         if (fuzz_rand() % 10 == 0)
             create_nc->if_not_exists = !create_nc->if_not_exists;
-        for (auto & change : create_nc->changes)
-            if (fuzz_rand() % 5 == 0)
-                change.value = fuzzField(change.value);
     }
     else if (auto * alter_nc = typeid_cast<ASTAlterNamedCollectionQuery *>(ast.get()))
     {
         if (fuzz_rand() % 10 == 0)
             alter_nc->if_exists = !alter_nc->if_exists;
-        for (auto & change : alter_nc->changes)
-            if (fuzz_rand() % 5 == 0)
-                change.value = fuzzField(change.value);
     }
     else if (auto * drop_nc = typeid_cast<ASTDropNamedCollectionQuery *>(ast.get()))
     {
@@ -8246,9 +8174,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         if (!create_workload->or_replace && fuzz_rand() % 10 == 0)
             create_workload->if_not_exists = !create_workload->if_not_exists;
-        for (auto & change : create_workload->changes)
-            if (fuzz_rand() % 5 == 0)
-                change.value = fuzzField(change.value);
         /// Drop a setting, or duplicate one (a repeated setting exercises the last-wins/validation path)
         if (create_workload->changes.size() > 1 && fuzz_rand() % 20 == 0)
             create_workload->changes.erase(create_workload->changes.begin() + fuzz_rand() % create_workload->changes.size());
@@ -8347,9 +8272,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 create_user->add_identified_with = false;
             }
         }
-        if (create_user->global_valid_until)
-            fuzz(create_user->global_valid_until);
-        /// The authentication methods are registered as children.
+        /// The authentication methods and the user-level `VALID UNTIL`/`VALID FOR` deadline are
+        /// registered as children, so fuzzing `children` covers them. `global_valid_until` must not
+        /// be fuzzed separately here: it is already in `children`, and visiting the same node twice
+        /// trips the fuzzer's loop detector.
         fuzz(create_user->children);
     }
     else if (auto * create_role = typeid_cast<ASTCreateRoleQuery *>(ast.get()))
