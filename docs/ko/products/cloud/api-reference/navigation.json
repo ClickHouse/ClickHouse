@@ -74,6 +74,7 @@
       {
         "group": "서비스",
         "pages": [
+          "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
           "POST /v1/organizations/{organizationId}/services",
           "GET /v1/organizations/{organizationId}/services/{serviceId}",
