@@ -18,23 +18,23 @@ void AsyncTaskExecutor::resume()
     if (routine_is_finished)
         return;
 
-    /// Create fiber lazily on first resume() call.
-    if (!fiber)
-        createFiber();
+    /// Create coroutine lazily on first resume() call.
+    if (!coroutine)
+        createCoroutine();
 
     if (!checkBeforeTaskResume())
         return;
 
     {
-        std::lock_guard guard(fiber_lock);
+        std::lock_guard guard(coroutine_lock);
         if (is_cancelled)
             return;
 
         resumeUnlocked();
 
-        /// Destroy fiber when it's finished.
+        /// Destroy coroutine when it's finished.
         if (routine_is_finished)
-            destroyFiber();
+            destroyCoroutine();
 
         if (exception)
             processException(exception);
@@ -45,15 +45,15 @@ void AsyncTaskExecutor::resume()
 
 void AsyncTaskExecutor::resumeUnlocked()
 {
-    fiber.resume();
+    coroutine.resume();
 }
 
 void AsyncTaskExecutor::cancel()
 {
-    std::lock_guard guard(fiber_lock);
+    std::lock_guard guard(coroutine_lock);
     is_cancelled = true;
     {
-        SCOPE_EXIT({ destroyFiber(); });
+        SCOPE_EXIT({ destroyCoroutine(); });
         cancelBefore();
     }
     cancelAfter();
@@ -61,9 +61,9 @@ void AsyncTaskExecutor::cancel()
 
 void AsyncTaskExecutor::restart()
 {
-    std::lock_guard guard(fiber_lock);
+    std::lock_guard guard(coroutine_lock);
     if (!routine_is_finished)
-        destroyFiber();
+        destroyCoroutine();
     routine_is_finished = false;
 }
 
@@ -96,7 +96,7 @@ struct AsyncTaskExecutor::Routine
         }
         catch (const boost::context::detail::forced_unwind &)
         {
-            /// This exception is thrown by fiber implementation in case if fiber is being deleted but hasn't exited
+            /// This exception is thrown by coroutine implementation in case if coroutine is being deleted but hasn't exited
             /// It should not be caught or it will segfault.
             /// Other exceptions must be caught
             throw;
@@ -110,14 +110,14 @@ struct AsyncTaskExecutor::Routine
     }
 };
 
-void AsyncTaskExecutor::createFiber()
+void AsyncTaskExecutor::createCoroutine()
 {
-    fiber = Fiber(fiber_stack, Routine{*this});
+    coroutine = StackfulCoroutine(coroutine_stack, Routine{*this});
 }
 
-void AsyncTaskExecutor::destroyFiber()
+void AsyncTaskExecutor::destroyCoroutine()
 {
-    Fiber to_destroy = std::move(fiber);
+    StackfulCoroutine to_destroy = std::move(coroutine);
 }
 
 String getSocketTimeoutExceededMessageByTimeoutType(AsyncEventTimeoutType type, Poco::Timespan timeout, const String & socket_description)
