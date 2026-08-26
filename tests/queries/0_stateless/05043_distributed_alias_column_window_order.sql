@@ -143,12 +143,19 @@ SELECT * FROM (SELECT * FROM (
 SELECT * FROM (SELECT * FROM (
     SELECT al AS category, cur, row_number() OVER (ORDER BY a) AS rn FROM loc_win
 )) ORDER BY rn;
+-- A CTE is a subquery scope as well, so it crosses the same renumbering.
+WITH cte AS (SELECT al AS category, cur, row_number() OVER (PARTITION BY a ORDER BY dt DESC) AS rn
+             FROM remote('127.0.0.{1,2}', currentDatabase(), loc_win))
+SELECT * FROM cte ORDER BY rn;
+WITH cte AS (SELECT al AS category, cur, row_number() OVER (PARTITION BY a ORDER BY dt DESC) AS rn
+             FROM loc_win)
+SELECT * FROM cte ORDER BY rn;
 
 SELECT 'deduplicated alias pair';
 -- Two ALIAS columns with the same body collapse to one shard column, so the initiator fans that column
 -- back out and reports the duplicate. Adding a third ALIAS column the shard does not send at all puts the
--- fan-out and the computed path in one header. Every mapping in this block is accepted; a duplicate
--- reported by a mapping that then declines is covered by the `joined sources` section.
+-- fan-out and the computed path in one header. Every mapping in this block is accepted; a mapping that
+-- reports a duplicate and then declines is reached in the `joined sources` section.
 DROP TABLE IF EXISTS loc_dup;
 CREATE TABLE loc_dup
 (
@@ -192,10 +199,37 @@ SELECT al AS category, cur, sum(a) OVER (PARTITION BY cur ORDER BY dt) AS s
 FROM remote('127.0.0.{1,2}', currentDatabase(), loc_win) ORDER BY s;
 SELECT al AS category, cur, sum(a) OVER (PARTITION BY cur ORDER BY dt) AS s
 FROM loc_win ORDER BY s;
--- GROUP BY and a window function together take a different planner path; it must stay correct.
+-- GROUP BY with a window function: the shard aggregates, and the initiator adds the window on top of
+-- the merged result. Both headers list the group key first here, so the mapping declines to the identity.
+SELECT al AS category, count() AS c, row_number() OVER (ORDER BY al) AS rn
+FROM remote('127.0.0.{1,2}', currentDatabase(), loc_win) GROUP BY al ORDER BY category;
+SELECT al AS category, count() * 2 AS c, row_number() OVER (ORDER BY al) AS rn
+FROM loc_win GROUP BY al ORDER BY category;
+-- GROUP BY alone also stops at a mergeable-state boundary, so it reaches the same reconciliation with
+-- no window function anywhere in the query.
 SELECT al AS category, count() AS c FROM remote('127.0.0.{1,2}', currentDatabase(), loc_win)
 GROUP BY al ORDER BY category;
 SELECT al AS category, count() * 2 AS c FROM loc_win GROUP BY al ORDER BY category;
+
+SELECT 'parallel replicas';
+-- Reading a plain MergeTree table over parallel replicas stops at the same mergeable-state boundary, so
+-- the same reconciliation runs with no Distributed table and no remote() in the query. Replicas split the
+-- work instead of duplicating rows, so each arm returns the same rows as its single-replica oracle.
+SELECT al AS category, cur, row_number() OVER (PARTITION BY a ORDER BY dt DESC) AS rn
+FROM loc_win ORDER BY rn
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+         cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+         parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1;
+SELECT al AS category, cur, row_number() OVER (PARTITION BY a ORDER BY dt DESC) AS rn
+FROM loc_win ORDER BY rn SETTINGS enable_parallel_replicas = 0;
+-- The same over an expression-bodied ALIAS, whose body is computed on the initiator.
+SELECT upper_al AS category, cur, row_number() OVER (ORDER BY a) AS rn
+FROM loc_win ORDER BY rn
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+         cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+         parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1;
+SELECT upper_al AS category, cur, row_number() OVER (ORDER BY a) AS rn
+FROM loc_win ORDER BY rn SETTINGS enable_parallel_replicas = 0;
 
 SELECT 'negative controls';
 -- No ALIAS column: the two headers already agree, so nothing is reconstructed.
@@ -258,8 +292,9 @@ DROP TABLE loc_jr;
 -- A same-body ALIAS pair collapses to one shard column, so a duplicate is already recorded when a later
 -- ALIAS body turns out to read a column both sources expose. Declining then leaves one expected column
 -- with nothing to read, and reconciling positionally cannot invent it, so the query is rejected instead
--- of returning values from the wrong source. The duplicate must not reach the plan, which performs no
--- collapse here.
+-- of returning values from the wrong source. The arm pins that rejection, not the state of the reported
+-- duplicates: this header carries one more expected column than the shard sends, so the read never
+-- reaches an aggregation, which is the only thing that reads them.
 DROP TABLE IF EXISTS loc_jdl;
 DROP TABLE IF EXISTS loc_jdr;
 CREATE TABLE loc_jdl (a UInt64, x String, y UInt8, s1 UInt8 ALIAS y, s2 UInt8 ALIAS y,

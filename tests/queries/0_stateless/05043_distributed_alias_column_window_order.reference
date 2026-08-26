@@ -62,6 +62,9 @@ Empty	Empty	1
 Empty	USD	1
 Empty	USD	2
 Empty	USD	1
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
 deduplicated alias pair
 7	7	7	1
 7	7	7	2
@@ -80,8 +83,15 @@ window clauses
 Empty	USD	2
 Empty	USD	2
 Empty	USD	1
+Empty	2	1
+Empty	2	1
 Empty	2
 Empty	2
+parallel replicas
+Empty	USD	1
+Empty	USD	1
+EMPTY	USD	1
+EMPTY	USD	1
 negative controls
 Empty	USD	1
 Empty	USD	2
