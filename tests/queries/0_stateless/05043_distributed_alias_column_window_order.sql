@@ -11,8 +11,8 @@
 -- NUMBER_OF_COLUMNS_DOESNT_MATCH / CANNOT_PARSE_DATETIME.
 --
 -- An arm with a comparable single-node equivalent is followed by it as the oracle, so a result in
--- the wrong columns fails even though it raises no error. The negative controls and the
--- expected-error arm have none.
+-- the wrong columns fails even though it raises no error. Some arms deliberately have none, the
+-- expected-error one necessarily so.
 
 DROP TABLE IF EXISTS loc_win;
 DROP TABLE IF EXISTS dist_win;
