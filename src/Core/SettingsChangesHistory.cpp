@@ -1423,6 +1423,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
             {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
+            {"ttl_resort_max_bytes_before_external_sort", 0, 268435456, "New setting bounding the memory of the re-sort a merge performs after a `TTL ... GROUP BY ... SET` that rewrites a sorting key column; the previous value disables spilling to keep the pre-26.9 in-memory behavior"},
+            {"ttl_group_by_unsorted_max_bytes_before_external_group_by", 0, 268435456, "New setting bounding the memory of the hash aggregation a `GROUP BY` TTL performs when an earlier `TTL ... GROUP BY ... SET` rewrote its grouping key; the previous value disables spilling to keep the pre-26.9 in-memory behavior"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
@@ -1434,8 +1436,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"allow_experimental_adaptive_codec_selection", false, false, "New setting."},
             {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "sainte_lague", "Enable Sainte-Lague distribution by default."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
-            {"ttl_resort_max_bytes_before_external_sort", 0, 268435456, "New setting bounding the memory of the re-sort a merge performs after a `TTL ... GROUP BY ... SET` that rewrites a sorting key column; the previous value disables spilling to keep the pre-26.8 in-memory behavior"},
-            {"ttl_group_by_unsorted_max_bytes_before_external_group_by", 0, 268435456, "New setting bounding the memory of the hash aggregation a `GROUP BY` TTL performs when an earlier `TTL ... GROUP BY ... SET` rewrote its grouping key; the previous value disables spilling to keep the pre-26.8 in-memory behavior"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
             {"text_index_serialization_version", "v1_with_codec", "v2_with_positions", "Allow the 'v2_with_positions' text index format that persists token positions for phrase search. Reverts to 'v1_with_codec' under older compatibility so that newer servers keep writing the format that older servers can read during a rolling upgrade."},
         });
