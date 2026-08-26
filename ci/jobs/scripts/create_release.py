@@ -494,6 +494,23 @@ class ReleaseInfo:
                     f"{GIT_PREFIX} checkout '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'",
                     verbose=True,
                 )
+            else:
+                # An unbumped branch keeps counting the tweak from the previous release, so the next run mints a second release at this patch.
+                Shell.check(
+                    f"{GIT_PREFIX} fetch --quiet origin {self.release_branch}",
+                    strict=True,
+                    verbose=True,
+                )
+                branch_tip_version_file = Shell.get_output_or_raise(
+                    f"{GIT_PREFIX} show FETCH_HEAD:{FILE_WITH_VERSION_PATH}"
+                )
+                assert (
+                    f"SET(VERSION_STRING {version.string})" in branch_tip_version_file
+                ), (
+                    f"branch [{self.release_branch}] does not describe [{version.string}] "
+                    f"after the bump push, so the next release would reuse "
+                    f"[{self.version}]:\n{branch_tip_version_file}"
+                )
 
         if self.release_type == "new":
             release_type = version.get_stable_release_type()
