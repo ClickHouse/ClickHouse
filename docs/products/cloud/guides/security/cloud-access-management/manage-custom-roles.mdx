@@ -100,11 +100,7 @@ Select the service the permissions apply to. Add more services to apply the same
 </Step>
 <Step title="Choose the access level" id="choose-data-access-level">
 
-Select `Read-only`, `Admin`, or `Custom` access. With `Custom` access, define specific data access permissions using ClickHouse [`GRANT` statements](/reference/statements/grant).
-
-<Note>
-`Custom` access can only be selected when the permissions target a single service. To define custom permissions for multiple services, add a separate `Data` permission for each service, each targeting the specific service it applies to.
-</Note>
+Select `Read-only`, `Admin`, or `Custom` access. With `Custom` access, define specific data access permissions using ClickHouse [`GRANT` statements](/reference/statements/grant). `Custom` access can only be selected when the permissions target a single service; to define custom permissions for multiple services, add a separate `Data` permission for each service.
 
 <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="Create new role dialog with data permissions defined by custom grant statements" size="md"/>
 </Step>
