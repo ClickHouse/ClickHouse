@@ -27,3 +27,10 @@ OK
 Unrecognized token
 -- a malformed SET without = still gets the ordinary SQL lexical error
 Unrecognized token
+-- a malformed SET without a setting name is reported by the dialect grammar
+CANNOT_PARSE_PROMQL_QUERY
+CANNOT_PARSE_PROMQL_QUERY
+-- a '#' comment after a metric named 'set' still parses as PromQL
+[('__name__','set'),('instance','host1')]	3
+[('__name__','set'),('instance','host2')]	1
+[('__name__','set'),('instance','host3')]	2

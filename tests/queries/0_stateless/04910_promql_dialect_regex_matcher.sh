@@ -57,4 +57,15 @@ promql_client -q 'SET max_threads = ~1' 2>&1 | grep -o "Unrecognized token"
 echo "-- a malformed SET without = still gets the ordinary SQL lexical error"
 promql_client -q 'SET max_threads ~1' 2>&1 | grep -o "Unrecognized token"
 
+# Without a setting name there is nothing to tell `SET <junk>` apart from a malformed query over a
+# metric named `set`, so the active dialect reports it. Committing to SET on the error token instead
+# would reject the `#` comment below, which is valid PromQL (PromQLLexer.g4: SL_COMMENT).
+echo "-- a malformed SET without a setting name is reported by the dialect grammar"
+promql_client -q 'SET ~' 2>&1 | grep -o "CANNOT_PARSE_PROMQL_QUERY"
+promql_client -q 'SET ~1' 2>&1 | grep -o "CANNOT_PARSE_PROMQL_QUERY"
+
+echo "-- a '#' comment after a metric named 'set' still parses as PromQL"
+promql_client -q 'set # trailing comment
+' | cut -f1,3 | LC_ALL=C sort
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE ts"

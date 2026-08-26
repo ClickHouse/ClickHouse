@@ -42,3 +42,12 @@ $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect '' \
 # Test that multi-statement input is rejected
 $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
     -q "SELECT 1; SELECT 2" 2>&1 | grep -om1 'SYNTAX_ERROR'
+
+# Test that a SET statement is still handled as ClickHouse SQL, so the dialect can be reset
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
+    -q "SET dialect = 'clickhouse'" && echo OK
+
+# Test that `SET` without a setting name reaches the dialect parser instead of being
+# rejected by the ClickHouse lexer before it gets there
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
+    -q 'SET ~' 2>&1 | grep -cim1 'polyglot'
