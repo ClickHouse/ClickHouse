@@ -15,7 +15,7 @@ using namespace DB;
 
 namespace DB::ErrorCodes
 {
-    extern const int ABORTED;
+    extern const int REPLICA_ALREADY_EXISTS;
 }
 
 namespace
@@ -47,7 +47,7 @@ TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesForeignHolder)
     catch (const DB::Exception & e)
     {
         /// A foreign or not-yet-expired holder is expected runtime state, not a broken invariant.
-        EXPECT_EQ(e.code(), DB::ErrorCodes::ABORTED);
+        EXPECT_EQ(e.code(), DB::ErrorCodes::REPLICA_ALREADY_EXISTS);
     }
     const auto elapsed_ms
         = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started_at).count();
@@ -63,6 +63,30 @@ TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesOwnNode)
 
     EXPECT_NO_THROW(zk->deleteEphemeralNodeIfContentMatches("/mine", "me"));
     EXPECT_FALSE(zk->exists("/mine"));
+}
+
+TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesRewrittenNode)
+{
+    auto zk = makeTestKeeperClient(/*session_timeout_ms=*/ 200);
+    zk->create("/rewritten", "me", zkutil::CreateMode::Persistent);
+
+    try
+    {
+        /// The condition runs after the node and its version have been read, so writing from here makes the
+        /// versioned removal lose the same race a concurrent writer would cause.
+        zk->deleteEphemeralNodeIfContentMatches("/rewritten", [&](const std::string & content)
+        {
+            zk->set("/rewritten", "me");
+            return content == "me";
+        });
+        ADD_FAILURE() << "Expected an exception for a node rewritten while it was being removed";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::REPLICA_ALREADY_EXISTS);
+    }
+
+    EXPECT_TRUE(zk->exists("/rewritten"));
 }
 
 TEST(ZooKeeperTest, TestMatchPath)
