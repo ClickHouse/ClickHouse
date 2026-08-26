@@ -345,6 +345,34 @@ SELECT '-- arm O: a _table filter naming the forwarding target admits the wrappe
 SELECT count() FROM merge(currentDatabase(), '^t04741_file_(buf|sibling)$')
     WHERE _table = 't04741_file_buf_target'; -- { serverError FILE_DOESNT_EXIST }
 
+-- A materialized view is not a transparent wrapper: `StorageMaterializedView::getInMemoryMetadataPtr`
+-- moves the target's `_database`/`_table` to `Plan`, and `StorageWithCommonVirtualColumns::read`
+-- materializes both from the VIEW's own `StorageID`. So a view over a file-like target emits the
+-- view's identity, not the target's, and must be pruned against that: following the target instead
+-- admits the view for `_table = '<target>'` / `_database = ''` and opens its absent file, where
+-- master answered. Arms P and Q are the witnesses, each raising `FILE_DOESNT_EXIST` without the rule.
+CREATE TABLE t04741_file_mv_src (x UInt32) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE t04741_file_mv_target (x UInt32) ENGINE = File(TSV, '04741_no_such_file_4.tsv');
+CREATE MATERIALIZED VIEW t04741_file_mv TO t04741_file_mv_target AS SELECT x FROM t04741_file_mv_src;
+
+SELECT '-- arm P: a materialized view child is pruned against its own name, not its file-like target';
+SELECT count() FROM merge(currentDatabase(), '^t04741_file_(mv|sibling)$')
+    WHERE _table = 't04741_file_mv_target';
+
+-- The view declares no `_database` (its file-like target does not), so its rows carry an empty one and
+-- a `_database = ''` predicate must not prune it, exactly as for the direct file-like child of arm G.
+SELECT '-- arm Q control: a _database filter must not prune the view, whose rows carry an empty one';
+SELECT count() FROM merge(currentDatabase(), '^t04741_file_(mv|sibling)$')
+    WHERE _database = ''; -- { serverError FILE_DOESNT_EXIST }
+
+SELECT '-- arm R control: naming the view itself admits it, and its absent target does raise';
+SELECT count() FROM merge(currentDatabase(), '^t04741_file_(mv|sibling)$')
+    WHERE _table = 't04741_file_mv'; -- { serverError FILE_DOESNT_EXIST }
+
+DROP TABLE t04741_file_mv;
+DROP TABLE t04741_file_mv_target;
+DROP TABLE t04741_file_mv_src;
+
 DROP TABLE t04741_file_buf;
 DROP TABLE t04741_file_buf_target;
 DROP TABLE t04741_file_present;

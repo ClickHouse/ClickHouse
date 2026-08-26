@@ -91,6 +91,10 @@ t04741_file_sibling	23
 -- arm N: same for a direct file-like child
 t04741_file_sibling	23
 -- arm O: a _table filter naming the forwarding target admits the wrapper
+-- arm P: a materialized view child is pruned against its own name, not its file-like target
+0
+-- arm Q control: a _database filter must not prune the view, whose rows carry an empty one
+-- arm R control: naming the view itself admits it, and its absent target does raise
 -- arm I: a _table filter prunes the loop child, so the query terminates
 t04741_loop_sibling	31
 -- arm I control: the pruned plan really does not read it

@@ -1870,8 +1870,36 @@ bool declaresFileLikeSelfStampedTable(const ColumnsDescription & columns, const 
 /// True when reading `child` does not stamp `child`'s own name into every row, so pruning it by name is
 /// required rather than optional. Only wrappers that forward the whole read and prune nothing themselves
 /// are followed, so a nested `Merge`, which prunes by name itself, is not.
-bool readIsNotSelfNamed(const IStorage & child, String & file_like_target_table, size_t depth = 0)
+bool readIsNotSelfNamed(
+    const IStorage & child,
+    QueryProcessingStage::Enum stage,
+    String & emitted_database,
+    String & emitted_table,
+    size_t depth = 0)
 {
+    /// A materialized view is not a transparent wrapper: `StorageMaterializedView::getInMemoryMetadataPtr`
+    /// re-places the target's `_database`/`_table` at `Plan`, and `StorageWithCommonVirtualColumns::read`
+    /// then materializes them from the VIEW's own `StorageID`, whatever the target stamps. So the identity
+    /// the rows carry is the view's, and following the target instead would prune the view against a name
+    /// its rows never carry. That site runs only at `FetchColumns`; above it the view delegates the read
+    /// untouched and the target's stamping is what reaches the rows. A virtual the view does not declare
+    /// is not materialized at all, so the rows carry an empty value for it, as for a file-like child.
+    if (const auto * self_named_view = dynamic_cast<const StorageMaterializedView *>(&child);
+        self_named_view && stage == QueryProcessingStage::FetchColumns)
+    {
+        auto view_metadata = self_named_view->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        const auto & view_virtuals = view_metadata->virtuals;
+        if (view_virtuals.tryGetDescription("_table", VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Plan))
+        {
+            emitted_database
+                = view_virtuals.tryGetDescription("_database", VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Plan)
+                ? self_named_view->getStorageID().getDatabaseName()
+                : "";
+            emitted_table = self_named_view->getStorageID().getTableName();
+            return true;
+        }
+    }
+
     if (child.isStreamingStorage())
         return true;
 #if USE_FILELOG
@@ -1891,19 +1919,21 @@ bool readIsNotSelfNamed(const IStorage & child, String & file_like_target_table,
     /// for every child, so it cannot regress, whereas admitting one of these reads the wrong table.
     if (depth >= max_read_forwarding_depth)
         return true;
-    auto forwards_to = [&file_like_target_table, depth](const std::function<StoragePtr()> & resolve)
+    auto forwards_to = [&emitted_database, &emitted_table, stage, depth](const std::function<StoragePtr()> & resolve)
     {
         auto target = tryResolveForwardingTarget(resolve);
         /// Held for the rest of the decision, so the inspected chain cannot be destroyed under us.
-        if (!target || readIsNotSelfNamed(*target, file_like_target_table, depth + 1))
+        if (!target || readIsNotSelfNamed(*target, stage, emitted_database, emitted_table, depth + 1))
             return true;
         /// A file-like target stamps its own `StorageID`, which is the target's name and not this
         /// wrapper's, so reading through the wrapper is not self-named either. Report that name, so
-        /// the caller prunes against the identity the rows carry rather than the wrapper's.
+        /// the caller prunes against the identity the rows carry rather than the wrapper's. The
+        /// family declares no `_database`, so the rows carry an empty one.
         auto target_metadata = target->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
         if (!declaresFileLikeSelfStampedTable(target_metadata->columns, target_metadata->virtuals))
             return false;
-        file_like_target_table = target->getStorageID().getTableName();
+        emitted_database.clear();
+        emitted_table = target->getStorageID().getTableName();
         return true;
     };
 
@@ -1941,9 +1971,10 @@ bool childMaterializesOwnStorageId(
     /// Pruning these is required rather than optional, at any stage: their rows carry another table's
     /// name, and reading one consumes a queue or never terminates. A file-like forwarding target is the
     /// exception: its name is known, so it is pruned against the identity its rows carry.
-    String file_like_target_table;
-    if (readIsNotSelfNamed(*storage, file_like_target_table))
-        return file_like_target_table.empty() || !table_filter("", file_like_target_table);
+    String emitted_database;
+    String emitted_table;
+    if (readIsNotSelfNamed(*storage, stage, emitted_database, emitted_table))
+        return emitted_table.empty() || !table_filter(emitted_database, emitted_table);
 
     /// Named, because `StorageMetadataHandle` deletes its rvalue `operator->` to stop `virtuals`
     /// outliving the handle.
