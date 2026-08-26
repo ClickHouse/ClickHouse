@@ -26,6 +26,7 @@ struct BuildQueryPipelineSettings
     explicit BuildQueryPipelineSettings(ContextPtr from);
 
     bool enable_multiple_filters_transforms_for_and_chain;
+    bool allow_preliminary_distinct_abandoning;
 
     ExpressionActionsSettings actions_settings;
     QueryStatusPtr process_list_element;
