@@ -1,0 +1,56 @@
+-- fixture is multi-part
+1
+-- deferred prewhere, filter above the exchange
+
+b
+-- ground truth: prewhere not deferred
+
+b
+-- ground truth: no distributed plan
+
+b
+-- deferred prewhere on a bare column
+
+b
+-- ground truth: bare column, no distributed plan
+
+b
+-- deferred filter still excludes rows
+0
+-- same predicate applied before final
+20
+-- select star under a deferred filter
+0	2	b
+1	2	b
+2	2	b
+-- ground truth: select star, no distributed plan
+0	2	b
+1	2	b
+2	2	b
+-- deferred prewhere with a virtual column
+
+t_hdr_05045
+-- ground truth: virtual column, no distributed plan
+
+t_hdr_05045
+-- fixture is multi-part
+1
+-- deferred row policy at default settings
+
+b
+-- ground truth: policy not deferred
+
+b
+-- ground truth: policy, no distributed plan
+
+b
+-- deferred row policy and deferred prewhere
+
+b
+-- ground truth: stacked, no distributed plan
+
+b
+-- deferred row policy still excludes rows
+0
+-- same policy applied before final
+20

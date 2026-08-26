@@ -4859,11 +4859,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         if (deferred_prewhere_info)
             add_required_columns(deferred_prewhere_info->prewhere_actions.getRequiredColumnsNames());
 
-        /// Recreate output_header without the deferred filters since they will be applied after FINAL
-        output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
-            storage_snapshot->getSampleBlockForColumns(all_column_names),
-            query_info.row_level_filter,
-            query_info.prewhere_info));
+        /// The declared output header must not change here: parent steps, and under
+        /// `make_distributed_plan` an already serialized `ShuffleReceiveStep`, are built from it.
+        /// The deferred filters run as pipeline transforms and the converting actions below restore it.
 
         LOG_DEBUG(
             log,
