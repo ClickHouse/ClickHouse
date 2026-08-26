@@ -10,9 +10,10 @@
 
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/Exception.h>
-#include <Common/NaNUtils.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+
+#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
 
 
 namespace DB
@@ -41,12 +42,29 @@ public:
             auto & last = buffer.back();
             if (timestamp == last.first)
             {
-                last.second = getMax(last.second, value);
+                last.second = timeseriesMaxValueForDuplicateTimestamp(last.second, value);
                 return;
             }
             sorted = false;
         }
         buffer.emplace_back(timestamp, value);
+    }
+
+    ALWAYS_INLINE void addMany(const TimestampType * __restrict timestamps, const ValueType * __restrict values, size_t count)
+    {
+        if (count == 0)
+            return;
+
+        const size_t old_size = buffer.size();
+        buffer.resize(old_size + count);
+        auto * __restrict appended = buffer.data() + old_size;
+        for (size_t i = 0; i < count; ++i)
+            appended[i] = {timestamps[i], values[i]};
+
+        UInt8 in_order = old_size == 0 || appended[-1].first < timestamps[0];
+        for (size_t i = 1; i < count; ++i)
+            in_order &= static_cast<UInt8>(timestamps[i - 1] < timestamps[i]);
+        sorted = sorted && in_order;
     }
 
     void merge(const AggregateFunctionTimeseriesSamples & other)
@@ -182,25 +200,14 @@ private:
         return lhs.first < rhs.first;
     }
 
-    /// Returns the larger of two values sharing a timestamp; a NaN loses to any real value.
-    /// The operation is associative and commutative, so the result does not depend on arrival or merge order.
-    static ValueType getMax(ValueType lhs, ValueType rhs)
-    {
-        if (isNaN(lhs))
-            return rhs;
-        if (isNaN(rhs))
-            return lhs;
-        return std::max(lhs, rhs);
-    }
-
-    /// Collapses each equal-timestamp run of a sorted buffer into one sample with `getMax`.
+    /// Collapses each equal-timestamp run of a sorted buffer into one sample with `timeseriesMaxValueForDuplicateTimestamp`.
     static void deduplicateSorted(Buffer & buf)
     {
         size_t last_unique = 0;
         for (size_t i = 1; i < buf.size(); ++i)
         {
             if (buf[i].first == buf[last_unique].first)
-                buf[last_unique].second = getMax(buf[last_unique].second, buf[i].second);
+                buf[last_unique].second = timeseriesMaxValueForDuplicateTimestamp(buf[last_unique].second, buf[i].second);
             else
                 buf[++last_unique] = buf[i];
         }

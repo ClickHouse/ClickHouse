@@ -810,6 +810,18 @@ ClickHouse Keeper에서 키의 메모리 아레나 크기를 바이트 단위로
 
 ClickHouse Keeper에서 마지막으로 커밋된 로그의 인덱스입니다.
 
+<div id="keeperlastleaderelectiontime">
+  ### KeeperLastLeaderElectionTime
+</div>
+
+이 ClickHouse Keeper 인스턴스가 leader가 되면서 종료된, 로컬에서 가장 최근에 관찰된 leader 부재 윈도우의 기간(밀리초)입니다. 샘플링된 leader 부재 state가 나타나지 않는 리더십 전환은 기록되지 않습니다. 이 인스턴스가 활성 leader가 아니거나 완료된 윈도우가 기록되어 있지 않으면 `0`입니다.
+
+<div id="keeperlastleaderunavailabletime">
+  ### KeeperLastLeaderUnavailableTime
+</div>
+
+이 ClickHouse Keeper leader에서 로컬로 관찰된 가장 최근의 leader 부재 윈도우 지속 시간(밀리초)입니다. 이 instance가 활성 leader가 아니거나 완료된 leader 부재 윈도우가 기록되어 있지 않으면 `0`입니다.
+
 <div id="keeperlastlogidx">
   ### KeeperLastLogIdx
 </div>
@@ -1468,7 +1480,7 @@ Prometheus 엔드포인트 서버의 스레드 수입니다. 참고: Prometheus 
   ### ReaderExecutorModeledCostMsPerRequestedMiB
 </div>
 
-Experimental ReaderExecutor 읽기 경로 효율성: 최근 업데이트 인터벌 동안 요청된 바이트의 MiB당 추정 비용(ms)을 인스턴스 전체 기준으로 나타냅니다 -- ProfileEvents ReaderExecutorModeledCostMicroseconds와 ReaderExecutorRequestedBytes의 델타 비율입니다. 값이 낮을수록 좋습니다. 대역폭 하한은 약 20(정상적인 소스 읽기)이며, cache 적중 시 0에 가까워집니다. 과도한 가져오기와 불완전한 연결은 이 값을 높입니다. 0은 해당 인터벌 동안 실행기 읽기가 없었음을 의미합니다.
+Experimental ReaderExecutor 읽기 경로 효율성: 최근 업데이트 인터벌 동안 요청된 바이트의 MiB당 추정 비용(ms)을 인스턴스 전체 기준으로 나타냅니다 -- ProfileEvents ReaderExecutorModeledCostMicroseconds와 ReaderExecutorDeliveredBytes의 델타 비율입니다. 값이 낮을수록 좋습니다. 대역폭 하한은 약 20(정상적인 소스 읽기)이며, 캐시 적중 시 0에 가까워집니다. 과도한 가져오기와 불완전한 연결은 이 값을 높입니다. 0은 해당 인터벌 동안 실행기 읽기가 없었음을 의미합니다.
 
 <div id="replicasmaxabsolutedelay">
   ### ReplicasMaxAbsoluteDelay

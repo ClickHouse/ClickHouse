@@ -310,6 +310,22 @@ std::unique_ptr<WriteBuffer> BackupWriterAzureBlobStorage::writeFile(const Strin
         threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_WRITER));
 }
 
+std::unique_ptr<WriteBuffer> BackupWriterAzureBlobStorage::writeFileIfNotExists(const String & file_name)
+{
+    String key = fs::path(blob_path) / file_name;
+    WriteSettings conditional_write_settings = write_settings;
+    conditional_write_settings.object_storage_write_if_none_match = "*";
+    return std::make_unique<WriteBufferFromAzureBlobStorage>(
+        client,
+        key,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        conditional_write_settings,
+        settings,
+        connection_params.getContainer(),
+        /* blob_log */ nullptr,
+        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_WRITER));
+}
+
 void BackupWriterAzureBlobStorage::removeFile(const String & file_name)
 {
     String key = fs::path(blob_path) / file_name;
