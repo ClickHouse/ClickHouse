@@ -118,7 +118,8 @@ Use the table below to resolve common failures.
 
 | Validation error | Likely cause | How to resolve |
 | --- | --- | --- |
-| **Cannot assume the management role / impersonation failed** | The onboarding stack wasn't completed, or the role/service account or external ID doesn't match | Re-run the latest onboarding stack and confirm the [external ID](#aws-external-id) shown in the console matches the one in your trust policy |
+| **Cannot assume the management role** *(AWS)* | The onboarding stack wasn't completed, or the role or external ID doesn't match | Re-run the latest onboarding stack and confirm the [external ID](#aws-external-id) shown in the console matches the one in your trust policy |
+| **Cannot impersonate the management service account** *(GCP)* | The onboarding Terraform wasn't completed, or the `clickhouse-management` service account is missing or does not grant ClickHouse impersonation | Re-run the latest onboarding Terraform and confirm the `clickhouse-management` service account exists and grants ClickHouse permission to impersonate it |
 | **Missing permission** (e.g. create VPC, create IAM role, create Kubernetes cluster) | The management identity lacks a required permission — often from a customized or outdated stack | Re-run the latest onboarding stack, which grants the full permission set; if you intentionally restrict permissions, add the reported one |
 | **Required API not enabled** *(GCP)* | A required Google Cloud service API is disabled on the project | Enable it, for example `gcloud services enable compute.googleapis.com --project <your-project>` |
 | **Subnet or VPC configuration issue** *(AWS bring-your-own-VPC)* — CIDR too small, missing tag, too few availability zones, no outbound egress, or too few free IP addresses | The provided VPC does not meet the BYOC network requirements | Adjust the VPC to satisfy the [network requirements](/products/bring-your-own-cloud/onboarding/network) |
