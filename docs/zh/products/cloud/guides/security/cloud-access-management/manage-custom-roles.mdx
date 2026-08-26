@@ -86,6 +86,14 @@ ClickHouse Cloud 客户可以选择预定义的系统角色，也可以创建自
   在数据库中使用 [`sql-console-role:<email>` 命名约定](/zh/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles)手动分配的角色，优先于通过控制台分配的角色。
 </Info>
 
+<div id="manage-database-roles-prerequisites">
+  ### 前置条件
+</div>
+
+服务上的自定义数据库角色依赖于 [JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)，禁用时不会生效。在向角色添加数据权限之前，请进入相应服务，打开 `Settings`，然后在 `Security` 部分找到 `JWT authentication` 卡片。确保已启用 `SQL 控制台` 切换开关。
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="已启用 SQL 控制台 切换开关的 JWT 身份验证卡片" size="lg" force />
+
 <Steps>
   <Step title="向角色添加数据权限" id="add-data-permissions">
     [创建自定义角色](#create-custom-role)，或编辑现有角色。在角色对话框中，单击 `Allow permissions` 按钮并选择 `Data`。

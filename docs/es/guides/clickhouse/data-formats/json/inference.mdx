@@ -74,7 +74,7 @@ Puede ver que el conjunto de datos anterior contiene objetos JSON anidados. Aunq
 Al usar la [función s3](/es/reference/functions/table-functions/s3) con el comando `DESCRIBE`, se muestran los tipos que se inferirán.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -117,14 +117,14 @@ Podemos ver que la mayoría de las columnas se han detectado automáticamente co
 
 A continuación, se asume que el JSON tiene una estructura coherente y un único tipo para cada ruta.
 
-Podemos apoyarnos en la inferencia de esquema para consultar datos JSON directamente. A continuación, vemos los autores principales de cada año, aprovechando que las fechas y los arrays se detectan automáticamente.
+Podemos apoyarnos en la inferencia de esquemas para consultar datos JSON directamente. A continuación, vemos los autores principales de cada año, aprovechando que las fechas y los arrays se detectan automáticamente.
 
 ```sql
 SELECT
  toYear(update_date) AS year,
  authors,
     count() AS c
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 GROUP BY
     year,
  authors
@@ -156,7 +156,7 @@ LIMIT 1 BY year
 │ 2024 │ ATLAS Collaboration                        │ 120 │
 └──────┴────────────────────────────────────────────┴─────┘
 
-18 filas en el conjunto. Transcurrido: 20.172 seg. Procesadas 2.52 millones de filas, 1.39 GB (124.72 miles de filas/s., 68.76 MB/s.)
+18 rows in set. Elapsed: 20.172 sec. Processed 2.52 million rows, 1.39 GB (124.72 thousand rows/s., 68.76 MB/s.)
 ```
 
 La inferencia de esquemas permite consultar archivos JSON sin necesidad de definir el esquema, lo que agiliza las tareas de análisis ad hoc de datos.
@@ -172,7 +172,7 @@ CREATE TABLE arxiv
 ENGINE = MergeTree
 ORDER BY update_date EMPTY
 AS SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 SETTINGS schema_inference_make_columns_nullable = 0
 ```
 
@@ -249,7 +249,7 @@ Los comandos anteriores crearon una tabla en la que se pueden cargar datos. Ahor
 
 ```sql
 INSERT INTO arxiv SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 ```
 
 ```response
@@ -337,7 +337,7 @@ Considere el siguiente ejemplo de una versión ampliada del [Python PyPI dataset
 Una muestra de estos datos está disponible públicamente en formato JSON delimitado por saltos de línea. Si intentamos hacer inferencia de esquema sobre este archivo, verá que el rendimiento es bajo y que la respuesta es muy verbosa:
 
 ```sql
-DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN)
 
 -- result omitted for brevity
 ```
@@ -353,7 +353,7 @@ Con miles de columnas únicas, este enfoque de inferencia es lento. Como alterna
 `JSONAsObject` trata toda la entrada como un único objeto JSON y la almacena en una sola columna de tipo [`JSON`](/es/reference/data-types/newjson), por lo que se adapta mejor a payloads JSON muy dinámicos o anidados.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', 'JSONAsObject')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN, 'JSONAsObject')
 SETTINGS describe_compact_output = 1
 ```
 
@@ -375,7 +375,7 @@ Este formato también es esencial cuando las columnas tienen varios tipos que no
 En este caso, ClickHouse puede resolver el conflicto de tipos y determinar que la columna `a` sea de tipo `Nullable(String)`.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -403,7 +403,7 @@ Sin embargo, algunos tipos no son compatibles. Considere el siguiente ejemplo:
 En este caso, no es posible realizar ningún tipo de conversión. Por lo tanto, el comando `DESCRIBE` falla:
 
 ```sql
-DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json')
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN)
 ```
 
 ```response
@@ -419,7 +419,7 @@ Code: 53. DB::Exception: Automatically defined type Tuple(b Int64) for column 'a
 En este caso, `JSONAsObject` trata cada fila como un único tipo [`JSON`](/es/reference/data-types/newjson) (que permite que una misma columna tenga varios tipos). Esto es esencial:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', JSONAsObject)
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN, JSONAsObject)
 SETTINGS enable_json_type = 1, describe_compact_output = 1
 ```
 

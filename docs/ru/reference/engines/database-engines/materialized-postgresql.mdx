@@ -171,7 +171,7 @@ WHERE oid = 'postgres_table'::regclass;
 ```
 
 <Note>
-  Репликация значений [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) не поддерживается. Будет использовано значение по умолчанию для данного типа данных.
+  Значения [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) реплицируются. Если PostgreSQL при обновлении отправляет неизменённую ссылку TOAST, существующее значение сохраняется. Если столбец идентификации реплики TOAST не изменился, PostgreSQL должен отправить старый кортеж ключа, иначе строку невозможно идентифицировать.
 </Note>
 
 <div id="settings">

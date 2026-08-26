@@ -4937,6 +4937,90 @@ SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
 └───┴───┴────────────────┴───────────────┘
 ```
 
+<div id="pgGetUserById">
+  ## pgGetUserById
+</div>
+
+引入版本：v26.8.0
+
+PostgreSQL wire protocol 的兼容函数，类似于 `pg_catalog.pg_get_userbyid`。
+PostgreSQL 客户端 (例如 `psql` 中的 `\d` 命令) 使用该函数显示表的所有者。
+ClickHouse 不跟踪表的所有权，因此该函数会忽略参数并返回当前用户的名称。
+
+<Note>
+  此函数是非确定性的：对于相同的参数，可能返回不同的结果。
+</Note>
+
+**语法**
+
+```sql
+pgGetUserById(oid)
+```
+
+**别名**：`pg_get_userbyid`
+
+**参数**
+
+* `oid` — 角色的对象标识符。该值将被忽略。[`UInt32`](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+返回当前用户的名称。[`String`](/zh/reference/data-types/string)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT pg_get_userbyid(10)
+```
+
+```response title=Response
+┌─pgGetUserById(10)─┐
+│ default           │
+└───────────────────┘
+```
+
+<div id="pgTableIsVisible">
+  ## pgTableIsVisible
+</div>
+
+引入版本：v26.8.0
+
+用于 PostgreSQL wire protocol 的兼容函数，对应于 `pg_catalog.pg_table_is_visible`。
+PostgreSQL 客户端 (例如 `psql` 中的 `\d` 命令) 使用该函数过滤搜索路径中可见的表。
+ClickHouse 模拟的 `pg_class` 视图仅暴露当前数据库中的表，且这些表均可见，因此该函数始终返回 `1`。
+
+**语法**
+
+```sql
+pgTableIsVisible(oid)
+```
+
+**别名**：`pg_table_is_visible`
+
+**参数**
+
+* `oid` — 表的对象标识符，通过模拟的 `pg_class` 视图提供。该值会被忽略。[`UInt32`](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+始终返回 `1`。[`UInt8`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT pg_table_is_visible(0)
+```
+
+```response title=Response
+┌─pgTableIsVisible(0)─┐
+│                   1 │
+└─────────────────────┘
+```
+
 <div id="queryID">
   ## queryID
 </div>
@@ -5566,7 +5650,12 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 引入版本：v22.6.0
 
 如果已配置，将显示当前服务器的 SSL 证书信息。
+如果服务器没有证书，则返回空映射，例如证书通过 ACME 配置但尚未签发时。
 有关如何将 ClickHouse 配置为使用 OpenSSL 证书验证连接的更多信息，请参见 [配置 TLS](/zh/concepts/features/security/tls/configuring-tls)。
+
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
 
 **语法**
 

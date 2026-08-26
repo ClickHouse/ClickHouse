@@ -485,16 +485,16 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 **语法**
 
 ```sql
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 ```
 
 **别名**: `hasAllToken`
 
 **参数**
 
-* `input` — 输入列。[`String`](/zh/reference/data-types/string)、[`FixedString`](/zh/reference/data-types/fixedstring)、[`Array(String)`](/zh/reference/data-types/array) 或 [`Array(FixedString)`](/zh/reference/data-types/array)
+* `input` — 输入列。[`String`](/zh/reference/data-types/string)、[`FixedString`](/zh/reference/data-types/fixedstring)、[`Nullable(String)`](/zh/reference/data-types/nullable)、[`Nullable(FixedString)`](/zh/reference/data-types/nullable)、[`Array(String)`](/zh/reference/data-types/array)、[`Array(FixedString)`](/zh/reference/data-types/array)、[`Array(Nullable(String))`](/zh/reference/data-types/array) 或 [`Array(Nullable(FixedString))`](/zh/reference/data-types/array)
 * `needles` — 待搜索的标记。[`String`](/zh/reference/data-types/string) 或 [`Array(String)`](/zh/reference/data-types/array)
-* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。可选；如果未显式设置，默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
+* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。可选；如果未显式设置，默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -524,7 +524,7 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**指定要在数组中按原样搜索的 needle (不进行标记化)**
+**在数组中指定按原样搜索的项 (不进行标记化)&#x20;**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -715,7 +715,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 **语法**
 
 ```sql
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 ```
 
 **别名**: `hasAnyToken`
@@ -724,7 +724,7 @@ hasAnyTokens(input, needles)
 
 * `input` — 输入列。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`Nullable(String)`](/zh/reference/data-types/nullable) 或 [`Nullable(FixedString)`](/zh/reference/data-types/nullable) 或 [`Array(String)`](/zh/reference/data-types/array) 或 [`Array(FixedString)`](/zh/reference/data-types/array) 或 [`Array(Nullable(String))`](/zh/reference/data-types/array) 或 [`Array(Nullable(FixedString))`](/zh/reference/data-types/array)
 * `needles` — 待搜索的标记。[`String`](/zh/reference/data-types/string) 或 [`Array(String)`](/zh/reference/data-types/array)
-* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。该参数为可选项；如果未显式设置，则默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
+* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。该参数为可选项；如果未显式设置，则默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -911,12 +911,13 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
   如果未定义 文本索引，该函数会执行穷举列扫描，其速度比索引查找慢几个数量级。
 </Note>
 
-搜索前，该函数会使用为 文本索引 指定的分词器，对 `input` 和 `phrase` 参数进行分词。
+搜索前，该函数会使用为 文本索引 指定的分词器，对 `input` 和 `phrase` 参数进行标记化。
 如果该列未定义 文本索引，则改用 `splitByNonAlpha` 分词器——除非通过可选的第三个参数提供了分词器。
-`tokenizer` 参数必须是 `splitByNonAlpha`、`splitByString`、`ngrams`、`asciiCJK` 或 `icu` 之一。
+`tokenizer` 参数必须是 `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`ngrams`、`asciiCJK` 或 `icu` 之一。
+请注意，当 文本索引 还定义了后处理器时，`hasPhrase` 不支持 `splitByRegexp`。
 
 <Note>
-  当 文本索引 定义了 [预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasPhrase` 会在分词前将其应用于 `input` 和 `phrase`。
+  当 文本索引 定义了 [预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasPhrase` 会在标记化前将其应用于 `input` 和 `phrase`。
   预处理器仅在 文本索引 路径上生效，因此，使用 文本索引 的查询与不使用 文本索引 的查询，结果可能不同 (例如 `SETTINGS use_skip_indexes = 0`) 。
   为了提高全文检索的易用性，可以容忍这种不一致。
 </Note>
@@ -1538,7 +1539,7 @@ SELECT locate('ca', 'abcabc')
 
 如果你只是想搜索子字符串，可以改用函数 [`like`](#like) 或 [`position`](#position)，它们的速度比此函数快得多。
 
-可选的运算符语法：`haystack REGEXP pattern`。
+可选的运算符语法：`haystack REGEXP pattern` 或 `haystack ~ pattern` (PostgreSQL 风格) 。
 
 **语法**
 
@@ -1593,6 +1594,48 @@ SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')
 ┌─match('abcde', 'b.*d')─┬─match('abcde', '^b.*d$')─┐
 │                      1 │                        0 │
 └────────────────────────┴──────────────────────────┘
+```
+
+<div id="matchCaseInsensitive">
+  ## matchCaseInsensitive
+</div>
+
+引入版本：v26.8.0
+
+与 [`match`](#match) 类似，但进行不区分大小写的匹配。
+
+此函数使用 RE2 正则表达式 库。支持的语法请参阅 [re2](https://github.com/google/re2/wiki/Syntax)。
+
+可选的运算符语法：`haystack ~* pattern` (PostgreSQL 风格) 。
+
+**语法**
+
+```sql
+matchCaseInsensitive(haystack, pattern)
+-- haystack ~* pattern
+```
+
+**参数**
+
+* `haystack` — 在其中搜索模式的 String。[`String`](/zh/reference/data-types/string)
+* `pattern` — 正则表达式模式。可以是常量，也可以来自列。[`String`](/zh/reference/data-types/string)
+
+**返回值**
+
+如果不区分大小写地匹配该模式，则返回 `1`，否则返回 `0`。[`UInt8`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT matchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' ~* 'HELLO.*'
+```
+
+```response title=Response
+┌─matchCaseIns⋯ 'hello.*')─┬─'Hello World' ~* 'HELLO.*'─┐
+│                        1 │                          1 │
+└──────────────────────────┴────────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAllIndices">
@@ -2892,6 +2935,90 @@ SELECT notLike('ClickHouse', '%SQL%');
 ┌─notLike('Cli⋯', '%SQL%')─┐
 │                        1 │
 └──────────────────────────┘
+```
+
+<div id="notMatch">
+  ## notMatch
+</div>
+
+引入版本：v26.8.0
+
+与 [`match`](#match) 类似，但会对结果取反：检查字符串是否不匹配正则表达式模式。
+
+此函数使用 RE2 正则表达式 库。支持的语法请参阅 [re2](https://github.com/google/re2/wiki/Syntax)。
+
+可选的运算符语法：`haystack !~ pattern` (PostgreSQL 风格) 。
+
+**语法**
+
+```sql
+notMatch(haystack, pattern)
+-- haystack !~ pattern
+```
+
+**参数**
+
+* `haystack` — 在其中搜索模式的 String。[`String`](/zh/reference/data-types/string)
+* `pattern` — 正则表达式模式。可以是常量，也可以来自列。[`String`](/zh/reference/data-types/string)
+
+**返回值**
+
+如果匹配该模式，则返回 `0`，否则返回 `1`。[`UInt8`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT notMatch('Hello World', 'Hello.*'), 'Hello World' !~ 'goodbye.*'
+```
+
+```response title=Response
+┌─notMatch('He⋯ 'Hello.*')─┬─'Hello World⋯goodbye.*'─┐
+│                        0 │                       1 │
+└──────────────────────────┴─────────────────────────┘
+```
+
+<div id="notMatchCaseInsensitive">
+  ## notMatchCaseInsensitive
+</div>
+
+引入版本：v26.8.0
+
+与 [`matchCaseInsensitive`](#matchCaseInsensitive) 类似，但会对结果取反：检查字符串是否不与正则表达式模式进行不区分大小写的匹配。
+
+此函数使用 RE2 正则表达式库。支持的语法请参阅 [re2](https://github.com/google/re2/wiki/Syntax)。
+
+可选的运算符语法：`haystack !~* pattern` (PostgreSQL 风格) 。
+
+**语法**
+
+```sql
+notMatchCaseInsensitive(haystack, pattern)
+-- haystack !~* pattern
+```
+
+**参数**
+
+* `haystack` — 在其中搜索模式的 String。[`String`](/zh/reference/data-types/string)
+* `pattern` — 正则表达式模式。可以是常量，也可以来自列。[`String`](/zh/reference/data-types/string)
+
+**返回值**
+
+如果不区分大小写地匹配该模式，则返回 `0`，否则返回 `1`。[`UInt8`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT notMatchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' !~* 'GOODBYE.*'
+```
+
+```response title=Response
+┌─notMatchCase⋯ 'hello.*')─┬─'Hello World⋯GOODBYE.*'─┐
+│                        0 │                       1 │
+└──────────────────────────┴─────────────────────────┘
 ```
 
 <div id="position">

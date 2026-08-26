@@ -197,12 +197,13 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "default_*",
-      count: 4,
+      count: 5,
       settings: [
         { name: "default_database", path: "/default#default_database", default: "default" },
         { name: "default_password_type", path: "/default#default_password_type", default: "sha256_password" },
         { name: "default_profile", path: "/default#default_profile", default: "default" },
-        { name: "default_session_timeout", path: "/default#default_session_timeout", default: "60" }
+        { name: "default_session_timeout", path: "/default#default_session_timeout", default: "60" },
+        { name: "default_session_user", path: "/default#default_session_user", default: "default" }
       ],
       children: []
     },
@@ -1053,7 +1054,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       count: 3,
       settings: [
         { name: "shutdown_wait_backups_and_restores", path: "/shutdown-wait#shutdown_wait_backups_and_restores", default: "1" },
-        { name: "shutdown_wait_unfinished", path: "/shutdown-wait#shutdown_wait_unfinished", default: "5" },
+        { name: "shutdown_wait_unfinished", path: "/shutdown-wait#shutdown_wait_unfinished", default: "120" },
         { name: "shutdown_wait_unfinished_queries", path: "/shutdown-wait#shutdown_wait_unfinished_queries", default: "0" }
       ],
       children: []
@@ -1324,8 +1325,8 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "cannot_allocate_thread_fault_injection_probability", path: "/other#cannot_allocate_thread_fault_injection_probability", default: "0" },
         { name: "cgroups_memory_usage_observer_wait_time", path: "/other#cgroups_memory_usage_observer_wait_time", default: "15" },
         { name: "compression", path: "/other#compression" },
-        { name: "config_reload_interval_ms", path: "/other#config_reload_interval_ms", default: "2000" },
         { name: "config-file", path: "/other#config-file", default: "config.xml" },
+        { name: "config_reload_interval_ms", path: "/other#config_reload_interval_ms", default: "2000" },
         { name: "core_dump", path: "/other#core_dump" },
         { name: "crash_log", path: "/other#crash_log" },
         { name: "create_union_system_log_tables", path: "/other#create_union_system_log_tables" },

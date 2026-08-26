@@ -367,8 +367,11 @@ Introducido en: v26.8.0
 
 Evalúa una condición en lenguaje natural sobre el texto proporcionado mediante un proveedor de LLM y devuelve un valor booleano (`UInt8`) apto para `WHERE`, `PREWHERE` y `JOIN ... ON`.
 
-La función solicita al modelo que responda únicamente con `true` o `false` en minúsculas. Las solicitudes fallidas (cuando
-`ai_function_throw_on_error` está deshabilitado) y las respuestas no reconocidas se asignan a `0`, por lo que se excluye la fila.
+La función solicita al modelo que responda únicamente con `true` o `false` en minúsculas. Cualquier respuesta completa distinta
+de `true` (incluidos `false` y texto no reconocido) se asigna a `0`, por lo que se excluye la fila. Una
+respuesta incompleta indicada por el proveedor —truncada, filtrada por contenido o que requiere una acción adicional— se
+trata como un error: con `ai_function_throw_on_error` habilitado (el valor predeterminado), la consulta se aborta; si está
+deshabilitado, la fila se asigna a `0` y se excluye.
 
 **Advertencia:** No confíe en los resultados de `aiFilter` sin revisarlos detenidamente. Los predicados basados en LLM pueden ser incorrectos
 o inconsistentes; utilícelos solo cuando los falsos positivos y los falsos negativos sean aceptables.
@@ -498,8 +501,9 @@ el salto de línea y el retorno de carro también se normalizan a espacios antes
 idéntica byte a byte a las entradas que los contienen.
 
 Dado que `aiRedact` devuelve el texto de entrada completo con la PII reemplazada, la salida tiene aproximadamente la misma longitud que la entrada.
-Establezca `max_tokens` (valor predeterminado: `1024`) por encima de la longitud de la entrada en tokens; una respuesta truncada por un límite demasiado bajo
-estará incompleta.
+Establezca `max_tokens` (valor predeterminado: `1024`) por encima de la longitud de la entrada en tokens; una respuesta truncada por un límite demasiado bajo se
+rechaza con `AI_PROVIDER_RESPONSE_TRUNCATED` (o devuelve el valor predeterminado de la columna cuando `ai_function_throw_on_error`
+está deshabilitado) en lugar de devolver texto parcialmente redactado.
 
 **Sintaxis**
 
@@ -511,17 +515,17 @@ aiRedact(text, categories[, params])
 
 **Argumentos**
 
-* `text` — Texto que se va a ocultar. [`String`](/es/reference/data-types/string)
-* `categories` — Lista constante de categorías de PII que se deben ocultar (p. ej., `['name', 'ssn', 'credit_card']`). Un array vacío usa un conjunto predeterminado de categorías comunes (nombre, correo electrónico, número de teléfono, dirección, tarjeta de crédito, dirección IP). [`Array(String)`](/es/reference/data-types/array)
-* `params` — `Map(String, String)` constante opcional de parámetros. Claves específicas de la función: `temperature` (temperatura de muestreo que controla la aleatoriedad; valor predeterminado `0.0`), `max_tokens` (máximo de tokens de salida por llamada; valor predeterminado `1024` — como `aiRedact` devuelve el texto completo, establézcalo por encima de la longitud de la entrada en tokens; de lo contrario, la respuesta podría truncarse y quedar incompleta), `replacement` (token que reemplaza cada span de PII detectado; valor predeterminado `[REDACTED]`). También se aplican los parámetros comunes `credentials` y `model` (consulte [Funciones de IA](/es/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/es/reference/data-types/map)
+* `text` — Texto que se va a redactar. [`String`](/es/reference/data-types/string)
+* `categories` — Lista constante de categorías de PII que se deben redactar (p. ej., `['name', 'ssn', 'credit_card']`). Un array vacío usa un conjunto predeterminado de categorías comunes (nombre, correo electrónico, número de teléfono, dirección, tarjeta de crédito, dirección IP). [`Array(String)`](/es/reference/data-types/array)
+* `params` — `Map(String, String)` constante opcional de parámetros. Claves específicas de la función: `temperature` (temperatura de muestreo que controla la aleatoriedad; valor predeterminado `0.0`), `max_tokens` (máximo de tokens de salida por llamada; valor predeterminado `1024` — como `aiRedact` devuelve el texto completo, establézcalo por encima de la longitud de la entrada en tokens; una respuesta truncada por un límite demasiado bajo se rechaza en lugar de devolver texto parcialmente redactado), `replacement` (token que reemplaza cada span de PII detectado; valor predeterminado `[REDACTED]`). También se aplican los parámetros comunes `credentials` y `model` (consulte [Funciones de IA](/es/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/es/reference/data-types/map)
 
 **Valor devuelto**
 
-El texto con la PII detectada reemplazada por el token de ocultación, o el valor predeterminado del tipo de columna (cadena vacía) si la solicitud falló y `ai_function_throw_on_error` está deshabilitado. [`String`](/es/reference/data-types/string)
+El texto con la PII detectada reemplazada por el token de redacción, o el valor predeterminado del tipo de columna (cadena vacía) si la solicitud falló y `ai_function_throw_on_error` está deshabilitado. [`String`](/es/reference/data-types/string)
 
 **Ejemplos**
 
-**Ocultar categorías específicas**
+**Redactar categorías específicas**
 
 ```sql title=Query
 SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
@@ -531,7 +535,7 @@ SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org
 Purchase was done by customer [REDACTED] with email [REDACTED]
 ```
 
-**Oculta las categorías de PII predeterminadas con un token personalizado**
+**Redacta las categorías de PII predeterminadas con un token personalizado**
 
 ```sql title=Query
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5

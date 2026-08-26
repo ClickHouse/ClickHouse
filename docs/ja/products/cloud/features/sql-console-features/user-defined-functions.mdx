@@ -16,7 +16,7 @@ ClickHouse Cloud では、ユーザー定義関数を作成および管理する
 1. SQL を使用する
 2. UI と独自のコードを使用する (公開ベータ)
 3. [Cloud API](#manage-udfs-with-the-cloud-api) を使用する (ベータ)
-4. [Terraform](#manage-udfs-with-terraform) を使用する (alpha)
+4. [Terraform](#manage-udfs-with-terraform) を使用する (ベータ)
 
 <div id="sql-udfs">
   ## SQL ユーザー定義関数
@@ -231,13 +231,15 @@ API を介した UDF の作成とデプロイの一般的なワークフロー�
   ## Terraform で UDF を管理する
 </div>
 
+<BetaBadge />
+
 公式の [ClickHouse Terraform プロバイダー](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs)には、Infrastructure as Code として UDF を管理するためのリソースが 2 つ含まれています。
 
 * [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md)は、関数自体を管理します。関数のソースコードを含む ZIP アーカイブを受け取り、アーカイブのハッシュが変更されるたびに新しいバージョンをパブリッシュし、ビルドの完了を待機します。
 * [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md)は、UDF のバージョンをサービスにアタッチします。サービスに関連付けられる関数のバージョンは、一度に最大 1 つです。固定のバージョン番号を指定することも、`clickhouse_udf.<name>.version` を参照してサービスを最新バージョンに自動更新することもできます。
 
 <Note>
-  これらのリソースは、プロバイダーのバージョン 3.24.0 以降で利用できます。alpha ステータスであり、今後のプロバイダーバージョンで動作が変更される可能性があります。
+  これらのリソースは、プロバイダーのバージョン 3.24.0 以降で利用できます。ベータ版であり、今後のプロバイダーバージョンで動作が変更される可能性があります。
 </Note>
 
 たとえば、前の例の `isBusinessHours` UDF を Terraform でデプロイするには、次のようにします。

@@ -367,8 +367,11 @@ Introduzido em: v26.8.0
 
 Avalia uma condição em linguagem natural em relação ao texto fornecido usando um provedor de LLM e retorna um valor booleano (`UInt8`) adequado para `WHERE`, `PREWHERE` e `JOIN ... ON`.
 
-A função solicita que o modelo responda apenas com `true` ou `false` em letras minúsculas. Solicitações com falha (quando
-`ai_function_throw_on_error` está desabilitado) e respostas não reconhecidas são mapeadas para `0`, portanto a linha é filtrada.
+A função solicita que o modelo responda apenas com `true` ou `false` em letras minúsculas. Qualquer resposta completa diferente
+de `true` (incluindo `false` e texto não reconhecido) é mapeada para `0`, portanto a linha é filtrada. Uma
+resposta incompleta sinalizada pelo provedor — truncada, filtrada por conteúdo ou que exija ação adicional — é, em vez disso,
+tratada como um erro: com `ai_function_throw_on_error` habilitado (o padrão), a consulta é interrompida; com ele
+desabilitado, a linha é mapeada para `0` e filtrada.
 
 **Aviso:** Não confie nos resultados de `aiFilter` sem analisá-los cuidadosamente. Predicados baseados em LLM podem estar incorretos
 ou ser inconsistentes; use-os apenas quando falsos positivos e falsos negativos forem aceitáveis.
@@ -395,7 +398,7 @@ aiFilter(text, condition[, params])
 
 **Valor retornado**
 
-`1` se o texto atender à condição; caso contrário, `0`. Retorna o valor padrão (`0`) se a solicitação falhar e `ai_function_throw_on_error` estiver desabilitado. [`UInt8`](/pt-BR/reference/data-types/int-uint)
+`1` se o texto atender à condição; caso contrário, `0`. Retorna o valor padrão (`0`) se a requisição falhar e `ai_function_throw_on_error` estiver desabilitado. [`UInt8`](/pt-BR/reference/data-types/int-uint)
 
 **Exemplos**
 
@@ -494,12 +497,13 @@ recorre a um conjunto padrão de categorias comuns (nome, e-mail, número de tel
 
 `aiRedact` instrui o modelo a alterar apenas os spans de PII detectados, mas a preservação do texto ao redor é
 feita conforme as melhores práticas possíveis, e o modelo ainda pode alterá-lo (consulte o aviso acima). Caracteres de controle diferentes de tabulação,
-quebra de linha e retorno de carro também são normalizados para espaços antes da solicitação; portanto, a saída não é
+quebra de linha e retorno de carro também são normalizados para espaços antes da requisição; portanto, a saída não é
 idêntica em bytes a entradas que os contêm.
 
 Como `aiRedact` retorna todo o texto de entrada com PII substituída, a saída tem aproximadamente o mesmo tamanho da entrada.
-Defina `max_tokens` (padrão `1024`) como um valor maior que o comprimento da entrada em tokens; uma resposta truncada por um limite muito baixo
-ficará incompleta.
+Defina `max_tokens` (padrão `1024`) como um valor maior que o comprimento da entrada em tokens; uma resposta truncada por um limite muito baixo será
+rejeitada com `AI_PROVIDER_RESPONSE_TRUNCATED` (ou produzirá o valor padrão da coluna quando `ai_function_throw_on_error`
+estiver desabilitado), em vez de retornar texto parcialmente ocultado.
 
 **Sintaxe**
 
@@ -513,11 +517,11 @@ aiRedact(text, categories[, params])
 
 * `text` — Texto a ser ocultado. [`String`](/pt-BR/reference/data-types/string)
 * `categories` — Lista constante de categorias de PII a serem ocultadas (por exemplo, `['name', 'ssn', 'credit_card']`). Um array vazio usa um conjunto padrão de categorias comuns (nome, e-mail, número de telefone, endereço, cartão de crédito, endereço IP). [`Array(String)`](/pt-BR/reference/data-types/array)
-* `params` — `Map(String, String)` constante opcional de parâmetros. Chaves específicas da função: `temperature` (temperatura de amostragem que controla a aleatoriedade; padrão `0.0`), `max_tokens` (número máximo de tokens de saída por chamada; padrão `1024` — como `aiRedact` retorna o texto completo, defina-o como maior que o comprimento da entrada em tokens; caso contrário, a resposta poderá ser truncada e incompleta), `replacement` (token que substitui cada span de PII detectado; padrão `[REDACTED]`). Os parâmetros comuns `credentials` e `model` também se aplicam (consulte [Funções de IA](/pt-BR/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/pt-BR/reference/data-types/map)
+* `params` — `Map(String, String)` constante opcional de parâmetros. Chaves específicas da função: `temperature` (temperatura de amostragem que controla a aleatoriedade; padrão `0.0`), `max_tokens` (número máximo de tokens de saída por chamada; padrão `1024` — como `aiRedact` retorna o texto completo, defina-o como maior que o comprimento da entrada em tokens; uma resposta truncada devido a um limite muito baixo é rejeitada, em vez de retornar texto parcialmente ocultado), `replacement` (token que substitui cada span de PII detectado; padrão `[REDACTED]`). Os parâmetros comuns `credentials` e `model` também se aplicam (consulte [Funções de IA](/pt-BR/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/pt-BR/reference/data-types/map)
 
 **Valor retornado**
 
-O texto com as PII detectadas substituídas pelo token de ocultação ou o valor padrão do tipo da coluna (string vazia), caso a solicitação falhe e `ai_function_throw_on_error` esteja desabilitado. [`String`](/pt-BR/reference/data-types/string)
+O texto com as PII detectadas substituídas pelo token de ocultação ou o valor padrão do tipo da coluna (string vazia), caso a requisição falhe e `ai_function_throw_on_error` esteja desabilitado. [`String`](/pt-BR/reference/data-types/string)
 
 **Exemplos**
 

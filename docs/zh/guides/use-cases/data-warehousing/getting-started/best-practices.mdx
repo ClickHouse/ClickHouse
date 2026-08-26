@@ -33,7 +33,7 @@ WHERE event_date >= today() - 7
 
 对于 AWS S3 和 GCS，请使用 S3 变体。Azure 和本地文件系统则有各自的专用变体 (`icebergAzure`、`icebergLocal`，以及其他格式中的对应变体) 。完整列表请参见[直接查询](/zh/guides/use-cases/data-warehousing/getting-started/querying-directly)。
 
-[Paimon](/zh/reference/functions/table-functions/paimon)仅提供表函数。
+[Paimon](/zh/reference/functions/table-functions/paimon)提供表函数和[实验性表引擎](/zh/reference/engines/table-engines/integrations/paimon)。
 
 <div id="table-engines">
   ### 表引擎

@@ -4936,6 +4936,90 @@ SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
 └───┴───┴────────────────┴───────────────┘
 ```
 
+<div id="pgGetUserById">
+  ## pgGetUserById
+</div>
+
+導入バージョン: v26.8.0
+
+PostgreSQL ワイヤプロトコルの互換性関数であり、`pg_catalog.pg_get_userbyid` に相当します。
+PostgreSQL クライアント (たとえば、`psql` の `\d` コマンド) は、テーブルの所有者を表示するためにこの関数を使用します。
+ClickHouse はテーブルの所有者を管理しないため、この関数は引数を無視し、現在のユーザー名を返します。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
+
+**構文**
+
+```sql
+pgGetUserById(oid)
+```
+
+**別名**: `pg_get_userbyid`
+
+**引数**
+
+* `oid` — ロールのオブジェクト識別子。値は無視されます。[`UInt32`](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+現在のユーザー名を返します。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT pg_get_userbyid(10)
+```
+
+```response title=Response
+┌─pgGetUserById(10)─┐
+│ default           │
+└───────────────────┘
+```
+
+<div id="pgTableIsVisible">
+  ## pgTableIsVisible
+</div>
+
+導入バージョン: v26.8.0
+
+PostgreSQL ワイヤプロトコルとの互換性関数で、`pg_catalog.pg_table_is_visible` に相当します。
+PostgreSQL クライアント (たとえば `psql` の `\d` コマンド) は、検索パス内で可視のテーブルを絞り込むためにこの関数を使用します。
+ClickHouse がエミュレートする `pg_class` ビューには、すべて可視である現在のデータベースのテーブルのみが含まれるため、この関数は常に `1` を返します。
+
+**構文**
+
+```sql
+pgTableIsVisible(oid)
+```
+
+**別名**: `pg_table_is_visible`
+
+**引数**
+
+* `oid` — エミュレートされた `pg_class` ビューで公開されるテーブルのオブジェクト識別子。この値は無視されます。[`UInt32`](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+常に `1` を返します。[`UInt8`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT pg_table_is_visible(0)
+```
+
+```response title=Response
+┌─pgTableIsVisible(0)─┐
+│                   1 │
+└─────────────────────┘
+```
+
 <div id="queryID">
   ## queryID
 </div>
@@ -5565,7 +5649,12 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 導入バージョン: v22.6.0
 
 設定されている場合は、現在のサーバーの Secure Sockets Layer (SSL) 証明書に関する情報を表示します。
+サーバーに証明書がない場合は空のマップを返します。たとえば、証明書が ACME によってプロビジョニングされており、まだ発行されていない場合です。
 接続の検証に OpenSSL 証明書を使用するように ClickHouse を設定する方法について詳しくは、[TLS の設定](/ja/concepts/features/security/tls/configuring-tls) を参照してください。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返す可能性があります。
+</Note>
 
 **構文**
 

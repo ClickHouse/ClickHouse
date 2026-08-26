@@ -20,7 +20,7 @@ doc_type: 'reference'
 
 * `name` ([String](/zh/reference/data-types/string)) — LAYOUT 子句中指定的字典布局名称。
 * `is_complex` ([UInt8](/zh/reference/data-types/int-uint)) — 该布局是否需要复杂键 (由多个属性组成，或为非整数类型的键) 。
-* `description` ([String](/zh/reference/data-types/string)) — 对字典布局功能的概述。
+* `description` ([String](/zh/reference/data-types/string)) — 对字典布局功能的描述。对于具有专门文档页面的布局，此项包含该页面完整的 Markdown 正文；对于其余布局，此项为简要摘要。
 * `syntax` ([String](/zh/reference/data-types/string)) — 如何在 CREATE DICTIONARY 查询的 LAYOUT 子句中指定该布局。
 * `examples` ([String](/zh/reference/data-types/string)) — 使用示例。
 * `introduced_in` ([String](/zh/reference/data-types/string)) — 首次引入该布局的 ClickHouse 版本，格式为 major.minor。

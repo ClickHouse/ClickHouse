@@ -86,6 +86,14 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   تكون للأدوار المعيّنة يدويًا في قاعدة البيانات باستخدام [اصطلاح التسمية `sql-console-role:<email>`](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) أولوية على الأدوار المعيّنة عبر Console.
 </Info>
 
+<div id="manage-database-roles-prerequisites">
+  ### المتطلبات الأساسية
+</div>
+
+تعتمد أدوار قاعدة البيانات المخصصة في الخدمة على [مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)، ولا تُطبّق عندما تكون معطّلة. قبل إضافة أذونات للبيانات إلى دور، انتقل إلى الخدمة، وافتح `Settings`، ثم ابحث عن بطاقة `JWT authentication` في قسم `Security`. تأكد من أن مفتاح التبديل `SQL Console` مفعّل.
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="بطاقة مصادقة JWT مع تفعيل مفتاح تبديل SQL Console" size="lg" force />
+
 <Steps>
   <Step title="إضافة أذونات للبيانات إلى دور" id="add-data-permissions">
     [أنشئ دورًا مخصصًا](#create-custom-role) أو حرّر دورًا موجودًا. في مربع حوار الدور، انقر فوق الزر `Allow permissions` واختر `Data`.

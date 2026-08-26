@@ -577,6 +577,42 @@ SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('src1'
 └───────┴──────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+<div id="timeSeriesMetricTypeToSuffixes">
+  ## timeSeriesMetricTypeToSuffixes
+</div>
+
+導入バージョン: v26.8.0
+
+指定された Prometheus タイプのメトリクスファミリーに対応するメトリクス名の接尾辞を返します。
+
+**構文**
+
+```sql
+timeSeriesMetricTypeToSuffixes(type)
+```
+
+**引数**
+
+* `type` — Prometheus メトリクスのタイプ (`counter`、`gauge`、`histogram`、`summary` など) 。[`String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+指定したタイプのメトリクスファミリーの接尾辞を返します。[`Array(String)`](/ja/reference/data-types/array)
+
+**例**
+
+**例**
+
+```sql title=Query
+SELECT timeSeriesMetricTypeToSuffixes('histogram') AS suffixes;
+```
+
+```response title=Response
+┌─suffixes──────────────────────┐
+│ ['_bucket','_count','_sum']   │
+└───────────────────────────────┘
+```
+
 <div id="timeSeriesRange">
   ## timeSeriesRange
 </div>
@@ -906,6 +942,46 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 ┌─group1─┬─group2─┬─empty_group─┬─same_group2─┬─throwIf(notEquals(same_group2, group2))─┬─timeSeriesGroupToTags(group2)──┐
 │      1 │      2 │           0 │           2 │                                       0 │ [('__name__','http_failures')] │
 └────────┴────────┴─────────────┴─────────────┴─────────────────────────────────────────┴────────────────────────────────┘
+```
+
+<div id="timeSeriesTagsToMap">
+  ## timeSeriesTagsToMap
+</div>
+
+導入バージョン: v26.8.0
+
+`(tag_name, tag_value)` ペアの配列と、タグ名および値を個別に指定する引数を組み合わせて、単一のマップを作成します。
+結果はタグ名でソートされ、重複したタグ名と値が空のタグは削除されます。
+
+**構文**
+
+```sql
+timeSeriesTagsToMap(tags_array, tag_name_1, tag_value_1, tag_name_2, tag_value_2, ...)
+```
+
+**引数**
+
+* `tags_array` —  (tag&#95;name, tag&#95;value) からなるペアのArray。[`Array(Tuple(String, String))`](/ja/reference/data-types/array)、[`Map(String, String)`](/ja/reference/data-types/map)、または[`NULL`](/ja/reference/syntax#null)
+* `tag_name_i` — タグ名。[`String`](/ja/reference/data-types/string)または[`FixedString`](/ja/reference/data-types/fixedstring)
+* `tag_value_i` — タグの値。[`String`](/ja/reference/data-types/string)、[`FixedString`](/ja/reference/data-types/fixedstring)、または[`Nullable(String)`](/ja/reference/data-types/nullable)
+
+**戻り値**
+
+タグ名でソートされ、重複したタグ名や空のタグの値を含まない、タグ名をタグの値にマッピングするmapを返します。
+[`Map(String, String)`](/ja/reference/data-types/map)
+
+**例**
+
+**例**
+
+```sql title=Query
+SELECT timeSeriesTagsToMap([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS tags
+```
+
+```response title=Response
+┌─tags───────────────────────────────────────────────────────────┐
+│ {'__name__':'http_requests_count','env':'dev','region':'eu'}    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="timeSeriesThrowDuplicateSeriesIf">

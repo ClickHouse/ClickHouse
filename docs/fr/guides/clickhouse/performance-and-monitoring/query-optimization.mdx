@@ -61,7 +61,7 @@ Avec cette vue d&#39;ensemble, examinons les outils fournis par ClickHouse et la
 
 Nous utiliserons un exemple concret pour illustrer notre approche des performances des requêtes. 
 
-Prenons le jeu de données NYC Taxi, qui contient des données sur les trajets en taxi à New York. Nous allons d&#39;abord ingérer le jeu de données NYC Taxi sans aucune optimisation.
+Prenons le jeu de données des taxis de NYC, qui contient des données sur les trajets en taxi à New York. Nous allons d&#39;abord ingérer le jeu de données des taxis de NYC sans aucune optimisation.
 
 Vous trouverez ci-dessous la commande permettant de créer la table et d&#39;y insérer des données depuis un bucket S3. Notez que nous déduisons volontairement le schéma à partir des données, ce qui n&#39;est pas optimisé.
 
@@ -69,7 +69,7 @@ Vous trouverez ci-dessous la commande permettant de créer la table et d&#39;y i
 -- Create table with inferred schema
 CREATE TABLE trips_small_inferred
 ORDER BY () EMPTY
-AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet', NOSIGN);
 
 -- Insert data into table with inferred schema
 INSERT INTO trips_small_inferred

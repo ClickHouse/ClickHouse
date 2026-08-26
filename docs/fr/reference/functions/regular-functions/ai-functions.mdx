@@ -367,8 +367,11 @@ Introduit dans : v26.8.0
 
 Évalue une condition en langage naturel sur le texte fourni à l’aide d’un fournisseur de LLM et renvoie une valeur booléenne (`UInt8`) utilisable dans `WHERE`, `PREWHERE` et `JOIN ... ON`.
 
-La fonction demande au modèle de répondre uniquement par `true` ou `false` en minuscules. Les requêtes échouées (lorsque
-`ai_function_throw_on_error` est désactivé) et les réponses non reconnues sont mappées sur `0`, de sorte que la ligne est filtrée.
+La fonction demande au modèle de répondre uniquement par `true` ou `false` en minuscules. Toute réponse complète autre
+que `true` (y compris `false` et le texte non reconnu) est mappée sur `0`, de sorte que la ligne est filtrée. Une
+réponse incomplète signalée par le fournisseur — tronquée, filtrée par le contenu ou nécessitant une action supplémentaire — est en revanche
+traitée comme une erreur : lorsque `ai_function_throw_on_error` est activé (valeur par défaut), la requête est abandonnée ; lorsqu’il est
+désactivé, la ligne est mappée sur `0` et filtrée.
 
 **Avertissement :** Ne vous fiez pas aux résultats d’`aiFilter` sans les examiner attentivement. Les prédicats basés sur des LLM peuvent être incorrects
 ou incohérents ; utilisez-les uniquement lorsque les faux positifs et les faux négatifs sont acceptables.
@@ -498,8 +501,9 @@ le saut de ligne et le retour chariot sont également remplacés par des espaces
 identique octet pour octet aux entrées qui en contiennent.
 
 Étant donné que `aiRedact` renvoie l’intégralité du texte d’entrée avec les PII remplacées, la sortie est environ aussi longue que l’entrée.
-Définissez `max_tokens` (valeur par défaut : `1024`) sur une valeur supérieure à la longueur de l’entrée en tokens ; une réponse tronquée en raison d’une limite trop basse
-sera incomplète.
+Définissez `max_tokens` (valeur par défaut : `1024`) sur une valeur supérieure à la longueur de l’entrée en tokens ; une réponse tronquée en raison d’une limite trop basse est
+rejetée avec `AI_PROVIDER_RESPONSE_TRUNCATED` (ou renvoie la valeur par défaut de la colonne lorsque `ai_function_throw_on_error`
+est désactivé) au lieu de renvoyer du texte partiellement masqué.
 
 **Syntaxe**
 
@@ -513,7 +517,7 @@ aiRedact(text, categories[, params])
 
 * `text` — Texte à masquer. [`String`](/fr/reference/data-types/string)
 * `categories` — Liste constante de catégories d’informations personnelles identifiables à masquer (par ex. `['name', 'ssn', 'credit_card']`). Un tableau vide utilise un ensemble par défaut de catégories courantes (nom, e-mail, numéro de téléphone, adresse, carte de crédit, adresse IP). [`Array(String)`](/fr/reference/data-types/array)
-* `params` — `Map(String, String)` constant facultatif de paramètres. Clés spécifiques à la fonction : `temperature` (température d’échantillonnage contrôlant le caractère aléatoire ; valeur par défaut : `0.0`), `max_tokens` (nombre maximal de tokens de sortie par appel ; valeur par défaut : `1024` — comme `aiRedact` renvoie l’intégralité du texte, définissez cette valeur au-dessus de la longueur de l’entrée en tokens, faute de quoi la réponse risque d’être tronquée et incomplète), `replacement` (jeton qui remplace chaque span d’informations personnelles identifiables détecté ; valeur par défaut : `[REDACTED]`). Les paramètres communs `credentials` et `model` s’appliquent également (voir [Fonctions d’IA](/fr/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/fr/reference/data-types/map)
+* `params` — `Map(String, String)` constant facultatif de paramètres. Clés spécifiques à la fonction : `temperature` (température d’échantillonnage contrôlant le caractère aléatoire ; valeur par défaut : `0.0`), `max_tokens` (nombre maximal de tokens de sortie par appel ; valeur par défaut : `1024` — comme `aiRedact` renvoie l’intégralité du texte, définissez cette valeur au-dessus de la longueur de l’entrée en tokens ; une réponse tronquée en raison d’une limite trop basse est rejetée plutôt que de renvoyer du texte partiellement masqué), `replacement` (jeton qui remplace chaque occurrence de PII détectée ; valeur par défaut : `[REDACTED]`). Les paramètres communs `credentials` et `model` s’appliquent également (voir [Fonctions d’IA](/fr/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/fr/reference/data-types/map)
 
 **Valeur renvoyée**
 

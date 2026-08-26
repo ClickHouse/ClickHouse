@@ -302,7 +302,6 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_PatchesAppliedInAllReadTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有读取任务中已应用的补丁分区片段总数
 * `ProfileEvent_PatchesMergeAppliedInAllReadTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有读取任务中以 Merge 模式应用的补丁分区片段总数
 * `ProfileEvent_PatchesJoinAppliedInAllReadTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有读取任务中以 Join 模式应用的补丁分区片段总数
-* `ProfileEvent_PatchesMergeOnKeyAppliedInAllReadTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有读取任务中以 MergeOnKey 模式 (v2) 应用的补丁分区片段总数
 * `ProfileEvent_PatchesReadRows` ([UInt64](/zh/reference/data-types/int-uint)) — 从补丁分区片段中读取的行总数
 * `ProfileEvent_PatchesReadUncompressedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从补丁分区片段中读取的未压缩字节总数
 * `ProfileEvent_PatchesJoinRowsAddedToHashTable` ([UInt64](/zh/reference/data-types/int-uint)) — 以 Join 模式应用补丁分区片段时添加到哈希表的行总数
@@ -310,7 +309,6 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ReadPatchesMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 读取补丁分区片段所花费的总时间
 * `ProfileEvent_BuildPatchesMergeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 为以 Merge 模式应用补丁分区片段而构建索引所花费的总时间
 * `ProfileEvent_BuildPatchesJoinMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 为以 Join 模式应用补丁分区片段而构建索引和哈希表所花费的总时间
-* `ProfileEvent_ApplyPatchMergeOnKeyMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 applyPatchesMergeOnKey 排序键合并循环中所花费的总时间
 * `ProfileEvent_AnalyzePatchRangesMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 分析补丁分区片段索引所花费的总时间
 * `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/zh/reference/data-types/int-uint)) — 即时应用了任意变更的读取任务总数
 * `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有读取任务中即时应用的变更总数
@@ -927,6 +925,10 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/zh/reference/data-types/int-uint)) — 聚合时初始化为两级哈希表的数量。
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/zh/reference/data-types/int-uint)) — 运行时将单层聚合哈希表转换为两级哈希表的次数。
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/zh/reference/data-types/int-uint)) — 应用了相等键范围优化的块数
+* `ProfileEvent_AggregationTopKRowsSkipped` ([UInt64](/zh/reference/data-types/int-uint)) — 聚合期间因其分组键无法进入 Top-K 结果而跳过的行数 (参见 `enable_group_by_top_k_optimization`) 。
+* `ProfileEvent_AggregationTopKKeysEvicted` ([UInt64](/zh/reference/data-types/int-uint)) — 聚合期间从有界 Top-K 堆中逐出的分组键数量 (参见 `enable_group_by_top_k_optimization`) 。
+* `ProfileEvent_AggregationTopKKeysPruned` ([UInt64](/zh/reference/data-types/int-uint)) — 从中间哈希表中同时删除并销毁其聚合状态的已逐出分组键数量 (参见 `enable_group_by_top_k_optimization`) 。当聚合方法无法删除键，或仅按键的前缀排名时，该值会低于 `AggregationTopKKeysEvicted`：此时堆仍会跳过行，但哈希表会保留每个已接纳的组。
+* `ProfileEvent_AggregationTopKHeapsFrozen` ([UInt64](/zh/reference/data-types/int-uint)) — 被冻结并回退到常规聚合的 Top-K 聚合堆数量。可能是堆在其观测窗口内几乎未拒绝任何内容 (例如不同分组键的数量未超过 LIMIT) ，或者堆边界处永远无法逐出的并列集合过度增长 (参见 `enable_group_by_top_k_optimization`) 。
 * `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/zh/reference/data-types/int-uint)) — 哈希连接时在哈希表中预分配的元素数量。
 * `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/zh/reference/data-types/int-uint)) — 对象存储元数据请求直接由缓存响应、无需向 Keeper 发起请求的次数
 * `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/zh/reference/data-types/int-uint)) — 对象存储元数据请求必须由 Keeper 响应的次数
@@ -1320,6 +1322,46 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperChangelogStartupReadBytes` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 并行启动读取器从更新日志文件读取的物理字节数 (校验和 + 请求头 + blob)
 * `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 写入 Keeper 快照文件的字节数
 * `ProfileEvent_KeeperSnapshotFileSyncMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 快照文件执行 fsync 所花费的时间
+* `ProfileEvent_KeeperLSMTFlushes` ([UInt64](/zh/reference/data-types/int-uint)) — 成功完成的 Keeper LSMT memtable 刷写次数
+* `ProfileEvent_KeeperLSMTMerges` ([UInt64](/zh/reference/data-types/int-uint)) — 成功完成的 Keeper LSMT 合并次数
+* `ProfileEvent_KeeperLSMTFlushExceptions` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT memtable 刷写期间发生的异常数量
+* `ProfileEvent_KeeperLSMTMergeExceptions` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 合并期间发生的异常数量
+* `ProfileEvent_KeeperLSMTFileDeletionExceptions` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 删除文件期间发生的异常数量
+* `ProfileEvent_KeeperLSMTFlushWrittenCompressedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT memtable 刷写写入文件的压缩字节数
+* `ProfileEvent_KeeperLSMTFlushWrittenUncompressedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT memtable 刷写写入文件的未压缩字节数
+* `ProfileEvent_KeeperLSMTMergeWrittenFiles` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 合并发布的输出文件数量
+* `ProfileEvent_KeeperLSMTMergeWrittenCompressedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 合并发布的输出文件中的压缩字节数
+* `ProfileEvent_KeeperLSMTMergeWrittenUncompressedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 合并发布的输出文件中的未压缩字节数
+* `ProfileEvent_KeeperLSMTMergeConsumedFiles` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 合并完全处理并删除的输入文件数量
+* `ProfileEvent_KeeperLSMTMergeConsumedUncompressedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 合并完全处理并删除的输入文件中的未压缩字节数
+* `ProfileEvent_KeeperLSMTUncommittedCreates` ([UInt64](/zh/reference/data-types/int-uint)) — 追加到 Keeper LSMT 未提交 memtable 的 Create 条目数量
+* `ProfileEvent_KeeperLSMTUncommittedCreateBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 追加到 Keeper LSMT 未提交 memtable 的 Create 条目的序列化字节数
+* `ProfileEvent_KeeperLSMTUncommittedUpdates` ([UInt64](/zh/reference/data-types/int-uint)) — 追加到 Keeper LSMT 未提交 memtable 的 Update 条目数量
+* `ProfileEvent_KeeperLSMTUncommittedUpdateBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 追加到 Keeper LSMT 未提交 memtable 的 Update 条目的序列化字节数
+* `ProfileEvent_KeeperLSMTUncommittedRemoves` ([UInt64](/zh/reference/data-types/int-uint)) — 追加到 Keeper LSMT 未提交 memtable 的 Remove 条目数量
+* `ProfileEvent_KeeperLSMTUncommittedRemoveBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 追加到 Keeper LSMT 未提交 memtable 的 Remove 条目的序列化字节数
+* `ProfileEvent_KeeperLSMTCommittedEntryBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 追加到 Keeper LSMT 已提交 memtable 的条目的序列化字节数
+* `ProfileEvent_KeeperLSMTThrottledWrites` ([UInt64](/zh/reference/data-types/int-uint)) — 因 Keeper LSMT 后台刷写或合并滞后而延迟的写入次数
+* `ProfileEvent_KeeperLSMTCommittedMemtablesCreated` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 创建的已提交 memtable 数量
+* `ProfileEvent_KeeperLSMTUncommittedMemtablesCreated` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 创建的未提交 memtable 数量
+* `ProfileEvent_KeeperLSMTGetUncommittedNodeHits` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 在未提交 memtable 中找到节点的查找次数
+* `ProfileEvent_KeeperLSMTGetUncommittedNodeMisses` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 未在未提交 memtable 中找到节点并转而查找已提交状态的次数
+* `ProfileEvent_KeeperLSMTGetCommittedNodeFromMemory` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 已提交节点查找中，该节点的块已在内存中的次数
+* `ProfileEvent_KeeperLSMTGetCommittedNodeNonexistent` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 对不存在节点进行已提交节点查找的次数
+* `ProfileEvent_KeeperLSMTGetCommittedNodeLoadedBlock` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 已提交节点查找中，必须加载该节点块的次数
+* `ProfileEvent_KeeperLSMTNodeCacheEntriesUpdated` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 节点缓存条目重新指向新加载块的次数
+* `ProfileEvent_KeeperLSMTListNamesFromMemtables` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT list 操作从 memtable 获取的子节点名称 (包括墓碑标记)
+* `ProfileEvent_KeeperLSMTListNamesFromFiles` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT list 操作从文件获取的子节点名称 (包括墓碑标记)
+* `ProfileEvent_KeeperLSMTListScannedBlocks` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT list 操作在文件中扫描的块数
+* `ProfileEvent_KeeperLSMTListScannedEntries` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT list 操作在文件中扫描的条目数
+* `ProfileEvent_KeeperLSMTListFilterSkipped` ([UInt64](/zh/reference/data-types/int-uint)) — 因父路径过滤器排除了所有子节点而被 Keeper LSMT list 操作跳过的文件扫描次数
+* `ProfileEvent_KeeperLSMTListFilterFalsePositives` ([UInt64](/zh/reference/data-types/int-uint)) — 未被 Keeper LSMT 父路径过滤器跳过但未找到子节点的文件扫描次数
+* `ProfileEvent_KeeperLSMTListFilterTruePositives` ([UInt64](/zh/reference/data-types/int-uint)) — 未被 Keeper LSMT 父路径过滤器跳过且找到子节点的文件扫描次数
+* `ProfileEvent_KeeperLSMTGetBlockFromWeakPtr` ([UInt64](/zh/reference/data-types/int-uint)) — 由文件块信息中的弱指针提供的 Keeper LSMT 块访问次数
+* `ProfileEvent_KeeperLSMTGetBlockFromCache` ([UInt64](/zh/reference/data-types/int-uint)) — 由块缓存提供的 Keeper LSMT 块访问次数
+* `ProfileEvent_KeeperLSMTGetBlockLoadedGroup` ([UInt64](/zh/reference/data-types/int-uint)) — 必须从磁盘加载块组的 Keeper LSMT 块访问次数
+* `ProfileEvent_KeeperLSMTLoadedBlocks` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 从磁盘加载的块数
+* `ProfileEvent_KeeperLSMTLoadedUncompressedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper LSMT 从磁盘加载的块的未压缩字节数
 * `ProfileEvent_StorageConnectionsCreated` ([UInt64](/zh/reference/data-types/int-uint)) — 已创建的存储连接数
 * `ProfileEvent_StorageConnectionsReused` ([UInt64](/zh/reference/data-types/int-uint)) — 已复用的存储连接数
 * `ProfileEvent_StorageConnectionsReset` ([UInt64](/zh/reference/data-types/int-uint)) — 已重置的存储连接数
@@ -1445,6 +1487,8 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/zh/reference/data-types/int-uint)) — jemalloc allocations 样本跟踪失败的总次数
 * `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/zh/reference/data-types/int-uint)) — jemalloc 释放样本跟踪失败的总次数
 * `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 从 parts 加载 STATISTICS 的耗时
+* `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/zh/reference/data-types/int-uint)) — 由于集合尚未构建且不能通过运行子查询来填充，选择性估算器无法分析的 `IN` 条件数量
+* `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/zh/reference/data-types/int-uint)) — 由于集合超过 `statistics_max_set_size_for_exact_selectivity_estimation`，根据集合大小和边界而非精确范围估算选择性的 `IN` 条件数量
 * `ProfileEvent_RuntimeDataflowStatisticsInputBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 收集到的统计信息：如果查询以并行副本方式执行，副本将读取的字节数
 * `ProfileEvent_RuntimeDataflowStatisticsOutputBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 收集到的统计信息：如果查询以并行副本方式执行，副本将发送给发起节点的字节数
 * `ProfileEvent_S3CachedCredentialsProvidersReused` ([UInt64](/zh/reference/data-types/int-uint)) — 从缓存中复用的凭证提供商总数

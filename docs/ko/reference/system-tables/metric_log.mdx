@@ -251,7 +251,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_RemoteWriteThrottlerSleepMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#39; 스로틀링 제한에 맞추기 위해 쿼리가 대기한 총 시간입니다.
 * `ProfileEvent_LocalReadThrottlerBytes` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;local&#95;read&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;read&#95;bandwidth&#39; 스로틀러를 통해 전달된 바이트 수입니다.
 * `ProfileEvent_LocalReadThrottlerSleepMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;local&#95;read&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;read&#95;bandwidth&#39; 스로틀링 제한에 맞추기 위해 쿼리가 대기한 총 시간입니다.
-* `ProfileEvent_LocalWriteThrottlerBytes` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;local&#95;write&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;write&#95;bandwidth&#95;for&#95;server&#39; 스로틀러를 통해 전달된 바이트 수입니다.
+* `ProfileEvent_LocalWriteThrottlerBytes` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;local&#95;write&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;write&#95;bandwidth&#39; 스로틀러를 통해 전달된 바이트 수입니다.
 * `ProfileEvent_LocalWriteThrottlerSleepMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;local&#95;write&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;write&#95;bandwidth&#39; 스로틀링 제한에 맞추기 위해 쿼리가 대기한 총 시간입니다.
 * `ProfileEvent_BackupThrottlerBytes` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;backup&#95;bandwidth&#95;for&#95;server&#39; 스로틀러를 통해 전달된 바이트 수입니다.
 * `ProfileEvent_BackupThrottlerSleepMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;backup&#95;bandwidth&#95;for&#95;server&#39; 스로틀링 제한에 맞추기 위해 쿼리가 대기한 총 시간입니다.
@@ -295,7 +295,6 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_PatchesAppliedInAllReadTasks` ([UInt64](/ko/reference/data-types/int-uint)) — 모든 읽기 작업에서 적용된 패치 파트의 총 개수입니다.
 * `ProfileEvent_PatchesMergeAppliedInAllReadTasks` ([UInt64](/ko/reference/data-types/int-uint)) — 모든 읽기 작업에서 Merge 모드로 적용된 패치 파트의 총 개수입니다.
 * `ProfileEvent_PatchesJoinAppliedInAllReadTasks` ([UInt64](/ko/reference/data-types/int-uint)) — 모든 읽기 작업에서 Join 모드로 적용된 패치 파트의 총 개수입니다.
-* `ProfileEvent_PatchesMergeOnKeyAppliedInAllReadTasks` ([UInt64](/ko/reference/data-types/int-uint)) — 모든 읽기 작업에서 MergeOnKey 모드(v2)로 적용된 패치 파트의 총 개수입니다.
 * `ProfileEvent_PatchesReadRows` ([UInt64](/ko/reference/data-types/int-uint)) — 패치 파트에서 읽은 행의 총 개수입니다.
 * `ProfileEvent_PatchesReadUncompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 패치 파트에서 읽은 비압축 바이트의 총 개수입니다.
 * `ProfileEvent_PatchesJoinRowsAddedToHashTable` ([UInt64](/ko/reference/data-types/int-uint)) — Join 모드로 패치 파트를 적용할 때 해시 테이블에 추가된 행의 총 개수입니다.
@@ -303,7 +302,6 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_ReadPatchesMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 패치 파트를 읽는 데 소요된 총 시간입니다.
 * `ProfileEvent_BuildPatchesMergeMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — Merge 모드로 패치 파트를 적용하기 위한 인덱스를 생성하는 데 소요된 총 시간입니다.
 * `ProfileEvent_BuildPatchesJoinMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — Join 모드로 패치 파트를 적용하기 위한 인덱스와 해시 테이블을 생성하는 데 소요된 총 시간입니다.
-* `ProfileEvent_ApplyPatchMergeOnKeyMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — applyPatchesMergeOnKey 정렬 키 머지 루프 내부에서 소요된 총 시간입니다.
 * `ProfileEvent_AnalyzePatchRangesMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 패치 파트의 인덱스를 분석하는 데 소요된 총 시간입니다.
 * `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/ko/reference/data-types/int-uint)) — on-the-fly 뮤테이션이 하나라도 적용된 읽기 작업의 총 개수입니다.
 * `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/ko/reference/data-types/int-uint)) — 모든 읽기 작업에서 on-the-fly로 적용된 뮤테이션의 총 개수입니다.
@@ -920,6 +918,10 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/ko/reference/data-types/int-uint)) — 집계를 위해 2단계로 초기화된 해시 테이블 수입니다.
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/ko/reference/data-types/int-uint)) — 단일 수준 집계 해시 테이블이 런타임에 2단계로 변환된 횟수입니다.
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/ko/reference/data-types/int-uint)) — 동일한 키 범위 최적화가 적용된 블록 수입니다.
+* `ProfileEvent_AggregationTopKRowsSkipped` ([UInt64](/ko/reference/data-types/int-uint)) — 그룹화 키가 Top-K 결과에 포함될 수 없어 집계 중 건너뛴 행 수입니다(`enable_group_by_top_k_optimization` 참조).
+* `ProfileEvent_AggregationTopKKeysEvicted` ([UInt64](/ko/reference/data-types/int-uint)) — 집계 중 제한된 Top-K 힙에서 축출된 그룹화 키 수입니다(`enable_group_by_top_k_optimization` 참조).
+* `ProfileEvent_AggregationTopKKeysPruned` ([UInt64](/ko/reference/data-types/int-uint)) — 축출된 그룹화 키 중 중간 해시 테이블에서도 제거되고 집계 상태가 삭제된 키 수입니다(`enable_group_by_top_k_optimization` 참조). 집계 메서드가 키를 제거할 수 없거나 키의 접두사만 순위가 매겨진 경우에는 `AggregationTopKKeysEvicted`보다 적습니다. 이 경우 힙은 여전히 행을 건너뛰지만 해시 테이블은 허용된 모든 그룹을 유지합니다.
+* `ProfileEvent_AggregationTopKHeapsFrozen` ([UInt64](/ko/reference/data-types/int-uint)) — 일반 집계로 폴백하며 동결된 Top-K 집계 힙 수입니다. 관측 윈도우 내에서 힙이 거의 아무것도 거부하지 않았거나(예: 고유 그룹화 키 수가 LIMIT를 초과하지 않음), 축출할 수 없는 힙 경계의 동률 집합이 힙보다 커진 경우입니다(`enable_group_by_top_k_optimization` 참조).
 * `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/ko/reference/data-types/int-uint)) — 해시 조인을 위해 해시 테이블에 미리 할당된 요소 수입니다.
 * `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper에 요청하지 않고 캐시에서 객체 스토리지 메타데이터 요청을 처리한 횟수입니다.
 * `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/ko/reference/data-types/int-uint)) — 객체 스토리지 메타데이터 요청을 Keeper에서 처리해야 했던 횟수입니다.
@@ -1313,6 +1315,46 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperChangelogStartupReadBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 병렬 Keeper 시작 리더가 changelog 파일에서 읽은 물리적 바이트 수(checksum + header + blob)
 * `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper의 snapshot 파일에 기록된 바이트 수
 * `ProfileEvent_KeeperSnapshotFileSyncMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper snapshot 파일에 대해 fsync에 소요된 시간
+* `ProfileEvent_KeeperLSMTFlushes` ([UInt64](/ko/reference/data-types/int-uint)) — 성공적으로 완료된 Keeper LSMT memtable 플러시 수
+* `ProfileEvent_KeeperLSMTMerges` ([UInt64](/ko/reference/data-types/int-uint)) — 성공적으로 완료된 Keeper LSMT 머지 수
+* `ProfileEvent_KeeperLSMTFlushExceptions` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT memtable 플러시 중 발생한 예외 수
+* `ProfileEvent_KeeperLSMTMergeExceptions` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 머지 중 발생한 예외 수
+* `ProfileEvent_KeeperLSMTFileDeletionExceptions` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 파일 삭제 중 발생한 예외 수
+* `ProfileEvent_KeeperLSMTFlushWrittenCompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT memtable 플러시로 파일에 기록된 압축 바이트 수
+* `ProfileEvent_KeeperLSMTFlushWrittenUncompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT memtable 플러시로 파일에 기록된 비압축 바이트 수
+* `ProfileEvent_KeeperLSMTMergeWrittenFiles` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 머지로 게시된 출력 파일 수
+* `ProfileEvent_KeeperLSMTMergeWrittenCompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 머지로 게시된 출력 파일의 압축 바이트 수
+* `ProfileEvent_KeeperLSMTMergeWrittenUncompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 머지로 게시된 출력 파일의 비압축 바이트 수
+* `ProfileEvent_KeeperLSMTMergeConsumedFiles` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 머지에서 완전히 소비되고 삭제된 입력 파일 수
+* `ProfileEvent_KeeperLSMTMergeConsumedUncompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 머지에서 완전히 소비되고 삭제된 입력 파일의 비압축 바이트 수
+* `ProfileEvent_KeeperLSMTUncommittedCreates` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 미커밋 memtable에 추가된 Create 항목 수
+* `ProfileEvent_KeeperLSMTUncommittedCreateBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 미커밋 memtable에 추가된 Create 항목의 직렬화된 바이트 수
+* `ProfileEvent_KeeperLSMTUncommittedUpdates` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 미커밋 memtable에 추가된 Update 항목 수
+* `ProfileEvent_KeeperLSMTUncommittedUpdateBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 미커밋 memtable에 추가된 Update 항목의 직렬화된 바이트 수
+* `ProfileEvent_KeeperLSMTUncommittedRemoves` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 미커밋 memtable에 추가된 Remove 항목 수
+* `ProfileEvent_KeeperLSMTUncommittedRemoveBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 미커밋 memtable에 추가된 Remove 항목의 직렬화된 바이트 수
+* `ProfileEvent_KeeperLSMTCommittedEntryBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 커밋된 memtable에 추가된 엔트리의 직렬화된 바이트 수
+* `ProfileEvent_KeeperLSMTThrottledWrites` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 백그라운드 플러시 또는 머지가 뒤처져 지연된 쓰기 수
+* `ProfileEvent_KeeperLSMTCommittedMemtablesCreated` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT가 생성한 커밋된 memtable 수
+* `ProfileEvent_KeeperLSMTUncommittedMemtablesCreated` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT가 생성한 커밋되지 않은 memtable 수
+* `ProfileEvent_KeeperLSMTGetUncommittedNodeHits` ([UInt64](/ko/reference/data-types/int-uint)) — 커밋되지 않은 memtable에서 노드를 찾은 Keeper LSMT 노드 조회 수
+* `ProfileEvent_KeeperLSMTGetUncommittedNodeMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 커밋되지 않은 memtable에서 노드를 찾지 못해 커밋된 상태를 조회한 Keeper LSMT 노드 조회 수
+* `ProfileEvent_KeeperLSMTGetCommittedNodeFromMemory` ([UInt64](/ko/reference/data-types/int-uint)) — 노드의 블록이 이미 메모리에 있는 경우의 Keeper LSMT 커밋된 노드 조회 수
+* `ProfileEvent_KeeperLSMTGetCommittedNodeNonexistent` ([UInt64](/ko/reference/data-types/int-uint)) — 존재하지 않는 노드에 대한 Keeper LSMT 커밋된 노드 조회 수
+* `ProfileEvent_KeeperLSMTGetCommittedNodeLoadedBlock` ([UInt64](/ko/reference/data-types/int-uint)) — 노드의 블록을 로드해야 했던 Keeper LSMT 커밋된 노드 조회 수
+* `ProfileEvent_KeeperLSMTNodeCacheEntriesUpdated` ([UInt64](/ko/reference/data-types/int-uint)) — 새로 로드된 블록을 가리키도록 다시 지정된 Keeper LSMT 노드 캐시 엔트리 수
+* `ProfileEvent_KeeperLSMTListNamesFromMemtables` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT list 작업이 memtable에서 가져온 하위 노드 이름 수(tombstone 포함)
+* `ProfileEvent_KeeperLSMTListNamesFromFiles` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT list 작업이 파일에서 가져온 하위 노드 이름 수(tombstone 포함)
+* `ProfileEvent_KeeperLSMTListScannedBlocks` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT list 작업이 파일에서 스캔한 블록 수
+* `ProfileEvent_KeeperLSMTListScannedEntries` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT list 작업이 파일에서 스캔한 엔트리 수
+* `ProfileEvent_KeeperLSMTListFilterSkipped` ([UInt64](/ko/reference/data-types/int-uint)) — 상위 경로 필터가 하위 노드가 없음을 판정하여 Keeper LSMT list 작업이 건너뛴 파일 스캔 수
+* `ProfileEvent_KeeperLSMTListFilterFalsePositives` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 상위 경로 필터가 건너뛰지 않았지만 하위 노드를 찾지 못한 파일 스캔 수
+* `ProfileEvent_KeeperLSMTListFilterTruePositives` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT 상위 경로 필터가 건너뛰지 않고 하위 노드를 찾은 파일 스캔 수
+* `ProfileEvent_KeeperLSMTGetBlockFromWeakPtr` ([UInt64](/ko/reference/data-types/int-uint)) — 파일의 블록 정보에 있는 weak pointer가 처리한 Keeper LSMT 블록 액세스 수
+* `ProfileEvent_KeeperLSMTGetBlockFromCache` ([UInt64](/ko/reference/data-types/int-uint)) — 블록 캐시가 처리한 Keeper LSMT 블록 액세스 수
+* `ProfileEvent_KeeperLSMTGetBlockLoadedGroup` ([UInt64](/ko/reference/data-types/int-uint)) — 디스크에서 블록 그룹을 로드해야 했던 Keeper LSMT 블록 액세스 수
+* `ProfileEvent_KeeperLSMTLoadedBlocks` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT가 디스크에서 로드한 블록 수
+* `ProfileEvent_KeeperLSMTLoadedUncompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper LSMT가 디스크에서 로드한 블록의 비압축 바이트 수
 * `ProfileEvent_StorageConnectionsCreated` ([UInt64](/ko/reference/data-types/int-uint)) — 스토리지용으로 생성된 연결 수
 * `ProfileEvent_StorageConnectionsReused` ([UInt64](/ko/reference/data-types/int-uint)) — 스토리지용으로 재사용된 연결 수
 * `ProfileEvent_StorageConnectionsReset` ([UInt64](/ko/reference/data-types/int-uint)) — 스토리지용으로 재설정된 연결 수
@@ -1438,6 +1480,8 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/ko/reference/data-types/int-uint)) — jemalloc allocation sample 추적에 실패한 총 횟수
 * `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/ko/reference/data-types/int-uint)) — jemalloc deallocation sample 추적에 실패한 총 횟수
 * `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 파트에서 통계를 로드하는 데 걸린 시간
+* `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/ko/reference/data-types/int-uint)) — Set이 아직 빌드되지 않았고 이를 채우기 위해 서브쿼리를 실행해서는 안 되므로 선택도 추정기가 분석할 수 없었던 `IN` 조건 수
+* `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/ko/reference/data-types/int-uint)) — Set이 `statistics_max_set_size_for_exact_selectivity_estimation`를 초과하여 정확한 범위 대신 Set의 크기와 경계로 선택도를 추정한 `IN` 조건 수
 * `ProfileEvent_RuntimeDataflowStatisticsInputBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리가 병렬 레플리카로 실행되었을 경우 레플리카가 읽게 될 바이트 수에 대해 수집된 통계
 * `ProfileEvent_RuntimeDataflowStatisticsOutputBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리가 병렬 레플리카로 실행되었을 경우 레플리카가 initiator에 전송하게 될 바이트 수에 대해 수집된 통계
 * `ProfileEvent_S3CachedCredentialsProvidersReused` ([UInt64](/ko/reference/data-types/int-uint)) — 캐시에서 재사용된 자격 증명 제공자의 총 수
@@ -1469,7 +1513,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_StatelessWorkerUpdateLeaseRequests` ([UInt64](/ko/reference/data-types/int-uint)) — worker lease를 갱신하기 위해 stateless worker 디스커버리 서비스로 전송된 update&#95;lease 요청 수입니다.
 * `ProfileEvent_StatelessWorkerUpdateLeaseMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스에 대한 update&#95;lease 요청에 소요된 총 시간입니다.
 * `ProfileEvent_StatelessWorkerUpdateLeaseErrors` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스에 대한 update&#95;lease 요청이 실패한 횟수입니다(오류 또는 시간 초과).
-* `ProfileEvent_StatelessWorkerServerRegisterRequests` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker가 stateless worker 디스커버리 서비스로 전송한 등록 요청 수입니다.
+* `ProfileEvent_StatelessWorkerServerRegisterRequests` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker가 stateless worker 디스커리 서비스로 전송한 등록 요청 수입니다.
 * `ProfileEvent_StatelessWorkerServerRegisterMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker가 stateless worker 디스커버리 서비스에 등록하는 데 소요한 총 시간입니다.
 * `ProfileEvent_StatelessWorkerServerRegisterErrors` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker가 stateless worker 디스커버리 서비스에 보낸 등록 요청이 실패한 횟수입니다(오류 또는 시간 초과).
 * `ProfileEvent_StatelessWorkerServerHeartbeatRequests` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker가 stateless worker 디스커버리 서비스로 전송한 하트비트 수입니다.
@@ -1571,6 +1615,9 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `CurrentMetric_MergeTreeDataSelectExecutorThreads` ([Int64](/ko/reference/data-types/int-uint)) — MergeTreeDataSelectExecutor 스레드 풀의 스레드 수입니다.
 * `CurrentMetric_MergeTreeDataSelectExecutorThreadsActive` ([Int64](/ko/reference/data-types/int-uint)) — 작업을 실행 중인 MergeTreeDataSelectExecutor 스레드 풀의 스레드 수입니다.
 * `CurrentMetric_MergeTreeDataSelectExecutorThreadsScheduled` ([Int64](/ko/reference/data-types/int-uint)) — MergeTreeDataSelectExecutor 스레드 풀에서 큐에 있거나 활성 상태인 job 수입니다.
+* `CurrentMetric_BackgroundQueryThreads` ([Int64](/ko/reference/data-types/int-uint)) — 백그라운드 쿼리 스레드 풀의 스레드 수입니다.
+* `CurrentMetric_BackgroundQueryThreadsActive` ([Int64](/ko/reference/data-types/int-uint)) — 작업을 실행 중인 백그라운드 쿼리 스레드 풀의 스레드 수입니다.
+* `CurrentMetric_BackgroundQueryThreadsScheduled` ([Int64](/ko/reference/data-types/int-uint)) — 백그라운드 쿼리 스레드 풀에서 큐에 있거나 활성 상태인 작업 수입니다.
 * `CurrentMetric_BackupsThreads` ([Int64](/ko/reference/data-types/int-uint)) — BACKUP용 스레드 풀의 스레드 수입니다.
 * `CurrentMetric_BackupsThreadsActive` ([Int64](/ko/reference/data-types/int-uint)) — 작업을 실행 중인 BACKUP용 스레드 풀의 스레드 수입니다.
 * `CurrentMetric_BackupsThreadsScheduled` ([Int64](/ko/reference/data-types/int-uint)) — BACKUP의 대기 중이거나 실행 중인 작업 수입니다.
@@ -2061,6 +2108,16 @@ CurrentMetric_DistributedFilesToInsert:                          0
 
 **스키마**
 이 테이블은 XML 태그 `<schema_type>`를 사용해 여러 스키마 유형으로 구성할 수 있습니다. 기본 스키마 유형은 `wide`이며, 각 메트릭 또는 프로파일 이벤트가 별도의 컬럼으로 저장됩니다. 이 스키마는 단일 컬럼 읽기에서 가장 높은 성능과 효율을 제공합니다.
+
+`bucketed` 스키마는 모든 프로파일 이벤트와 현재 메트릭을 [Map](/ko/reference/data-types/map)([Enum16](/ko/reference/data-types/enum), [Int64](/ko/reference/data-types/int-uint)) 타입의 단일 `metrics` 컬럼에 저장하므로, 테이블이 수천 개의 컬럼 대신 몇 개의 컬럼으로 구성됩니다. `Map`은 128개의 고정 버킷을 사용하는 버킷 직렬화(`map_serialization_version = 'with_buckets'`)를 사용하므로, 단일 메트릭을 읽을 때 128개 버킷 중 하나만 읽습니다. 값이 0인 항목은 저장되지 않으며, 없는 키를 읽으면 `0`이 반환됩니다. 모든 메트릭은 메트릭 자체의 이름을 가진 `ALIAS` 컬럼으로도 노출되므로(예: `ProfileEvent_Query UInt64 ALIAS metrics['ProfileEvent_Query']`), `wide` 스키마용으로 작성된 모든 쿼리가 계속 작동합니다. 프로파일 이벤트는 수집 인터벌 동안의 증가분으로 저장되며, 현재 메트릭은 수집 시점의 값으로 저장됩니다.
+
+```xml
+<clickhouse>
+    <metric_log>
+        <schema_type>bucketed</schema_type>
+    </metric_log>
+</clickhouse>
+```
 
 `transposed` 스키마는 메트릭과 이벤트를 행으로 저장하는 `system.asynchronous_metric_log`와 유사한 포맷으로 데이터를 저장합니다. 이 스키마는 머지 중 리소스 사용량을 줄여 주므로 리소스가 제한된 환경에서 유용합니다.
 

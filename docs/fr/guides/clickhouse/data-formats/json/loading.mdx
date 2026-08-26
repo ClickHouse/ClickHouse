@@ -72,7 +72,7 @@ ClickHouse peut charger des données JSON dans plusieurs formats, en déduisant 
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 LIMIT 1
 ```
 
@@ -87,7 +87,7 @@ LIMIT 1
 Notez qu&#39;il n&#39;est pas nécessaire de spécifier le format de fichier. À la place, nous utilisons un glob pattern pour lire tous les fichiers `*.json.gz` dans le bucket. ClickHouse déduit automatiquement que le format est `JSONEachRow` (ndjson) à partir de l&#39;extension et du contenu du fichier. Un format peut être spécifié manuellement via des fonctions paramétrées si ClickHouse n&#39;est pas en mesure de le détecter.
 
 ```sql
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
 ```
 
 <Info>
@@ -99,7 +99,7 @@ SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi
 Pour charger les lignes de ces fichiers, nous pouvons utiliser un [`INSERT INTO SELECT`](/fr/reference/statements/insert-into#inserting-the-results-of-select) :
 
 ```sql
-INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 ```
 
 ```response
@@ -139,7 +139,7 @@ Dans l’exemple précédent, nous avons chargé un JSON statique avec des noms 
 
 ClickHouse gère cela grâce à un type [`JSON`](/fr/reference/data-types/newjson) dédié.
 
-Prenons l’exemple suivant, tiré d’une version enrichie du [Python PyPI dataset](https://clickpy.clickhouse.com/) ci-dessus. Nous y avons ajouté une colonne `tags` arbitraire contenant des paires clé-valeur aléatoires.
+Prenons l’exemple suivant, tiré d’une version enrichie du [jeu de données Python PyPI](https://clickpy.clickhouse.com/) ci-dessus. Nous y avons ajouté une colonne `tags` arbitraire contenant des paires clé-valeur aléatoires.
 
 ```json
 {
@@ -183,12 +183,12 @@ ORDER BY (project, date);
 Nous remplissons la table en suivant la même approche que pour le jeu de données d’origine :
 
 ```sql
-INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```sql
 INSERT INTO pypi_with_tags SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```response

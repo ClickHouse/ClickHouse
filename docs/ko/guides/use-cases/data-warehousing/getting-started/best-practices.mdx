@@ -23,7 +23,7 @@ doc_type: 'guide'
   ### 테이블 함수
 </div>
 
-위치를 알고 있으며 영속 테이블 정의가 필요하지 않다면 저장소 경로와 자격 증명을 Inline으로 전달합니다.
+위치를 알고 있으며 영속 테이블 정의가 필요하지 않다면 스토리지 경로와 자격 증명을 Inline으로 전달합니다.
 
 ```sql
 SELECT count()
@@ -31,9 +31,9 @@ FROM icebergS3('https://my-bucket.s3.amazonaws.com/warehouse/my_table/')
 WHERE event_date >= today() - 7
 ```
 
-AWS S3와 GCS에는 S3 변형을 사용합니다. Azure와 로컬 파일 시스템에는 별도의 변형(`icebergAzure`, `icebergLocal` 및 다른 포맷의 대응 항목)이 있습니다. 전체 목록은 [직접 쿼리하기](/ko/guides/use-cases/data-warehousing/getting-started/querying-directly)를 참조하십시오.
+AWS S3와 GCS에는 S3 변형을 사용합니다. Azure와 로컬 파일 시스템에는 별도의 변형(`icebergAzure`, `icebergLocal` 및 다른 포맷의 대응 항목)이 있습니다. 전체 목록은 [직접 쿼리](/ko/guides/use-cases/data-warehousing/getting-started/querying-directly)를 참조하십시오.
 
-[Paimon](/ko/reference/functions/table-functions/paimon)은 테이블 함수만 제공합니다.
+[Paimon](/ko/reference/functions/table-functions/paimon)은 테이블 함수와 [실험적 테이블 엔진](/ko/reference/engines/table-engines/integrations/paimon)을 제공합니다.
 
 <div id="table-engines">
   ### 테이블 엔진

@@ -33,7 +33,7 @@ WHERE event_date >= today() - 7
 
 AWS S3 と GCS には S3 バリアントを使用します。Azure とローカルファイルシステムには専用のバリアント (`icebergAzure`、`icebergLocal`、および他のフォーマットの対応する同等物) があります。完全な一覧については、[直接クエリ](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly) を参照してください。
 
-[Paimon](/ja/reference/functions/table-functions/paimon) では、テーブル関数のみが利用できます。
+[Paimon](/ja/reference/functions/table-functions/paimon) では、テーブル関数と[実験的なテーブルエンジン](/ja/reference/engines/table-engines/integrations/paimon)が提供されています。
 
 <div id="table-engines">
   ### テーブルエンジン

@@ -578,6 +578,42 @@ SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('src1'
 └───────┴──────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+<div id="timeSeriesMetricTypeToSuffixes">
+  ## timeSeriesMetricTypeToSuffixes
+</div>
+
+Добавленный в: v26.8.0
+
+Возвращает суффиксы имени метрики для семейства метрик указанного типа Prometheus.
+
+**Синтаксис**
+
+```sql
+timeSeriesMetricTypeToSuffixes(type)
+```
+
+**Аргументы**
+
+* `type` — тип метрики Prometheus (`counter`, `gauge`, `histogram`, `summary`, ...). [`String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+Возвращает суффиксы семейства метрик указанного типа. [`Array(String)`](/ru/reference/data-types/array)
+
+**Примеры**
+
+**Пример**
+
+```sql title=Query
+SELECT timeSeriesMetricTypeToSuffixes('histogram') AS suffixes;
+```
+
+```response title=Response
+┌─suffixes──────────────────────┐
+│ ['_bucket','_count','_sum']   │
+└───────────────────────────────┘
+```
+
 <div id="timeSeriesRange">
   ## timeSeriesRange
 </div>
@@ -907,6 +943,46 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 ┌─group1─┬─group2─┬─empty_group─┬─same_group2─┬─throwIf(notEquals(same_group2, group2))─┬─timeSeriesGroupToTags(group2)──┐
 │      1 │      2 │           0 │           2 │                                       0 │ [('__name__','http_failures')] │
 └────────┴────────┴─────────────┴─────────────┴─────────────────────────────────────────┴────────────────────────────────┘
+```
+
+<div id="timeSeriesTagsToMap">
+  ## timeSeriesTagsToMap
+</div>
+
+Добавленный в: v26.8.0
+
+Объединяет массив пар `(tag_name, tag_value)` и отдельные аргументы имени и значения тега в одну карту.
+Результат сортируется по имени тега; повторяющиеся имена тегов и теги с пустыми значениями удаляются.
+
+**Синтаксис**
+
+```sql
+timeSeriesTagsToMap(tags_array, tag_name_1, tag_value_1, tag_name_2, tag_value_2, ...)
+```
+
+**Аргументы**
+
+* `tags_array` — Массив пар (tag&#95;name, tag&#95;value). [`Array(Tuple(String, String))`](/ru/reference/data-types/array) или [`Map(String, String)`](/ru/reference/data-types/map) или [`NULL`](/ru/reference/syntax#null)
+* `tag_name_i` — Имя тега. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring)
+* `tag_value_i` — Значение тега. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`Nullable(String)`](/ru/reference/data-types/nullable)
+
+**Возвращаемое значение**
+
+Возвращает map, сопоставляющий имена тегов с их значениями, отсортированный по именам тегов и не содержащий повторяющихся имён или пустых значений тегов.
+[`Map(String, String)`](/ru/reference/data-types/map)
+
+**Примеры**
+
+**Пример**
+
+```sql title=Query
+SELECT timeSeriesTagsToMap([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS tags
+```
+
+```response title=Response
+┌─tags───────────────────────────────────────────────────────────┐
+│ {'__name__':'http_requests_count','env':'dev','region':'eu'}    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="timeSeriesThrowDuplicateSeriesIf">

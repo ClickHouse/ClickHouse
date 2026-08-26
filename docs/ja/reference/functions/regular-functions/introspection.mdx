@@ -47,6 +47,10 @@ ClickHouseサーバープロセス内の仮想メモリアドレスを、ClickHo
 * `clickhouse-common-static-dbg` パッケージをインストールします。
 * 設定 [`allow_introspection_functions`](/ja/reference/settings/session-settings/allow#allow_introspection_functions) を `1` に設定します。
 
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返す場合があります。
+</Note>
+
 **構文**
 
 ```sql
@@ -135,6 +139,10 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 
 * `clickhouse-common-static-dbg` パッケージをインストールします。
 * 設定 [`allow_introspection_functions`](/ja/reference/settings/session-settings/allow#allow_introspection_functions) の値を `1` に設定します。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返す場合があります。
+</Note>
 
 **構文**
 
@@ -232,6 +240,10 @@ WHERE
 
 ClickHouseサーバープロセス内の仮想メモリアドレスを、ClickHouseのオブジェクトファイル内のシンボルに変換します。
 
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -256,7 +268,7 @@ SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
 ```response title=Response
--- `trace` フィールドには、サンプリング時点のスタックトレースが含まれています。
+-- The `trace` field contains the stack trace at the moment of sampling.
 Row 1:
 ──────
 event_date:    2019-11-20
@@ -286,8 +298,8 @@ addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20Aggregat
 ```sql title=Query
 SET allow_introspection_functions=1;
 
--- arrayMap関数を使用して、trace配列の各要素をaddressToSymbols関数で処理します。
--- この処理の結果は、出力のtrace_symbolsカラムに表示されます。
+-- The arrayMap function allows to process each individual element of the trace array by the addressToSymbols function.
+-- The result of this processing is shown in the trace_symbols column of output.
 
 SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols

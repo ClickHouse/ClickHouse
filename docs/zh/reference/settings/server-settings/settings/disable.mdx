@@ -18,7 +18,9 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
-禁用 insert/alter/delete 查询。当需要将节点设为只读，以防止插入和变更操作影响读取性能时，可启用此设置。即使启用了此设置，仍允许向外部引擎 (S3、DataLake、MySQL、PostrgeSQL、Kafka 等) 执行插入。
+禁用 `INSERT`、`ALTER` 和 `DELETE` 查询，防止只读副本创建会影响读取性能的数据分区片段、变更或合并任务。
+
+仍允许通过 `S3`、`DataLake`、`MySQL`、`PostgreSQL` 和 `Kafka` 等引擎写入外部存储。由于会在此副本上产生 `MergeTree` parts 和合并任务，从 `Kafka`、`RabbitMQ`、`NATS` 和 `S3Queue` 表后台流式传输到已附加 materialized view 的功能将被禁用。
 
 <div id="disable_internal_dns_cache">
   ## disable_internal_dns_cache

@@ -93,13 +93,19 @@ Un servidor ClickHouse utiliza varios [hilos de fusión](/es/reference/settings/
 
 Cada hilo de fusión ejecuta un bucle:
 
-① Decide qué partes fusionar a continuación y carga esas partes en memoria.
+<Steps>
+  <Step title="Cargar partes en memoria">
+    Decide qué partes fusionar a continuación y carga esas partes en memoria.
+  </Step>
 
-② Fusiona las partes en memoria en una parte más grande.
+  <Step title="Fusionar partes">
+    Fusiona las partes en memoria en una parte más grande.
+  </Step>
 
-③ Escribe la parte fusionada en disco.
-
-Volver a ①
+  <Step title="Escribir en disco">
+    Escribe la parte fusionada en disco y, a continuación, vuelve al paso 1.
+  </Step>
+</Steps>
 
 Ten en cuenta que aumentar el número de núcleos de CPU y la cantidad de RAM permite incrementar el rendimiento de las fusiones en segundo plano.
 
@@ -121,17 +127,27 @@ El siguiente diagrama ilustra cómo un único [hilo de fusión en segundo plano]
 
 La fusión de partes se realiza en varios pasos:
 
-**① Descompresión y carga**: Los [archivos binarios comprimidos de columnas](/es/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) de las partes que se van a fusionar se descomprimen y se cargan en memoria.
+<Steps>
+  <Step title="Descompresión y carga">
+    Los [archivos binarios comprimidos de columnas](/es/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) de las partes que se van a fusionar se descomprimen y se cargan en memoria.
+  </Step>
 
-**② Fusión**: Los datos se fusionan en archivos de columnas más grandes.
+  <Step title="Fusión">
+    Los datos se fusionan en archivos de columnas más grandes.
+  </Step>
 
-**③ Indexación**: Se genera un nuevo [índice primario disperso](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) para los archivos de columnas fusionados.
+  <Step title="Indexación">
+    Se genera un nuevo [índice primario disperso](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) para los archivos de columnas fusionados.
+  </Step>
 
-**④ Compresión y almacenamiento**: Los nuevos archivos de columnas y el índice se [comprimen](/es/reference/statements/create/table/codec) y se guardan en un nuevo [directorio](/es/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) que representa la parte de datos fusionada.
+  <Step title="Compresión y almacenamiento">
+    Los nuevos archivos de columnas y el índice se [comprimen](/es/reference/statements/create/table/codec) y se guardan en un nuevo [directorio](/es/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) que representa la parte de datos fusionada.
+  </Step>
+</Steps>
 
 Los [metadatos adicionales de las partes de datos](/es/concepts/core-concepts/parts), como índices secundarios de omisión de datos, estadísticas de columnas, sumas de comprobación e índices min-max, también se recrean a partir de los archivos de columnas fusionados. Omitimos estos detalles por simplicidad.
 
-La mecánica del paso ② depende del [motor MergeTree](/es/reference/engines/table-engines/mergetree-family/index) específico que se utilice, ya que los distintos motores gestionan la fusión de forma diferente. Por ejemplo, las filas pueden agregarse o reemplazarse si están desactualizadas. Como se mencionó antes, este enfoque **traslada todo el procesamiento de datos a las fusiones en segundo plano**, lo que permite **inserciones superrápidas** al mantener las operaciones de escritura ligeras y eficientes.
+La mecánica del paso de fusión depende del [motor MergeTree](/es/reference/engines/table-engines/mergetree-family/index) específico que se utilice, ya que los distintos motores gestionan la fusión de forma diferente. Por ejemplo, las filas pueden agregarse o reemplazarse si están desactualizadas. Como se mencionó antes, este enfoque **traslada todo el procesamiento de datos a las fusiones en segundo plano**, lo que permite **inserciones superrápidas** al mantener las operaciones de escritura ligeras y eficientes.
 
 A continuación, describiremos brevemente la mecánica de fusión de motores específicos de la familia MergeTree.
 

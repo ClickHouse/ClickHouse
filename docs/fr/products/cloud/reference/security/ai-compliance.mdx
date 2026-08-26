@@ -34,12 +34,12 @@ Lorsque le paramètre de niveau administrateur autorisant le partage de données
   ## ClickHouse Assistant
 </div>
 
-Le paramètre permettant d’activer [ClickHouse Assistant](/fr/products/cloud/features/ai-ml/ask-ai) peut être consulté et modifié par un utilisateur disposant des permissions `service:manage-generative-ai`. Il est disponible sur la page des paramètres du service. Cette fonctionnalité offre deux capacités distinctes :
+Le paramètre permettant d’activer [ClickHouse Assistant](/fr/products/cloud/features/ai-ml/aichat/using-ai-chat) peut être consulté et modifié par un utilisateur disposant des autorisations `service:manage-generative-ai`. Il est disponible sur la page des paramètres du service. Cette fonctionnalité offre deux capacités distinctes :
 
 | Fonctionnalité       | Description                                                                                 | Données utilisées                                                                | Validation utilisateur                                                                             |
 | :------------------- | :------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------- |
-| SQL AI               | Rédige, analyse et recommande des améliorations pour les requêtes                           | Métadonnées du service, texte de requête et entrées de prompt                    | Le résultat est fourni à l’utilisateur pour vérification avant l’exécution de la requête           |
-| ClickHouse Assistant | Permet aux utilisateurs de poser des questions en langage naturel et d’obtenir des réponses | Métadonnées et contenu du service, documentation ClickHouse et entrées de prompt | Le résultat est présenté pour vérification ; les utilisateurs doivent le valider avant utilisation |
+| SQL AI               | Rédige, analyse et recommande des améliorations pour les requêtes                           | Métadonnées du service, texte de requête et entrées de prompt                    | La sortie est fournie à l’utilisateur pour vérification avant l’exécution de la requête           |
+| ClickHouse Assistant | Permet aux utilisateurs de poser des questions en langage naturel et d’obtenir des réponses | Métadonnées et contenu du service, documentation ClickHouse et entrées de prompt | La sortie est présentée pour vérification ; les utilisateurs doivent la valider avant utilisation |
 
 <div id="model-comtext-protocol">
   ## Model Context Protocol

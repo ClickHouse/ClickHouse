@@ -92,6 +92,7 @@ s3(named_collection[, option=value [,..]])
 SELECT *
 FROM s3(
    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+   NOSIGN,
    'CSVWithNames'
 )
 LIMIT 5;
@@ -113,7 +114,8 @@ LIMIT 5;
   ```sql
   SELECT *
   FROM s3(
-     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv'
+     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+     NOSIGN
   )
   LIMIT 5;
   ```
@@ -147,7 +149,7 @@ LIMIT 5;
 * &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
 * &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
 * &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;file&#95;1.csv&#39;
 * &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
 * &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
 * &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
@@ -156,7 +158,7 @@ LIMIT 5;
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -169,7 +171,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucke
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -182,11 +184,11 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucke
   如果文件列表中包含带前导零的数字范围，请对每一位分别使用大括号写法，或使用 `?`。
 </Tip>
 
-统计名为 `file-000.csv`、`file-001.csv`、...、`file-999.csv` 的文件中的总行数：
+统计名为 `file-1.csv`、...、`file-4.csv` 的文件中的总行数：
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{1..4}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
 ```text
@@ -212,24 +214,24 @@ SELECT name, value FROM existing_table;
 Glob ** 可用于递归遍历目录。以下示例将递归拉取 `my-test-bucket-768` 目录中的所有文件：
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
-以下示例递归地从 `my-test-bucket` 目录内所有子文件夹中的 `test-data.csv.gz` 文件获取数据：
+以下示例将递归获取 `my-test-bucket` 目录中任意子目录内所有 `test-data.csv.gz` 文件的数据：
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 注意：可以在服务器配置文件中指定自定义 URL 映射器。示例：
 
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` 将被替换为 `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
 
-可在 `config.xml` 中添加自定义映射器：
+可在 `config.xml` 中添加自定义 URL 映射器：
 
 ```xml
 <url_scheme_mappers>
@@ -367,7 +369,8 @@ SELECT count() FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.co
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 
@@ -440,7 +443,7 @@ Peak memory usage: 192.27 KiB.
 
 ```sql
 SET s3_base = 's3://clickhouse-public-datasets/';
-SELECT count() FROM s3('hits_compatible/hits.csv');
+SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
 <div id="storage-settings">

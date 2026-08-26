@@ -578,6 +578,42 @@ SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('src1'
 └───────┴──────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+<div id="timeSeriesMetricTypeToSuffixes">
+  ## timeSeriesMetricTypeToSuffixes
+</div>
+
+引入版本：v26.8.0
+
+返回指定 Prometheus 类型的指标族对应的指标名称后缀。
+
+**语法**
+
+```sql
+timeSeriesMetricTypeToSuffixes(type)
+```
+
+**参数**
+
+* `type` — Prometheus 指标类型 (`counter`、`gauge`、`histogram`、`summary` 等) 。[`String`](/zh/reference/data-types/string)
+
+**返回值**
+
+返回该类型指标族的后缀。[`Array(String)`](/zh/reference/data-types/array)
+
+**示例**
+
+**示例**
+
+```sql title=Query
+SELECT timeSeriesMetricTypeToSuffixes('histogram') AS suffixes;
+```
+
+```response title=Response
+┌─suffixes──────────────────────┐
+│ ['_bucket','_count','_sum']   │
+└───────────────────────────────┘
+```
+
 <div id="timeSeriesRange">
   ## timeSeriesRange
 </div>
@@ -907,6 +943,46 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 ┌─group1─┬─group2─┬─empty_group─┬─same_group2─┬─throwIf(notEquals(same_group2, group2))─┬─timeSeriesGroupToTags(group2)──┐
 │      1 │      2 │           0 │           2 │                                       0 │ [('__name__','http_failures')] │
 └────────┴────────┴─────────────┴─────────────┴─────────────────────────────────────────┴────────────────────────────────┘
+```
+
+<div id="timeSeriesTagsToMap">
+  ## timeSeriesTagsToMap
+</div>
+
+引入版本：v26.8.0
+
+将 `(tag_name, tag_value)` 对组成的数组与单独指定的标签名称/值参数合并为一个映射。
+结果会按标签名称排序，并移除重复的标签名称以及值为空的标签。
+
+**语法**
+
+```sql
+timeSeriesTagsToMap(tags_array, tag_name_1, tag_value_1, tag_name_2, tag_value_2, ...)
+```
+
+**参数**
+
+* `tags_array` — 由 (标签名称、标签值) 对组成的 Array。[`Array(Tuple(String, String))`](/zh/reference/data-types/array) 或 [`Map(String, String)`](/zh/reference/data-types/map) 或 [`NULL`](/zh/reference/syntax#null)
+* `tag_name_i` — 标签名称。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring)
+* `tag_value_i` — 标签值。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`Nullable(String)`](/zh/reference/data-types/nullable)
+
+**返回值**
+
+返回一个按标签名称排序的标签名称到标签值的映射，不包含重复的标签名称或空标签值。
+[`Map(String, String)`](/zh/reference/data-types/map)
+
+**示例**
+
+**示例**
+
+```sql title=Query
+SELECT timeSeriesTagsToMap([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS tags
+```
+
+```response title=Response
+┌─tags───────────────────────────────────────────────────────────┐
+│ {'__name__':'http_requests_count','env':'dev','region':'eu'}    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="timeSeriesThrowDuplicateSeriesIf">

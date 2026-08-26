@@ -1,0 +1,140 @@
+---
+title: '权限模型'
+sidebarTitle: '权限模型'
+description: 'ClickHouse 连接器可执行和不可执行的操作：出站连接、ClickHouse 授权、Kubernetes RBAC、归因和数据最小化'
+keywords: ['BYOC', 'cloud', '自备 Cloud', '连接器', '权限', '安全']
+doc_type: 'reference'
+---
+
+本页是 ClickHouse 连接器的安全参考，涵盖其建立的所有连接、拥有的确切权限、从设计上无法执行的操作，以及每项操作的归因方式。有关各组件如何协同工作，请参阅[架构](/zh/products/bring-your-own-cloud/connector/architecture)。
+
+<div id="what-the-connector-can-do">
+  ## 连接器 的功能
+</div>
+
+<div id="outbound-connections">
+  ### 出站连接
+</div>
+
+以下是连接器发起的全部连接。所有连接均从您的环境内部发起。
+
+| 目标端                   | 协议                             | 用途                                                                                                                                |
+| --------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| 您组织的连接器 API 端点        | 使用 mTLS 的 HTTPS，每个请求均经 HMAC 签名 | `POST /v1/metrics`、`/v1/self-metrics`、`/v1/status`、`/v1/instance/sync`、`/v1/infra/sync`、`/v1/backup/sync`、`/v1/pcm/cert/renew`    |
+| 您组织的连接器 API 端点        | 出站 WebSocket，`/v1/commands/ws` | 故障排查器的命令通道，受支持会话状态控制                                                                                                              |
+| 您组织的注册端点              | HTTPS (注册令牌或 HMAC；不使用 mTLS)    | 安装期间兑换令牌并签署证书 (`/v1/pcm/cert/sign`)                                                                                               |
+| 您的 ClickHouse 实例      | ClickHouse 原生协议                | 以 `pcm_scraper` 和 `pcm_troubleshooter` 身份执行只读查询，以及执行抓取器的日志刷新语句 (参见[授权](#clickhouse-grants))                                       |
+| Kubernetes API server | HTTPS                          | 在命名空间范围内读取资源和请求 ServiceAccount 令牌 (适用于两个目标端) ；按确切名称读取和更新连接器自身的 mTLS Secret，以持久保存续订后的证书 (仅限 Kubernetes 安装；VM 会将续订后的证书写入本地 TLS 文件)  |
+| 您的身份提供商的 JWKS 端点      | HTTPS                          | 仅在启用会话网关时验证操作员令牌                                                                                                                  |
+
+对于入站连接，连接器仅开放本地健康检查和指标端口，以及可选启用的会话网关。不会有其他服务监听，ClickHouse Cloud 也绝不会连接到您的环境：它只能响应故障排查器发起的出站 WebSocket。
+
+<div id="clickhouse-grants">
+  ### ClickHouse 授权
+</div>
+
+预配会为每个组件创建一个只读用户。纯读取操作唯一的例外是下方列出的抓取器 `SYSTEM FLUSH LOGS` 授权；它不能读取或修改任何内容，只会强制日志表将已缓冲的条目持久化。用户通过 `IDENTIFIED WITH bcrypt_hash` 创建，因此预配 SQL 中仅包含加盐的 bcrypt 哈希；明文密码仅保存在守护进程运行时读取的凭据文件中。授权如下，使用默认表集：
+
+```sql
+CREATE USER IF NOT EXISTS `pcm_scraper` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
+
+GRANT SELECT ON `system`.`asynchronous_metric_log` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`metric_log` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`server_settings` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`tables` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`warnings` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`user_directories` TO `pcm_scraper`;
+GRANT READ ON REMOTE TO `pcm_scraper`;
+GRANT SYSTEM FLUSH LOGS ON *.* TO `pcm_scraper`;
+```
+
+由于抓取查询会通过 `clusterAllReplicas()` 包装每个系统表，因此需要 `READ ON REMOTE`。必须在全局范围内授予 `SYSTEM FLUSH LOGS`，因为 ClickHouse 会拒绝为该权限指定更窄的范围；ClickHouse 仅会对 `*_log` 系统表执行该权限，因此授予范围比实际能力更广。
+
+```sql
+CREATE USER IF NOT EXISTS `pcm_troubleshooter` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
+
+GRANT SELECT ON `system`.`asynchronous_metrics` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`build_options` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`clusters` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`columns` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`databases` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`detached_parts` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`disks` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`events` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`formats` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`functions` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`grants` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`merges` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`metrics` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`mutations` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`parts` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`parts_columns` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`parts_summary` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`processes` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`replicas` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`replication_queue` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`roles` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`settings` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`settings_profile_elements` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`settings_profiles` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`storage_policies` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`table_engines` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`tables` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`users` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
+```
+
+两个用户都拥有 `system.user_directories` 授权，但仅用于一项诊断：`clicklink clctl preflight` 会使用连接器自身的凭据运行，并检查该实例如何存储 ClickHouse 用户 (副本或本地) 。该表保存的是用户存储配置元数据，而非用户数据；抓取集合和会话表允许列表均未包含该表，因此抓取或会话输出路径不会读取它。没有此授权时，该项预检会显示为已跳过，其他操作仍会继续。
+
+除各表的 `SELECT` 外，唯一的系统级授权是供抓取器使用的 `SYSTEM FLUSH LOGS`：它会强制 `*_log` 系统表将缓冲条目持久化到磁盘，使抓取能获取最新数据，除此之外不执行任何操作；尽管该授权只能在全局范围内授予，ClickHouse 也仅会对日志表执行该操作。没有 `INSERT`、DDL、用户管理、设置或进程控制方面的授权。当第二个 连接器 部署共享同一实例时，其用户会带有后缀 (`pcm_scraper_<suffix>`) ，并拥有相同的授权集。
+
+<div id="kubernetes-rbac">
+  ### Kubernetes RBAC
+</div>
+
+该 chart 仅创建命名空间范围内的 Role；不创建集群角色或 ClusterRoleBinding。
+
+| 资源                                                                                              | 动词                     | 范围                                                    |
+| ----------------------------------------------------------------------------------------------- | ---------------------- | ----------------------------------------------------- |
+| `secrets`                                                                                       | `get`                  | 仅限指定名称：mTLS Secret、HMAC Secret 以及每个实例的访问包 Secret      |
+| `secrets`                                                                                       | `update`               | 仅限指定名称的 mTLS Secret，以便守护进程持久保存自动续订的客户端证书              |
+| `serviceaccounts/token`                                                                         | `create`               | 仅限指定名称：组件自身的 ServiceAccount 以及每个实例的访问包 ServiceAccount |
+| `pods`, `pods/log`, `pods/status`, `services`, `configmaps`, `events`, `persistentvolumeclaims` | `get`, `list`, `watch` | 仅限 Troubleshooter                                     |
+| `deployments`, `statefulsets`, `replicasets` (`apps`)                                           | `get`, `list`, `watch` | 仅限 Troubleshooter                                     |
+
+<div id="what-the-connector-cannot-do">
+  ## 连接器无法执行的操作
+</div>
+
+* **不会向 ClickHouse 写入数据或状态。** 上述授权不包含 `INSERT`、DDL，也不包含用户管理、设置或进程控制权限；唯一的系统级授权，即抓取器的 `SYSTEM FLUSH LOGS`，仅会将日志表已缓冲的内容持久化。连接器无法修改数据、schema、用户或设置。
+* **无法执行命令。** RBAC 不包含 `pods/exec`；连接器无法在您的 Pod (容器组) 中运行命令。
+* **无法删除或修补。** RBAC 仅允许两项变更：对连接器自身的 mTLS Secret 执行精确名称匹配的 `update`，以及对 `serviceaccounts/token` 执行 `create`。后者会为连接器自身的 ServiceAccounts 签发短期标记，且不会修改任何已存储对象。
+* **不具备集群范围权限。** 每个 Role 均绑定在某个命名空间中；连接器无法列出或读取您未授予权限的命名空间中的资源。
+* **没有入站连接。** ClickHouse Cloud 绝不会向您的环境发起连接。唯一的命令通道是故障排查器的出站 WebSocket；除非您启用的支持会话处于活动状态，否则故障排查器会拒绝所有命令。即使在会话期间，访问范围也在两端受到限制：ClickHouse 查询仅限于表允许列表，且无论配置如何，验证器都会拒绝 `query_log` 和 `text_log`；Kubernetes 访问则单独限制为命名空间范围 Role 授予的只读视图和 pod (容器组) 日志。
+
+<div id="what-requires-your-action">
+  ## 需要您采取操作的事项
+</div>
+
+* **支持会话。** 交互式故障排查只能在您启用的会话中进行；默认时长为 4 小时，最长不超过 24 小时。禁用后立即生效。请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
+* **操作员允许列表。** 每个 Gateway 请求都必须携带 OIDC 标记，且其声明的电子邮件地址必须在您的允许列表中。允许列表为空时，访问默认关闭。该列表由您管理；请参阅[配置指南](/zh/products/bring-your-own-cloud/connector/configuration)。
+* **Gateway 暴露。** 会话网关默认关闭，需由您启用；除非您选择使用入口，否则只能通过端口转发访问。在 VM 上，每位操作员都必须固定其自签名证书的指纹，会话命令才能与之通信。
+* **网络出站流量。** 在强制实施 CNI 的环境中，连接器默认没有出站访问权限，除非您在 chart 的 NetworkPolicy 中将端点 CIDR 加入允许列表。
+
+<div id="how-access-is-attributed">
+  ## 访问归属
+</div>
+
+* **部署身份。** mTLS 客户端证书的通用名称为您的 org ID，且仅有一个 DNS name 绑定到您的端点主机，因此每个 API 连接均可归属于您的 org。证书会在守护进程内自动续订；无需操作员处理密钥材料。
+* **请求完整性。** 每个 API 请求还会携带一个 HMAC-SHA256 签名 (`Authorization: HMAC-SHA256 AccessKey=..., Signature=..., Timestamp=...`) 。该签名使用注册时签发的密钥对，根据方法、路径、时间戳和正文哈希计算得出。
+* **操作员身份。** Gateway 调用归属于操作员 OIDC ID token 中证明的电子邮件地址，并根据您的身份提供商 JWKS 进行验证；只要 token 可用，绝不信任自行声明的名称。
+* **审计跟踪。** 每次 gateway 调用和每条 troubleshoot 命令，无论被接受还是阻止，都会追加到 NDJSON 审计日志中：gateway 条目包含经验证的操作员电子邮件地址，VM 本地会话变更包含执行调用的主机用户，会话命令则包含经身份验证通道传递的 org 身份。使用 `clicklink clctl troubleshoot audit tail` 读取；请参阅 [命令行客户端参考](/zh/products/bring-your-own-cloud/connector/reference/cli)。
+
+<div id="data-minimization-defaults">
+  ## 数据最小化默认设置
+</div>
+
+* **默认不抓取 `query_log`。**其列包含带字面值的原始 SQL，其中可能包含个人数据或密钥，因此除非您主动添加，否则这些数据不会离开您的边界。
+* **故障排查器仅读取允许列表中的表**，验证器会无条件拒绝 `query_log` 和 `text_log`，因此查询历史记录永远无法读取。默认允许列表包含 `system.processes` (实时查询文本) ；如果会话期间也必须隐藏这些内容，请缩减会话表允许列表 (Kubernetes 上为 `troubleshooter.allowedTables`，VM 上为 `troubleshooter.allowed_tables`) 。
+* **所有故障排查器输出都会脱敏**，内置模式可识别 IPv4 和 IPv6 地址、Bearer 令牌、AWS 访问密钥、电子邮件、JWT、SSH 私钥和连接字符串凭据，以及您定义的任何模式。模式文件无效时，守护进程会拒绝启动，而不会在未脱敏的情况下运行。
+* **静态存储的凭据已最小化。**预配 SQL 包含 bcrypt 哈希，绝不包含明文密码；注册令牌绝不会写入命令行、磁盘或日志；密钥存储在 Kubernetes Secrets 中，或存储在权限模式为 0600 的文件中。

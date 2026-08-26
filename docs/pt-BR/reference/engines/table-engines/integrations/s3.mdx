@@ -458,7 +458,8 @@ Suponha que temos vários arquivos compactados com os seguintes URIs no S3:
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 
