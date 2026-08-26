@@ -197,6 +197,11 @@ void MergePlainMergeTreeTask::finish()
         ThreadFuzzer::maybeInjectMemoryLimitException();
     }
 
+    /// Release it here, while this still runs under the merge's own tracker: the writer's compression buffers
+    /// were charged to it, and destroying the task with the rest of the object would free them against whoever
+    /// waits for the merge instead. As in `cancel`, this also has to happen before the entry is finalized.
+    merge_task.reset();
+
     merge_mutate_entry->finalize();
 }
 
