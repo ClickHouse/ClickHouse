@@ -196,8 +196,8 @@ are taken from the `credentials` key of the optional parameter map, or from the
         },
         .returned_value = {"One of the provided category labels, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Classify sentiment", "SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])", "positive"},
-            {"Classify a column with explicit credentials", "SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5", ""},
+            {"Classify sentiment", "SET allow_experimental_ai_functions = 1;\nSELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])", "positive"},
+            {"Classify a column with explicit credentials", "SET allow_experimental_ai_functions = 1;\nCREATE TABLE issues (body String) ENGINE = Memory;\nINSERT INTO issues VALUES ('The application exits unexpectedly after login.');\nSELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5", ""},
         },
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});
