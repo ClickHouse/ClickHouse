@@ -1,4 +1,3 @@
--- Random settings limits: index_granularity=(8192, None)
 DROP TABLE IF EXISTS t_bf_array_in;
 
 CREATE TABLE t_bf_array_in (x Array(UInt32), INDEX idx_x x TYPE bloom_filter GRANULARITY 1)
@@ -59,28 +58,39 @@ SELECT count() FROM t_bf_array_in_low_cardinality WHERE x IN ([], ['b']) SETTING
 
 DROP TABLE t_bf_array_in_low_cardinality;
 
--- A tuple `IN`, with the array component in either position.
+-- A tuple `IN` where the array component has an index of its own.
 DROP TABLE IF EXISTS t_bf_array_in_tuple;
 
-CREATE TABLE t_bf_array_in_tuple (a UInt32, x Array(UInt32), y UInt32,
-  INDEX idx_a a TYPE bloom_filter GRANULARITY 1,
+CREATE TABLE t_bf_array_in_tuple (x Array(UInt32), y UInt32,
   INDEX idx_x x TYPE bloom_filter GRANULARITY 1,
   INDEX idx_y y TYPE bloom_filter GRANULARITY 1)
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
-INSERT INTO t_bf_array_in_tuple VALUES (9, [], 1), (9, [1], 2), (9, [2], 3), (9, [3], 4);
+INSERT INTO t_bf_array_in_tuple VALUES ([], 1), ([1], 2), ([2], 3), ([3], 4);
 
 SELECT count() FROM t_bf_array_in_tuple WHERE (x, y) IN (([], 1), ([2], 3)) SETTINGS use_skip_indexes = 1;
 SELECT count() FROM t_bf_array_in_tuple WHERE (x, y) IN (([], 1), ([2], 3)) SETTINGS use_skip_indexes = 0;
-SELECT count() FROM t_bf_array_in_tuple WHERE (y, x) IN ((1, []), (3, [2])) SETTINGS use_skip_indexes = 1;
-SELECT count() FROM t_bf_array_in_tuple WHERE (y, x) IN ((1, []), (3, [2])) SETTINGS use_skip_indexes = 0;
-SELECT count() FROM t_bf_array_in_tuple WHERE (a, x, y) IN ((9, [], 1), (9, [2], 3)) SETTINGS use_skip_indexes = 1;
-SELECT count() FROM t_bf_array_in_tuple WHERE (a, x, y) IN ((9, [], 1), (9, [2], 3)) SETTINGS use_skip_indexes = 0;
-
--- No empty array in the tuple set, so every component keeps pruning.
-SELECT count() FROM t_bf_array_in_tuple WHERE (x, y) IN (([1], 2), ([2], 3)) SETTINGS use_skip_indexes = 1;
-SELECT count() FROM t_bf_array_in_tuple WHERE (x, y) IN (([1], 2), ([2], 3)) SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_bf_array_in_tuple;
+
+-- One index over both tuple components, so the array component shares an index condition with
+-- its sibling. Either component order.
+DROP TABLE IF EXISTS t_bf_array_in_tuple_one_index;
+
+CREATE TABLE t_bf_array_in_tuple_one_index (x Array(UInt32), y UInt32,
+  INDEX idx_xy (x, y) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
+INSERT INTO t_bf_array_in_tuple_one_index VALUES ([], 1), ([1], 2), ([2], 3), ([3], 4);
+
+SELECT count() FROM t_bf_array_in_tuple_one_index WHERE (x, y) IN (([], 1), ([2], 3)) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_bf_array_in_tuple_one_index WHERE (x, y) IN (([], 1), ([2], 3)) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_array_in_tuple_one_index WHERE (y, x) IN ((1, []), (3, [2])) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_bf_array_in_tuple_one_index WHERE (y, x) IN ((1, []), (3, [2])) SETTINGS use_skip_indexes = 0;
+
+-- No empty array in the set, so the shared index keeps pruning.
+SELECT count() FROM t_bf_array_in_tuple_one_index WHERE (x, y) IN (([1], 2), ([2], 3)) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_bf_array_in_tuple_one_index WHERE (x, y) IN (([1], 2), ([2], 3)) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_bf_array_in_tuple_one_index;
 
 -- An absent value is still pruned away, so the index keeps working.
 DROP TABLE IF EXISTS t_bf_array_in_pruning;
