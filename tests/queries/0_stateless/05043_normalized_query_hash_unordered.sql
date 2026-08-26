@@ -24,6 +24,16 @@ SELECT normalizedQueryHashUnordered('SELECT a FROM t1 UNION ALL SELECT b FROM t2
 -- a lambda is hashed from the AST, so its rendering plays no part
 SELECT normalizedQueryHashUnordered('SELECT arrayMap(x -> x + 1, a) FROM t') = normalizedQueryHashUnordered('SELECT arrayMap(x -> x + 2, a) FROM t');
 
+-- only what the lexer erases is erased, and every name part is judged on its own
+SELECT normalizedQueryHashUnordered('SELECT NULL FROM t') = normalizedQueryHashUnordered('SELECT 1 FROM t');
+SELECT normalizedQueryHashUnordered('SELECT true FROM t') = normalizedQueryHashUnordered('SELECT 1 FROM t');
+SELECT normalizedQueryHashUnordered('SELECT db1.t34 FROM t') = normalizedQueryHashUnordered('SELECT db1.t56 FROM t');
+SELECT normalizedQueryHashUnordered('SELECT 1 AS x FROM t') = normalizedQueryHashUnordered('SELECT 1 AS y FROM t');
+
+-- the set operator is part of the query, even though it does not live in the AST children
+SELECT normalizedQueryHashUnordered('SELECT 1 UNION ALL SELECT 2') = normalizedQueryHashUnordered('SELECT 1 UNION DISTINCT SELECT 2');
+SELECT normalizedQueryHashUnordered('SELECT 1 INTERSECT SELECT 2') = normalizedQueryHashUnordered('SELECT 1 EXCEPT SELECT 2');
+
 -- not everything collapses
 SELECT normalizedQueryHashUnordered('SELECT a, b FROM t') = normalizedQueryHashUnordered('SELECT a, c FROM t');
 SELECT normalizedQueryHashUnordered('SELECT a FROM t') = normalizedQueryHashUnordered('SELECT a FROM u');

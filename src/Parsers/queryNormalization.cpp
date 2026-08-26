@@ -1,5 +1,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Core/Field.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/queryNormalization.h>
@@ -221,15 +222,54 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
 namespace
 {
 
+/// normalizedQueryHash erases Number and StringLiteral tokens only, so NULL and true stay distinct
+bool isErasedByLexer(Field::Types::Which which)
+{
+    switch (which)
+    {
+        case Field::Types::UInt64:
+        case Field::Types::Int64:
+        case Field::Types::Float64:
+        case Field::Types::UInt128:
+        case Field::Types::Int128:
+        case Field::Types::UInt256:
+        case Field::Types::Int256:
+        case Field::Types::Decimal32:
+        case Field::Types::Decimal64:
+        case Field::Types::Decimal128:
+        case Field::Types::Decimal256:
+        case Field::Types::String:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// a generated-looking name becomes a placeholder, like normalizedQueryHash does, one SQL token at a time
+void updateWithName(SipHash & hash, const String & name)
+{
+    if (isComplexIdentifier(name.data(), name.data() + name.size()))
+    {
+        hash.update("\x01", 1);
+        return;
+    }
+
+    hash.update(name.size());
+    hash.update(name);
+}
+
 /// such as the right hand side of IN
-bool isListOfLiterals(const IAST & ast)
+bool isListOfErasedLiterals(const IAST & ast)
 {
     if (!ast.as<ASTExpressionList>() || ast.children.empty())
         return false;
 
     for (const auto & child : ast.children)
-        if (!child->as<ASTLiteral>())
+    {
+        const auto * literal = child->as<ASTLiteral>();
+        if (!literal || !isErasedByLexer(literal->value.getType()) || !literal->tryGetAlias().empty())
             return false;
+    }
 
     return true;
 }
@@ -239,16 +279,30 @@ IASTHash hashUnordered(const IAST & ast)
     checkStackSize();
 
     SipHash hash;
+    updateWithName(hash, ast.tryGetAlias());
 
-    /// erase the value, same as normalizedQueryHash
-    if (ast.as<ASTLiteral>())
+    if (const auto * literal = ast.as<ASTLiteral>())
     {
-        hash.update("\x00", 1);
-        return getSipHash128AsPair(hash);
+        const auto which = literal->value.getType();
+
+        /// erase the value, same as normalizedQueryHash
+        if (isErasedByLexer(which))
+        {
+            hash.update("\x00", 1);
+            return getSipHash128AsPair(hash);
+        }
+
+        /// the lexer turns a collection of literals into ?.. as well, so keep only its kind
+        if (!Field::isScalar(which))
+        {
+            hash.update("\x00", 1);
+            hash.update(which);
+            return getSipHash128AsPair(hash);
+        }
     }
 
     /// collapse it, so that IN (1, 2) and IN (1, 2, 3) match
-    if (isListOfLiterals(ast))
+    if (isListOfErasedLiterals(ast))
     {
         hash.update("\x00", 1);
         if (ast.children.size() > 1)
@@ -256,14 +310,16 @@ IASTHash hashUnordered(const IAST & ast)
         return getSipHash128AsPair(hash);
     }
 
-    if (const auto * identifier = ast.as<ASTIdentifier>();
-        identifier && isComplexIdentifier(identifier->full_name.data(), identifier->full_name.data() + identifier->full_name.size()))
+    /// as<> only matches the exact type, and the lexer sees every part as its own token, so db1.t34 is two simple names
+    if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(&ast))
     {
-        hash.update("\x01", 1);
-        return getSipHash128AsPair(hash);
+        hash.update("Identifier");
+        hash.update(identifier->name_parts.size());
+        for (const auto & part : identifier->name_parts)
+            updateWithName(hash, part);
     }
-
-    ast.updateTreeHashImpl(hash, /*ignore_aliases=*/ true);
+    else
+        ast.updateTreeHashImpl(hash, /*ignore_aliases=*/ true);
 
     std::vector<IASTHash> child_hashes;
     child_hashes.reserve(ast.children.size());
