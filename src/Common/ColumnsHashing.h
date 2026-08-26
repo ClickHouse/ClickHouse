@@ -655,8 +655,11 @@ struct HashMethodSerialized
     bool keyViewsAreBlockStable() const
     requires(!prealloc)
     {
-        /// Every key is serialized into the arena and stays there.
-        return true;
+        /// The key is serialized into the arena a row at a time, and it stays there only if the row
+        /// inserts: a `SerializedKeyHolder` that is discarded - which is what a lookup that finds
+        /// its key does, and what the caller does with a key it only staged - rolls the arena back,
+        /// and the next row writes the same bytes again.
+        return false;
     }
 
     /// Lay the whole block out at once, for a caller that never asked for the chunk. This is the
