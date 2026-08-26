@@ -131,25 +131,12 @@ public:
 
     /// Register codec with parameters and column type. The `source` is captured automatically at the call site
     /// (the codec's registration), so it points to the source file that defines the codec; do not pass it explicitly.
-    void registerCompressionCodecWithType(
-        const String & family_name,
-        std::optional<uint8_t> byte_code,
-        CreatorWithType creator,
-        std::source_location source = std::source_location::current());
-
+    void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator, std::source_location source = std::source_location::current());
     /// Register codec with parameters
-    void registerCompressionCodec(
-        const String & family_name,
-        std::optional<uint8_t> byte_code,
-        Creator creator,
-        std::source_location source = std::source_location::current());
+    void registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator, std::source_location source = std::source_location::current());
 
     /// Register codec without parameters
-    void registerSimpleCompressionCodec(
-        const String & family_name,
-        std::optional<uint8_t> byte_code,
-        SimpleCreator creator,
-        std::source_location source = std::source_location::current());
+    void registerSimpleCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, SimpleCreator creator, std::source_location source = std::source_location::current());
 
     Strings getAllRegisteredNames() const;
 
