@@ -26,27 +26,46 @@ SET group_by_two_level_threshold_bytes = 1;
 SET max_threads = 16;
 SET distributed_aggregation_memory_efficient = 1;
 
--- Arming, asserted separately from the results below: the initiator merges bucket by bucket, and it
--- does so over more than one producer. Both are required for a duplicated bucket to be observable.
--- The settings sit on the inner query because the wrapper's own `SETTINGS` clause, which keeps the
--- wrapper out of the rewrite, would otherwise apply to the plan being explained as well.
+-- Arming, asserted separately from the results below, on the same rewritten plan the guard acts on:
+-- `distributed = 1` shows the per-shard plans, and the settings sit on the inner query because the
+-- wrapper's own `SETTINGS` clause, which keeps the wrapper itself out of the rewrite, would otherwise
+-- apply to the plan being explained as well. The initiator merges bucket by bucket, it does so over
+-- more than one producer, and both are required for a duplicated bucket to be observable.
 SELECT count() > 0 FROM
-    (EXPLAIN PLAN actions = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k
-        SETTINGS distributed_aggregation_memory_efficient = 1)
+    (EXPLAIN PLAN actions = 1, distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k
+        SETTINGS make_distributed_plan = 1, distributed_aggregation_memory_efficient = 1)
     WHERE explain ILIKE '%memory-efficient%'
     SETTINGS make_distributed_plan = 0;
-SELECT count() > 0 FROM
-    (EXPLAIN PLAN SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k
-        SETTINGS distributed_aggregation_memory_efficient = 1)
-    WHERE explain ILIKE '%ReadFromRemote%'
+SELECT count() > 1 FROM
+    (EXPLAIN PLAN actions = 1, distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k
+        SETTINGS make_distributed_plan = 1, distributed_aggregation_memory_efficient = 1)
+    WHERE explain ILIKE '%ReadFromMergeTree%'
+    SETTINGS make_distributed_plan = 0;
+
+-- The guard itself, observed at the site it acts on: the shuffle scatter is gone from the shard plan,
+-- so the strategy is partial aggregation plus merge. The second row pins that
+-- `distributed_plan_force_shuffle_aggregation` loses to the guard, as it loses to GROUPING SETS.
+SELECT count() = 0 FROM
+    (EXPLAIN PLAN actions = 1, distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k
+        SETTINGS make_distributed_plan = 1, distributed_aggregation_memory_efficient = 1)
+    WHERE explain ILIKE '%by hash(%'
+    SETTINGS make_distributed_plan = 0;
+SELECT count() = 0 FROM
+    (EXPLAIN PLAN actions = 1, distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k
+        SETTINGS make_distributed_plan = 1, distributed_aggregation_memory_efficient = 1,
+                 distributed_plan_force_shuffle_aggregation = 1)
+    WHERE explain ILIKE '%by hash(%'
     SETTINGS make_distributed_plan = 0;
 
 -- The aggregation must complete. The shuffle strategy keeps the promise to produce results in bucket
 -- order while each of its instances orders only its own share, so the merge receives a bucket it has
 -- already merged and rejects the whole query. Two shapes, because the merge reaches the duplicate
--- from both its ordered and its delayed-bucket push.
-SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k FORMAT Null;
-SELECT k FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY ALL FORMAT Null;
+-- from both its ordered and its delayed-bucket push. The force setting pins the strategy, so neither
+-- arm depends on the statistics-free default choice.
+SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k FORMAT Null
+    SETTINGS distributed_plan_force_shuffle_aggregation = 1;
+SELECT k FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY ALL FORMAT Null
+    SETTINGS distributed_plan_force_shuffle_aggregation = 1;
 
 -- The keys and the aggregate values must match the plain plan, not merely avoid the rejection. A
 -- single group keeps the output deterministic without an ORDER BY, which this plan cannot distribute.
