@@ -64,9 +64,9 @@ Like [`hasToken`](#hasToken) but returns null if token is ill-formed.
         "Usage example",
         "SELECT hasTokenOrNull('apple banana cherry', 'ban ana');",
         R"(
-┌─hasTokenOrNull('apple banana cherry', 'ban ana')─┐
-│                                             ᴺᵁᴸᴸ │
-└──────────────────────────────────────────────────┘
+┌─hasTokenOrNu⋯ 'ban ana')─┐
+│                     ᴺᵁᴸᴸ │
+└──────────────────────────┘
         )"
     }
     };

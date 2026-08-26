@@ -194,9 +194,7 @@ def parse_settings_history_changes(patch, file_lines):
     (check_settings_changes_history), which enforces the rule as soon as any other C++ source
     file changed. A change that edits only this file - fixing what a past release recorded -
     is a historical correction, not a default change made now, so it is allowed there; that is
-    what keeps a phantom record deletable. The caller also drops reported settings that are no
-    longer declared at all, so removing a setting that was never released - records included -
-    stays possible; nothing can be recorded for a setting that does not exist."""
+    what keeps a phantom record deletable."""
     added = []  # (new_line_number, name, signature, body_without_name)
     removed = []  # (new_line_number, name, signature, body_without_name)
     headers_added = []  # new_line_number of an added `addSettingsChanges` header

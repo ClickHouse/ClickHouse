@@ -2,8 +2,8 @@
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
 #include <Common/ProfileEvents.h>
-#include <base/scope_guard.h>
 #include <Common/Exception.h>
+#include <base/scope_guard.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <algorithm>
@@ -375,7 +375,7 @@ AIParamSpecs FunctionBaseAI::embeddingParams()
     };
 }
 
-void FunctionBaseAI::embedTexts(
+FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
     IAIProvider & provider,
     const String & model,
     UInt64 dimensions,
@@ -386,19 +386,10 @@ void FunctionBaseAI::embedTexts(
     UInt64 retry_delay_ms,
     bool throw_on_error,
     AIQuotaTracker & quota,
-    const ConnectionTimeouts & timeouts,
-    EmbeddingResult & result)
+    const ConnectionTimeouts & timeouts)
 {
+    EmbeddingResult result;
     result.embeddings.resize(inputs.size());
-
-    UInt64 api_calls = 0;
-    UInt64 input_tokens = 0;
-
-    /// Increment ProfileEvents counters upon destruction, to avoid underreporting on error
-    SCOPE_EXIT({
-        ProfileEvents::increment(ProfileEvents::AIAPICalls, api_calls);
-        ProfileEvents::increment(ProfileEvents::AIInputTokens, input_tokens);
-    });
 
     for (size_t batch_start = 0; batch_start < inputs.size(); batch_start += max_batch_size)
     {
@@ -429,13 +420,10 @@ void FunctionBaseAI::embedTexts(
 
             try
             {
-                /// Count the call before issuing it, so a failed request is still counted.
-                ++api_calls;
-                SCOPE_EXIT({
-                    input_tokens += ai_embedding_response.input_tokens;
-                    quota.recordTokens(ai_embedding_response.input_tokens, 0);
-                });
-                provider.embed(ai_embedding_request, timeouts, ai_embedding_response);
+                ++result.api_calls;
+                ai_embedding_response = provider.embed(ai_embedding_request, timeouts);
+                result.input_tokens += ai_embedding_response.input_tokens;
+                quota.recordTokens(ai_embedding_response.input_tokens, 0);
                 batch_ok = true;
                 break;
             }
@@ -469,6 +457,8 @@ void FunctionBaseAI::embedTexts(
             ++result.texts_embedded;
         }
     }
+
+    return result;
 }
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -570,13 +560,11 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
                 ++total_api_calls;
 
-                AIResponse ai_response;
-                SCOPE_EXIT({
-                    quota_tracker->recordTokens(ai_response.input_tokens, ai_response.output_tokens);
-                    total_input_tokens += ai_response.input_tokens;
-                    total_output_tokens += ai_response.output_tokens;
-                });
-                provider->call(ai_request, timeouts, ai_response);
+                auto ai_response = provider->call(ai_request, timeouts);
+
+                quota_tracker->recordTokens(ai_response.input_tokens, ai_response.output_tokens);
+                total_input_tokens += ai_response.input_tokens;
+                total_output_tokens += ai_response.output_tokens;
 
                 /// `raw_finish_reason` is provider-controlled text; sanitize control characters before
                 /// interpolating it into an exception message that reaches the logs and `system.query_log`.

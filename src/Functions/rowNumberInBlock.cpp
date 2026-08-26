@@ -90,12 +90,20 @@ FROM
 ┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
 └────────────────────┘

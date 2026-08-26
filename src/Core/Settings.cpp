@@ -519,7 +519,7 @@ The exact size of part to upload during multipart upload to S3 (some implementat
     DECLARE(UInt64, azure_strict_upload_part_size, 0, R"(
 The exact size of part to upload during multipart upload to Azure blob storage.
 )", 0) \
-    DECLARE(NonZeroUInt64, azure_max_blocks_in_multipart_upload, 50000, R"(
+    DECLARE(UInt64, azure_max_blocks_in_multipart_upload, 50000, R"(
 Maximum number of blocks in multipart upload for Azure.
 )", 0) \
     DECLARE(UInt64, s3_min_upload_part_size, S3::DEFAULT_MIN_UPLOAD_PART_SIZE, R"(
@@ -1893,7 +1893,7 @@ Possible values:
     DECLARE(Bool, use_skip_indexes_if_final, true, R"(
 Controls whether skipping indexes are used when executing a query with the FINAL modifier.
 
-Skip indexes may exclude rows (granules) containing the latest data, which could lead to incorrect results from a query with the `FINAL` modifier. When this setting is enabled, skipping indexes are applied even with the `FINAL` modifier, potentially improving performance. Correct results still depend on setting `use_skip_indexes_if_final_exact_mode`, which is enabled by default and scans the additional parts that overlap the ranges returned by the skip index. The risk of missing recent updates applies only if that setting is disabled.
+Skip indexes may exclude rows (granules) containing the latest data, which could lead to incorrect results from a query with the FINAL modifier. When this setting is enabled, skipping indexes are applied even with the FINAL modifier, potentially improving performance but with the risk of missing recent updates. This setting should be enabled in sync with the setting use_skip_indexes_if_final_exact_mode (default is enabled).
 
 Possible values:
 
@@ -2282,9 +2282,9 @@ Possible values:
 )", IMPORTANT) \
     \
     DECLARE(UInt64, max_concurrent_queries_for_all_users, 0, R"(
-Throw exception if the current number of simultaneously processed queries reaches or exceeds this setting's value.
+Throw exception if the value of this setting is less or equal than the current number of simultaneously processed queries.
 
-Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for themselves to run queries for investigation even when the server is overloaded.
+Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for itself to run queries for investigation even when the server is overloaded.
 
 Modifying the setting for one query or user does not affect other queries.
 
@@ -6681,14 +6681,6 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_fuse_filter_into_array_join, true, R"(
-Toggles a query-plan-level optimization which fuses a filter on `ARRAY JOIN`ed element columns into the `ARRAY JOIN` step, filtering the arrays in element space before expansion so that filtered-out elements are never expanded or replicated.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-)", 0) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
@@ -6795,6 +6787,15 @@ Possible values:
 - 1 - Enable
 )", 0) \
     DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0) \
+    DECLARE(Bool, query_plan_read_in_order_through_spilling_join, true, R"(
+Allow [`query_plan_read_in_order_through_join`](#query_plan_read_in_order_through_join) to also apply to a hash join that has an automatic spill-to-disk threshold configured with [`max_bytes_before_external_join`](#max_bytes_before_external_join) or [`max_bytes_ratio_before_external_join`](#max_bytes_ratio_before_external_join).
+
+Such a join can only promise to preserve the order of the left table if it never spills, because spilling scatters rows into buckets by hash. When the optimization applies, the join is therefore kept in memory and the spill threshold no longer triggers: the right-side table is bounded by the memory tracker instead, as if no automatic spilling were configured.
+
+Set to `0` to keep the conservative behavior of never propagating reading in order through a join that may spill. Queries that rely on spilling to stay within the memory limit, and that would otherwise become eligible for the optimization, keep working as before.
+
+The separate `ORDER BY ... LIMIT` through `JOIN` optimization, which pushes a `Sort` and a `Limit` down to the preserved side of the join, never relies on the join preserving any order and stays available for spill-capable joins regardless of this setting. It does, however, step aside for reading in order when reading in order is possible - so with this setting enabled, an `ORDER BY ... LIMIT` over a spill-capable join whose preserved side can stream rows in the requested order gets the read-in-order plan instead of a pushed-down `Sort` and `Limit`. That handoff keeps its pre-existing conditions, most notably that [`query_plan_join_swap_table`](#query_plan_join_swap_table) is explicitly set to `false`: under the default `auto`, a later optimization may swap the join sides and invalidate the read-in-order plan, so the handoff never commits and such queries keep the pushed-down `Sort` and `Limit`.
+)", 0) \
     DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
 Toggles the aggregation in-order query-plan-level optimization.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -7150,10 +7151,10 @@ If disabled and the INSERT query contains inline data, the server will not send 
 If true, data from INSERT query is stored in queue and later flushed to table in background. If wait_for_async_insert is false, INSERT query is processed almost instantly, otherwise client will wait until data will be flushed to table
 )", 0) \
     DECLARE(Bool, wait_for_async_insert, true, R"(
-If true wait for processing of asynchronous insertion.
+If true wait for processing of asynchronous insertion
 )", 0) \
     DECLARE(Seconds, wait_for_async_insert_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
-Timeout for waiting for processing asynchronous insertion.
+Timeout for waiting for processing asynchronous insertion
 )", 0) \
     DECLARE(UInt64, async_insert_max_data_size, 10485760, R"(
 Maximum size in bytes of unparsed data collected per query before being inserted
@@ -8684,7 +8685,7 @@ Max backoff in milliseconds for parts update when using `select_sequential_consi
 Max retries for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
-If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. It prevents read in order through join optimization.
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. A join that may spill normally prevents the read in order through join optimization; see [`query_plan_read_in_order_through_spilling_join`](#query_plan_read_in_order_through_spilling_join) for when the optimization applies anyway and the join is pinned in memory instead.
 )", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
 The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to grace hash join to spill the right-side data to disk.
@@ -8694,6 +8695,8 @@ For example, if set to `0.6`, `JOIN` will allow using `60%` of the available mem
 If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
 
 Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto` and a temporary data path is configured.
+
+A join that may spill normally prevents the read in order through join optimization; see [`query_plan_read_in_order_through_spilling_join`](#query_plan_read_in_order_through_spilling_join) for when the optimization applies anyway and the join is pinned in memory instead, so that reaching this ratio does not convert it to grace hash join.
 )", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
