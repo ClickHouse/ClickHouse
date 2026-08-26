@@ -11,6 +11,8 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ErrnoException.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/scope_guard_safe.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -514,23 +516,23 @@ namespace
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
         {
-            auto context_for_reading = Context::createCopy(context);
-            /// Currently parallel parsing input format cannot read exactly max_block_size rows from input,
-            /// so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
-            if (configuration.read_fixed_number_of_rows)
-                context_for_reading->setSetting("input_format_parallel_parsing", false);
-            /// Here header auto detection can only cause troubles, since if it
-            /// will find "header" the number of input and output rows will not
-            /// match.
-            context_for_reading->setSetting("input_format_csv_detect_header", false);
-            context_for_reading->setSetting("input_format_tsv_detect_header", false);
-            context_for_reading->setSetting("input_format_custom_detect_header", false);
-            context = context_for_reading;
-
-            auto thread_group = CurrentThread::getGroup();
-
             try
             {
+                auto context_for_reading = Context::createCopy(context);
+                /// Currently parallel parsing input format cannot read exactly max_block_size rows from input,
+                /// so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
+                if (configuration.read_fixed_number_of_rows)
+                    context_for_reading->setSetting("input_format_parallel_parsing", false);
+                /// Here header auto detection can only cause troubles, since if it
+                /// will find "header" the number of input and output rows will not
+                /// match.
+                context_for_reading->setSetting("input_format_csv_detect_header", false);
+                context_for_reading->setSetting("input_format_tsv_detect_header", false);
+                context_for_reading->setSetting("input_format_custom_detect_header", false);
+                context = context_for_reading;
+
+                auto thread_group = CurrentThread::getGroup();
+
                 for (auto && send_data_task : send_data_tasks)
                 {
                     send_data_threads.emplace_back([thread_group, task = std::move(send_data_task), this]() mutable
@@ -656,10 +658,24 @@ namespace
             {
                 bool valid_command = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
 
+                /// Nothing is unwinding when `cleanup` runs from a `catch` handler or an ordinary
+                /// destructor call, so the memory tracker is free to throw: reaping the worker
+                /// allocates inside a destructor, and handing the slot back would lose it.
+                LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+                /// A worker that will not be reused is reaped before its slot is published.
                 if (command && valid_command)
                     command_holder->returnCommand(std::move(command));
-
-                process_pool->returnObject(std::move(command_holder));
+                else
+                    command = nullptr;
+                try
+                {
+                    process_pool->returnObject(std::move(command_holder));
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("ShellCommandSource");
+                }
             }
         }
 
@@ -841,6 +857,17 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
     std::unique_ptr<ShellCommand> process;
     std::unique_ptr<ShellCommandHolder> process_holder;
+
+    /// Ownership of a pool holder reaches `ShellCommandSource` (whose `cleanup` returns it) only at
+    /// the end of this function; a holder still owned here is a slot the pool never gets back.
+    /// Publishing the slot wakes a borrower that spawns at once, so the worker goes first.
+    SCOPE_EXIT_SAFE({
+        if (process_holder && process_pool)
+        {
+            process.reset();
+            process_pool->returnObject(std::move(process_holder));
+        }
+    });
 
     auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, SIGTERM, configuration.command_termination_timeout_seconds};
     command_config.terminate_in_destructor_strategy = destructor_strategy;
