@@ -118,7 +118,7 @@ SELECT count() FROM t_ret_settings;
 SELECT 'session construction settings are rejected in returning';
 TRUNCATE TABLE t_ret_settings;
 SET limit = 2;
-INSERT INTO t_ret_settings VALUES (1)
+INSERT INTO t_ret_settings SELECT 1
 RETURNING (SELECT number FROM numbers(5) ORDER BY number); -- { serverError NOT_IMPLEMENTED }
 SET limit = DEFAULT;
 
