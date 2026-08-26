@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
@@ -94,6 +95,25 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     else if (const auto * limit_step = typeid_cast<const LimitStep *>(plan_step))
     {
         group->statistics = deriveLimitStatistics(*limit_step, input_statistics(0));
+    }
+    else if (const auto * intersect_or_except_step = typeid_cast<const IntersectOrExceptStep *>(plan_step))
+    {
+        /// INTERSECT keeps at most the smallest input, EXCEPT at most the first input, whose
+        /// header (and so column statistics) the output reuses.
+        ExpressionStatistics result = input_statistics(0);
+        const auto op = intersect_or_except_step->getOperator();
+        if (op == IntersectOrExceptStep::Operator::INTERSECT_ALL
+            || op == IntersectOrExceptStep::Operator::INTERSECT_DISTINCT)
+        {
+            for (size_t input_index = 1; input_index < expression->inputs.size(); ++input_index)
+            {
+                const auto & other = input_statistics(input_index);
+                result.estimated_row_count = std::min(result.estimated_row_count, other.estimated_row_count);
+                result.max_row_count = std::min(result.max_row_count, other.max_row_count);
+            }
+        }
+        result.min_row_count = 0;
+        group->statistics = std::move(result);
     }
     else if (!expression->inputs.empty())
     {

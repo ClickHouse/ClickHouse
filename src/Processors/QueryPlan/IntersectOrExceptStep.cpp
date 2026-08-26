@@ -11,7 +11,11 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/ResizeProcessor.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -20,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 static bool containsAggregateStateColumn(const IColumn & column)
@@ -178,6 +183,28 @@ void IntersectOrExceptStep::describePipeline(FormatSettings & settings) const
 QueryPlanStepPtr IntersectOrExceptStep::clone() const
 {
     return std::make_unique<IntersectOrExceptStep>(*this);
+}
+
+void IntersectOrExceptStep::serialize(Serialization & ctx) const
+{
+    writeIntBinary(static_cast<UInt8>(current_operator), ctx.out);
+}
+
+QueryPlanStepPtr IntersectOrExceptStep::deserialize(Deserialization & ctx)
+{
+    UInt8 operator_value = 0;
+    readIntBinary(operator_value, ctx.in);
+    const auto current_operator = static_cast<Operator>(operator_value);
+    if (current_operator != Operator::EXCEPT_ALL && current_operator != Operator::EXCEPT_DISTINCT
+        && current_operator != Operator::INTERSECT_ALL && current_operator != Operator::INTERSECT_DISTINCT)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected intersect/except operator value {}", static_cast<UInt32>(operator_value));
+    return std::make_unique<IntersectOrExceptStep>(ctx.input_headers, current_operator, /*max_threads_=*/0);
+}
+
+void registerIntersectOrExceptStep(QueryPlanStepRegistry & registry);
+void registerIntersectOrExceptStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("IntersectOrExcept", &IntersectOrExceptStep::deserialize);
 }
 
 }
