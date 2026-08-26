@@ -12,4 +12,6 @@ read	9
 reloaded	10	45
 skip index, no filter	4096	8386560
 skip index, filtered	1	500
+skip index keeps every granule	0
 skip index granularity 1, filtered	1	500
+skip index drops all but one granule	1

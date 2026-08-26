@@ -1,6 +1,6 @@
 -- Tags: no-replicated-database, no-shared-merge-tree
 
--- A granularity close to the maximum of UInt64 must still return the rows that were written, both for
+-- A granularity close to the maximum of `UInt64` must still return the rows that were written, both for
 -- the data marks of a part with non-adaptive granularity and for the granules of a secondary index.
 
 DROP TABLE IF EXISTS t_granularity_near_max;
@@ -25,7 +25,7 @@ DROP TABLE t_granularity_near_max;
 
 DROP TABLE IF EXISTS t_skip_granularity_near_max;
 
--- An index GRANULARITY counts marks, so the part needs more than one mark for the rounding to matter.
+-- An index `GRANULARITY` counts marks, so the part needs more than one mark for the rounding to matter.
 CREATE TABLE t_skip_granularity_near_max (x UInt64, y UInt64, INDEX i y TYPE minmax GRANULARITY 18446744073709551615)
 ENGINE = MergeTree() ORDER BY x
 SETTINGS index_granularity = 64;
@@ -34,6 +34,11 @@ INSERT INTO t_skip_granularity_near_max SELECT number, number FROM numbers(4096)
 
 SELECT 'skip index, no filter', count(), sum(y) FROM t_skip_granularity_near_max;
 SELECT 'skip index, filtered', count(), sum(y) FROM t_skip_granularity_near_max WHERE y = 500 SETTINGS force_data_skipping_indices = 'i';
+
+-- One index granule spans the whole part here, and it holds the matching value, so no granule may be
+-- dropped. Only the prefix is matched: the number of marks depends on randomized settings.
+SELECT 'skip index keeps every granule', countIf(explain LIKE '%Granules: 0/%')
+FROM (EXPLAIN indexes = 1 SELECT sum(y) FROM t_skip_granularity_near_max WHERE y = 500);
 
 DROP TABLE t_skip_granularity_near_max;
 
@@ -46,5 +51,10 @@ SETTINGS index_granularity = 64;
 INSERT INTO t_skip_granularity_one SELECT number, number FROM numbers(4096);
 
 SELECT 'skip index granularity 1, filtered', count(), sum(y) FROM t_skip_granularity_one WHERE y = 500 SETTINGS force_data_skipping_indices = 'i';
+
+-- Here one index granule covers one mark, so exactly the mark holding the matching value survives.
+-- This is the control that shows the count above can observe a granule being dropped.
+SELECT 'skip index drops all but one granule', countIf(explain LIKE '%Granules: 1/%')
+FROM (EXPLAIN indexes = 1 SELECT sum(y) FROM t_skip_granularity_one WHERE y = 500);
 
 DROP TABLE t_skip_granularity_one;
