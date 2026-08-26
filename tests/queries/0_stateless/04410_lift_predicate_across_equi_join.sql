@@ -171,16 +171,27 @@ SELECT 'computed target key correctness',
         SETTINGS query_plan_lift_predicate_across_join = 0);
 
 -- The target side already carries a pushed-down filter above its rename step: the key must still
--- resolve through it to the primary key
-SELECT 'filtered target lifts',
-       countIf(explain LIKE '%ilter column:%orderkey = 4242%') >= 2
-FROM (
-    EXPLAIN PLAN actions=1
-    SELECT count()
-    FROM (SELECT * FROM lift_orders WHERE orderkey = 4242) AS o
-    INNER JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
-    WHERE l.custkey != 999999
-);
+-- resolve through it to the primary key. Count granules instead of filters, so that the lift is
+-- only credited when the target read actually prunes
+WITH
+    (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')))
+     FROM (
+         EXPLAIN PLAN indexes=1
+         SELECT count()
+         FROM (SELECT * FROM lift_orders WHERE orderkey = 4242) AS o
+         INNER JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
+         WHERE l.custkey != 999999
+     )) AS with_lift,
+    (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')))
+     FROM (
+         EXPLAIN PLAN indexes=1
+         SELECT count()
+         FROM (SELECT * FROM lift_orders WHERE orderkey = 4242) AS o
+         INNER JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
+         WHERE l.custkey != 999999
+         SETTINGS query_plan_lift_predicate_across_join = 0
+     )) AS without_lift
+SELECT 'filtered target prunes', with_lift < without_lift;
 
 -- Same shape, but the target subquery computes the key under the primary key's name: no lift
 SELECT 'filtered computed target key',
@@ -192,23 +203,6 @@ FROM (
     INNER JOIN (SELECT orderkey + 1000000 AS orderkey, payload FROM lift_lineitem WHERE payload != '') AS l
         ON o.orderkey = l.orderkey
 );
-
--- `DISTINCT` keeps the rows and the names, so the walk goes through it to the target read
-SELECT 'distinct target lifts',
-       countIf(explain LIKE '%ilter column:%orderkey = 4242%') >= 2
-FROM (
-    EXPLAIN PLAN actions=1
-    SELECT count()
-    FROM (SELECT * FROM lift_orders WHERE orderkey = 4242) AS o
-    INNER JOIN (SELECT DISTINCT orderkey FROM lift_lineitem) AS l ON o.orderkey = l.orderkey
-);
-
-SELECT 'distinct target lifts correctness',
-       (SELECT count() FROM (SELECT * FROM lift_orders WHERE orderkey = 4242) AS o
-        INNER JOIN (SELECT DISTINCT orderkey FROM lift_lineitem) AS l ON o.orderkey = l.orderkey)
-     - (SELECT count() FROM (SELECT * FROM lift_orders WHERE orderkey = 4242) AS o
-        INNER JOIN (SELECT DISTINCT orderkey FROM lift_lineitem) AS l ON o.orderkey = l.orderkey
-        SETTINGS query_plan_lift_predicate_across_join = 0);
 
 -- Both keys are in the target primary key, but `KeyCondition` cannot use `key = key`, so a
 -- key-vs-key predicate must stay on the source side

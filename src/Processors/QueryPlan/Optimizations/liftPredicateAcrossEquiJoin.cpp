@@ -2,7 +2,6 @@
 #include <Processors/QueryPlan/Optimizations/joinEquivalentSets.h>
 
 #include <Interpreters/ActionsDAG.h>
-#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -22,12 +21,13 @@ namespace
 
 using SubstitutionMap = std::unordered_map<std::string, ColumnWithTypeAndName>;
 
-/// Steps that keep every surviving row and every column name, so a filter below one of them still
-/// holds above it and `tryPushDownFilter` can move a lifted filter back down through it
+/// Steps a lifted filter can sit above and still reach index analysis. Keep in sync with the steps
+/// `optimizePrimaryKeyConditionAndLimit` walks up through, or the copied conjunct never prunes
 bool isTransparentForLift(const IQueryPlanStep * step)
 {
-    return typeid_cast<const ExpressionStep *>(step) || typeid_cast<const FilterStep *>(step)
-        || typeid_cast<const DistinctStep *>(step);
+    if (const auto * expr = typeid_cast<const ExpressionStep *>(step))
+        return !expr->getExpression().hasArrayJoin();
+    return typeid_cast<const FilterStep *>(step) != nullptr;
 }
 
 /// Walk down a single-child chain of transparent steps, until `predicate` matches or the chain ends
