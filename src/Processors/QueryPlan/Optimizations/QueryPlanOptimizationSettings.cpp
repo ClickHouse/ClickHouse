@@ -88,6 +88,7 @@ namespace Setting
     extern const SettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
     extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
     extern const SettingsBool query_plan_optimize_join_order_use_cd_a_conflict_detector;
+    extern const SettingsBool query_plan_optimize_join_order_use_cd_c_conflict_detector;
     extern const SettingsUInt64 query_plan_min_columns_for_join_lazy_indexing;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 distributed_plan_default_shuffle_join_bucket_count;
@@ -315,6 +316,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
     query_plan_optimize_join_order_use_cd_a_conflict_detector = from[Setting::query_plan_optimize_join_order_use_cd_a_conflict_detector];
+    query_plan_optimize_join_order_use_cd_c_conflict_detector = from[Setting::query_plan_optimize_join_order_use_cd_c_conflict_detector];
     if (query_plan_optimize_join_order_algorithm.empty())
         query_plan_optimize_join_order_algorithm.push_back(JoinOrderAlgorithm::GREEDY); /// Use greedy by default
 

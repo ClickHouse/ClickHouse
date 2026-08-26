@@ -23,7 +23,7 @@
 #include <vector>
 #include <Processors/QueryPlan/Optimizations/dpTable.h>
 #include <Processors/QueryPlan/Optimizations/enumeratorChecker.h>
-#include <Processors/QueryPlan/Optimizations/cdaConflictDetector.h>
+#include <Processors/QueryPlan/Optimizations/conflictDetector.h>
 
 
 namespace ProfileEvents
@@ -307,11 +307,13 @@ String DPJoinEntry::dump() const
 class JoinOrderOptimizer
 {
 public:
-    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_, bool use_cd_a_conflict_detector_ = false)
+    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_,
+                       bool use_cd_a_conflict_detector_ = false, bool use_cd_c_conflict_detector_ = false)
         : query_graph(std::move(query_graph_))
         , max_searched_plans(max_searched_plans_)
         , enabled_algorithms(enabled_algorithms_)
         , use_cd_a_conflict_detector(use_cd_a_conflict_detector_)
+        , use_cd_c_conflict_detector(use_cd_c_conflict_detector_)
     {
         auto context = CurrentThread::tryGetQueryContext();
         if (context)
@@ -353,14 +355,14 @@ private:
     void initDPsubScratch();
     std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
 
-    /// CD-A variant: decide validity and the resulting (kind, strictness) using the per-operator
-    /// TES descriptors in `dpsub_data.cda_operators`, which supports outer and semi/anti
-    /// reordering. Returns nullopt to reject the split.
-    std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskCDA(UInt32 left_mask, UInt32 right_mask) const;
+    /// Conflict-detector variant: decide validity and the resulting (kind, strictness) using the
+    /// per-operator descriptors in `dpsub_data.conflict_operators` (CD-A or CD-C), which support
+    /// outer and semi/anti reordering. Returns nullopt to reject the split.
+    std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 right_mask) const;
 
-    /// Dispatch used by the DPsub acceptor: routes to the CD-A per-operator check when the CD-A
-    /// conflict detector is enabled, otherwise to the per-relation `isValidJoinOrderMask` (with
-    /// strictness fixed to All, its only supported case).
+    /// Dispatch used by the DPsub acceptor: routes to the per-operator conflict-detector check when
+    /// a conflict detector (CD-A or CD-C) is enabled, otherwise to the per-relation
+    /// `isValidJoinOrderMask` (with strictness fixed to All, its only supported case).
     std::optional<std::pair<JoinKind, JoinStrictness>> resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const;
     /// Returns the connecting (and, for two-relation joins, the early non-connecting) predicates,
     /// reusing an internal scratch buffer that is overwritten on every call.
@@ -436,11 +438,11 @@ private:
         UInt64 equiv_generation = 0;              /// bumped on each computeSelectivityMask call
         std::vector<JoinActionRef *> applicable_scratch; /// reused output of collectJoinEdgesMask
 
-        /// Per-operator CD-A descriptors, populated in `initDPsubScratch` only when the CD-A
-        /// conflict detector is enabled. When non-empty, `isValidJoinOrderMaskCDA` uses these
-        /// (per-operator TES / applicable_A) instead of the per-relation `restriction_by_rel`,
-        /// which lets non-commutative outer and semi/anti joins be reordered.
-        std::vector<CdaOperator> cda_operators;
+        /// Per-operator conflict descriptors (CD-A or CD-C), populated in `initDPsubScratch` only
+        /// when a conflict detector is enabled. When non-empty, `isValidJoinOrderMaskConflict` uses
+        /// these (per-operator required-set + conflict rules) instead of the per-relation
+        /// `restriction_by_rel`, which lets non-commutative outer and semi/anti joins be reordered.
+        std::vector<ConflictOperator> conflict_operators;
     };
     DPsubMaskData<UInt32> dpsub_data;
 
@@ -472,10 +474,16 @@ private:
 
     const std::vector<JoinOrderAlgorithm> enabled_algorithms;
 
-    /// When true, `initDPsubScratch` builds the DPsub reordering constraints from the CD-A
-    /// conflict detector (see cdaConflictDetector.h) instead of `query_graph.join_kinds`.
-    /// Affects only DPsub.
+    /// When either is true, `initDPsubScratch` builds the DPsub reordering constraints from the
+    /// conflict detector (see conflictDetector.h) instead of `query_graph.join_kinds`. CD-C takes
+    /// precedence over CD-A when both are set. Affects only DPsub.
     const bool use_cd_a_conflict_detector = false;
+    const bool use_cd_c_conflict_detector = false;
+    bool useConflictDetector() const { return use_cd_a_conflict_detector || use_cd_c_conflict_detector; }
+    ConflictDetector conflictDetectorKind() const
+    {
+        return use_cd_c_conflict_detector ? ConflictDetector::CDC : ConflictDetector::CDA;
+    }
 
     LoggerPtr log = getLogger("JoinOrderOptimizer");
 
@@ -800,19 +808,20 @@ void JoinOrderOptimizer::initDPsubScratch()
     /// Outer-join reordering constraints. Two mutually exclusive representations:
     ///  - default: per-relation ON-clause restrictions from `query_graph.join_kinds`, consumed by
     ///    `isValidJoinOrderMask`. Handles inner + outer joins only.
-    ///  - CD-A enabled: per-operator TES descriptors from the CD-A conflict detector, consumed by
-    ///    `isValidJoinOrderMaskCDA`. Handles inner/outer *and* semi/anti joins, with orientation.
+    ///  - conflict detector enabled: per-operator descriptors from CD-A or CD-C, consumed by
+    ///    `isValidJoinOrderMaskConflict`. Handles inner/outer *and* semi/anti joins, with orientation.
     dpsub_data.restriction_by_rel.assign(num_relations, {});
-    dpsub_data.cda_operators.clear();
-    if (use_cd_a_conflict_detector)
+    dpsub_data.conflict_operators.clear();
+    if (useConflictDetector())
     {
-        std::vector<CdaJoinOpMask> ops;
-        ops.reserve(query_graph.cda_ops.size());
-        for (const auto & op : query_graph.cda_ops)
-            ops.push_back(CdaJoinOpMask{toMask(op.left), toMask(op.right), toMask(op.nel), op.kind, op.strictness});
+        std::vector<ConflictOpMask> ops;
+        ops.reserve(query_graph.conflict_ops.size());
+        for (const auto & op : query_graph.conflict_ops)
+            ops.push_back(ConflictOpMask{toMask(op.left), toMask(op.right), toMask(op.nel), toMask(op.nr_rels), op.kind, op.strictness});
 
-        dpsub_data.cda_operators = computeCdaOperators(ops, log);
-        LOG_TRACE(log, "DPsub: using CD-A conflict detector over {} captured join operators", dpsub_data.cda_operators.size());
+        dpsub_data.conflict_operators = computeConflictOperators(ops, conflictDetectorKind(), log);
+        LOG_TRACE(log, "DPsub: using {} conflict detector over {} captured join operators",
+                  use_cd_c_conflict_detector ? "CD-C" : "CD-A", dpsub_data.conflict_operators.size());
     }
     else
     {
@@ -893,17 +902,19 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrderMask(UInt32 left_mas
 }
 
 std::optional<std::pair<JoinKind, JoinStrictness>>
-JoinOrderOptimizer::isValidJoinOrderMaskCDA(UInt32 left_mask, UInt32 right_mask) const
+JoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 right_mask) const
 {
-    /// CD-A `applicable_A` (SIGMOD'13, Section 5.2). The enumerator proposes each connected,
-    /// non-overlapping (left_mask, right_mask) split once. We look at every operator whose ON
-    /// predicate is applied across this split and require it to be `applicable`:
-    ///   L-TES(op) subseteq S1  AND  R-TES(op) subseteq S2   (forward), or the mirrored variant.
-    /// Every crossing operator -- inner joins included -- must pass, because CD-A records the
-    /// conflict between a nested operator and its parent in the *parent's* TES, and that parent
-    /// may itself be an inner join. The single non-inner operator that crosses (if any) fixes the
-    /// resulting join kind/strictness; two of them cannot share one binary node, so the split is
-    /// rejected. If none crosses, the step is a plain inner join.
+    /// Unified `applicable` for CD-A (Section 5.2) and CD-C (Section 5.4). The enumerator proposes
+    /// each connected, non-overlapping (left_mask, right_mask) split once. We look at every operator
+    /// whose ON predicate is applied across this split and require it to be `applicable`:
+    ///   required_left(op) subseteq S1  AND  required_right(op) subseteq S2  (forward, or mirrored),
+    ///   AND every conflict rule T1 -> T2 obeyed: T1 met by S implies T2 subseteq S.
+    /// For CD-A the required set is the widened TES and there are no rules; for CD-C it is the SES
+    /// plus conflict rules. Every crossing operator -- inner joins included -- must pass, because a
+    /// conflict between a nested operator and its parent is recorded in the *parent's* descriptor,
+    /// and that parent may itself be an inner join. The single non-inner operator that crosses (if
+    /// any) fixes the resulting join kind/strictness; two of them cannot share one binary node, so
+    /// the split is rejected. If none crosses, the step is a plain inner join.
     const UInt32 combined = left_mask | right_mask;
     auto subset_of = [](const UInt32 a, const UInt32 b) { return (a & ~b) == 0; };
 
@@ -911,7 +922,7 @@ JoinOrderOptimizer::isValidJoinOrderMaskCDA(UInt32 left_mask, UInt32 right_mask)
     JoinStrictness strictness = JoinStrictness::All;
     bool have_non_inner = false;
 
-    for (const auto & op : dpsub_data.cda_operators)
+    for (const auto & op : dpsub_data.conflict_operators)
     {
         /// The operator is applied at this boundary when its ON predicate (NEL) spans the split.
         /// Using the operator's *relation set* to detect straddling is wrong: an ancestor's
@@ -925,17 +936,24 @@ JoinOrderOptimizer::isValidJoinOrderMaskCDA(UInt32 left_mask, UInt32 right_mask)
         if (!involved)
             continue;
 
-        /// applicable_A. `forward` keeps the operator's (left, right) inputs aligned with
-        /// (left_mask, right_mask); `mirrored` swaps them -- a valid equivalence for any of our
+        /// Conflict rules (CD-C; empty for CD-A). A rule T1 -> T2 is disobeyed when some table of T1
+        /// is already in the joined set S but not all of T2 is -- that ordering would apply this
+        /// operator before a conflicting operand is in place.
+        for (const auto & rule : op.rules)
+            if ((rule.t1 & combined) && (rule.t2 & ~combined))
+                return std::nullopt;
+
+        /// Required-set containment. `forward` keeps the operator's (left, right) inputs aligned
+        /// with (left_mask, right_mask); `mirrored` swaps them -- a valid equivalence for any of our
         /// operators via `reverseJoinKind` (Left<->Right, Full/Inner unchanged; for semi/anti it
-        /// flips the preserved side). L-TES and R-TES are disjoint and, for a non-degenerate
+        /// flips the preserved side). The two required sides are disjoint and, for a non-degenerate
         /// predicate, both non-empty, so at most one orientation can hold.
-        const bool forward = subset_of(op.tes_left, left_mask) && subset_of(op.tes_right, right_mask);
-        const bool mirrored = subset_of(op.tes_left, right_mask) && subset_of(op.tes_right, left_mask);
+        const bool forward = subset_of(op.required_left, left_mask) && subset_of(op.required_right, right_mask);
+        const bool mirrored = subset_of(op.required_left, right_mask) && subset_of(op.required_right, left_mask);
         if (!forward && !mirrored)
             return std::nullopt;
 
-        /// Inner joins impose no join kind and are commutative; only their TES gate matters.
+        /// Inner joins impose no join kind and are commutative; only their gate matters.
         if (op.freely_reorderable)
             continue;
 
@@ -953,8 +971,8 @@ JoinOrderOptimizer::isValidJoinOrderMaskCDA(UInt32 left_mask, UInt32 right_mask)
 std::optional<std::pair<JoinKind, JoinStrictness>>
 JoinOrderOptimizer::resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const
 {
-    if (use_cd_a_conflict_detector)
-        return isValidJoinOrderMaskCDA(left_mask, right_mask);
+    if (useConflictDetector())
+        return isValidJoinOrderMaskConflict(left_mask, right_mask);
 
     if (auto kind = isValidJoinOrderMask(left_mask, right_mask))
         return std::make_pair(*kind, JoinStrictness::All);
@@ -1944,7 +1962,8 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
         std::move(query_graph),
         optimization_settings.query_plan_optimize_join_order_algorithm,
         optimization_settings.query_plan_optimize_join_order_max_searched_plans,
-        optimization_settings.query_plan_optimize_join_order_use_cd_a_conflict_detector);
+        optimization_settings.query_plan_optimize_join_order_use_cd_a_conflict_detector,
+        optimization_settings.query_plan_optimize_join_order_use_cd_c_conflict_detector);
     auto best_plan = reorderer.solve();
     if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
