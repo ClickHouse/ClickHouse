@@ -334,6 +334,14 @@ SETTINGS force_data_skipping_indices = 'shared_variant_tokens';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_dynamic WHERE shared_variant.text = '42'
 SETTINGS force_data_skipping_indices = 'shared_variant_tokens';
 
+SELECT 'Dynamic string patterns';
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_dynamic
+WHERE multiSearchAny(shared_path.text, ['42'])
+SETTINGS force_data_skipping_indices = 'shared_path_tokens', text_index_like_min_pattern_length = 2;
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_dynamic
+WHERE multiSearchAnyUTF8(shared_path.text, ['43'])
+SETTINGS force_data_skipping_indices = 'shared_path_tokens', text_index_like_min_pattern_length = 2;
+
 SELECT 'Dynamic numeric edges';
 SELECT arraySort(groupArrayIf(id, shared_path.zero = 0.0)) FROM json_index_tokens_dynamic;
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_dynamic WHERE shared_path.zero = 0.0

@@ -547,6 +547,9 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
         && getContext()->getSettingsRef()[Setting::dynamic_throw_on_type_mismatch])
         return false;
 
+    if (expression_is_dynamic && has_multiple_needles)
+        type = std::make_shared<DataTypeString>();
+
     if (WhichDataType(type).isObject())
         return false;
 
