@@ -1452,8 +1452,7 @@ void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, st
     if (condition(content))
     {
         auto code = tryRemove(path, stat.version);
-        /// A version mismatch means the node was rewritten after it was read, so it is no longer the node
-        /// the condition accepted. Someone else owns it now, which is the same runtime state as below.
+        /// The node was rewritten after it was read, so the condition no longer describes it.
         if (code == Coordination::Error::ZBADVERSION)
             throw DB::Exception(
                 DB::ErrorCodes::REPLICA_ALREADY_EXISTS,
