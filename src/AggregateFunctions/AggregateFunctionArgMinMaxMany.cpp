@@ -473,7 +473,7 @@ SELECT argMaxMany(2)(user, salary) FROM salary;
             )"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_argMaxMany = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in_argMaxMany = {26, 9};
     FunctionDocumentation::Category category_argMaxMany = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_argMaxMany = {
         description_argMaxMany,
@@ -528,7 +528,7 @@ SELECT argMinMany(2)(user, salary) FROM salary;
             )"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_argMinMany = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in_argMinMany = {26, 9};
     FunctionDocumentation::Category category_argMinMany = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_argMinMany = {
         description_argMinMany,
