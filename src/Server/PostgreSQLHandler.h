@@ -40,6 +40,7 @@ public:
         bool ssl_enabled_,
         bool secure_required_,
         Int32 connection_id_,
+        std::optional<String> default_session_user_,
         VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
@@ -70,6 +71,9 @@ private:
     /// Unguessable, fixed for the lifetime of the connection, and sent to the client in `BackendKeyData`:
     /// a cancel request presenting it is honoured without authentication. See the constructor.
     Int32 secret_key = 0;
+
+    /// If set, overrides the `default_session_user` server setting for this listener.
+    std::optional<String> default_session_user;
 
     bool is_query_in_progress = false;
     bool ignore_extended_query_messages_until_sync = false;
