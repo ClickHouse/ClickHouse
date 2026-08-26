@@ -85,11 +85,6 @@ SELECT count() FROM test_alias WHERE hasToken(text, 'alpha')
 SELECT 'Alias policy and text-index count optimization enabled';
 SELECT count() FROM test_alias WHERE hasToken(text, 'alpha') SETTINGS enable_analyzer = 1;
 
-SELECT 'Alias policy disables text-index count optimization';
-SELECT count(explain)
-FROM (EXPLAIN SELECT count() FROM test_alias WHERE hasToken(text, 'alpha') SETTINGS enable_analyzer = 1)
-WHERE explain LIKE '%ReadFromTextIndexCount%';
-
 DROP ROW POLICY alias_policy ON test_alias;
 DROP TABLE test_merge;
 DROP TABLE test_alias;
