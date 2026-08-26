@@ -17,43 +17,13 @@ IConnectionPool::IConnectionPool(String host_, UInt16 port_, Priority config_pri
 {
 }
 
-ConnectionPool::ConnectionPool(
-    unsigned max_connections_,
-    const String & host_,
-    UInt16 port_,
-    const String & default_database_,
-    const String & user_,
-    const String & password_,
-    const String & proto_send_chunked_,
-    const String & proto_recv_chunked_,
-    const String & quota_key_,
-    const String & cluster_,
-    const String & cluster_secret_,
-    const String & client_name_,
-    Protocol::Compression compression_,
-    Protocol::Secure secure_,
-    const String & bind_host_,
-    Priority config_priority_)
-    : IConnectionPool(host_, port_, config_priority_)
-    , Base(max_connections_, getLogger("ConnectionPool (" + host_ + ":" + toString(port_) + ")"))
-    , default_database(default_database_)
-    , user(user_)
-    , password(password_)
-    , proto_send_chunked(proto_send_chunked_)
-    , proto_recv_chunked(proto_recv_chunked_)
-    , quota_key(quota_key_)
-    , cluster(cluster_)
-    , cluster_secret(cluster_secret_)
-    , client_name(client_name_)
-    , compression(compression_)
-    , secure(secure_)
-    , bind_host(bind_host_)
+Poco::Timespan::TimeDiff connectionPoolMaxWaitMilliseconds(const Settings & settings)
 {
-}
-
-std::string ConnectionPool::getDescription() const
-{
-    return host + ":" + toString(port);
+    /// `connection_pool_max_wait_ms` documents 0 as an infinite timeout and is unsigned, so a
+    /// negative value cannot be written. `PoolBase::get` spells "infinite" as a negative timeout,
+    /// hence the translation: without it 0 selects a zero-length wait and the retry loop spins.
+    const Int64 wait_ms = settings[Setting::connection_pool_max_wait_ms].totalMilliseconds();
+    return wait_ms > 0 ? wait_ms : -1;
 }
 
 
@@ -142,22 +112,6 @@ ConnectionPoolFactory & ConnectionPoolFactory::instance()
 {
     static ConnectionPoolFactory ret;
     return ret;
-}
-
-IConnectionPool::Entry ConnectionPool::get(const DB::ConnectionTimeouts& timeouts, const DB::Settings& settings)
-{
-    Entry entry = getUnchecked(timeouts, settings);
-    entry->forceConnected(timeouts);
-    return entry;
-}
-
-IConnectionPool::Entry ConnectionPool::getUnchecked(const DB::ConnectionTimeouts&, const DB::Settings& settings)
-{
-    /// `connection_pool_max_wait_ms` documents 0 as an infinite timeout and is unsigned, so a
-    /// negative value cannot be written. `PoolBase::get` spells "infinite" as a negative timeout,
-    /// hence the translation: without it 0 selects a zero-length wait and the retry loop spins.
-    const Int64 wait_ms = settings[Setting::connection_pool_max_wait_ms].totalMilliseconds();
-    return Base::get(wait_ms > 0 ? wait_ms : -1);
 }
 
 }
