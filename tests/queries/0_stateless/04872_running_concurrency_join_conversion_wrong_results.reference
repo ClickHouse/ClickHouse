@@ -11,5 +11,6 @@ control sibling	1
 rowNumberInAllBlocks	0
 runningConcurrency	0
 legacy index attaches	0
+legacy text index attaches	0
 onfly off	0
 onfly after materialisation	1

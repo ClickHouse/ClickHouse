@@ -117,6 +117,30 @@ ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy_index
     ENGINE = MergeTree ORDER BY a;
 SELECT 'legacy index attaches', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.legacy_index;
 
+-- A text index transform is validated on attach, unlike the index expression above, so a table
+-- an earlier version accepted does not come back. The transform is wrapped in `toString` because
+-- it must return a String; without the wrapper the return type is refused first and the
+-- determinism check is never reached.
+SET allow_experimental_full_text_index = 1;
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy_text_preprocessor
+    (a UInt64, val String,
+     INDEX i(val) TYPE text(tokenizer = 'splitByNonAlpha',
+        preprocessor = toString(runningConcurrency(toDateTime(val), toDateTime(val)))))
+    ENGINE = MergeTree ORDER BY a; -- { serverError INCORRECT_QUERY }
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy_text_postprocessor
+    (a UInt64, val String,
+     INDEX i(val) TYPE text(tokenizer = 'splitByNonAlpha',
+        postprocessor = toString(runningConcurrency(toDateTime(val), toDateTime(val)))))
+    ENGINE = MergeTree ORDER BY a; -- { serverError INCORRECT_QUERY }
+
+-- Negative control: a deterministic transform still attaches, so the two rows above are refused
+-- for the function they name and not for using a transform at all.
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy_text_plain
+    (a UInt64, val String,
+     INDEX i(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(val)))
+    ENGINE = MergeTree ORDER BY a;
+SELECT 'legacy text index attaches', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.legacy_text_plain;
+
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.rejected
     (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree
     ORDER BY runningConcurrency(s, e); -- { serverError BAD_ARGUMENTS }
