@@ -297,6 +297,50 @@ public:
      * (if type is provided for the message by the protocol).
      */
     virtual void deserialize(ReadBuffer & in) = 0;
+
+protected:
+    /** Reads the length field every frontend message starts with and, on destruction, verifies that the
+      * body the message read is exactly as long as the length announced.
+      *
+      * Without that check a variable-length message (`Query`, `Parse`, `Bind`, `Execute`, `Close`) would
+      * stop after its last logical field and leave any extra bytes in the stream, where they would be
+      * read as the next message type - a malformed frame such as `Q "SELECT 1\0<extra>"` would execute
+      * successfully and then desynchronize the session. A short length is rejected for the same reason:
+      * the fields have already read into the following message.
+      */
+    class PayloadBoundary
+    {
+    public:
+        PayloadBoundary(ReadBuffer & in_, const char * message_name_)
+            : in(in_), message_name(message_name_)
+        {
+            readBinaryBigEndian(declared_size, in);
+            if (declared_size < static_cast<Int32>(sizeof(Int32)))
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Wrong message length {} in {}, it must be at least 4", declared_size, message_name);
+            bytes_read_before_body = in.count();
+        }
+
+        /// Must be called at the end of `deserialize`. It is not done in the destructor because
+        /// `deserialize` may legitimately leave the body unread while unwinding on another error.
+        void check() const
+        {
+            const size_t body_size = in.count() - bytes_read_before_body;
+            const size_t message_size = body_size + sizeof(Int32);
+            if (message_size != static_cast<size_t>(declared_size))
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Message {} announces a length of {} bytes, but its body is {} bytes",
+                                message_name, declared_size, message_size);
+        }
+
+        Int32 size() const { return declared_size; }
+
+    private:
+        ReadBuffer & in;
+        const char * message_name;
+        Int32 declared_size = 0;
+        size_t bytes_read_before_body = 0;
+    };
 };
 
 class BackendMessage : public IMessage, public ISerializable
@@ -731,9 +775,9 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        PayloadBoundary boundary(in, "Query");
         readNullTerminated(query, in);
+        boundary.check();
     }
 
     MessageType getMessageType() const override
@@ -751,14 +795,14 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        PayloadBoundary boundary(in, "Parse");
         readNullTerminated(function_name, in);
         readNullTerminated(sql_query, in);
         readBinaryBigEndian(num_params, in);
         Int32 oid_param = 0;
         for (int i = 0; i < num_params; ++i)
             readBinaryBigEndian(oid_param, in);
+        boundary.check();
     }
 
     MessageType getMessageType() const override
@@ -799,8 +843,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        PayloadBoundary boundary(in, "Bind");
         readNullTerminated(portal_name, in);
         readNullTerminated(function_name, in);
 
@@ -840,6 +883,8 @@ public:
             if (format_param_result != 0)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary result formats are not supported in the PostgreSQL wire protocol");
         }
+
+        boundary.check();
 
         /// Extended-protocol parameter values are typed values, not SQL fragments. Decoding their
         /// text and binary encodings requires the type OIDs from the corresponding `Parse` message;
@@ -884,10 +929,10 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        PayloadBoundary boundary(in, "Describe");
         in.readStrict(&describe, 1);
         readNullTerminated(function_name, in);
+        boundary.check();
     }
 
     MessageType getMessageType() const override
@@ -905,10 +950,10 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        PayloadBoundary boundary(in, "Execute");
         readNullTerminated(portal_name, in);
         readBinaryBigEndian(max_rows, in);
+        boundary.check();
     }
 
     MessageType getMessageType() const override
@@ -953,12 +998,12 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        PayloadBoundary boundary(in, "Close");
         Int8 byte = 0;
         readBinaryBigEndian(byte, in);
         close_target = static_cast<char>(byte);
         readNullTerminated(function_name, in);
+        boundary.check();
     }
 
     MessageType getMessageType() const override

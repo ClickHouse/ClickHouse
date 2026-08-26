@@ -1097,6 +1097,38 @@ def test_fixed_size_frontend_frames_reject_trailing_bytes(started_cluster, messa
         sock.close()
 
 
+@pytest.mark.parametrize(
+    "message_type,body",
+    [
+        (b"Q", b"SELECT 1\x00"),
+        (b"P", b"\x00SELECT 1\x00\x00\x00"),
+        (b"B", b"\x00\x00\x00\x00\x00\x00\x00\x00"),
+        (b"E", b"\x00\x00\x00\x00\x00"),
+        (b"C", b"S\x00"),
+    ],
+)
+def test_variable_size_frontend_frames_reject_trailing_bytes(
+    started_cluster, message_type, body
+):
+    """A variable-length frontend message must consume exactly the payload it announces. Reading only
+    the logical fields would leave the extra bytes in the stream, where they are read as the next
+    message type - the statement would run and only then desynchronize the session."""
+    node = cluster.instances["node"]
+    sock = _pg_connect_raw(node, "default", "123", "default")
+
+    try:
+        trailing = b"xyz"
+        sock.sendall(
+            message_type
+            + struct.pack("!i", 4 + len(body) + len(trailing))
+            + body
+            + trailing
+        )
+        assert sock.recv(1) == b""
+    finally:
+        sock.close()
+
+
 def test_copy_done_rejects_trailing_bytes(started_cluster):
     """`CopyDone` is fixed-size and must reject a payload before it can desynchronize the session."""
     node = cluster.instances["node"]

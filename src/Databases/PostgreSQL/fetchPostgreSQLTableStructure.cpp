@@ -194,8 +194,8 @@ DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> reche
     {
         /// PostgreSQL's `attnotnull` describes the array value, not its elements. The native PostgreSQL
         /// catalog does not expose element nullability, but the ClickHouse PostgreSQL protocol emulation
-        /// carries it in its private `attgenerated = 'e'` marker so that self-connected arrays retain it.
-        /// Keep the historical `attnotnull` interpretation for real PostgreSQL servers, where it is the
+        /// carries it in an extra `pg_attribute.attelemnotnull` column so that self-connected arrays retain
+        /// it. Keep the historical `attnotnull` interpretation for real PostgreSQL servers, where it is the
         /// only available signal.
         if (is_array_element_nullable || is_nullable)
             res = std::make_shared<DataTypeNullable>(res);
@@ -256,7 +256,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             }
             else
             {
-                std::tuple<std::string, std::string, std::string, uint16_t, std::string, std::string, std::string, std::string> row;
+                std::tuple<std::string, std::string, std::string, uint16_t, std::string, std::string, std::string, std::string, std::string> row;
                 while (stream >> row)
                 {
                     const auto column_name = std::get<0>(row);
@@ -264,7 +264,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
                     const auto data_type = convertPostgreSQLDataType(
                         std::get<1>(row), recheck_array,
                         use_nulls && (std::get<2>(row) == /* not nullable */"f"),
-                        std::get<3>(row), attgenerated == "e");
+                        std::get<3>(row), std::get<8>(row) == /* element is nullable */"f");
 
                     columns.push_back(NameAndTypePair(column_name, data_type));
                     attributes.emplace(
@@ -392,6 +392,15 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
     pqxx::result gen_result{tx.exec("select case when current_setting('server_version_num')::int < 120000 then '''''' else 'attgenerated' end as generated")};
     std::string generated = gen_result[0][0].as<std::string>();
 
+    /// A real PostgreSQL catalog cannot report the nullability of array *elements*; the ClickHouse
+    /// PostgreSQL protocol emulation adds an `attelemnotnull` column to `pg_attribute` for it. Detect it
+    /// through `pg_attribute`'s own description of itself, using only standard catalog columns, and select
+    /// the PostgreSQL-native constant 't' (elements not nullable) when it is absent.
+    pqxx::result elem_result{tx.exec(
+        "select case when exists (select 1 from pg_attribute where attrelid = 1249 and attname = 'attelemnotnull') "
+        "then 'attelemnotnull' else '''t''' end as element_not_null")};
+    std::string element_not_null = elem_result[0][0].as<std::string>();
+
     std::string query = fmt::format(
            "SELECT attname AS name, " /// column name
            "format_type(atttypid, atttypmod) AS type, " /// data type
@@ -400,11 +409,12 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "atttypid as type_id, "
            "atttypmod as type_modifier, "
            "attnum as att_num, "
-           "{} as generated " /// if column has GENERATED
+           "{} as generated, " /// if column has GENERATED
+           "{} as element_not_null " /// ClickHouse emulation only: nullability of the array elements
            "FROM pg_attribute "
            "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) {}"
            "AND NOT attisdropped AND attnum > 0 "
-           "ORDER BY attnum ASC", generated, where, columns_part); /// Now we use variable `generated` to form query string. End of trick.
+           "ORDER BY attnum ASC", generated, element_not_null, where, columns_part); /// Now we use variable `generated` to form query string. End of trick.
 
     auto postgres_table_with_schema = postgres_schema.empty() ? postgres_table : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
     table.physical_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, false);

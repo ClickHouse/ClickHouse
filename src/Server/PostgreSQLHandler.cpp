@@ -215,7 +215,14 @@ private:
             }
             if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION)
             {
+                /// `CopyDone` is a fixed-size message and `deserialize` rejects any other length, but it
+                /// has consumed only the length field by then, so the advertised trailing bytes stay in
+                /// the stream and would be read as the next message. That desynchronization is not
+                /// recoverable: flag it up front so the error tears the connection down instead of being
+                /// reported as an ordinary query error, and clear the flag once the frame is consumed.
+                protocol_error = true;
                 transport.receive<PostgreSQLProtocol::Messaging::CopyDone>();
+                protocol_error = false;
                 received_copy_done = true;
                 return false;
             }
@@ -2585,7 +2592,8 @@ INNER JOIN pg_namespace AS ns ON oids.database = ns.nspname)");
     /// emulated catalog (2662 is `pg_class_oid_index`, a real index, and 9999 is unassigned). The generated
     /// branch excludes a user table that would collide with a named row (a ClickHouse database literally
     /// named `pg_catalog` holding a table `pg_type`), so a (namespace, name) pair still denotes one
-    /// relation.
+    /// relation. The anonymous rows stay in the `pg_catalog` namespace so that the query behind psql's
+    /// `\d`, which excludes that namespace, does not list them as nameless relations.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class SQL SECURITY INVOKER AS
 SELECT oid, relname, relnamespace, relowner, relam, relkind FROM VALUES(
     'oid UInt32, relname String, relnamespace UInt32, relowner UInt32, relam UInt32, relkind String',
@@ -2596,12 +2604,12 @@ SELECT oid, relname, relnamespace, relowner, relam, relkind FROM VALUES(
     (2615, 'pg_namespace', 11, 10, 2, 'r'),
     (3501, 'pg_enum', 11, 10, 2, 'r'),
     (3541, 'pg_range', 11, 10, 2, 'r'),
-    (2662, '', 0, 10, 2, 'i'),
-    (3079, '', 0, 10, 0, 'v'),
-    (1260, '', 0, 10, 2, 'c'),
-    (9999, '', 0, 10, 2, 'f'),
-    (3476, '', 0, 10, 0, 'm'),
-    (3074, '', 0, 10, 2, 'S')
+    (2662, '', 11, 10, 2, 'i'),
+    (3079, '', 11, 10, 0, 'v'),
+    (1260, '', 11, 10, 2, 'c'),
+    (9999, '', 11, 10, 2, 'f'),
+    (3476, '', 11, 10, 0, 'm'),
+    (3074, '', 11, 10, 2, 'S')
 )
 UNION ALL
 SELECT
@@ -2700,7 +2708,7 @@ SELECT * FROM VALUES(
     /// declared `text` (the view emits the strings 't'/'f', which do not parse as a boolean), and
     /// `pg_attribute.attnum` / `attndims` / `atttypmod` are `int4` (the view emits plain integers).
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_attribute SQL SECURITY INVOKER AS
-SELECT atttypid, attrelid, attname, attnum, attisdropped, atttypmod, attnotnull, attndims, attgenerated FROM VALUES(
+SELECT atttypid, attrelid, attname, attnum, attisdropped, atttypmod, attnotnull, attndims, attgenerated, 't' AS attelemnotnull FROM VALUES(
     'atttypid UInt32, attrelid UInt32, attname String, attnum Int32, attisdropped UInt8, atttypmod Int32, attnotnull String, attndims Int32, attgenerated String',
     (26, 1247, 'oid',          1,  0, -1, 't', 0, ''),
     (26, 1247, 'typnamespace', 2,  0, -1, 't', 0, ''),
@@ -2721,6 +2729,7 @@ SELECT atttypid, attrelid, attname, attnum, attisdropped, atttypmod, attnotnull,
     (25, 1249, 'attnotnull',   7, 0, -1, 't', 0, ''),
     (23, 1249, 'attndims',     8, 0, -1, 't', 0, ''),
     (18, 1249, 'attgenerated', 9, 0, -1, 't', 0, ''),
+    (25, 1249, 'attelemnotnull', 10, 0, -1, 't', 0, ''),
     (26, 1255, 'oid',           1, 0, -1, 't', 0, ''),
     (19, 1255, 'proname',       2, 0, -1, 't', 0, ''),
     (26, 1259, 'oid',           1, 0, -1, 't', 0, ''),
@@ -2808,9 +2817,15 @@ SELECT
     /// `Array` column itself nullable.
     if (startsWith(cols.type, 'Nullable(') OR startsWith(cols.type, 'LowCardinality(Nullable('), 'f', 't') AS attnotnull,
     cols.ndims AS attndims,
-    /// PostgreSQL has no catalog field for array-element nullability. The self-connect schema reader uses
-    /// this emulation-only marker to distinguish it from the column's `attnotnull` value.
-    if (cols.ndims > 0 AND position(cols.wrappers, 'Nullable(') > 0, 'e', '') AS attgenerated
+    /// ClickHouse has no generated columns, so `attgenerated` keeps its PostgreSQL meaning and is always
+    /// empty. Array-element nullability, which PostgreSQL has no catalog field for at all, is carried by
+    /// the extra `attelemnotnull` column below: overloading `attgenerated` would make every
+    /// `Array(Nullable(...))` column look generated to an ordinary catalog client.
+    '' AS attgenerated,
+    /// Emulation-only column, mirroring `attnotnull` but for the elements of an array column. The
+    /// self-connect schema reader detects its presence through `pg_attribute`'s own description of itself
+    /// and falls back to the PostgreSQL-native behaviour against a real server, which cannot report this.
+    if (cols.ndims > 0 AND position(cols.wrappers, 'Nullable(') > 0, 'f', 't') AS attelemnotnull
 FROM (
     SELECT
         database, table, name, position, type,
