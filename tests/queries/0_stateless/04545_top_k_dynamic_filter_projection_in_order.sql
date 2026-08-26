@@ -213,8 +213,36 @@ FROM (
 )
 WHERE explain ILIKE '%InOrder%';
 
+-- A key column is stored ASC NULLS LAST, so `NULLS FIRST` is not the stored order: the projection
+-- cannot serve the read in order (expected 0) and dynamic filtering must stay on (expected 1).
+DROP TABLE IF EXISTS t_topk_nulls;
+CREATE TABLE t_topk_nulls (id UInt64, k UInt64, score Nullable(UInt64), payload String CODEC(NONE))
+ENGINE = MergeTree ORDER BY (k, id)
+SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
+INSERT INTO t_topk_nulls SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(32768);
+OPTIMIZE TABLE t_topk_nulls FINAL;
+ALTER TABLE t_topk_nulls ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
+ALTER TABLE t_topk_nulls MATERIALIZE PROJECTION p_score SETTINGS mutations_sync = 2;
+
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_nulls ORDER BY score ASC NULLS FIRST, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 AS nulls_first_in_order
+FROM (
+    EXPLAIN projections = 1
+    SELECT id, cityHash64(payload) FROM t_topk_nulls ORDER BY score ASC NULLS FIRST, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%InOrder%';
+
 DROP TABLE t_topk_proj_rio;
 DROP TABLE t_topk_noproj;
 DROP TABLE t_topk_unmat;
 DROP TABLE t_topk_mixed;
 DROP TABLE t_topk_sample;
+DROP TABLE t_topk_nulls;

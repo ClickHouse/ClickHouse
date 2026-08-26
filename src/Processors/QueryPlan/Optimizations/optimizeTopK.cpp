@@ -1,6 +1,7 @@
 #include <Columns/Collator.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -35,13 +36,28 @@ namespace DB::QueryPlanOptimizations
 /// sorting key or from a sorting projection the second-pass chooser would select. Runs before that
 /// chooser, so each gate below mirrors one of its gates and an uncertain case must return false.
 static bool readWouldBeInOrderForColumn(
-    ReadFromMergeTree & read_step, const String & sort_column_name, bool optimize_projection, bool has_query_filter)
+    ReadFromMergeTree & read_step,
+    const String & sort_column_name,
+    const SortColumnDescription & sort_col_desc,
+    bool optimize_projection,
+    bool has_query_filter)
 {
+    /// A collated order is never a key order: keys carry no collation.
+    if (sort_col_desc.collator)
+        return false;
+
+    /// A key column is stored ASC NULLS LAST or DESC NULLS FIRST, so the opposite NULL placement is
+    /// not a key order. Floats are included because NaN takes the NULL position.
+    auto null_placement_is_stored_order = [&](const DataTypePtr & key_type)
+    {
+        return sort_col_desc.nulls_direction != -1 || !(isNullableOrLowCardinalityNullable(key_type) || isFloat(*key_type));
+    };
+
     const auto & metadata = read_step.getStorageMetadata();
 
     const auto & sorting_key = metadata->getSortingKey();
     if (!sorting_key.column_names.empty() && sorting_key.column_names[0] == sort_column_name)
-        return true;
+        return null_placement_is_stored_order(sorting_key.data_types[0]);
 
     /// A sorting projection can only serve the read when projection optimization is enabled.
     if (!optimize_projection)
@@ -76,6 +92,9 @@ static bool readWouldBeInOrderForColumn(
 
         const auto & proj_sorting_key = projection.metadata->getSortingKey();
         if (proj_sorting_key.column_names.empty() || proj_sorting_key.column_names[0] != sort_column_name)
+            continue;
+
+        if (!null_placement_is_stored_order(proj_sorting_key.data_types[0]))
             continue;
 
         /// A projection with its own WHERE stores a subset of rows, so it cannot serve the full read.
@@ -281,7 +300,8 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     /// On an already-sorted read the prewhere rejects every row past the threshold, so the LIMIT
     /// never cancels the pipeline early and the whole table is scanned.
     if (use_dynamic_filtering && settings.read_in_order
-        && readWouldBeInOrderForColumn(*read_from_mergetree_step, sort_column_name, settings.optimize_projection, where_clause))
+        && readWouldBeInOrderForColumn(
+               *read_from_mergetree_step, sort_column_name, sort_col_desc, settings.optimize_projection, where_clause))
         use_dynamic_filtering = false;
 
     /// The threshold tracker is needed for dynamic mark skipping during reads
