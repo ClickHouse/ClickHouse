@@ -43,7 +43,7 @@ FROM merge('json_nested_evolution_(wide|compact)')
 GROUP BY _table
 ORDER BY _table;
 
-SELECT table, arraySort(groupUniqArray(tupleElement(path, 1)))
+SELECT table, tupleElement(path, 1), tupleElement(path, 2)
 FROM
 (
     SELECT table, arrayJoin(arrayZip(subcolumns.names, subcolumns.serializations)) AS path
@@ -53,9 +53,8 @@ FROM
         AND table IN ('json_nested_evolution_wide', 'json_nested_evolution_compact')
         AND column = 'j'
 )
-WHERE startsWith(tupleElement(path, 1), 't.')
-GROUP BY table
-ORDER BY table;
+WHERE tupleElement(path, 1) IN ('t.a', 't.b')
+ORDER BY table, tupleElement(path, 1);
 
 ALTER TABLE json_nested_evolution_wide
     MODIFY COLUMN j JSON(t Tuple(c Nullable(String), b UInt64), max_dynamic_paths = 0)
@@ -69,7 +68,7 @@ FROM merge('json_nested_evolution_(wide|compact)')
 GROUP BY _table
 ORDER BY _table;
 
-SELECT table, arraySort(groupUniqArray(tupleElement(path, 1)))
+SELECT table, tupleElement(path, 1), tupleElement(path, 2)
 FROM
 (
     SELECT table, arrayJoin(arrayZip(subcolumns.names, subcolumns.serializations)) AS path
@@ -79,9 +78,8 @@ FROM
         AND table IN ('json_nested_evolution_wide', 'json_nested_evolution_compact')
         AND column = 'j'
 )
-WHERE startsWith(tupleElement(path, 1), 't.')
-GROUP BY table
-ORDER BY table;
+WHERE tupleElement(path, 1) IN ('t.b', 't.c')
+ORDER BY table, tupleElement(path, 1);
 
 ALTER TABLE json_nested_evolution_wide
     MODIFY COLUMN j JSON(t Tuple(c Nullable(String)), max_dynamic_paths = 0)
@@ -98,7 +96,7 @@ FROM merge('json_nested_evolution_(wide|compact)')
 GROUP BY _table
 ORDER BY _table;
 
-SELECT table, arraySort(groupUniqArray(tupleElement(path, 1)))
+SELECT table, tupleElement(path, 1), tupleElement(path, 2)
 FROM
 (
     SELECT table, arrayJoin(arrayZip(subcolumns.names, subcolumns.serializations)) AS path
@@ -108,9 +106,8 @@ FROM
         AND table IN ('json_nested_evolution_wide', 'json_nested_evolution_compact')
         AND column = 'j'
 )
-WHERE startsWith(tupleElement(path, 1), 't.')
-GROUP BY table
-ORDER BY table;
+WHERE tupleElement(path, 1) = 't.c'
+ORDER BY table, tupleElement(path, 1);
 
 DROP TABLE json_nested_evolution_wide;
 DROP TABLE json_nested_evolution_compact;

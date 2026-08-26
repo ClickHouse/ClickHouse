@@ -12,7 +12,6 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationInfoObject.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
-#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -323,6 +322,7 @@ TEST(SerializationInfoObject, CreateWithChangedTypedPathStructure)
         auto evolved_info = old_info->createWithType(*old_type, *new_type, settings);
         auto fresh_info = new_type->createSerializationInfo(settings);
         EXPECT_TRUE(evolved_info->structureEquals(*fresh_info));
+        EXPECT_TRUE(evolved_info->hasCustomSerialization());
     };
 
     check_evolution(
@@ -481,15 +481,17 @@ TEST(SerializationInfoObject, NativeRevisionGate)
     column.name = "j";
     column.type = DataTypeFactory::instance().get("JSON(x String, max_dynamic_paths=0)");
     auto object_template = column.type->createColumn();
-    auto shared_data = assert_cast<const ColumnObject &>(*object_template).getSharedDataPtr()->cloneResized(rows);
+    const auto & object_template_ref = assert_cast<const ColumnObject &>(*object_template);
+    auto shared_data = object_template_ref.getSharedDataPtr()->cloneResized(rows);
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths;
     column.column = ColumnObject::create(
         std::move(typed_paths),
         std::move(dynamic_paths),
         std::move(shared_data),
-        0,
-        0,
-        DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
+        object_template_ref.getMaxDynamicPaths(),
+        object_template_ref.getMaxDynamicPathsUpperBound(),
+        object_template_ref.getGlobalMaxDynamicPaths(),
+        object_template_ref.getMaxDynamicTypes());
 
     auto new_result = NativeWriter::getSerializationAndColumn(DBMS_MIN_REVISION_WITH_JSON_TYPED_PATHS_SERIALIZATION, column);
     const auto & new_info = std::get<1>(new_result);

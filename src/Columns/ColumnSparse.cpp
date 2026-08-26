@@ -1010,6 +1010,7 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
             dynamic_paths,
             column_object->getSharedDataPtr(),
             column_object->getMaxDynamicPaths(),
+            column_object->getMaxDynamicPathsUpperBound(),
             column_object->getGlobalMaxDynamicPaths(),
             column_object->getMaxDynamicTypes(),
             column_object->getStatistics());
