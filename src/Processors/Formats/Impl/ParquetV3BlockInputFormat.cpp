@@ -15,16 +15,13 @@
 #include <IO/VarInt.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
-#include <parquet/file_reader.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -305,20 +302,16 @@ void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr>
 
 std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
 {
-    std::atomic<int> is_stopped = false;
-    auto arrow_file = asArrowFile(buf, format_settings_, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, nullptr);
-    auto file_size = arrow_file->GetSize();
-    if (!file_size.ok())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot get Parquet file size: {}", file_size.status().ToString());
-    /// Size the footer read the same way the v3 reader does, so `input_format_parquet_footer_read_size`
-    /// applies to this metadata read too. Without it this path would keep arrow's fixed 64 KiB default
-    /// and pay an extra round trip for every footer wider than that.
-    parquet::ReaderProperties properties;
-    properties.set_footer_read_size(Parquet::parquetFooterReadSize(size_t(*file_size), format_settings_.parquet.footer_read_size));
-    auto metadata = parquet::ParquetFileReader::Open(arrow_file, properties)->metadata();
+    /// Read the footer with the same reader the format itself uses, so this metadata read honors the
+    /// same settings (`input_format_parquet_footer_read_size` in particular) and there is one parquet
+    /// metadata code path instead of two.
+    Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
+    Parquet::Prefetcher prefetcher;
+    prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
+    auto metadata = Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
     std::vector<size_t> bucket_sizes;
-    for (int i = 0; i < metadata->num_row_groups(); ++i)
-        bucket_sizes.push_back(metadata->RowGroup(i)->total_byte_size());
+    for (const auto & row_group : metadata.row_groups)
+        bucket_sizes.push_back(size_t(row_group.total_byte_size));
 
     std::vector<std::vector<size_t>> buckets;
     size_t current_weight = 0;

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <algorithm>
-
 #include <Common/threadPoolCallbackRunner.h>
 #include <Formats/FormatSettings.h>
 
@@ -39,20 +37,6 @@ struct ReadOptions
     /// searching for 100 elements would have 63% false positive probability.
     size_t bloom_filter_max_set_size = 100;
 };
-
-/// Size (in bytes) of the initial tail read that fetches the parquet footer (`FileMetaData`).
-/// A non-zero `configured_size` (`input_format_parquet_footer_read_size`) forces a fixed read size,
-/// bumped up to the 8-byte trailer (metadata size + magic) that footer-length parsing needs; 0 sizes
-/// the read adaptively to the file - 1 % clamped to [128 KiB, 2 MiB] - so it usually covers the whole
-/// footer in one read even for wide files. The result is not clamped to the file size; callers do
-/// that (arrow's reader clamps internally). Only affects the number of reads, never correctness: an
-/// undershoot costs one extra read of the exact remainder.
-inline size_t parquetFooterReadSize(size_t file_size, size_t configured_size)
-{
-    if (configured_size == 0)
-        return std::clamp<size_t>(file_size / 100, 128ul << 10, 2ul << 20);
-    return std::max<size_t>(configured_size, 8);
-}
 
 struct SharedResourcesExt
 {
