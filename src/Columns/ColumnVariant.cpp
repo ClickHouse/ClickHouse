@@ -858,6 +858,8 @@ void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
     Discriminator global_discr = 0;
     readBinaryLittleEndian<Discriminator>(global_discr, in);
 
+    checkDiscriminatorValue(global_discr, variants.size(), /* allow_logical_error= */ false);
+
     Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
     getLocalDiscriminators().push_back(local_discr);
     if (local_discr == NULL_DISCRIMINATOR)
@@ -877,6 +879,8 @@ void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const
 
     if (global_discr == NULL_DISCRIMINATOR)
         return;
+
+    checkDiscriminatorValue(global_discr, variants.size(), /* allow_logical_error= */ true);
 
     variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(in);
 }
