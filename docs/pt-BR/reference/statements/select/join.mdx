@@ -51,25 +51,25 @@ Os tipos adicionais de junção disponíveis no ClickHouse são:
 | `PASTE JOIN`                                        | Executa uma concatenação horizontal de duas tabelas.                                                                                                       |
 
 <Note>
-  Quando [join&#95;algorithm](/pt-BR/reference/settings/session-settings#join_algorithm) está definido como `partial_merge`, `RIGHT JOIN` e `FULL JOIN` são suportados apenas com a strictness `ALL` (`SEMI`, `ANTI`, `ANY` e `ASOF` não são suportados).
+  Quando [join&#95;algorithm](/pt-BR/reference/settings/session-settings/join#join_algorithm) está definido como `partial_merge`, `RIGHT JOIN` e `FULL JOIN` são suportados apenas com a strictness `ALL` (`SEMI`, `ANTI`, `ANY` e `ASOF` não são suportados).
 </Note>
 
 <div id="settings">
   ## Configurações
 </div>
 
-O tipo de junção padrão pode ser substituído usando a configuração [`join_default_strictness`](/pt-BR/reference/settings/session-settings#join_default_strictness).
+O tipo de junção padrão pode ser substituído usando a configuração [`join_default_strictness`](/pt-BR/reference/settings/session-settings/join#join_default_strictness).
 
-O comportamento do servidor do ClickHouse para operações `ANY JOIN` depende da configuração [`any_join_distinct_right_table_keys`](/pt-BR/reference/settings/session-settings#any_join_distinct_right_table_keys).
+O comportamento do servidor do ClickHouse para operações `ANY JOIN` depende da configuração [`any_join_distinct_right_table_keys`](/pt-BR/reference/settings/session-settings/other#any_join_distinct_right_table_keys).
 
 **Veja também**
 
-* [`join_algorithm`](/pt-BR/reference/settings/session-settings#join_algorithm)
-* [`join_any_take_last_row`](/pt-BR/reference/settings/session-settings#join_any_take_last_row)
-* [`join_use_nulls`](/pt-BR/reference/settings/session-settings#join_use_nulls)
-* [`partial_merge_join_rows_in_right_blocks`](/pt-BR/reference/settings/session-settings#partial_merge_join_rows_in_right_blocks)
-* [`join_on_disk_max_files_to_merge`](/pt-BR/reference/settings/session-settings#join_on_disk_max_files_to_merge)
-* [`any_join_distinct_right_table_keys`](/pt-BR/reference/settings/session-settings#any_join_distinct_right_table_keys)
+* [`join_algorithm`](/pt-BR/reference/settings/session-settings/join#join_algorithm)
+* [`join_any_take_last_row`](/pt-BR/reference/settings/session-settings/join#join_any_take_last_row)
+* [`join_use_nulls`](/pt-BR/reference/settings/session-settings/join#join_use_nulls)
+* [`partial_merge_join_rows_in_right_blocks`](/pt-BR/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks)
+* [`join_on_disk_max_files_to_merge`](/pt-BR/reference/settings/session-settings/join#join_on_disk_max_files_to_merge)
+* [`any_join_distinct_right_table_keys`](/pt-BR/reference/settings/session-settings/other#any_join_distinct_right_table_keys)
 
 Use a configuração `cross_to_inner_join_rewrite` para definir o comportamento quando o ClickHouse não consegue reescrever um `CROSS JOIN` como um `INNER JOIN`. O valor padrão é `1`, o que permite que a junção continue, mas ela será mais lenta. Defina `cross_to_inner_join_rewrite` como `0` se quiser que um erro seja gerado e como `2` para não executar os `CROSS JOIN`, mas sim forçar a reescrita de todas as junções com vírgula ou `CROSS JOIN`. Se a reescrita falhar quando o valor for `2`, você receberá uma mensagem de erro informando &quot;Please, try to simplify `WHERE` section&quot;.
 
@@ -182,7 +182,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
   ## Junção com condições de desigualdade para colunas de tabelas diferentes
 </div>
 
-Atualmente, o ClickHouse oferece suporte a `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` com condições de desigualdade, além das condições de igualdade. As condições de desigualdade são compatíveis apenas com os algoritmos de junção `hash` e `grace_hash`. As condições de desigualdade não são compatíveis com `join_use_nulls`.
+Atualmente, o ClickHouse oferece suporte a `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` com condições de desigualdade, além das condições de igualdade. As condições de desigualdade são compatíveis apenas com os algoritmos de junção `hash`, `parallel_hash` e `grace_hash`. Uma condição de não igualdade avaliada durante a junção não pode conter `arrayJoin`, pois deve preservar o número de linhas; uma condição aplicada a apenas um lado e uma chave de igualdade baseada em `arrayJoin` são extraídas antes da junção e não são afetadas; uma condição não disjuntiva de `ALL INNER JOIN` também não é afetada, pois, nesse caso, a condição é aplicada após a junção. Quando a expansão depende de apenas um lado, mova-a para um `ARRAY JOIN` em uma subconsulta antes da junção; uma condição cujo argumento de `arrayJoin` lê colunas de ambos os lados precisa ser reestruturada.
 
 **Exemplo**
 
@@ -231,10 +231,10 @@ key4    f    2    3    4            0    0    \N
 ```
 
 <div id="null-values-in-join-keys">
-  ## Valores NULL nas chaves de JOIN
+  ## Valores NULL e NaN nas chaves de junção
 </div>
 
-`NULL` não é igual a nenhum valor, nem a si mesmo. Isso significa que, se uma chave de `JOIN` tiver um valor `NULL` em uma tabela, ela não corresponderá a um valor `NULL` na outra tabela.
+`NULL` não é igual a nenhum valor, nem a si mesmo. Isso significa que, se uma chave de junção tiver um valor `NULL` em uma tabela, ela não corresponderá a um valor `NULL` na outra tabela.
 
 **Exemplo**
 
@@ -270,9 +270,9 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON A.id = B.id
 └─────────┴───────┘
 ```
 
-Observe que a linha com `Charlie` da tabela `A` e a linha com pontuação 88 da tabela `B` não aparecem no resultado por causa do valor `NULL` na chave de `JOIN`.
+Observe que a linha com `Charlie` da tabela `A` e a linha com pontuação 88 da tabela `B` não aparecem no resultado por causa do valor `NULL` na chave de junção.
 
-Caso você queira fazer a correspondência de valores `NULL`, use a função `isNotDistinctFrom` para comparar as chaves de `JOIN`.
+Caso você queira fazer a correspondência de valores `NULL`, use a função `isNotDistinctFrom` para comparar as chaves de junção.
 
 ```sql
 SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
@@ -285,6 +285,13 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 │ Charlie │    88 │
 └─────────┴───────┘
 ```
+
+Os valores `NaN` em chaves de junção de ponto flutuante não seguem a regra de `NULL` acima.
+A comparação escalar de dois valores `NaN` (`NaN = NaN`) resulta em `0`; no entanto, as chaves de junção não são comparadas usando semântica escalar — chaves `NaN` podem corresponder.
+Se isso de fato ocorre é um detalhe de implementação e depende do algoritmo de junção, do tipo de chave e das configurações da sessão.
+Não dependa de um comportamento específico.
+Se você precisar que linhas com `NaN` não correspondam, mapeie-as para valores `NULL`: `ON if(isNaN(A.id), NULL, A.id) = B.id`.
+Em um `ASOF JOIN`, a coluna de correspondência mais próxima é comparada por ordenação, que `NaN` não suporta — filtre essas linhas em ambos os lados.
 
 <div id="asof-join-usage">
   ## Uso do ASOF JOIN
@@ -465,7 +472,7 @@ retorna o conjunto:
   ### Processamento de células vazias ou NULL
 </div>
 
-Ao fazer `JOIN` entre tabelas, podem surgir células vazias. A configuração [join&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings#join_use_nulls) define como o ClickHouse preenche essas células.
+Ao fazer `JOIN` entre tabelas, podem surgir células vazias. A configuração [join&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings/join#join_use_nulls) define como o ClickHouse preenche essas células.
 
 Se as chaves de `JOIN` forem campos [Nullable](/pt-BR/reference/data-types/nullable), as linhas em que pelo menos uma das chaves tem o valor [NULL](/pt-BR/reference/syntax#null) não são unidas.
 
@@ -507,14 +514,14 @@ Se você precisar de um `JOIN` para fazer junção com tabelas de dimensão (tab
   ### Limitações de memória
 </div>
 
-Por padrão, o ClickHouse usa o algoritmo [hash junção](https://en.wikipedia.org/wiki/Hash_join). O ClickHouse usa a `right_table` e cria uma tabela hash para ela na RAM. Se `join_algorithm = 'auto'` estiver habilitado, após determinado limite de consumo de memória, o ClickHouse passa a usar o algoritmo [merge](https://en.wikipedia.org/wiki/Sort-merge_join) de junção. Para obter uma descrição dos algoritmos de junção, consulte a configuração [join&#95;algorithm](/pt-BR/reference/settings/session-settings#join_algorithm).
+Por padrão, o ClickHouse usa o algoritmo [hash join](https://en.wikipedia.org/wiki/Hash_join). O ClickHouse usa a `right_table` e cria uma tabela hash para ela na RAM. Se `join_algorithm = 'auto'` estiver habilitado, após determinado limite de consumo de memória, o ClickHouse passa a usar o algoritmo [merge](https://en.wikipedia.org/wiki/Sort-merge_join) de junção. Para obter uma descrição dos algoritmos de junção, consulte a configuração [join&#95;algorithm](/pt-BR/reference/settings/session-settings/join#join_algorithm).
 
 Se você precisar restringir o consumo de memória da operação de junção `JOIN`, use as seguintes configurações:
 
-* [max&#95;rows&#95;in&#95;join](/pt-BR/reference/settings/session-settings#max_rows_in_join) — Limita o número de linhas na tabela hash.
-* [max&#95;bytes&#95;in&#95;join](/pt-BR/reference/settings/session-settings#max_bytes_in_join) — Limita o tamanho da tabela hash.
+* [max&#95;rows&#95;in&#95;join](/pt-BR/reference/settings/session-settings/max-rows#max_rows_in_join) — Limita o número de linhas na tabela hash.
+* [max&#95;bytes&#95;in&#95;join](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_in_join) — Limita o tamanho da tabela hash.
 
-Quando qualquer um desses limites é atingido, o ClickHouse age conforme instruído pela configuração [join&#95;overflow&#95;mode](/pt-BR/reference/settings/session-settings#join_overflow_mode).
+Quando qualquer um desses limites é atingido, o ClickHouse age conforme instruído pela configuração [join&#95;overflow&#95;mode](/pt-BR/reference/settings/session-settings/join#join_overflow_mode).
 
 <div id="examples">
   ## Exemplos

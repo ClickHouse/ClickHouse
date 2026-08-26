@@ -3,6 +3,8 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
+#include <Analyzer/WindowFunctionsUtils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -46,8 +48,19 @@ void OptimizeTrivialGroupByLimitPass::run(QueryTreeNodePtr & query_tree_node, Co
 
     auto * query = query_tree_node->as<QueryNode>();
     if (!query || !query->hasGroupBy() || !query->hasLimit() || query->hasHaving() || query->hasOrderBy() || query->hasWindow()
-        || query->hasLimitBy() || query->isGroupByWithTotals() || query->isGroupByWithRollup() || query->isGroupByWithCube()
-        || query->isGroupByWithGroupingSets() || query->hasGroupByWithCluster() || hasAggregateFunctionNodes(query->getProjectionNode()))
+        || query->hasQualify() || query->hasLimitBy() || query->isDistinct() || query->isGroupByWithTotals()
+        || query->isGroupByWithRollup() || query->isGroupByWithCube() || query->isGroupByWithGroupingSets() || query->hasGroupByWithCluster()
+        || hasAggregateFunctionNodes(query->getProjectionNode()))
+        return;
+
+    /// Window functions and `arrayJoin` in the projection consume the aggregated rows after
+    /// GROUP BY, so the produced groups are not simply cut by LIMIT and keeping only the first
+    /// `LIMIT + OFFSET` groups changes the result:
+    /// - a window function is evaluated over all groups (`count() OVER ()` counts them);
+    /// - `arrayJoin` can expand or drop rows, so `LIMIT + OFFSET` groups may produce fewer
+    ///   rows than the LIMIT while more groups exist.
+    /// `DISTINCT` and `QUALIFY` (checked above) collapse and filter the groups in the same way.
+    if (hasWindowFunctionNodes(query->getProjectionNode()) || hasFunctionNode(query->getProjectionNode(), "arrayJoin"))
         return;
 
     /// `GROUP BY ... WITH CLUSTER` clusters the exact groups after aggregation, so it must see

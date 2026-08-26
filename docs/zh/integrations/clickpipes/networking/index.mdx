@@ -1,0 +1,45 @@
+---
+sidebarTitle: '网络'
+description: 'ClickPipes 的网络配置选项。'
+slug: /integrations/clickpipes/networking
+title: '网络'
+doc_type: 'guide'
+keywords: ['clickpipes networking', 'private networking', 'reverse private endpoint', 'aws privatelink', 'gcp private service connect', 'private connectivity', 'azure privatelink']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+根据上游数据源的网络配置，您可以通过以下方式连接 ClickPipes：
+
+<div id="ip-allowlisting">
+  ## IP 允许列表
+</div>
+
+对于暴露在公网的数据源，可以使用 IP 允许列表，将流量限制为仅允许来自 ClickPipes 所用静态 NAT IP 地址的流量。将 ClickPipes 连接所用区域的[静态 NAT IP 地址](/zh/integrations/clickpipes/networking/static-ips)添加到上游防火墙或安全组 (Security Group) 规则中。
+
+<div id="managed-private-endpoints">
+  ## 托管专用终结点
+</div>
+
+对于**未**暴露在公网的数据源，您可以通过托管专用终结点进行连接。ClickPipes 会在其 VPC 中创建一个**反向专用终结点 (RPE)**，并将其指向为您的数据源发布的 VPC endpoint service，从而确保流量不会暴露在公网。
+
+是否支持 RPE 取决于托管数据源的云提供商和区域：
+
+| 提供商                                                                         | 支持情况 | 说明                                                                                                                         |
+| --------------------------------------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------- |
+| [AWS PrivateLink](/zh/integrations/clickpipes/networking/aws-privatelink)      | 是    | 适用于托管在 AWS 上的数据源。可通过 VPC endpoint service 配置跨区域连接。                                                                         |
+| [GCP Private Service Connect](/zh/integrations/clickpipes/networking/gcp-psc)  | 是    | 适用于托管在 GCP 上的 `AlloyDB` 数据源。尚不支持通过 Global Access 实现跨区域连接；如需访问位于不受支持 GCP 区域中的私有 `AlloyDB` 数据源，请使用 [SSH 隧道](#ssh-tunneling)。 |
+| [Azure Private Link](/zh/integrations/clickpipes/networking/azure-privatelink) | 否    | 请使用 [SSH 隧道](#ssh-tunneling) 访问私有 Azure 数据源。                                                                               |
+
+<div id="ssh-tunneling">
+  ## SSH 隧道
+</div>
+
+对于**未**暴露在公网且**无法**使用托管专用终结点的数据源，您可以通过堡垒机建立 SSH 隧道进行连接。请将 ClickPipes 所在区域的[静态 NAT IP 地址](/zh/integrations/clickpipes/networking/static-ips)添加到上游堡垒机的防火墙规则中。
+
+应在以下情况下采用此方法：
+
+* 数据源托管在 Azure 上。
+* 数据源与 ClickPipes 托管在不同的云提供商或区域，且无法通过[托管专用终结点](#managed-private-endpoints)实现跨区域连接。
+* 无法使用[托管专用终结点](#managed-private-endpoints)，例如只能通过堡垒机访问的本地部署。

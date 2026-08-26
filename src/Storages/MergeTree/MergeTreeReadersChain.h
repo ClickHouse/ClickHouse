@@ -65,6 +65,13 @@ private:
         const Block & previous_header,
         size_t num_read_rows) const;
 
+    /// Evaluates default expressions for columns that are absent in part.
+    void evaluateMissingDefaults(
+        MergeTreeRangeReader & range_reader,
+        const ReadResult & result,
+        const Block & previous_header,
+        Columns & columns) const;
+
     void executePrewhereActions(
         MergeTreeRangeReader & reader,
         ReadResult & result,
@@ -72,6 +79,11 @@ private:
         bool is_last_reader);
 
     void readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result);
+
+    /// Materializes the sort-key result columns of MergeOnKey patches.
+    /// Returns the main block used for key comparisons.
+    Block executeSortingKeyExpressions(const Block & result_header, ReadResult & read_result);
+
     void addPatchVirtuals(Block & to, const Block & from) const;
     void addPatchVirtuals(ReadResult & result, const Block & header) const;
     void applyPatchesAfterReader(ReadResult & result, size_t reader_index);
