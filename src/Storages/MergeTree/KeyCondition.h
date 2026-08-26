@@ -55,13 +55,11 @@ struct DeterministicKeyTransformDag
     String input_name;
 };
 
-/// Whether a value of this type can be a NaN that an aggregated `getExtremes` bound does not show,
-/// and whose ordering comparisons are therefore all false rather than complementary.
-/// `Tuple` qualifies: its comparison is built from its elements' and `ColumnTuple::getExtremes`
-/// delegates per child. `Array` and `Map` do not: they compare through `compareAt`'s total order,
-/// where a NaN has a defined position.
+/// Whether a value of this type can be a NaN that an aggregated `getExtremes` bound does not show, and
+/// whose ordering comparisons are therefore all false rather than complementary. `Tuple` qualifies, per
+/// element. An `Array`/`Map` bound hides a NaN too (opposite `nan_direction_hint` per bound in
+/// `ColumnArray::getExtremes`), but their comparison orders it, so it can also make a predicate true.
 bool typeMayHideNaN(const DataTypePtr & type);
-
 
 /** Condition on the index.
   *
@@ -468,14 +466,9 @@ public:
     bool isRelaxed() const;
 
     /// Weaken the atoms over a `typeMayHideNaN` key column. Only for a condition evaluated against a
-    /// `getExtremes`-derived hyperrectangle, and only before `alwaysUnknownOrTrue()`.
-    ///
-    /// A hidden NaN satisfies no ordering comparison, so it can make an atom true only through an
-    /// enclosing negation: `can_be_true` holds and `can_be_false` does not, which is `relaxed`. It can
-    /// also make the atom true directly, and is then `FUNCTION_UNKNOWN`, in three shapes: a monotonic
-    /// function chain (applied to the bound's endpoints, and not required to preserve NaN), a set
-    /// holding a NaN element (matched under `compareAt`'s total order, where `nan = nan`), and a set
-    /// mapping carrying its own chain.
+    /// `getExtremes`-derived hyperrectangle, and only before `alwaysUnknownOrTrue()`. A hidden NaN satisfies
+    /// no ordering comparison, so it makes an atom true only through an enclosing negation: `can_be_true`
+    /// without `can_be_false`, i.e. `relaxed`. Making one true directly needs `FUNCTION_UNKNOWN` instead.
     void relaxAtomsOverNaNHidingColumns(const DataTypes & key_types);
 
     bool isSinglePoint() const { return single_point; }

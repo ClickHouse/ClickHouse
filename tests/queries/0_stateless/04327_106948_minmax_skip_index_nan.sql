@@ -130,8 +130,7 @@ DROP TABLE t_set_idx_nan;
 
 -- Tuple comparison is built from its elements' scalar comparisons, so a NaN element makes an ordering
 -- operator and its inverse both false exactly as a bare float does, and ColumnTuple::getExtremes
--- delegates per child. Array and Map instead compare through the total order, where a NaN has a
--- defined position, so they are not affected.
+-- delegates per child.
 DROP TABLE IF EXISTS t_minmax_nan_tuple;
 
 CREATE TABLE t_minmax_nan_tuple
@@ -144,24 +143,50 @@ INSERT INTO t_minmax_nan_tuple VALUES (4, (100., 100.)), (5, (150., 150.)), (6, 
 SELECT count() FROM t_minmax_nan_tuple WHERE NOT (t <= (100., 100.));
 SELECT count() FROM t_minmax_nan_tuple WHERE NOT (t <= (100., 100.)) SETTINGS use_skip_indexes = 0;
 
--- A NaN inside a tuple constant is not a top-level NaN, so recognising it needs a recursive walk of
--- the constant as well as of the type.
+-- A NaN inside a tuple constant is reached through the column operand's type here, which is already
+-- NaN-hiding, so this pair does not distinguish the type test from a walk of the constant.
 SELECT count() FROM t_minmax_nan_tuple WHERE NOT (t < (nan, 1.));
 SELECT count() FROM t_minmax_nan_tuple WHERE NOT (t < (nan, 1.)) SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_minmax_nan_tuple;
 
--- Array and Map compare through the total order, in which a NaN has a defined position, so they are
--- not NaN-hiding and keep their pruning: only the sibling granule is read for a negated range.
+-- A packed Tuple key keeps the mapped set column as a ColumnTuple, so a set element holding a NaN is
+-- a tuple rather than a top-level NaN. A set matches under the total order, in which nan = nan, so
+-- such an element can make a positive IN true and its granule must be kept. The finite element has to
+-- fall outside the granule's bound, or it keeps the granule on its own and the arm asserts nothing.
+DROP TABLE IF EXISTS t_minmax_nan_tuple_set;
+
+CREATE TABLE t_minmax_nan_tuple_set
+(id UInt64, t Tuple(Float64, Float64), INDEX idx_t t TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_minmax_nan_tuple_set VALUES (1, (1., 1.)), (2, (nan, 1.)), (3, (3., 3.));
+
+SELECT count() FROM t_minmax_nan_tuple_set WHERE t IN ((nan, 1.), (500., 500.));
+SELECT count() FROM t_minmax_nan_tuple_set WHERE t IN ((nan, 1.), (500., 500.)) SETTINGS use_skip_indexes = 0;
+
+-- An all-finite set outside the bound is still pruned, so the rule did not disable this index.
+SELECT count() FROM t_minmax_nan_tuple_set WHERE t IN ((500., 500.));
+SELECT count() FROM t_minmax_nan_tuple_set WHERE t IN ((500., 500.)) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_minmax_nan_tuple_set;
+
+-- Array and Map are excluded from the rule, so an all-finite Array minmax index keeps its pruning:
+-- only the sibling granule is read for a negated range. An Array bound hides a NaN as much as a float
+-- one does, but a NaN element is ordered, so it also makes a positive predicate true and would need a
+-- stronger treatment than this rule applies. That carrier is out of scope, so no arm asserts its
+-- result and this fixture holds no NaN.
 DROP TABLE IF EXISTS t_minmax_nan_array;
 
 CREATE TABLE t_minmax_nan_array
 (id UInt64, a Array(Float64), INDEX idx_a a TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
-INSERT INTO t_minmax_nan_array VALUES (1, [1.]), (2, [nan]), (3, [3.]);
+INSERT INTO t_minmax_nan_array VALUES (1, [1.]), (2, [2.]), (3, [3.]);
 INSERT INTO t_minmax_nan_array VALUES (4, [100.]), (5, [150.]), (6, [200.]);
 
+SELECT count() FROM t_minmax_nan_array WHERE NOT (a <= [3.]);
+SELECT count() FROM t_minmax_nan_array WHERE NOT (a <= [3.]) SETTINGS use_skip_indexes = 0;
 SELECT countIf(explain LIKE '%Granules: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_minmax_nan_array WHERE NOT (a <= [3.]));
 
 DROP TABLE t_minmax_nan_array;
