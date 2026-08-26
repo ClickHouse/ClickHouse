@@ -16,14 +16,14 @@ struct PartitionWatermarkInfo : public ChunkInfoCloneable<PartitionWatermarkInfo
 };
 
 /// Calculates the partition watermark on the aligned stream. Attaches PartitionWatermarkInfo.
-class CalculatePartitionWatermarksStep : public ITransformingStep
+class StampPartitionWatermarksStep : public ITransformingStep
 {
     void updateOutputHeader() override;
 
 public:
-    CalculatePartitionWatermarksStep(SharedHeader input_header_, String partition_id_);
+    StampPartitionWatermarksStep(SharedHeader input_header_, String partition_id_);
 
-    String getName() const override { return "CalculatePartitionWatermarks"; }
+    String getName() const override { return "StampPartitionWatermarks"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;

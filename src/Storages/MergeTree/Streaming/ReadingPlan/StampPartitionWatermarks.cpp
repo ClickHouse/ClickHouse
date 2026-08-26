@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/Streaming/ReadingPlan/CalculatePartitionWatermarks.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
 
 #include <Processors/Streaming/Markers.h>
 #include <Processors/IInflatingTransform.h>
@@ -44,17 +44,17 @@ std::shared_ptr<PartitionWatermarkInfo> createPartitionWatermarkInfo(const Strin
     return info;
 }
 
-class CalculatePartitionWatermarksTransform final : public IInflatingTransform
+class StampPartitionWatermarksTransform final : public IInflatingTransform
 {
 public:
-    CalculatePartitionWatermarksTransform(SharedHeader header, String partition_id_)
+    StampPartitionWatermarksTransform(SharedHeader header, String partition_id_)
         : IInflatingTransform(header, header)
         , watermark_column_pos(header->getPositionByName(WatermarkColumn::name))
         , partition_id(std::move(partition_id_))
     {
     }
 
-    String getName() const override { return "CalculatePartitionWatermarks"; }
+    String getName() const override { return "StampPartitionWatermarks"; }
 
     void consume(Chunk chunk) override
     {
@@ -97,28 +97,28 @@ private:
 
 }
 
-CalculatePartitionWatermarksStep::CalculatePartitionWatermarksStep(SharedHeader input_header_, String partition_id_)
+StampPartitionWatermarksStep::StampPartitionWatermarksStep(SharedHeader input_header_, String partition_id_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , partition_id(std::move(partition_id_))
 {
 }
 
-void CalculatePartitionWatermarksStep::updateOutputHeader()
+void StampPartitionWatermarksStep::updateOutputHeader()
 {
     output_header = input_headers.front();
 }
 
-void CalculatePartitionWatermarksStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void StampPartitionWatermarksStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addSimpleTransform([&] (const SharedHeader & header)
     {
-        return std::make_shared<CalculatePartitionWatermarksTransform>(header, partition_id);
+        return std::make_shared<StampPartitionWatermarksTransform>(header, partition_id);
     });
 }
 
-QueryPlanStepPtr CalculatePartitionWatermarksStep::clone() const
+QueryPlanStepPtr StampPartitionWatermarksStep::clone() const
 {
-    return std::make_unique<CalculatePartitionWatermarksStep>(input_headers.front(), partition_id);
+    return std::make_unique<StampPartitionWatermarksStep>(input_headers.front(), partition_id);
 }
 
 }

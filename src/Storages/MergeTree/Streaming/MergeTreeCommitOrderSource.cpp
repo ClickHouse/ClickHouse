@@ -2,8 +2,8 @@
 
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSource.h>
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
-#include <Storages/MergeTree/Streaming/ReadingPlan/CalculatePartitionCursors.h>
-#include <Storages/MergeTree/Streaming/ReadingPlan/CalculatePartitionWatermarks.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
 
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
