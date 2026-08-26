@@ -1535,11 +1535,12 @@ class ScrambleSHA256Auth : public AuthenticationMethod
     {
         /// The user has no `scram_sha256_password` at all.
         NoScram,
-        /// Exactly one live verifier, which PostgreSQL SCRAM can offer on the wire.
+        /// Live verifiers sharing a single salt, which PostgreSQL SCRAM can offer on the wire.
         Live,
         /// Only expired verifiers: the salt is still usable to run the exchange and report invalid credentials.
         ExpiredOnly,
-        /// Live verifiers that PostgreSQL SCRAM cannot represent: a second factor, or several salts to choose from.
+        /// Live verifiers that PostgreSQL SCRAM cannot represent: a second factor, or several different salts to
+        /// choose from.
         UnsupportedConfiguration,
     };
 
@@ -1587,8 +1588,18 @@ class ScrambleSHA256Auth : public AuthenticationMethod
                         continue;
                     }
 
-                    /// PostgreSQL SCRAM cannot represent a second factor or choose between several salts.
-                    if (auth_method.getOneTimePassword() || live_scram_salt)
+                    /// PostgreSQL SCRAM cannot represent a second factor.
+                    if (auth_method.getOneTimePassword())
+                    {
+                        unsupported_configuration = true;
+                        continue;
+                    }
+
+                    /// Several live verifiers are representable as long as they agree on the salt: the exchange sends a
+                    /// single salt in `AuthenticationSASLContinue`, and the client proof derived from it is then checked
+                    /// against every stored salted password of the user. Differing salts cannot be represented, because
+                    /// only one of them can be sent on the wire.
+                    if (live_scram_salt && *live_scram_salt != auth_method.getSalt())
                     {
                         unsupported_configuration = true;
                         continue;
