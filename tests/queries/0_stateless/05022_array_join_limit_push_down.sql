@@ -115,6 +115,15 @@ FROM
     SETTINGS query_plan_push_down_limit_through_array_join = 1
 );
 
+SELECT '-- chained plan shape: one inner Limit and guard per ARRAY JOIN';
+EXPLAIN PLAN description = 0
+SELECT x FROM t_array_join_limit ARRAY JOIN arr ARRAY JOIN arr2 LIMIT 7
+SETTINGS
+    query_plan_push_down_limit_through_array_join = 1,
+    query_plan_optimize_lazy_materialization = 0,
+    query_plan_optimize_prewhere = 0,
+    optimize_move_to_prewhere = 0;
+
 SELECT '-- serialized plan';
 SELECT count()
 FROM (SELECT x FROM t_array_join_limit ARRAY JOIN arr LIMIT 7)

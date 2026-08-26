@@ -267,7 +267,17 @@ bool addArrayJoinEmptinessFilter(
 
     for (size_t i = 0; i < array_join_columns.size(); ++i)
     {
+        /// The filter may be inserted at different depths: immediately below `ArrayJoinStep`
+        /// (limit push-down, where the header contains analyzer aliases) or below the whole
+        /// `ARRAY JOIN` expression chain (top-K, where the header contains original input names).
         const auto * input = dag.tryFindInOutputs(source_columns[i]);
+        if (!input)
+            input = dag.tryFindInOutputs(array_join_columns[i]);
+        if (!input)
+        {
+            if (auto pos = source_columns[i].rfind('.'); pos != String::npos && pos + 1 < source_columns[i].size())
+                input = dag.tryFindInOutputs(source_columns[i].substr(pos + 1));
+        }
         if (!input)
         {
             if (!array_join_input_header.has(array_join_columns[i]))

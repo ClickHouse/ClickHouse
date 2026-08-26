@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -10,7 +11,10 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Core/SortDescription.h>
 #include <Common/typeid_cast.h>
+
+#include <vector>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -48,8 +52,21 @@ static bool hasEquivalentLimitBelow(QueryPlan::Node * node, size_t limit)
         if (const auto * existing_limit = typeid_cast<const LimitStep *>(node->step.get()))
             return existing_limit->getOffset() == 0 && existing_limit->getLimit() <= limit;
 
+        if (node->children.size() != 1)
+            return false;
+
+        /// Walk through row-preserving expressions and through `FilterStep`s. Emptiness guards
+        /// inserted for inner `ARRAY JOIN` are filters; `tryPushDownFilter` may then move them
+        /// below a deeper `ARRAY JOIN`, so skipping only `preserves_number_of_rows` steps would
+        /// miss an already-inserted limit and apply the rewrite twice.
+        if (typeid_cast<const ExpressionStep *>(node->step.get()) || typeid_cast<const FilterStep *>(node->step.get()))
+        {
+            node = node->children.front();
+            continue;
+        }
+
         const auto * transforming = dynamic_cast<const ITransformingStep *>(node->step.get());
-        if (!transforming || !transforming->getTransformTraits().preserves_number_of_rows || node->children.size() != 1)
+        if (!transforming || !transforming->getTransformTraits().preserves_number_of_rows)
             return false;
 
         node = node->children.front();
@@ -92,7 +109,7 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
 
     if (settings.push_down_limit_through_array_join)
     {
-        if (auto * array_join = typeid_cast<ArrayJoinStep *>(child.get()))
+        if (typeid_cast<ArrayJoinStep *>(child.get()))
         {
             if (limit->alwaysReadTillEnd() || child_node->children.size() != 1)
                 return 0;
@@ -101,46 +118,101 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
             if (limit_for_array_join == 0)
                 return 0;
 
-            QueryPlan::Node * array_join_input_node = child_node->children.front();
-
             /// A sort in this unary subtree may have been moved below one or several
             /// `ARRAY JOIN` steps by `tryTopKThroughArrayJoin`. Its own limit already restricts
             /// the input, and inserting another limit above its emptiness guards would be both
             /// redundant and incorrect.
-            if (hasSortingBelow(array_join_input_node))
+            if (hasSortingBelow(child_node->children.front()))
                 return 0;
 
-            if (hasEquivalentLimitBelow(array_join_input_node, limit_for_array_join))
+            if (hasEquivalentLimitBelow(child_node->children.front(), limit_for_array_join))
                 return 0;
 
-            if (!array_join->isLeft())
+            /// Collect the whole `ARRAY JOIN` chain in one pass. Consecutive `ArrayJoinStep`s are
+            /// typically separated by cardinality-preserving `ExpressionStep`s (`ARRAY JOIN
+            /// actions`, `DROP unused columns before ARRAY JOIN`). Stopping at the first
+            /// expression would only pre-limit the outermost join and leave inner expansions
+            /// unbounded.
+            std::vector<std::pair<QueryPlan::Node *, ArrayJoinStep *>> array_joins;
+            QueryPlan::Node * current_node = child_node;
+            while (true)
             {
-                Names source_columns;
-                source_columns.reserve(array_join->getColumns().size());
-                for (const auto & column_name : array_join->getColumns())
-                    source_columns.push_back(array_join->getSourceColumnName(column_name));
+                if (auto * array_join = typeid_cast<ArrayJoinStep *>(current_node->step.get()))
+                {
+                    if (current_node->children.size() != 1)
+                        return 0;
 
-                if (!addArrayJoinEmptinessFilter(
-                        array_join_input_node,
-                        array_join->getColumns(),
-                        source_columns,
-                        *array_join->getInputHeaders().front(),
-                        nodes))
-                    return 0;
+                    array_joins.emplace_back(current_node, array_join);
+                    current_node = current_node->children.front();
+                    continue;
+                }
+
+                if (typeid_cast<ExpressionStep *>(current_node->step.get()))
+                {
+                    SortDescription unused;
+                    if (!peelPassThroughExpressions(current_node, unused, 1))
+                        break;
+                    continue;
+                }
+
+                break;
             }
 
-            auto & inner_limit_node = nodes.emplace_back();
-            inner_limit_node.children.push_back(array_join_input_node);
-            inner_limit_node.step = std::make_unique<LimitStep>(
-                array_join_input_node->step->getOutputHeader(),
-                limit_for_array_join,
-                /*offset_=*/ 0);
+            if (array_joins.empty())
+                return 0;
 
-            child_node->children[0] = &inner_limit_node;
-            array_join->updateInputHeader(inner_limit_node.step->getOutputHeader());
+            struct RewiredInput
+            {
+                QueryPlan::Node * array_join_node;
+                ArrayJoinStep * array_join_step;
+                QueryPlan::Node * input_node;
+            };
+
+            QueryPlan::Nodes new_nodes;
+            std::vector<RewiredInput> rewired_inputs;
+            rewired_inputs.reserve(array_joins.size());
+            size_t num_guards = 0;
+
+            for (const auto & [array_join_node, array_join] : array_joins)
+            {
+                QueryPlan::Node * array_join_input_node = array_join_node->children.front();
+                if (!array_join->isLeft())
+                {
+                    Names source_columns;
+                    source_columns.reserve(array_join->getColumns().size());
+                    for (const auto & column_name : array_join->getColumns())
+                        source_columns.push_back(array_join->getSourceColumnName(column_name));
+
+                    if (!addArrayJoinEmptinessFilter(
+                            array_join_input_node,
+                            array_join->getColumns(),
+                            source_columns,
+                            *array_join->getInputHeaders().front(),
+                            new_nodes))
+                        return 0;
+
+                    ++num_guards;
+                }
+
+                auto & inner_limit_node = new_nodes.emplace_back();
+                inner_limit_node.children.push_back(array_join_input_node);
+                inner_limit_node.step = std::make_unique<LimitStep>(
+                    array_join_input_node->step->getOutputHeader(),
+                    limit_for_array_join,
+                    /*offset_=*/ 0);
+
+                rewired_inputs.push_back({array_join_node, array_join, &inner_limit_node});
+            }
+
+            nodes.splice(nodes.end(), new_nodes);
+            for (const auto & rewired_input : rewired_inputs)
+            {
+                rewired_input.array_join_node->children[0] = rewired_input.input_node;
+                rewired_input.array_join_step->updateInputHeader(rewired_input.input_node->step->getOutputHeader());
+            }
 
             /// Keep the outer limit to apply the original offset after expansion.
-            return 3;
+            return 2 * array_joins.size() + num_guards;
         }
     }
 

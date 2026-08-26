@@ -150,5 +150,29 @@
 -- plan shape off/on: Limit Filter
 1	0
 2	1
+-- chained plan shape: one inner Limit and guard per ARRAY JOIN
+Output: x
+
+Limit
+│  Limit 7
+│  Offset 0
+└──ArrayJoin
+   │  ARRAY JOIN arr2
+   └──Limit
+      │  Limit 7
+      │  Offset 0
+      └──ArrayJoin
+         │  ARRAY JOIN arr
+         └──Filter
+            │  Filter column: length(arr2) > 0
+            └──Limit
+               │  Limit 7
+               │  Offset 0
+               └──Filter
+                  │  Filter column: length(arr) > 0
+                  └──ReadFromMergeTree
+                        Read type: Default
+                        Parts: 1 | Granules: 1
+                        Output: x, arr, arr2
 -- serialized plan
 7

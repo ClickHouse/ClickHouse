@@ -3147,10 +3147,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
             array_join_action_dag.getOutputs().push_back(array_join_column_node);
             array_join_expressions_output_nodes.insert(array_join_column_node->result_name);
 
-            String source_column_name = expression_dag_index_node->result_name;
-            if (const auto * source_column = array_join_source_expression->as<ColumnNode>())
-                source_column_name = source_column->getColumnName();
-            array_join_source_columns.emplace(array_join_column_identifier, std::move(source_column_name));
+            array_join_source_columns.emplace(array_join_column_identifier, expression_dag_index_node->result_name);
         }
     }
 
