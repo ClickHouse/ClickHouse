@@ -1594,6 +1594,9 @@ class JobConfigs:
                 "./ci/jobs/scripts/docs",
                 "./utils/generate-async-metrics-docs",
                 "./utils/generate-system-tables-docs",
+                # The source of truth for the generated Open source changelog
+                # page, so a change to it alone must still run this job.
+                "./CHANGELOG.md",
             ],
             # These files are internal inputs or contributor documentation, not
             # pages published by Mintlify.
