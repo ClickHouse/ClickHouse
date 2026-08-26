@@ -106,86 +106,11 @@ spec:
   clusterDomain: cluster.local   # default; override only for a custom domain
 ```
 
-The operator addresses every pod through the headless Service as
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. That suffix flows into
-two parts of the generated configuration:
+For ClickHouse replicas the operator creates a governing headless Service `<cluster-name>-clickhouse-headless` that serves client traffic.
+And per-replica services `<cluster-name>-clickhouse-internal-<shard>-<index>` that publish unready Pods for internal traffic
+and management requests from the operator. This can be used for replica recovery if it cannot become ready itself.
 
-- On a `ClickHouseCluster`, its value is used for the replica host names in
-  `remote_servers` (cross-replica and `Distributed` queries).
-- On a `KeeperCluster`, its value builds the Keeper node host names that
-  ClickHouse uses for coordination.
-
-<Note>
-Only override this when your cluster's `kubelet` runs with a `--cluster-domain`
-other than `cluster.local`. If the value does not match the real cluster domain,
-ClickHouse cannot resolve the Keeper and replica host names — coordination and
-`Distributed` queries fail with DNS resolution errors. Set the **same** value on the
-`ClickHouseCluster` and the `KeeperCluster` it references.
-</Note>
-
-### Multi-disk (JBOD) storage {#multi-disk-jbod-storage}
-
-`additionalVolumeClaimTemplates` attaches extra disks to each ClickHouse replica, on top of the primary `dataVolumeClaimSpec`, which is required to use them.
-Each entry is a PVC template — a `metadata.name` plus a PVC `spec`.
-The disks are reconciled exactly like the primary data disk — as StatefulSet `volumeClaimTemplates` — so the StatefulSet controller creates and retains one PVC per replica, named `<name>-<statefulset>-0`.
-
-```yaml
-spec:
-  dataVolumeClaimSpec:
-    storageClassName: fast-ssd
-    resources:
-      requests:
-        storage: 100Gi
-  additionalVolumeClaimTemplates:
-    - metadata:
-        name: disk1
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-    - metadata:
-        name: disk2
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-```
-
-The operator mounts each additional volume at `/var/lib/clickhouse/disks/<name>` and adds it to a generated ClickHouse storage configuration.
-Hyphens in a name become underscores in the ClickHouse disk identifier; the mount path keeps the original name.
-
-The primary data disk and every additional disk are placed in a single volume of the `default` storage policy, so ClickHouse spreads new data parts across all of them in round-robin fashion.
-Usable capacity is the sum of all disks, and every table that does not set its own `storage_policy` (including `system.*` tables) uses the combined set.
-
-<Note>
-PVC names must match `^[a-z]([-a-z0-9]*[a-z0-9])?$` and must not collide with the primary data volume name.
-Like the primary data disk, the set of additional disks is fixed at creation: adding, removing, or renaming entries after creation is rejected.
-Additional PVCs are retained when the cluster is deleted, like the primary data disk.
-Storage size on an existing entry can be expanded if the StorageClass supports expansion.
-</Note>
-
-## Cluster domain {#cluster-domain}
-
-`spec.clusterDomain` sets the Kubernetes DNS suffix the operator uses when it builds
-the fully-qualified pod host names it writes into the ClickHouse server
-configuration. It defaults to `cluster.local` and exists on both
-`ClickHouseCluster` and `KeeperCluster`.
-
-```yaml
-spec:
-  clusterDomain: cluster.local   # default; override only for a custom domain
-```
-
-The operator addresses every pod through the headless Service as
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. That suffix flows into
-two parts of the generated configuration:
-
-- On a `ClickHouseCluster`, its value is used for the replica host names in
-  `remote_servers` (cross-replica and `Distributed` queries).
-- On a `KeeperCluster`, its value builds the Keeper node host names that
-  ClickHouse uses for coordination.
+Keeper nodes use pod names through their headless Service: `<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`.
 
 <Note>
 Only override this when your cluster's `kubelet` runs with a `--cluster-domain`
@@ -531,7 +456,7 @@ The set of required keys depends on the running ClickHouse version. `named-colle
 
 ## Additional ports {#additional-ports}
 
-The operator exposes a fixed set of ports on every ClickHouse Pod and its headless Service: `8123` HTTP, `9000` native, `9009` interserver, `9001` management, `9363` Prometheus metrics, and the TLS variants `8443`/`9440` when TLS is enabled. To make ClickHouse listen on additional protocols — MySQL, PostgreSQL, gRPC, or any custom port — declare them in `spec.additionalPorts`:
+The operator exposes a fixed set of ports on every ClickHouse Pod and its public headless Service: `8123` HTTP, `9000` native, `9009` interserver, `9001`/`9002` management, `9363` Prometheus metrics, and the TLS variants `8443`/`9440` when TLS is enabled. The `interserver` and management ports are additionally exposed through the per-replica internal Services so replicas and the operator can communicate before a replica becomes ready. To make ClickHouse listen on additional protocols — MySQL, PostgreSQL, gRPC, or any custom port — declare them in `spec.additionalPorts`:
 
 ```yaml
 spec:
@@ -544,7 +469,8 @@ spec:
       port: 9100
 ```
 
-The operator adds those ports to the Pod's `containerPorts` and to the headless Service. The complete example lives at [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
+The operator adds those ports to the Pod's `containerPorts` and the public headless Service.
+The complete example lives at [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
 
 <Warning>
 `additionalPorts` only opens the ports on the Kubernetes side. It does **not** configure the ClickHouse server to listen on them. You also have to enable the matching protocol in `spec.settings.extraConfig.protocols`. Without that, the port is open on the Service but nothing inside the pod is answering.
@@ -568,7 +494,7 @@ spec:
       requests:
         storage: 2Gi
 
-  # 1) Open the port on the Pod and the headless Service.
+  # 1) Open the port on the Pod and the public headless Service.
   additionalPorts:
     - name: mysql
       port: 9004
@@ -881,6 +807,12 @@ spec:
 ```
 
 When enabled, the operator synchronizes Replicated and integration tables to new replicas.
+
+Every replica Pod carries the `clickhouse.com/ReplicaInitialized` readiness gate, so a new replica is published through the public headless Service only after the operator completes its initialization: the `default` database is converted to the Replicated engine and the schema is synchronized. Until then, the operator and the other replicas reach it through its internal Service. With `enableDatabaseSync: false`, the operator marks replicas initialized immediately, so readiness follows the container probes alone.
+
+The operator never drops a populated non-Replicated `default` database. Such a replica still starts serving client traffic after schema preparation, but the cluster reports `SchemaInSync=False` with reason `DefaultDatabaseNotReplicated` until you resolve that database yourself.
+
+Before a replica is removed on scale-down, the operator first unloads client traffic from it, waits until it stops being published, replicates its remaining data to the surviving replicas, and only then deletes it.
 
 ### Server logging {#server-logging}
 
