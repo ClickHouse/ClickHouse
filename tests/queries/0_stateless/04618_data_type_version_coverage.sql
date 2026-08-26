@@ -56,4 +56,22 @@ INSERT INTO version_typename_test VALUES ('1.2.3.4');
 SELECT throwIf(toTypeName(ver) != 'Version', 'FAIL: toTypeName round-trip through column') FROM version_typename_test;
 DROP TABLE version_typename_test;
 
+-- (7) toVersionOrZero / toVersionOrNull / toVersionOrDefault: only bare toVersion() was covered
+-- elsewhere. Each is documented to differ from toVersion() only in how a malformed string is
+-- handled, so exercise a valid string plus all three documented malformed shapes.
+SELECT throwIf(toVersionOrZero('1.2.3.4') != toVersion('1.2.3.4'), 'FAIL: toVersionOrZero valid string');
+SELECT throwIf(toVersionOrZero('1.2.abc') != toVersion('0.0.0.0'), 'FAIL: toVersionOrZero non-numeric component');
+SELECT throwIf(toVersionOrZero('1.2.3.4.5') != toVersion('0.0.0.0'), 'FAIL: toVersionOrZero too many components');
+SELECT throwIf(toVersionOrZero('') != toVersion('0.0.0.0'), 'FAIL: toVersionOrZero empty string');
+
+SELECT throwIf(toVersionOrNull('1.2.3.4') != toVersion('1.2.3.4'), 'FAIL: toVersionOrNull valid string');
+SELECT throwIf(toVersionOrNull('1.2.abc') IS NOT NULL, 'FAIL: toVersionOrNull non-numeric component');
+SELECT throwIf(toVersionOrNull('1.2.3.4.5') IS NOT NULL, 'FAIL: toVersionOrNull too many components');
+SELECT throwIf(toVersionOrNull('') IS NOT NULL, 'FAIL: toVersionOrNull empty string');
+
+SELECT throwIf(toVersionOrDefault('1.2.3.4') != toVersion('1.2.3.4'), 'FAIL: toVersionOrDefault valid string');
+SELECT throwIf(toVersionOrDefault('1.2.abc') != toVersion('0.0.0.0'), 'FAIL: toVersionOrDefault invalid string falls back to zero Version');
+SELECT throwIf(toVersionOrDefault('1.2.abc', toVersion('9.9.9.9')) != toVersion('9.9.9.9'), 'FAIL: toVersionOrDefault invalid string uses provided default');
+SELECT throwIf(toVersionOrDefault('1.2.3.4', toVersion('9.9.9.9')) != toVersion('1.2.3.4'), 'FAIL: toVersionOrDefault valid string ignores provided default');
+
 SET allow_experimental_version_type = 0;

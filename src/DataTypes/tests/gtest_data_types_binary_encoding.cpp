@@ -111,6 +111,7 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(DataTypeFactory::instance().get("Map(String, Map(String, Map(String, UInt32)))"));
     check(std::make_shared<DataTypeIPv4>());
     check(std::make_shared<DataTypeIPv6>());
+    check(DataTypeFactory::instance().get("Version"));
     check(DataTypeFactory::instance().get("Variant(String, UInt32, Date32)"));
     check(std::make_shared<DataTypeDynamic>());
     check(std::make_shared<DataTypeDynamic>(10));

@@ -37,6 +37,7 @@ GTEST_TEST(FieldBinaryEncoding, EncodeAndDecode)
     check(UUID(42));
     check(IPv4(42));
     check(IPv6(42));
+    check(Version(42));
     check(Float64(42.42));
     check(String("Hello, World!"));
     check(Array({Field(UInt64(42)), Field(UInt64(43))}));
