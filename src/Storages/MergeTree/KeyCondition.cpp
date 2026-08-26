@@ -3019,10 +3019,8 @@ static bool tupleElementTakesFirstElement(const ColumnWithTypeAndName & index_ar
         return index_value.safeGet<Int64>() == 1;
     if (index_value.getType() == Field::Types::String)
     {
-        if (!tuple_type->hasExplicitNames())
-            return false;
-        const auto & names = tuple_type->getElementNames();
-        return !names.empty() && names[0] == index_value.safeGet<String>();
+        auto position = tuple_type->tryGetPositionByName(index_value.safeGet<String>());
+        return position && *position == 0;
     }
     return false;
 }
@@ -3073,12 +3071,11 @@ std::optional<KeyCondition::TupleElementSubcolumn> KeyCondition::tryParseTupleEl
             if (index >= 1 && index <= tuple_type->getElements().size())
                 element_position = index - 1;
         }
-        else if (tuple_type->hasExplicitNames())
+        else
         {
-            const auto & names = tuple_type->getElementNames();
-            for (size_t i = 0; i < names.size(); ++i)
-                if (names[i] == element_name)
-                    element_position = i;
+            /// On an unnamed tuple the implicit element names are "1", "2", ..., which the
+            /// numeric branch above already covered, so this resolves explicit names only.
+            element_position = tuple_type->tryGetPositionByName(element_name);
         }
 
         if (!element_position)
@@ -3934,13 +3931,8 @@ bool KeyCondition::resolvePointCoordinateArguments(
                 return value - 1;
             return {};
         }
-        if (index.getType() == Field::Types::String && tuple_type->hasExplicitNames())
-        {
-            const auto & names = tuple_type->getElementNames();
-            for (size_t i = 0; i < names.size(); ++i)
-                if (names[i] == index.safeGet<String>())
-                    return i;
-        }
+        if (index.getType() == Field::Types::String)
+            return tuple_type->tryGetPositionByName(index.safeGet<String>());
         return {};
     };
 
