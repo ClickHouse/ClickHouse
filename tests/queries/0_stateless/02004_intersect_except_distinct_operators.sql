@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 -- { echo }
 
 set intersect_default_mode = 'DISTINCT';

@@ -86,7 +86,7 @@ void NativeReader::resetParser()
 
 void NativeReader::readData(
     const ISerialization & serialization,
-    ColumnPtr & column,
+    IColumn & column,
     ReadBuffer & istr,
     const FormatSettings * format_settings,
     size_t rows,
@@ -117,13 +117,13 @@ void NativeReader::readData(
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
     serialization.deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-    serialization.deserializeBinaryBulkWithMultipleStreams(column, 0, rows, settings, state, nullptr);
+    serialization.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
 
-    if (column->size() != rows)
+    if (column.size() != rows)
         throw Exception(
             ErrorCodes::CANNOT_READ_ALL_DATA,
             "Cannot read all data in NativeReader. Rows read: {}. Rows expected: {}",
-            column->size(),
+            column.size(),
             rows);
 }
 
@@ -206,13 +206,14 @@ Block NativeReader::read()
         setVersionToAggregateFunctions(column.type, true, server_revision);
 
         SerializationPtr serialization;
-        ColumnPtr read_column;
+        MutableColumnPtr read_column;
 
         if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
             /// NativeReader must enable all supported serializations (e.g. nullable sparse) here. Since it operates on
             /// in-memory state, it should be able to handle all possible serialization variants.
-            auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations());
+            auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations(
+                server_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
 
             UInt8 has_custom = 0;
             readBinary(has_custom, istr);
@@ -245,7 +246,7 @@ Block NativeReader::read()
         {
             const auto * format = format_settings ? &*format_settings : nullptr;
             NameAndTypePair name_and_type = {column.name, column.type};
-            readData(*serialization, read_column, istr, format, rows, &name_and_type, &avg_value_size_hints);
+            readData(*serialization, *read_column, istr, format, rows, &name_and_type, &avg_value_size_hints);
         }
 
         column.column = std::move(read_column);

@@ -7,21 +7,14 @@
 namespace DB
 {
 
+class ColumnString;
+
 struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization::DeserializeBinaryBulkState
 {
-    /// Holds full string values when `need_string_data` is true
-    ColumnPtr column;
-
     /// Whether full string data is required during deserialization
     bool need_string_data = false;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override;
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (column)
-            callback(column);
-    }
 };
 
 class SerializationString final : public ISerialization
@@ -51,8 +44,7 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -61,7 +53,7 @@ public:
     void deserializeBinaryBulkStatePrefix(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const override;
 
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const override;
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
@@ -110,16 +102,21 @@ private:
         SerializeBinaryBulkStatePtr & state) const;
 
     /// dispatch helpers for deserializeBinaryBulkWithMultipleStreams
-    void deserializeBinaryBulkWithSizeStream(
-        ColumnPtr & column,
-        size_t rows_offset,
+    /// Reads the size/offset stream (branching on position_independent_encoding), appends the read
+    /// offsets to column's offsets, and returns the number of data bytes to read next.
+    /// Precondition: settings.path.back() == Substream::StringSizes.
+    size_t deserializeStringOffsetsAndGetDataSize(
+        ColumnString & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const;
+    void deserializeBinaryBulkWithSizeStream(
+        IColumn & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
         SubstreamsCache * cache) const;
     void deserializeBinaryBulkWithoutSizeStream(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,

@@ -300,6 +300,8 @@ public:
     /// and remapping the indexes accordingly. Unlike `nestedToNullable()`, this keeps existing values valid.
     void convertDictionaryToNullableInplace() { compactInplaceToNullable(); }
 
+    void compactDictionaryInplace() { compactInplace(); }
+
     ColumnPtr cloneWithDefaultOnNull() const;
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }

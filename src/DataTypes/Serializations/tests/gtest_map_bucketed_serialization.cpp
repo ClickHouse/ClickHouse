@@ -84,10 +84,10 @@ Streams serializeWithBuckets(const DataTypePtr & type, const IColumn & column)
     return streams;
 }
 
-/// Reads `limit` rows starting from `rows_offset` out of the serialized streams.
+/// Reads `limit` rows out of the serialized streams.
 /// `serialization` is either the whole-column serialization or a subcolumn one.
 ColumnPtr deserializeRange(
-    const SerializationPtr & serialization, const DataTypePtr & column_type, const Streams & streams, size_t rows_offset, size_t limit)
+    const SerializationPtr & serialization, const DataTypePtr & column_type, const Streams & streams, size_t limit)
 {
     std::map<String, std::unique_ptr<ReadBufferFromString>> buffers;
 
@@ -112,25 +112,23 @@ ColumnPtr deserializeRange(
     ISerialization::DeserializeBinaryBulkStatePtr state;
     serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
-    ColumnPtr column = column_type->createColumn();
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, nullptr);
-    return column;
+    auto column = column_type->createColumn();
+    serialization->deserializeBinaryBulkWithMultipleStreams(*column, limit, settings, state, nullptr);
+    return std::move(column);
 }
 
-void assertRangesEqual(const IColumn & expected, size_t expected_offset, const IColumn & actual)
+void assertColumnsEqual(const IColumn & expected, const IColumn & actual)
 {
-    ASSERT_EQ(expected.size() - expected_offset, actual.size());
+    ASSERT_EQ(expected.size(), actual.size());
     for (size_t row = 0; row != actual.size(); ++row)
-        ASSERT_EQ(expected[expected_offset + row], actual[row]) << "at row " << row;
+        ASSERT_EQ(expected[row], actual[row]) << "at row " << row;
 }
 
 }
 
-/// The `bucket_indexes` stream that restores the original key order holds one entry per key-value
-/// pair, so it cannot be positioned by a number of rows. Reading a range that starts in the middle
-/// of a granule (`rows_offset > 0`) must still return exactly the rows of that range, in the
-/// original key order, and not the bucket indexes of the skipped rows.
-TEST(MapBucketedSerialization, ReadWithRowsOffset)
+/// A multi-bucket `Map` round-trips through the in-memory substreams: the `bucket_indexes` stream
+/// restores the original key order across all buckets.
+TEST(MapBucketedSerialization, RoundTrip)
 {
     auto type = getMapType();
     constexpr size_t num_rows = 20;
@@ -141,15 +139,12 @@ TEST(MapBucketedSerialization, ReadWithRowsOffset)
     ASSERT_TRUE(streams.contains("bucket_indexes"));
 
     auto serialization = getBucketedSerialization(type);
-    for (size_t rows_offset = 0; rows_offset != num_rows; ++rows_offset)
-    {
-        auto result = deserializeRange(serialization, type, streams, rows_offset, num_rows - rows_offset);
-        assertRangesEqual(*column, rows_offset, *result);
-    }
+    auto result = deserializeRange(serialization, type, streams, num_rows);
+    assertColumnsEqual(*column, *result);
 }
 
 /// The same holds for the `keys` subcolumn, which reassembles the keys of all buckets on its own.
-TEST(MapBucketedSerialization, ReadKeysSubcolumnWithRowsOffset)
+TEST(MapBucketedSerialization, ReadKeysSubcolumn)
 {
     auto type = getMapType();
     constexpr size_t num_rows = 20;
@@ -158,11 +153,9 @@ TEST(MapBucketedSerialization, ReadKeysSubcolumnWithRowsOffset)
 
     auto keys_type = type->getSubcolumnType("keys");
     auto keys_serialization = type->getSubcolumnSerialization("keys", getBucketedSerialization(type));
-    auto expected_keys = deserializeRange(keys_serialization, keys_type, streams, 0, num_rows);
+    auto result = deserializeRange(keys_serialization, keys_type, streams, num_rows);
 
-    for (size_t rows_offset = 1; rows_offset != num_rows; ++rows_offset)
-    {
-        auto result = deserializeRange(keys_serialization, keys_type, streams, rows_offset, num_rows - rows_offset);
-        assertRangesEqual(*expected_keys, rows_offset, *result);
-    }
+    /// Ground truth: the keys subcolumn extracted directly from the source column.
+    auto expected_keys = type->getSubcolumn("keys", column);
+    assertColumnsEqual(*expected_keys, *result);
 }
