@@ -6,10 +6,13 @@
 #include <Coordination/KeeperStateManager.h>
 #include <libnuraft/raft_params.hxx>
 #include <libnuraft/raft_server.hxx>
+#include <libnuraft/timer_task.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/RaftServerConfig.h>
+
+#include <cstdint>
 
 namespace DB
 {
@@ -109,6 +112,21 @@ private:
     std::condition_variable initialized_cv;
     std::atomic<bool> initial_batch_committed = false;
 
+    /// Milliseconds since monotonic clock epoch, or 0 if this node is not a leader.
+    std::atomic<UInt64> leader_since_ms = 0;
+
+    mutable std::mutex leader_unavailable_metrics_mutex;
+    UInt64 leader_unavailable_since_ms = 0;
+    UInt64 election_since_ms = 0;
+    UInt64 sum_leader_unavailable_time_ms = 0;
+    UInt64 cnt_leader_unavailable_time = 0;
+    std::optional<UInt64> last_leader_unavailable_time_ms;
+    UInt64 sum_election_time_ms = 0;
+    UInt64 cnt_election_time = 0;
+    std::optional<UInt64> last_leader_election_time_ms;
+    int32_t leader_unavailable_poll_interval_ms = 0;
+    std::optional<nuraft::ptr<nuraft::delayed_task>> leader_unavailable_polling_task;
+
     std::atomic<uint64_t> last_log_idx_on_disk = 0;
 
     nuraft::ptr<nuraft::cluster_config> last_local_config;
@@ -128,6 +146,15 @@ private:
     void loadLatestConfig();
 
     void enterRecoveryMode(nuraft::raft_params & params);
+
+    void startLeaderUptimeMetrics();
+    void stopLeaderUptimeMetrics();
+    std::optional<uint64_t> getLeaderUptimeMetrics() const;
+
+    void startLeaderMetricsPolling(int32_t poll_interval_ms);
+    void stopLeaderMetricsPolling();
+    void collectLeaderMetrics();
+    void finishLeaderElectionMetrics();
 
     std::atomic_bool is_recovering = false;
 
@@ -178,6 +205,8 @@ public:
     bool isExceedingMemorySoftLimit() const;
 
     int64_t getLeaderID() const;
+
+    void resetLeaderMetrics();
 
     Keeper4LWInfo getPartiallyFilled4LWInfo() const;
 

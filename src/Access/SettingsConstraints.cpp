@@ -62,6 +62,36 @@ SettingSourceRestrictions getSettingSourceRestrictions(std::string_view name)
     return SettingSourceRestrictions(); // allows everything
 }
 
+/// Settings that are always allowed to change in readonly mode, regardless of the user profile's
+/// `<constraints>` block. These are per-request HTTP routing, query-construction, and output
+/// shaping settings (formerly special URL parameters like `?database=` and `?default_format=`)
+/// that any client must be able to set on a GET request, even when `users.xml` does not declare
+/// them as `<changeable_in_readonly/>`. Hard-coding the carve-out here (rather than shipping a
+/// new `<constraints>` block in the default `users.xml`) keeps the new server compatible with
+/// older `users.xml` files - and, importantly, lets older server versions continue to start up
+/// against the new repo `programs/server/users.xml` (the integration-test framework mounts it
+/// into backwards-compat containers, where unknown setting names in `<constraints>` would
+/// otherwise be rejected with `UNKNOWN_SETTING`).
+bool isAlwaysChangeableInReadonly(std::string_view name)
+{
+    /// HTTP routing / session.
+    if (name == "database" || name == "default_format")
+        return true;
+    /// Output format selection and response compression.
+    if (name == "format" || name == "input_format" || name == "output_format" || name == "compression")
+        return true;
+    /// Query-construction settings introduced for the HTTP "table as file" feature.
+    if (name == "select" || name == "order" || name == "sort" || name == "filter")
+        return true;
+    /// Result-shaping (LIMIT / OFFSET / paging). The query itself remains read-only.
+    if (name == "limit" || name == "offset" || name == "page")
+        return true;
+    /// FROM-less SELECT helper used by the HTTP "table as file" feature.
+    if (name == "implicit_table_at_top_level")
+        return true;
+    return false;
+}
+
 }
 
 SettingsConstraints::SettingsConstraints(const AccessControl & access_control_) : access_control(&access_control_)
@@ -220,6 +250,31 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
 void SettingsConstraints::check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
 {
     checkOrClamp(current_settings, changes, THROW_ON_VIOLATION, source);
+}
+
+void SettingsConstraints::checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const
+{
+    /// A reset of a built-in setting is equivalent to assigning its declared default. The regular
+    /// check also deliberately permits a reset that does not change the value.
+    const Settings defaults;
+    for (const auto & name : names)
+    {
+        if (Settings::hasBuiltin(name))
+        {
+            check(current_settings, SettingChange{name, defaults.get(name)}, source);
+            continue;
+        }
+
+        /// Custom settings have no declared default: resetting one removes it. There cannot be a
+        /// value constraint for such a setting, but an existing value must still pass the readonly
+        /// and source checks. Do not check an absent custom setting, preserving its no-op behavior.
+        Field current_value;
+        if (current_settings.tryGet(name, current_value))
+        {
+            SettingChange change{name, current_value};
+            getChecker(current_settings, Settings::resolveName(name)).check(change, current_value, THROW_ON_VIOLATION, source);
+        }
+    }
 }
 
 void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const
@@ -484,14 +539,22 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     if (access_control)
     {
         bool allowed_experimental = access_control->getAllowExperimentalTierSettings();
+        bool allowed_private_preview = access_control->getAllowPrivatePreviewTierSettings();
         bool allowed_beta = access_control->getAllowBetaTierSettings();
-        if (!allowed_experimental || !allowed_beta)
+        if (!allowed_experimental || !allowed_private_preview || !allowed_beta)
         {
             auto setting_tier = current_settings.getTier(resolved_name);
             if (setting_tier == SettingsTierType::EXPERIMENTAL && !allowed_experimental)
                 return Checker(
                     PreformattedMessage::create(
                         "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config ('allow_feature_tier')",
+                        setting_name),
+                    ErrorCodes::READONLY);
+            if (setting_tier == SettingsTierType::PRIVATE_PREVIEW && !allowed_private_preview)
+                return Checker(
+                    PreformattedMessage::create(
+                        "Cannot modify setting '{}'. Changes to PRIVATE PREVIEW settings are disabled in the server config "
+                        "('allow_feature_tier')",
                         setting_name),
                     ErrorCodes::READONLY);
             if (setting_tier == SettingsTierType::BETA && !allowed_beta)
@@ -506,15 +569,15 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     auto it = constraints.find(resolved_name);
     if (current_settings[Setting::readonly] == 1)
     {
-        if (it == constraints.end() || it->second.writability != SettingConstraintWritability::CHANGEABLE_IN_READONLY)
+        const bool changeable_in_readonly = (it != constraints.end()
+                && it->second.writability == SettingConstraintWritability::CHANGEABLE_IN_READONLY)
+            || isAlwaysChangeableInReadonly(resolved_name);
+        if (!changeable_in_readonly)
             return Checker(PreformattedMessage::create("Cannot modify '{}' setting in readonly mode", setting_name),
                            ErrorCodes::READONLY);
     }
-    else // For both readonly=0 and readonly=2
-    {
-        if (it == constraints.end())
-            return Checker(Settings::resolveName); // Allowed
-    }
+    if (it == constraints.end())
+        return Checker(Settings::resolveName); // Allowed — no stored Constraint, do not dereference end().
     return Checker(it->second, Settings::resolveName);
 }
 
