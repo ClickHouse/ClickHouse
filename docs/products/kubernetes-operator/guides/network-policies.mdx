@@ -2,18 +2,19 @@
 position: 7
 slug: /clickhouse-operator/guides/network-policies
 title: Network policies
-keywords: ['kubernetes', 'network policy', 'security', 'metrics', 'webhook']
-description: 'How the operator restricts ingress to the controller manager pod with Kubernetes NetworkPolicies for the metrics and webhook endpoints, how to enable them, and which client namespaces you must label.'
+keywords: ['kubernetes', 'network policy', 'security', 'metrics', 'webhook', 'ingress']
+description: 'How the operator manages Kubernetes NetworkPolicies for ClickHouse and Keeper clusters, how to allow client and monitoring traffic, and how to restrict ingress to the controller manager pod.'
 doc_type: 'guide'
 ---
 
-The operator ships optional Kubernetes `NetworkPolicy` resources that
-restrict which traffic can reach the **controller manager pod** — the operator
-process itself, not the ClickHouse server or Keeper pods. They are off by
-default, so you opt in only when you want to isolate the operator's ingress.
+The operator manages Kubernetes `NetworkPolicy` resources at two levels, both
+off by default:
 
-The policies cover the two ports the operator exposes to other clients: the metrics
-endpoint and the admission webhook.
+- **Cluster policies** — per-cluster policies covering the internal traffic of
+  `ClickHouseCluster` and `KeeperCluster` resources, enabled through
+  `spec.networkPolicy` on each custom resource.
+- **Operator pod policies** — chart-shipped policies restricting ingress to the
+  controller manager pod itself for the metrics and webhook endpoints.
 
 <Note>
 A `NetworkPolicy` is only enforced when the cluster's CNI plugin implements it
@@ -21,6 +22,108 @@ A `NetworkPolicy` is only enforced when the cluster's CNI plugin implements it
 resources are created but silently have no effect — Kubernetes does not return an
 error. Confirm your CNI enforces policies before relying on them.
 </Note>
+
+## Cluster NetworkPolicies {#cluster-network-policies}
+
+Enable the managed policy per cluster:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+spec:
+  networkPolicy:
+    policy: Enabled
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+spec:
+  networkPolicy:
+    policy: Enabled
+```
+
+The managed policies cover **cluster-internal traffic only**. Selecting the pods
+switches them to default deny for ingress, and the operator allows exactly what
+the clusters need to function:
+
+| Cluster    | Allowed source                                                       | Allowed ports                                  |
+|------------|----------------------------------------------------------------------|------------------------------------------------|
+| ClickHouse | The cluster's own pods                                               | `9009` (interserver), `9001` (management)      |
+| ClickHouse | Operator pods (label `clickhouse.com/role: operator`, any namespace) | `9001`, `9002` (management)                    |
+| Keeper     | The cluster's own pods                                               | `9234` (Raft)                                  |
+| Keeper     | Operator pods and every `ClickHouseCluster` referencing this keeper  | `2181`, `2281` (client), `9123` (HTTP control) |
+
+A keeper admits ClickHouse clusters based on their `keeperClusterRef` — adding
+or removing a reference updates the keeper's policy automatically, including
+references from other namespaces.
+
+### Allowing clients and monitoring {#allowing-clients}
+
+Client connections and metrics scraping are **not** covered: with the managed
+policy enabled, nothing can reach the client ports (`9000`/`8123`, or the TLS
+variants) or the metrics port until you allow it. NetworkPolicies are additive,
+so grant access with your own policy next to the managed one:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-clients
+  namespace: <cluster-namespace>
+spec:
+  podSelector:
+    matchLabels:
+      app: <name>-clickhouse
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          role: my-app
+    ports:
+    - protocol: TCP
+      port: 9000
+```
+
+The same pattern applies to Prometheus scrapes (port `9363` on ClickHouse,
+`9090` on Keeper) — allow your monitoring namespace explicitly.
+
+Setting `networkPolicy.policy: Disabled` (the default) removes the managed
+policy; user-defined policies are never touched by the operator unless they
+carry the cluster's `app` label.
+
+### Cluster-wide opt-out {#np-cluster-wide-disable}
+
+NetworkPolicy management can also be disabled cluster-wide via the operator's
+`ENABLE_NETWORK_POLICY` environment variable. With `ENABLE_NETWORK_POLICY=false`,
+the operator skips the NetworkPolicy reconcile step for **every**
+ClickHouseCluster and KeeperCluster regardless of their `spec.networkPolicy.policy`,
+and **does not watch** `NetworkPolicy` resources at all. The operator's
+ServiceAccount therefore does not need RBAC permissions on
+`networkpolicies.networking.k8s.io`, which is useful when running the operator
+under a restricted ServiceAccount that intentionally omits those permissions.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: ENABLE_NETWORK_POLICY
+  value: "false"
+```
+
+With Helm, the same switch is exposed as a chart value:
+
+```yaml
+# values.yaml
+controller:
+  networkPolicyManagement:
+    enabled: false
+```
+
+## Operator pod policies {#operator-pod-policies}
+
+The chart also ships optional policies that restrict which traffic can reach the
+**controller manager pod** — the operator process itself. They cover the two
+ports the operator exposes to other clients: the metrics endpoint and the
+admission webhook.
 
 ## What the Helm chart creates {#what-the-helm-chart-creates}
 

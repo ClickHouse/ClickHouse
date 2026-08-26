@@ -338,9 +338,9 @@ mortonDecode(range_mask, code)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple of the specified size.", {"Tuple(UInt64)"}};
     FunctionDocumentation::Examples examples = {
-        {"Simple mode", "SELECT mortonDecode(3, 53)", R"(["1", "2", "3"])"},
-        {"Single argument", "SELECT mortonDecode(1, 1)", R"(["1"])"},
-        {"Expanded mode, shrinking one argument", R"(SELECT mortonDecode(tuple(2), 32768))", R"(["128"])"},
+        {"Simple mode", "SELECT mortonDecode(3, 53)", R"((1,2,3))"},
+        {"Single argument", "SELECT mortonDecode(1, 1)", R"((1))"},
+        {"Expanded mode, shrinking one argument", R"(SELECT mortonDecode(tuple(2), 32768))", R"((128))"},
         {"Column usage",
          R"(
 -- First create the table and insert some data
@@ -361,7 +361,7 @@ INSERT INTO morton_numbers (*) values(1, 2, 3, 4, 5, 6, 7, 8);
 -- Use column names instead of constants as function arguments
 SELECT untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) FROM morton_numbers;
          )",
-         "1 2 3 4 5 6 7 8"
+         "1\t2\t3\t4\t5\t6\t7\t8"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
