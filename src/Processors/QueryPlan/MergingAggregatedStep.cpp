@@ -324,8 +324,8 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
     /// The flag exists only since query plan serialization version 10. Throw rather than send a
     /// bit the other side would ignore, failing at runtime instead (deserialize checks the same).
     /// Distributed task fragments are always serialized at the current version
-    /// (`DistributedPlanExecutor::serializeQueryPlan`), so this gate cannot fire there - an older
-    /// worker instead rejects the stream's leading version before reaching this step. The
+    /// (`serializeQueryPlan` in `DistributedPlanExecutor.cpp`), so this gate cannot fire there -
+    /// an older worker instead rejects the stream's leading version before reaching this step. The
     /// client-to-server transport negotiates `min(peer, current)` (`Connection::sendQueryPlan` ->
     /// `QueryPlan::serialize`), so an older server IS reachable through this gate.
     if ((flags & 64) && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO)
