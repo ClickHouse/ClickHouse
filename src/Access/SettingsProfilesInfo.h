@@ -33,9 +33,9 @@ struct SettingsProfilesInfo
     ///
     /// `Layer` - a single profile applied on top of whatever is already in effect, i.e.
     ///     `SET profile = ...`. Any user can do that with any profile, there is no access check
-    ///     (see `Context::setSettingWithLock`), so composition must be key-monotonic: it may add
-    ///     or override a constraint, but never drop one. That is what stops `SET profile` from
-    ///     being used to escape a constraint. Produced by `SettingsProfilesCache::getSettingsProfileInfo`.
+    ///     (see `Context::setSettingWithLock`), so composition may only narrow the set of allowed
+    ///     values. That is what stops `SET profile` from being used to escape a constraint. Produced
+    ///     by `SettingsProfilesCache::getSettingsProfileInfo`.
     ///
     /// `Complete` - the whole set of profiles which applies to a principal: the default profile,
     ///     the profiles targeting the user and its roles, the settings of the roles and the settings

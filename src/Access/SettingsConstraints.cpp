@@ -9,6 +9,7 @@
 #include <Common/SettingSource.h>
 #include <IO/WriteHelpers.h>
 
+#include <algorithm>
 #include <bitset>
 #include <string_view>
 #include <unordered_map>
@@ -149,26 +150,48 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
 {
     [[maybe_unused]] const size_t num_constraints_before = constraints.size();
 
-    if (access_control->doesSettingsConstraintsReplacePrevious())
+    for (const auto & [other_name, other_constraint] : other.constraints)
     {
-        for (const auto & [other_name, other_constraint] : other.constraints)
+        auto [it, inserted] = constraints.try_emplace(other_name, other_constraint);
+        if (inserted)
         {
-            constraints[other_name] = other_constraint;
+            /// A profile chosen with `SET profile` must not grant an exception to the current
+            /// read-only mode. Such an exception is safe only in a complete, access-controlled
+            /// profile set, which does not use `merge`.
+            if (it->second.writability == SettingConstraintWritability::CHANGEABLE_IN_READONLY)
+            {
+                it->second.writability = SettingConstraintWritability::WRITABLE;
+            }
+            continue;
         }
-    }
-    else
-    {
-        for (const auto & [other_name, other_constraint] : other.constraints)
+
+        auto & constraint = it->second;
+        if (!other_constraint.min_value.isNull()
+            && (constraint.min_value.isNull() || accurateLess(constraint.min_value, other_constraint.min_value)))
         {
-            auto & constraint = constraints[other_name];
-            if (!other_constraint.min_value.isNull())
-                constraint.min_value = other_constraint.min_value;
-            if (!other_constraint.max_value.isNull())
-                constraint.max_value = other_constraint.max_value;
-            if (!other_constraint.disallowed_values.empty())
-                constraint.disallowed_values = other_constraint.disallowed_values;
-            if (other_constraint.writability == SettingConstraintWritability::CONST)
-                constraint.writability = SettingConstraintWritability::CONST; // NOTE: In this mode <readonly/> flag cannot be overridden to be false
+            constraint.min_value = other_constraint.min_value;
+        }
+        if (!other_constraint.max_value.isNull()
+            && (constraint.max_value.isNull() || accurateLess(other_constraint.max_value, constraint.max_value)))
+        {
+            constraint.max_value = other_constraint.max_value;
+        }
+        for (const auto & disallowed_value : other_constraint.disallowed_values)
+        {
+            if (std::find(constraint.disallowed_values.begin(), constraint.disallowed_values.end(), disallowed_value) == constraint.disallowed_values.end())
+            {
+                constraint.disallowed_values.push_back(disallowed_value);
+            }
+        }
+
+        if (other_constraint.writability == SettingConstraintWritability::CONST)
+        {
+            constraint.writability = SettingConstraintWritability::CONST;
+        }
+        else if (constraint.writability == SettingConstraintWritability::CHANGEABLE_IN_READONLY
+            && other_constraint.writability != SettingConstraintWritability::CHANGEABLE_IN_READONLY)
+        {
+            constraint.writability = SettingConstraintWritability::WRITABLE;
         }
     }
 
@@ -176,8 +199,8 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
         settings_alias_cache.try_emplace(other_alias, other_resolved_name);
 
     /// `merge` layers a profile chosen by the user on top of the constraints which are already in
-    /// effect, so it must never drop a constrained setting - that is what makes `SET profile` unable
-    /// to escape a constraint. Replacing a whole set of constraints is `operator=`, not `merge`.
+    /// effect, so it may only narrow the allowed values. Replacing a whole set of constraints is
+    /// `operator=`, not `merge`.
     chassert(constraints.size() >= num_constraints_before);
 }
 

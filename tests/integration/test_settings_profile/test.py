@@ -520,7 +520,7 @@ def test_set_profile_cannot_drop_constraint():
     instance.query(
         "CREATE SETTINGS PROFILE P1 SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin"
     )
-    instance.query("CREATE SETTINGS PROFILE P2 SETTINGS max_threads = 4")
+    instance.query("CREATE SETTINGS PROFILE P2 SETTINGS max_memory_usage WRITABLE")
 
     session_id = new_session_id()
     instance.http_query(
@@ -539,7 +539,7 @@ def test_set_profile_cannot_drop_const():
     instance.query(
         "CREATE SETTINGS PROFILE P1 SETTINGS max_memory_usage = 100000001 CONST TO robin"
     )
-    instance.query("CREATE SETTINGS PROFILE P2 SETTINGS max_threads = 4")
+    instance.query("CREATE SETTINGS PROFILE P2 SETTINGS max_memory_usage WRITABLE")
 
     session_id = new_session_id()
     instance.http_query(
@@ -547,6 +547,25 @@ def test_set_profile_cannot_drop_const():
     )
 
     expected_error = "Setting max_memory_usage should not be changed"
+    assert expected_error in instance.http_query_and_get_error(
+        "SET max_memory_usage=120000000",
+        user="robin",
+        params={"session_id": session_id},
+    )
+
+
+def test_set_profile_cannot_bypass_readonly_mode():
+    instance.query("CREATE SETTINGS PROFILE P1 SETTINGS readonly = 1 TO robin")
+    instance.query(
+        "CREATE SETTINGS PROFILE P2 SETTINGS max_memory_usage CHANGEABLE_IN_READONLY"
+    )
+
+    session_id = new_session_id()
+    instance.http_query(
+        "SET profile='P2'", user="robin", params={"session_id": session_id}
+    )
+
+    expected_error = "Cannot modify 'max_memory_usage' setting in readonly mode"
     assert expected_error in instance.http_query_and_get_error(
         "SET max_memory_usage=120000000",
         user="robin",

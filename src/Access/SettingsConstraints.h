@@ -74,8 +74,8 @@ public:
     void get(const Settings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & disallowed_values, SettingConstraintWritability & writability) const;
     void get(const MergeTreeSettings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & disallowed_values, SettingConstraintWritability & writability) const;
 
-    /// Layers `other` on top of these constraints. Key-monotonic: a setting which is constrained here
-    /// stays constrained, whether or not `other` mentions it. To replace a whole set of constraints,
+    /// Layers `other` on top of these constraints without widening the set of allowed values. This
+    /// is used for `SET profile`, which any user can invoke. To replace a whole set of constraints,
     /// for example when the profiles of a principal are recomputed, use `operator=` instead.
     void merge(const SettingsConstraints & other);
 
