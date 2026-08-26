@@ -50,8 +50,16 @@ endif ()
 #                              0 disables the arena. Left disabled on non-Linux: the win relies on THP
 #                              madvise on the oversize arena (JEMALLOC_HAVE_MADVISE_HUGE, absent on macOS)
 #                              and is unvalidated there.
+#   cache_oblivious:false      Drop the page of padding jemalloc adds to every large (>= 16KiB) allocation
+#                              and the cacheline-granular randomization of the returned pointer inside it.
+#                              The padding exists to avoid cache-index aliasing between page-aligned large
+#                              buffers, but it costs a page per large allocation (a 16KiB request occupies
+#                              20KiB) and leaves the pointer misaligned to the page, which works against
+#                              transparent huge pages and makes every large buffer straddle an extra cache
+#                              line. EXPERIMENT: measuring whether the alignment and memory win outweighs
+#                              the loss of aliasing avoidance.
 if (OS_LINUX)
-    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:67108864,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:8")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:67108864,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:8,cache_oblivious:false")
 elseif (OS_DARWIN)
     # background_thread is unavailable in upstream jemalloc on Darwin; we enable it via the Darwin config
     # headers (include_darwin_*/jemalloc/internal/jemalloc_internal_defs.h.in), where the full rationale
