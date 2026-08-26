@@ -29,6 +29,7 @@ SET query_plan_optimize_join_order_algorithm = 'dpsize greedy';
 SET allow_experimental_correlated_subqueries = 1;
 SET param__internal_cascades_cluster_node_count = 8;
 SET param__internal_join_table_stat_hints = '{"t_filter_sel": {"cardinality": 600000000, "avg_row_bytes": 12, "distinct_keys": {"k": 6000000, "v": 100}}, "t_filter_dim": {"cardinality": 3000000, "avg_row_bytes": 12, "distinct_keys": {"k": 3000000}}}';
+SET distributed_plan_fallback_to_local_execution = 0;
 
 -- `HAVING` compares an aggregate result, so the default factor 0.33 applies: the 6000000-row
 -- aggregation estimate becomes 1980000. Before, the filter kept the full input estimate.

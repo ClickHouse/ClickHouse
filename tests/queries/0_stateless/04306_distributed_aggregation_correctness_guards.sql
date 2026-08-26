@@ -17,11 +17,12 @@ SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_def
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 1000000000, enable_join_runtime_filters = 0;
 
+
 SELECT '-- GROUPING SETS rejected';
-SELECT a, b, sum(v) AS s FROM t_agg_guard GROUP BY GROUPING SETS ((a), (b), ()); -- { serverError SUPPORT_IS_DISABLED }
+SELECT a, b, sum(v) AS s FROM t_agg_guard GROUP BY GROUPING SETS ((a), (b), ()) SETTINGS distributed_plan_fallback_to_local_execution=0; -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT '-- max_rows_to_group_by rejected';
 SELECT a, sum(v) FROM t_agg_guard GROUP BY a
-SETTINGS max_rows_to_group_by = 5; -- { serverError SUPPORT_IS_DISABLED }
+SETTINGS max_rows_to_group_by = 5, distributed_plan_fallback_to_local_execution=0; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE t_agg_guard;

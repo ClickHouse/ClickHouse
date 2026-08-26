@@ -16,6 +16,15 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
     distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0, max_rows_to_group_by = 0;
 
 SELECT '-- WITH TOTALS';
-SELECT a, sum(v) FROM t_totals_guard GROUP BY a WITH TOTALS ORDER BY a; -- { serverError SUPPORT_IS_DISABLED }
+SELECT a, sum(v) FROM t_totals_guard GROUP BY a WITH TOTALS ORDER BY a
+SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+SELECT '-- ROLLUP';
+SELECT a, sum(v) FROM t_totals_guard GROUP BY a WITH ROLLUP ORDER BY a
+SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+SELECT '-- CUBE';
+SELECT a, sum(v) FROM t_totals_guard GROUP BY a WITH CUBE ORDER BY a
+SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE t_totals_guard;
