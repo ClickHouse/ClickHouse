@@ -96,8 +96,11 @@ public:
     /// there is no legacy `.idx` layout to discover. The read-time usability checks (invalidated
     /// system columns, part/metadata type compatibility) stay in the non-virtual
     /// `IMergeTreeIndex::getDeserializedFormat`, which calls this.
+    using IMergeTreeIndex::getPhysicalFormat;
     MergeTreeIndexFormat getPhysicalFormat(
-        const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
+        const MergeTreeDataPartChecksums & checksums,
+        const IDataPartStorage & storage,
+        const std::string & relative_path_prefix) const override;
 };
 
 }
