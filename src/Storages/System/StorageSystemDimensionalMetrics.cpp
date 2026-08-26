@@ -62,21 +62,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "dimensional_metrics",
     .description = R"DOCS_MD(
 This table contains dimensional metrics that can be calculated instantly and exported in the Prometheus format. It is always up to date.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-You can use a query like this to export all the dimensional metrics in the Prometheus format.
-```sql
-SELECT
-  metric AS name,
-  toFloat64(value) AS value,
-  description AS help,
-  labels,
-  'gauge' AS type
-FROM system.dimensional_metrics
-FORMAT Prometheus
-```
-)DOCS_MD",
-    .additional_sections = R"DOCS_MD(
+
 ## Metric descriptions {#metric_descriptions}
 
 ### merge_failures {#merge_failures}
@@ -111,6 +97,19 @@ Unix timestamp of the last-modified time of the newest object seen so far by an 
 
 ### `object_storage_queue_newest_committed_object_timestamp_seconds` {#object-storage-queue-newest-committed-object-timestamp-seconds}
 Unix timestamp of the last-modified time of the newest object fully processed so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table.
+)DOCS_MD",
+    .examples = R"DOCS_MD(
+You can use a query like this to export all the dimensional metrics in the Prometheus format.
+```sql
+SELECT
+  metric AS name,
+  toFloat64(value) AS value,
+  description AS help,
+  labels,
+  'gauge' AS type
+FROM system.dimensional_metrics
+FORMAT Prometheus
+```
 )DOCS_MD",
     .see_also = R"DOCS_MD(
 - [system.asynchronous_metrics](/reference/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.

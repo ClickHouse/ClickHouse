@@ -120,8 +120,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "backups",
     .description = R"DOCS_MD(
 Contains a list of all `BACKUP` or `RESTORE` operations with their current states and other properties. Note, that table is not persistent and it shows only operations executed after the last server restart.
-)DOCS_MD",
-    .additional_sections = R"DOCS_MD(
+
 ## Restore atomicity {#restore-atomicity}
 
 `RESTORE` is not transactional and does not roll back on failure. For each table, all selected parts are copied before any are attached, but the attach phase itself is not transactional — parts are made visible one at a time. Tables are processed independently.

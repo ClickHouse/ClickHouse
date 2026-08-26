@@ -18,7 +18,8 @@ using SystemTableColumnsProvider = ColumnsDescription (*)();
   * Columns normally come from the live table metadata. Tables which are not
   * attached in every environment provide `get_columns` so their complete page
   * can still be rendered directly from this registry. `columns_notes` can add
-  * narrative or caveats after the generated list.
+  * narrative or caveats after the generated list. Page-specific sections
+  * belong to `description`, before the consistently ordered generated sections.
   */
 struct SystemTableDocumentation
 {
@@ -26,7 +27,6 @@ struct SystemTableDocumentation
     SystemTableColumnsProvider get_columns = nullptr;
     String columns_notes;
     String examples;
-    String additional_sections;
     String see_also;
 
     /// Captured at the registration site so `system.documentation` points to

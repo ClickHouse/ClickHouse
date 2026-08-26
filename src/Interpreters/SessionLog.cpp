@@ -344,6 +344,17 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "session_log",
     .description = R"DOCS_MD(
 Contains information about all successful and failed login and logout events.
+
+## Reading rotated tables after an upgrade {#reading-rotated-tables-after-an-upgrade}
+
+When a new value is added to the `interface` enumeration, the table already stored on disk keeps the older `Enum8` definition. On the first start of the new version, `system.session_log` is renamed to `system.session_log_<N>` and a fresh table with the current schema is created in its place; the schema of the rotated table is not changed.
+
+If a login was recorded over an interface that was missing from the enumeration of the version that wrote it — for example an `ArrowFlight` login on a version where `ArrowFlight` was absent from the `interface` enumeration — the rotated table contains a raw value that its own enumeration does not define, and a `SELECT` from it throws `Unexpected value 10 in enum`. Extend the enumeration of that table to read it; this is a metadata-only operation which does not rewrite any data:
+
+```sql
+ALTER TABLE system.session_log_1
+    MODIFY COLUMN interface Enum8('TCP' = 1, 'HTTP' = 2, 'gRPC' = 3, 'MySQL' = 4, 'PostgreSQL' = 5, 'Local' = 6, 'TCP_Interserver' = 7, 'Prometheus' = 8, 'Background' = 9, 'ArrowFlight' = 10);
+```
 )DOCS_MD",
     .get_columns = SessionLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
@@ -381,18 +392,6 @@ certificate_serial:
 certificate_issuer:
 certificate_not_before:  ᴺᵁᴸᴸ
 certificate_not_after:   ᴺᵁᴸᴸ
-```
-)DOCS_MD",
-    .additional_sections = R"DOCS_MD(
-## Reading rotated tables after an upgrade {#reading-rotated-tables-after-an-upgrade}
-
-When a new value is added to the `interface` enumeration, the table already stored on disk keeps the older `Enum8` definition. On the first start of the new version, `system.session_log` is renamed to `system.session_log_<N>` and a fresh table with the current schema is created in its place; the schema of the rotated table is not changed.
-
-If a login was recorded over an interface that was missing from the enumeration of the version that wrote it — for example an `ArrowFlight` login on a version where `ArrowFlight` was absent from the `interface` enumeration — the rotated table contains a raw value that its own enumeration does not define, and a `SELECT` from it throws `Unexpected value 10 in enum`. Extend the enumeration of that table to read it; this is a metadata-only operation which does not rewrite any data:
-
-```sql
-ALTER TABLE system.session_log_1
-    MODIFY COLUMN interface Enum8('TCP' = 1, 'HTTP' = 2, 'gRPC' = 3, 'MySQL' = 4, 'PostgreSQL' = 5, 'Local' = 6, 'TCP_Interserver' = 7, 'Prometheus' = 8, 'Background' = 9, 'ArrowFlight' = 10);
 ```
 )DOCS_MD")
 

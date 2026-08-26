@@ -94,21 +94,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "histogram_metrics",
     .description = R"DOCS_MD(
 This table contains histogram metrics that can be calculated instantly and exported in the Prometheus format. It is always up to date. Replaces the deprecated `system.latency_log`.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-You can use a query like this to export all the histogram metrics in the Prometheus format.
-```sql
-SELECT
-  metric AS name,
-  toFloat64(value) AS value,
-  description AS help,
-  labels,
-  'histogram' AS type
-FROM system.histogram_metrics
-FORMAT Prometheus
-```
-)DOCS_MD",
-    .additional_sections = R"DOCS_MD(
+
 ## Metric descriptions {#metric_descriptions}
 
 | Metric | Description |
@@ -129,6 +115,19 @@ FORMAT Prometheus
 | `filesystem_cache_evicted_segment_size_bytes_bucket` | Distribution of byte sizes of evicted file segments, labelled by cache name. |
 | `filesystem_cache_evicted_segment_hits_by_user_bucket` | Distribution of cache-hit counts on evicted file segments, labelled by cache name and user id. |
 | `filesystem_cache_evicted_segment_size_bytes_by_user_bucket` | Distribution of byte sizes of evicted file segments, labelled by cache name and user id. |
+)DOCS_MD",
+    .examples = R"DOCS_MD(
+You can use a query like this to export all the histogram metrics in the Prometheus format.
+```sql
+SELECT
+  metric AS name,
+  toFloat64(value) AS value,
+  description AS help,
+  labels,
+  'histogram' AS type
+FROM system.histogram_metrics
+FORMAT Prometheus
+```
 )DOCS_MD",
     .see_also = R"DOCS_MD(
 - [system.asynchronous_metrics](/reference/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.

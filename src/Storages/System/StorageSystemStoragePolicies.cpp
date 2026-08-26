@@ -142,8 +142,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "storage_policies",
     .description = R"DOCS_MD(
 Contains information about storage policies and volumes which are defined in [server configuration](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes_configure).
-)DOCS_MD",
-    .additional_sections = R"DOCS_MD(
+
 ## Volume selection on `INSERT` {#volume-selection-on-insert}
 
 When `INSERT` creates a new data part, ClickHouse picks a destination disk

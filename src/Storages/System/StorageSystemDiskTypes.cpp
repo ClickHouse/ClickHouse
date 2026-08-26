@@ -59,16 +59,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
 Contains the list of disk types supported by the server, along with embedded documentation for each type. A disk type is specified in the `type` of a disk configuration and determines where and how a disk stores its data (local filesystem, object storage, a cache over another disk, and so on).
 
 Note that this table lists the available disk *types*, whereas [`system.disks`](/reference/system-tables/disks) lists the disk instances configured on the server.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql title="Query"
-SELECT name, description
-FROM system.disk_types
-WHERE name IN ('local', 'object_storage')
-ORDER BY name
-```
-)DOCS_MD",
-    .additional_sections = R"DOCS_MD(
+
 ## Configuration examples {#configuration-examples}
 
 A disk can be configured in two ways: **statically**, in the server configuration files (XML or YAML), or **dynamically**, in the settings of a `CREATE`/`ATTACH` query using the `disk` function. The same disk type and parameters are accepted in both cases.
@@ -139,6 +130,14 @@ SETTINGS disk = disk(
 ```
 
 See [Configuring external storage](/concepts/features/configuration/server-config/storing-data) for the full list of parameters of each disk type.
+)DOCS_MD",
+    .examples = R"DOCS_MD(
+```sql title="Query"
+SELECT name, description
+FROM system.disk_types
+WHERE name IN ('local', 'object_storage')
+ORDER BY name
+```
 )DOCS_MD",
     .see_also = R"DOCS_MD(
 - [`system.disks`](/reference/system-tables/disks) — The disk instances configured on the server.

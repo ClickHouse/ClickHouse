@@ -214,6 +214,28 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "mutations",
     .description = R"DOCS_MD(
 The table contains information about [mutations](/reference/statements/alter/index#mutations) of [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables and their progress. Each mutation command is represented by a single row.
+
+## Monitoring Mutations {#monitoring-mutations}
+
+To track the progress on the `system.mutations` table, use the following query:
+
+```sql
+SELECT * FROM clusterAllReplicas('cluster_name', 'system', 'mutations')
+WHERE is_done = 0 AND table = 'tmp';
+
+-- or
+
+SELECT * FROM clusterAllReplicas('cluster_name', 'system.mutations')
+WHERE is_done = 0 AND table = 'tmp';
+```
+
+Note: this requires read permissions on the `system.*` tables.
+
+<Tip>
+**Cloud usage**
+
+In ClickHouse Cloud the `system.mutations` table on each node has all the mutations in the cluster, and there is no need for `clusterAllReplicas`.
+</Tip>
 )DOCS_MD",
     .columns_notes = R"DOCS_MD(
 <Note>
@@ -240,29 +262,6 @@ If there were problems with mutating some data parts, the following columns cont
 - `latest_failed_part` ([String](/reference/data-types/string)) — The name of the most recent part that could not be mutated.
 - `latest_fail_time` ([DateTime](/reference/data-types/datetime)) — The date and time of the most recent part mutation failure.
 - `latest_fail_reason` ([String](/reference/data-types/string)) — The exception message that caused the most recent part mutation failure.
-)DOCS_MD",
-    .additional_sections = R"DOCS_MD(
-## Monitoring Mutations {#monitoring-mutations}
-
-To track the progress on the `system.mutations` table, use the following query:
-
-```sql
-SELECT * FROM clusterAllReplicas('cluster_name', 'system', 'mutations')
-WHERE is_done = 0 AND table = 'tmp';
-
--- or
-
-SELECT * FROM clusterAllReplicas('cluster_name', 'system.mutations')
-WHERE is_done = 0 AND table = 'tmp';
-```
-
-Note: this requires read permissions on the `system.*` tables.
-
-<Tip>
-**Cloud usage**
-
-In ClickHouse Cloud the `system.mutations` table on each node has all the mutations in the cluster, and there is no need for `clusterAllReplicas`.
-</Tip>
 )DOCS_MD",
     .see_also = R"DOCS_MD(
 - [Mutations](/reference/statements/alter/index#mutations)

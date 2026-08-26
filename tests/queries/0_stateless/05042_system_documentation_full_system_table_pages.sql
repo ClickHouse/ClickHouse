@@ -50,6 +50,34 @@ SELECT
 FROM system.documentation
 WHERE type = 'System Table' AND name = 'databases';
 
+-- Page-specific sections are part of Description, while the structured
+-- Columns and Examples sections retain their canonical order.
+SELECT
+    name,
+    position(description, '## Description {#description}')
+        < position(
+            description,
+            multiIf(
+                name = 'disk_types', '## Configuration examples {#configuration-examples}',
+                name = 'events', '## Event descriptions {#event-descriptions}',
+                '## Row shapes {#row-shapes}'))
+        AND position(
+            description,
+            multiIf(
+                name = 'disk_types', '## Configuration examples {#configuration-examples}',
+                name = 'events', '## Event descriptions {#event-descriptions}',
+                '## Row shapes {#row-shapes}'))
+            < position(description, '## Columns {#columns}') AS additional_section_in_description,
+    position(description, '## Columns {#columns}')
+        < position(description, '## Examples {#examples}') AS columns_before_examples,
+    position(description, '## See also {#see-also}') = 0
+        OR position(description, '## Examples {#examples}')
+            < position(description, '## See also {#see-also}') AS examples_before_see_also
+FROM system.documentation
+WHERE type = 'System Table'
+    AND name IN ('disk_types', 'events', 'predicate_statistics_log')
+ORDER BY name;
+
 -- Catalogs which are themselves exposed through system tables are rendered
 -- from their registries instead of being frozen into the page template.
 SELECT

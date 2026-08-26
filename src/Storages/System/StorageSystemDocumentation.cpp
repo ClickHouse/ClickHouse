@@ -1040,9 +1040,6 @@ String renderSystemTableDoc(
     if (documentation)
     {
         appendSystemTableSection(result, "Examples", "examples", normalizeMdxForMarkdown(documentation->examples));
-        const String additional_sections = normalizeMdxForMarkdown(documentation->additional_sections);
-        if (!additional_sections.empty())
-            result += "\n\n" + additional_sections;
         appendSystemTableSection(result, "See also", "see-also", normalizeMdxForMarkdown(documentation->see_also));
     }
 

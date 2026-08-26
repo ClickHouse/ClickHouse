@@ -326,46 +326,7 @@ ClickHouse creates this table when the [trace_log](/reference/settings/server-se
 
 When symbolization is enabled (the default), the demangled function names and source locations are already available in the `symbols` and `lines` columns, so you can analyze the logs directly without introspection functions. The `symbolize` setting applies to profiler-collected trace types; rows with the `Instrumentation` trace type are symbolized regardless of it. Symbolization is supported on ELF platforms (such as Linux) and macOS; on FreeBSD the `symbols` and `lines` columns are always empty. Function names in `symbols` come from the binary's symbol table and are available by default, while source locations in `lines` are best-effort: they require debug info (a `.dSYM` bundle on macOS) and, on ELF platforms, are resolved only for frames inside the main ClickHouse binary; unresolved frames have empty `lines` entries.
 If symbolization is disabled, or you want to resolve the raw addresses in the `trace` column on the fly (for example, to expand inline frames), use the `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` and `demangle` introspection functions. These functions are available on the same platforms as symbolization (ELF platforms such as Linux, and macOS); on FreeBSD they are not compiled in either, so the addresses in `trace` have to be resolved outside the server.
-)DOCS_MD",
-    .get_columns = TraceLogElement::getColumnsDescription,
-    .columns_notes = R"DOCS_MD(
-Symbolization can be enabled or disabled with the `symbolize` setting under `trace_log` in the server's configuration file. It is enabled by default. The setting applies to profiler-collected trace types; rows with the `Instrumentation` trace type are symbolized regardless of it.
-)DOCS_MD",
-    .examples = R"DOCS_MD(
-```sql
-SELECT * FROM system.trace_log LIMIT 1 \G
-```
 
-```text
-Row 1:
-──────
-hostname:                clickhouse.eu-central1.internal
-event_date:              2025-11-11
-event_time:              2025-11-11 11:53:59
-event_time_microseconds: 2025-11-11 11:53:59.128333
-timestamp_ns:            1762862039128333000
-revision:                54504
-trace_type:              Instrumentation
-cpu_id:                  19
-thread_id:               3166432 -- 3.17 million
-query_id:                ef462508-e189-4ea2-b231-4489506728e8
-trace:                   [350594916,447733712,447742095,447727324,447726659,221642873,450882315,451852359,451905441,451885554,512404306,512509092,612861767,612863269,612466367,612455825,137631896259267,137631896856768]
-size:                    0
-ptr:                     0
-memory_context:          Unknown
-memory_blocked_context:  Unknown
-event:
-increment:               0
-symbols:                 ['StackTrace::StackTrace()','DB::InstrumentationManager::createTraceLogElement(DB::InstrumentationManager::InstrumentedPointInfo const&, XRayEntryType, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>) const','DB::InstrumentationManager::profile(XRayEntryType, DB::InstrumentationManager::InstrumentedPointInfo const&)','DB::InstrumentationManager::dispatchHandlerImpl(int, XRayEntryType)','DB::InstrumentationManager::dispatchHandler(int, XRayEntryType)','__xray_FunctionEntry','DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)','DB::logQueryStart(std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>> const&, std::__1::shared_ptr<DB::Context> const&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, unsigned long, std::__1::shared_ptr<DB::IAST> const&, DB::QueryPipeline const&, DB::IInterpreter const*, bool, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, bool)','DB::executeQueryImpl(char const*, char const*, std::__1::shared_ptr<DB::Context>, DB::QueryFlags, DB::QueryProcessingStage::Enum, std::__1::unique_ptr<DB::ReadBuffer, std::__1::default_delete<DB::ReadBuffer>>&, std::__1::shared_ptr<DB::IAST>&, std::__1::shared_ptr<DB::ImplicitTransactionControlExecutor>, std::__1::function<void ()>)','DB::executeQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::shared_ptr<DB::Context>, DB::QueryFlags, DB::QueryProcessingStage::Enum)','DB::TCPHandler::runImpl()','DB::TCPHandler::run()','Poco::Net::TCPServerConnection::start()','Poco::Net::TCPServerDispatcher::run()','Poco::PooledThread::run()','Poco::ThreadImpl::runnableEntry(void*)','start_thread','__clone3']
-lines:                   ['./build/../src/Common/StackTrace.cpp:395','./src/Common/StackTrace.h:62','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:738','./build/./src/Interpreters/InstrumentationManager.cpp:257','./build/./src/Interpreters/InstrumentationManager.cpp:225','','./build/./src/Interpreters/QueryMetricLog.cpp:0','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:667','./build/./src/Interpreters/executeQuery.cpp:0','./build/./src/Interpreters/executeQuery.cpp:0','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:744','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:583','./build/../base/poco/Net/src/TCPServerConnection.cpp:54','../contrib/llvm-project/libcxx/include/__memory/unique_ptr.h:80','./build/../base/poco/Foundation/src/ThreadPool.cpp:219','../base/poco/Foundation/include/Poco/AutoPtr.h:77','','']
-function_id:             231255
-function_name:           DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)
-handler:                 profile
-entry_type:              Exit
-duration_nanoseconds:   58435
-```
-)DOCS_MD",
-    .additional_sections = R"DOCS_MD(
 ## Converting to Chrome Event Trace Format {#chrome-event-trace-format}
 
 The profiling data can be converted to Chrome's Event Trace Format with the following query. Save the query to a `chrome_trace.sql` file:
@@ -404,6 +365,44 @@ echo $(clickhouse client --query "$(cat chrome_trace.sql)") > trace.json
 ```
 
 We can omit the stack part if we want a more compact but less informative trace.
+)DOCS_MD",
+    .get_columns = TraceLogElement::getColumnsDescription,
+    .columns_notes = R"DOCS_MD(
+Symbolization can be enabled or disabled with the `symbolize` setting under `trace_log` in the server's configuration file. It is enabled by default. The setting applies to profiler-collected trace types; rows with the `Instrumentation` trace type are symbolized regardless of it.
+)DOCS_MD",
+    .examples = R"DOCS_MD(
+```sql
+SELECT * FROM system.trace_log LIMIT 1 \G
+```
+
+```text
+Row 1:
+──────
+hostname:                clickhouse.eu-central1.internal
+event_date:              2025-11-11
+event_time:              2025-11-11 11:53:59
+event_time_microseconds: 2025-11-11 11:53:59.128333
+timestamp_ns:            1762862039128333000
+revision:                54504
+trace_type:              Instrumentation
+cpu_id:                  19
+thread_id:               3166432 -- 3.17 million
+query_id:                ef462508-e189-4ea2-b231-4489506728e8
+trace:                   [350594916,447733712,447742095,447727324,447726659,221642873,450882315,451852359,451905441,451885554,512404306,512509092,612861767,612863269,612466367,612455825,137631896259267,137631896856768]
+size:                    0
+ptr:                     0
+memory_context:          Unknown
+memory_blocked_context:  Unknown
+event:
+increment:               0
+symbols:                 ['StackTrace::StackTrace()','DB::InstrumentationManager::createTraceLogElement(DB::InstrumentationManager::InstrumentedPointInfo const&, XRayEntryType, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>) const','DB::InstrumentationManager::profile(XRayEntryType, DB::InstrumentationManager::InstrumentedPointInfo const&)','DB::InstrumentationManager::dispatchHandlerImpl(int, XRayEntryType)','DB::InstrumentationManager::dispatchHandler(int, XRayEntryType)','__xray_FunctionEntry','DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)','DB::logQueryStart(std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>> const&, std::__1::shared_ptr<DB::Context> const&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, unsigned long, std::__1::shared_ptr<DB::IAST> const&, DB::QueryPipeline const&, DB::IInterpreter const*, bool, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, bool)','DB::executeQueryImpl(char const*, char const*, std::__1::shared_ptr<DB::Context>, DB::QueryFlags, DB::QueryProcessingStage::Enum, std::__1::unique_ptr<DB::ReadBuffer, std::__1::default_delete<DB::ReadBuffer>>&, std::__1::shared_ptr<DB::IAST>&, std::__1::shared_ptr<DB::ImplicitTransactionControlExecutor>, std::__1::function<void ()>)','DB::executeQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::shared_ptr<DB::Context>, DB::QueryFlags, DB::QueryProcessingStage::Enum)','DB::TCPHandler::runImpl()','DB::TCPHandler::run()','Poco::Net::TCPServerConnection::start()','Poco::Net::TCPServerDispatcher::run()','Poco::PooledThread::run()','Poco::ThreadImpl::runnableEntry(void*)','start_thread','__clone3']
+lines:                   ['./build/../src/Common/StackTrace.cpp:395','./src/Common/StackTrace.h:62','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:738','./build/./src/Interpreters/InstrumentationManager.cpp:257','./build/./src/Interpreters/InstrumentationManager.cpp:225','','./build/./src/Interpreters/QueryMetricLog.cpp:0','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:667','./build/./src/Interpreters/executeQuery.cpp:0','./build/./src/Interpreters/executeQuery.cpp:0','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:744','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:583','./build/../base/poco/Net/src/TCPServerConnection.cpp:54','../contrib/llvm-project/libcxx/include/__memory/unique_ptr.h:80','./build/../base/poco/Foundation/src/ThreadPool.cpp:219','../base/poco/Foundation/include/Poco/AutoPtr.h:77','','']
+function_id:             231255
+function_name:           DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)
+handler:                 profile
+entry_type:              Exit
+duration_nanoseconds:   58435
+```
 )DOCS_MD",
     .see_also = R"DOCS_MD(
 - [SYSTEM INSTRUMENT](/reference/statements/system#instrument) — Add or remove instrumentation points.
