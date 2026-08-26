@@ -30,13 +30,18 @@ all_unavailable_node = failed_cluster.add_instance(
 )
 
 
+WILDCARD_ADDRESSES = ("0.0.0.0", "::")
+
+
 def decode_proc_net_address(hex_address):
     """Decode an address of `/proc/net/tcp` or `/proc/net/tcp6`: a hexadecimal dump of the raw
-    address whose every 4-byte word is in host byte order."""
+    address whose every 4-byte word is in host byte order. gRPC binds an `AF_INET6` socket for an
+    IPv4 address, so an IPv4-mapped address is reported in its IPv4 form."""
     raw = bytes.fromhex(hex_address)
     raw = b"".join(raw[offset : offset + 4][::-1] for offset in range(0, len(raw), 4))
     family = socket.AF_INET if len(raw) == 4 else socket.AF_INET6
-    return socket.inet_ntop(family, raw)
+    address = socket.inet_ntop(family, raw)
+    return address.removeprefix("::ffff:")
 
 
 def listening_addresses(node, port):
@@ -58,15 +63,25 @@ def listening_addresses(node, port):
     return sorted(addresses)
 
 
-def wait_for_listening_addresses(node, port, expected, timeout=30):
-    """Wait until the sockets listening on `port` are exactly `expected`. A listener replaced by a
+def is_single_wildcard(addresses):
+    return len(addresses) == 1 and addresses[0] in WILDCARD_ADDRESSES
+
+
+def is_closed(addresses):
+    return not addresses
+
+
+def wait_for_listeners(node, port, is_settled, description, timeout=30):
+    """Wait until the sockets listening on `port` satisfy `is_settled`. A listener replaced by a
     reload is destroyed - and its socket closed - only after the new one has been created, so the
     settled state is what the test is about."""
     deadline = time.monotonic() + timeout
     while True:
         addresses = listening_addresses(node, port)
-        if addresses == expected or time.monotonic() > deadline:
-            assert addresses == expected, f"port {port}: {addresses} != {expected}"
+        if is_settled(addresses) or time.monotonic() > deadline:
+            assert is_settled(
+                addresses
+            ), f"port {port}: {addresses} is not {description}"
             return
         time.sleep(0.5)
 
@@ -179,9 +194,13 @@ EOF""",
     # The log alone would also be satisfied by a broken reload that merely adds the wildcard
     # listener next to the old specific one, so check the live listeners: the specific address is
     # gone, and a single wildcard socket serves each port.
-    wait_for_listening_addresses(reload_node, 9200, ["0.0.0.0"])
-    wait_for_listening_addresses(reload_node, 8889, ["0.0.0.0"])
-    wait_for_listening_addresses(reload_node, 8888, [])
+    wait_for_listeners(
+        reload_node, 9200, is_single_wildcard, "a single wildcard listener"
+    )
+    wait_for_listeners(
+        reload_node, 8889, is_single_wildcard, "a single wildcard listener"
+    )
+    wait_for_listeners(reload_node, 8888, is_closed, "closed")
 
     # The single Arrow Flight listener must serve IPv4 traffic on the new port.
     reload_node.wait_until_port_is_ready(8889, timeout=10)
