@@ -248,18 +248,25 @@ def test_nonempty_data_does_not_wait_for_interactive_delay():
     assert native_send_count() - sends_before == 5
 
 
-def test_insert_schema_and_completion_are_flushed():
-    node.query("CREATE TABLE insert_target (x UInt64) ENGINE = Memory")
+@pytest.mark.parametrize("async_insert", [0, 1])
+def test_insert_schema_and_completion_are_flushed(async_insert):
+    table_name = f"insert_target_{async_insert}"
+    node.query(f"CREATE TABLE {table_name} (x UInt64) ENGINE = Memory")
     sends_before = native_send_count()
 
     node.query(
-        "INSERT INTO insert_target FORMAT TSV",
+        f"INSERT INTO {table_name} FORMAT TSV",
         stdin="1\n2\n",
-        settings={"compression": 1},
+        settings={
+            "async_insert": async_insert,
+            "compression": 1,
+            "send_profile_events": 1,
+            "wait_for_async_insert": 1,
+        },
         timeout=10,
     )
 
     # The schema must be visible before the client can encode its data. Completion
     # packets must then be visible before the client can finish the query.
     assert native_send_count() - sends_before == 4
-    assert node.query("SELECT groupArray(x) FROM insert_target") == "[1,2]\n"
+    assert node.query(f"SELECT groupArray(x) FROM {table_name}") == "[1,2]\n"
