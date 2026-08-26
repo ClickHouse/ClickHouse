@@ -141,6 +141,7 @@ FROM
 (
     EXPLAIN actions = 1
     SELECT count() FROM json_index_tokens_ifnull WHERE ifNull(data.s, '') = 'mcp'
+    SETTINGS query_plan_optimize_count_from_text_index = 0
 )
 WHERE position(explain, '__text_index') > 0;
 
@@ -260,6 +261,7 @@ FROM
     EXPLAIN actions = 1
     SELECT count() FROM json_path_values_dynamic_arrays
     WHERE has(data.tags.:`Array(Nullable(String))`, 'foo')
+    SETTINGS query_plan_optimize_count_from_text_index = 0
 )
 WHERE position(explain, '__text_index') > 0;
 SELECT count() > 0

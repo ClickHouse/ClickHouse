@@ -54,6 +54,7 @@ FROM
 (
     EXPLAIN actions = 1
     SELECT count() FROM json_index_tokens_float_equality WHERE data.f64 = toFloat64(0.0)
+    SETTINGS query_plan_optimize_count_from_text_index = 0
 )
 WHERE position(explain, '__text_index') > 0;
 

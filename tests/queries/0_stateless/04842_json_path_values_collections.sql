@@ -100,6 +100,7 @@ FROM
 (
     EXPLAIN actions = 1
     SELECT count() FROM json_index_tokens_arrays WHERE has(typed.tags, 'foo')
+    SETTINGS query_plan_optimize_count_from_text_index = 0
 )
 WHERE position(explain, '__text_index') > 0;
 
