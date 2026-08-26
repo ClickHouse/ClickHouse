@@ -29,8 +29,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event AIInputTokens;
-    extern const Event AIAPICalls;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
 }
@@ -201,11 +199,10 @@ public:
             }
         }
 
-        auto embedding_result = FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker, timeouts);
-
-        ProfileEvents::increment(ProfileEvents::AIAPICalls, embedding_result.api_calls);
-        ProfileEvents::increment(ProfileEvents::AIInputTokens, embedding_result.input_tokens);
+        FunctionBaseAI::EmbeddingResult embedding_result;
+        FunctionBaseAI::embedTexts(
+            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker,
+            timeouts, embedding_result);
 
         const auto & embeddings = embedding_result.embeddings;
 
