@@ -67,10 +67,9 @@ MutableSerializationInfoPtr SerializationInfoTuple::createWithType(
         else
             old_position = old_tuple.tryGetPositionByName(new_tuple.getElementNames()[i]);
 
-        if (old_position
-            && (elems[*old_position]->structureEquals(*info)
-                || (typeid_cast<const SerializationInfoTuple *>(elems[*old_position].get())
-                    && typeid_cast<const SerializationInfoTuple *>(info.get()))))
+        const auto * old_info = old_position ? elems[*old_position].get() : nullptr;
+        const auto * new_info = info.get();
+        if (old_info && typeid(*old_info) == typeid(*new_info))
             info = elems[*old_position]->createWithType(*old_elements[*old_position], *new_elements[i], new_settings);
         else if (!old_position)
             info->addDefaults(data.num_rows);

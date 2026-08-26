@@ -339,6 +339,30 @@ TEST(SerializationInfoObject, CreateWithChangedTypedPathStructure)
         "JSON(t Tuple(a Tuple(b String, c UInt64)), max_dynamic_paths=0)");
 }
 
+TEST(SerializationInfoObject, PreservesNestedObjectStatsWithoutReselectingKinds)
+{
+    auto old_type = DataTypeFactory::instance().get("JSON(obj JSON(x String, max_dynamic_paths=0), max_dynamic_paths=0)");
+    auto new_type = DataTypeFactory::instance().get("JSON(obj JSON(x String, y UInt64, max_dynamic_paths=0), max_dynamic_paths=0)");
+
+    auto settings = defaultSettings();
+    settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+    auto old_info = old_type->createSerializationInfo(settings);
+    old_info->addDefaults(100);
+
+    settings.choose_kind = false;
+    auto evolved_info = old_info->createWithType(*old_type, *new_type, settings);
+    const auto * outer_info = assert_cast<const SerializationInfoObject *>(evolved_info.get());
+    const auto * nested_info = assert_cast<const SerializationInfoObject *>(outer_info->getTypedPathInfo("obj").get());
+    const auto & new_path_info = nested_info->getTypedPathInfo("y");
+
+    EXPECT_EQ(
+        nested_info->getTypedPathInfo("x")->getKindStack(),
+        ISerialization::KindStack({ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
+    EXPECT_EQ(new_path_info->getKindStack(), ISerialization::KindStack({ISerialization::Kind::DEFAULT}));
+    EXPECT_EQ(new_path_info->getData().num_rows, 100);
+    EXPECT_EQ(new_path_info->getData().num_defaults, 100);
+}
+
 TEST(SerializationInfoTuple, StructureIgnoresElementNames)
 {
     auto old_type = DataTypeFactory::instance().get("Tuple(a String)");

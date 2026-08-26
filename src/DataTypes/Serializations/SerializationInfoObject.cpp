@@ -3,7 +3,6 @@
 #include <Columns/ColumnObject.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/Serializations/SerializationInfoTuple.h>
 
 namespace DB
 {
@@ -46,11 +45,11 @@ MutableSerializationInfoPtr SerializationInfoObject::createWithType(
         auto new_info = new_path_type->createSerializationInfo(new_settings);
         auto old_type_it = old_object.getTypedPaths().find(path);
         auto old_info_it = name_to_elem.find(path);
+        const auto * old_info = old_info_it != name_to_elem.end() ? old_info_it->second.get() : nullptr;
+        const auto * new_info_ptr = new_info.get();
         if (old_type_it != old_object.getTypedPaths().end()
-            && old_info_it != name_to_elem.end()
-            && (old_info_it->second->structureEquals(*new_info)
-                || (typeid_cast<const SerializationInfoTuple *>(old_info_it->second.get())
-                    && typeid_cast<const SerializationInfoTuple *>(new_info.get()))))
+            && old_info
+            && typeid(*old_info) == typeid(*new_info_ptr))
         {
             new_info = old_info_it->second->createWithType(*old_type_it->second, *new_path_type, new_settings);
         }
