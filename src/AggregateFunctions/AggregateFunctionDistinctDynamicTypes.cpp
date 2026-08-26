@@ -180,9 +180,9 @@ INSERT INTO test_dynamic VALUES (42), (NULL), ('Hello'), ([1, 2, 3]), ('2020-01-
 SELECT distinctDynamicTypes(d) FROM test_dynamic;
         )",
         R"(
-┌─distinctDynamicTypes(d)──────────────────────────────────────────┐
-│ ['Array(Int64)', 'Date', 'Int64', 'Map(UInt8, UInt8)', 'String'] │
-└──────────────────────────────────────────────────────────────────┘
+┌─distinctDynamicTypes(d)──────────────────────────────────────┐
+│ ['Array(Int64)','Date','Int64','Map(UInt8, UInt8)','String'] │
+└──────────────────────────────────────────────────────────────┘
         )"
     }
     };

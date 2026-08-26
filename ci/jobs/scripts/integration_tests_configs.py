@@ -49,12 +49,6 @@ TEST_CONFIGS = [
         "18-node Keeper+S3 cluster; concurrent --dist=each copies OOM the ASAN runner",
         dist_each_sequential=True,
     ),
-    TC(
-        "test_wasm_parser/",
-        True,
-        "two full-LTO builds of the parser; saturates the runner and would slow every "
-        "co-scheduled test down",
-    ),
     TC("test_storage_kafka/", False, "each cluster has its own Kafka container and Docker network"),
     TC("test_storage_rabbitmq/", False, "each cluster has its own RabbitMQ container; tests use unique exchange/db names"),
     TC("test_storage_kerberized_kafka/", False, "each cluster has its own Kafka container and Docker network"),
