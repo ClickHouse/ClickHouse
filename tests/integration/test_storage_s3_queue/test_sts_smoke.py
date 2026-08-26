@@ -24,7 +24,10 @@ def started_cluster():
                 "configs/zookeeper.xml",
                 "configs/s3_credentials_cache.xml",
             ],
-            user_configs=["configs/users.xml", "configs/allow_server_credentials.xml"],
+            # No s3_allow_server_credentials_in_user_queries opt-in: both tests here use only
+            # role_arn-based STS assume-role (extra_credentials(role_arn=...)), which is allowed
+            # regardless of the setting. The environment credentials serve only as the STS base.
+            user_configs=["configs/users.xml"],
             with_zookeeper=True,
             stay_alive=True,
         )

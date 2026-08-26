@@ -202,8 +202,7 @@ void QueryPipelineBuilder::addDefaultTotals()
 
 void QueryPipelineBuilder::dropTotalsAndExtremes()
 {
-    pipe.dropTotals();
-    pipe.dropExtremes();
+    pipe.dropTotalsAndExtremes();
 }
 
 void QueryPipelineBuilder::addExtremesTransform()
@@ -391,6 +390,30 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     assignToJoinStage(collected_processors, join_step, JoinStep::JoinStage::Default);
     return result;
+}
+
+std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesPaired(
+    std::unique_ptr<QueryPipelineBuilder> left,
+    std::unique_ptr<QueryPipelineBuilder> right,
+    ProcessorPtr joining,
+    Processors * collected_processors)
+{
+    left->checkInitializedAndNotCompleted();
+    right->checkInitializedAndNotCompleted();
+
+    left->pipe.dropExtremes();
+    right->pipe.dropExtremes();
+
+    if (left->hasTotals() || right->hasTotals())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Current join algorithm is supported only for pipelines without totals");
+
+    /// The joining transform may rely on the order of each input stream (e.g. IEJoin expects
+    /// pre-sorted inputs), so a multi-stream input cannot be silently squashed here.
+    if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Join is supported only for pipelines with one output port, got {} and {}", left->getNumStreams(), right->getNumStreams());
+
+    return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
 }
 
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShapedByShards(
@@ -814,38 +837,13 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
 }
 
 
-namespace
-{
-
-/// Drop the totals and extremes streams of `pipe` (which are irrelevant for set
-/// construction / CTE materialization) using a `DroppingTransform` instead of a
-/// `NullSink`. The transform consumes all output ports (data + totals + extremes),
-/// forwards the data streams and discards totals/extremes. Unlike a childless
-/// `NullSink`, it keeps the dropping node connected to the data path, so
-/// `ExecutingGraph::initializeExecution` does not seed it and does not pull the
-/// gated source sub-pipeline before its materialized CTE has been built.
-void dropTotalsAndExtremesViaTransform(Pipe & pipe, const SharedHeader & header)
-{
-    if (!pipe.getTotalsPort() && !pipe.getExtremesPort())
-        return;
-
-    bool has_totals = pipe.getTotalsPort() != nullptr;
-    bool has_extremes = pipe.getExtremesPort() != nullptr;
-    auto dropping = std::make_shared<DroppingTransform>(header, pipe.numOutputPorts(), has_totals, has_extremes);
-    auto * totals_in = dropping->getTotalsPort();
-    auto * extremes_in = dropping->getExtremesPort();
-    pipe.addTransform(std::move(dropping), totals_in, extremes_in);
-}
-
-}
-
 void QueryPipelineBuilder::addCreatingSetsTransform(
     SharedHeader res_header,
     SetAndKeyPtr set_and_key,
     const SizeLimits & limits,
     PreparedSetsCachePtr prepared_sets_cache)
 {
-    dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
+    dropTotalsAndExtremes();
     resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
@@ -864,7 +862,7 @@ void QueryPipelineBuilder::addMaterializingCTETransform(
 )
 {
     checkInitializedAndNotCompleted();
-    dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
+    dropTotalsAndExtremes();
     resize(1);
 
     auto transform = std::make_shared<MaterializingCTETransform>(

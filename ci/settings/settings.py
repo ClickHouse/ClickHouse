@@ -99,6 +99,7 @@ TEST_FAILURE_PATTERNS = [
     "Test runs too long",
     "having exception in stdout",
     "server died",
+    "liveness check failed",
     "Test internal error:",
     # Common Integration tests failures
     "AssertionError",

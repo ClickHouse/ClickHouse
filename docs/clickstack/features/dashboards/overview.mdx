@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'Visualizations and dashboards with ClickStack'
-sidebarTitle: 'Dashboards'
+sidebarTitle: 'Overview'
 description: 'Visualizations and dashboards with ClickStack'
 doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualization', 'monitoring', 'observability']
@@ -57,10 +57,6 @@ Note that you can filter events using either a SQL `WHERE` clause or Lucene synt
 For example, filter by the service `frontend` by adding the filter `ServiceName:"frontend"`. Add a second series for the count of events over time with the alias `Count` by clicking `Add Series`.
 
 <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="Simple visualization 2" size="lg"/>
-
-To build a series similar to an existing one, you can duplicate it instead of starting from scratch. Click the copy icon (`Duplicate series`) on a series row to insert a copy directly below. The copy keeps the source series' settings, such as the metric, column, and filter. You then change only the fields that differ (for example the aggregation) and give the copy its own alias. Duplicating is available wherever multiple series are supported. It is hidden for visualization types that allow only one series, such as `Number`, `Pie`, and `Heatmap`.
-
-<Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="The Duplicate series copy icon and its tooltip on a chart series row" size="lg"/>
 
 To build a series similar to an existing one, you can duplicate it instead of starting from scratch. Click the copy icon (`Duplicate series`) on a series row to insert a copy directly below. The copy keeps the source series' settings, such as the metric, column, and filter. You then change only the fields that differ (for example the aggregation) and give the copy its own alias. Duplicating is available wherever multiple series are supported. It is hidden for visualization types that allow only one series, such as `Number`, `Pie`, and `Heatmap`.
 
@@ -197,6 +193,43 @@ To remove, edit, or duplicate a visualization, hover over it and use the corresp
 
 Each tile has a **Display Settings** drawer for options that control how its value is rendered. Open it from the tile editor by clicking **Display Settings**. The available options depend on the visualization type.
 
+#### Number tile color {#number-tile-color}
+
+Number tiles support a static **Color** choice from the curated chart palette. With a number tile selected, open **Display Settings** and use the **Color** control (labeled **Number tile color** for accessibility) to pick a swatch, or clear the selection to use the default text color.
+
+Colors are stored as palette tokens, not raw hex values, so the same tile reflows correctly across light, dark, and IDE themes.
+
+**Categorical tokens** (multi-series hues):
+
+| Token | Label |
+|---|---|
+| `chart-blue` | Blue |
+| `chart-orange` | Orange |
+| `chart-red` | Red |
+| `chart-cyan` | Cyan |
+| `chart-green` | Green |
+| `chart-pink` | Pink |
+| `chart-purple` | Purple |
+| `chart-light-blue` | Light Blue |
+| `chart-brown` | Brown |
+| `chart-gray` | Gray |
+
+**Semantic tokens** (status-oriented):
+
+| Token | Label |
+|---|---|
+| `chart-success` | Success |
+| `chart-warning` | Warning |
+| `chart-error` | Error |
+
+Use semantic tokens when the number represents a status (for example error count in `chart-error`, or a healthy rate in `chart-success`). Use categorical tokens when you want visual distinction between related KPI tiles without implying status.
+
+Older configs may still store legacy numeric tokens (`chart-1` through `chart-10`). ClickStack maps those to the hue-named tokens above when loading a dashboard.
+
+The same palette powers optional **color rules** in the same drawer: ordered conditions evaluated against the displayed value (last match wins). When no rule matches, the static color applies, then the default text color.
+
+#### Number tile background chart {#number-tile-background-chart}
+
 Number tiles can show a **background chart**: a trend sparkline drawn behind the value, so its movement over the selected time range is visible at a glance. This is useful for SLO and error-budget tiles, where how a value is trending matters as much as its current reading.
 
 With a number tile selected, open **Display Settings** and set **Background chart** to **Line** or **Area** (or **None** to turn it off). The sparkline is derived from a time-bucketed version of the tile's query, so no extra configuration is needed. It inherits the tile color by default; set a **Background color** to override it with a specific palette color.
@@ -204,6 +237,52 @@ With a number tile selected, open **Display Settings** and set **Background char
 <Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Display Settings drawer for a number tile, with Background chart set to Area" size="lg"/>
 
 Background charts apply to query-builder number tiles. Raw SQL number tiles return a single value with no time dimension to bucket, so the option appears but is disabled for them.
+
+Table tiles can stripe their rows with **Alternate Row Background**, which tints every other row so wide tables are easier to scan. It is off by default.
+
+With a table tile selected, open **Display Settings** and turn on **Alternate Row Background**. Striping is purely visual, so it works on both query-builder and raw SQL table tiles.
+
+<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Display Settings drawer for a table tile, with Alternate Row Background turned on" size="lg"/>
+
+Table tiles also keep a separator between the header row and the data as you scroll, so the column headers stay distinct.
+
+#### Dashboards API: number tile color {#api-number-tile-color}
+
+When creating or updating dashboards through the external API (`POST` / `PUT` `/api/v2/dashboards`), set `color` on a builder number-tile config to a palette token. Raw hex values are rejected.
+
+```json
+{
+  "name": "Error rate KPIs",
+  "tiles": [
+    {
+      "id": "65f5e4a3b9e77c001a222222",
+      "name": "Errors",
+      "x": 0,
+      "y": 0,
+      "w": 6,
+      "h": 4,
+      "config": {
+        "displayType": "number",
+        "sourceId": "<SOURCE_ID>",
+        "select": [
+          {
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "whereLanguage": "lucene",
+            "alias": "Errors"
+          }
+        ],
+        "color": "chart-error",
+        "backgroundChart": {
+          "type": "area"
+        }
+      }
+    }
+  ]
+}
+```
+
+`color` accepts any token from the categorical and semantic lists above (for example `chart-blue` or `chart-success`). Optional `backgroundChart.color` overrides the sparkline color with the same token enum. See the [ClickStack API reference](/use-cases/observability/clickstack/api-reference) for authentication and base URLs.
 
 ## Dashboard - Listing and search {#dashboard-listing-search}
 
@@ -287,7 +366,7 @@ This dashboard uses tabs to separate monitoring of **Selects**, **Inserts**, and
 <Info>
 **Required system table access**
 
-This dashboard queries the ClickHouse [system tables](/reference/system-tables/index) to expose key metrics. The following grants are required:
+This dashboard queries the ClickHouse [system tables](/reference/system-tables/overview) to expose key metrics. The following grants are required:
 
 `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

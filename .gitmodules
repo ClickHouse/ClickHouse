@@ -36,7 +36,7 @@
 	url = https://github.com/ClickHouse/jemalloc
 [submodule "contrib/google-protobuf"]
 	path = contrib/google-protobuf
-	url = https://github.com/ClickHouse/google-protobuf.git
+	url = https://github.com/protocolbuffers/protobuf.git
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse/boost
@@ -69,7 +69,7 @@
 	url = https://github.com/ClickHouse/h3
 [submodule "contrib/simdjson"]
 	path = contrib/simdjson
-	url = https://github.com/simdjson/simdjson
+	url = https://github.com/ClickHouse/simdjson
 [submodule "contrib/rapidjson"]
 	path = contrib/rapidjson
 	url = https://github.com/ClickHouse/rapidjson
@@ -378,6 +378,9 @@
 [submodule "contrib/antlr4-cpp-runtime"]
 	path = contrib/antlr4-cpp-runtime
 	url = https://github.com/antlr/antlr4.git
+[submodule "contrib/darts-clone"]
+	path = contrib/darts-clone
+	url = https://github.com/s-yata/darts-clone
 [submodule "contrib/libcotp"]
 	path = contrib/libcotp
 	url = https://github.com/paolostivanin/libcotp.git
@@ -398,7 +401,7 @@
 	url = https://github.com/ClickHouse/silk.git
 [submodule "contrib/xsimd"]
 	path = contrib/xsimd
-	url = https://github.com/xtensor-stack/xsimd
+	url = https://github.com/ClickHouse/xsimd
 [submodule "contrib/simdutf"]
 	path = contrib/simdutf
 	url = https://github.com/ClickHouse/simdutf
@@ -414,3 +417,12 @@
 [submodule "contrib/zxc"]
 	path = contrib/zxc
 	url = https://github.com/ClickHouse/zxc
+[submodule "contrib/libucontext"]
+	path = contrib/libucontext
+	url = https://github.com/kaniini/libucontext
+[submodule "contrib/Jieba-CPP"]
+	path = contrib/Jieba-CPP
+	url = https://github.com/amosbird/Jieba-CPP
+[submodule "contrib/MeCab"]
+	path = contrib/MeCab
+	url = https://github.com/taku910/mecab

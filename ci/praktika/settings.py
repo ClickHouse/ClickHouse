@@ -74,6 +74,33 @@ class _Settings:
     RUN_LOG: str = f"{TEMP_DIR}/job.log"
 
     SECRET_GH_APP: str = "gh-app"
+
+    ######################################
+    #      Host metrics (CPU/RAM)        #
+    ######################################
+    # Sample whole-VM CPU and RAM usage in the background while a job runs and
+    # store a decimated timeline in Result.ext["metrics"] (rendered in json.html).
+    HOST_METRICS_ENABLED: bool = True
+    # Reporting/window interval: one aggregated point (avg + peak) is emitted and
+    # written per window, so the timeline stays ~1 point / this-many-seconds
+    # regardless of the fine cadence.
+    HOST_METRICS_SAMPLE_INTERVAL_SEC: float = 5.0
+    # Fine sampling cadence: /proc is read this often within each reporting window
+    # so short bursts are captured as the window's peak instead of being averaged
+    # away. Must be <= the reporting interval.
+    HOST_METRICS_FINE_INTERVAL_SEC: float = 1.0
+    # Upper bound on points kept per series after min/max decimation, so the
+    # payload injected into the Result stays small regardless of job duration.
+    HOST_METRICS_MAX_POINTS: int = 400
+    HOST_METRICS_FILE: str = f"{TEMP_DIR}/host_metrics.jsonl"
+    # Filesystem whose used% is tracked as the "disk" series. Defaults to the
+    # working directory, i.e. the disk the job actually writes to.
+    HOST_METRICS_DISK_PATH: str = "."
+    # Jobs are labelled over/under-utilized only when they ran at least this
+    # long OR ran on a host with more than HOST_METRICS_MIN_LABEL_MEM_GB of RAM;
+    # short jobs on small runners are too noisy and not worth right-sizing.
+    HOST_METRICS_MIN_LABEL_DURATION_SEC: int = 1800
+    HOST_METRICS_MIN_LABEL_MEM_GB: int = 15
     GH_AUTH_LAMBDA_NAME: str = ""
     GH_AUTH_LAMBDA_REGION: str = ""
 
@@ -89,8 +116,13 @@ class _Settings:
     # If enabled, Config Workflow creates a content-addressed .git/modules/ archive
     # in S3. Jobs with needs_submodules=True download it instead of cloning from GitHub.
     ENABLE_SUBMODULE_CACHE: bool = False
+    # If enabled, submodule clones authenticate with the App installation token
+    # (required for private submodules); otherwise they run anonymously.
+    ENABLE_SUBMODULE_CLONE_AUTH: bool = False
 
-    CACHE_VERSION: int = 1
+    # v2: records carry the producing workflow event, used as the reuse trust
+    # signal instead of the branch (see CacheRunnerHooks.configure).
+    CACHE_VERSION: int = 2
     CACHE_DIGEST_LEN: int = 20
     CACHE_S3_PATH: str = ""
     CACHE_LOCAL_PATH: str = f"{TEMP_DIR}/ci_cache"
@@ -108,6 +140,10 @@ class _Settings:
     COMPRESS_THRESHOLD_MB: int = 0
 
     SECRET_DOCKER_REGISTRY: str = ""
+    DOCKERHUB_USERNAME: str = ""
+    DOCKERHUB_SECRET: str = ""
+    DOCKER_LAYER_COMPRESSION: str = "zstd"
+    DOCKER_LAYER_COMPRESSION_LEVEL: int = 3
 
     ######################################
     #        CI DB Settings              #
@@ -182,6 +218,10 @@ _USER_DEFINED_SETTINGS = [
     "HEARTBEAT_TIMEOUT_S",
     "VALIDATE_FILE_PATHS",
     "SECRET_DOCKER_REGISTRY",
+    "DOCKERHUB_USERNAME",
+    "DOCKERHUB_SECRET",
+    "DOCKER_LAYER_COMPRESSION",
+    "DOCKER_LAYER_COMPRESSION_LEVEL",
     "READY_FOR_MERGE_CUSTOM_STATUS_NAME",
     "SECRET_CI_DB_CONNECTION",
     "CI_DB_DB_NAME",
@@ -197,10 +237,19 @@ _USER_DEFINED_SETTINGS = [
     "DEFAULT_LOCAL_TEST_WORKFLOW",
     "COMPRESS_THRESHOLD_MB",
     "ENABLE_SUBMODULE_CACHE",
+    "ENABLE_SUBMODULE_CLONE_AUTH",
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",
     "PRAKTIKA_BASE_VENV",
+    "HOST_METRICS_ENABLED",
+    "HOST_METRICS_SAMPLE_INTERVAL_SEC",
+    "HOST_METRICS_FINE_INTERVAL_SEC",
+    "HOST_METRICS_MAX_POINTS",
+    "HOST_METRICS_FILE",
+    "HOST_METRICS_DISK_PATH",
+    "HOST_METRICS_MIN_LABEL_DURATION_SEC",
+    "HOST_METRICS_MIN_LABEL_MEM_GB",
 ]
 
 

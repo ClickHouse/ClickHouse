@@ -4,6 +4,10 @@ brown end fox here quick
 1
 if(token NOT IN (keep-set)): only the keep-set survives
 fox the
+if(token IN (tuple)): listed stop words retained, non-stop words dropped
+a is the
+0
+0
 if(token IN (array)): array right-hand side, same as tuple
 brown end fox here quick
 multiIf(token IN (tuple)): CASE spelling drops the same tokens

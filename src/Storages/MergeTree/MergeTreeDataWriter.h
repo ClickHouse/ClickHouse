@@ -9,7 +9,6 @@
 #include <Interpreters/sortBlock.h>
 
 #include <Processors/Chunk.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -87,15 +86,21 @@ public:
 
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
+      * `may_have_leftover`: see `MergeTreeData::claimTemporaryPartDirectory`.
       */
-    MergeTreeTemporaryPartPtr writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context);
+    MergeTreeTemporaryPartPtr writeTempPart(
+        BlockWithPartition & block,
+        StorageMetadataPtr metadata_snapshot,
+        ContextPtr context,
+        bool may_have_leftover = true);
 
     MergeTreeTemporaryPartPtr writeTempPatchPart(
         BlockWithPartition & block,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
-        SourcePartsSetForPatch source_parts_set,
-        ContextPtr context);
+        PatchPartIndex patch_part_index,
+        ContextPtr context,
+        bool may_have_leftover = true);
 
     MergeTreeData::MergingParams::Mode getMergingMode() const
     {
@@ -105,7 +110,6 @@ public:
     /// For insertion.
     static MergeTreeTemporaryPartPtr writeProjectionPart(
         const MergeTreeData & data,
-        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
@@ -115,7 +119,6 @@ public:
     /// For mutation: MATERIALIZE PROJECTION.
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
         const MergeTreeData & data,
-        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
@@ -134,20 +137,21 @@ private:
         BlockWithPartition & block_with_partition,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
-        SourcePartsSetForPatch source_parts_set,
+        std::optional<PatchPartIndex> patch_part_index,
         ContextPtr context,
-        UInt64 block_number);
+        UInt64 block_number,
+        bool may_have_leftover);
 
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
         const String & part_name,
         bool is_temp,
         IMergeTreeDataPart * parent_part,
         const MergeTreeData & data,
-        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         MergeTreeIndices indices,
-        bool merge_is_needed);
+        bool merge_is_needed,
+        bool try_adaptive_codec);
 
     MergeTreeData & data;
     LoggerPtr log;

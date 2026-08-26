@@ -36,14 +36,18 @@ class time_zone;
 
 #define DAYNUM_OFFSET_EPOCH 25567
 
-/// Max int value of Date32, DATE LUT cache size minus daynum_offset_epoch
-#define DATE_LUT_MAX_EXTEND_DAY_NUM (DATE_LUT_SIZE - DAYNUM_OFFSET_EPOCH)
+/// Min and max value of Date32: day numbers (days relative to 1970-01-01) of
+/// DATE_LUT_MIN_REPRESENTABLE_YEAR-01-01 and DATE_LUT_MAX_REPRESENTABLE_YEAR-12-31.
+#define DATE_LUT_MIN_EXTEND_DAY_NUM (-719528)
+#define DATE_LUT_MAX_EXTEND_DAY_NUM 2932896
 
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
 /// It must cover the whole representable range (down to year 0000), otherwise the relative hour/minute helpers below
 /// would feed a negative dividend into C++ truncating division and round pre-1970 values towards zero instead of -inf.
-#define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_REPRESENTABLE_YEAR) * 366L * 86400)
+/// `366LL`, not `366L`: the value is about 6.2e10 and so needs 64 bits, which `long` only has
+/// on LP64 platforms - on an LLP64 one it is 32 bits and the constant silently wraps.
+#define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_REPRESENTABLE_YEAR) * 366LL * 86400)
 /// NOLINTEND(modernize-macro-to-enum)
 
 
@@ -265,6 +269,10 @@ private:
     static constexpr Time min_representable_time = -62167219200;   /// 0000-01-01 00:00:00 UTC
     static constexpr Time max_representable_time = 253402300799;   /// 9999-12-31 23:59:59 UTC
 
+    /// The Date32 range is the whole representable window.
+    static_assert(DATE_LUT_MIN_EXTEND_DAY_NUM == min_representable_day_index - daynum_offset_epoch);
+    static_assert(DATE_LUT_MAX_EXTEND_DAY_NUM == max_representable_day_index - daynum_offset_epoch);
+
     /// std::chrono::system_clock::from_time_t can overflow for extreme Int64 inputs, so the cctz escape paths
     /// bound the UTC timestamp to this window before constructing a time point. It is wider than the
     /// representable calendar by more than a whole-day timezone offset, so that a local civil value at the
@@ -420,14 +428,8 @@ private:
 
         const Int64 v = static_cast<Int64>(value);
         const Int64 d = static_cast<Int64>(divisor);
-        const Int64 remainder = v % d; /// In (-d, 0] for negative v.
-        if (remainder == 0)
-            return static_cast<DateOrTime>(v);
-
-        const Int64 rounded_towards_zero = v - remainder; /// A multiple of d in [v, 0], never overflows.
-        if (unlikely(rounded_towards_zero < std::numeric_limits<Int64>::min() + d))
-            return static_cast<DateOrTime>(rounded_towards_zero);
-        return static_cast<DateOrTime>(rounded_towards_zero - d);
+        const Int64 rounded_towards_zero = v - v % d; /// A multiple of d in [v, 0], never overflows.
+        return static_cast<DateOrTime>(roundDownNegativeToMultiple(v, rounded_towards_zero, d));
     }
 
     /// Add `offset` to `base`, saturating at the boundaries of `Time` instead of overflowing (which is
@@ -483,6 +485,20 @@ public:
     // Methods only for unit-testing, it makes very little sense to use it from user code.
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
+
+    /// Round a negative `value` down to a multiple of `divisor` (towards negative infinity), given the
+    /// already computed `rounded_towards_zero` == `value / divisor * divisor` (truncating division).
+    /// Near the minimum of Int64 the next multiple down is not representable, so we saturate there.
+    static Int64 roundDownNegativeToMultiple(Int64 value, Int64 rounded_towards_zero, Int64 divisor)
+    {
+        if (rounded_towards_zero == value)
+            return value;
+        if (unlikely(rounded_towards_zero < std::numeric_limits<Int64>::min() + divisor))
+            return rounded_towards_zero;
+        return rounded_towards_zero - divisor;
+    }
+
+    static bool isTimeInLUTRange(Time t) { return !isOutOfLUTRange(t); }
 
     /// Whether the UTC offset never changes within the range of the LUT (UTC and other fixed-offset
     /// time zones). When true, every calendar day is exactly 86400 seconds, so adding days or weeks
@@ -868,21 +884,15 @@ public:
 
         const LUTIndex index = findIndexInRange(t);
 
-        /// Calculate daylight saving offset first.
-        /// Because the "amount_of_offset_change" in LUT entry only exists in the change day, it's costly to scan it from the very begin.
-        /// but we can figure out all the accumulated offsets from 1970-01-01 to that day just by get the whole difference between lut[].date,
-        /// and then, we can directly subtract multiple 86400s to get the real DST offsets for the leap seconds is not considered now.
-        Time res = (lut[index].date - lut[daynum_offset_epoch].date) % 86400;
-
-        /// As so far to know, the maximal DST offset couldn't be more than 2 hours, so after the modulo operation the remainder
-        /// will sits between [-offset --> 0 --> offset] which respectively corresponds to moving clock forward or backward.
-        res = res > 43200 ? (86400 - res) : (0 - res);
+        /// The offset at the start of the day: local midnight is `day_number * 86400` seconds of local
+        /// time from the epoch, while `date` is the UTC instant of that same midnight.
+        Time res = (static_cast<Int64>(index.toUnderType()) - daynum_offset_epoch) * 86400 - lut[index].date;
 
         /// Check if has a offset change during this day. Add the change when cross the line
         if (lut[index].amount_of_offset_change() != 0 && t >= lut[index].date + lut[index].time_at_offset_change())
             res += lut[index].amount_of_offset_change();
 
-        return res + offset_at_start_of_epoch;
+        return res;
     }
 
 
@@ -1641,19 +1651,53 @@ public:
             return res;
     }
 
-    template <typename DateOrTime>
-    DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
+    /// The rounding divisor of a `minutes`-long interval, in seconds. An extreme interval count (e.g.
+    /// `INTERVAL 4611686018427387904 MINUTE`) wraps `60 * minutes` to exactly zero, which would then divide
+    /// by zero; saturate instead - the result for such meaningless interval counts is discarded anyway.
+    static Int64 minuteIntervalDivisor(UInt64 minutes)
     {
-        /// `minutes` is only validated to be positive by the caller, so an extreme interval count can make
-        /// `60 * minutes` wrap, exactly as in `toStartOfHourInterval`. `INTERVAL 4611686018427387904 MINUTE`
-        /// wraps the product to exactly zero, which would then divide by zero in `roundDownToMultiple` (or in
-        /// the reconstruction below) before producing a result. Saturate the divisor to the maximum instead;
-        /// the rounding result for such meaningless interval counts is discarded anyway.
         UInt64 product = 0;
         if (unlikely(__builtin_mul_overflow(minutes, static_cast<UInt64>(60), &product)
                      || product > static_cast<UInt64>(std::numeric_limits<Int64>::max())))
             product = static_cast<UInt64>(std::numeric_limits<Int64>::max());
-        Int64 divisor = static_cast<Int64>(product);
+        return static_cast<Int64>(product);
+    }
+
+    /// The divisor in seconds if the corresponding `toStartOf*Interval` method equals
+    /// `roundDownToMultiple(t, divisor)` for every `t` within the LUT range in this time zone, nothing if it
+    /// needs the LUT. Must mirror the dispatch of the corresponding methods. The `offset_is_whole_number_of_*`
+    /// properties only hold during the epoch, so callers must keep out-of-range `t` on the generic path.
+    std::optional<Int64> minuteIntervalModularDivisor(UInt64 minutes) const
+    {
+        if (!offset_is_whole_number_of_minutes_during_epoch)
+            return std::nullopt;
+        return minuteIntervalDivisor(minutes);
+    }
+
+    std::optional<Int64> secondIntervalModularDivisor(UInt64 seconds) const
+    {
+        if (seconds == 1)
+            return Int64(1);
+        if (seconds % 60 == 0)
+            return minuteIntervalModularDivisor(seconds / 60);
+        if (offset_is_whole_number_of_hours_during_epoch)
+            return static_cast<Int64>(seconds);
+        return std::nullopt;
+    }
+
+    std::optional<Int64> hourIntervalModularDivisor(UInt64 hours) const
+    {
+        /// Multi-hour intervals are aligned to the start of the day, not to the epoch, so in general they
+        /// cannot be computed by modular arithmetic (the alignment differs on days with an offset change).
+        if (hours == 1 && offset_is_whole_number_of_hours_during_epoch)
+            return Int64(3600);
+        return std::nullopt;
+    }
+
+    template <typename DateOrTime>
+    DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
+    {
+        Int64 divisor = minuteIntervalDivisor(minutes);
 
         /// Checked before the fast path below: historical (pre-1900) offsets can have a sub-minute component,
         /// so for out-of-range values the fast path would round to a UTC boundary instead of the local one.
@@ -1721,6 +1765,9 @@ public:
     /// Create DayNum from year, month, day of month.
     ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0) const
     {
+        if (unlikely(isMakeDateOutOfRange(year, month, day_of_month)))
+            return makeDayNumOutOfRange(year, month, day_of_month);
+
         if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return ExtendedDayNum(default_error_day_num);
 
@@ -1729,6 +1776,9 @@ public:
 
     std::optional<ExtendedDayNum> tryToMakeDayNum(Int16 year, UInt8 month, UInt8 day_of_month) const
     {
+        if (unlikely(isMakeDateOutOfRange(year, month, day_of_month)))
+            return makeDayNumOutOfRange(year, month, day_of_month);
+
         if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return std::nullopt;
 
@@ -2005,7 +2055,10 @@ public:
 
     NO_SANITIZE_UNDEFINED Time addWeeks(Time t, Int64 delta) const
     {
-        return addDays(t, delta * 7);
+        /// Compute delta * 7 in the UInt64 domain so it wraps by construction. FillingRow::doLongJump
+        /// (WITH FILL) passes deltas from the whole Int64 range and relies on the wraparound; a signed
+        /// multiply is UB on overflow even under NO_SANITIZE_UNDEFINED. Bit-identical two's complement.
+        return addDays(t, static_cast<Int64>(static_cast<UInt64>(delta) * 7ULL));
     }
 
     UInt8 saturateDayOfMonth(Int16 year, UInt8 month, UInt8 day_of_month) const
@@ -2023,7 +2076,12 @@ public:
     {
         const Values & values = lut[toLUTIndex(v)];
 
-        Int64 month = values.month + delta;
+        /// Clamp delta to a window wide enough to reach any representable calendar month but narrow enough
+        /// that values.month + delta cannot overflow Int64. WITH FILL passes deltas from the whole Int64
+        /// range and a plain values.month + delta would be UB on overflow; the calendar saturates far
+        /// inside this window anyway, so clamping does not change any representable result.
+        static constexpr Int64 max_month_delta = 12 * (DATE_LUT_MAX_REPRESENTABLE_YEAR + 1);
+        Int64 month = values.month + std::clamp<Int64>(delta, -max_month_delta, max_month_delta);
 
         if (month > 0)
         {
@@ -2109,7 +2167,8 @@ public:
     template <typename DateOrTime>
     auto NO_SANITIZE_UNDEFINED addQuarters(DateOrTime d, Int64 delta) const
     {
-        return addMonths(d, delta * 3);
+        /// UInt64 domain for defined wraparound (see addWeeks); addMonths itself has no further multiply.
+        return addMonths(d, static_cast<Int64>(static_cast<UInt64>(delta) * 3ULL));
     }
 
     template <typename DateOrTime>
@@ -2117,7 +2176,14 @@ public:
     {
         const Values & values = lut[toLUTIndex(v)];
 
-        auto year = values.year + static_cast<Int16>(delta);
+        /// Clamp delta to a window wide enough to reach any representable year but narrow enough that
+        /// values.year + delta stays within Int16 (makeLUTIndex saturates out-of-range years). WITH FILL
+        /// passes deltas from the whole Int64 range and the UInt32 (DateTime) / DayNum (Date) carriers
+        /// reach here without a window check; the previous static_cast<Int16>(delta) narrowed e.g. 32768
+        /// to -32768 and ran the calendar backward. The calendar saturates far inside this window anyway,
+        /// so clamping does not change any representable result.
+        static constexpr Int64 max_year_delta = DATE_LUT_MAX_REPRESENTABLE_YEAR + 1;
+        Int64 year = values.year + std::clamp<Int64>(delta, -max_year_delta, max_year_delta);
         auto month = values.month;
         auto day_of_month = values.day_of_month;
 

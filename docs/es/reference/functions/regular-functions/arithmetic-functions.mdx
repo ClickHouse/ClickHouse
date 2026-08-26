@@ -778,8 +778,8 @@ max2(x, y)
 
 **Argumentos**
 
-* `x` — Primer valor [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal`](/es/reference/data-types/decimal)
-* `y` — Segundo valor [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal`](/es/reference/data-types/decimal)
+* `x` — Primer valor [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`BFloat16`](/es/reference/data-types/float) o [`Decimal`](/es/reference/data-types/decimal)
+* `y` — Segundo valor [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`BFloat16`](/es/reference/data-types/float) o [`Decimal`](/es/reference/data-types/decimal)
 
 **Valor devuelto**
 
@@ -899,8 +899,8 @@ min2(x, y)
 
 **Argumentos**
 
-* `x` — Primer valor [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal`](/es/reference/data-types/decimal)
-* `y` — Segundo valor [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal`](/es/reference/data-types/decimal)
+* `x` — Primer valor [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`BFloat16`](/es/reference/data-types/float) o [`Decimal`](/es/reference/data-types/decimal)
+* `y` — Segundo valor [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`BFloat16`](/es/reference/data-types/float) o [`Decimal`](/es/reference/data-types/decimal)
 
 **Valor devuelto**
 
@@ -1050,8 +1050,9 @@ SELECT moduloLegacy(10, 3)
 
 Introducido en: v25.5.0
 
-Calcula el resto de dividir `a` entre `b`. Es similar a la función `modulo`, excepto que `moduloOrNull` devuelve NULL
-si el argumento de la derecha es 0.
+Calcula el resto de dividir `a` entre `b`. Es similar a la función `modulo`, excepto que `moduloOrNull` devuelve `NULL`
+cuando, de otro modo, la operación produciría una excepción de coma flotante. En el caso de argumentos de coma flotante, esto ocurre solo cuando el
+divisor es `0`; para argumentos enteros, además cubre el caso del valor negativo mínimo módulo `-1` (por ejemplo, `-128 % -1` para `Int8`).
 
 **Sintaxis**
 
@@ -1068,7 +1069,8 @@ moduloOrNull(x, y)
 
 **Valor devuelto**
 
-Devuelve el resto de la división de `x` entre `y`, o `NULL` cuando el divisor es cero.
+Devuelve el resto de la división de `x` entre `y`, o `NULL` cuando la operación produciría una excepción de coma flotante:
+cuando el divisor es cero o, en el caso de argumentos enteros, al calcular el valor negativo mínimo módulo `-1`.
 
 **Ejemplos**
 
@@ -1076,6 +1078,16 @@ Devuelve el resto de la división de `x` entre `y`, o `NULL` cuando el divisor e
 
 ```sql title=Query
 SELECT moduloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**moduloOrNull del entero negativo mínimo con -1**
+
+```sql title=Query
+SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response
@@ -1198,7 +1210,8 @@ SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
 **Diferencia con la multiplicación normal**
 
 ```sql title=Query
-SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
+SELECT multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
+SELECT multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
 ```
 
 ```response title=Response
@@ -1371,8 +1384,9 @@ SELECT positiveModulo(-1, 10)
 
 Introducido en: v25.5.0
 
-Calcula el resto de dividir `a` entre `b`. Es similar a la función `positiveModulo`, salvo que `positiveModuloOrNull` devuelve NULL
-si el argumento de la derecha es 0.
+Calcula el resto de dividir `a` entre `b`. Es similar a la función `positiveModulo`, salvo que `positiveModuloOrNull` devuelve `NULL`
+cuando la operación provocaría de otro modo una excepción de coma flotante. En el caso de argumentos de coma flotante, esto solo ocurre cuando el
+divisor es `0`; para argumentos enteros, además cubre el valor negativo mínimo módulo `-1` (por ejemplo, `-128 % -1` para `Int8`).
 
 **Sintaxis**
 
@@ -1389,11 +1403,12 @@ positiveModuloOrNull(x, y)
 **Valor devuelto**
 
 Devuelve la diferencia entre `x` y el entero más cercano, no mayor que
-`x`, divisible por `y`; `null` cuando el divisor es cero.
+`x`, divisible por `y`, o `NULL` cuando la operación produciría una excepción de coma flotante: cuando el divisor es cero o,
+para argumentos enteros, al calcular el valor negativo mínimo módulo `-1`.
 
 **Ejemplos**
 
-**positiveModuloOrNull**
+**positiveModuloOrNull con cero**
 
 ```sql title=Query
 SELECT positiveModuloOrNull(5, 0)
@@ -1401,6 +1416,50 @@ SELECT positiveModuloOrNull(5, 0)
 
 ```response title=Response
 \N
+```
+
+**positiveModuloOrNull del entero negativo mínimo dividido entre -1**
+
+```sql title=Query
+SELECT positiveModuloOrNull(toInt8(-128), toInt8(-1))
+```
+
+```response title=Response
+\N
+```
+
+<div id="sqr">
+  ## sqr
+</div>
+
+Introducido en: v26.7.0
+
+Calcula el cuadrado de un valor `x`.
+
+**Sintaxis**
+
+```sql
+sqr(x)
+```
+
+**Argumentos**
+
+* `x` — Valor que se elevará al cuadrado. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal`](/es/reference/data-types/decimal)
+
+**Valor devuelto**
+
+Devuelve el producto de `x` por sí mismo.
+
+**Ejemplos**
+
+**Elevar al cuadrado un número**
+
+```sql title=Query
+SELECT sqr(5)
+```
+
+```response title=Response
+25
 ```
 
 {/*AUTOGENERATED_END*/}

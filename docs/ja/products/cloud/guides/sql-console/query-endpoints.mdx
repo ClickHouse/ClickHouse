@@ -29,13 +29,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Info>
 
 <Steps>
-  <Step>
-    ### 保存クエリを作成する
-
+  <Step title="保存クエリを作成する" id="creating-a-saved-query">
     すでに保存クエリがある場合は、この手順はスキップできます。
 
     新しいクエリタブを開きます。デモ用として、約 45 億件のレコードを含む [youtube dataset](/ja/get-started/sample-datasets/youtube-dislikes) を使用します。
-    Cloud サービス上にテーブルを作成してデータを挿入するには、[&quot;Create table&quot;](/ja/get-started/sample-datasets/youtube-dislikes#create-the-table) セクションの手順に従ってください。
+    [&quot;Create table&quot;](/ja/get-started/sample-datasets/youtube-dislikes#create-the-table) セクションの手順に従って、Cloud サービス上にテーブルを作成し、データを挿入します。
 
     <Tip>
       **`LIMIT` で行数を制限する**
@@ -64,11 +62,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
       LIMIT 10
     ```
 
-    このクエリには、上のスニペットで強調表示されているパラメータ (`year`) が含まれています。
+    このクエリには、上のスニペットで強調表示されているパラメータ (`year`) が含まれている点に注意してください。
     クエリパラメータは、パラメータの型とともに `{ }` を使って指定できます。
     SQL Console のクエリエディタは ClickHouse のクエリパラメータ式を自動的に検出し、各パラメータ用の入力欄を表示します。
 
-    このクエリが正しく動作することを確認するため、SQL エディタ右側のクエリ変数入力ボックスで `2010` を指定して、手早く実行してみましょう。
+    正しく動作することを確認するために、SQL エディタ右側のクエリ変数入力ボックスで年 `2010` を指定して、このクエリをすばやく実行してみましょう。
 
     <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="サンプルクエリをテストする" />
 
@@ -79,46 +77,40 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     保存クエリの詳細については、[&quot;Saving a query&quot;](/ja/products/cloud/features/sql-console-features/sql-console#saving-a-query) セクションを参照してください。
   </Step>
 
-  <Step>
-    ### クエリ API エンドポイントを設定する
-
+  <Step title="クエリ API エンドポイントを設定する" id="configuring-the-query-api-endpoint">
     クエリ API エンドポイントは、クエリビューで **Share** ボタンをクリックし、`API Endpoint` を選択することで直接設定できます。
-    すると、どの API キー にエンドポイントへのアクセスを許可するかを指定するよう求められます。
+    どの API キーにエンドポイントへのアクセスを許可するかを指定するよう求められます。
 
-    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="クエリ API エンドポイントを設定する" />
+    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="クエリエンドポイントを設定する" />
 
-    API キー を選択すると、次の設定を求められます。
+    API キーを選択すると、次の項目を求められます。
 
     * クエリの実行に使用するデータベースロールを選択する (`Full access`、`Read only`、または `Create a custom role`)
-    * クロスオリジンリソース共有 (CORS) で許可するドメインを指定する
+    * クロスオリジン リソース共有 (CORS) で許可するドメインを指定する
 
-    これらのオプションを選択すると、クエリ API エンドポイントが自動的にプロビジョニングされます。
+    これらのオプションを選択すると、クエリ API エンドポイントは自動的にプロビジョニングされます。
 
-    テストリクエストを送信できるように、`curl` コマンドの例が表示されます。
+    テスト用のリクエストを送信できるよう、`curl` コマンドの例が表示されます。
 
     <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="エンドポイントの curl コマンド" />
 
-    インターフェイスに表示される curl コマンドを、便宜上以下にも示します。
+    インターフェイスに表示される curl コマンドを、便宜上以下に示します。
 
     ```bash
     curl -H "Content-Type: application/json" -s --user '<key_id>:<key_secret>' '<API-endpoint>?format=JSONEachRow&param_year=<value>'
     ```
   </Step>
 
-  <Step>
-    ### クエリ API パラメータ
-
-    クエリ内のクエリパラメータは、`{parameter_name: type}` という構文で指定できます。これらのパラメータは自動的に検出され、リクエスト payload の例には、それらのパラメータを渡すための `queryVariables` オブジェクトが含まれます。
+  <Step title="クエリ API パラメータ" id="query-api-parameters">
+    クエリ内のクエリパラメータは、`{parameter_name: type}` 構文で指定できます。これらのパラメータは自動的に検出され、リクエストペイロードの例には `queryVariables` オブジェクトが含まれるため、それを通じてこれらのパラメータを渡せます。
   </Step>
 
-  <Step>
-    ### テストと監視
-
-    クエリ API エンドポイントを作成したら、`curl` やその他の HTTP クライアントを使って動作をテストできます。
+  <Step title="テストと監視" id="testing-and-monitoring">
+    クエリ API エンドポイントが作成されたら、`curl` または他の HTTP クライアントを使って動作をテストできます。
 
     <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="エンドポイントの curl テスト" />
 
-    最初のリクエストを送信すると、**Share** ボタンのすぐ右側に新しいボタンが表示されます。これをクリックすると、クエリに関する監視データを含む flyout が開きます。
+    最初のリクエストを送信すると、**Share** ボタンのすぐ右側に新しいボタンが表示されるはずです。これをクリックすると、クエリに関する監視データを含むフライアウトが開きます。
 
     <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="エンドポイントの監視" />
   </Step>

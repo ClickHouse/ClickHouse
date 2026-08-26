@@ -245,15 +245,6 @@ export const AskAILink = ({ children }) => {
     );
 };
 
-export const mcpJsonConfig = `{
-  "mcpServers": {
-    "clickhouse-docs": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://private-7c7dfe99.mintlify.app/mcp"]
-    }
-  }
-}`;
-
 export const PageWrapper = ({ children }) => {
     const [visible, setVisible] = useState(false);
     useEffect(() => {
@@ -360,7 +351,7 @@ export const PageWrapper = ({ children }) => {
                 links={[
                     { label: "Modelling data", href: "/guides/clickhouse/data-modelling/schema-design" },
                     { label: "Optimizing performance", href: "/guides/clickhouse/performance-and-monitoring/query-optimization" },
-                    { label: "ClickHouse Cloud", href: "/products/cloud/guides" },
+                    { label: "ClickHouse Cloud", href: "/products/cloud/getting-started/cloud-get-started" },
                     { label: "Use-cases", href: "/guides/use-cases" }
                 ]}
             />
@@ -379,7 +370,7 @@ export const PageWrapper = ({ children }) => {
                     { label: "Settings", href: "/reference/settings/index" },
                     { label: "Functions", href: "/reference/functions/regular-functions/overview" },
                     { label: "Engines", href: "/reference/engines/engines" },
-                    { label: "System tables", href: "/reference/system-tables" },
+                    { label: "System tables", href: "/reference/system-tables/overview" },
                     { label: "Formats", href: "/reference/formats/index" },
                     { label: "Data types", href: "/reference/data-types/index" }
                 ]}
@@ -397,7 +388,7 @@ export const PageWrapper = ({ children }) => {
                 links={[
                     { label: "ClickHouse Cloud", href: "/products/cloud/getting-started/cloud-get-started" },
                     { label: "ClickStack", href: "/clickstack" },
-                    { label: "Managed Postgres", href: "/products/managed-postgres/overview" },
+                    { label: "ClickHouse Managed Postgres", href: "/products/managed-postgres/overview" },
                     { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
                     { label: "chDB", href: "/chdb" },
                     { label: "Kubernetes operator", href: "/products/kubernetes-operator/overview" },
@@ -462,7 +453,7 @@ export const PageWrapper = ({ children }) => {
                             <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">What you&rsquo;ll learn:</p>
                         </>}
                         links={[
-                            { label: "1. How to ingest data from common sources with minimal work", href: "/integrations" },
+                            { label: "1. How to ingest data from common sources with minimal work", href: "/integrations/home" },
                             { label: "2. Best practices for organizing data for analytics and growth", href: "/guides/clickhouse/data-modelling/schema-design" },
                             { label: "3. Ways to query large datasets in real time", href: "/get-started/use-cases/real-time-analytics" },
                             { label: "4. How to build dashboards, alerts, and event-driven features on top", href: "/get-started/use-cases/data-warehousing" },
@@ -483,7 +474,7 @@ export const PageWrapper = ({ children }) => {
                     />
                     <HeroCard
                         filename="thumbnail-postgres-light.webp"
-                        title="Managed Postgres"
+                        title="ClickHouse Managed Postgres"
                         galaxyEvent="docs.home.managed-postgres"
                         description="Fast, scalable, enterprise-grade Postgres service, natively integrated with ClickHouse. Easily combine Postgres for transactions and ClickHouse for analytics."
                         href="/products/managed-postgres/overview"
@@ -533,19 +524,23 @@ export const PageWrapper = ({ children }) => {
                 <Tabs>
                     <Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
                         <p className="mb-2 text-[#9ca3af] text-[13px]">Run in your terminal:</p>
-                        <CodeBlock language="bash">{`claude mcp add --transport http clickhouse-docs https://private-7c7dfe99.mintlify.app/mcp --scope user`}</CodeBlock>
+                        <CodeBlock language="bash">{`claude mcp add --transport http clickhouse-docs https://clickhouse.com/docs/mcp --scope user`}</CodeBlock>
                     </Tab>
                     <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
                         <p className="mb-2 text-[#9ca3af] text-[13px]">Add to <code>claude_desktop_config.json</code>:</p>
-                        <CodeBlock language="json">{mcpJsonConfig}</CodeBlock>
+                        <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
+                    </Tab>
+                    <Tab title="Codex" icon="/images/logo-codex.svg">
+                        <p className="mb-2 text-[#9ca3af] text-[13px]">Run in your terminal:</p>
+                        <CodeBlock language="bash">{`codex mcp add clickhouse-docs --url https://clickhouse.com/docs/mcp`}</CodeBlock>
                     </Tab>
                     <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
                         <p className="mb-2 text-[#9ca3af] text-[13px]">Add to <code>.cursor/mcp.json</code>:</p>
-                        <CodeBlock language="json">{mcpJsonConfig}</CodeBlock>
+                        <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
                     </Tab>
                     <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
                         <p className="mb-2 text-[#9ca3af] text-[13px]">Add to <code>~/.codeium/windsurf/mcp_config.json</code>:</p>
-                        <CodeBlock language="json">{mcpJsonConfig}</CodeBlock>
+                        <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
                     </Tab>
                 </Tabs>
             </div>

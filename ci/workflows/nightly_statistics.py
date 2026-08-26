@@ -13,17 +13,21 @@ workflow = Workflow.Config(
     engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         Job.Config(
-            name="Collect Statistics",
-            command="python3 ./ci/jobs/collect_statistics.py",
+            name="Collect Job Duration Statistics",
+            command="python3 ./ci/jobs/collect_job_duration_statistics.py",
             runs_on=RunnerLabels.ARM_TINY,
-        )
+        ),
+        Job.Config(
+            name="Collect Test Duration Statistics",
+            command="python3 ./ci/jobs/collect_test_duration_statistics.py",
+            runs_on=RunnerLabels.ARM_TINY,
+        ),
     ],
     secrets=SECRETS,
     enable_report=True,
     enable_cidb=False,
     cron_schedules=["13 5 * * *"],
 )
-
 WORKFLOWS = [
     workflow,
 ]

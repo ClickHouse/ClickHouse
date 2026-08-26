@@ -5,11 +5,9 @@ from praktika.infrastructure.ec2_instance import EC2Instance
 from ci.defs.defs import RunnerLabels
 
 MAC_OS_TAHOE_IMAGE_AMI = "ami-0f8ce53a93ab42329"
-MAC_OS_SEQUOIA_AMD_IMAGE_AMI = "ami-0d66088cfc49c54b0"
 MAC_OS_TAHOE_ARM_IMAGE_AMI = "ami-0cbd6d494543c15b3"
 
 MAC_VPC_NAME = "ci-cd"
-MAC_SECURITY_GROUP_IDS = ["sg-061fd9184274476c0"]
 
 EC2_INSTANCE_PROFILE_NAME = "untrusted_runner"
 
@@ -30,7 +28,9 @@ CLOUD = CloudInfrastructure.Config(
             ],
             instance_type="mac2-m2pro.metal",
             auto_placement="on",
-            quantity_per_az=6,
+            # 10 of the 16 hosts allowed by quota `L-14F120D1`, all managed by
+            # praktika.
+            quantity_per_az=10,
             praktika_resource_tag="mac_m2_pro",
         ),
     ],
@@ -51,7 +51,11 @@ CLOUD = CloudInfrastructure.Config(
             tenancy="host",
             praktika_resource_tag="mac_m2_pro",
             runner_labels=MACOS_ARM_SMALL_RUNNER_LABELS,
-            quantity=6,
+            # One instance per host across all 10 managed hosts. A single
+            # instance completes about three fast test runs per hour, so 10 of
+            # them absorb the ~18 runs per hour that were queueing up behind 6
+            # instances.
+            quantity=10,
         ),
     ]
 )
