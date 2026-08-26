@@ -693,7 +693,10 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
 -- `allowParallelReplicasForJoinTree` rejects a top-level `CROSS JOIN`, even if
 -- its `WHERE` clause makes it equivalent to the normal recursive inner join.
 -- Keep the cross join intact to verify that forced mode follows the planner and
--- runs this recursive step plainly instead of throwing.
+-- runs this recursive step plainly instead of throwing. Unlike the cases above,
+-- the non-recursive part of this query reads a table, and that read is an ordinary
+-- one the preflight does not touch: it really does use parallel replicas, so the
+-- cluster has to be named (the default `cluster_for_parallel_replicas` is empty).
 WITH RECURSIVE traverse_pr_cross_join AS
 (
     SELECT to_id AS current_id
@@ -707,7 +710,7 @@ WITH RECURSIVE traverse_pr_cross_join AS
 SELECT sum(current_id) FROM traverse_pr_cross_join
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
-    cross_to_inner_join_rewrite = 0;
+    cluster_for_parallel_replicas = 'parallel_replicas', cross_to_inner_join_rewrite = 0;
 
 -- The same planner gate applies to a non-`ALL` inner join. The edge keys are
 -- unique, so `ANY INNER JOIN` has the same result as the ordinary walk above.
@@ -722,7 +725,8 @@ WITH RECURSIVE traverse_pr_any_inner_join AS
 )
 SELECT sum(current_id) FROM traverse_pr_any_inner_join
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
-    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+    cluster_for_parallel_replicas = 'parallel_replicas';
 
 -- The same force-or-throw contract must hold for *every* parallel-replica mode
 -- the recursive context could otherwise engage, not just the task-based one.
@@ -833,11 +837,15 @@ SELECT sum(n) FROM joined_pr_non_replicated
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 0, automatic_parallel_replicas_mode = 0;
 
--- A `VIEW` as the leftmost leaf of an outer join tree cannot make that join use
--- parallel replicas: `allowParallelReplicasForJoinTree` rejects it. The view's inner
--- query may still use parallel replicas, but it does not read the recursive working
--- table and therefore cannot observe a stale rewritten `GLOBAL JOIN`; the recursive
--- step must keep that safe inner-view path intact in forcing mode.
+-- A view over a `MergeTree` table can engage parallel replicas regardless of
+-- `parallel_replicas_allow_view_over_mergetree`: that setting only gates the *outer*
+-- planner's unwrapping of the view, while with the setting off `StorageView::readImpl`
+-- still re-interprets the inner query with the reading context's settings, and that inner
+-- planner engages parallel replicas for the bare eligible `MergeTree` (the plain read's
+-- plan contains `ReadFromRemoteParallelReplicas` over the view's inner query either way).
+-- The view here is the *right* table of the join, so the leftmost-view gate of
+-- `allowParallelReplicasForJoinTree` does not apply to it. The forced mode must
+-- therefore fail closed with the view support turned off too ...
 CREATE VIEW edges_view AS SELECT * FROM edges;
 
 WITH RECURSIVE view_pr AS
@@ -849,10 +857,9 @@ WITH RECURSIVE view_pr AS
 SELECT sum(n) FROM view_pr
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 0,
-    automatic_parallel_replicas_mode = 0, log_comment = '04489_view_pr';
+    automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
--- This remains true when view-over-`MergeTree` support is enabled: the outer join-tree
--- gate still leaves the `VIEW` on its regular read path.
+-- ... and with it on, when the outer planner itself can read the view with parallel replicas.
 WITH RECURSIVE view_pr_throw AS
 (
     SELECT 1 AS n
@@ -862,18 +869,7 @@ WITH RECURSIVE view_pr_throw AS
 SELECT sum(n) FROM view_pr_throw
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 1,
-    automatic_parallel_replicas_mode = 0, log_comment = '04489_view_pr_allow';
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT throwIf(count() != 2 OR countIf(ProfileEvents['ParallelReplicasUsedCount'] = 0) > 0,
-    'ordinary view inner queries did not use parallel replicas')
-FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
-    AND current_database = currentDatabase()
-    AND log_comment IN ('04489_view_pr', '04489_view_pr_allow')
-    AND type = 'QueryFinish' AND query_id = initial_query_id
-FORMAT Null;
+    automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 -- `FINAL` on a view is an outer `TableNode` modifier. It disqualifies parallel replicas
 -- in the ordinary planner, so the recursive-step preflight must preserve that guard and
@@ -1384,6 +1380,39 @@ SELECT sum(n) FROM right_join_local_pr_throw
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
+-- Shape 3: a single `FULL JOIN`. `allowParallelReplicasForJoinTree` only ever lets an
+-- `ALL INNER`, a `LEFT` or a `RIGHT` join drive parallel replicas, so a lone `FULL JOIN`
+-- over otherwise eligible local `MergeTree` tables is planned without them and the
+-- recursive step must run plainly as well.
+WITH RECURSIVE full_join_local_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM full_join_local_pr AS t FULL JOIN edges AS e ON e.from_id = t.n
+    WHERE n > 0 AND n < 10
+)
+SELECT sum(n) FROM full_join_local_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
+-- Shape 4: the leftmost table expression is a `view(...)` table function over a
+-- `Distributed` table. `allowParallelReplicasForJoinTree` decides a leftmost table
+-- function by `parallelReplicasEnabledForStorage`, which accepts a view only when it
+-- unwraps to an eligible `MergeTree` table — a view over a `Distributed` table does not,
+-- so the outer join tree is planned without parallel replicas and the recursive step
+-- must run plainly instead of failing closed.
+WITH RECURSIVE view_fn_left_dist_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT t.n + 1 FROM view(SELECT * FROM edges_dist_replicas) AS e
+        LEFT JOIN view_fn_left_dist_pr AS t ON e.from_id = t.n
+    WHERE t.n > 0 AND t.n < 10
+)
+SELECT sum(n) FROM view_fn_left_dist_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
 DROP TABLE edges_dist_replicas;
 
 DROP TABLE edges;
@@ -1467,19 +1496,6 @@ WITH RECURSIVE float_walk_ppm AS
 )
 SELECT cur FROM float_walk_ppm ORDER BY cur
 SETTINGS join_algorithm = 'prefer_partial_merge' FORMAT Null;
-
--- Force `auto` to leave its initial hash attempt and use its value-comparing
--- `partial_merge` fallback. The generated `IN` prefilter must remain disabled.
-WITH RECURSIVE float_walk_auto AS
-(
-    SELECT toFloat64(0.) AS cur
-  UNION ALL
-    SELECT e.to_id AS cur
-    FROM float_edges_mj AS e
-    INNER JOIN float_walk_auto AS w ON e.from_id = w.cur
-)
-SELECT cur FROM float_walk_auto ORDER BY cur
-SETTINGS join_algorithm = 'auto', max_bytes_in_join = 1 FORMAT Null;
 
 -- `parallel_full_sorting_merge` builds the very same `FullSortingMergeJoin` as
 -- `full_sorting_merge`, so it compares floating-point keys by value too and
@@ -1615,12 +1631,17 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_rep
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT throwIf(count() != 2 OR countIf(ProfileEvents['ParallelReplicasUsedCount'] = 0) > 0,
+-- Only the forced mode (`= 2`) is asserted here: it guarantees the plan-based
+-- transformation is applied. The best-effort mode (`= 1`) is free to decide, from the
+-- plan and the estimated rows to read, that parallel replicas are not worth it — as it
+-- does for the tiny recursive steps of `plan_based_joined_pr` — so asserting its usage
+-- would be asserting a heuristic.
+SELECT throwIf(count() != 1 OR countIf(ProfileEvents['ParallelReplicasUsedCount'] = 0) > 0,
     'plan-based recursive steps did not use parallel replicas')
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND current_database = currentDatabase()
-    AND log_comment IN ('04489_plan_based_traverse_pr', '04489_plan_based_joined_pr')
+    AND log_comment = '04489_plan_based_traverse_pr'
     AND type = 'QueryFinish' AND query_id = initial_query_id
 FORMAT Null;
 

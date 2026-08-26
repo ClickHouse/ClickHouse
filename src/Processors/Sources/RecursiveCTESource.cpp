@@ -72,6 +72,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsBool allow_nondeterministic_optimize_skip_unused_shards;
 }
@@ -481,13 +482,39 @@ ParallelReplicasEngagement mayEngageParallelReplicasForWrappedStorage(const Stor
 /// self-referential branch would be rejected because of a sibling branch that reads a
 /// `MergeTree` table. Nodes that share `scope_context` are the ones whose settings
 /// really are the ones being examined, so only those are walked.
+
+/// Mirror of `parallelReplicasEnabledForStorage` (`PlannerJoinTree.cpp`) for a `StorageView`:
+/// the planner accepts a view as a parallel-replica read only when
+/// `parallel_replicas_allow_view_over_mergetree` lets it unwrap the view to a `MergeTree`
+/// table that is itself eligible (replicated, or non-replicated with
+/// `parallel_replicas_for_non_replicated_merge_tree`).
+bool parallelReplicasEnabledForViewStorage(const StorageView & view, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::parallel_replicas_allow_view_over_mergetree])
+        return false;
+
+    auto underlying_storage = view.getUnderlyingMergeTreeStorageForParallelReplicas(context);
+    if (!underlying_storage)
+        return false;
+
+    if (!underlying_storage->isMergeTree())
+        return false;
+
+    return underlying_storage->supportsReplication() || settings[Setting::parallel_replicas_for_non_replicated_merge_tree];
+}
+
 /// Mirror the join-tree gates in `buildJoinTreeQueryPlan`
 /// (`PlannerJoinTree.cpp`): `allowParallelReplicasForJoinTree` rejects a top-level
 /// `CROSS JOIN` and a non-`ALL` `INNER JOIN`, while `should_disable_parallel_replicas`
 /// silently sets
 /// `enable_parallel_replicas = 0` before planning the reads — even under the forcing
 /// mode — instead of throwing:
-///   - a top-level `CROSS JOIN` or non-`ALL` `INNER JOIN`,
+///   - a top-level `CROSS JOIN`, `FULL JOIN` or non-`ALL` `INNER JOIN` (only an
+///     `ALL INNER`, `LEFT` or `RIGHT` join can drive parallel replicas at all),
+///   - a top-level join whose leftmost table expression is a `VIEW` — either a plain
+///     view table, or a `view(...)` table function that does not unwrap to an eligible
+///     `MergeTree` table,
 ///   - an n-way join where a `LEFT`/`INNER`/`RIGHT` join precedes the last `RIGHT`
 ///     join (the left side of that `RIGHT` join cannot be parallelized),
 ///   - an n-way join involving a `FULL`, `GLOBAL` or `CROSS` join,
@@ -501,7 +528,7 @@ ParallelReplicasEngagement mayEngageParallelReplicasForWrappedStorage(const Stor
 /// planner's, which reads `TableExpressionData::isRemote` — set from
 /// `IStorage::isRemote` for table and table-function expressions and left `false`
 /// for any other right side (e.g. a subquery).
-bool plannerDisablesParallelReplicasForJoinTreeShape(const QueryTreeNodePtr & join_tree_node)
+bool plannerDisablesParallelReplicasForJoinTreeShape(const QueryTreeNodePtr & join_tree_node, const ContextPtr & context)
 {
     /// `allowParallelReplicasForJoinTree` only permits a top-level `INNER JOIN`
     /// with `ALL` strictness and rejects a top-level `CROSS JOIN`. The engagement
@@ -517,14 +544,38 @@ bool plannerDisablesParallelReplicasForJoinTreeShape(const QueryTreeNodePtr & jo
         /// parallel replicas for the view's inner query, but that query does not
         /// reference the recursive working table, so it cannot use the stale
         /// `GLOBAL JOIN` table that this guard prevents.
-        if (const auto * left_table = join_node->getLeftTableExpressionNode()->as<TableNode>();
+        const auto & left_table_expression = join_node->getLeftTableExpressionNode();
+        if (const auto * left_table = left_table_expression->as<TableNode>();
             left_table && left_table->getStorage()->isView())
             return true;
-    }
 
-    if (const auto * join_node = join_tree_node->as<JoinNode>();
-        join_node && join_node->getKind() == JoinKind::Inner && join_node->getStrictness() != JoinStrictness::All)
-        return true;
+        /// The same escape for a `StorageView` reached through a table function
+        /// (`view(...)`, `viewIfPermitted(...)`): `allowParallelReplicasForJoinTree`
+        /// does not apply its unconditional `TableNode` view rejection to it, but
+        /// falls back to the storage-level rule for the leftmost table expression,
+        /// which is `parallelReplicasEnabledForStorage`. That rule accepts a view
+        /// only when it unwraps to an eligible `MergeTree` table, so a `view(...)`
+        /// over a `Distributed` table (or over a `MergeTree` table the settings do
+        /// not allow) leaves the outer join tree ineligible, exactly like a plain
+        /// view table. A view that does unwrap to an eligible `MergeTree` table
+        /// stays eligible here, so a genuine engagement is still reported.
+        if (const auto * left_table_function = left_table_expression->as<TableFunctionNode>())
+        {
+            if (const auto * view = typeid_cast<const StorageView *>(left_table_function->getStorage().get());
+                view && !parallelReplicasEnabledForViewStorage(*view, context))
+                return true;
+        }
+
+        /// `allowParallelReplicasForJoinTree` only ever allows an `ALL INNER`, a
+        /// `LEFT` or a `RIGHT` join to drive parallel replicas; every other join
+        /// kind — in particular a single `FULL JOIN`, which the n-way rules below
+        /// do not cover — falls through to its final `return false`.
+        const auto join_kind = join_node->getKind();
+        if (!(join_kind == JoinKind::Inner && join_node->getStrictness() == JoinStrictness::All)
+            && join_kind != JoinKind::Left
+            && join_kind != JoinKind::Right)
+            return true;
+    }
 
     /// Post-order like `buildTableExpressionsStack`, but tolerant of unresolved
     /// trees: the engagement walk also inspects view inner queries built by
@@ -653,7 +704,7 @@ ParallelReplicasEngagement mayEngageParallelReplicas(IQueryTreeNode * root, cons
         if (const auto * query_node = subtree_node->as<QueryNode>())
         {
             const auto & join_tree = query_node->getJoinTreeNode();
-            if (join_tree && plannerDisablesParallelReplicasForJoinTreeShape(join_tree))
+            if (join_tree && plannerDisablesParallelReplicasForJoinTreeShape(join_tree, scope_context))
             {
                 for (auto & child : subtree_node->getChildren())
                     if (child && child != join_tree)
@@ -1377,16 +1428,6 @@ public:
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "Parallel replicas (allow_experimental_parallel_reading_from_replicas = 2) are not supported for the "
                     "recursive part of a recursive CTE. Set it to 0 or 1 to run the query.");
-
-            /// Nothing in this context can engage parallel replicas for the recursive
-            /// step. Leave it intact instead of disabling the setting unconditionally:
-            /// in particular, an ordinary `VIEW` in the leftmost position of the outer
-            /// join tree makes that tree ineligible, while `StorageView::readImpl` can
-            /// still use parallel replicas for the view's independent inner query. That
-            /// inner query cannot observe the recursive working table or the legacy
-            /// `GLOBAL JOIN` cache this rewrite protects.
-            if (!engagement.any())
-                return;
 
             auto new_ctx = Context::createCopy(ctx);
             new_ctx->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
