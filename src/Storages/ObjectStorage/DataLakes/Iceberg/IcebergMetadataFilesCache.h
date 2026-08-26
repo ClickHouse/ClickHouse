@@ -11,6 +11,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
@@ -39,6 +40,10 @@ struct MetadataFileWithInfo
     String path;
     CompressionMethod compression_method{};
 };
+
+/// Defined in Snapshot.h (which includes this header); a shared_ptr to an
+/// incomplete type is enough here.
+struct IcebergDataSnapshot;
 }
 
 struct LatestMetadataVersion
@@ -49,6 +54,17 @@ struct LatestMetadataVersion
     Iceberg::MetadataFileWithInfo latest_metadata;
 };
 using LatestMetadataVersionPtr = std::shared_ptr<LatestMetadataVersion>;
+
+/// Parsed table state cached alongside the metadata JSON so that its
+/// lifecycle (eviction, SYSTEM CLEAR ICEBERG METADATA CACHE) matches the
+/// files cache. Parsing is done lazily by the caller on a miss; the
+/// snapshot is forward-declared because Snapshot.h includes this header.
+struct ParsedTableMetadata
+{
+    std::shared_ptr<const Iceberg::IcebergDataSnapshot> data_snapshot;
+    Iceberg::TableStateSnapshot table_state;
+};
+using ParsedTableMetadataPtr = std::shared_ptr<const ParsedTableMetadata>;
 
 /// The structure that can identify a manifest file. We store it in cache.
 /// And we can get `ManifestFileContent` from cache by ManifestFileEntry.
@@ -74,8 +90,17 @@ struct IcebergMetadataFilesCacheCell : private boost::noncopyable
     /// - metadata.json content [file_path --> String]
     /// - manifest list consists of cache keys which will retrieve the manifest file from cache [file_path --> ManifestFileCacheKeys]
     /// - manifest file [file_path --> Iceberg::ManifestFileCacheableInfo]
-    std::variant<String, LatestMetadataVersionPtr, ManifestFileCacheKeys, Iceberg::ManifestFileCacheableInfo> cached_element;
+    /// - parsed table state [file_path#version#snapshot_selector --> ParsedTableMetadataPtr]
+    std::variant<String, LatestMetadataVersionPtr, ManifestFileCacheKeys, Iceberg::ManifestFileCacheableInfo, ParsedTableMetadataPtr> cached_element;
     Int64 memory_bytes;
+
+    explicit IcebergMetadataFilesCacheCell(ParsedTableMetadataPtr parsed_table_metadata)
+        : cached_element(std::move(parsed_table_metadata))
+        /// Rough estimate: the snapshot dominates (manifest list + file
+        /// entries), the metadata JSON itself is accounted separately.
+        , memory_bytes(sizeof(ParsedTableMetadata) + 8192)
+    {
+    }
 
     explicit IcebergMetadataFilesCacheCell(String && metadata_json_str)
         : cached_element(std::move(metadata_json_str))
@@ -151,6 +176,21 @@ public:
         else
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
         return std::get<String>(result.first->cached_element);
+    }
+
+    template <typename LoadFunc>
+    ParsedTableMetadataPtr getOrSetParsedTableMetadata(const String & key, LoadFunc && load_fn)
+    {
+        auto load_fn_wrapper = [&]()
+        {
+            return std::make_shared<IcebergMetadataFilesCacheCell>(load_fn());
+        };
+        auto result = Base::getOrSet(key, load_fn_wrapper);
+        if (result.second)
+            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
+        else
+            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
+        return std::get<ParsedTableMetadataPtr>(result.first->cached_element);
     }
 
     template <typename LoadFunc>
