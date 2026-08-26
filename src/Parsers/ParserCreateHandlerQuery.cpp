@@ -193,7 +193,7 @@ Creates a custom HTTP handler defined from SQL, without editing the server confi
 ## Syntax {#syntax}
 
 ```sql
-CREATE HANDLER [IF NOT EXISTS] name
+CREATE HANDLER [IF NOT EXISTS] name [ON CLUSTER cluster]
 [PROTOCOL protocol_name|ANY]
 URL [PREFIX|REGEXP] '/path'
 [METHODS (GET, POST)]
@@ -292,6 +292,10 @@ CREATE HANDLER get_user URL REGEXP '/users/(?P<id>\d+)' AS SELECT * FROM users W
 ```bash
 $ curl 'http://localhost:8123/users/42'
 ```
+
+**Part of:** `CREATE`
+
+**Related:** `ALTER`, `DROP`
 )DOCS_MD",
         .syntax = R"(
 CREATE HANDLER [IF NOT EXISTS] name [ON CLUSTER cluster]
