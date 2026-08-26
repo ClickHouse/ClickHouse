@@ -97,8 +97,8 @@ static ASTPtr generateOptimizedDateFilterAST(const String & comparator, const Na
     }
 }
 
-/// `tryEvaluateConstantExpression` can still throw when an expression resolves successfully but does
-/// not produce a `ColumnConst`. Check the same foldability properties recursively before calling it.
+/// `tryEvaluateConstantExpression` throws when an expression resolves but yields no `ColumnConst`,
+/// so check the same foldability properties recursively first.
 static bool canEvaluateConstantExpression(const ASTPtr & ast, const ContextPtr & context)
 {
     if (ast->as<ASTLiteral>())
@@ -154,8 +154,8 @@ void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction
     for (size_t func_id = 0; func_id < function.arguments->children.size(); ++func_id)
     {
         const auto * ast_func = function.arguments->children[func_id]->as<ASTFunction>();
-        /// The preimage API does not receive constant function arguments. Explicit-time-zone
-        /// overloads therefore cannot be calculated safely, so optimize only one-argument calls.
+        /// Explicit-time-zone overloads cannot be handled: the preimage API does not receive
+        /// constant function arguments.
         if (!ast_func || !ast_func->arguments || ast_func->arguments->children.size() != 1)
             continue;
 
@@ -187,11 +187,11 @@ void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction
         if (!converter_base || !converter_base->hasInformationAboutPreimage())
             continue;
 
-        /// `TreeOptimizer` invokes this legacy pass before general constant folding. Fold only the
-        /// operand opposite the recognized converter so expressions such as `toDate('2026-03-08')`
-        /// and `today` can participate in the rewrite.
+        /// This legacy pass runs before general constant folding, so fold the operand opposite the
+        /// converter ourselves to let `toDate('2026-03-08')` and `today` take part.
         const size_t constant_id = 1 - func_id;
         Field point;
+        DataTypePtr point_type;
         if (const auto * literal = function.arguments->children[constant_id]->as<ASTLiteral>())
         {
             point = literal->value;
@@ -205,9 +205,13 @@ void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction
             if (!constant)
                 continue;
             point = std::move(constant->first);
+            point_type = std::move(constant->second);
         }
 
         if (point.getType() != Field::Types::UInt64)
+            continue;
+
+        if (point_type && !canCalculatePreimageForConstant(*converter_base->getResultType(), *point_type))
             continue;
 
         auto preimage_range = converter_base->getPreimage(*column_type, point);

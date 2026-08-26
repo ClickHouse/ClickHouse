@@ -4351,9 +4351,8 @@ struct ToDateMonotonicity
 
     static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
     {
-        /// With the default `date_time_overflow_behavior=ignore`, converting `DateTime64` or `Date32`
-        /// to `Date` can wrap and have multiple disjoint preimages. The shared helper only accepts
-        /// `DateTime`, whose `UInt32` domain has a single interval preimage for complete civil days.
+        /// The helper only accepts `DateTime`: with `date_time_overflow_behavior=ignore` a
+        /// `DateTime64` or `Date32` source can wrap and have several disjoint preimages.
         return getPreimageForDateRounding(type, point, DateRoundingInterval::Day);
     }
 

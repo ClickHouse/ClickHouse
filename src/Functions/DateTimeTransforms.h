@@ -155,11 +155,8 @@ enum class DateRoundingInterval : UInt8
 inline FieldIntervalPtr makeDateOrDateTimePreimageForDayRange(
     const IDataType & type, ExtendedDayNum start_day, ExtendedDayNum end_day)
 {
-    /// This optimization is deliberately limited to `Date` and `DateTime`. Extending it to
-    /// `Date32` and `DateTime64` is not just another type branch: date-returning transforms depend
-    /// on `enable_extended_results_for_datetime_functions`, default results can clamp or wrap at
-    /// the type boundaries, and `DateTime64` bounds are scale-dependent. Supporting the complete
-    /// source-type surface requires result-type-aware bounds and, in some cases, multiple intervals.
+    /// Limited to `Date` and `DateTime`: `Date32` and `DateTime64` bounds clamp, wrap or depend on
+    /// the scale, so they need result-type-aware bounds and sometimes several intervals.
     const auto & utc_time_zone = DateLUT::instance("UTC");
     if (isDate(type))
     {
@@ -182,13 +179,9 @@ inline FieldIntervalPtr makeDateOrDateTimePreimageForDayRange(
     if (source_start < 0 || source_end > std::numeric_limits<UInt32>::max())
         return nullptr;
 
-    /// Preimage bounds are rendered as civil date/time strings in UTC by the optimizer and then
-    /// converted to the column type. Preserve the local components of the actual source-time-zone
-    /// boundaries in UTC surrogates. A boundary need not be midnight: for example,
-    /// America/Lima advanced its clock at 1994-01-01 00:00:00, so that civil year starts at 01:00:00.
-    ///
-    /// Parsing an ambiguous local time can also choose a different timestamp. Decline the
-    /// optimization unless both strings round-trip to the exact source boundaries.
+    /// The optimizer renders the bounds as UTC civil strings, so carry the source-time-zone local
+    /// components over. Boundaries need not be midnight (`America/Lima` started 1994 at 01:00:00),
+    /// and ambiguous local times may not round-trip, in which case decline.
     const auto make_utc_civil_time_surrogate =
         [&](DateLUTImpl::Time source_time) -> std::optional<DateLUTImpl::Time>
     {
@@ -323,12 +316,12 @@ inline FieldIntervalPtr getPreimageForStartOfDay(const IDataType & type, const F
     if (point.getType() != Field::Types::UInt64)
         return nullptr;
 
-    /// Keep the source types aligned with `makeDateOrDateTimePreimageForDayRange`; in particular,
-    /// the default `DateTime` result for extended source types can have a non-contiguous preimage.
+    /// The default `DateTime` result for extended source types can have a non-contiguous preimage.
     const DateLUTImpl * source_time_zone = nullptr;
+    const bool source_is_date = isDate(type);
     if (const auto * date_time_type = checkAndGetDataType<DataTypeDateTime>(&type))
         source_time_zone = &date_time_type->getTimeZone();
-    else if (isDate(type))
+    else if (source_is_date)
         source_time_zone = &DateLUT::instance();
     else
         return nullptr;
@@ -338,11 +331,25 @@ inline FieldIntervalPtr getPreimageForStartOfDay(const IDataType & type, const F
         return nullptr;
 
     const auto source_day = source_time_zone->toDayNum(static_cast<UInt32>(timestamp));
-    const ExtendedDayNum start_day(static_cast<Int32>(source_day.toUnderType()));
-    const ExtendedDayNum end_day(start_day.toUnderType() + 1);
+    ExtendedDayNum start_day(static_cast<Int32>(source_day.toUnderType()));
     const auto source_start = source_time_zone->fromDayNum(start_day);
     if (source_start < 0 || static_cast<UInt64>(source_start) != timestamp)
         return nullptr;
+
+    ExtendedDayNum end_day(start_day.toUnderType() + 1);
+
+    /// A civil day skipped by a time-zone shift shares its start with a neighbour, so several
+    /// source dates can round to the same timestamp. `Pacific/Apia` skipped 2011-12-30.
+    if (source_is_date)
+    {
+        const auto starts_at_point = [&](Int32 day)
+        { return day >= 0 && day <= DATE_LUT_MAX_DAY_NUM && source_time_zone->fromDayNum(ExtendedDayNum(day)) == source_start; };
+
+        while (starts_at_point(start_day.toUnderType() - 1))
+            start_day = ExtendedDayNum(start_day.toUnderType() - 1);
+        while (starts_at_point(end_day.toUnderType()))
+            end_day = ExtendedDayNum(end_day.toUnderType() + 1);
+    }
 
     return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day);
 }

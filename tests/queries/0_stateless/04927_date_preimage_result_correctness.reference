@@ -1,0 +1,8 @@
+mixed rhs analyzer off	0
+mixed rhs analyzer on	0
+mixed rhs legacy off	0
+mixed rhs legacy on	0
+skipped day analyzer off	['2011-12-30','2011-12-31']
+skipped day analyzer on	['2011-12-30','2011-12-31']
+skipped day legacy off	['2011-12-30','2011-12-31']
+skipped day legacy on	['2011-12-30','2011-12-31']
