@@ -280,9 +280,11 @@ SELECT count() FROM merge(currentDatabase(), '^t04741_file_(child|sibling)$')
 -- is preserved. Arms F, G and J are the witnesses for the class. A count cannot be used here at all,
 -- because an admitted child's rows are dropped by the per-row filter and the total is unchanged.
 SELECT '-- arm H control: an excluded file-like child stays absent from the plan';
-INSERT INTO TABLE FUNCTION file('04741_present.tsv', TSV, 'x UInt32') SELECT number FROM numbers(19)
-    SETTINGS engine_file_truncate_on_insert = 1;
-CREATE TABLE t04741_file_present (x UInt32) ENGINE = File(TSV, '04741_present.tsv');
+-- The path is left implicit on purpose: a `File` table without a path owns a directory under its own
+-- database, so concurrent runs of this test (the flaky check runs it several times at once) cannot
+-- truncate each other's data the way a shared `user_files` path does.
+CREATE TABLE t04741_file_present (x UInt32) ENGINE = File(TSV);
+INSERT INTO t04741_file_present SELECT number FROM numbers(19);
 SELECT count() FROM (EXPLAIN SELECT count() FROM merge(currentDatabase(), '^t04741_file_(present|sibling)$')
     WHERE _table = 't04741_file_sibling')
     WHERE explain ILIKE '%ReadFromFile%';
