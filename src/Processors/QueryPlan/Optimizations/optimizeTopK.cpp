@@ -120,7 +120,21 @@ static bool readWouldBeInOrderForColumn(
                    {
                        const auto & created = part_with_ranges.data_part->getProjectionParts();
                        auto it = created.find(projection.name);
-                       return it != created.end() && !it->second->is_broken;
+                       if (it == created.end() || it->second->is_broken)
+                           return false;
+
+                       /// A projection part can lack a column the re-derived projection metadata expects;
+                       /// the chooser serves it from the parent part, so the read is not in order. A column
+                       /// missing from both parts was added later and fills the same default on either path.
+                       return std::ranges::all_of(
+                           read_columns,
+                           [&](const String & column)
+                           {
+                               if (it->second->tryGetColumn(column))
+                                   return true;
+                               return !part_with_ranges.data_part->tryGetColumn(column)
+                                   && metadata->getColumns().hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column);
+                           });
                    });
 
         if (projection_serves_every_part)

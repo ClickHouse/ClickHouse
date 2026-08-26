@@ -240,9 +240,39 @@ FROM (
 )
 WHERE explain ILIKE '%InOrder%';
 
+-- A projection part that lacks a column the re-derived projection metadata expects (here after an
+-- ALTER re-points the ALIAS the projection selects) is served from the parent part, so no projection
+-- serves this read (expected 0) and dynamic filtering must stay on (expected 1).
+DROP TABLE IF EXISTS t_topk_drift;
+CREATE TABLE t_topk_drift (id UInt64, score UInt64, b UInt64, d UInt64, c UInt64 ALIAS b + 1,
+    PROJECTION p_score (SELECT id, score, c ORDER BY (score, id)))
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
+INSERT INTO t_topk_drift (id, score, b, d)
+SELECT number, sipHash64(number), number, number + 1000 FROM numbers(32768);
+
+ALTER TABLE t_topk_drift MODIFY COLUMN c UInt64 ALIAS d + 1;
+
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, c FROM t_topk_drift ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 AS drifted_projection_used
+FROM (
+    EXPLAIN projections = 1
+    SELECT id, c FROM t_topk_drift ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%p_score%';
+
 DROP TABLE t_topk_proj_rio;
 DROP TABLE t_topk_noproj;
 DROP TABLE t_topk_unmat;
 DROP TABLE t_topk_mixed;
 DROP TABLE t_topk_sample;
 DROP TABLE t_topk_nulls;
+DROP TABLE t_topk_drift;
