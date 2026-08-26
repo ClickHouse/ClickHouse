@@ -64,18 +64,51 @@ SET param__internal_join_table_stat_hints = '{"t_corr_left": {"cardinality": 100
 
 -- Canaries: prove the stat hints above actually steer the cascades optimizer to the pushed
 -- shapes for this file's tables, not to a classic plan that would make every on/off pair below
--- compare classic-vs-classic while staying green. Shape-insensitive (`countIf` over `EXPLAIN`
--- lines), like 04926's task-budget case, so cosmetic plan-text churn does not break the canary.
+-- compare classic-vs-classic while staying green. Presence of `JoinLogical`/`Aggregating`/
+-- `MergingAggregated` lines is not enough: the classic distributed plan (two-stage split) has all
+-- three too, and classic shuffle aggregation drops `MergingAggregated` without being pushed
+-- either, so `MergingAggregated` presence/absence alone cannot tell pushed from classic. The
+-- robust, churn-insensitive discriminator is line ORDER in the top-down `EXPLAIN` output: in every
+-- pushed shape (A and B) the first `JoinLogical` line is ABOVE the first `Aggregating` line;
+-- classic two-stage AND classic shuffle both place `Aggregating` above the join. `minIf` returns
+-- the default value on no match, so the order check alone would be illegible on an absent node -
+-- hence the explicit presence conjuncts alongside it. `trimLeft(explain) LIKE 'Aggregating%'`
+-- (anchored, like 04926's task-budget case) rather than a bare substring keeps working even if
+-- some step's descriptive text ever contains the word `Aggregating`; `explain_query_plan_default
+-- = 'legacy'` is pinned on the explained query because the anchor relies on plain-text indentation,
+-- not this file's default pretty tree-drawing prefix.
 SELECT '-- canary: variant A (partial pushdown) fires for case 1''s query';
-SELECT countIf(explain LIKE '%JoinLogical%') >= 1, countIf(explain LIKE '%Aggregating%') >= 1, countIf(explain LIKE '%MergingAggregated%') >= 1 FROM (
-  EXPLAIN SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
-  SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1
+SELECT
+    countIf(explain LIKE '%JoinLogical%') > 0 AS has_join,
+    countIf(trimLeft(explain) LIKE 'Aggregating%') > 0 AS has_aggregation,
+    countIf(explain LIKE '%MergingAggregated%') >= 1 AS has_merging_aggregated,
+    minIf(rn, explain LIKE '%JoinLogical%')
+        < minIf(rn, trimLeft(explain) LIKE 'Aggregating%') AS join_above_aggregation
+FROM
+(
+    SELECT explain, rowNumberInAllBlocks() AS rn
+    FROM
+    (
+        EXPLAIN SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
+        SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy'
+    )
 ) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 SELECT '-- canary: variant B (full pushdown) fires for case 13''s query (no MergingAggregated above the join)';
-SELECT countIf(explain LIKE '%JoinLogical%') >= 1, countIf(explain LIKE '%Aggregating%') >= 1, countIf(explain LIKE '%MergingAggregated%') = 0 FROM (
-  EXPLAIN SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT ANY JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
-  SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1
+SELECT
+    countIf(explain LIKE '%JoinLogical%') > 0 AS has_join,
+    countIf(trimLeft(explain) LIKE 'Aggregating%') > 0 AS has_aggregation,
+    countIf(explain LIKE '%MergingAggregated%') = 0 AS no_merging_aggregated,
+    minIf(rn, explain LIKE '%JoinLogical%')
+        < minIf(rn, trimLeft(explain) LIKE 'Aggregating%') AS join_above_aggregation
+FROM
+(
+    SELECT explain, rowNumberInAllBlocks() AS rn
+    FROM
+    (
+        EXPLAIN SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT ANY JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
+        SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy'
+    )
 ) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 SELECT '-- 1. INNER ALL with fan-out (variant A, push-left)';
