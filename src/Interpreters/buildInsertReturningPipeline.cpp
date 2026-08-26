@@ -133,6 +133,18 @@ namespace
             "temporary_files_codec",
             "temporary_files_buffer_size",
             "use_concurrency_control",
+            /// The delayed RETURNING path does not run the top-level query-construction preprocessing from
+            /// `executeQueryImpl` (`applyQueryConstructionSettings`) and does not rebind `currentDatabase`
+            /// from RETURNING-subquery SETTINGS. Until that preprocessing is shared here, fail-close these
+            /// settings instead of accepting and silently ignoring them.
+            "database",
+            "select",
+            "filter",
+            "order",
+            "sort",
+            "limit",
+            "offset",
+            "page",
             "use_query_cache",
             "enable_reads_from_query_cache",
             "enable_writes_to_query_cache",

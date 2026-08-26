@@ -39,6 +39,10 @@ query settings preserved for returning
 10
 source database setting does not leak into returning
 1
+returning construction settings are rejected
+1
+returning database setting is rejected
+1
 source custom setting does not leak into returning
 unset
 1

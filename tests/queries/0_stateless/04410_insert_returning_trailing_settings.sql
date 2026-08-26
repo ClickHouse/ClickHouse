@@ -89,6 +89,22 @@ DROP TABLE t_ret_probe;
 DROP TABLE db_ret_settings_b.t_ret_db;
 DROP DATABASE db_ret_settings_b;
 
+-- RETURNING-subquery construction settings are currently rejected fail-close.
+SELECT 'returning construction settings are rejected';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT 1
+RETURNING (SELECT number FROM numbers(5) SETTINGS limit = 2); -- { serverError NOT_IMPLEMENTED }
+
+SELECT count() FROM t_ret_settings;
+
+-- RETURNING-subquery database setting is currently rejected fail-close.
+SELECT 'returning database setting is rejected';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT 1
+RETURNING (SELECT count() FROM t_ret_settings SETTINGS database = 'default'); -- { serverError NOT_IMPLEMENTED }
+
+SELECT count() FROM t_ret_settings;
+
 -- Source-only custom settings must not leak into RETURNING settings context.
 SELECT 'source custom setting does not leak into returning';
 TRUNCATE TABLE t_ret_settings;
