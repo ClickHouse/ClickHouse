@@ -138,9 +138,16 @@ private:
 
     std::unique_ptr<ThreadPool> pool;
 
-    /// Per-chunk parallel-vs-serial build decision. True when a pool exists and the chunk clears
-    /// the min-rows gate. A seam: can later be driven by online per-block signals.
+    /// Per-chunk parallel-vs-serial build decision. True when a pool exists and the chunk is large
+    /// enough to keep at least two workers busy (see `twoLevelWorkerCount`). A seam: can later be
+    /// driven by online per-block signals.
     bool shouldBuildParallel(size_t num_rows) const;
+
+    /// Number of workers the two-level parallel build would use for `num_rows`, or 0 without a pool.
+    /// Shared by `shouldBuildParallel` (which rejects a single-worker chunk in favor of the cheaper
+    /// serial path) and `buildTwoLevelParallelFilter` (which sizes its scratch to it), so the gate
+    /// and the build never disagree on the worker count.
+    size_t twoLevelWorkerCount(size_t num_rows) const;
 
     /// Total bytes held by the deduplication set. Includes the per-bucket string arenas of the
     /// two-level parallel build, which live outside `SetVariants::string_pool` and so are invisible to

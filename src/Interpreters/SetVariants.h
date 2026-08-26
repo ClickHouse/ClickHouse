@@ -271,6 +271,8 @@ struct NonClearableSet
     std::unique_ptr<SetMethodOneNumber<UInt64, TwoLevelHashSet<UInt64, HashCRC32<UInt64>>>>       key64_two_level;
     std::unique_ptr<SetMethodString<TwoLevelHashSetWithSavedHash<std::string_view>>>              key_string_two_level;
     std::unique_ptr<SetMethodFixedString<TwoLevelHashSetWithSavedHash<std::string_view>>>         key_fixed_string_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelHashSet<UInt32, HashCRC32<UInt32>>>>               keys32_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelHashSet<UInt64, HashCRC32<UInt64>>>>               keys64_two_level;
     std::unique_ptr<SetMethodKeysFixed<TwoLevelHashSet<UInt128, UInt128HashCRC32>>>               keys128_two_level;
     std::unique_ptr<SetMethodKeysFixed<TwoLevelHashSet<UInt256, UInt256HashCRC32>>>               keys256_two_level;
     std::unique_ptr<SetMethodKeysFixed<TwoLevelHashSet<UInt128, UInt128HashCRC32>, true>>         nullable_keys128_two_level;
@@ -306,6 +308,8 @@ struct ClearableSet
     std::unique_ptr<SetMethodOneNumber<UInt64, TwoLevelClearableHashSet<UInt64, HashCRC32<UInt64>>>>       key64_two_level;
     std::unique_ptr<SetMethodString<TwoLevelClearableHashSetWithSavedHash<std::string_view>>>              key_string_two_level;
     std::unique_ptr<SetMethodFixedString<TwoLevelClearableHashSetWithSavedHash<std::string_view>>>         key_fixed_string_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelClearableHashSet<UInt32, HashCRC32<UInt32>>>>               keys32_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelClearableHashSet<UInt64, HashCRC32<UInt64>>>>               keys64_two_level;
     std::unique_ptr<SetMethodKeysFixed<TwoLevelClearableHashSet<UInt128, UInt128HashCRC32>>>               keys128_two_level;
     std::unique_ptr<SetMethodKeysFixed<TwoLevelClearableHashSet<UInt256, UInt256HashCRC32>>>               keys256_two_level;
     std::unique_ptr<SetMethodKeysFixed<TwoLevelClearableHashSet<UInt128, UInt128HashCRC32>, true>>         nullable_keys128_two_level;
@@ -350,6 +354,8 @@ struct CountingSet
     std::unique_ptr<SetMethodOneNumber<UInt64, TwoLevelHashMap<UInt64, Count, HashCRC32<UInt64>>>>        key64_two_level;
     std::unique_ptr<SetMethodString<TwoLevelHashMapWithSavedHash<std::string_view, Count>>>              key_string_two_level;
     std::unique_ptr<SetMethodFixedString<TwoLevelHashMapWithSavedHash<std::string_view, Count>>>         key_fixed_string_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelHashMap<UInt32, Count, HashCRC32<UInt32>>>>               keys32_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelHashMap<UInt64, Count, HashCRC32<UInt64>>>>               keys64_two_level;
     std::unique_ptr<SetMethodKeysFixed<TwoLevelHashMap<UInt128, Count, UInt128HashCRC32>>>               keys128_two_level;
     std::unique_ptr<SetMethodKeysFixed<TwoLevelHashMap<UInt256, Count, UInt256HashCRC32>>>               keys256_two_level;
     std::unique_ptr<SetMethodKeysFixed<TwoLevelHashMap<UInt128, Count, UInt128HashCRC32>, true>>         nullable_keys128_two_level;
@@ -383,6 +389,8 @@ struct SetVariantsTemplate: public Variant
         M(key64_two_level)      \
         M(key_string_two_level) \
         M(key_fixed_string_two_level) \
+        M(keys32_two_level)     \
+        M(keys64_two_level)     \
         M(keys128_two_level)    \
         M(keys256_two_level)    \
         M(nullable_keys128_two_level) \
@@ -392,7 +400,7 @@ struct SetVariantsTemplate: public Variant
     /// per-bucket arenas (see phase B of `DistinctTransform::buildTwoLevelParallelFilter`).
     #define APPLY_FOR_SET_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
         M(key32) M(key64) M(key_string) M(key_fixed_string) \
-        M(keys128) M(keys256) M(nullable_keys128) M(nullable_keys256) M(hashed)
+        M(keys32) M(keys64) M(keys128) M(keys256) M(nullable_keys128) M(nullable_keys256) M(hashed)
 
     #define M(NAME) using Variant::NAME;
         APPLY_FOR_SET_VARIANTS(M)

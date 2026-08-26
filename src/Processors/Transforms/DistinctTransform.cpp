@@ -207,12 +207,26 @@ DistinctTransform::DistinctTransform(
 
 DistinctTransform::~DistinctTransform() = default;
 
+size_t DistinctTransform::twoLevelWorkerCount(size_t num_rows) const
+{
+    if (!pool)
+        return 0;
+
+    /// Each worker should own at least `parallel_build_min_rows` rows (a floor division, so the
+    /// per-worker slice never drops below the grain). `parallel_build_min_rows == 0` disables that
+    /// minimum. Capped by the pool size and the bucket count, matching `buildTwoLevelParallelFilter`.
+    const size_t grain = std::max<size_t>(parallel_build_min_rows, 1);
+    const size_t work_workers = std::max<size_t>(num_rows / grain, 1);
+    return std::min({pool->getMaxThreads(), two_level_num_fine_buckets, work_workers});
+}
+
 bool DistinctTransform::shouldBuildParallel(size_t num_rows) const
 {
-    /// Parallelize only with a pool and a chunk big enough to amortize the scatter.
-    /// `parallel_build_min_rows == 0` disables the minimum. A policy hook: the decision
-    /// can later be driven by online per-block signals instead of this fixed heuristic.
-    return pool != nullptr && num_rows > parallel_build_min_rows;
+    /// Parallelize only when the chunk is large enough to keep at least two workers busy. A chunk
+    /// that would floor to a single worker takes the cheaper serial path instead of paying the
+    /// two-phase scatter (partition + per-bucket emplace) for no parallelism. A policy hook: the
+    /// decision can later be driven by online per-block signals instead of this fixed heuristic.
+    return twoLevelWorkerCount(num_rows) > 1;
 }
 
 size_t DistinctTransform::totalSetByteCount() const
@@ -289,14 +303,12 @@ void DistinctTransform::buildTwoLevelParallelFilter(
 
     using KeyType = typename BucketData::key_type;
 
-    /// Scale worker count to the chunk size so a chunk that barely clears the gate does not fan out to
-    /// the whole pool: each worker should own at least `parallel_build_min_rows` rows. This is a floor
-    /// division (`rows / grain`) so the per-worker slice stays at or above the grain; a chunk just over
-    /// the gate keeps a single worker rather than splitting into sub-grain slices. The pool size is
-    /// already capped at construction (`MAX_TWO_LEVEL_BUILD_THREADS`).
-    const size_t grain = std::max<size_t>(parallel_build_min_rows, 1);
-    const size_t work_workers = std::max<size_t>(rows / grain, 1);
-    const size_t num_workers = std::min({thread_pool.getMaxThreads(), NUM_BUCKETS, work_workers});
+    /// Worker count scales with the chunk size (each worker owns at least `parallel_build_min_rows`
+    /// rows) and is capped by the pool and the bucket count. `shouldBuildParallel` gates the dispatch
+    /// on the same helper returning > 1, so a single-worker chunk never reaches here — it takes the
+    /// cheaper serial path instead. The pool size is already capped at construction
+    /// (`MAX_TWO_LEVEL_BUILD_THREADS`).
+    const size_t num_workers = twoLevelWorkerCount(rows);
     if (num_workers == 0 || rows == 0)
         return;
 
@@ -689,6 +701,8 @@ void DistinctTransform::transform(Chunk & chunk)
         DISPATCH_TWO_LEVEL(hashed_two_level)
         DISPATCH_TWO_LEVEL(key32_two_level)
         DISPATCH_TWO_LEVEL(key64_two_level)
+        DISPATCH_TWO_LEVEL(keys32_two_level)
+        DISPATCH_TWO_LEVEL(keys64_two_level)
         DISPATCH_TWO_LEVEL(keys128_two_level)
         DISPATCH_TWO_LEVEL(keys256_two_level)
         DISPATCH_TWO_LEVEL(nullable_keys128_two_level)
@@ -755,6 +769,8 @@ using NonClearableKey32TwoLevel           = SetMethodOneNumber<UInt32, TwoLevelH
 using NonClearableKey64TwoLevel           = SetMethodOneNumber<UInt64, TwoLevelHashSet<UInt64, HashCRC32<UInt64>>>;
 using NonClearableKeyStringTwoLevel       = SetMethodString<TwoLevelHashSetWithSavedHash<std::string_view>>;
 using NonClearableKeyFixedStringTwoLevel  = SetMethodFixedString<TwoLevelHashSetWithSavedHash<std::string_view>>;
+using NonClearableKeys32TwoLevel          = SetMethodKeysFixed<TwoLevelHashSet<UInt32, HashCRC32<UInt32>>>;
+using NonClearableKeys64TwoLevel          = SetMethodKeysFixed<TwoLevelHashSet<UInt64, HashCRC32<UInt64>>>;
 using NonClearableKeys128TwoLevel         = SetMethodKeysFixed<TwoLevelHashSet<UInt128, UInt128HashCRC32>>;
 using NonClearableKeys256TwoLevel         = SetMethodKeysFixed<TwoLevelHashSet<UInt256, UInt256HashCRC32>>;
 using NonClearableNullableKeys128TwoLevel = SetMethodKeysFixed<TwoLevelHashSet<UInt128, UInt128HashCRC32>, true>;
@@ -765,6 +781,8 @@ INSTANTIATE_TWO_LEVEL_BUILD(NonClearableKey32TwoLevel)
 INSTANTIATE_TWO_LEVEL_BUILD(NonClearableKey64TwoLevel)
 INSTANTIATE_TWO_LEVEL_BUILD(NonClearableKeyStringTwoLevel)
 INSTANTIATE_TWO_LEVEL_BUILD(NonClearableKeyFixedStringTwoLevel)
+INSTANTIATE_TWO_LEVEL_BUILD(NonClearableKeys32TwoLevel)
+INSTANTIATE_TWO_LEVEL_BUILD(NonClearableKeys64TwoLevel)
 INSTANTIATE_TWO_LEVEL_BUILD(NonClearableKeys128TwoLevel)
 INSTANTIATE_TWO_LEVEL_BUILD(NonClearableKeys256TwoLevel)
 INSTANTIATE_TWO_LEVEL_BUILD(NonClearableNullableKeys128TwoLevel)

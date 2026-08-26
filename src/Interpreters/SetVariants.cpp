@@ -196,6 +196,8 @@ bool SetVariantsTemplate<Variant>::isTwoLevel() const
         case Type::key64_two_level:
         case Type::key_string_two_level:
         case Type::key_fixed_string_two_level:
+        case Type::keys32_two_level:
+        case Type::keys64_two_level:
         case Type::keys128_two_level:
         case Type::keys256_two_level:
         case Type::nullable_keys128_two_level:
