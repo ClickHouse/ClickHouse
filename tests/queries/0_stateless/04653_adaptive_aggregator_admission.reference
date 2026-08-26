@@ -1,6 +1,6 @@
 Aggregation in order (not admitted)
 1
-Group-by limits (not admitted)
+Group-by limits in a dropping mode (not admitted)
 1
 Sharded aggregation takes precedence
 1
