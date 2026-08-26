@@ -353,13 +353,14 @@ bool StorageNATS::subscribeConsumers()
     {
         try
         {
-            /// A consumer that is still subscribed keeps what it has buffered: those messages
-            /// arrived on a live subscription and the streaming cycles will insert them.
-            if (!consumer->isSubscribed())
-            {
-                consumer->dropBuffered();
-                consumer->subscribe();
-            }
+            /// A consumer can reach this point still subscribed, because `unsubscribeConsumers`
+            /// only reaches the consumers that are in the pool at that moment: a direct `SELECT`
+            /// holds one out of the pool and hands it back subscribed whenever it found it that
+            /// way. What such a consumer buffered belongs to the window when the table was not
+            /// streaming - messages published while the materialized view was detached - so it is
+            /// dropped here rather than inserted into the views by the cycles that follow.
+            consumer->dropBuffered();
+            consumer->subscribe();
             ++num_initialized;
         }
         catch (...)
