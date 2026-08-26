@@ -117,7 +117,7 @@ Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3I
             "SELECT h3EdgeLengthKm(15) AS edgeLengthKm",
             R"(
 ┌─edgeLengthKm─┐
-│  0.000509713 │
+│  0.000584169 │
 └──────────────┘
             )"
         }
