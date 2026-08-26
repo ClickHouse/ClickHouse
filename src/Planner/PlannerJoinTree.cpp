@@ -35,6 +35,7 @@
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageValues.h>
 #include <Storages/buildQueryTreeForShard.h>
 
@@ -129,10 +130,12 @@ namespace Setting
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
+    extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool join_use_nulls;
-    extern const SettingsUInt64 limit;
-    extern const SettingsUInt64 offset;
+    extern const SettingsDouble limit;
+    extern const SettingsBool make_distributed_plan;
+    extern const SettingsDouble offset;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -348,9 +351,12 @@ NameSet checkAccessRights(const StoragePtr & storage, const StorageID & storage_
           * one table column is accessible.
           */
         auto access = query_context->getAccess();
+        const auto * alias = storage->as<StorageAlias>();
         for (const auto & column : storage_snapshot->metadata->getColumns())
         {
-            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
+            /// An `Alias` also requires access to the selected column of its target table.
+            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
+                && (!alias || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
                 accessible_columns.insert(column.name);
         }
 
@@ -481,8 +487,16 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
     if (!columns_with_sizes.empty())
         result = std::min_element(columns_with_sizes.begin(), columns_with_sizes.end())->column;
     else
+    {
+        /// A table expression can resolve to no columns at all, for example a table function over a
+        /// table whose schema is unavailable. `getSmallestColumn` treats an empty list as a logical error.
+        if (column_names_and_types.empty())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Cannot read from table expression with no columns");
+
         /// If we have no information about columns sizes, choose a column of minimum size of its data type
         result = ExpressionActions::getSmallestColumn(column_names_and_types);
+    }
 
     return result;
 }
@@ -535,6 +549,11 @@ bool applyTrivialCountIfPossible(
     if (!settings[Setting::optimize_trivial_count_query])
         return false;
 
+    /// The rewrite produces a `ReadFromPreparedSource` leaf that the Cascades optimizer cannot
+    /// clone; a distributed plan counts the rows with a distributed read instead.
+    if (settings[Setting::make_distributed_plan] && settings[Setting::enable_cascades_optimizer])
+        return false;
+
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
     if (!storage->supportsTrivialCountOptimization(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
@@ -574,6 +593,12 @@ bool applyTrivialCountIfPossible(
     chassert(function_node.getAggregateFunction() != nullptr);
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
+        return false;
+
+    /// `arrayJoin` in the argument multiplies rows above the source read, so the aggregate does not
+    /// observe `totalRows()` rows. Must precede `optimize_trivial_count`: storages that count in
+    /// read() act on that flag even when this function later declines.
+    if (hasFunctionNode(aggregates.front(), "arrayJoin"))
         return false;
 
     /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
@@ -649,6 +674,11 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     /// disabling the parent setting also disables this variant.
     if (!settings[Setting::optimize_trivial_count_query]
         || !settings[Setting::optimize_trivial_count_with_sparsity_filter])
+        return false;
+
+    /// The rewrite produces a `ReadFromPreparedSource` leaf that the Cascades optimizer cannot
+    /// clone; a distributed plan counts the rows with a distributed read instead.
+    if (settings[Setting::make_distributed_plan] && settings[Setting::enable_cascades_optimizer])
         return false;
 
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
@@ -1429,7 +1459,7 @@ void pushOrderByIntoView(
         /// the alias-vs-source-column ambiguity that the outer-context guard already excludes.
         /// Check the effective context here and skip the pushdown when any of these is set.
         const auto & view_settings = view_context->getSettingsRef();
-        if (view_settings[Setting::limit] || view_settings[Setting::offset] || view_settings[Setting::prefer_column_name_to_alias])
+        if (view_settings[Setting::limit] != 0 || view_settings[Setting::offset] != 0 || view_settings[Setting::prefer_column_name_to_alias])
             return;
 
         inner_header = InterpreterSelectQueryAnalyzer::getSampleBlock(inner, view_context, SelectQueryOptions().analyze());
@@ -2748,6 +2778,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         table_expression->formatASTForErrorMessage());
     }
 
+    /// Filled by `buildShardCollapseFanOut` below: duplicate GROUP BY key columns the shard collapsed before bucketing.
+    /// Propagated to the outer planner so a distributed aggregation merge buckets by only the representative keys.
+    std::unordered_map<String, String> shard_collapse_duplicate_keys;
+
     if (till_stage == QueryProcessingStage::FetchColumns)
     {
         ActionsDAG rename_actions_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
@@ -2825,7 +2859,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     select_query_info.query_tree,
                     select_query_info.planner_context,
                     *query_plan.getCurrentHeader(),
-                    *expected_header))
+                    *expected_header,
+                    &shard_collapse_duplicate_keys))
             {
                 auto fan_out_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(*fan_out_actions_dag));
                 fan_out_step->setStepDescription("Reconstruct deduplicated duplicate-ALIAS columns");
@@ -2876,6 +2911,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         .useful_sets = std::move(useful_sets),
         .query_node_to_plan_step_mapping = std::move(query_node_to_plan_step_mapping),
         .source_constants = std::move(source_constants),
+        .shard_collapse_duplicate_keys = std::move(shard_collapse_duplicate_keys),
     };
 }
 
@@ -3013,9 +3049,9 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
         return;
 
     const auto * children_step = root_node->children.front()->step.get();
+    /// Only steps that support clone(), because the lookup plan below is cloned per lookup batch.
     bool is_allowed_storage = typeid_cast<const ReadFromMergeTree *>(children_step)
-                           || typeid_cast<const ReadNothingStep *>(children_step)
-                           || typeid_cast<const ReadFromPreparedSource *>(children_step);
+                           || typeid_cast<const ReadNothingStep *>(children_step);
     if (!is_allowed_storage)
         return;
 
