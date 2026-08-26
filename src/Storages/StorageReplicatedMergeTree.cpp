@@ -255,6 +255,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char replicated_queue_fail_next_entry[];
+    extern const char alter_settings_throw_before_metadata_write[];
     extern const char replicated_queue_unfail_entries[];
     extern const char finish_set_quorum_failed_parts[];
     extern const char zero_copy_lock_zk_fail_before_op[];
@@ -6889,15 +6890,40 @@ void StorageReplicatedMergeTree::alter(
         merge_strategy_picker.refreshState();
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
-        if (statistics_changed)
+        try
         {
-            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
-            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-            setInMemoryMetadata(future_metadata);
+            if (statistics_changed)
+            {
+                /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                setInMemoryMetadata(future_metadata);
+            }
+
+            fiu_do_on(FailPoints::alter_settings_throw_before_metadata_write,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before the metadata write of a settings ALTER");
+            });
+
+            /// Safe because the early max_query_size check already passed.
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// The durable metadata was not written, so the in-memory settings must not stay ahead of it.
+            /// This matters for settings that gate an on-disk or ClickHouse Keeper format, such as
+            /// `persist_mutation_author`: a query that returned an exception must not leave the replica
+            /// writing mutation entries in a format the other replicas cannot read.
+            changeSettings(metadata_snapshot->settings_changes, table_lock_holder, /*run_sanity_checks=*/false);
+
+            if (statistics_changed)
+            {
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                setInMemoryMetadata(*metadata_snapshot);
+            }
+
+            throw;
         }
 
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
         return;
     }
 
