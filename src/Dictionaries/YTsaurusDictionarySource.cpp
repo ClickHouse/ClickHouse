@@ -168,7 +168,7 @@ Setting fields:
 | `cypress_path` | Cypress path to the table source. |
 | `oauth_token` | OAuth token. |
 | `lookup_throttler_max_requests_per_second` | Maximum number of YTsaurus lookup requests per second when fetching keys for selective dictionary loads (`CACHE`, `COMPLEX_KEY_CACHE`, etc.). `0` disables throttling. The default is `200000`. |
-| `lookup_max_rows_per_query` | Maximum number of rows per single YTsaurus lookup request. Selective loads are split into chunks of this size. `0` means unlimited (a single chunk per load). The default is `1024`. |
+| `lookup_max_rows_per_query` | Maximum number of rows per single YTsaurus lookup request. Selective loads are split into chunks of this size. `0`, the default, means unlimited: a selective load is sent as a single request. |
 )DOCS_MD"
 #if !USE_YTSAURUS
             "\n\nCurrently unavailable, because this ClickHouse build does not include YTsaurus support."

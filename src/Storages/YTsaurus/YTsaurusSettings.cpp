@@ -36,7 +36,7 @@ static constexpr std::array dictionary_only_setting_names{"lookup_throttler_max_
     DECLARE(UInt64, min_rows_for_spawn_stream, 1000, "Min number of rows to spawn the new stream. To use 8 streams the table must hold at least 8 * `min_rows_for_spawn_stream` rows.", 0) \
     DECLARE(UInt64, max_streams, 4, "Max number of streams to read from static table.", 0) \
     DECLARE(UInt64, lookup_throttler_max_requests_per_second, 200000, "Maximum number of lookup requests per second to YTsaurus. Set to 0 to disable throttling.", 0) \
-    DECLARE(UInt64, lookup_max_rows_per_query, 1024, "Maximum number of rows per YTsaurus lookup requests. 0 is unlimited.", 0) \
+    DECLARE(UInt64, lookup_max_rows_per_query, 0, "Maximum number of rows per YTsaurus lookup request. 0 (the default) is unlimited: a selective load is sent as a single request.", 0) \
 
 DECLARE_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTSAURUS_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTsaurusSettings, YTsaurusSetting)
