@@ -51,6 +51,23 @@ SANITIZER_RULES: List[Tuple[str, str, str]] = [
     (r"stack-buffer-overflow",          "HIGH",      "stack-buffer-overflow"),
     (r"global-buffer-overflow",         "HIGH",      "global-buffer-overflow"),
     (r"stack-overflow",                 "HIGH",      "stack-overflow"),
+    # Allocator-contract violations are as exploitable as a use-after-free write.
+    (r"double-free",                    "CRITICAL",  "double-free"),
+    (r"alloc-dealloc-mismatch",         "CRITICAL",  "alloc-dealloc-mismatch"),
+    (r"bad-free",                       "CRITICAL",  "bad-free"),
+    (r"attempting free",                "CRITICAL",  "bad-free"),
+    # Out-of-bounds and lifetime classes that are not covered by the heap rules above.
+    (r"container-overflow",             "HIGH",      "container-overflow"),
+    (r"stack-use-after-return",         "HIGH",      "stack-use-after-return"),
+    (r"stack-use-after-scope",          "HIGH",      "stack-use-after-scope"),
+    (r"negative-size-param",            "HIGH",      "negative-size-param"),
+    (r"memcpy-param-overlap",           "HIGH",      "memcpy-param-overlap"),
+    (r"use-of-uninitialized-value",     "HIGH",      "use-of-uninitialized-value"),
+    (r"data race",                      "HIGH",      "data-race"),
+    (r"lock-order-inversion",           "MEDIUM",    "lock-order-inversion"),
+    (r"initialization-order-fiasco",    "MEDIUM",    "initialization-order-fiasco"),
+    # Leaks are reported by LeakSanitizer; keep them aligned with the `leak` filename prefix.
+    (r"detected memory leaks",          "LOW",       "memory-leak"),
     (r"undefined.behavio",              "MEDIUM",    "undefined-behavior"),
     (r"assertion.*failed",              "MEDIUM",    "assertion-failed"),
     (r"SEGV",                           "MEDIUM",    "SEGV"),
@@ -142,7 +159,9 @@ def _classify_from_sanitizer_text(text: str) -> Tuple[str, str]:
             for pattern, severity, canonical in SANITIZER_RULES:
                 if re.search(pattern, context, re.IGNORECASE):
                     return severity, canonical
-            # Matched the header but no specific rule — default to MEDIUM.
+            # Matched the header but no specific rule. The listed rules cover the
+            # memory-corruption classes explicitly, so anything left here is genuinely
+            # unrecognised and MEDIUM is the right conservative default.
             return "MEDIUM", description
     return "", ""
 
@@ -483,6 +502,44 @@ def _run_self_tests() -> int:
     severity, crash_type = _classify_from_sanitizer_text(sample)
     assert severity == "CRITICAL", f"directionless use-after-free: {severity}"
     assert crash_type == "heap-use-after-free", crash_type
+
+    # Memory-corruption classes that are not heap overflows or use-after-free must
+    # still be classified explicitly instead of falling back to MEDIUM.
+    explicit_cases = [
+        ("AddressSanitizer: attempting double-free", "CRITICAL", "double-free"),
+        ("AddressSanitizer: alloc-dealloc-mismatch", "CRITICAL", "alloc-dealloc-mismatch"),
+        ("AddressSanitizer: attempting free on address which was not malloc()-ed", "CRITICAL", "bad-free"),
+        ("AddressSanitizer: bad-free", "CRITICAL", "bad-free"),
+        ("AddressSanitizer: container-overflow", "HIGH", "container-overflow"),
+        ("AddressSanitizer: stack-use-after-return", "HIGH", "stack-use-after-return"),
+        ("AddressSanitizer: stack-use-after-scope", "HIGH", "stack-use-after-scope"),
+        ("AddressSanitizer: negative-size-param", "HIGH", "negative-size-param"),
+        ("AddressSanitizer: memcpy-param-overlap", "HIGH", "memcpy-param-overlap"),
+        ("MemorySanitizer: use-of-uninitialized-value", "HIGH", "use-of-uninitialized-value"),
+        ("ThreadSanitizer: data race", "HIGH", "data-race"),
+        ("ThreadSanitizer: lock-order-inversion", "MEDIUM", "lock-order-inversion"),
+        ("AddressSanitizer: initialization-order-fiasco", "MEDIUM", "initialization-order-fiasco"),
+        ("LeakSanitizer: detected memory leaks", "LOW", "memory-leak"),
+    ]
+    for header, expected_severity, expected_type in explicit_cases:
+        sample = f"==123==ERROR: {header}\n    #0 0xdead in foo\n"
+        severity, crash_type = _classify_from_sanitizer_text(sample)
+        assert severity == expected_severity, f"{header!r}: {severity} != {expected_severity}"
+        assert crash_type == expected_type, f"{header!r}: {crash_type!r} != {expected_type!r}"
+
+    # A double-free must outrank a stack-buffer-overflow in the report ordering.
+    order = group_crashes(
+        [make("h3", "HIGH", "stack-buffer-overflow"), make("h4", "CRITICAL", "double-free")]
+    )
+    assert [g.crash_type for g in order] == ["double-free", "stack-buffer-overflow"], (
+        f"double-free not sorted first: {[g.crash_type for g in order]}"
+    )
+
+    # A genuinely unrecognised sanitizer class still falls back to MEDIUM.
+    sample = "==123==ERROR: AddressSanitizer: some-brand-new-check\n    #0 0xdead in foo\n"
+    severity, crash_type = _classify_from_sanitizer_text(sample)
+    assert severity == "MEDIUM", f"unknown class: {severity}"
+    assert crash_type == "some-brand-new-check", crash_type
 
     print("All self-tests passed.", file=sys.stderr)
     return 0

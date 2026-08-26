@@ -68,15 +68,28 @@ static MutableColumnPtr buildSourceVariantColumn(const DiscriminatorVec & local_
     return col;
 }
 
-/// Build a ColumnDynamic with a few rows.
-static MutableColumnPtr buildSourceDynamicColumn()
+/// Build a `ColumnDynamic` with a few rows.
+/// When `overflow` is set, more distinct types are inserted than `max_dynamic_types` allows, so the
+/// surplus ones end up in the shared variant. That is required to reach the combine/extract branch of
+/// `ColumnDynamic::insertRangeFrom`, which decodes the type tag out of the shared blob and rewrites
+/// discriminators and offsets; with only `UInt8`, `String` and `NULL` the shared variant stays empty
+/// and that branch is never taken.
+static MutableColumnPtr buildSourceDynamicColumn(size_t max_dynamic_types, bool overflow)
 {
-    auto col = ColumnDynamic::create(/*max_dynamic_types=*/4);
+    auto col = ColumnDynamic::create(max_dynamic_types);
     col->insert(Field(UInt64(1)));
     col->insert(Field(String("foo")));
     col->insertDefault();
     col->insert(Field(UInt64(99)));
     col->insert(Field(String("bar")));
+
+    if (overflow)
+    {
+        col->insert(Field(Float64(1.5)));
+        col->insert(Field(Array{Field(UInt64(1)), Field(UInt64(2))}));
+        col->insert(Field(Tuple{Field(UInt64(7))}));
+    }
+
     return col;
 }
 
@@ -96,7 +109,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         if (size < 10)
             return 0;
 
-        /// Byte 0: low bit selects which local ordering the src column uses.
+        /// Byte 0, bit 0: selects which local ordering the src column uses.
+        /// Bits 1 and 2 drive the `ColumnDynamic` shared-variant shape, see task A-3 below.
         ///   0 -> src local order: (String=0, UInt64=1), i.e. local_to_global = {0, 1}
         ///   1 -> src local order: (UInt64=0, String=1), i.e. local_to_global = {1, 0}
         const uint8_t mapping_selector = data[0];
@@ -170,8 +184,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         /// Task A-3: fuzz ColumnDynamic::insertRangeFrom
         /// -------------------------------------------------------------------
         {
-            auto src_dyn = buildSourceDynamicColumn();
-            auto dst_dyn = ColumnDynamic::create(/*max_dynamic_types=*/4);
+            /// Bit 1 selects whether the source overflows into its shared variant, bit 2 selects whether the
+            /// destination has enough free slots to promote those overflowed types back to regular variants.
+            /// The interesting combination is an overflowing source plus a roomy destination: the fast path
+            /// at the top of `ColumnDynamic::insertRangeFrom` is skipped only when the source shared variant
+            /// is non-empty, and only a destination that can still add variants reaches the extract branch.
+            const bool src_overflows = (mapping_selector & 2) != 0;
+            const size_t src_max_dynamic_types = src_overflows ? 2 : 4;
+            const size_t dst_max_dynamic_types = (mapping_selector & 4) ? 8 : src_max_dynamic_types;
+
+            auto src_dyn = buildSourceDynamicColumn(src_max_dynamic_types, src_overflows);
+            auto dst_dyn = ColumnDynamic::create(dst_max_dynamic_types);
 
             const size_t src_size = src_dyn->size();
             if (src_size == 0)
