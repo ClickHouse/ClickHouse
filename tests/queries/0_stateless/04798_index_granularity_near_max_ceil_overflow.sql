@@ -42,18 +42,30 @@ SELECT 'skip index, top-K read', y FROM t_skip_granularity_near_max ORDER BY y L
 SETTINGS max_block_size = 64, max_threads = 1, use_skip_indexes_on_data_read = 1,
          use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1;
 
+-- That part's single index granule starts at the smallest value in it, so a top-K threshold can never
+-- exclude it, and no row or mark count separates a read that consulted the granules from one that did
+-- not. This arm therefore asserts only that the granule filter is selected for the shape.
+SELECT 'skip index, top-K granule filter', countIf(explain LIKE '%Filter TopK Granules%')
+FROM (EXPLAIN indexes = 1 SELECT y FROM t_skip_granularity_near_max ORDER BY y LIMIT 1
+      SETTINGS max_block_size = 64, max_threads = 1, use_skip_indexes_on_data_read = 1,
+               use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1,
+               enable_parallel_replicas = 0);
+
 -- One index granule spans the whole part here, and it holds the matching value, so no granule may be
 -- dropped. Only the prefix is matched: the number of marks depends on randomized settings. Part
 -- pruning by column statistics is off, so the index is the only thing that can drop a granule.
+-- Every arm in this file that reads plan text pins parallel replicas off: with
+-- `parallel_replicas_local_plan = 0` the initiator plans no local read step, so there is no index
+-- description to count.
 SELECT 'skip index keeps every granule', countIf(explain LIKE '%Granules: 0/%')
 FROM (EXPLAIN indexes = 1 SELECT sum(y) FROM t_skip_granularity_near_max WHERE y = 500
-      SETTINGS use_statistics_for_part_pruning = 0);
+      SETTINGS use_statistics_for_part_pruning = 0, enable_parallel_replicas = 0);
 
 -- No granule can hold this value, so the index has to drop them all. This reads 0 when the index is
 -- never consulted, which is the case the line above cannot tell apart on its own.
 SELECT 'skip index drops every granule', countIf(explain LIKE '%Granules: 0/%')
 FROM (EXPLAIN indexes = 1 SELECT sum(y) FROM t_skip_granularity_near_max WHERE y = 999999
-      SETTINGS use_statistics_for_part_pruning = 0);
+      SETTINGS use_statistics_for_part_pruning = 0, enable_parallel_replicas = 0);
 
 SELECT 'skip index, no match', count(), sum(y) FROM t_skip_granularity_near_max WHERE y = 999999
 SETTINGS force_data_skipping_indices = 'i', use_statistics_for_part_pruning = 0;
@@ -73,7 +85,8 @@ SELECT 'skip index granularity 1, filtered', count(), sum(y) FROM t_skip_granula
 -- Here one index granule covers one mark, so exactly the mark holding the matching value survives.
 -- This is the control that shows the count above can observe a granule being dropped.
 SELECT 'skip index drops all but one granule', countIf(explain LIKE '%Granules: 1/%')
-FROM (EXPLAIN indexes = 1 SELECT sum(y) FROM t_skip_granularity_one WHERE y = 500);
+FROM (EXPLAIN indexes = 1 SELECT sum(y) FROM t_skip_granularity_one WHERE y = 500
+      SETTINGS enable_parallel_replicas = 0);
 
 DROP TABLE t_skip_granularity_one;
 
@@ -90,5 +103,11 @@ INSERT INTO t_reverse_granularity_near_max SELECT number FROM numbers(4096);
 -- non-terminating split, so it fails instead of running until the server is out of memory.
 SELECT 'reverse', x FROM t_reverse_granularity_near_max ORDER BY x DESC LIMIT 3
 SETTINGS optimize_read_in_order = 1, max_threads = 1, max_memory_usage = 200000000;
+
+-- An ordinary sort returns those three rows as well, so this asserts that the plan which produced
+-- them is the one that splits mark ranges backwards.
+SELECT 'reverse reads in reverse order', countIf(explain LIKE '%Read type: InReverseOrder%')
+FROM (EXPLAIN actions = 1 SELECT x FROM t_reverse_granularity_near_max ORDER BY x DESC LIMIT 3
+      SETTINGS optimize_read_in_order = 1, max_threads = 1, enable_parallel_replicas = 0);
 
 DROP TABLE t_reverse_granularity_near_max;

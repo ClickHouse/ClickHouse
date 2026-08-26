@@ -13,6 +13,7 @@ reloaded	10	45
 skip index, no filter	4096	8386560
 skip index, filtered	1	500
 skip index, top-K read	0
+skip index, top-K granule filter	1
 skip index keeps every granule	0
 skip index drops every granule	1
 skip index, no match	0	0
@@ -21,3 +22,4 @@ skip index drops all but one granule	1
 reverse	4095
 reverse	4094
 reverse	4093
+reverse reads in reverse order	1
