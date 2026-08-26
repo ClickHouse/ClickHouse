@@ -1,5 +1,6 @@
 drop table if exists X sync;
 drop table if exists Y sync;
+drop table if exists Z sync;
 
 create table X (id Int32, x_a String, x_b Nullable(Int32)) engine ReplicatedMergeTree('/clickhouse/{database}/X', '1') order by id settings index_granularity=1;
 create table Y (id Int32, y_a String, y_b Nullable(String)) engine ReplicatedMergeTree('/clickhouse/{database}/Y', '1') order by id settings index_granularity=1;
@@ -10,6 +11,10 @@ insert into X (id, x_a) values      (4, 'l5'), (4, 'l6'), (5, 'l7'), (8, 'l8'), 
 insert into X (id, x_a, x_b) select number, toString(number), toString(-number) from numbers(10000);
 insert into Y (id, y_a) values      (1, 'r1'), (1, 'r2'), (2, 'r3'), (3, 'r4'), (3, 'r5');
 insert into Y (id, y_a, y_b) values (4, 'r6', 'nr6'), (6, 'r7', 'nr7'), (7, 'r8', 'nr8'), (9, 'r9', 'nr9');
+
+-- A `FINAL`-supporting engine, for the `FINAL` probe below.
+create table Z (id Int32, z_a String) engine ReplicatedReplacingMergeTree('/clickhouse/{database}/Z', '1') order by id settings index_granularity=1;
+insert into Z (id, z_a) select number, toString(number) from numbers(1000);
 
 set enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
@@ -81,49 +86,32 @@ select count() from (explain select * from (select id from X union all (select i
 -- An `IN` subquery is collected into a prepared set before the join kill switch runs, and it is later
 -- planned by an independent `Planner` built from the subquery's own context, so the switch must be
 -- propagated into the prepared-set subqueries as well, or the set would still be built with parallel
--- replicas inside `CreatingSets`. `EXPLAIN` does not print the plans of the set subqueries, so the
--- check is on the secondary queries the parallel replicas protocol spawns: there must be none when
--- the setting is disabled, and, as a control that the probe is not vacuous, some when it is enabled.
--- The `log_comment` is propagated to the secondary queries, and they are counted by `QueryStart`
--- because a secondary query may legitimately end with `ExceptionWhileProcessing` when the initiator
--- has already got the whole result and resets the connections.
+-- replicas inside `CreatingSets`. `EXPLAIN` does not print the plans of the set subqueries, so the probe
+-- is `enable_parallel_replicas = 2` (refuse instead of silently falling back) together with a `FINAL`
+-- read inside the subquery, which parallel replicas do not support: when the subquery is still planned
+-- with parallel replicas the query is refused. With the setting enabled it must be refused, which is
+-- also the control that the probe is not vacuous; with the setting disabled it must not be.
 set parallel_replicas_for_queries_with_multiple_tables=1;
-select count() from (select * from X as s inner join Y as j on s.id = j.id where s.id in (select id from Y)) settings log_comment='03354_in_subquery_kill_switch_on' format Null;
+select count() > 0 from (select * from X as s inner join Y as j on s.id = j.id where s.id in (select id from Z final))
+    settings enable_parallel_replicas = 2, parallel_replicas_allow_in_with_subquery = 1; -- { serverError SUPPORT_IS_DISABLED }
 set parallel_replicas_for_queries_with_multiple_tables=0;
-select count() from (select * from X as s inner join Y as j on s.id = j.id where s.id in (select id from Y)) settings log_comment='03354_in_subquery_kill_switch_off' format Null;
-system flush logs query_log;
-select count() > 0 from system.query_log
-    where type = 'QueryStart' and not is_initial_query and event_date >= yesterday()
-        and (current_database = currentDatabase() or has(databases, currentDatabase()))
-        and log_comment = '03354_in_subquery_kill_switch_on';
-select count() from system.query_log
-    where type = 'QueryStart' and not is_initial_query and event_date >= yesterday()
-        and (current_database = currentDatabase() or has(databases, currentDatabase()))
-        and log_comment = '03354_in_subquery_kill_switch_off';
+select count() > 0 from (select * from X as s inner join Y as j on s.id = j.id where s.id in (select id from Z final))
+    settings enable_parallel_replicas = 2, parallel_replicas_allow_in_with_subquery = 1;
 
 -- A materialized CTE is planned by yet another independent `Planner`, built from the CTE subquery's own
 -- context in `addBuildSubqueriesForMaterializedCTEsIfNeeded` after the join kill switch has run, so the
 -- switch must reach that context as well. The CTE is referenced twice, otherwise it is inlined and becomes
 -- an ordinary subquery table expression. `EXPLAIN` does not print the CTE materialization plan either, so
--- the check is again on the secondary queries, counted the same way as for the `IN` subquery above.
+-- the probe is the same `FINAL` refusal as for the `IN` subquery above.
 set enable_materialized_cte = 1;
 set parallel_replicas_for_queries_with_multiple_tables=1;
-with a as materialized (select id from Y)
-    select count() from X as s inner join a as l on s.id = l.id inner join a as r on s.id = r.id
-    settings log_comment='03354_materialized_cte_kill_switch_on' format Null;
+with a as materialized (select id from Z final)
+    select count() > 0 from X as s inner join a as l on s.id = l.id inner join a as r on s.id = r.id
+    settings enable_parallel_replicas = 2; -- { serverError SUPPORT_IS_DISABLED }
 set parallel_replicas_for_queries_with_multiple_tables=0;
-with a as materialized (select id from Y)
-    select count() from X as s inner join a as l on s.id = l.id inner join a as r on s.id = r.id
-    settings log_comment='03354_materialized_cte_kill_switch_off' format Null;
-system flush logs query_log;
-select count() > 0 from system.query_log
-    where type = 'QueryStart' and not is_initial_query and event_date >= yesterday()
-        and (current_database = currentDatabase() or has(databases, currentDatabase()))
-        and log_comment = '03354_materialized_cte_kill_switch_on';
-select count() from system.query_log
-    where type = 'QueryStart' and not is_initial_query and event_date >= yesterday()
-        and (current_database = currentDatabase() or has(databases, currentDatabase()))
-        and log_comment = '03354_materialized_cte_kill_switch_off';
+with a as materialized (select id from Z final)
+    select count() > 0 from X as s inner join a as l on s.id = l.id inner join a as r on s.id = r.id
+    settings enable_parallel_replicas = 2;
 set enable_materialized_cte = 0;
 
 -- The parallel-replicas compatibility checks of the planner (`parallel_replicas_allow_in_with_subquery`,
@@ -139,9 +127,9 @@ select count() > 0 from X as s inner join Y as j on s.id = j.id where s.id in (s
     settings parallel_replicas_allow_in_with_subquery = 0, enable_parallel_replicas = 2;
 
 set parallel_replicas_for_queries_with_multiple_tables=1;
-select count() > 0 from X as s final inner join Y as j on s.id = j.id settings enable_parallel_replicas = 2; -- { serverError SUPPORT_IS_DISABLED }
+select count() > 0 from Z as s final inner join Y as j on s.id = j.id settings enable_parallel_replicas = 2; -- { serverError SUPPORT_IS_DISABLED }
 set parallel_replicas_for_queries_with_multiple_tables=0;
-select count() > 0 from X as s final inner join Y as j on s.id = j.id settings enable_parallel_replicas = 2;
+select count() > 0 from Z as s final inner join Y as j on s.id = j.id settings enable_parallel_replicas = 2;
 
 -- The legacy (pre-analyzer) interpreter must respect the setting as well: with
 -- parallel_replicas_only_with_analyzer = 0 task-based parallel replicas are allowed on that path,
