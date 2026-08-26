@@ -314,83 +314,8 @@ BlockIO InterpreterCreateUserQuery::execute()
     else if (query.settings)
         settings_from_query = AlterSettingsProfileElements{*query.settings, access_control};
 
-    /// `CREATE USER ... ROLE r` grants the role here instead of through `GRANT`, and `DEFAULT ROLE r` on a
-    /// new user grants it too (see `grant_roles` above). Either way it grants the settings the role carries.
-    const RolesOrUsersSet * granted_by_query = nullptr;
-    if (roles_from_query)
-        granted_by_query = &*roles_from_query;
-    else if (default_roles_from_query && !query.alter && !default_roles_from_query->all)
-        granted_by_query = &*default_roles_from_query;
-
-    if (granted_by_query && !query.attach)
-    {
-        /// A statement that can leave an existing user in place grants nothing by naming a role that user
-        /// already has, so only the roles that are new to every target are a change.
-        std::vector<std::shared_ptr<const User>> existing_users;
-        if (query.or_replace || query.if_not_exists)
-        {
-            for (const auto & name : query.names->toStrings())
-            {
-                if (auto user = access_control.tryRead<User>(name))
-                    existing_users.push_back(user);
-            }
-        }
-
-        /// The resulting user only gets the settings of its default roles, which is every granted role
-        /// unless the statement names them. A role outside that set carries nothing until it is made
-        /// default, and that is checked where the default roles change.
-        RolesOrUsersSet enabled_roles{RolesOrUsersSet::AllTag{}};
-        if (default_roles_from_query)
-            enabled_roles = *default_roles_from_query;
-
-        std::vector<UUID> newly_granted;
-        for (const auto & role_id : granted_by_query->getMatchingIDs())
-        {
-            bool granted_to_every_target = !existing_users.empty();
-            for (const auto & user : existing_users)
-                granted_to_every_target &= user->granted_roles.isGranted(role_id);
-            if (!granted_to_every_target && enabled_roles.match(role_id))
-                newly_granted.push_back(role_id);
-        }
-
-        auto elements = getSettingsOfRolesRecursively(newly_granted, access_control);
-        if (!elements.empty())
-            getContext()->checkSettingsConstraints({}, AlterSettingsProfileElements{elements}, SettingSource::ROLE);
-    }
-
-    if (default_roles_from_query && !query.attach)
-    {
-        for (const auto & name : query.names->toStrings())
-        {
-            if (auto user = access_control.tryRead<User>(name))
-                checkSettingsOfDefaultRolesChange(getContext(), access_control, *user, *default_roles_from_query);
-        }
-    }
-
-    /// A replacement states the whole entity, so leaving out the settings clause replaces the settings with
-    /// nothing. That is a change like any other and has to be checked.
-    const AlterSettingsProfileElements replace_with_nothing{SettingsProfileElements{}};
-    const AlterSettingsProfileElements * settings_change = nullptr;
-    if (settings_from_query)
-        settings_change = &*settings_from_query;
-    else if (query.or_replace)
-        settings_change = &replace_with_nothing;
-
-    /// Check the change against the settings each target has now, so that what it changes for that target is
-    /// what gets checked, however the clause is written and whatever the caller's own settings are.
-    if (settings_change && !query.attach)
-    {
-        for (const auto & name : query.names->toStrings())
-        {
-            SettingsProfileElements old_settings;
-            if (query.alter || query.or_replace)
-            {
-                if (auto user = access_control.tryRead<User>(name))
-                    old_settings = user->settings;
-            }
-            getContext()->checkSettingsConstraints(old_settings, *settings_change, SettingSource::USER);
-        }
-    }
+    if (settings_from_query && !query.attach)
+        getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
 
     if (!query.cluster.empty())
     {

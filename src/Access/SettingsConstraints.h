@@ -85,13 +85,7 @@ public:
     void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const;
 
-    /// Checks a change to the settings of an access entity, `old_elements` being the settings it has now.
-    /// What counts as a change is decided by that entity's effective settings, not by `current_settings`.
-    void check(
-        const Settings & current_settings,
-        const SettingsProfileElements & old_elements,
-        const AlterSettingsProfileElements & profile_elements,
-        SettingSource source) const;
+    void check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
 
     /// Checks whether resetting the specified settings to their defaults violates these constraints.
     void checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const;

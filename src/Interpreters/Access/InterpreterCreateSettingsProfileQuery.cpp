@@ -67,61 +67,18 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
     else if (query.settings)
         settings_from_query = AlterSettingsProfileElements{SettingsProfileElements(*query.settings, access_control)};
 
-    std::optional<RolesOrUsersSet> roles_from_query;
-    if (query.to_roles)
-        roles_from_query = RolesOrUsersSet{*query.to_roles, access_control, getContext()->getUserID()};
-
-    /// A replacement states the whole profile, so leaving out a clause replaces what it holds with nothing.
-    const AlterSettingsProfileElements replace_with_nothing{SettingsProfileElements{}};
-    const AlterSettingsProfileElements * settings_change = nullptr;
-    if (settings_from_query)
-        settings_change = &*settings_from_query;
-    else if (query.or_replace)
-        settings_change = &replace_with_nothing;
-
-    if (!query.attach)
-    {
-        for (const auto & name : query.names)
-        {
-            std::shared_ptr<const SettingsProfile> old_profile;
-            if (query.alter || query.or_replace)
-                old_profile = access_control.tryRead<SettingsProfile>(name);
-
-            SettingsProfileElements old_settings;
-            if (old_profile)
-                old_settings = old_profile->elements;
-
-            /// Check the change against the settings this profile has now, so that what it changes for the
-            /// profile is what gets checked, however the clause is written and whatever the caller's own
-            /// settings are.
-            if (settings_change)
-                getContext()->checkSettingsConstraints(old_settings, *settings_change, SettingSource::PROFILE);
-
-            /// Assigning the profile to another set of users makes every setting it carries effective for
-            /// them, or stops doing so, without naming any of them. Restating the same set changes nothing.
-            RolesOrUsersSet old_assignment;
-            if (old_profile)
-                old_assignment = old_profile->to_roles;
-            RolesOrUsersSet new_assignment;
-            if (roles_from_query)
-                new_assignment = *roles_from_query;
-
-            if ((query.to_roles || query.or_replace) && old_assignment != new_assignment)
-            {
-                auto new_settings = old_settings;
-                if (settings_change)
-                    new_settings.applyChanges(*settings_change);
-                getContext()->checkSettingsConstraints({}, AlterSettingsProfileElements{new_settings}, SettingSource::PROFILE);
-                getContext()->checkSettingsConstraints({}, AlterSettingsProfileElements{old_settings}, SettingSource::PROFILE);
-            }
-        }
-    }
+    if (settings_from_query && !query.attach)
+        getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::PROFILE);
 
     if (!query.cluster.empty())
     {
         query.replaceCurrentUserTag(getContext()->getUserName());
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
     }
+
+    std::optional<RolesOrUsersSet> roles_from_query;
+    if (query.to_roles)
+        roles_from_query = RolesOrUsersSet{*query.to_roles, access_control, getContext()->getUserID()};
 
 
     IAccessStorage * storage = &access_control;

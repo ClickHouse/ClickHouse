@@ -3,7 +3,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Core/Field.h>
 #include <Core/UUID.h>
-#include <Common/SettingsChanges.h>
 #include <Common/SettingConstraintWritability.h>
 #include <optional>
 #include <unordered_map>
@@ -13,6 +12,7 @@
 namespace DB
 {
 struct Settings;
+class SettingsChanges;
 class SettingsConstraints;
 struct AlterSettingsProfileElements;
 class ASTSettingsProfileElement;
@@ -94,21 +94,9 @@ public:
     /// Applies changes from an "ALTER PROFILE (USER/ROLE)" command. Always normalizes the result.
     void applyChanges(const AlterSettingsProfileElements & changes);
 
-    /// The settings whose effective value or constraints `applyChanges(changes)` would change. Effective
-    /// means alias-resolved and with inherited profiles substituted, so how the change is written does not
-    /// matter: an explicit value, an inherited profile, a DROP and an omission in a full replacement all
-    /// show up the same. Only names: what the values may be is decided against the caller's own settings,
-    /// by the checks over the elements the statement writes.
-    Strings findChangedSettings(const AlterSettingsProfileElements & changes, const AccessControl & access_control) const;
-
     bool isBackupAllowed() const;
     static bool isAllowBackupSetting(const String & setting_name);
 };
-
-/// Everything the settings of these roles make effective for whoever holds them: their own settings and
-/// those of the roles granted to them, recursively. A statement that makes a role effective, or stops
-/// doing so, changes those settings without naming any of them.
-SettingsProfileElements getSettingsOfRolesRecursively(const std::vector<UUID> & role_ids, const AccessControl & access_control);
 
 struct AlterSettingsProfileElements
 {

@@ -181,24 +181,11 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
 }
 
 
-void SettingsConstraints::check(
-    const Settings & current_settings,
-    const SettingsProfileElements & old_elements,
-    const AlterSettingsProfileElements & profile_elements,
-    SettingSource source) const
+void SettingsConstraints::check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const
 {
     check(current_settings, profile_elements.add_settings, source);
     check(current_settings, profile_elements.modify_settings, source);
-
-    /// The checks above see only what the statement writes, and they compare it with the caller's own
-    /// settings, which is what decides the constraints and whether the setting may be set from there at
-    /// all. `allow_feature_tier` answers a different question - whether the entity's settings change at
-    /// all - so it is the only thing decided by the diff of the entity's effective settings.
-    for (const auto & setting_name : old_elements.findChangedSettings(profile_elements, *access_control))
-    {
-        if (auto tier_checker = getTierChecker(setting_name, settingGetTier(setting_name)))
-            throw Exception(tier_checker->explain, tier_checker->code);
-    }
+    /// We don't check `drop_settings` here.
 }
 
 void SettingsConstraints::check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const

@@ -5,9 +5,7 @@
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/Role.h>
-#include <Access/GrantedRoles.h>
 #include <Access/RolesOrUsersSet.h>
-#include <Access/SettingsProfileElement.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
@@ -480,58 +478,6 @@ BlockIO InterpreterGrantQuery::execute()
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot grant role '{}' to itself",
                 entity ? entity->getName() : String{});
-        }
-    }
-
-    /// Granting or revoking a role makes the settings it carries effective for the grantees, or stops doing
-    /// so, without naming any of them. Check them like a settings clause naming them would be checked.
-    auto check_settings_of_roles = [&](const std::vector<UUID> & role_ids)
-    {
-        auto elements = getSettingsOfRolesRecursively(role_ids, access_control);
-        if (!elements.empty())
-            getContext()->checkSettingsConstraints({}, AlterSettingsProfileElements{elements}, SettingSource::ROLE);
-    };
-
-    /// Only what really starts or stops being granted: re-granting a role, or granting the admin option for
-    /// one that is already granted, leaves every setting where it is.
-    for (const auto & grantee_id : grantees)
-    {
-        /// A grantee is a user or a role, and `tryRead<T>` throws on the other one.
-        auto grantee = access_control.tryRead(grantee_id);
-        const GrantedRoles * granted_roles = nullptr;
-        /// A user only gets the settings of the roles that are default for it, so a role outside that set
-        /// carries nothing until it is made default, which is checked where the default roles change. Every
-        /// role granted to a role is enabled with it, so there is nothing to narrow down there.
-        const RolesOrUsersSet * enabled_roles = nullptr;
-        if (const auto * user = typeid_cast<const User *>(grantee.get()))
-        {
-            granted_roles = &user->granted_roles;
-            enabled_roles = &user->default_roles;
-        }
-        else if (const auto * role = typeid_cast<const Role *>(grantee.get()))
-            granted_roles = &role->granted_roles;
-        if (!granted_roles)
-            continue;
-
-        auto is_enabled = [&](const UUID & role_id) { return !enabled_roles || enabled_roles->match(role_id); };
-
-        std::vector<UUID> newly_granted;
-        for (const auto & role_id : roles_to_grant)
-        {
-            if (!granted_roles->isGranted(role_id) && is_enabled(role_id))
-                newly_granted.push_back(role_id);
-        }
-        check_settings_of_roles(newly_granted);
-
-        if (!roles_to_revoke.empty() && !query.admin_option)
-        {
-            std::vector<UUID> revoked_and_enabled;
-            for (const auto & role_id : granted_roles->findGranted(roles_to_revoke))
-            {
-                if (is_enabled(role_id))
-                    revoked_and_enabled.push_back(role_id);
-            }
-            check_settings_of_roles(revoked_and_enabled);
         }
     }
 
