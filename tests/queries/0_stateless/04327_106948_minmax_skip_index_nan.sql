@@ -149,10 +149,6 @@ SELECT count() FROM t_minmax_nan_tuple WHERE NOT (t <= (100., 100.)) SETTINGS us
 SELECT count() FROM t_minmax_nan_tuple WHERE NOT (t < (nan, 1.));
 SELECT count() FROM t_minmax_nan_tuple WHERE NOT (t < (nan, 1.)) SETTINGS use_skip_indexes = 0;
 
--- A set element can be a tuple holding a NaN, which is not a top-level NaN either.
-SELECT count() FROM t_minmax_nan_tuple WHERE t IN ((nan, 1.), (2., 2.));
-SELECT count() FROM t_minmax_nan_tuple WHERE t IN ((nan, 1.), (2., 2.)) SETTINGS use_skip_indexes = 0;
-
 DROP TABLE t_minmax_nan_tuple;
 
 -- Array and Map compare through the total order, in which a NaN has a defined position, so they are

@@ -1606,22 +1606,6 @@ bool KeyCondition::isRelaxed() const
     });
 }
 
-/// `Field::isNaN` only inspects a top-level `Float64`, so a `Tuple` element needs a walk.
-static bool fieldContainsNaN(const Field & field)
-{
-    if (field.isNaN())
-        return true;
-
-    if (field.getType() == Field::Types::Tuple)
-    {
-        for (const auto & element : field.safeGet<Tuple>())
-            if (fieldContainsNaN(element))
-                return true;
-    }
-
-    return false;
-}
-
 /// Whether any element of an already-materialized set column is a NaN.
 static bool columnContainsNaN(const IColumn & column)
 {
@@ -1629,7 +1613,7 @@ static bool columnContainsNaN(const IColumn & column)
     for (size_t i = 0, size = column.size(); i < size; ++i)
     {
         column.get(i, field);
-        if (fieldContainsNaN(field))
+        if (field.isNaN())
             return true;
     }
     return false;

@@ -132,9 +132,11 @@ SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_
 
 INSERT INTO t_106533_pk_minmax VALUES (1, 1.0), (1, nan), (2, 2.0), (2, 3.0), (3, 1.5), (3, 2.5);
 
+-- The query condition cache is keyed on the condition, not on the settings, so the second arm would
+-- otherwise reuse the first arm's granule verdict and stop being an independent oracle.
 SELECT count() FROM t_106533_pk_minmax WHERE NOT ((val >= 0.) AND (val <= 3.))
-SETTINGS use_skip_indexes = 0, use_statistics_for_part_pruning = 0;
+SETTINGS use_skip_indexes = 0, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0;
 SELECT count() FROM t_106533_pk_minmax WHERE NOT ((val >= 0.) AND (val <= 3.))
-SETTINGS use_skip_indexes = 0, use_statistics_for_part_pruning = 0, use_partition_minmax_for_primary_key_pruning = 0;
+SETTINGS use_skip_indexes = 0, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0, use_partition_minmax_for_primary_key_pruning = 0;
 
 DROP TABLE t_106533_pk_minmax;
