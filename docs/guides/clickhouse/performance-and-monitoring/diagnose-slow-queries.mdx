@@ -19,7 +19,7 @@ The examples in this guide use the `nyc_taxi.trips_small_inferred` table. To run
   <NYCTaxiExampleDataset />
 </Accordion>
 
-To reproduce the query-log results in this guide, run one or more of the [example workload queries](/guides/clickhouse/performance-and-monitoring/query-optimization-example#establish-the-baseline) at least twice after loading the dataset. Then flush the query log so that the completed runs are available to the examples below:
+To reproduce the query-log results in this guide, run all three [example workload queries](/guides/clickhouse/performance-and-monitoring/query-optimization-example#establish-the-baseline) at least twice after loading the dataset. Then flush the query log so that the completed runs are available to the examples below:
 
 ```sql
 SYSTEM FLUSH LOGS;
@@ -373,14 +373,14 @@ The table contains 329.04 million rows, approximately the same number reported i
 
 After choosing a representative run, use [`EXPLAIN`](/reference/statements/explain) to inspect how ClickHouse plans the query without running it. The output shows the operations ClickHouse expects to perform and how data moves between them, providing more context for the measurements in the query log.
 
-For a detailed introduction to the available output formats, see [Understanding query execution with the analyzer](/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer). In this example, `EXPLAIN indexes = 1` shows how ClickHouse plans to read and filter the data and whether it can skip any of it.
+For a detailed introduction to the available output formats, see [Understanding query execution with the analyzer](/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer). In this example, `EXPLAIN` shows how ClickHouse plans to read and filter the data and whether it can skip any of it.
 
 The output is a tree of operations that shows how ClickHouse expects to read, filter, and process the data. Child operations appear below their parents. Start with the deepest read operation, then follow the plan upward to see how ClickHouse transforms the data into the final result.
 
-Use the first long-running query from the query-log results:
+For this example, inspect the calculated-speed query from the query-log results:
 
 ```sql
-EXPLAIN indexes = 1
+EXPLAIN actions = 1, compact = 1, pretty = 1, indexes = 1
 WITH
     dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
     (trip_distance / trip_time) * 3600 AS speed_mph
@@ -389,25 +389,23 @@ FROM nyc_taxi.trips_small_inferred
 WHERE speed_mph > 30
 ```
 
-```response
-Query id: f35c412a-edda-4089-914b-fa1622d69868
+The output includes the following operations. Details such as the number of parts and granules depend on how the data is stored:
 
-   ┌─explain─────────────────────────────────────────────┐
-1. │ Expression ((Projection + Before ORDER BY))         │
-2. │   Aggregating                                       │
-3. │     Expression (Before GROUP BY)                    │
-4. │       Filter (WHERE)                                │
-5. │         ReadFromMergeTree (nyc_taxi.trips_small_inferred) │
-   └─────────────────────────────────────────────────────┘
+```response
+Output: quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+
+Aggregating
+│  Aggregates: quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+└──Filter
+   │  Filter column: trip_distance / dateDiff('s', pickup_datetime, dropoff_datetime) * 3600 > 30
+   └──ReadFromMergeTree (nyc_taxi.trips_small_inferred)
 ```
 
 From the bottom up, the plan maps to the query as follows:
 
 1. `ReadFromMergeTree` reads from `nyc_taxi.trips_small_inferred`. The missing `Indexes` section, combined with `read_rows` matching the table's row count, shows that ClickHouse reads the entire table.
-2. `Filter (WHERE)` corresponds to `WHERE speed_mph > 30`. For every row read, ClickHouse calculates `trip_time` using `dateDiff`, calculates `speed_mph`, and then keeps only rows above 30 miles per hour.
-3. `Expression (Before GROUP BY)` passes the filtered `trip_distance` values to `quantiles`. ClickHouse uses this label for the step that prepares aggregate inputs even though this query has no `GROUP BY` clause.
-4. `Aggregating` calculates the quantiles.
-5. The top `Expression` produces the final result.
+2. `Filter` shows the expanded expression for `speed_mph > 30`. For every row read, ClickHouse calculates the trip duration and speed, then keeps only rows above 30 miles per hour.
+3. `Aggregating` calculates the quantiles from the filtered `trip_distance` values.
 
 This plan identifies three sources of work to test: reading every row, calculating `speed_mph` while filtering, and calculating the quantiles.
 
@@ -417,4 +415,4 @@ This plan identifies three sources of work to test: reading every row, calculati
 
 ## Next steps {#next-steps}
 
-Next, test these findings with the controlled comparison method in [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks). Because this query has no `GROUP BY`, skip the grouped comparison and compare it with a `count` that retains `WHERE speed_mph > 30`. This helps distinguish the quantile calculation from the scan-and-filter work.
+Next, use [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks) to learn how to test suspected sources of work under controlled conditions. It compares progressively simpler query shapes to identify which operations warrant further investigation.
