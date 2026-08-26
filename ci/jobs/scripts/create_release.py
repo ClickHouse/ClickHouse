@@ -164,8 +164,9 @@ class ReleaseProgress:
 
 
 class ReleaseContextManager:
-    def __init__(self, release_progress):
+    def __init__(self, release_progress, commit_sha=None):
         self.release_progress = release_progress
+        self.commit_sha = commit_sha
         self.release_info = None
 
     def __enter__(self):
@@ -173,7 +174,7 @@ class ReleaseContextManager:
             self.release_info = ReleaseInfo(
                 release_branch="NA",
                 release_type="NA",
-                commit_sha=args.ref,
+                commit_sha=self.commit_sha,
                 release_tag="NA",
                 version="NA",
                 codename="NA",
@@ -237,7 +238,12 @@ class ReleaseInfo:
         return self
 
     def prepare(
-        self, commit_ref: str, release_type: str, dry_run: bool = False
+        self,
+        commit_ref: str,
+        release_type: str,
+        dry_run: bool = False,
+        skip_repo: bool = False,
+        skip_docker: bool = False,
     ) -> "ReleaseInfo":
         assert release_type in ("patch", "new")
         # `commit_ref` (the workflow `ref` input) is interpolated into git
@@ -318,6 +324,14 @@ class ReleaseInfo:
 
         # Behind the tip and not the release tag itself -> out of order; else an existing release tag (at this commit) is recovery, a missing one is create.
         self.is_tag_pushed = Git.tag_exists(release_tag)
+        # skip-repo/skip-docker re-publish an already-created release; refuse them
+        # against a ref that resolves to a new (untagged) release, which would
+        # otherwise fall through to the creation steps and publish it partially.
+        assert not (not self.is_tag_pushed and (skip_repo or skip_docker)), (
+            "skip-repo/skip-docker re-publish an existing release and must be run "
+            "against its release tag (recovery); the given ref resolves to a new "
+            "release. Pass the release tag as the ref."
+        )
         assert not (self.is_bump_landed and commit_ref != release_tag), (
             f"Refusing out-of-order release [{release_tag}] from [{commit_ref}]: "
             f"branch [{release_branch}] tip is already ahead of it. Pass a "
@@ -356,6 +370,10 @@ class ReleaseInfo:
         return self
 
     def push_release_tag(self, dry_run: bool) -> None:
+        # Idempotent: a recovery finds the tag already published — nothing to do.
+        if Git.tag_exists(self.release_tag):
+            print(f"Release tag [{self.release_tag}] already exists — skipping")
+            return
         print(
             f"Create and push release tag [{self.release_tag}], commit [{self.commit_sha}]"
         )
@@ -383,34 +401,40 @@ class ReleaseInfo:
             print("WARNING: failed to create backport labels for the new branch")
 
     def push_new_release_branch(self, dry_run: bool) -> None:
-        version = CHVersion.get_current_version()
         new_release_branch = self.release_branch
-        version_after_release = copy(version)
-        version_after_release.bump_release()
-        assert version_after_release.string == self.version, (
-            f"Unexpected current version in git, must precede [{self.version}] by one step, "
-            f"actual [{version.string}]"
-        )
-        if dry_run:
-            Shell.check(
-                f"{GIT_PREFIX} branch -l | grep -q {new_release_branch} && git branch -d {new_release_branch}"
+        # Skip only the push if the branch exists; the labels below are recreated
+        # regardless, since a prior attempt may have pushed the branch but failed
+        # before creating them.
+        if Git.branch_exists(new_release_branch):
+            print(f"Release branch [{new_release_branch}] already exists — skipping push")
+        else:
+            version = CHVersion.get_current_version()
+            version_after_release = copy(version)
+            version_after_release.bump_release()
+            assert version_after_release.string == self.version, (
+                f"Unexpected current version in git, must precede [{self.version}] by one step, "
+                f"actual [{version.string}]"
             )
-        print(
-            f"Create and push new release branch [{new_release_branch}], commit [{self.commit_sha}]"
-        )
-        # Cut the branch from the exact released commit, not ambient master:
-        # the workflow may be dispatched with a SHA, and master can move between
-        # release selection and this step, which would otherwise point the tag
-        # and the branch at different commits.
-        with checkout(self.commit_sha):
-            with checkout_new(new_release_branch):
-                Git.push(
-                    GITHUB_REPOSITORY,
-                    f"HEAD:refs/heads/{new_release_branch}",
-                    dry_run=dry_run,
-                    strict=True,
-                    retries=3,  # transient workflow-scope timeout (see push_release_tag)
+            if dry_run:
+                Shell.check(
+                    f"{GIT_PREFIX} branch -l | grep -q {new_release_branch} && git branch -d {new_release_branch}"
                 )
+            print(
+                f"Create and push new release branch [{new_release_branch}], commit [{self.commit_sha}]"
+            )
+            # Cut the branch from the exact released commit, not ambient master:
+            # the workflow may be dispatched with a SHA, and master can move between
+            # release selection and this step, which would otherwise point the tag
+            # and the branch at different commits.
+            with checkout(self.commit_sha):
+                with checkout_new(new_release_branch):
+                    Git.push(
+                        GITHUB_REPOSITORY,
+                        f"HEAD:refs/heads/{new_release_branch}",
+                        dry_run=dry_run,
+                        strict=True,
+                        retries=3,  # transient workflow-scope timeout (see push_release_tag)
+                    )
 
         print("Create and push backport tags for new release branch")
         ReleaseInfo._create_gh_label(
@@ -421,6 +445,13 @@ class ReleaseInfo:
         )
 
     def update_version_and_contributors_list(self, dry_run: bool) -> None:
+        # A superseded (late) recovery must not rewrite the branch version backwards.
+        if self.release_type == "patch" and self.is_bump_landed:
+            print(
+                f"Branch {self.release_branch} already advanced past this release "
+                f"(late recovery) — skipping version bump"
+            )
+            return
         with checkout(self.commit_sha):
             version = CHVersion.get_current_version()
             if self.release_type == "patch":
@@ -907,7 +938,9 @@ if __name__ == "__main__":
         _ssh_agent.print_keys()
 
     if args.prepare_release_info:
-        with ReleaseContextManager(release_progress=ReleaseProgress.STARTED) as release_info:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.STARTED, commit_sha=args.ref
+        ) as release_info:
             assert (
                 args.ref and args.release_type
             ), "--ref and --release-type must be provided with --prepare-release-info"

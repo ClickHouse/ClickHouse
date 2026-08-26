@@ -172,14 +172,12 @@ def test_new_bump_is_early_and_patch_bump_is_deferred():
     enqueue/merge step.
     """
     text = _read(RELEASE_JOB)
-    # Match the actual create_release.py invocations, not prose in comments.
-    bump_positions = [
-        m.start()
-        for m in re.finditer(r"create_release\.py --create-bump-version-pr", text)
-    ]
+    # Match the actual bump step invocations, not prose in comments. The bump now
+    # runs in-process via the bump_version() callable, not a create_release.py CLI call.
+    bump_positions = [m.start() for m in re.finditer(r"command=bump_version\b", text)]
     changelog_pos = text.find('name="Push ChangeLog to master"')
     assert len(bump_positions) >= 2, (
-        "expected a separate 'new' and deferred 'patch' --create-bump-version-pr"
+        "expected a separate 'new' and deferred 'patch' bump_version step"
     )
     assert changelog_pos != -1, "release_job.py should have the Push ChangeLog step"
     assert "Merge Created PRs" not in text, "the merge/enqueue step must be gone"
