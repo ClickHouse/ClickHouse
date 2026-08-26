@@ -154,6 +154,10 @@ The rule is applied to every expression list, including the ones whose order doe
 function: `SELECT a - b` and `SELECT b - a` also get the same hash. The function is therefore lossy on purpose - use it to group a workload by
 shape, for example over `system.query_log`, and never to decide that two queries may be substituted for each other.
 
+The argument is parsed as ClickHouse SQL under the current session's [`max_query_size`](/operations/settings/settings#max_query_size),
+[`max_parser_depth`](/operations/settings/settings#max_parser_depth), [`max_parser_backtracks`](/operations/settings/settings#max_parser_backtracks)
+and [`implicit_select`](/operations/settings/settings#implicit_select), not under the settings the query originally ran with.
+
 Throws in case of a parsing error.
     )";
     FunctionDocumentation::Syntax syntax = "normalizedQueryHashUnordered(x)";
@@ -192,6 +196,10 @@ Like [`normalizedQueryHashUnordered`](#normalizedQueryHashUnordered), but return
 
 This is the variant to use over `system.query_log`, which also stores queries that failed to parse and queries truncated by
 the [`log_queries_cut_to_length`](/operations/settings/settings#log_queries_cut_to_length) setting.
+
+`query_log.query` holds the text as it was submitted, so a row gives `NULL` whenever that text is not ClickHouse SQL for the current session:
+a query written in another dialect, or one that needed a higher `max_parser_depth` than this session allows. To hash the ClickHouse SQL of such
+queries instead, turn on [`log_formatted_queries`](/operations/settings/settings#log_formatted_queries) and pass `formatted_query`.
     )";
     FunctionDocumentation::Syntax syntax = "normalizedQueryHashUnorderedOrNull(x)";
     FunctionDocumentation::Arguments arguments = {
