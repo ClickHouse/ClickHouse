@@ -17,7 +17,7 @@ SELECT DISTINCT (number % 60000)::UInt16 AS a, (number % 40000)::UInt16 AS b FRO
 SELECT DISTINCT (number % 300000)::UInt32 AS a, (number % 200000)::UInt32 AS b FROM numbers_mt(4000000)
     FORMAT Null SETTINGS distinct_two_level_threshold = 1000, log_comment = '05042_distinct_keys64_probe';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 -- The packed-key two-level parallel build actually ran (settings honored, not a silent no-op).
 SELECT ProfileEvents['DistinctTwoLevelParallelFilterBuilds'] > 0

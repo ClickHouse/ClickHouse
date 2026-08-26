@@ -18,7 +18,7 @@ SELECT DISTINCT number % 200000 AS k FROM numbers_mt(4000000)
     FORMAT Null SETTINGS distinct_two_level_threshold = 1000,
                          distinct_two_level_threshold_bytes = 0, log_comment = '05044_big_chunks';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 -- Small chunks: never converted, so nothing was paid for an unused parallel build.
 SELECT ProfileEvents['DistinctHashTablesInitializedAsTwoLevel'] = 0
@@ -52,7 +52,7 @@ SELECT DISTINCT lc FROM t_05044_lc
     FORMAT Null SETTINGS distinct_two_level_threshold = 1000,
                          distinct_two_level_threshold_bytes = 0, log_comment = '05044_lowcardinality';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['DistinctTwoLevelParallelFilterBuilds'] = 0
 FROM system.query_log
