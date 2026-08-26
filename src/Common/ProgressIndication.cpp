@@ -44,6 +44,8 @@ void ProgressIndication::resetProgress()
         std::lock_guard lock(profile_events_mutex);
         watch.restart();
         cpu_usage_meter.reset(static_cast<double>(getElapsedNanoseconds()));
+        disk_read_meter.reset(static_cast<double>(getElapsedNanoseconds()));
+        disk_write_meter.reset(static_cast<double>(getElapsedNanoseconds()));
         hosts_data.clear();
     }
 }
@@ -65,18 +67,38 @@ void ProgressIndication::updateThreadEventData(HostToTimesMap & new_hosts_data)
     constexpr UInt64 us_to_ns = 1000;
 
     UInt64 total_cpu_ns = 0;
+    UInt64 total_read_bytes = 0;
+    UInt64 total_write_bytes = 0;
     for (auto & new_host : new_hosts_data)
     {
         total_cpu_ns += us_to_ns * new_host.second.time();
+        total_read_bytes += new_host.second.os_read_bytes;
+        total_write_bytes += new_host.second.os_write_bytes;
         hosts_data[new_host.first] = new_host.second;
     }
-    cpu_usage_meter.add(static_cast<double>(getElapsedNanoseconds()), static_cast<double>(total_cpu_ns));
+    double now_ns = static_cast<double>(getElapsedNanoseconds());
+    cpu_usage_meter.add(now_ns, static_cast<double>(total_cpu_ns));
+    disk_read_meter.add(now_ns, static_cast<double>(total_read_bytes));
+    disk_write_meter.add(now_ns, static_cast<double>(total_write_bytes));
 }
 
 double ProgressIndication::getCPUUsage()
 {
     std::lock_guard lock(profile_events_mutex);
     return cpu_usage_meter.rate(static_cast<double>(getElapsedNanoseconds()));
+}
+
+double ProgressIndication::getDiskReadRate()
+{
+    std::lock_guard lock(profile_events_mutex);
+    /// The meter yields bytes per nanosecond; scale to bytes per second.
+    return disk_read_meter.rate(static_cast<double>(getElapsedNanoseconds())) * 1e9;
+}
+
+double ProgressIndication::getDiskWriteRate()
+{
+    std::lock_guard lock(profile_events_mutex);
+    return disk_write_meter.rate(static_cast<double>(getElapsedNanoseconds())) * 1e9;
 }
 
 ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
@@ -176,8 +198,10 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
     double cpu_usage = getCPUUsage();
     auto [memory_usage, max_host_usage, peak_usage] = getMemoryUsage();
     auto [temp_data_on_disk_usage, max_host_temp_data_on_disk_usage] = getTempDataOnDiskUsage();
+    double disk_read_rate = getDiskReadRate();
+    double disk_write_rate = getDiskWriteRate();
 
-    if (cpu_usage > 0 || memory_usage > 0 || temp_data_on_disk_usage > 0)
+    if (cpu_usage > 0 || memory_usage > 0 || temp_data_on_disk_usage > 0 || disk_read_rate > 0 || disk_write_rate > 0)
     {
         WriteBufferFromOwnString profiling_msg_builder;
 
@@ -194,6 +218,10 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(temp_data_on_disk_usage) << " disk";
         if (max_host_temp_data_on_disk_usage < temp_data_on_disk_usage)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(max_host_temp_data_on_disk_usage) << " max/host";
+        if (disk_read_rate > 0)
+            profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(disk_read_rate) << "/s read";
+        if (disk_write_rate > 0)
+            profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(disk_write_rate) << "/s write";
 
         profiling_msg_builder << ")";
         profiling_msg = profiling_msg_builder.str();
