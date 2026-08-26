@@ -73,6 +73,10 @@ SELECT trimLeft(explain) AS explain FROM (
     SELECT count() FROM named_points WHERE p.x <= 25000
 ) WHERE explain LIKE '%Parts%' OR explain LIKE '%Granules%';
 
+-- The explicit tupleElement form with the element name goes through a separate branch
+-- of the analysis (a String constant instead of a subcolumn read), pin it as well
+SELECT count() FROM named_points WHERE tupleElement(p, 'x') <= 25000 SETTINGS force_primary_key = 1;
+
 SELECT count() FROM named_points WHERE p.y <= 25000;
 SELECT count() FROM named_points WHERE p.y <= 25000 SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 

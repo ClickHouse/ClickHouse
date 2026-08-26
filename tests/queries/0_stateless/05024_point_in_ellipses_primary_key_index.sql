@@ -23,6 +23,11 @@ SELECT trimLeft(explain) AS explain FROM (
     SELECT count() FROM points_xy WHERE pointInEllipses(x, y, 0., 0., 5000., 5000.)
 ) WHERE explain LIKE '%Parts%' OR explain LIKE '%Granules%';
 
+-- A point inside the union bounding box but outside the ellipse itself: the index only
+-- over-approximates with the box, the function's quadratic check rejects the point
+-- (2 * 4000^2 > 5000^2)
+SELECT pointInEllipses(4000., 4000., 0., 0., 5000., 5000.);
+
 -- A union of two ellipses
 SELECT count() FROM points_xy WHERE pointInEllipses(x, y, 0., 0., 5000., 5000., 50000., 50000., 1000., 2000.);
 

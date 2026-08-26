@@ -560,7 +560,7 @@ private:
         DataTypePtr tuple_type;
         size_t element_position;
     };
-    std::optional<TupleElementSubcolumn> tryParseTupleElementSubcolumnOfKey(const String & name, const BuildInfo & info) const;
+    std::optional<TupleElementSubcolumn> tryParseTupleElementSubcolumnOfKey(const RPNBuilderTreeNode & node, const BuildInfo & info) const;
 
     bool extractMonotonicFunctionsChainFromKey(
         ContextPtr context,

@@ -3039,8 +3039,15 @@ DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func)
 
 
 std::optional<KeyCondition::TupleElementSubcolumn> KeyCondition::tryParseTupleElementSubcolumnOfKey(
-    const String & name, const BuildInfo & info) const
+    const RPNBuilderTreeNode & node, const BuildInfo & info) const
 {
+    /// Subcolumn inputs only come from the analyzer's ActionsDAG; without a DAG node there is
+    /// nothing to verify the type against, so decline.
+    const auto * dag_node = node.getDAGNode();
+    if (!dag_node)
+        return {};
+
+    const String name = node.getColumnName();
     const auto & sample_block = info.key_expr->getSampleBlock();
 
     /// An element name can itself contain a dot, so try every split position.
@@ -3062,6 +3069,13 @@ std::optional<KeyCondition::TupleElementSubcolumn> KeyCondition::tryParseTupleEl
         /// of an unnamed tuple; explicit names resolve directly.
         std::optional<size_t> element_position = tuple_type->tryGetPositionByName(element_name);
         if (!element_position)
+            continue;
+
+        /// A defense against a genuine top-level column whose name collides with the flattened
+        /// element name (MergeTree DDL rejects such a column because of a data-stream name
+        /// collision, and for external sources a real column wins the direct key lookup above,
+        /// but require positive evidence anyway): the node must have exactly the element's type.
+        if (!dag_node->result_type->equals(*tuple_type->getElements()[*element_position]))
             continue;
 
         return TupleElementSubcolumn{column_name, it->second, type, *element_position};
@@ -3213,7 +3227,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     /// a named tuple (`p.x`) as a subcolumn input instead of a `tupleElement` function call.
     /// The first element is analyzable through the monotonic-functions chain (tuples are ordered
     /// lexicographically); the caller prepends the equivalent `tupleElement(key, 1)` chain link.
-    if (auto subcolumn = tryParseTupleElementSubcolumnOfKey(name, info))
+    if (auto subcolumn = tryParseTupleElementSubcolumnOfKey(node, info))
     {
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(subcolumn->tuple_type.get());
         if (subcolumn->element_position == 0 && tuple_type && firstTupleElementIsAnalyzable(*tuple_type))
@@ -3877,7 +3891,7 @@ bool KeyCondition::resolvePointCoordinateArguments(
 
         /// A subcolumn read of a tuple-typed key column: the analyzer plans access to an element
         /// of a named tuple (`p.x`) as a subcolumn input instead of a `tupleElement` call.
-        if (auto subcolumn = tryParseTupleElementSubcolumnOfKey(node.getColumnName(), info))
+        if (auto subcolumn = tryParseTupleElementSubcolumnOfKey(node, info))
             return TupleElementAccess{subcolumn->column_name, Field(static_cast<UInt64>(subcolumn->element_position + 1))};
 
         return {};
