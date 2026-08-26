@@ -720,8 +720,10 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         /// On a cache hit the transform rebound `tmp_set_and_key` and left the set this task created
         /// empty, so the created one would read "not created".
         Set & built_set = tmp_set_and_key ? *tmp_set_and_key->set : *set_and_key->set;
+        /// The wording differs from the unordered path on purpose: it is the only way to tell from the
+        /// outside which of the two builds observed the cancellation, and the regression test relies on it.
         if (observed_cancel && !built_set.isCreated())
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while building a set for subquery");
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while building an ordered set for subquery");
         if (!built_set.isCreated())
             return false;
 

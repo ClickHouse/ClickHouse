@@ -62,7 +62,7 @@ wait $client_pid
 if grep -q -F "Not-ready Set" "$CLIENT_ERR"; then
     echo "FAIL: an unbuilt set reached the filter"
     cat "$CLIENT_ERR"
-elif grep -q -F "QUERY_WAS_CANCELLED" "$CLIENT_ERR"; then
+elif grep -q -F "cancelled while building a set for subquery" "$CLIENT_ERR"; then
     echo "the cancellation is reported"
 else
     echo "FAIL: neither the cancellation nor the unbuilt set was reported"
@@ -79,18 +79,22 @@ $CLICKHOUSE_CLIENT -q "
     SELECT count() > 0 FROM (
         EXPLAIN indexes = 1
         SELECT count() FROM t_first_cancel_set_build WHERE a IN (
-            SELECT number * 3 FROM numbers(3) WHERE number IN (SELECT number FROM numbers(3))
+            SELECT number * 3 FROM numbers(3) WHERE sleep(0) = 0 AND number IN (SELECT number FROM numbers(3))
         ) SETTINGS $PINNED_SETTINGS
     ) WHERE explain ILIKE '%PrimaryKey%'"
 
 QUERY_ID="${CLICKHOUSE_DATABASE}_first_cancel_ordered_set_build"
 CLIENT_ERR="${CLICKHOUSE_TMP}/first_cancel_ordered_set_build.err"
 
+# The slow stage must be the *outer* non-clonable set build itself, not the nested one: if the nested
+# subquery were the long-running one, the cancellation would land in its own `buildSetInplace` and the
+# unordered fix alone would report it, so this half would pass even with the ordered-path guard removed.
+# The nested `IN` is therefore trivial (it only makes the source non-clonable) and `sleep` is the first
+# conjunct, so it is evaluated for every block even under short-circuit evaluation.
 $CLICKHOUSE_CLIENT --query_id="$QUERY_ID" -q "
     SELECT count() FROM t_first_cancel_set_build WHERE a IN (
-        SELECT number * 3 FROM numbers(10000000) WHERE number IN (
-            SELECT number FROM numbers(10000000) WHERE sleep(1) = 0
-        )
+        SELECT number * 3 FROM numbers(10000000)
+        WHERE sleep(1) = 0 AND number IN (SELECT number FROM numbers(3))
     ) SETTINGS partial_result_on_first_cancel = 1, $PINNED_SETTINGS" > /dev/null 2> "$CLIENT_ERR" &
 client_pid=$!
 
@@ -111,10 +115,10 @@ wait $client_pid
 if grep -q -F "Not-ready Set" "$CLIENT_ERR"; then
     echo "FAIL: an unbuilt ordered set reached the filter"
     cat "$CLIENT_ERR"
-elif grep -q -F "QUERY_WAS_CANCELLED" "$CLIENT_ERR"; then
+elif grep -q -F "cancelled while building an ordered set for subquery" "$CLIENT_ERR"; then
     echo "the ordered-set cancellation is reported"
 else
-    echo "FAIL: neither the ordered-set cancellation nor the unbuilt set was reported"
+    echo "FAIL: the ordered-set build did not report the cancellation"
     cat "$CLIENT_ERR"
 fi
 
