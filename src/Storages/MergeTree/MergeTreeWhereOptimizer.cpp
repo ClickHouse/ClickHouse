@@ -31,11 +31,13 @@ namespace Setting
     extern const SettingsBool use_statistics;
 }
 
+namespace {
+
 /// Conditions like "x = N" are considered good if abs(N) > threshold.
 /// This is used to assume that condition is likely to have good selectivity.
-static constexpr auto threshold = 2;
+constexpr auto threshold = 2;
 
-static NameToIndexMap fillNamesPositions(const Names & names)
+NameToIndexMap fillNamesPositions(const Names & names)
 {
     NameToIndexMap names_positions;
 
@@ -48,10 +50,8 @@ static NameToIndexMap fillNamesPositions(const Names & names)
     return names_positions;
 }
 
-/// Average bytes of one value of a type. Constants match `estimateColumnWidthFromType`.
-/// Uncompressed, unlike the stored column sizes, so it over-charges - the safe direction for a
-/// column whose real cost is unknown.
-static double estimateBytesPerValueFromType(const IDataType & type)
+/// Approximates the bytes per value for a given type.
+double approximateBytesPerValueForType(const IDataType & type)
 {
     static constexpr double default_string_size = 64;
     static constexpr double default_complex_type_size = 128;
@@ -64,7 +64,7 @@ static double estimateBytesPerValueFromType(const IDataType & type)
 }
 
 /// Find minimal position of any of the column in primary key.
-static Int64 findMinPosition(const NameSet & condition_table_columns, const NameToIndexMap & primary_key_positions)
+Int64 findMinPosition(const NameSet & condition_table_columns, const NameToIndexMap & primary_key_positions)
 {
     Int64 min_position = std::numeric_limits<Int64>::max() - 1;
 
@@ -78,7 +78,7 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
     return min_position;
 }
 
-static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names & queried_columns)
+NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names & queried_columns)
 {
     GetColumnsOptions options(GetColumnsOptions::All);
     options.withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
@@ -99,6 +99,8 @@ static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, cons
     }
 
     return table_columns;
+}
+
 }
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
@@ -539,7 +541,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 /// Rejects no rows, so it is useless in PREWHERE regardless of its cost: schedule it last.
                 cond.cost_with_selectivity = std::numeric_limits<double>::infinity();
             else
-                cond.cost_with_selectivity = getBytesPerRow(cond.table_columns) * static_cast<double>(total_rows) / rejected_rows;
+                cond.cost_with_selectivity = approximateBytesPerRow(cond.table_columns) * static_cast<double>(total_rows) / rejected_rows;
 
             res.emplace_back(std::move(cond));
         }
@@ -726,32 +728,29 @@ UInt64 MergeTreeWhereOptimizer::getColumnsSize(const NameSet & columns) const
     return size;
 }
 
-double MergeTreeWhereOptimizer::getBytesPerRow(const NameSet & columns) const
+double MergeTreeWhereOptimizer::approximateBytesPerRow(const NameSet & columns) const
 {
     double bytes_per_row = 0;
 
     for (const auto & column : columns)
-        bytes_per_row += getColumnBytesPerRow(column);
+        bytes_per_row += approximateBytesPerRowAndColumn(column);
 
     return bytes_per_row;
 }
 
-double MergeTreeWhereOptimizer::getColumnBytesPerRow(const String & column) const
+double MergeTreeWhereOptimizer::approximateBytesPerRowAndColumn(const String & column) const
 {
     chassert(total_rows > 0);
 
     if (auto it = column_sizes.find(column); it != column_sizes.end() && it->second != 0)
         return static_cast<double>(it->second) / static_cast<double>(total_rows);
 
-    /// No stored size (compact part, or not a physical column). The score must stay in bytes per row,
-    /// so estimate from the type rather than substituting another quantity.
-    /// NOTE: a column the reader computes from a default expression is charged one value of its own
-    /// type, not the cost of that expression, so it is underestimated in parts that need the default.
+    /// No stored size (compact part, or not a physical column).
     if (auto column_in_storage = storage_metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, column))
-        return estimateBytesPerValueFromType(*column_in_storage->type);
+        return approximateBytesPerValueForType(*column_in_storage->type);
 
     if (auto virtual_column = storage_metadata->virtuals.tryGet(column, VirtualsKind::All, VirtualsMaterializationPlace::All))
-        return estimateBytesPerValueFromType(*virtual_column->type);
+        return approximateBytesPerValueForType(*virtual_column->type);
 
     return 0;
 }

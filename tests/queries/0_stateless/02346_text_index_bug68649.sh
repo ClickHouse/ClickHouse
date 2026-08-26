@@ -47,14 +47,16 @@ $MY_CLICKHOUSE_CLIENT --query "
     SETTINGS max_insert_threads = 1;
 "
 
-# `hasToken` uses exact direct read, so it becomes a condition on the virtual column alone. The
-# equality has a non-constant right side, so it stays a raw predicate over `text`.
+# A query with a conjunction as WHERE filter
+# - `hasToken` uses exact direct read, so it becomes a read of a virtual column.
+# - The `=` filter is against a non-constant value, so it stays raw scan
 QUERY="SELECT count() FROM tab WHERE hasToken(text, 'alpha') AND text = concat('x', toString(v))"
 
 echo '-- no row matches the equality'
 $MY_CLICKHOUSE_CLIENT --query "$QUERY"
 
 # Conditions are logged in scheduling order.
+# Expect that `hasToken` (virtual column __text_index_) runs first in PREWHERE
 echo '-- PREWHERE scheduling order'
 MY_CLICKHOUSE_CLIENT_TEST_LOGS=$(echo "$MY_CLICKHOUSE_CLIENT" | sed "s/--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}/--send_logs_level=test/g")
 $MY_CLICKHOUSE_CLIENT_TEST_LOGS --query "$QUERY" 2>&1 >/dev/null \

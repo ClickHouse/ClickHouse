@@ -161,9 +161,8 @@ private:
 
     UInt64 getColumnsSize(const NameSet & columns) const;
 
-    /// Bytes read per row to evaluate a condition over `columns`. Require total_rows > 0.
-    double getBytesPerRow(const NameSet & columns) const;
-    double getColumnBytesPerRow(const String & column) const;
+    double approximateBytesPerRow(const NameSet & columns) const;
+    double approximateBytesPerRowAndColumn(const String & column) const;
 
     bool columnsSupportPrewhere(const NameSet & columns) const;
 
