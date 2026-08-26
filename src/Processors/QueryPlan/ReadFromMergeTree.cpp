@@ -2667,6 +2667,28 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
         /*check_row_limits=*/false);
 }
 
+std::optional<size_t> ReadFromMergeTree::estimateUncompressedBytesToRead() const
+{
+    const auto analysis = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead();
+    if (!analysis)
+        return {};
+
+    const auto & column_names = analysis->column_names_to_read.empty() ? all_column_names : analysis->column_names_to_read;
+    if (const auto estimate = estimateReadBytes(
+            analysis->parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, context->getSettingsRef()))
+        return estimate;
+
+    /// No conservative per-column estimate is available. Charge every selected part in full rather
+    /// than giving up: the caller needs a bound it can rely on, and an over-estimate is harmless.
+    size_t total_bytes = 0;
+    for (const auto & part : analysis->parts_with_ranges)
+    {
+        if (__builtin_add_overflow(total_bytes, part.data_part->getTotalColumnsSize().data_uncompressed, &total_bytes))
+            return std::numeric_limits<size_t>::max();
+    }
+    return total_bytes;
+}
+
 namespace
 {
 

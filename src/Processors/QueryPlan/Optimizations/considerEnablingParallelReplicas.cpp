@@ -323,6 +323,51 @@ void considerEnablingParallelReplicas(
         return;
     }
 
+    /// Building the parallel-replicas plan below re-plans the query from scratch, which is expensive.
+    /// Before paying for that, reject queries that read too little data for parallel replicas to be
+    /// worth considering at all. The final check further down applies
+    /// `automatic_parallel_replicas_min_bytes_per_replica` to the compressed bytes of the read that
+    /// ends up being parallelized, which is not known until both plans are built and matched. Bound it
+    /// here by the largest read in the plan: the parallelized read is one of them, and uncompressed
+    /// bytes are never fewer than compressed ones, so a plan rejected here would have been rejected
+    /// there as well. A read whose size cannot be estimated counts as large enough, so the gate never
+    /// rejects on missing information. Mode 2 of `automatic_parallel_replicas_mode` only collects
+    /// statistics and never switches to parallel replicas, and the threshold does not apply to it, so
+    /// such queries are exempt and keep collecting statistics however little they read.
+    const bool threshold_applies = optimization_settings.automatic_parallel_replicas_mode == 1
+        && optimization_settings.automatic_parallel_replicas_min_bytes_per_replica != 0;
+    if (threshold_applies)
+    {
+        const auto min_bytes_per_replica = optimization_settings.automatic_parallel_replicas_min_bytes_per_replica;
+        const auto num_replicas = std::max<size_t>(optimization_settings.max_parallel_replicas, 1);
+        size_t max_bytes_to_read = 0;
+        bool all_reads_estimated = true;
+        traverseQueryPlan(
+            stack,
+            root,
+            [&](auto & frame_node)
+            {
+                if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(frame_node.step.get()))
+                {
+                    if (const auto bytes_to_read = reading->estimateUncompressedBytesToRead())
+                        max_bytes_to_read = std::max(max_bytes_to_read, *bytes_to_read);
+                    else
+                        all_reads_estimated = false;
+                }
+            });
+
+        if (all_reads_estimated && max_bytes_to_read / num_replicas < min_bytes_per_replica)
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Not building the parallel replicas plan because the largest read in the plan gives at most {} bytes per replica, "
+                "less than automatic_parallel_replicas_min_bytes_per_replica {}",
+                max_bytes_to_read / num_replicas,
+                min_bytes_per_replica);
+            return;
+        }
+    }
+
     auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder();
     if (!plan_with_parallel_replicas)
         return;
