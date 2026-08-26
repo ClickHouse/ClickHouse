@@ -163,7 +163,7 @@ void StorageMySQL::readImpl(
         /// The user-provided query is passed to MySQL as is; no outer predicate is pushed down into it, so
         /// reject any outer filter under external_table_strict_query.
         rejectOuterFilterForQueryBackedExternalSourceIfStrict(
-            query_info, storage_snapshot->metadata->getColumns().getOrdinary(), context_, getStorageID());
+            query_info, storage_snapshot->metadata->getColumns().getAllPhysical(), context_, getStorageID());
         query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::BackticksMySQL);
     }
     else
