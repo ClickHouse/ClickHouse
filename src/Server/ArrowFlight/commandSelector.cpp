@@ -185,14 +185,12 @@ static constexpr int32_t SQL_REAL = 7;
 static constexpr int32_t SQL_DOUBLE = 8;
 static constexpr int32_t SQL_VARCHAR = 12;
 static constexpr int32_t SQL_TYPE_DATE = 91;
-static constexpr int32_t SQL_TYPE_TIME = 92;
 static constexpr int32_t SQL_TYPE_TIMESTAMP = 93;
 
 /// Verbose SQL data type used in sql_data_type for datetime rows,
 /// with the concise type reported in datetime_subcode (see FlightSQL.proto).
 static constexpr int32_t SQL_DATETIME = 9;
 static constexpr int32_t SQL_CODE_DATE = 1;
-static constexpr int32_t SQL_CODE_TIME = 2;
 static constexpr int32_t SQL_CODE_TIMESTAMP = 3;
 
 static constexpr int32_t SQL_NULLABLE = 1;
@@ -314,7 +312,7 @@ commandGetXdbcTypeInfo(const arrow::flight::protocol::sql::CommandGetXdbcTypeInf
          .searchable = SQL_SEARCHABLE_FULL},
         {.type_name = "String",
          .data_type = SQL_VARCHAR,
-         .column_size = MAX_FIXEDSTRING_SIZE,
+         .column_size = arrow::StringBuilder::memory_limit(),
          .literal_prefix = "'",
          .literal_suffix = "'",
          .case_sensitive = true,
@@ -332,24 +330,6 @@ commandGetXdbcTypeInfo(const arrow::flight::protocol::sql::CommandGetXdbcTypeInf
          .literal_prefix = "'",
          .literal_suffix = "'",
          .datetime_subcode = SQL_CODE_DATE},
-        // Time / Time64
-        {.type_name = "Time",
-         .data_type = SQL_TYPE_TIME,
-         .column_size = 10,
-         .literal_prefix = "'",
-         .literal_suffix = "'",
-         .datetime_subcode = SQL_CODE_TIME,
-         .minimum_scale = 0,
-         .maximum_scale = 0},
-        {.type_name = "Time64",
-         .data_type = SQL_TYPE_TIME,
-         .column_size = 20,
-         .literal_prefix = "'",
-         .literal_suffix = "'",
-         .create_params = "precision",
-         .datetime_subcode = SQL_CODE_TIME,
-         .minimum_scale = 0,
-         .maximum_scale = 9},
         // DateTime / DateTime64
         {.type_name = "DateTime",
          .data_type = SQL_TYPE_TIMESTAMP,

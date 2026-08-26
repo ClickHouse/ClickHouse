@@ -287,8 +287,6 @@ def test_get_xdbc_type_info():
         "String",
         "Date",
         "Date32",
-        "Time",
-        "Time64",
         "DateTime",
         "DateTime64",
     ]
@@ -318,16 +316,10 @@ def test_get_xdbc_type_info():
         assert rows[name]["data_type"] == 93
         assert rows[name]["sql_data_type"] == 9
         assert rows[name]["datetime_subcode"] == 3
-    for name in ("Time", "Time64"):
-        assert rows[name]["data_type"] == 92
-        assert rows[name]["sql_data_type"] == 9
-        assert rows[name]["datetime_subcode"] == 2
-    for name in ("Time", "DateTime"):
-        assert rows[name]["minimum_scale"] == 0
-        assert rows[name]["maximum_scale"] == 0
-    for name in ("Time64", "DateTime64"):
-        assert rows[name]["minimum_scale"] == 0
-        assert rows[name]["maximum_scale"] == 9
+    assert rows["DateTime"]["minimum_scale"] == 0
+    assert rows["DateTime"]["maximum_scale"] == 0
+    assert rows["DateTime64"]["minimum_scale"] == 0
+    assert rows["DateTime64"]["maximum_scale"] == 9
     assert rows["Int32"]["sql_data_type"] == 4
     assert rows["Int32"]["datetime_subcode"] is None
 
@@ -337,7 +329,6 @@ def test_get_xdbc_type_info():
     assert rows["Decimal"]["create_params"] == ["precision", "scale"]
     assert rows["DateTime"]["create_params"] == ["timezone"]
     assert rows["DateTime64"]["create_params"] == ["precision", "timezone"]
-    assert rows["Time64"]["create_params"] == ["precision"]
     assert rows["Int32"]["create_params"] is None
     assert rows["String"]["create_params"] is None
 
@@ -367,8 +358,10 @@ def test_get_xdbc_type_info():
     assert rows["String"]["unsigned_attribute"] is None
     assert rows["String"]["auto_increment"] is None
 
-    for name in ("FixedString", "Enum8", "Enum16", "String"):
+    for name in ("FixedString", "Enum8", "Enum16"):
         assert rows[name]["column_size"] == 0xFFFFFF
+    # Arrow UTF-8 arrays use signed 32-bit offsets and reserve one value.
+    assert rows["String"]["column_size"] == 2**31 - 2
 
     schema_result = client.get_xdbc_type_info_schema()
     assert schema_result.schema == table.schema
