@@ -44,6 +44,8 @@ using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResourc
 class IStorageURLBase : public IStorage
 {
 public:
+    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override;
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -369,6 +371,9 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
+    /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
+    /// `t.x` on its own and prune on it.
+    bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
