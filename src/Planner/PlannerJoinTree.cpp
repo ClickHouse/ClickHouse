@@ -1651,6 +1651,50 @@ void disableParallelReplicasForSubqueries(const QueryTreeNodePtr & node)
     });
 }
 
+}
+
+void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePtr & query_node, const PlannerContextPtr & planner_context)
+{
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    if (settings[Setting::parallel_replicas_for_queries_with_multiple_tables])
+        return;
+
+    const auto & query_node_typed = query_node->as<const QueryNode &>();
+    const auto table_expressions_stack = buildTableExpressionsStack(query_node_typed.getJoinTreeNode());
+    const bool joins_multiple_tables = std::any_of(
+        table_expressions_stack.begin(),
+        table_expressions_stack.end(),
+        [](const auto & table_expression)
+        {
+            /// `ARRAY JOIN` is not a join between tables and does not count here.
+            const auto node_type = table_expression->getNodeType();
+            return node_type == QueryTreeNodeType::JOIN || node_type == QueryTreeNodeType::CROSS_JOIN;
+        });
+
+    if (!joins_multiple_tables)
+        return;
+
+    LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because parallel_replicas_for_queries_with_multiple_tables is disabled and the query joins multiple tables");
+    planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
+
+    /// Every subquery of this query is planned by an independent `Planner` built from the
+    /// subquery's own context, so updating the query context above is not enough: the switch has to
+    /// reach the context of every query carried by the query tree - `IN` subqueries, materialized
+    /// CTE subqueries and correlated subqueries alike. All of them are still part of the tree here
+    /// (they are detached, if at all, only when their plan is built, which happens later).
+    disableParallelReplicasForSubqueries(query_node);
+
+    /// A prepared set holds its own reference to the subquery tree, taken by `collectSets` before
+    /// this point, so a set whose tree was replaced in the query tree in the meantime is not covered
+    /// by the traversal above.
+    for (const auto & set_subquery : planner_context->getPreparedSets().getSubqueries())
+        if (const auto & set_query_tree = set_subquery->getQueryTree())
+            disableParallelReplicasForSubqueries(set_query_tree);
+}
+
+namespace
+{
+
 JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_expression,
     const QueryTreeNodePtr & parent_join_tree,
     const SelectQueryInfo & select_query_info,
@@ -3351,27 +3395,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         }
 
         prepareBuildQueryPlanForTableExpression(table_expression, select_query_options, planner_context);
-    }
-
-    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
-    if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables] && joins_count > 0)
-    {
-        LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because parallel_replicas_for_queries_with_multiple_tables is disabled and the query joins multiple tables");
-        planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
-
-        /// Every subquery of this query is planned by an independent `Planner` built from the
-        /// subquery's own context, so updating the query context above is not enough: the switch has to
-        /// reach the context of every query carried by the query tree - `IN` subqueries, materialized
-        /// CTE subqueries and correlated subqueries alike. All of them are still part of the tree here
-        /// (they are detached, if at all, only when their plan is built, which happens later).
-        disableParallelReplicasForSubqueries(query_node);
-
-        /// A prepared set holds its own reference to the subquery tree, taken by `collectSets` before
-        /// this point, so a set whose tree was replaced in the query tree in the meantime is not covered
-        /// by the traversal above.
-        for (const auto & set_subquery : planner_context->getPreparedSets().getSubqueries())
-            if (const auto & set_query_tree = set_subquery->getQueryTree())
-                disableParallelReplicasForSubqueries(set_query_tree);
     }
 
     auto should_disable_parallel_replicas = [&]() -> bool

@@ -2543,6 +2543,12 @@ void Planner::buildPlanForQueryNode()
     collectSets(query_tree, *planner_context);
     auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);
 
+    /// The kill switch for a query joining multiple tables runs first: the checks below throw when
+    /// `enable_parallel_replicas = 2`, and a query for which parallel replicas are already disabled
+    /// must be executed without them instead of failing with a parallel-replicas-only exception.
+    /// It runs after `collectSets` so that the prepared sets it has to reach are already collected.
+    disableParallelReplicasForMultipleTablesQueryIfNeeded(query_tree, planner_context);
+
     if (query_context->canUseTaskBasedParallelReplicas())
     {
         if (!settings[Setting::parallel_replicas_allow_in_with_subquery] && planner_context->getPreparedSets().hasSubqueries())

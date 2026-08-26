@@ -126,6 +126,23 @@ select count() from system.query_log
         and log_comment = '03354_materialized_cte_kill_switch_off';
 set enable_materialized_cte = 0;
 
+-- The parallel-replicas compatibility checks of the planner (`parallel_replicas_allow_in_with_subquery`,
+-- `additional_table_filters`, `FINAL`, ...) run before the join tree is planned, and with
+-- `enable_parallel_replicas = 2` they throw instead of silently turning parallel replicas off.
+-- The kill switch has to run before them: a query for which parallel replicas are already disabled by
+-- the setting must simply be executed without them, not fail with a parallel-replicas-only exception.
+set parallel_replicas_for_queries_with_multiple_tables=1;
+select count() > 0 from X as s inner join Y as j on s.id = j.id where s.id in (select id from Y)
+    settings parallel_replicas_allow_in_with_subquery = 0, enable_parallel_replicas = 2; -- { serverError SUPPORT_IS_DISABLED }
+set parallel_replicas_for_queries_with_multiple_tables=0;
+select count() > 0 from X as s inner join Y as j on s.id = j.id where s.id in (select id from Y)
+    settings parallel_replicas_allow_in_with_subquery = 0, enable_parallel_replicas = 2;
+
+set parallel_replicas_for_queries_with_multiple_tables=1;
+select count() > 0 from X as s final inner join Y as j on s.id = j.id settings enable_parallel_replicas = 2; -- { serverError SUPPORT_IS_DISABLED }
+set parallel_replicas_for_queries_with_multiple_tables=0;
+select count() > 0 from X as s final inner join Y as j on s.id = j.id settings enable_parallel_replicas = 2;
+
 -- The legacy (pre-analyzer) interpreter must respect the setting as well: with
 -- parallel_replicas_only_with_analyzer = 0 task-based parallel replicas are allowed on that path,
 -- and the kill switch is applied in InterpreterSelectQuery before the storage read.
