@@ -113,10 +113,19 @@ public:
 
     bool hasPartitions() const { return !partition_by_description.empty(); }
     const SortDescription & getPartitionByDescription() const { return partition_by_description; }
+    Names getPartitionByColumnNames() const;
 
     size_t getScatterPartitions() const { return scatter_partitions; }
 
+    /// Do not reshuffle the input by the hash of the partition columns before sorting: the input streams
+    /// already carry disjoint sets of the partition key values, so sorting each stream independently is
+    /// enough to keep every partition contiguous and sorted.
+    void skipScatterByPartition() { skip_scatter_by_partition = true; }
+
     bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
+
+    bool isPartialTopN() const { return is_partial_top_n; }
+    void setPartialTopN() { is_partial_top_n = true; }
 
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
@@ -213,9 +222,16 @@ private:
     /// When > 0, `scatterByPartitionIfNeeded` scatters into exactly this many partitions (instead of the
     /// pipeline's thread count), so both sides of a hash-sharded merge join get the same shard count.
     size_t scatter_partitions = 0;
+    bool skip_scatter_by_partition = false;
 
     /// See `findQueryForParallelReplicas`
     bool is_sorting_for_merge_join = false;
+
+    /// A distributed plan can split a top-N sort in two stages: each node keeps its local
+    /// top `limit` rows, and a limit above keeps the global top `limit` of the merged result.
+    /// This flag marks the first stage. It only tells the optimizer what the sort is for (like
+    /// `is_sorting_for_merge_join`); the executed sort is the same, so it is not serialized.
+    bool is_partial_top_n = false;
 
     UInt64 limit;
     bool always_read_till_end = false;

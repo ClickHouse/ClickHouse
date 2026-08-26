@@ -501,6 +501,22 @@ read in-order 最適化のクエリプランレベルでの 最適化 を切り�
 
 JOIN演算において左テーブルから順序どおりに読み取りを継続し、その後のステップで利用できるようにします。
 
+<div id="query_plan_read_in_order_through_spilling_join">
+  ## query_plan_read_in_order_through_spilling_join
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "結合をメモリに固定して、結合が保証する順序を維持することで、自動スピルしきい値が設定されたハッシュ結合を介した順序どおりの読み取りの伝播を可能にする新しい設定。previous_value=false のため、26.8 より前のバージョンとの `互換性設定` では、このような結合を順序どおりの読み取りに使用せず、常にスピル可能とする従来の保守的な動作が復元されます。"}]}]} />
+
+[`query_plan_read_in_order_through_join`](/ja/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_join) を、[`max_bytes_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) または [`max_bytes_ratio_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) で自動ディスクスピルしきい値が設定されたハッシュ結合にも適用できるようにします。
+
+このような結合が左テーブルの順序を保持すると保証できるのは、一度もスピルしない場合に限られます。スピルすると、行がハッシュによってバケットに分散されるためです。この最適化が適用される場合、結合はメモリ内に保持され、スピルしきい値はトリガーされなくなります。代わりに、自動スピルが設定されていない場合と同様に、右側のテーブルはメモリトラッカーによって制限されます。
+
+`0` に設定すると、スピルする可能性がある結合を介して順序どおりの読み取りを伝播しないという保守的な動作を維持します。メモリ制限内に収めるためにスピルに依存しており、そうでなければこの最適化の対象となるクエリは、従来どおり動作します。
+
+結合の保持側に `Sort` と `Limit` をプッシュダウンする、`JOIN` を介した個別の `ORDER BY ... LIMIT` 最適化は、結合が順序を保持することに依存しないため、この設定にかかわらずスピル可能な結合でも引き続き利用できます。ただし、順序どおりの読み取りが可能な場合は、順序どおりの読み取りが優先されます。そのため、この設定を有効にすると、保持側が要求された順序で行をストリーミングできるスピル可能な結合に対する `ORDER BY ... LIMIT` では、プッシュダウンされた `Sort` と `Limit` ではなく、順序どおりの読み取りプランが使用されます。この切り替えには従来からの条件が適用され、特に [`query_plan_join_swap_table`](/ja/reference/settings/session-settings/query-plan#query_plan_join_swap_table) が明示的に `false` に設定されている必要があります。デフォルトの `auto` では、後続の最適化によって結合の左右が入れ替わり、順序どおりの読み取りプランが無効になる可能性があるため、この切り替えは確定せず、そのようなクエリではプッシュダウンされた `Sort` と `Limit` が引き続き使用されます。
+
 <div id="query_plan_remove_redundant_distinct">
   ## query_plan_remove_redundant_distinct
 </div>

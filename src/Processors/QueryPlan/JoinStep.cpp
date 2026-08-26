@@ -147,9 +147,10 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         std::swap(pipelines[0], pipelines[1]);
 
     std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
-    /// Sharding requires both pipelines to have the same number of streams.
-    /// When stream counts don't match, fall back to the
-    /// regular join pipeline which handles different stream counts
+    /// Sharding requires both pipelines to have the same number of streams, because the shards of the two
+    /// sides are paired positionally. Every step that can feed a sharded join keeps one output port per
+    /// shard, so the counts diverge only if the plan is inconsistent: for a `YShaped` join the regular
+    /// pipeline below is not a usable fallback, it accepts a single port per side and throws otherwise.
     bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
     if (!use_sharding)
     {
