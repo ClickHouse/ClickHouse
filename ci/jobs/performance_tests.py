@@ -1202,7 +1202,7 @@ def fetch_prev_master_result(link):
     with tempfile.TemporaryDirectory() as tmp_dir:
         body_file = Path(tmp_dir) / "result.json"
         http_code = Shell.get_output(
-            f'curl -s --compressed --max-time 60 -o {body_file} '
+            f"curl -s --compressed --max-time 60 -o {body_file} "
             f'-w "%{{http_code}}" "{link}"'
         ).strip()
         # `Shell.get_output` returns an empty string when curl exits non-zero,
@@ -1259,9 +1259,7 @@ def find_prev_master_slower_count(job_name, commits, release_base_sha):
             )
             return None, None
         prev_release_base = parse_release_base(prev_message)
-        if not prev_release_base or not release_base_sha.startswith(
-            prev_release_base
-        ):
+        if not prev_release_base or not release_base_sha.startswith(prev_release_base):
             print(
                 f"WARNING: previous run {sha} was measured against release "
                 f"baseline {prev_release_base!r}, not {release_base_sha!r}"
