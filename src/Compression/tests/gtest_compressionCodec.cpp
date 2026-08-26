@@ -3167,6 +3167,30 @@ TEST_F(WallabyTest, DecompressMalformedInputCorruptDeltaAtQuantizableException)
         constructCodecPayload<Float64>(vectors, 3), "Cannot decompress Wallaby-encoded data, corrupt delta at a quantizable exception", 24);
 }
 
+TEST_F(WallabyTest, DecompressMalformedInputNonZeroDeltaThroughTheLeadingExceptionPrefix)
+{
+    /// The delta chain starts at the first value that is not exiled and `base` holds that
+    /// value's quantized integer, so every lane up to and including that position is zero.
+    /// Here position zero is an exception and the lane at position one carries a delta of one,
+    /// which no encoder can emit: the chain would have started at position one with that
+    /// value as the base instead.
+    std::vector<UInt8> vectors = {
+        0x02,                                           // mode = DECIMAL_DELTA
+        0x20,                                           // biased scale 32: alpha = 0
+        0x02,                                           // bits = 2
+        0x00,                                           // adjustment_bits = 0
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // base = 1
+        0x01, 0x00                                      // exception_count = 1
+    };
+    /// The lane at position 1 is zigzag value two, decoding to +1.
+    appendPackedLanes(vectors, 2, {{1, 2}});
+    vectors.insert(vectors.end(), {0x00, 0x00}); // exception position = 0
+    vectors.insert(vectors.end(), {0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x8F, 0x40}); // 1000.0
+
+    verifyDecompressExpectedException(
+        constructCodecPayload<Float64>(vectors, 3), "Cannot decompress Wallaby-encoded data, corrupt decimal delta lane", 24);
+}
+
 TEST_F(WallabyTest, DecompressMalformedInputTruncatedXorPayload)
 {
     /// The declared XOR payload size is cut below the 72 bits the flags byte and the raw first
