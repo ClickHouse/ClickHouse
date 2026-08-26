@@ -1,28 +1,21 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
-#include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
-#include <Processors/QueryPlan/Optimizations/joinEnum.h>
 #include <Common/CurrentThread.h>
 
 #include <algorithm>
-#include <bit>
 #include <functional>
-#include <limits>
-#include <Common/typeid_cast.h>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 #include <Core/Joins.h>
 #include <IO/Operators.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Common/safe_cast.h>
 #include <base/defines.h>
-#include <unordered_map>
-#include <vector>
-#include <Processors/QueryPlan/Optimizations/dpTable.h>
-#include <Processors/QueryPlan/Optimizations/enumeratorChecker.h>
 
 
 namespace ProfileEvents
@@ -305,9 +298,8 @@ public:
     }
 
     std::shared_ptr<DPJoinEntry> solve();
-private:
-    void buildQueryGraph();
 
+private:
     QueryGraph query_graph;
     const UInt64 max_searched_plans;
     const std::vector<JoinOrderAlgorithm> enabled_algorithms;
