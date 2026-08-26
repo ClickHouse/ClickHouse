@@ -169,14 +169,14 @@ VPC リソースで PrivateLink を設定するには:
 </div>
 
 [マルチ VPC 接続](https://docs.aws.amazon.com/msk/latest/developerguide/aws-access-mult-vpc.html)は、複数の VPC を単一の MSK クラスターに接続できる AWS MSK の組み込み機能です。
-private DNS は標準でサポートされており、追加の設定は不要です。
+プライベート DNS は標準でサポートされており、追加の設定は不要です。
 クロスリージョン接続には対応していません。
 
 ClickPipes for MSK では、このオプションを推奨します。
 詳細については、[開始ガイド](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-getting-started.html)を参照してください。
 
 <Info>
-  MSK クラスターのポリシーを更新し、MSK クラスターで許可するプリンシパルに `072088201116` を追加してください。
+  ClickPipes はクライアント VPC を所有し、マネージド VPC 接続を作成します。ネットワーク接続を確立するには、MSK クラスターでマルチ VPC プライベート接続を有効にし、クラスター ポリシーで ClickPipes AWS アカウントを認可してください。
   詳細については、[クラスター ポリシーのアタッチ](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-cluster-owner-action-policy.html)に関する AWS ガイドを参照してください。
 </Info>
 

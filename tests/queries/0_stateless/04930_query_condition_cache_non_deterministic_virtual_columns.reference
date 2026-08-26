@@ -1,0 +1,27 @@
+-- { echo }
+-- The starting offsets of the parts shift when a preceding part is dropped, so the granules
+-- excluded for the previous part numbering must not be reused from the query condition cache
+select count() from test_qcc_offset where _part_offset + _part_starting_offset < 50000;
+50000
+alter table test_qcc_offset drop part 'all_1_1_0';
+select count() from test_qcc_offset where _part_offset + _part_starting_offset < 50000;
+50000
+-- The same for the filter that only reads the column (no index analysis is involved)
+select count() from test_qcc_offset where _part_starting_offset < 100000;
+100000
+alter table test_qcc_offset drop part 'all_2_2_0';
+select count() from test_qcc_offset where _part_starting_offset < 100000;
+100000
+-- The part indexes shift when a preceding part is dropped as well
+select count() from test_qcc_index where _part_index < 1;
+100000
+alter table test_qcc_index drop part 'all_1_1_0';
+select count() from test_qcc_index where _part_index < 1;
+100000
+-- Renaming the table keeps its parts, so the entries cached for a filter over the future name
+-- (when it matched no rows) must not be reused after the rename (when it matches all rows)
+select count() from test_qcc_rename where _table = 'test_qcc_renamed';
+0
+rename table test_qcc_rename to test_qcc_renamed;
+select count() from test_qcc_renamed where _table = 'test_qcc_renamed';
+100000
