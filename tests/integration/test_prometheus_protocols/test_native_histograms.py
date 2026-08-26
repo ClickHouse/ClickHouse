@@ -471,8 +471,8 @@ def test_http_json_coarse_schema():
     }
 
 
-# The HTTP JSON rendering of an NHCB (schema -53) histogram: every custom bucket uses boundary
-# rule 0, including the first one, whose lower bound is -Inf.
+# The HTTP JSON rendering of an NHCB (schema -53) histogram: the first bucket's lower bound is
+# -Inf, so it uses boundary rule 3; the rest use rule 0.
 def test_http_json_nhcb():
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS store_native_histograms = 1"
@@ -504,7 +504,7 @@ def test_http_json_nhcb():
                         "count": "3",
                         "sum": "4.5",
                         "buckets": [
-                            [0, "-Inf", "1", "2"],
+                            [3, "-Inf", "1", "2"],
                             [0, "1", "2.5", "1"],
                         ],
                     },
