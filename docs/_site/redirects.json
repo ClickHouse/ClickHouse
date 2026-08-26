@@ -3752,7 +3752,7 @@
     "source": "/guides"
   },
   {
-    "destination": "/reference/functions/regular-functions/other-functions",
+    "destination": "/reference/functions/regular-functions/machine-learning-functions",
     "source": "/guides/apply_catboost_model"
   },
   {
@@ -3768,7 +3768,7 @@
     "source": "/guides/developer/alternative-query-languages"
   },
   {
-    "destination": "/reference/functions/regular-functions/other-functions",
+    "destination": "/reference/functions/regular-functions/machine-learning-functions",
     "source": "/guides/developer/apply-catboost-model"
   },
   {
@@ -4918,6 +4918,10 @@
   {
     "destination": "/integrations/connectors/data-visualization/metabase-and-clickhouse",
     "source": "/integrations/metabase"
+  },
+  {
+    "destination": "/integrations/connectors/data-integrations/integrations/microsoft-fabric",
+    "source": "/integrations/microsoft-fabric"
   },
   {
     "destination": "/integrations/connectors/data-integrations/integrations/middleware",
@@ -27832,8 +27836,12 @@
     "source": "/operations/system-tables/metrics"
   },
   {
-    "destination": "/reference/system-tables/models",
+    "destination": "/reference/system-tables/overview",
     "source": "/operations/system-tables/models"
+  },
+  {
+    "destination": "/reference/system-tables/overview",
+    "source": "/reference/system-tables/models"
   },
   {
     "destination": "/reference/system-tables/moves",
