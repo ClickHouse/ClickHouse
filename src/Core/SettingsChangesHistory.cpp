@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"aggregate_functions_skip_variant_nulls", false, true, "From 26.9, the aggregate functions that accept a `Variant` argument natively (`count`, `any`, `groupArray`, `groupConcat`, the `uniq` family, ...) skip the rows where the `Variant` holds a NULL value, like they skip the NULL values of a `Nullable` argument. The `-SimpleState` combinator and declared `SimpleAggregateFunction(..., Variant(...))` columns are excluded and retain the previous behavior, where those rows were aggregated as ordinary values. Set this to `false` (or `SET compatibility = '26.8'`) to restore that previous behavior for other aggregate functions."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},
             {"query_plan_fuse_filter_into_array_join", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."},
@@ -62,8 +63,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
-            {"aggregate_functions_skip_variant_nulls", false, true, "From 26.8, the aggregate functions that accept a `Variant` argument natively (`count`, `any`, `groupArray`, `groupConcat`, the `uniq` family, ...) skip the rows where the `Variant` holds a NULL value, like they skip the NULL values of a `Nullable` argument. The `-SimpleState` combinator and declared `SimpleAggregateFunction(..., Variant(...))` columns are excluded and retain the previous behavior, where those rows were aggregated as ordinary values. Set this to `false` (or `SET compatibility = '26.7'`) to restore that previous behavior for other aggregate functions."},
-            {"max_insert_threads", 1, 0,"Changed the default from 1 (no parallel execution) to auto (0), which resolves to the number of CPU cores available to the server, reduced under memory pressure via `max_insert_threads_min_free_memory_per_thread`. This parallelizes `INSERT SELECT` by default. Set to 1 to restore the previous single-threaded behavior."},
             {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
             {"group_by_top_k_optimization_observation_rows", 65536, 65536, "New experimental setting: rows each aggregation stream observes before declaring a full top-K heap that never rejected anything pure overhead and freezing it."},
             {"time_series_prefer_recent_samples_table", true, true, "New setting to read from the recent samples table of a TimeSeries table when the requested time range fits in its TTL window."},

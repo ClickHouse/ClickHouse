@@ -1,6 +1,6 @@
 -- The aggregate functions that accept a Variant argument natively skip the rows where the Variant holds a NULL
 -- value. That is a change of behavior, so `aggregate_functions_skip_variant_nulls = 0` (implied by
--- `compatibility` below 26.8) restores the previous behavior, where those rows were aggregated as ordinary values.
+-- `compatibility` below 26.9) restores the previous behavior, where those rows were aggregated as ordinary values.
 
 SET allow_experimental_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
@@ -10,8 +10,8 @@ CREATE TABLE t_variant_compat (v Variant(UInt64, String)) ENGINE = Memory;
 INSERT INTO t_variant_compat VALUES (NULL), (1::UInt64), (NULL), ('a');
 
 -- The `compatibility` setting picks the old behavior as long as the setting itself is not set explicitly.
-SET compatibility = '26.7';
-SELECT 'compatibility 26.7', count(v), uniqExact(v), any(v), length(groupArray(v)) FROM t_variant_compat;
+SET compatibility = '26.8';
+SELECT 'compatibility 26.8', count(v), uniqExact(v), any(v), length(groupArray(v)) FROM t_variant_compat;
 SET compatibility = '';
 
 SET aggregate_functions_skip_variant_nulls = 1;

@@ -1,4 +1,4 @@
-compatibility 26.7	4	3	\N	4
+compatibility 26.8	4	3	\N	4
 skip	2	2	1	2
 keep	4	3	\N	4
 state type skip	AggregateFunction(count, Variant(String, UInt64))	AggregateFunction(any, Variant(String, UInt64))
