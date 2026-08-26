@@ -6,6 +6,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/Exception.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Common/logger_useful.h>
@@ -114,6 +115,8 @@ ManifestFilesPruner::ManifestFilesPruner(
         return;
     }
 
+    partition_spec_fields_count = manifest_file.getPartitionSpecFieldsCount();
+
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
     transformed_dag = transformFilterDagForManifest(filter_dag, used_columns_in_filter);
@@ -122,7 +125,6 @@ ManifestFilesPruner::ManifestFilesPruner(
     if (manifest_file.hasPartitionKey())
     {
         partition_key = &manifest_file.getPartitionKeyDescription();
-        partition_spec_fields_count = manifest_file.getPartitionSpecFieldsCount();
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
         partition_key_condition.emplace(
             inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
@@ -147,20 +149,21 @@ ManifestFilesPruner::ManifestFilesPruner(
 PruningReturnStatus ManifestFilesPruner::canBePruned(
     const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
 {
+    const auto & partition_value = entry->parsed_entry->partition_key_value;
+
+    /// Iceberg requires one partition value per field of the spec the manifest was written with.
+    /// This holds whether or not any of those fields ended up in the partition key.
+    if (partition_spec_fields_count.has_value() && partition_value.size() != *partition_spec_fields_count)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg manifest partition tuple for data file '{}' has {} values but the manifest's "
+            "partition spec defines {} fields",
+            entry->parsed_entry->file_path_key,
+            partition_value.size(),
+            *partition_spec_fields_count);
+
     if (partition_key_condition.has_value())
     {
-        const auto & partition_value = entry->parsed_entry->partition_key_value;
-
-        /// Iceberg requires one partition value per field of the spec the manifest was written with.
-        if (partition_value.size() != partition_spec_fields_count)
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Iceberg manifest partition tuple for data file '{}' has {} values but the manifest's "
-                "partition spec defines {} fields",
-                entry->parsed_entry->file_path_key,
-                partition_value.size(),
-                partition_spec_fields_count);
-
         /// A spec field whose source column or transform cannot be modelled is left out of the
         /// partition key, so the key is narrower than the tuple and the two are not index-aligned.
         /// Only the partition key is unusable then; the min/max conditions below still apply.
