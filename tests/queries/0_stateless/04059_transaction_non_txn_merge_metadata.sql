@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database, no-parallel-replicas
+-- Tags: no-ordinary-database, no-encrypted-storage, no-parallel-replicas
 -- Test: non-transactional OPTIMIZE TABLE FINAL sets correct removal metadata on source
 -- parts: removal_tid = NonTransactionalTID = (1,1,'...') and removal_csn = NonTransactionalCSN = 1.
 -- This exercises setAndStoreNonTransactionalRemovalTID and the isVisible fast-path in

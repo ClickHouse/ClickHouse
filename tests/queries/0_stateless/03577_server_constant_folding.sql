@@ -100,6 +100,13 @@ SETTINGS enable_analyzer = 1;
 
 SELECT '-- JOIN subquery, w/o analyzer';
 
+SELECT shardNum(), number
+FROM remote('127.0.0.{1..3}', numbers(100))
+    ALL JOIN (
+        SELECT number AS flt_number FROM numbers(10) WHERE number = shardNum()
+    ) flt ON number = flt_number
+ORDER BY 1, 2
+SETTINGS enable_analyzer = 0, joined_subquery_requires_alias = 0;
 
 SELECT '-- GLOBAL JOIN subquery, analyzer';
 
@@ -113,6 +120,13 @@ SETTINGS enable_analyzer = 1;
 
 SELECT '-- GLOBAL JOIN subquery, w/o analyzer';
 
+SELECT shardNum(), number
+FROM remote('127.0.0.{1..3}', numbers(100))
+    GLOBAL ALL JOIN (
+        SELECT number AS flt_number FROM numbers(10) WHERE number = shardNum()
+    ) flt ON number = flt_number
+ORDER BY 1, 2
+SETTINGS enable_analyzer = 0, joined_subquery_requires_alias = 0;
 
 SELECT '-- JOIN union, analyzer';
 
@@ -128,6 +142,15 @@ SETTINGS enable_analyzer = 1;
 
 SELECT '-- JOIN union, w/o analyzer';
 
+SELECT shardNum(), number
+FROM remote('127.0.0.{1..3}', numbers(100))
+    ALL JOIN (
+        SELECT number AS flt_number FROM numbers(10) WHERE number = shardNum()
+        UNION ALL
+        SELECT number AS flt_number FROM numbers(10) WHERE number = shardNum() * 2
+    ) flt ON number = flt_number
+ORDER BY 1, 2
+SETTINGS enable_analyzer = 0, joined_subquery_requires_alias = 0;
 
 SELECT '-- GLOBAL JOIN union, analyzer';
 
@@ -143,3 +166,12 @@ SETTINGS enable_analyzer = 1;
 
 SELECT '-- GLOBAL JOIN union, w/o analyzer';
 
+SELECT shardNum(), number
+FROM remote('127.0.0.{1..3}', numbers(100))
+    GLOBAL ALL JOIN (
+        SELECT number AS flt_number FROM numbers(10) WHERE number = shardNum()
+        UNION ALL
+        SELECT number AS flt_number FROM numbers(10) WHERE number = shardNum() * 2
+    ) flt ON number = flt_number
+ORDER BY 1, 2
+SETTINGS enable_analyzer = 0, joined_subquery_requires_alias = 0;

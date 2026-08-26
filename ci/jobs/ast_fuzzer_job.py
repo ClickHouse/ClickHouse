@@ -2,7 +2,7 @@
 import logging
 import os
 import random
-import re
+import subprocess
 import sys
 import traceback
 from pathlib import Path
@@ -34,193 +34,12 @@ JOB_ARTIFACTS = (
 )
 
 
-def _log_tail(path: Path, max_lines: int = 50, max_bytes: int = 65536) -> str:
-    """Last `max_lines` lines of `path` (bounded read), or "" if absent/empty."""
-    try:
-        size = path.stat().st_size
-        if size == 0:
-            return ""
-        with open(path, "rb") as fh:
-            if size > max_bytes:
-                fh.seek(-max_bytes, os.SEEK_END)
-            data = fh.read()
-    except OSError:
-        return ""
-    return "\n".join(data.decode("utf-8", errors="replace").splitlines()[-max_lines:])
-
-
-# A server-transmitted exception is printed by the client prefixed with
-# "Received from <host>." A client-side 241 raised under
-# --max_memory_usage_in_client prints "Code: 241. DB::Exception: ..." with no
-# such prefix, so this signature keeps only genuine server-survived limits.
-# The server error text can appear as the enum "(MEMORY_LIMIT_EXCEEDED)" or the
-# prose "... memory limit exceeded" (the two are printed on separate lines: the
-# "Received from" line carries the prose message, the enum trails on its own
-# line), so match either form -- both are server-origin because of the prefix.
-SERVER_MLE_SIGNATURE = r"Received from.*(?:MEMORY_LIMIT_EXCEEDED|memory limit exceeded)"
-
-# A client-origin 241 line: "Code: 241" with NO "Received from" on the same line.
-# clickhouse-client raises 241 for its own --max_memory_usage_in_client cap (see
-# tests/queries/0_stateless/02003_memory_limit_in_client.sh) and prints it as
-# "Code: 241. DB::Exception: ..." with no transmission prefix, whereas a server-
-# transmitted 241 always carries "Received from <host>" on that line. Used only
-# in the no-marker fallback below to reject a client/harness 241 that a server
-# limit recovered from earlier in the same read tail must not mask.
-CLIENT_241_SIGNATURE = re.compile(r"^(?!.*Received from).*Code: 241\b", re.MULTILINE)
-
-# The client prints "Fuzzing step <n> out of <m>" to stderr before each fuzz
-# step (programs/client/FuzzLoop.cpp), so the text after the LAST such marker is
-# the terminal query block -- the only step whose outcome sets the exit code.
-# This anchors on stderr, not the "Dump of fuzzed AST:" line: that dump is
-# printed to stdout, which is block-buffered when redirected to a file, so
-# run-fuzzer.sh's "> fuzzer.log 2>&1" flushes the terminal step's dump at process
-# exit -- AFTER its own (unbuffered stderr) exception -- and a dump-based anchor
-# would land on that trailing re-dump, past the evidence.
-# The AST fuzzer swallows query-side server MEMORY_LIMIT_EXCEEDED and keeps going
-# (Client::processASTFuzzerStep returns success), so a 30-minute fuzzer.log
-# accumulates many recovered "Received from ... memory limit exceeded" lines that
-# did NOT terminate the run; each sits in its own (non-terminal) step block. A
-# fixed line/byte tail can still hold such a swallowed limit together with a
-# later client-side 241 when only a few stack frames separate the two steps, so
-# anchor on the terminal step block instead of a fixed-size window.
-STEP_MARKER = re.compile(r"^Fuzzing step \d+ out of \d+$", re.MULTILINE)
-
-# Bounded read for the terminal block. A single fuzz step's dump plus its
-# transmitted exception is small; 256 KiB comfortably covers the last marker and
-# everything after it without loading a 30-minute log. Everything within a
-# tail-of-file window is by construction after the last marker, so even when the
-# terminal step's output is larger than this bound the window stays inside the
-# terminal block and never leaks an earlier step's swallowed limit.
-TERMINAL_BLOCK_MAX_BYTES = 262144
-
-
-def _terminal_query_block(fuzzer_log: Path) -> str:
-    """Text of fuzzer.log after the last 'Fuzzing step <n> out of <m>' marker.
-
-    Returns the read tail as-is when no marker is present (the run exited before
-    any AST fuzz step, e.g. a startup/handshake error, or BuzzHouse which does
-    not print step markers)."""
-    try:
-        size = fuzzer_log.stat().st_size
-        if size == 0:
-            return ""
-        with open(fuzzer_log, "rb") as fh:
-            if size > TERMINAL_BLOCK_MAX_BYTES:
-                fh.seek(-TERMINAL_BLOCK_MAX_BYTES, os.SEEK_END)
-            text = fh.read().decode("utf-8", errors="replace")
-    except OSError:
-        return ""
-    matches = list(STEP_MARKER.finditer(text))
-    return text if not matches else text[matches[-1].start():]
-
-
-def _fuzzer_log_terminal_block_has_server_mle(fuzzer_log: Path) -> bool:
-    """True when a server-origin MEMORY_LIMIT_EXCEEDED explains the terminal 241.
-
-    The terminal block is anchored on the last 'Fuzzing step' marker (or the
-    whole read tail for a startup/handshake 241 or a BuzzHouse run, which print
-    no marker). It can still hold a server limit the run recovered from earlier
-    followed by a later client/harness 241 -- a recovered query limit then a
-    client-side reconnect/handshake 241 within a step, or the same across a
-    markerless tail. Treat it as benign only when no client-origin 241 line (a
-    "Code: 241" line with no "Received from" prefix) appears AFTER the last
-    server-origin MLE: that later 241 is the real exit cause and must surface,
-    while an earlier recovered client 241 does not veto a genuinely terminal
-    server limit."""
-    block = _terminal_query_block(fuzzer_log)
-    server_mles = [m.start() for m in re.finditer(SERVER_MLE_SIGNATURE, block)]
-    if not server_mles:
-        return False
-    return not any(
-        m.start() > server_mles[-1] for m in CLIENT_241_SIGNATURE.finditer(block)
-    )
-
-
-def _is_benign_memory_limit(
-    server_died: bool, fuzzer_exit_code: int, terminal_block_has_server_mle: bool
-) -> bool:
-    """True when the fuzzer exited only because the SERVER hit its memory cap.
-
-    A fuzzed query pushes the server over its memory limit; the memory tracker
-    rejects the allocation with Code 241 (MEMORY_LIMIT_EXCEEDED) and the server
-    stays up (server_died=0). The server transmits that exception to the client,
-    which prints it prefixed with "Received from <host>. ... (MEMORY_LIMIT_
-    EXCEEDED)" and exits with the server error code (241). This is the tracker
-    working as intended, not a crash or a finding -- run-fuzzer.sh's liveness
-    loop already treats a 241 as "alive, busy".
-
-    The evidence must be server-origin (SERVER_MLE_SIGNATURE) AND come from the
-    TERMINAL query block (after the last 'Fuzzing step' marker). clickhouse-client
-    itself can raise 241 under --max_memory_usage_in_client (a client-side cap;
-    see tests/queries/0_stateless/02003_memory_limit_in_client.sh) and
-    mainEntryClickHouseClient returns that code verbatim -- such a client/harness
-    241 has no "Received from" prefix. And because the fuzzer swallows earlier
-    server limits and keeps running, only a server MLE in the terminal block
-    actually explains the exit; a swallowed one from an earlier step must not
-    mask a terminal client/harness 241, or a real regression would be missed.
-    """
-    return (
-        not server_died
-        and fuzzer_exit_code == 241
-        and terminal_block_has_server_mle
-    )
-
-
-def _read_fuzzer_status(status_path: Path) -> tuple[bool, int, int]:
-    """Parse (server_died, server_exit_code, fuzzer_exit_code) from status.tsv.
-
-    Raises FileNotFoundError when the file is missing or empty (the runner
-    aborted before writing it) and ValueError when its contents are malformed.
-    """
-    if not status_path.exists():
-        raise FileNotFoundError(f"{status_path} was not produced by the fuzzer runner")
-    first_line = status_path.read_text(encoding="utf-8").split("\n", 1)[0]
-    if not first_line.strip():
-        raise FileNotFoundError(f"{status_path} is empty")
-    fields = first_line.split("\t")
-    if len(fields) != 3:
-        raise ValueError(
-            f"expected 3 tab-separated fields, got {len(fields)}: {first_line!r}"
-        )
-    server_died, server_exit_code, fuzzer_exit_code = fields
-    return bool(int(server_died)), int(server_exit_code), int(fuzzer_exit_code)
-
-
-def _format_status_error(exc: Exception, log_paths) -> str:
-    """Actionable job-error text for a missing/malformed status.tsv, with log tails."""
-    tails = []
-    for path in log_paths:
-        tail = _log_tail(path)
-        if tail:
-            tails.append(f"--- {path.name} (last lines) ---\n{tail}")
-    tails_str = ("\n\n" + "\n\n".join(tails)) if tails else ""
-
-    if isinstance(exc, FileNotFoundError):
-        return (
-            "Fuzzer runner aborted before writing status.tsv. run-fuzzer.sh runs "
-            "under 'set -e' and writes status.tsv only at the very end, so any "
-            "earlier failure lands here: a server startup failure (e.g. the "
-            "clickhouse-server pid file is never created), a fuzzer-harness "
-            "error, or an infrastructure problem (job timeout, out of memory, "
-            "docker/orchestration). Inspect the log tails below to determine the "
-            "cause; a normal fuzzer finding instead writes a complete status.tsv "
-            "(the three numeric fields server_died, server_exit_code, "
-            "fuzzer_exit_code), which run_fuzz_job then reports as FAIL with a "
-            "stack trace parsed from the logs." + tails_str
-        )
-
-    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-    return (
-        f"Fuzzer runner wrote an unparseable status.tsv ({exc}). This is a "
-        f"fuzzer-harness bug. Traceback:\n{tb}" + tails_str
-    )
-
-
 def get_run_command(
     image: DockerImage,
     buzzhouse: bool,
     targeted_queries_file: Path | None = None,
     compatibility_setting: str | None = None,
+    enable_server_fuzzer: bool = False,
 ) -> str:
     from ci.jobs.ci_utils import is_extended_run
 
@@ -229,6 +48,8 @@ def get_run_command(
         f"-e FUZZER_TO_RUN='{'BuzzHouse' if buzzhouse else 'AST Fuzzer'}'",
         f"-e FUZZ_TIME_LIMIT='{minutes}m'",
     ]
+    if enable_server_fuzzer:
+        envs.append("-e SERVER_FUZZER_ENABLED=1")
     if targeted_queries_file:
         container_queries_file = f"/workspace/{targeted_queries_file.name}"
         envs.append(f"-e TARGETED_QUERIES_FILE='{container_queries_file}'")
@@ -342,6 +163,7 @@ def run_fuzz_job(check_name: str):
     WORKSPACE_PATH.mkdir(parents=True, exist_ok=True)
 
     info = Info()
+    job_name = info.job_name
     extra_results = []
     targeted_queries_file: Path | None = None
 
@@ -361,10 +183,8 @@ def run_fuzz_job(check_name: str):
     if not buzzhouse:
         if is_old_compatibility:
             # The minimum version is 24.3 because that's when enable_analyzer
-            # became enabled by default, and the fuzzer profile constrains
-            # enable_analyzer to >= 1 to avoid wasting cycles on the old
-            # interpreter. An older compatibility version would revert the
-            # setting instead of tripping the constraint.
+            # became enabled by default, and the fuzzer has a readonly constraint
+            # on enable_analyzer to avoid wasting cycles on the old interpreter.
             compatibility_setting = "24.3"
         elif is_targeted:
             compatibility_setting = None
@@ -382,6 +202,7 @@ def run_fuzz_job(check_name: str):
         buzzhouse,
         targeted_queries_file=targeted_queries_file,
         compatibility_setting=compatibility_setting,
+        enable_server_fuzzer="serverfuzz" in job_name,
     )
     logging.info("Going to run %s", run_command)
 
@@ -412,30 +233,20 @@ def run_fuzz_job(check_name: str):
     if buzzhouse:
         paths.extend([WORKSPACE_PATH / "fuzzerout.sql", WORKSPACE_PATH / "fuzz.json"])
 
-    # Raw sanitizer reports written via *SAN_OPTIONS=log_path (see run-fuzzer.sh).
-    # Their contents are also merged into stderr.log/server.log, but upload the
-    # originals too for debugging truncated reports.
-    paths.extend(sorted(WORKSPACE_PATH.glob("sanitizer.log.*")))
-
     server_died = False
     server_exit_code = 0
     fuzzer_exit_code = 0
     try:
-        server_died, server_exit_code, fuzzer_exit_code = _read_fuzzer_status(
-            WORKSPACE_PATH / "status.tsv"
-        )
-    except Exception as e:
-        # Missing/empty status.tsv -> runner aborted before reporting (server
-        # start failure, harness error, or infra); malformed status.tsv ->
-        # harness bug. _format_status_error inlines the log tails so the abort
-        # cause is visible instead of an opaque FileNotFoundError traceback.
-        # Attach available artifacts (incl. sanitizer.log.*) so nothing is lost.
-        error_info = _format_status_error(e, paths)
-        early_result = Result.create_from(status=Result.Status.ERROR, info=error_info)
-        for file in paths:
-            if file.exists() and file.stat().st_size > 0:
-                early_result.set_files(file)
-        early_result.complete_job()
+        with open(WORKSPACE_PATH / "status.tsv", "r", encoding="utf-8") as status_f:
+            server_died, server_exit_code, fuzzer_exit_code = (
+                status_f.readline().rstrip("\n").split("\t")
+            )
+            server_died = bool(int(server_died))
+            server_exit_code = int(server_exit_code)
+            fuzzer_exit_code = int(fuzzer_exit_code)
+    except Exception:
+        error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
+        Result.create_from(status=Result.Status.ERROR, info=error_info).complete_job()
 
     # parse runner script exit status
     status = Result.Status.FAIL
@@ -454,17 +265,6 @@ def run_fuzz_job(check_name: str):
             info.append("Fuzzer killed")
         else:
             info.append("Fuzzer exited with timeout")
-        info.append("\n")
-    elif _is_benign_memory_limit(
-        server_died,
-        fuzzer_exit_code,
-        _fuzzer_log_terminal_block_has_server_mle(fuzzer_log),
-    ):
-        # Server hit its memory cap on a fuzzed query but stayed alive; see
-        # _is_benign_memory_limit. Not a crash or a finding.
-        is_failed = False
-        status = Result.Status.OK
-        info.append("Server hit its memory limit (Code 241) but stayed alive")
         info.append("\n")
     elif fuzzer_exit_code in (227,):
         # BuzzHouse exception, it means a query oracle failed, or
@@ -495,24 +295,9 @@ def run_fuzz_job(check_name: str):
             sanitizer_oom = Shell.get_output(
                 f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {server_log}"
             )
-            # Sanitizer shadow memory is invisible to the server's memory tracker,
-            # so the kernel OOM killer may SIGKILL the server before any limit
-            # fires. It may also kill the watchdog, losing the "terminated by
-            # signal 9" message in the server log. A SIGKILLed server (exit 137)
-            # with no sanitizer report is an OOM, not a bug.
-            has_sanitizer_report = any(WORKSPACE_PATH.glob("sanitizer.log.*"))
-            kernel_oom_kill = (
-                server_died and server_exit_code == 137 and not has_sanitizer_report
-            )
-            if sanitizer_oom or kernel_oom_kill:
+            if sanitizer_oom:
                 print("Sanitizer OOM")
-                if sanitizer_oom:
-                    info.append("WARNING: Sanitizer OOM - test considered passed")
-                else:
-                    info.append(
-                        "WARNING: Server was killed by the kernel OOM killer "
-                        "(sanitizer build) - test considered passed"
-                    )
+                info.append("WARNING: Sanitizer OOM - test considered passed")
                 status = Result.Status.OK
                 is_failed = False
         else:

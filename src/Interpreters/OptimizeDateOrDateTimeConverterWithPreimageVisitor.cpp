@@ -33,7 +33,7 @@ namespace ErrorCodes
  *
  *  This function generates a new AST with the transformed relation.
  */
-static ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTypePair & column, const FieldInterval & range)
+ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTypePair & column, const FieldInterval & range)
 {
     const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 

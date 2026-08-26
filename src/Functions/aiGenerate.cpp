@@ -31,7 +31,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"prompt", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
+            {"prompt", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
         };
         FunctionArgumentDescriptors optional_args{
             {"params", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap), &isColumnConst, "const Map(String, String)"},
@@ -84,7 +84,7 @@ not set, the default is: `)" + String(default_system_prompt) + R"(`
         .syntax = "aiGenerate(prompt[, params])",
         .arguments
         = {{"prompt", "The user prompt or question to send to the model.", {"String"}},
-           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.7`), `max_tokens` (maximum output tokens per call; default `1024`), `system_prompt` (constant system-level instruction guiding the model's behavior; default a generic assistant prompt). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}}},
+           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.7`), `max_tokens` (maximum output tokens per call; default `1024`), `system_prompt` (constant system-level instruction guiding the model's behavior; default a generic assistant prompt). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}}},
         .returned_value = {"The generated text response, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples
         = {{"Simple question", "SELECT aiGenerate('What is 2 + 2? Reply with just the number.')", "4"},
