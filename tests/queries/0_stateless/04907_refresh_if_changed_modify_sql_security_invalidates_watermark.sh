@@ -21,7 +21,7 @@ $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "
     INSERT INTO $DB.src VALUES (1);
     CREATE MATERIALIZED VIEW $DB.mv REFRESH EVERY 1 SECOND IF CHANGED APPEND
         ENGINE = ReplicatedMergeTree ORDER BY cnt
-        DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT count() AS cnt FROM src;
+        DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT count() AS cnt FROM $DB.src;
 "
 
 # The initial refresh records a watermark. Subsequent refreshes over the unchanged source are skipped.
