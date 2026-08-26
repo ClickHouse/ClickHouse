@@ -223,7 +223,9 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
         if (element.writability)
             new_value = *element.writability;
 
-        auto setting_name = Settings::resolveName(element.setting_name);
+        /// Not `Settings::resolveName`: it leaves a `merge_tree_`-prefixed name alone, and `set` stored the
+        /// constraint under the canonical name.
+        auto setting_name = resolveSettingName(element.setting_name);
         auto it = constraints.find(setting_name);
         if (it != constraints.end())
             old_value = it->second.writability;
@@ -529,7 +531,16 @@ std::string_view SettingsConstraints::resolveSettingNameWithCache(std::string_vi
 
 SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & current_settings, std::string_view setting_name) const
 {
+    /// The cache holds the aliases that a constraint was declared with, which is not necessarily the alias
+    /// a query uses. `Settings::resolveName`, applied by the caller, leaves a `merge_tree_`-prefixed name
+    /// alone, so such a name still has to be resolved the way `set` resolved it before storing.
+    String canonical_merge_tree_name;
     auto resolved_name = resolveSettingNameWithCache(setting_name);
+    if (resolved_name.starts_with(MERGE_TREE_SETTINGS_PREFIX))
+    {
+        canonical_merge_tree_name = resolveSettingName(resolved_name);
+        resolved_name = canonical_merge_tree_name;
+    }
     if (!current_settings[Setting::allow_ddl] && resolved_name == "allow_ddl")
         return Checker(PreformattedMessage::create("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user"),
                        ErrorCodes::QUERY_IS_PROHIBITED);
@@ -602,8 +613,9 @@ std::optional<SettingsConstraints::Checker> SettingsConstraints::getTierChecker(
 
 SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::string_view short_name) const
 {
-    auto full_name = settingFullName<MergeTreeSettings>(short_name);
-    auto it = constraints.find(resolveSettingNameWithCache(full_name));
+    /// The canonical name, because that is what `set` stored the constraint under.
+    auto full_name = settingFullName<MergeTreeSettings>(MergeTreeSettings::resolveName(short_name));
+    auto it = constraints.find(full_name);
     if (it == constraints.end())
         return Checker(MergeTreeSettings::resolveName); // Allowed
     return Checker(it->second, MergeTreeSettings::resolveName);

@@ -45,6 +45,7 @@ MERGE_TREE_EXPERIMENTAL_SETTING = "allow_experimental_replacing_merge_with_clean
 # Set by configs/merge_tree_experimental_setting.xml
 MERGE_TREE_EXPERIMENTAL_SETTING_IN_CONFIG = "allow_commit_order_projection"
 MERGE_TREE_ALIASED_SETTING = "allow_experimental_block_number_column"
+MERGE_TREE_ALIASED_SETTING_CANONICAL = "enable_block_number_column"
 
 MERGE_TREE_PRODUCTION_SETTING_IN_PROFILE = (
     MERGE_TREE_SETTINGS_PREFIX + MERGE_TREE_PRODUCTION_SETTING
@@ -720,3 +721,29 @@ def test_custom_settings_belong_to_no_tier(start_cluster):
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP USER IF EXISTS user_with_custom_setting")
+
+
+def test_merge_tree_constraint_applies_to_the_alias_of_the_setting(start_cluster):
+    # A constraint on a `MergeTree` setting is stored under the canonical name. Writing the setting through
+    # its alias is writing the same setting, so the constraint has to apply to it as well
+    assert "0" == get_current_tier_value(instance)
+    canonical = MERGE_TREE_SETTINGS_PREFIX + MERGE_TREE_ALIASED_SETTING_CANONICAL
+    alias = MERGE_TREE_SETTINGS_PREFIX + MERGE_TREE_ALIASED_SETTING
+
+    instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_const_constraint")
+    instance.query("DROP USER IF EXISTS user_with_const_constraint")
+    instance.query(f"CREATE SETTINGS PROFILE profile_with_const_constraint SETTINGS {canonical} CONST")
+    instance.query(
+        "CREATE USER user_with_const_constraint IDENTIFIED WITH no_password "
+        "SETTINGS PROFILE 'profile_with_const_constraint'"
+    )
+
+    for name in [canonical, alias]:
+        output, error = instance.query_and_get_answer_with_error(
+            f"SELECT 1 SETTINGS {name} = 1", user="user_with_const_constraint"
+        )
+        assert output == ""
+        assert "should not be changed" in error, name
+
+    instance.query("DROP USER IF EXISTS user_with_const_constraint")
+    instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_const_constraint")
