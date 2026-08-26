@@ -895,6 +895,17 @@ Minimal amount of data parts which merge selector can pick to merge at once
     DECLARE(Bool, apply_patches_on_merge, true, R"(
 If true patch parts are applied on merges
 )", 0) \
+    DECLARE(MergeTreePatchPartsVersion, patch_parts_version, "v2", R"(
+On-disk serialization version for patch parts produced by lightweight UPDATE queries.
+
+Possible values:
+- `v1` - legacy format: patch parts contain `_part, _part_offset` system columns and are sorted by
+`(_part, _part_offset)`. In the worst case, memory usage during apply is bounded by the size of the whole patch part.
+- `v2` - patch parts carry the main table's sort-key columns and are sorted by
+`(sorting_key_columns..., _block_number, _block_offset)`. Memory usage during apply is bounded by the largest equal-sort-key run.
+
+Old-format patches on disk remain readable regardless of this setting.
+)", 0) \
     \
     DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
 The maximum uncompressed size of data in all patch parts in bytes.
@@ -1615,6 +1626,20 @@ Only available in ClickHouse Cloud
 Enables requesting FS cache hints from in-memory
 cache on other replicas. Only available in ClickHouse Cloud
 )", 0) \
+    DECLARE(Bool, shared_merge_tree_use_blobs_list_for_parts, false, R"(
+Store parts of a SharedMergeTree table (both Wide and Compact) as a single
+consolidated blob-list metadata node instead of one Keeper node per file.
+Collapses per-part Keeper metadata from O(files) to a small constant while
+keeping one object-storage blob per file. Only available in ClickHouse Cloud.
+)", 0) \
+    DECLARE(UInt64, shared_merge_tree_blobs_list_inline_file_max_bytes, 0, R"(
+Store files of a blob-list part that are at most this many bytes long (e.g.
+count.txt, metadata_version.txt, minmax indexes) directly inside the
+consolidated blobs.list file instead of a separate object-storage blob,
+saving one blob write and read per small file. 0 disables inlining. Takes
+effect only for parts using the blob-list storage (see
+shared_merge_tree_use_blobs_list_for_parts). Only available in ClickHouse Cloud.
+)", 0) \
     DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas, false, R"(
 If enabled all the replicas try to fetch part in memory data (like primary
 key, partition info and so on) from other replicas where it already exists.
@@ -2205,9 +2230,6 @@ Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
 How many partition discoveries should be packed into batch
 )", 0) \
-    DECLARE(Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, true, R"(
-Will SMT discover virtual parts partition atomically with extra data fetch and watches setup.
-)", 0) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
 Enabled cleanup of Keeper entries of empty partition.
 )", 0) \
@@ -2441,6 +2463,7 @@ are also created during INSERTs with [materialize_projections_on_insert](/refere
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, allow_experimental_reverse_key, false) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_async_block_ids_cache, true) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, true) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
