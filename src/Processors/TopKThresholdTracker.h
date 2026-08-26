@@ -1,10 +1,7 @@
 #pragma once
 #include <atomic>
-#include <limits>
-#include <Core/CompareHelper.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
-#include <Common/NaNUtils.h>
 #include <Common/SharedMutex.h>
 
 namespace DB
@@ -37,72 +34,16 @@ template <typename T>
 class TopKThresholdTrackerNumeric : public ITopKThresholdTracker
 {
 public:
-    explicit TopKThresholdTrackerNumeric(const SortColumnDescription & sort_desc_)
-        : ITopKThresholdTracker(sort_desc_)
-        , threshold(sentinel(sort_desc_.direction))
-    {
-    }
+    explicit TopKThresholdTrackerNumeric(const SortColumnDescription & sort_desc_);
 
-    void testAndSet(const Field & value) override
-    {
-        T candidate = value.safeGet<T>();
-
-        /// A NaN boundary must never become the threshold
-        if constexpr (std::is_floating_point_v<T>)
-        {
-            if (isNaN(candidate))
-                return;
-        }
-
-        T current = threshold.load(std::memory_order_relaxed);
-
-        if (sort_desc.direction == 1)
-        {
-            while (CompareHelper<T>::less(candidate, current, sort_desc.nulls_direction)
-                && !threshold.compare_exchange_weak(current, candidate, std::memory_order_relaxed))
-            {
-            }
-        }
-        else
-        {
-            while (CompareHelper<T>::greater(candidate, current, sort_desc.nulls_direction)
-                && !threshold.compare_exchange_weak(current, candidate, std::memory_order_relaxed))
-            {
-            }
-        }
-
-        is_set.store(true, std::memory_order_release);
-    }
-
-    bool isValueInsideThreshold(const Field & value) const override
-    {
-        if (!is_set.load(std::memory_order_acquire))
-            return true;
-
-        T candidate = value.safeGet<T>();
-        T current = threshold.load(std::memory_order_relaxed);
-
-        if (sort_desc.direction == 1)
-            return !CompareHelper<T>::greater(candidate, current, sort_desc.nulls_direction);
-
-        return !CompareHelper<T>::less(candidate, current, sort_desc.nulls_direction);
-    }
+    void testAndSet(const Field & value) override;
+    bool isValueInsideThreshold(const Field & value) const override;
 
     /// Returns the sentinel if no value was published yet; callers must check `isSet` first.
-    Field getValue() const override { return threshold.load(std::memory_order_relaxed); }
-    bool isSet() const override { return is_set.load(std::memory_order_acquire); }
+    Field getValue() const override { return threshold.load(std::memory_order_relaxed);}
+    bool isSet() const override { return is_set.load(std::memory_order_acquire);}
 
 private:
-    static constexpr T sentinel(int direction)
-    {
-        /// For floating point types the maximum finite value is not enough:
-        /// a published threshold of +inf must not exclude +inf values.
-        if constexpr (std::is_floating_point_v<T>)
-            return direction == 1 ? std::numeric_limits<T>::infinity() : -std::numeric_limits<T>::infinity();
-        else
-            return direction == 1 ? std::numeric_limits<T>::max() : std::numeric_limits<T>::min();
-    }
-
     std::atomic<T> threshold;
     std::atomic<bool> is_set{false};
 };

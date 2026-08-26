@@ -2,10 +2,85 @@
 #include <shared_mutex>
 #include <Processors/TopKThresholdTracker.h>
 #include <Columns/Collator.h>
+#include <Core/CompareHelper.h>
 #include <DataTypes/IDataType.h>
 
 namespace DB
 {
+
+namespace
+{
+
+/// Initial threshold that lets every value pass. For floating point types the maximum
+/// finite value is not enough: a published threshold of +inf must not exclude +inf values.
+template <typename T>
+constexpr T sentinel(int direction)
+{
+    if constexpr (std::is_floating_point_v<T>)
+        return direction == 1 ? std::numeric_limits<T>::infinity() : -std::numeric_limits<T>::infinity();
+    else
+        return direction == 1 ? std::numeric_limits<T>::max() : std::numeric_limits<T>::min();
+}
+
+}
+
+template <typename T>
+TopKThresholdTrackerNumeric<T>::TopKThresholdTrackerNumeric(const SortColumnDescription & sort_desc_)
+    : ITopKThresholdTracker(sort_desc_)
+    , threshold(sentinel<T>(sort_desc_.direction))
+{
+}
+
+template <typename T>
+void TopKThresholdTrackerNumeric<T>::testAndSet(const Field & value)
+{
+    T candidate = value.safeGet<T>();
+
+    /// A NaN boundary must never become the threshold.
+    if constexpr (std::is_floating_point_v<T>)
+    {
+        if (isNaN(candidate))
+            return;
+    }
+
+    T current = threshold.load(std::memory_order_relaxed);
+
+    if (sort_desc.direction == 1)
+    {
+        while (CompareHelper<T>::less(candidate, current, sort_desc.nulls_direction)
+            && !threshold.compare_exchange_weak(current, candidate, std::memory_order_relaxed))
+        {
+        }
+    }
+    else
+    {
+        while (CompareHelper<T>::greater(candidate, current, sort_desc.nulls_direction)
+            && !threshold.compare_exchange_weak(current, candidate, std::memory_order_relaxed))
+        {
+        }
+    }
+
+    is_set.store(true, std::memory_order_release);
+}
+
+template <typename T>
+bool TopKThresholdTrackerNumeric<T>::isValueInsideThreshold(const Field & value) const
+{
+    if (!is_set.load(std::memory_order_acquire))
+        return true;
+
+    T candidate = value.safeGet<T>();
+    T current = threshold.load(std::memory_order_relaxed);
+
+    if (sort_desc.direction == 1)
+        return !CompareHelper<T>::greater(candidate, current, sort_desc.nulls_direction);
+
+    return !CompareHelper<T>::less(candidate, current, sort_desc.nulls_direction);
+}
+
+template class TopKThresholdTrackerNumeric<UInt64>;
+template class TopKThresholdTrackerNumeric<Int64>;
+template class TopKThresholdTrackerNumeric<Float64>;
 
 void TopKThresholdTrackerGeneric::testAndSet(const Field & value)
 {
@@ -44,8 +119,7 @@ bool TopKThresholdTrackerGeneric::isValueInsideThreshold(const Field & value) co
 Field TopKThresholdTrackerGeneric::getValue() const
 {
     std::shared_lock lock(mutex);
-    auto ret = threshold;
-    return ret;
+    return threshold;
 }
 
 int TopKThresholdTrackerGeneric::compareFields(const Field & lhs, const Field & rhs) const
