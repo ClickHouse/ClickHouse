@@ -45,11 +45,8 @@ SELECT 'sibling', groupArray(m) FROM
     (SELECT if(i % 2 = 0, rowNumberInAllBlocks(), 999) AS m FROM (SELECT * FROM events_04876 ORDER BY s))
 SETTINGS short_circuit_function_evaluation = 'enable';
 
--- Opting out only keeps a function off the lazy path when it is reached through its own
--- suitability. A lazy-suitable argument still makes its parent lazy, so a computed argument
--- reintroduces the filtering, and `force_enable` bypasses the predicate outright. Both remain
--- wrong here, and identically wrong for the four siblings above, so they are recorded as
--- observed rather than asserted as fixed.
+-- Still wrong on purpose: a computed argument puts the call back on the lazy path, so the
+-- expected value below is the filtered one, not the ground truth.
 SELECT 'computed argument, still filtered', groupArray(m) FROM
     (SELECT if(i % 2 = 0, runningConcurrency(toDateTime(toString(s)), toDateTime(toString(e))), 0) AS m
      FROM (SELECT * FROM events_04876 ORDER BY s))
