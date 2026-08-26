@@ -4,14 +4,9 @@
 #include <bit>
 #include <cmath>
 #include <cstddef>
-#include <cstring>
 #include <optional>
 #include <type_traits>
 
-
-#include <DataTypes/DataTypesDecimal.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnNullable.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSlidingSum.h>
