@@ -1,0 +1,14 @@
+-- schema from the log: physical top-level names, logical nested names
+col_s1	Tuple(\n    a Nullable(Int64))
+col_s2	Tuple(\n    inner Nullable(Int64))
+arr	Array(Tuple(\n    x Nullable(Int64)))
+-- nested names not renamed: readable
+(0)
+(1)
+(2)
+-- renamed nested field: rejected
+UNSUPPORTED_METHOD
+-- renamed field inside array elements: rejected
+UNSUPPORTED_METHOD
+-- external schema with the logical nested name: rejected
+UNSUPPORTED_METHOD
