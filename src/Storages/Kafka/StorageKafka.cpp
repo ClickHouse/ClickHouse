@@ -1,5 +1,7 @@
 #include <Storages/Kafka/StorageKafka.h>
 
+#include <limits>
+
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -38,8 +40,6 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-
-#include <limits>
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
