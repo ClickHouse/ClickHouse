@@ -1,6 +1,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -28,6 +29,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_eval_table_function;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool enforce_strict_identifier_format;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsUInt64 max_ast_depth;
@@ -168,26 +170,20 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
-    /// Resolve the generated query's own `SETTINGS` clause into a private context, before the
-    /// normalization visitors below rewrite the query tree (which can move or drop the `SETTINGS`).
-    /// The AST size limits are then read from this context, so an inner `... SETTINGS max_ast_elements = N`
-    /// controls its own limits the same way it would when the query is executed directly.
+    /// A private copy, because the generated query's `SETTINGS` scope only itself. Resolved here,
+    /// ahead of the visitors below, which can move or drop the `SETTINGS` clause.
     auto limits_context = Context::createCopy(context);
     InterpreterSetQuery::applySettingsFromQuery(query, limits_context);
     const auto & inner_settings = limits_context->getSettingsRef();
 
-    /// Expand global `WITH` aliases before the size limits below, same as `executeQueryImpl` does
-    /// (and gated by the inner query's own `enable_global_with_statement`). Otherwise the size limits
-    /// would run on the pre-expansion AST, so a generated query whose global CTE expands past
-    /// `max_ast_elements` / `max_ast_depth` would pass in `eval` while executing it directly is rejected.
+    /// Expand global `WITH` aliases ahead of the prechecks below, same as `executeQueryImpl` does, so
+    /// they see the post-expansion AST that the analyzer will receive.
     if (inner_settings[Setting::enable_global_with_statement])
         ApplyWithGlobalVisitor::visit(query);
 
     /// The generated query does not go through `executeQuery`, so resolve the INTERSECT/EXCEPT
     /// operator precedence and the implicit UNION mode here, same as `executeQueryImpl` does
-    /// for a usual query. These modes are read from the inner query's own context, so that an
-    /// inner `... SETTINGS union_default_mode = 'DISTINCT'` normalizes the same way it would when
-    /// the query is executed directly, instead of being resolved against the outer defaults.
+    /// for a usual query, from the generated query's own modes rather than the outer defaults.
     {
         SelectIntersectExceptQueryVisitor::Data data{
             inner_settings[Setting::intersect_default_mode], inner_settings[Setting::except_default_mode]};
@@ -212,16 +208,21 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
-    /// Apply the AST size limits to the generated query, same as `executeQueryImpl` does for a usual
-    /// query. Without this, `max_ast_depth` / `max_ast_elements` are ineffective for the inner query:
-    /// a tiny outer `SELECT * FROM eval('...')` could smuggle a huge or very deep AST into the analyzer,
-    /// even though executing the same inner query directly would be rejected.
+    /// The remaining prechecks `executeQueryImpl` runs on a usual query, in its order: the identifier
+    /// format, then the AST size limits. Both read the generated query's own settings, and both run
+    /// after the wrapping above, so they see the AST that is stored and analyzed.
+    if (inner_settings[Setting::enforce_strict_identifier_format])
     {
-        if (inner_settings[Setting::max_ast_depth])
-            query->checkDepth(inner_settings[Setting::max_ast_depth]);
-        if (inner_settings[Setting::max_ast_elements])
-            query->checkSize(inner_settings[Setting::max_ast_elements]);
+        WriteBufferFromOwnString buf;
+        IAST::FormatSettings strict_identifier_format_settings(true);
+        strict_identifier_format_settings.enforce_strict_identifier_format = true;
+        query->format(buf, strict_identifier_format_settings);
     }
+
+    if (inner_settings[Setting::max_ast_depth])
+        query->checkDepth(inner_settings[Setting::max_ast_depth]);
+    if (inner_settings[Setting::max_ast_elements])
+        query->checkSize(inner_settings[Setting::max_ast_elements]);
 
     create.set(create.select, query);
 }

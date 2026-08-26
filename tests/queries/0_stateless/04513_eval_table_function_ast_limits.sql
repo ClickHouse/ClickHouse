@@ -33,3 +33,14 @@ SELECT * FROM eval('SELECT 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 AS big SETTING
 -- global CTE that stays small before expansion but grows past `max_ast_elements` once it is inlined into
 -- every UNION branch is rejected, instead of slipping through the pre-expansion check.
 SELECT count() FROM eval('WITH 1+2+3+4+5+6+7+8+9+10+11+12+13+14+15 AS big SELECT big UNION ALL SELECT big UNION ALL SELECT big UNION ALL SELECT big UNION ALL SELECT big UNION ALL SELECT big UNION ALL SELECT big UNION ALL SELECT big SETTINGS max_ast_elements = 100'); -- { serverError TOO_BIG_AST }
+
+-- `enforce_strict_identifier_format` applies to the generated query, same as when it is executed
+-- directly, so moving the query text into `eval` does not get a rejected identifier accepted.
+SELECT * FROM eval('SELECT 1 AS "bad-name"') SETTINGS enforce_strict_identifier_format = 1; -- { serverError BAD_ARGUMENTS }
+-- It is read after the generated query's own SETTINGS are applied, so an inner clause enables it.
+SELECT * FROM eval('SELECT 1 AS "bad-name" SETTINGS enforce_strict_identifier_format = 1') SETTINGS enforce_strict_identifier_format = 0; -- { serverError BAD_ARGUMENTS }
+-- It is checked after the construction settings are materialized, so an identifier that only the
+-- generated query's own `filter` introduces is rejected as well.
+SELECT * FROM eval('SELECT 1 AS good SETTINGS filter = ''"bad-col" = 1''') SETTINGS enforce_strict_identifier_format = 1; -- { serverError BAD_ARGUMENTS }
+-- An alphanumeric identifier is still accepted with the check enabled.
+SELECT * FROM eval('SELECT 1 AS good_name') SETTINGS enforce_strict_identifier_format = 1;
