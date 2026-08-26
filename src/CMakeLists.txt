@@ -496,6 +496,7 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" AND ARCH_AMD64)
         Processors/QueryPlan/Optimizations/joinOrderDP.cpp
         Processors/QueryPlan/Optimizations/joinOrderDPHyp.cpp
         Processors/QueryPlan/Optimizations/joinOrderDPSize.cpp
+        Processors/QueryPlan/Optimizations/joinOrderDPSub.cpp
         Processors/QueryPlan/Optimizations/joinOrderGreedy.cpp
         PROPERTIES COMPILE_FLAGS "-O2")
 endif()

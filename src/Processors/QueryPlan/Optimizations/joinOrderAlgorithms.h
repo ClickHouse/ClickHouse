@@ -13,6 +13,8 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
 DPJoinEntryPtr solveGreedyJoinOrder(QueryGraph & query_graph);
 
+DPJoinEntryPtr solveDPSubJoinOrder(QueryGraph & query_graph);
+
 DPJoinEntryPtr solveDPSizeJoinOrder(
     QueryGraph & query_graph,
     UInt64 max_searched_plans,
