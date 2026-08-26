@@ -22,7 +22,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 <EnterprisePlanFeatureBadge feature="カスタムアイデンティティプロバイダを使用したJWT認証" />
 
 <Tip>
-  このガイドでは、Cloud Console で JWKS プロバイダを設定する方法を説明します。JWT の生成方法や構造 (必須のクレーム、ロールおよび権限付与のクレーム、一時ユーザーの仕組みを含む) については、[JWT Authentication](/ja/operations/external-authenticators/jwt) リファレンスを参照してください。
+  このガイドでは、Cloud Console で JWKS プロバイダを設定する方法を説明します。JWT の生成方法や構造 (必須のクレーム、ロールおよび権限付与のクレーム、一時ユーザーの仕組みを含む) については、[JWT Authentication](/ja/concepts/features/security/external-authenticators/jwt) リファレンスを参照してください。
 </Tip>
 
 ClickHouse Cloud では、独自の JSON Web Key Set (JWKS) エンドポイントに対して検証された JSON Web Token (JWT) を使用して、サービスへの接続を認証できます。データベース認証情報を管理する代わりに、アイデンティティプロバイダが短期間有効なトークンを発行し、ClickHouse は設定した JWKS URL で公開されている公開鍵を使用してそのトークンを検証します。
@@ -48,11 +48,11 @@ ClickHouse Cloud Console の **Settings → Security** から、サービスご�
   ## 仕組み
 </div>
 
-クライアント (アイデンティティプロバイダまたはアプリケーション) は JWT を生成し、**秘密鍵**で署名します。トークンは、想定される[トークン形式](/ja/operations/external-authenticators/jwt#token-claims)に従う必要があります。ClickHouse は、JWKS URL で公開されている**公開鍵**を使用してトークンを検証します。
+クライアント (アイデンティティプロバイダまたはアプリケーション) は JWT を生成し、**秘密鍵**で署名します。トークンは、想定される[トークン形式](/ja/concepts/features/security/external-authenticators/jwt#token-claims)に従う必要があります。ClickHouse は、JWKS URL で公開されている**公開鍵**を使用してトークンを検証します。
 
 1. ClickHouse はトークンの `kid` (鍵 ID) ヘッダーを読み取り、JWKS ドキュメントから一致する鍵を選択します。
 2. その公開鍵を使用してトークンの署名を検証し、`iss` (発行者) および `aud` (オーディエンス) クレーム をプロバイダー設定と照合します。
-3. 検証に成功すると、接続は一時ユーザーとして実行されます。アクセス権はトークンの `clickhouse:grants` および `clickhouse:roles` クレーム から取得され、権限上限 (`default` ユーザー) によって制限されます。詳細は[アクセス権](/ja/operations/external-authenticators/jwt#access-rights)を参照してください。
+3. 検証に成功すると、接続は一時ユーザーとして実行されます。アクセス権はトークンの `clickhouse:grants` および `clickhouse:roles` クレーム から取得され、権限上限 (`default` ユーザー) によって制限されます。詳細は[アクセス権](/ja/concepts/features/security/external-authenticators/jwt#access-rights)を参照してください。
 
 ClickHouse はプロバイダーの追加または更新時に JWKS URL を検証して取得するため、設定が不適切な URL や到達できない URL は事前に拒否されます。
 
@@ -104,4 +104,4 @@ ClickHouse はプロバイダーの追加または更新時に JWKS URL を検�
   ## 関連情報
 </div>
 
-* [JWT Authentication](/ja/operations/external-authenticators/jwt) — トークンのクレーム、一時ユーザー、クライアントの使用方法。
+* [JWT Authentication](/ja/concepts/features/security/external-authenticators/jwt) — トークンのクレーム、一時ユーザー、クライアントの使用方法。

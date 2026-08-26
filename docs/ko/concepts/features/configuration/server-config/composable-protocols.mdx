@@ -232,7 +232,7 @@ HTTP(포트 8123)와 HTTPS(포트 8443)용 엔드포인트를 정의할 수 있�
   ### 엔드포인트별 기본 세션 사용자
 </div>
 
-클라이언트가 사용자 이름을 지정하지 않고 연결하면(예: `user` 매개변수 없이 전송된 HTTP 요청 또는 사용자 이름이 비어 있는 네이티브 프로토콜 `Hello` 패킷) 서버는 기본 세션 사용자로 인증합니다. 기본 세션 사용자는 기본값이 `default`인 `default_session_user` [서버 설정](/ko/operations/server-configuration-parameters/settings)입니다.
+클라이언트가 사용자 이름을 지정하지 않고 연결하면(예: `user` 매개변수 없이 전송된 HTTP 요청 또는 사용자 이름이 비어 있는 네이티브 프로토콜 `Hello` 패킷) 서버는 기본 세션 사용자로 인증합니다. 기본 세션 사용자는 기본값이 `default`인 `default_session_user` [서버 설정](/ko/reference/settings/server-settings/settings)입니다.
 
 `<default_session_user>` 태그를 사용하면 단일 엔드포인트에 대해 이 설정을 재정의할 수 있습니다. 이를 통해 서로 다른 수신 포트에서 서로 다른 익명 사용자를 처리할 수 있습니다:
 

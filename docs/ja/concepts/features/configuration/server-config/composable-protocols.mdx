@@ -229,7 +229,7 @@ doc_type: 'reference'
   ### エンドポイントごとのデフォルトセッションユーザー
 </div>
 
-クライアントがユーザー名を指定せずに接続した場合 (たとえば、`user` パラメータなしの HTTP リクエストや、ユーザー名が空のネイティブプロトコル `Hello` パケット) 、サーバーはデフォルトセッションユーザーとして認証します。デフォルトセッションユーザーは、デフォルト値が `default` の `default_session_user` [サーバー設定](/ja/operations/server-configuration-parameters/settings)です。
+クライアントがユーザー名を指定せずに接続した場合 (たとえば、`user` パラメータなしの HTTP リクエストや、ユーザー名が空のネイティブプロトコル `Hello` パケット) 、サーバーはデフォルトセッションユーザーとして認証します。デフォルトセッションユーザーは、デフォルト値が `default` の `default_session_user` [サーバー設定](/ja/reference/settings/server-settings/settings)です。
 
 `<default_session_user>` タグは、単一のエンドポイントに対してこの設定を上書きします。これにより、異なる待ち受けポートで異なる匿名ユーザーを使用できます。
 

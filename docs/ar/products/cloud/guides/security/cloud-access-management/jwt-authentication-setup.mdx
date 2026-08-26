@@ -22,7 +22,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 <EnterprisePlanFeatureBadge feature="مصادقة JWT باستخدام موفر هوية مخصص" />
 
 <Tip>
-  يشرح هذا الدليل كيفية تهيئة موفري JWKS في Cloud console. لمعرفة كيفية إنشاء JWT وبنيته — بما في ذلك المطالبات المطلوبة ومطالبات الأدوار والمنح وكيفية عمل المستخدمين المؤقتين — راجع [مصادقة JWT](/ar/operations/external-authenticators/jwt).
+  يشرح هذا الدليل كيفية تهيئة موفري JWKS في Cloud console. لمعرفة كيفية إنشاء JWT وبنيته — بما في ذلك المطالبات المطلوبة ومطالبات الأدوار والمنح وكيفية عمل المستخدمين المؤقتين — راجع [مصادقة JWT](/ar/concepts/features/security/external-authenticators/jwt).
 </Tip>
 
 يتيح لك ClickHouse Cloud مصادقة الاتصالات بخدمة باستخدام JSON Web Tokens ‏(JWTs) التي يتم التحقق من صحتها بالاستناد إلى نقاط نهاية JSON Web Key Set ‏(JWKS) الخاصة بك. وبدلًا من إدارة بيانات اعتماد قاعدة البيانات، يصدر موفر الهوية رموزًا مميزة قصيرة العمر يتحقق ClickHouse من صحتها باستخدام المفاتيح العامة المنشورة على عنوان URL لـ JWKS الذي تهيّئه.
@@ -48,11 +48,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   ## آلية العمل
 </div>
 
-ينشئ العميل (موفّر الهوية أو تطبيقك) JWT ويوقّعه باستخدام **مفتاحه الخاص**. يجب أن يتبع الرمز المميز [تنسيق الرمز المميز](/ar/operations/external-authenticators/jwt#token-claims) المتوقع. ثم يتحقق ClickHouse منه باستخدام المفاتيح **العامة** المنشورة على عنوان URL الخاص بـ JWKS:
+ينشئ العميل (موفّر الهوية أو تطبيقك) JWT ويوقّعه باستخدام **مفتاحه الخاص**. يجب أن يتبع الرمز المميز [تنسيق الرمز المميز](/ar/concepts/features/security/external-authenticators/jwt#token-claims) المتوقع. ثم يتحقق ClickHouse منه باستخدام المفاتيح **العامة** المنشورة على عنوان URL الخاص بـ JWKS:
 
 1. يقرأ ClickHouse ترويسة `kid` (معرّف المفتاح) للرمز المميز ويختار المفتاح المطابق من مستند JWKS.
 2. يتحقق من توقيع الرمز المميز باستخدام ذلك المفتاح العام، ويتحقق من مطالبتي `iss` (المُصدِر) و`aud` (الجمهور) بمقارنتهما مع تهيئة الموفّر.
-3. عند نجاح التحقق، يعمل الاتصال كمستخدم مؤقت، وتُستمد حقوق وصوله من مطالبتي `clickhouse:grants` و`clickhouse:roles` في الرمز المميز، ضمن الحد الأقصى للأذونات (المستخدم `default`). راجع [حقوق الوصول](/ar/operations/external-authenticators/jwt#access-rights) للتفاصيل.
+3. عند نجاح التحقق، يعمل الاتصال كمستخدم مؤقت، وتُستمد حقوق وصوله من مطالبتي `clickhouse:grants` و`clickhouse:roles` في الرمز المميز، ضمن الحد الأقصى للأذونات (المستخدم `default`). راجع [حقوق الوصول](/ar/concepts/features/security/external-authenticators/jwt#access-rights) للتفاصيل.
 
 يتحقق ClickHouse من عنوان URL الخاص بـ JWKS ويجلبه عند إضافة موفّر أو تحديثه، لذا يُرفض مسبقًا أي عنوان URL مُهيأ بشكل خاطئ أو يتعذر الوصول إليه.
 
@@ -104,4 +104,4 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   ## مواضيع ذات صلة
 </div>
 
-* [مصادقة JWT](/ar/operations/external-authenticators/jwt) — مطالبات الرمز المميز، والمستخدمون المؤقتون، واستخدام العميل.
+* [مصادقة JWT](/ar/concepts/features/security/external-authenticators/jwt) — مطالبات الرمز المميز، والمستخدمون المؤقتون، واستخدام العميل.

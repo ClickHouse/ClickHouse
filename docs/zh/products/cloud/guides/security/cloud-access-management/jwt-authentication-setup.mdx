@@ -22,7 +22,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 <EnterprisePlanFeatureBadge feature="通过自定义身份提供商进行 JWT 身份验证" />
 
 <Tip>
-  本指南介绍如何在 Cloud 控制台中配置 JWKS 提供商。若要了解如何生成 JWT 及其结构，包括必需的声明、角色和授权声明，以及临时用户的工作方式，请参阅 [JWT 身份验证](/zh/operations/external-authenticators/jwt)参考文档。
+  本指南介绍如何在 Cloud 控制台中配置 JWKS 提供商。若要了解如何生成 JWT 及其结构，包括必需的声明、角色和授权声明，以及临时用户的工作方式，请参阅 [JWT 身份验证](/zh/concepts/features/security/external-authenticators/jwt)参考文档。
 </Tip>
 
 ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份验证，并根据您自己的 JSON Web Key Set (JWKS) 端点验证这些 JWT。您无需管理数据库凭据；身份提供商会签发短期有效的标记，ClickHouse 则会使用您配置的 JWKS URL 中发布的公钥对其进行验证。
@@ -48,11 +48,11 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
   ## 工作原理
 </div>
 
-客户端 (您的身份提供商或应用程序) 生成 JWT，并使用其**私钥**对其签名。标记必须符合预期的[标记格式](/zh/operations/external-authenticators/jwt#token-claims)。随后，ClickHouse 会使用您 JWKS URL 上发布的**公钥**验证该标记：
+客户端 (您的身份提供商或应用程序) 生成 JWT，并使用其**私钥**对其签名。标记必须符合预期的[标记格式](/zh/concepts/features/security/external-authenticators/jwt#token-claims)。随后，ClickHouse 会使用您 JWKS URL 上发布的**公钥**验证该标记：
 
 1. ClickHouse 读取标记 `kid` (密钥 ID) 请求头，并从您的 JWKS 文档中选择匹配的密钥。
 2. 它使用该公钥验证标记签名，并根据您的提供商配置检查 `iss` (签发方) 和 `aud` (受众) 声明。
-3. 验证成功后，连接将以临时用户身份运行；其访问权限来自标记中的 `clickhouse:grants` 和 `clickhouse:roles` 声明，并受权限上限 (`default` 用户) 约束。详见[访问权限](/zh/operations/external-authenticators/jwt#access-rights)。
+3. 验证成功后，连接将以临时用户身份运行；其访问权限来自标记中的 `clickhouse:grants` 和 `clickhouse:roles` 声明，并受权限上限 (`default` 用户) 约束。详见[访问权限](/zh/concepts/features/security/external-authenticators/jwt#access-rights)。
 
 添加或更新提供商时，ClickHouse 会验证并拉取 JWKS URL，因此会预先拒绝配置错误或无法访问的 URL。
 
@@ -104,4 +104,4 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
   ## 相关内容
 </div>
 
-* [JWT 身份验证](/zh/operations/external-authenticators/jwt) — 令牌声明、临时用户和客户端使用。
+* [JWT 身份验证](/zh/concepts/features/security/external-authenticators/jwt) — 令牌声明、临时用户和客户端使用。

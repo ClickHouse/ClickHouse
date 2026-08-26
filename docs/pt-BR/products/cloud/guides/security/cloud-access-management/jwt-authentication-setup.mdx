@@ -22,7 +22,7 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 <EnterprisePlanFeatureBadge feature="Autenticação JWT com provedor de identidade personalizado" />
 
 <Tip>
-  Este guia aborda a configuração de provedores JWKS no Cloud Console. Para saber como gerar um JWT e como é sua estrutura — as claims obrigatórias, as claims de funções e grants e o funcionamento dos usuários efêmeros — consulte a referência sobre [Autenticação JWT](/pt-BR/operations/external-authenticators/jwt).
+  Este guia aborda a configuração de provedores JWKS no Cloud Console. Para saber como gerar um JWT e como é sua estrutura — as claims obrigatórias, as claims de funções e grants e o funcionamento dos usuários efêmeros — consulte a referência sobre [Autenticação JWT](/pt-BR/concepts/features/security/external-authenticators/jwt).
 </Tip>
 
 O ClickHouse Cloud permite autenticar conexões com um serviço usando JSON Web Tokens (JWTs) validados nos seus próprios endpoints de JSON Web Key Set (JWKS). Em vez de gerenciar credenciais de banco de dados, seu provedor de identidade emite tokens de curta duração que o ClickHouse verifica com base nas chaves públicas publicadas em um URL JWKS configurado por você.
@@ -48,11 +48,11 @@ Para configurar provedores JWT para um serviço, você precisa de:
   ## Como funciona
 </div>
 
-O cliente (seu provedor de identidade ou aplicação) gera um JWT e o assina com sua **chave privada**. O token deve seguir o [formato de token](/pt-BR/operations/external-authenticators/jwt#token-claims) esperado. Em seguida, o ClickHouse o verifica usando as chaves **públicas** publicadas no URL do seu JWKS:
+O cliente (seu provedor de identidade ou aplicação) gera um JWT e o assina com sua **chave privada**. O token deve seguir o [formato de token](/pt-BR/concepts/features/security/external-authenticators/jwt#token-claims) esperado. Em seguida, o ClickHouse o verifica usando as chaves **públicas** publicadas no URL do seu JWKS:
 
 1. O ClickHouse lê o cabeçalho `kid` (ID da chave) do token e seleciona a chave correspondente no documento JWKS.
 2. Ele verifica a assinatura do token usando essa chave pública e valida as claims `iss` (emissor) e `aud` (audiência) em relação à configuração do seu provedor.
-3. Em caso de sucesso, a conexão é estabelecida como um usuário efêmero, cujos direitos de acesso são derivados das claims `clickhouse:grants` e `clickhouse:roles` do token, limitados pelo limite de permissões (o usuário `default`). Consulte [Direitos de acesso](/pt-BR/operations/external-authenticators/jwt#access-rights) para obter detalhes.
+3. Em caso de sucesso, a conexão é estabelecida como um usuário efêmero, cujos direitos de acesso são derivados das claims `clickhouse:grants` e `clickhouse:roles` do token, limitados pelo limite de permissões (o usuário `default`). Consulte [Direitos de acesso](/pt-BR/concepts/features/security/external-authenticators/jwt#access-rights) para obter detalhes.
 
 O ClickHouse valida e busca o URL JWKS quando você adiciona ou atualiza um provedor. Assim, um URL configurado incorretamente ou inacessível é rejeitado imediatamente.
 
@@ -104,4 +104,4 @@ O ClickHouse valida e busca o URL JWKS quando você adiciona ou atualiza um prov
   ## Conteúdo relacionado
 </div>
 
-* [Autenticação JWT](/pt-BR/operations/external-authenticators/jwt) — claims de tokens, usuários efêmeros e uso do cliente.
+* [Autenticação JWT](/pt-BR/concepts/features/security/external-authenticators/jwt) — claims de tokens, usuários efêmeros e uso do cliente.

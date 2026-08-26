@@ -238,7 +238,7 @@ endpoint correspondente é reiniciado automaticamente.
 Quando um cliente se conecta sem especificar um nome de usuário (por exemplo, uma requisição HTTP
 sem o parâmetro `user` ou um pacote `Hello` do protocolo nativo com um nome de usuário
 vazio), o servidor o autentica como o usuário de sessão padrão —
-a [configuração do servidor](/pt-BR/operations/server-configuration-parameters/settings) `default_session_user`, cujo valor padrão é `default`.
+a [configuração do servidor](/pt-BR/reference/settings/server-settings/settings) `default_session_user`, cujo valor padrão é `default`.
 
 A tag `<default_session_user>` substitui essa configuração para um único endpoint. Isso
 permite que diferentes portas de escuta atendam a diferentes usuários anônimos:

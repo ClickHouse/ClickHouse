@@ -36,7 +36,7 @@ doc_type: 'reference'
 {"type": "auth", "user": "<user>", "password": "<password>"}
 ```
 
-`user` 필드는 선택 사항입니다. 생략되거나 비어 있으면 사용자 이름은 `default_session_user` [서버 설정](/ko/operations/server-configuration-parameters/settings)(또는 [composable protocols](/ko/operations/settings/composable-protocols) 구성의 엔드포인트별 재정의)에 지정된 값으로 사용되며, 별도로 구성하지 않은 경우 `default`입니다. `default_session_user`가 빈 문자열로 설정되면 사용자 이름이 없는 연결은 허용되지 않습니다. 생략되거나 비어 있는 `user`가 포함된 `auth` 메시지는 인증에 실패하고, server는 코드 `1008`로 WebSocket 연결을 종료하며, 서버 구성에서 `session_log` 섹션이 활성화된 경우 거부 내역은 빈 `user`를 가진 `LoginFailure` 이벤트로 [`system.session_log`](/ko/operations/system-tables/session_log)에 기록됩니다.
+`user` 필드는 선택 사항입니다. 생략되거나 비어 있으면 사용자 이름은 `default_session_user` [서버 설정](/ko/reference/settings/server-settings/settings)(또는 [composable protocols](/ko/concepts/features/configuration/server-config/composable-protocols) 구성의 엔드포인트별 재정의)에 지정된 값으로 사용되며, 별도로 구성하지 않은 경우 `default`입니다. `default_session_user`가 빈 문자열로 설정되면 사용자 이름이 없는 연결은 허용되지 않습니다. 생략되거나 비어 있는 `user`가 포함된 `auth` 메시지는 인증에 실패하고, server는 코드 `1008`로 WebSocket 연결을 종료하며, 서버 구성에서 `session_log` 섹션이 활성화된 경우 거부 내역은 빈 `user`를 가진 `LoginFailure` 이벤트로 [`system.session_log`](/ko/reference/system-tables/session_log)에 기록됩니다.
 
 이렇게 하면 업그레이드 요청에 포함된 URL 쿼리 매개변수나 `Authorization` 헤더에 자격 증명을 넣지 않아도 되므로, 자격 증명이 브라우저 이력, 서버 액세스 로그, 리버스 프록시 로그에 남을 수 있는 위험을 피할 수 있습니다. `/webterminal`은 업그레이드 요청의 URL 매개변수, HTTP Basic, `X-ClickHouse-User`/`X-ClickHouse-Key` 헤더를 의도적으로 **확인하지 않습니다**.
 
