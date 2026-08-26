@@ -30,6 +30,7 @@ public:
     void consume(Chunk chunk) override;
     bool canGenerate() override;
     Chunk generate() override;
+    Chunk getRemaining() override;
 
 private:
     const std::string event_time_column;

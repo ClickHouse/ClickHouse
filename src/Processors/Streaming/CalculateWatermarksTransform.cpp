@@ -132,6 +132,14 @@ void CalculateWatermarksTransform::consume(Chunk chunk)
     pending_chunks.push(WatermarkMarker::create(getOutputPort().getHeader(), watermark));
 }
 
+Chunk CalculateWatermarksTransform::getRemaining()
+{
+    if (watermark.isNull())
+        return {};
+
+    return WatermarkMarker::create(getOutputPort().getHeader(), watermark);
+}
+
 bool CalculateWatermarksTransform::canGenerate()
 {
     return !pending_chunks.empty();
