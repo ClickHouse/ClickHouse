@@ -97,49 +97,42 @@ size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &
     SortDescription description = sort_step->getSortDescription();
     QueryPlan::Node * first_node_below_sort = sort_node->children.front();
     QueryPlan::Node * array_join_node = first_node_below_sort;
-    if (!peelPassThroughExpressions(array_join_node, description))
-        return 0;
 
     std::vector<std::pair<QueryPlan::Node *, ArrayJoinStep *>> array_joins;
     QueryPlan::Node * insertion_parent_node = nullptr;
     while (true)
     {
-        if (auto * array_join_step = typeid_cast<ArrayJoinStep *>(array_join_node->step.get()))
+        while (typeid_cast<ExpressionStep *>(array_join_node->step.get()))
         {
-            if (array_join_node->children.size() != 1)
-                return 0;
-
-            const auto & array_join_columns = array_join_step->getColumns();
-            const NameSet array_join_column_names(array_join_columns.begin(), array_join_columns.end());
-            const auto & array_join_input_header = array_join_step->getInputHeaders().front();
-
-            /// Every sort key must be carried through the `ARRAY JOIN` unchanged. A joined column
-            /// keeps its name across the step and only changes its type, so checking that the name is
-            /// present in the input header is not enough.
-            for (const auto & sort_column : description)
-            {
-                if (array_join_column_names.contains(sort_column.column_name))
-                    return 0;
-                if (!array_join_input_header->has(sort_column.column_name))
-                    return 0;
-            }
-
-            array_joins.emplace_back(array_join_node, array_join_step);
-            insertion_parent_node = array_join_node;
-            array_join_node = array_join_node->children.front();
-            continue;
-        }
-
-        if (typeid_cast<ExpressionStep *>(array_join_node->step.get()))
-        {
-            auto * expression_node = array_join_node;
             if (!peelPassThroughExpressions(array_join_node, description, 1))
                 return 0;
-            insertion_parent_node = expression_node;
-            continue;
         }
 
-        break;
+        auto * array_join_step = typeid_cast<ArrayJoinStep *>(array_join_node->step.get());
+        if (!array_join_step)
+            break;
+
+        if (array_join_node->children.size() != 1)
+            return 0;
+
+        const auto & array_join_columns = array_join_step->getColumns();
+        const NameSet array_join_column_names(array_join_columns.begin(), array_join_columns.end());
+        const auto & array_join_input_header = array_join_step->getInputHeaders().front();
+
+        /// Every sort key must be carried through the `ARRAY JOIN` unchanged. A joined column
+        /// keeps its name across the step and only changes its type, so checking that the name is
+        /// present in the input header is not enough.
+        for (const auto & sort_column : description)
+        {
+            if (array_join_column_names.contains(sort_column.column_name))
+                return 0;
+            if (!array_join_input_header->has(sort_column.column_name))
+                return 0;
+        }
+
+        array_joins.emplace_back(array_join_node, array_join_step);
+        insertion_parent_node = array_join_node;
+        array_join_node = array_join_node->children.front();
     }
 
     if (array_joins.empty() || !insertion_parent_node)

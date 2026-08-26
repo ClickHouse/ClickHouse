@@ -137,25 +137,22 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
             QueryPlan::Node * current_node = child_node;
             while (true)
             {
-                if (auto * array_join = typeid_cast<ArrayJoinStep *>(current_node->step.get()))
-                {
-                    if (current_node->children.size() != 1)
-                        return 0;
-
-                    array_joins.emplace_back(current_node, array_join);
-                    current_node = current_node->children.front();
-                    continue;
-                }
-
-                if (typeid_cast<ExpressionStep *>(current_node->step.get()))
+                while (typeid_cast<ExpressionStep *>(current_node->step.get()))
                 {
                     SortDescription unused;
                     if (!peelPassThroughExpressions(current_node, unused, 1))
                         break;
-                    continue;
                 }
 
-                break;
+                auto * array_join = typeid_cast<ArrayJoinStep *>(current_node->step.get());
+                if (!array_join)
+                    break;
+
+                if (current_node->children.size() != 1)
+                    return 0;
+
+                array_joins.emplace_back(current_node, array_join);
+                current_node = current_node->children.front();
             }
 
             if (array_joins.empty())
