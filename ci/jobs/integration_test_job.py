@@ -23,6 +23,11 @@ from ci.praktika.utils import Shell, Utils
 repo_dir = Utils.cwd()
 temp_path = f"{repo_dir}/ci/tmp"
 
+# Must equal helpers/cluster.py's RABBITMQ_RECREATE_TOKEN, which emits it. Copied
+# rather than imported so this script does not depend on the test helpers' imports;
+# test_cluster_waiters/test_rabbitmq_start_retry.py asserts the two stay equal.
+RABBITMQ_RECREATE_TOKEN = "RABBITMQ_RECREATE"
+
 
 MAX_FAILS_BEFORE_DROP = 5
 # Flaky-check best-effort scope cap: the maximum number of changed test modules a single
@@ -47,9 +52,16 @@ MAX_MEM_PER_WORKER = 11
 # cgroup and tripping the kernel OOM killer (see OOM_IN_DMESG_TEST_NAME).
 MAX_MEM_PER_WORKER_DIST_EACH = 20
 
-INFRASTRUCTURE_ERROR_PATTERNS = [
+# A timeout says nothing about its own origin: a container orchestration command and
+# the process under test both raise `subprocess.TimeoutExpired`, rendering the same two
+# substrings. These two are therefore matched by the argv that timed out rather than by
+# a plain substring search.
+TIMEOUT_ERROR_PATTERNS = [
     "timed out after",
     "TimeoutExpired",
+]
+
+INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "Cannot connect to the Docker daemon",
     "Error response from daemon",
     "Name or service not known",
@@ -64,13 +76,133 @@ INFRASTRUCTURE_ERROR_PATTERNS = [
     "Got exception pulling images:",  # docker pull failure during cluster.start()
 ]
 
+# compose options that consume the token after them, so the subcommand is not the
+# first non-option token but the first one no option has claimed.
+COMPOSE_VALUED_OPTIONS = {
+    "--ansi",
+    "--env-file",
+    "--file",
+    "--parallel",
+    "--profile",
+    "--progress",
+    "--project-directory",
+    "--project-name",
+    "-f",
+    "-p",
+}
+
+# Subcommands whose timeout does not mean the server failed to respond, so exceeding the
+# python-side budget says nothing about the server under test.
+ORCHESTRATION_LIFECYCLE_VERBS = {
+    "config",
+    "create",
+    "down",
+    "images",
+    "login",
+    "logs",
+    "ps",
+    "pull",
+    "rm",
+    "start",
+    "unpause",
+    "up",
+}
+
+# Subcommands that wait on the server exiting: an unguarded `stop` with no `--timeout`
+# (cluster.py:2641) is bounded only by the generated template's `stop_grace_period: 10m`,
+# which outlives the python-side budget, so its timeout means the server did not respond.
+ORCHESTRATION_PRODUCT_VERBS = {"kill", "pause", "restart", "stop"}
+
+# Top-level `docker` subcommands the harness runs on its own behalf, outside compose, and
+# whose timeout is known to arrive here (`run_and_check` re-raises `TimeoutExpired` even
+# under `nothrow`). `exec` and `update` are absent: a test body runs those.
+DOCKER_TOPLEVEL_LIFECYCLE_VERBS = {"login", "ps", "rm"}
+
+
+def _raising_exception_lines(info: str) -> list:
+    """The `E   <ExcType>: <msg>` lines, i.e. the exceptions actually raised.
+
+    Scoped to these lines because an embedded server stack trace can carry a timeout
+    substring tens of kilobytes away from anything that timed out.
+    """
+    return [line for line in info.splitlines() if line.startswith("E ")]
+
+
+def _argv_lists(line: str) -> list:
+    """Every bracketed argv on `line`, in either rendering."""
+    argvs = []
+    for match in re.finditer(r"\[((?:'[^']*'(?:,\s*)?)+)\]", line):
+        argvs.append(re.findall(r"'([^']*)'", match.group(1)))
+    for match in re.finditer(r"\[([^\[\]']+)\]", line):
+        argvs.append(match.group(1).split())
+    return argvs
+
+
+def _orchestration_verb(argv: list):
+    """The docker subcommand `argv` invokes, or None if it is not orchestration."""
+    if len(argv) < 2 or argv[0] != "docker":
+        return None
+    if argv[1] in DOCKER_TOPLEVEL_LIFECYCLE_VERBS:
+        return argv[1]
+    if argv[1] != "compose":
+        return None
+    i = 2
+    while i < len(argv):
+        if argv[i] in COMPOSE_VALUED_OPTIONS:
+            i += 2
+        elif argv[i].startswith("-"):
+            i += 1
+        else:
+            return argv[i]
+    return None
+
+
+def _is_orchestration_lifecycle_timeout(info: str) -> bool:
+    """Whether the timeout is docker's or the registry's rather than the server's.
+
+    Every command a raised exception reports as timing out must be one docker runs on the
+    harness's behalf. A row can name several: `raise ... from ex` makes pytest render both
+    exceptions with their own `E ` prefix, a teardown reports its own commands beside the
+    body's, and captured output is embedded verbatim in the message. So anything else on a
+    timeout-bearing line -- a product-sensitive subcommand, a command that is not
+    orchestration at all, or no argv whatsoever -- means the wait that expired is not
+    known to be docker's.
+
+    An unrecognised subcommand is not a lifecycle one: a new compose verb must be
+    classified deliberately rather than default to suppressing the result.
+    """
+    saw_lifecycle = False
+    for line in _raising_exception_lines(info):
+        if not any(p in line for p in TIMEOUT_ERROR_PATTERNS):
+            continue
+        argvs = _argv_lists(line)
+        if not argvs:
+            return False
+        for argv in argvs:
+            verb = _orchestration_verb(argv)
+            if verb is None or verb in ORCHESTRATION_PRODUCT_VERBS:
+                return False
+            if verb not in ORCHESTRATION_LIFECYCLE_VERBS:
+                return False
+            saw_lifecycle = True
+    return saw_lifecycle
+
+
+def _non_timeout_patterns_match(info: str) -> bool:
+    return any(
+        p in info for p in INFRASTRUCTURE_ERROR_PATTERNS
+        if p not in TIMEOUT_ERROR_PATTERNS
+    )
+
 
 def _is_infrastructure_error(result: Result) -> bool:
     """Returns True if the result is a failure caused by infrastructure issues."""
     if not result.info:
         return False
     if result.status == Result.Status.ERROR:
-        return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
+        return _non_timeout_patterns_match(
+            result.info
+        ) or _is_orchestration_lifecycle_timeout(result.info)
     # Docker compose/pull infrastructure failures may appear with FAIL status
     # when pytest reports fixture (setup phase) errors as test failures.
     # Require both docker context and an infrastructure pattern to avoid
@@ -79,8 +211,9 @@ def _is_infrastructure_error(result: Result) -> bool:
         has_docker_context = (
             "'docker'" in result.info or "images_pull_cmd" in result.info
         )
-        return has_docker_context and any(
-            p in result.info for p in INFRASTRUCTURE_ERROR_PATTERNS
+        return has_docker_context and (
+            _non_timeout_patterns_match(result.info)
+            or _is_orchestration_lifecycle_timeout(result.info)
         )
     return False
 
@@ -98,6 +231,80 @@ def _mark_infrastructure_errors(results: list) -> int:
             count += 1
     if count:
         print(f"Marked {count} test result(s) as infrastructure errors")
+    return count
+
+
+def clear_rabbitmq_recreation_scan_inputs() -> None:
+    """Delete everything `report_rabbitmq_recreations` scans, before the first batch.
+
+    The reporter scans every line and the log handlers append, so anything left in
+    `temp_path` by an earlier job counts as an event of this one. Best effort: a job
+    must never fail because a stale file could not be removed.
+    """
+    try:
+        stale_files = sorted(Path(temp_path).glob("pytest_*.log")) + sorted(
+            Path(temp_path).glob("rabbit-*.log")
+        )
+    except OSError as ex:
+        print(f"WARNING: cannot list {temp_path} before RabbitMQ retry scan: {ex}")
+        return
+    for stale in stale_files:
+        try:
+            os.remove(stale)
+        except OSError as ex:
+            print(f"WARNING: cannot remove {stale} before RabbitMQ retry scan: {ex}")
+
+
+def report_rabbitmq_recreations(result: Result) -> int:
+    """Publish RabbitMQ container recreations, and the broker logs the waiter preserved.
+
+    Must be called once per job, after every batch: the per-worker log handlers append
+    and a sequential batch reuses one log file across repeats, so scanning per batch
+    would report a multiple of the real count.
+    """
+    snapshots = []
+    count = 0
+    for log_file in sorted(Path(temp_path).glob("pytest_*.log")):
+        # Streamed: these are the full per-worker integration logs, tens of MB each.
+        # A file contributes only once read to the end, so a partial read is no count.
+        file_count = 0
+        file_snapshots = []
+        try:
+            with log_file.open(encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    if RABBITMQ_RECREATE_TOKEN not in line:
+                        continue
+                    file_count += 1
+                    # The field is a bare file name in `temp_path`: the whitespace-
+                    # delimited parse below cannot carry a directory, which may contain
+                    # spaces.
+                    match = re.search(r"snapshot=(\S+)", line)
+                    if not match or os.path.basename(match.group(1)) != match.group(1):
+                        continue
+                    snapshot = os.path.join(temp_path, match.group(1))
+                    if os.path.isfile(snapshot):
+                        file_snapshots.append(snapshot)
+        except OSError as ex:
+            print(f"WARNING: cannot read {log_file} for RabbitMQ retry scan: {ex}")
+            continue
+        count += file_count
+        snapshots.extend(file_snapshots)
+    if not count:
+        return 0
+    # Only `info` and `files` are touched; status and labels stay as the results left them.
+    # `complete_job` appends `Failures: N/M` only while `info` is empty and runs after
+    # this, so emit it here on exactly the runs that would otherwise have received it.
+    if not result.info:
+        fail_cnt = sum(1 for r in result.results if not r.is_ok())
+        result.set_info(f"Failures: {fail_cnt}/{len(result.results)}")
+    result.set_info(
+        f"RabbitMQ container recreation was attempted {count} time(s)"
+        " after failing to start"
+    )
+    for snapshot in snapshots:
+        if snapshot not in result.files:
+            result.files.append(snapshot)
+    print(f"NOTE: RabbitMQ container recreations observed: {count}")
     return count
 
 
@@ -739,7 +946,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     break
             else:
                 raise FileNotFoundError(
-                    "Clickhouse binary not found in any of the paths: "
+                    "ClickHouse binary not found in any of the paths: "
                     + ", ".join(paths_to_check)
                     + ". You can also specify path to binary via --path argument"
                 )
@@ -747,7 +954,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             clickhouse_server_config_dir = args.path_1
     assert Path(
         clickhouse_server_config_dir
-    ), f"Clickhouse config dir does not exist [{clickhouse_server_config_dir}]"
+    ), f"ClickHouse config dir does not exist [{clickhouse_server_config_dir}]"
     print(f"Using ClickHouse binary at [{clickhouse_path}]")
 
     changed_test_modules = []
@@ -992,7 +1199,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
-        # PromQL compliance: deterministic JSON for post-hook (see promql_compliance_hook.py).
+        # PromQL compliance: deterministic JSON for upload hook (see promql_compliance_upload_hook.py).
         "COMPLIANCE_RESULT_FILE": os.environ.get(
             "COMPLIANCE_RESULT_FILE", os.path.join(temp_path, "promql_compliance_result.json")
         ),
@@ -1069,6 +1276,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
             Utils.clear_dmesg()
         except Exception as ex:
             print(f"Failed to clear dmesg before integration tests: {ex}")
+
+    clear_rabbitmq_recreation_scan_inputs()
 
     if is_flaky_check or is_targeted_check:
         # Each xdist worker runs all modules independently with its own isolated Docker cluster.
@@ -1518,6 +1727,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
         force_ok_exit = True
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
+
+    report_rabbitmq_recreations(R)
 
     R.sort().complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
