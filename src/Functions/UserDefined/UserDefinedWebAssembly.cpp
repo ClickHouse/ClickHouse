@@ -252,10 +252,6 @@ public:
         auto ptr = loadFromWasmMemory<WasmPtr>(raw_buffer_ptr);
         auto size = loadFromWasmMemory<WasmSizeT>(raw_buffer_ptr + sizeof(WasmPtr));
 
-        if (size > 0 && ptr == 0)
-            throw Exception(ErrorCodes::WASM_ERROR,
-                "WebAssembly buffer returned null data pointer with size {}", size);
-
         return compartment->getMemory(ptr, size);
     }
 
