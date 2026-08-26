@@ -1,4 +1,3 @@
-#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -8,6 +7,7 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Common/FailPoint.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
