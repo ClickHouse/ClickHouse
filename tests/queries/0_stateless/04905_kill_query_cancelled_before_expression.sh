@@ -30,10 +30,13 @@ run_cancelled_query()
 
     ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT ${before_failpoint}"
 
-    timeout 30 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "$query" >"$output_file" 2>&1 &
+    # The client must outlive the whole orchestration below (waiting for the failpoint, killing the
+    # query and waiting for the cancellation to be observed), otherwise `timeout` terminates it
+    # before the server reports `QUERY_WAS_CANCELLED` and the test fails spuriously on slow builds.
+    timeout 120 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "$query" >"$output_file" 2>&1 &
     local client_pid=$!
 
-    if ! timeout 30 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT ${before_failpoint} PAUSE"
+    if ! timeout 60 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT ${before_failpoint} PAUSE"
     then
         echo "FAIL: timed out waiting for ${before_failpoint}"
         ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT ${before_failpoint}"
@@ -50,14 +53,17 @@ run_cancelled_query()
 
     # Do not release the failpoint until the asynchronous kill has reached the query. Otherwise,
     # the query can resume and park at the post-expression failpoint before cancellation is set.
+    # Poll over HTTP: starting `clickhouse-client` hundreds of times costs more wall-clock time
+    # than the query client is allowed to live on a debug or sanitizer build.
     local cancelled=0
-    for _ in {1..300}
+    local deadline=$((SECONDS + 60))
+    while (( SECONDS < deadline ))
     do
-        cancelled=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = '${query_id}' AND is_cancelled")
+        cancelled=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM system.processes WHERE query_id = '${query_id}' AND is_cancelled")
         [[ "$cancelled" -ge 1 ]] && break
         sleep 0.1
     done
-    [[ "$cancelled" -ge 1 ]] || { echo "FAIL: query was not cancelled"; ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT ${before_failpoint}"; return 1; }
+    [[ "$cancelled" -ge 1 ]] || { echo "FAIL: the query was not marked as cancelled in system.processes"; ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT ${before_failpoint}"; return 1; }
 
     # Arm the post-expression failpoint only after the kill is confirmed. These failpoints are
     # global: while one is armed but not yet consumed, the first unrelated query passing the same
@@ -70,7 +76,7 @@ run_cancelled_query()
     wait "$client_pid"
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT ${after_failpoint}"
 
-    grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; cat "$output_file"; return 1; }
+    grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: the client did not report QUERY_WAS_CANCELLED"; cat "$output_file"; return 1; }
 }
 
 run_cancelled_query \

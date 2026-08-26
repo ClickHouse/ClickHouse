@@ -1,3 +1,4 @@
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -33,6 +34,12 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char adding_defaults_transform_before_expression_pause[];
+    extern const char adding_defaults_transform_pause[];
+}
 
 namespace ErrorCodes
 {
@@ -295,6 +302,16 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
                 ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag)),
                 ExpressionActionsSettings(context, CompileExpressions::yes), true);
 
+            FailPointInjection::pauseFailPoint(FailPoints::adding_defaults_transform_before_expression_pause);
+
+            /// The task can be dispatched before the query is cancelled and start running after it:
+            /// skip the whole default evaluation instead of running one action of it.
+            if (isCancelled())
+            {
+                chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
+                return;
+            }
+
             /// Publish the actions so that a concurrent `onCancel` can forward `cancelExecution`
             /// into a function that is already running.
             {
@@ -308,6 +325,8 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
                 std::lock_guard lock(current_actions_mutex);
                 current_actions.reset();
             }
+
+            FailPointInjection::pauseFailPoint(FailPoints::adding_defaults_transform_pause);
 
             if (isCancelled())
             {
