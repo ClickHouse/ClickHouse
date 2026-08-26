@@ -48,7 +48,9 @@ SELECT CAST(0.1, concat('Decimal', '256(76)'));
 SELECT CAST(1 AS DateTime('UTC')), CAST(1234567890 AS DateTime('UTC'));
 SELECT CAST(19000 AS Date), CAST(1234567890 AS Date32);
 SELECT CAST(-1 AS UInt8), CAST(1000 AS UInt8), CAST(1.9 AS UInt8);
-SELECT CAST(1.9 AS Int64), CAST(1e19 AS Int64);
+-- `1e18` rather than a number over the `Int64` range: converting an out-of-range `Float64` to an
+-- integer is undefined, and the two architectures give different answers.
+SELECT CAST(1.9 AS Int64), CAST(1e18 AS Int64);
 SELECT CAST(42 AS Bool), CAST(1 AS Enum8('a' = 1, 'b' = 2)), CAST(1234567890 AS IPv4);
 SELECT CAST(1.0 AS String), CAST(1e3 AS String);
 SELECT CAST(256 AS Nullable(UInt8));
