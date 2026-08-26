@@ -1155,8 +1155,20 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
             return join;
     }
 
+    /// Print the names the way they are spelled in the `join_algorithm` setting, so that they can be
+    /// pasted straight back into it. `toString(JoinAlgorithm)` returns the uppercase enum spelling,
+    /// which the setting parser rejects.
+    std::vector<String> enabled_algorithm_names;
+    enabled_algorithm_names.reserve(join_algorithms.size());
+    for (auto algorithm : join_algorithms)
+        enabled_algorithm_names.emplace_back(SettingFieldJoinAlgorithmTraits::toString(algorithm));
+
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "Can't execute any of specified join algorithms for this strictness/kind and right storage type");
+        "None of the algorithms enabled by the 'join_algorithm' setting [{}] can execute this {} {} JOIN "
+        "with the given right table storage type",
+        fmt::join(enabled_algorithm_names, ", "),
+        toString(analyzed_join->strictness()),
+        toString(analyzed_join->kind()));
 }
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(

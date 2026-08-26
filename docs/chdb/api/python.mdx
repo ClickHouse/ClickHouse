@@ -14,7 +14,7 @@ doc_type: 'reference'
 Execute SQL query using chDB engine.
 
 This is the main query function that executes SQL statements using the embedded
-ClickHouse engine. Supports various output formats and can work with in-memory
+ClickHouse engine. Supports various output formats and can work with temporary
 or file-based databases.
 
 **Syntax**
@@ -29,7 +29,7 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 |-----------------|-------|------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `sql`           | str   | *required* | SQL query string to execute                                                                                                                                                                                                                                                                                     |
 | `output_format` | str   | `"CSV"`    | Output format for results. Supported formats:<br/>• `"CSV"` - Comma-separated values<br/>• `"JSON"` - JSON format<br/>• `"Arrow"` - Apache Arrow format<br/>• `"Parquet"` - Parquet format<br/>• `"DataFrame"` - Pandas DataFrame<br/>• `"ArrowTable"` - PyArrow Table<br/>• `"Debug"` - Enable verbose logging |
-| `path`          | str   | `""`       | Database file path. Defaults to in-memory database.<br/>Can be a file path or `":memory:"` for in-memory database                                                                                                                                                                                               |
+| `path`          | str   | `""`       | Database file path. Defaults to a temporary, non-persistent database (equivalent to `":memory:"`).<br/>Pass a file path to persist to disk                                                                                                                                                                                               |
 | `udf_path`      | str   | `""`       | Path to legacy subprocess-based UDF directory. Not needed for native Python UDFs ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                                                                                                                        |
 
 **Returns**
@@ -79,7 +79,7 @@ Returns the query result in the specified format:
 Execute SQL query using chDB engine.
 
 This is the main query function that executes SQL statements using the embedded
-ClickHouse engine. Supports various output formats and can work with in-memory
+ClickHouse engine. Supports various output formats and can work with temporary
 or file-based databases.
 
 **Syntax**
@@ -94,7 +94,7 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 |-----------------|-------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `sql`           | str   | *required* | SQL query string to execute                                                                                                                                                                                                                                                                              |
 | `output_format` | str   | `"CSV"`    | Output format for results. Supported formats:<br/>• `"CSV"` - Comma-separated values<br/>• `"JSON"` - JSON format<br/>• `"Arrow"` - Apache Arrow format<br/>• `"Parquet"` - Parquet format<br/>• `"DataFrame"` - Pandas DataFrame<br/>• `"ArrowTable"` - PyArrow Table<br/>• `"Debug"` - Enable verbose logging |
-| `path`          | str   | `""`       | Database file path. Defaults to in-memory database.<br/>Can be a file path or `":memory:"` for in-memory database                                                                                                                                                                                         |
+| `path`          | str   | `""`       | Database file path. Defaults to a temporary, non-persistent database (equivalent to `":memory:"`).<br/>Pass a file path to persist to disk                                                                                                                                                                                         |
 | `udf_path`      | str   | `""`       | Path to legacy subprocess-based UDF directory. Not needed for native Python UDFs ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                                                                                                                 |
 
 **Returns**
@@ -232,8 +232,7 @@ The following Session Functions are available:
 Create a connection to chDB background server.
 
 This function establishes a [Connection](#chdb-state-sqlitelike-connection) to the chDB (ClickHouse) database engine.
-Only one open connection is allowed per process.
-Multiple calls with the same connection string will return the same connection object.
+Each call returns an independent connection, and any number of connections to the same database path may be open at the same time.
 
 ```python
 chdb.connect(connection_string: str = ':memory:') → Connection
@@ -249,7 +248,7 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 
 | Format                    | Description                  |
 |---------------------------|------------------------------|
-| `":memory:"`              | In-memory database (default) |
+| `":memory:"`              | Temporary database (default) |
 | `"test.db"`               | Relative path database file  |
 | `"file:test.db"`          | Same as relative path        |
 | `"/path/to/test.db"`      | Absolute path database file  |
@@ -260,7 +259,7 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 | Format                                             | Description               |
 |----------------------------------------------------|---------------------------|
 | `"file:test.db?param1=value1&param2=value2"`       | Relative path with params |
-| `"file::memory:?verbose&log-level=test"`           | In-memory with params     |
+| `"file::memory:?verbose&log-level=test"`           | Temporary with params     |
 | `"///path/to/test.db?param1=value1&param2=value2"` | Absolute path with params |
 
 **Query parameter handling**
@@ -288,15 +287,14 @@ For a complete parameter list, see `clickhouse local --help --verbose`
 |----------------|---------------------------------|
 | `RuntimeError` | If connection to database fails |
 
-<Warning>
-Only one connection per process is supported.
-Creating a new connection will close any existing connection.
-</Warning>
+<Note>
+A process runs one embedded engine bound to one database path. Multiple connections to the same path can coexist and run queries concurrently. Opening a *different* path while any connection is open raises a `RuntimeError`; close the open ones first.
+</Note>
 
 **Examples**
 
 ```pycon
->>> # In-memory database
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
@@ -338,8 +336,7 @@ provides error information from the underlying ClickHouse engine.
 Bases: `object`
 
 Session will keep the state of query.
-If path is None, it will create a temporary directory and use it as the database path
-and the temporary directory will be removed when the session is closed.
+If path is None, the session uses the process-wide temporary (`:memory:`) database, so all path-less sessions see each other's tables; its temporary directory is removed only when the last such session or connection closes.
 You can also pass in a path to create a database at that path where will keep your data.
 
 You can also use a connection string to pass in the path and other parameters.
@@ -352,13 +349,13 @@ class chdb.session.Session(path=None)
 
 | Connection String                                  | Description                          |
 |----------------------------------------------------|--------------------------------------|
-| `":memory:"`                                       | In-memory database                   |
+| `":memory:"`                                       | Temporary database                   |
 | `"test.db"`                                        | Relative path                        |
 | `"file:test.db"`                                   | Same as above                        |
 | `"/path/to/test.db"`                               | Absolute path                        |
 | `"file:/path/to/test.db"`                          | Same as above                        |
 | `"file:test.db?param1=value1&param2=value2"`       | Relative path with query params      |
-| `"file::memory:?verbose&log-level=test"`           | In-memory database with query params |
+| `"file::memory:?verbose&log-level=test"`           | Temporary database with query params |
 | `"///path/to/test.db?param1=value1&param2=value2"` | Absolute path with query params      |
 
 <Info>
@@ -373,12 +370,12 @@ Some special args handling:
 - “mode=ro” would be “–readonly=1” for clickhouse (read-only mode)
 </Info>
 
-<Warning>
+<Note>
 **Important**
 
-- There can be only one session at a time. If you want to create a new session, you need to close the existing one.
-- Creating a new session will close the existing one.
-</Warning>
+- Multiple sessions can coexist, as long as they share the same database path.
+- To use a different database path, close the open session(s) first.
+</Note>
 
 ---
 
@@ -703,8 +700,7 @@ id,name
 Create a [Connection](#chdb-state-sqlitelike-connection) to the chDB background server.
 
 This function establishes a connection to the chDB (ClickHouse) database engine.
-Only one open connection is allowed per process. Multiple calls with the same
-connection string will return the same connection object.
+Each call returns an independent connection, and any number of connections to the same database path may be open at the same time.
 
 **Syntax**
 
@@ -724,7 +720,7 @@ Supported connection string formats:
 
 | Format                    | Description                  |
 |---------------------------|------------------------------|
-| `":memory:"`              | In-memory database (default) |
+| `":memory:"`              | Temporary database (default) |
 | `"test.db"`               | Relative path database file  |
 | `"file:test.db"`          | Same as relative path        |
 | `"/path/to/test.db"`      | Absolute path database file  |
@@ -735,7 +731,7 @@ Supported connection string formats:
 | Format                                             | Description               |
 |----------------------------------------------------|---------------------------|
 | `"file:test.db?param1=value1&param2=value2"`       | Relative path with params |
-| `"file::memory:?verbose&log-level=test"`           | In-memory with params     |
+| `"file::memory:?verbose&log-level=test"`           | Temporary with params     |
 | `"///path/to/test.db?param1=value1&param2=value2"` | Absolute path with params |
 
 **Query parameter handling**
@@ -763,17 +759,14 @@ For a complete parameter list, see `clickhouse local --help --verbose`
 |----------------|---------------------------------|
 | `RuntimeError` | If connection to database fails |
 
-<Warning>
-**Warning**
-
-Only one connection per process is supported.
-Creating a new connection will close any existing connection.
-</Warning>
+<Note>
+A process runs one embedded engine bound to one database path. Multiple connections to the same path can coexist and run queries concurrently. Opening a *different* path while any connection is open raises a `RuntimeError`; close the open ones first.
+</Note>
 
 **Examples**
 
 ```pycon
->>> # In-memory database
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
@@ -1747,7 +1740,7 @@ chdb.dbapi.connect(*args, **kwargs)
 
 | Parameter  | Type  | Default  | Description                                     |
 |------------|-------|----------|-------------------------------------------------|
-| `path`     | str   | `None`   | Database file path. None for in-memory database |
+| `path`     | str   | `None`   | Database file path. None for a temporary, non-persistent database |
 
 **Raises**
 
@@ -1815,7 +1808,7 @@ Bases: `object`
 DB-API 2.0 compliant connection to chDB database.
 
 This class provides a standard DB-API interface for connecting to and interacting
-with chDB databases. It supports both in-memory and file-based databases.
+with chDB databases. It supports both temporary and file-based databases.
 
 The connection manages the underlying chDB engine and provides methods for
 executing queries, managing transactions (no-op for ClickHouse), and creating cursors.
@@ -1828,7 +1821,7 @@ class chdb.dbapi.connections.Connection(path=None)
 
 | Parameter  | Type  | Default  | Description                                                                                                        |
 |------------|-------|----------|--------------------------------------------------------------------------------------------------------------------|
-| `path`     | str   | `None`   | Database file path. If None, uses in-memory database. Can be a file path like 'database.db' or None for ':memory:' |
+| `path`     | str   | `None`   | Database file path. If None (the default), uses a temporary, non-persistent database (equivalent to `':memory:'`). Pass a file path like 'database.db' to persist to disk. |
 
 **Variables**
 
@@ -1840,7 +1833,7 @@ class chdb.dbapi.connections.Connection(path=None)
 **Examples**
 
 ```pycon
->>> # In-memory database
+>>> # Temporary database
 >>> conn = Connection()
 >>> cursor = conn.cursor()
 >>> cursor.execute("SELECT 1")
@@ -3235,7 +3228,7 @@ Connection Management:
 ```python
 import chdb.dbapi as dbapi
 
-# In-memory database (default)
+# Temporary database (default)
 conn1 = dbapi.connect()
 
 # Persistent database file
