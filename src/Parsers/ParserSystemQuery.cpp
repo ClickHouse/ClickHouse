@@ -98,7 +98,6 @@ namespace ErrorCodes
 
 enum class SystemQueryTargetType : uint8_t
 {
-    Model,
     Function,
     Disk,
 };
@@ -148,11 +147,6 @@ enum class SystemQueryTargetType : uint8_t
 
     switch (target_type)
     {
-        case SystemQueryTargetType::Model:
-        {
-            res->target_model = std::move(target);
-            break;
-        }
         case SystemQueryTargetType::Function:
         {
             res->target_function = std::move(target);
@@ -371,12 +365,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::RELOAD_DICTIONARY:
         case Type::UNLOAD_DICTIONARY: {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ true))
-                return false;
-            break;
-        }
-        case Type::RELOAD_MODEL:
-        {
-            if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Model))
                 return false;
             break;
         }

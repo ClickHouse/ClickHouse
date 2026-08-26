@@ -2106,7 +2106,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "dictionary",
         "lemmatizers",
         "synonyms_extensions",
-        "catboost_lib_path",
         "path_to_regions_hierarchy_file",
         "path_to_regions_names_files",
 
