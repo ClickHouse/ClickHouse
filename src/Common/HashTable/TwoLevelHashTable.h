@@ -107,6 +107,14 @@ public:
     template <typename Source>
     explicit TwoLevelHashTable(const Source & src)
     {
+        /// The final size of every sub-table is known up front - the source's elements spread over
+        /// NUM_BUCKETS - so reserve it once and let the conversion be a single sized rehash. Without
+        /// this the sub-tables start at their initial size and grow while the cells are inserted below,
+        /// rehashing each bucket several times over. `reserve(0)` is a no-op, so a small source, whose
+        /// buckets fit in the initial size anyway, keeps allocating lazily.
+        for (auto & impl : impls)
+            impl.reserve(src.size() / NUM_BUCKETS);
+
         typename Source::const_iterator it = src.begin();
 
         /// It is assumed that the zero key (stored separately) is first in iteration order.
