@@ -436,7 +436,7 @@ void StorageKafka::pushConsumer(KafkaConsumerPtr consumer)
     CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse, 1);
 }
 
-KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
+KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout, size_t poll_batch_size_override)
 {
     std::unique_lock lock(mutex);
 
@@ -502,6 +502,9 @@ KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
     {
         CurrentMetrics::add(CurrentMetrics::KafkaConsumersInUse, 1);
         ret_consumer_ptr->inUse();
+        /// Set here rather than by the caller: a pooled consumer keeps whatever the previous holder
+        /// left, and its own `subscribe` polls before the caller regains control.
+        ret_consumer_ptr->setPollBatchSizeOverride(poll_batch_size_override);
     }
     return ret_consumer_ptr;
 }

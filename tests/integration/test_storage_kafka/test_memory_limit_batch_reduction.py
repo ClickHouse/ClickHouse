@@ -11,7 +11,11 @@ import helpers.kafka.common as k
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/kafka.xml", "configs/memory_limit.xml"],
+    main_configs=[
+        "configs/kafka.xml",
+        "configs/memory_limit.xml",
+        "configs/dead_letter_queue.xml",
+    ],
     user_configs=["configs/users.xml"],
     with_kafka=True,
     stay_alive=True,
@@ -111,16 +115,18 @@ def create_kafka_pipeline(
         """)
 
 
-def log_numbers(pattern, after=None):
+def log_numbers(pattern, after=None, anchored=True):
     """Numbers matched by `pattern` in the server log, in order of appearance. With `after`, only
-    the part of the log following the first occurrence of that marker is scanned."""
+    the part of the log following the first occurrence of that marker is scanned. `anchored` takes
+    the number at the end of each match; without it, any number inside the match."""
     scan = (
         f"awk '/{after}/ {{seen = 1}} seen' {SERVER_LOG}"
         if after
         else f"cat {SERVER_LOG}"
     )
+    pick = "[0-9]+$" if anchored else "[0-9]+"
     out = instance.exec_in_container(
-        ["bash", "-c", f"{scan} | grep -oE '{pattern}' | grep -oE '[0-9]+$' || true"]
+        ["bash", "-c", f"{scan} | grep -oE '{pattern}' | grep -oE '{pick}' || true"]
     )
     return [int(x) for x in out.split()]
 
@@ -131,6 +137,12 @@ def reduced_block_sizes():
 
 def polled_batch_sizes(after=None):
     return log_numbers("Polled batch of [0-9]+", after=after)
+
+
+def pushed_row_counts(after=None):
+    """Rows delivered per cycle. `formatReadableQuantity` renders the count with two decimals, so
+    the match stops at the decimal point and only the integer part is read."""
+    return log_numbers(r"Pushing [0-9]+\.", after=after, anchored=False)
 
 
 def memory_errors_count():
@@ -164,6 +176,29 @@ def wait_for_memory_errors(expected, timeout=180):
         time.sleep(1)
         observed = memory_errors_count()
     return observed
+
+
+def wait_for_more_reductions(seen, timeout=180):
+    """Reduced-size cycles once more than `seen` of them have been logged. A fixed sleep cannot be
+    used as the window: an idle cycle spends `kafka_max_failed_poll_attempts` polls of
+    `stream_poll_timeout_ms` before it ends, which is several seconds."""
+    deadline = time.monotonic() + timeout
+    sizes = reduced_block_sizes()
+    while len(sizes) <= seen and time.monotonic() < deadline:
+        time.sleep(1)
+        sizes = reduced_block_sizes()
+    return sizes
+
+
+def wait_for_delivery_at_reduced_size(after, timeout=180):
+    """Row counts of the cycles that delivered rows after the first reduction. Read from the log
+    because the memory is still pinned while this waits."""
+    deadline = time.monotonic() + timeout
+    delivered = [n for n in pushed_row_counts(after=after) if n > 0]
+    while not delivered and time.monotonic() < deadline:
+        time.sleep(1)
+        delivered = [n for n in pushed_row_counts(after=after) if n > 0]
+    return delivered
 
 
 def messages_failed_event():
@@ -221,13 +256,17 @@ def test_batch_size_is_reduced_after_memory_limit(kafka_cluster):
         # The poll shrinks together with the block. Without this the block size is only a floor:
         # a block is never cut short of a polled batch, so a poll of the original size still
         # allocates the original amount.
-        #
-        # Not covered here: the cap also has to be installed before `subscribe()`, whose own poll
-        # would otherwise be uncapped. On this fixture that poll always returns zero messages
-        # (the assignment arrives later), so no assertion can distinguish the two orders.
         polled = polled_batch_sizes(after=REDUCTION_LINE)
         assert polled, "no poll was observed after the reduction"
         assert max(polled) <= POLL_SIZE // 2, polled
+
+        # The point of the reduction: rows reach the views while the memory is still pinned, at a
+        # size that fits. Without this the arm would only show that a reduction was logged and that
+        # everything arrived once the pressure was gone, which a reduction that shrinks nothing
+        # satisfies as well.
+        delivered = wait_for_delivery_at_reduced_size(after=REDUCTION_LINE)
+        assert delivered, "no cycle delivered rows at a reduced size while memory was pinned"
+        assert max(delivered) <= BLOCK_SIZE // 2, delivered
 
         # The input is not lost, which is what makes retrying a smaller unit sufficient.
         drain_topic(MESSAGES)
@@ -266,10 +305,41 @@ def test_reduction_is_not_restored_after_success(kafka_cluster):
 
         # A restored size would stop logging the reduced-size line, or log a larger size again.
         before = len(reduced_block_sizes())
-        time.sleep(5)
-        after = reduced_block_sizes()
+        after = wait_for_more_reductions(before)
         assert len(after) > before, (before, len(after))
         assert max(after[before:]) == smallest, after[before:]
+
+
+def test_reduction_is_reset_by_reattach(kafka_cluster):
+    """Re-attaching the table goes back to the configured sizes, which is the recovery the log line
+    points the operator at. The level lives on the storage object, so a new one starts unreduced.
+    """
+    instance.rotate_logs()
+    topic_name = f"kafka_mem_reattach_{k.random_string(6)}"
+
+    with k.kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
+        produce_wide_messages(kafka_cluster, topic_name)
+        pin_memory_to_headroom()
+        create_kafka_pipeline(topic_name)
+
+        assert wait_for_reductions(1) >= 1
+        drain_topic(MESSAGES)
+
+        instance.query("DETACH TABLE test.kafka")
+        instance.query("ATTACH TABLE test.kafka")
+        # The old log, and with it every reduced-size line of the reduced storage object, is archived
+        # away here, so any such line seen afterwards belongs to the re-attached table.
+        instance.rotate_logs()
+
+        # The memory is free again, so a full-size block fits: a correct reset logs nothing.
+        produce_wide_messages(kafka_cluster, topic_name, count=4)
+        instance.query_with_retry(
+            "SELECT count() FROM test.dst",
+            retry_count=180,
+            sleep_time=1,
+            check_callback=lambda res: int(res.strip() or 0) == MESSAGES + 4,
+        )
+        assert reduced_block_sizes() == []
 
 
 def test_non_memory_error_does_not_reduce(kafka_cluster):
@@ -315,25 +385,32 @@ def test_commit_every_batch_is_excluded(kafka_cluster):
         assert reductions_event() == events_before
 
 
-def test_memory_error_is_not_a_bad_message_in_stream_handle_error_mode(kafka_cluster):
-    """`kafka_handle_error_mode = 'stream'` reports a bad message through the `_error` virtual column
-    and keeps consuming, so it does not rethrow. A memory limit reaches the same callback but is a
-    state of the server, not a property of the message: reported that way it would replace a
-    well-formed message with an error row, commit its offset and never let the size adapt.
+@pytest.mark.parametrize("mode", ["stream", "dead_letter_queue"])
+def test_memory_error_is_not_a_bad_message(kafka_cluster, mode):
+    """The handle-error modes other than the default report a bad message and keep consuming, so they
+    do not rethrow. A memory limit reaches the same callback but is a state of the server, not a
+    property of the message: reported that way it would replace a well-formed message with an error
+    record, commit its offset and never let the size adapt. Both non-default modes are covered
+    because the guard sits ahead of all of them.
     """
     instance.rotate_logs()
-    topic_name = f"kafka_mem_stream_{k.random_string(6)}"
+    topic_name = f"kafka_mem_{mode}_{k.random_string(6)}"
     reductions_before = reductions_event()
     failed_before = messages_failed_event()
+    streams_error = mode == "stream"
 
     with k.kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
         produce_wide_messages(kafka_cluster, topic_name)
         pin_memory_to_headroom()
         create_kafka_pipeline(
             topic_name,
-            extra_settings=",\n                     kafka_handle_error_mode = 'stream'",
-            dst_columns="key UInt64, value String, error String",
-            mv_select="key, value, _error AS error",
+            extra_settings=f",\n                     kafka_handle_error_mode = '{mode}'",
+            # Only the `stream` mode exposes the error through a virtual column; in
+            # `dead_letter_queue` mode `on_error` produces no row at all.
+            dst_columns="key UInt64, value String, error String"
+            if streams_error
+            else "key UInt64, value String",
+            mv_select="key, value, _error AS error" if streams_error else "key, value",
         )
 
         assert wait_for_reductions(1) >= 1
@@ -343,10 +420,24 @@ def test_memory_error_is_not_a_bad_message_in_stream_handle_error_mode(kafka_clu
         drain_topic(MESSAGES)
 
         # Not a row count: a message accounted for here has been consumed as malformed, whether or
-        # not its error row survived to `test.dst`. `on_error` is the only increment site, and no
-        # message in this arm is malformed, so any increment is a memory error taken for one.
+        # not its error record survived. `on_error` is the only increment site, and no message in
+        # this arm is malformed, so any increment is a memory error taken for one.
         assert messages_failed_event() == failed_before, messages_failed_event() - failed_before
-        assert int(instance.query("SELECT count() FROM test.dst WHERE error != ''").strip()) == 0
+        if streams_error:
+            assert (
+                int(instance.query("SELECT count() FROM test.dst WHERE error != ''").strip()) == 0
+            )
+        else:
+            instance.query("SYSTEM FLUSH LOGS")
+            assert (
+                int(
+                    instance.query(
+                        "SELECT count() FROM system.dead_letter_queue WHERE table = 'kafka'"
+                    ).strip()
+                    or 0
+                )
+                == 0
+            )
         assert reductions_event() - reductions_before >= 1
 
 
@@ -358,6 +449,7 @@ def test_concurrent_failures_reduce_one_step_at_a_time(kafka_cluster):
     """
     instance.rotate_logs()
     topic_name = f"kafka_mem_tpc_{k.random_string(6)}"
+    events_before = reductions_event()
 
     with k.kafka_topic(k.get_admin_client(kafka_cluster), topic_name, num_partitions=4):
         produce_wide_messages(kafka_cluster, topic_name)
@@ -394,3 +486,7 @@ def test_concurrent_failures_reduce_one_step_at_a_time(kafka_cluster):
         assert distinct == expected, (distinct, expected)
 
         drain_topic(MESSAGES)
+        # One halving per size used, whatever the order the four tasks failed in. Several failures at
+        # one size raise the level once, so counting them instead would exceed the sizes observed.
+        reductions = reductions_event() - events_before
+        assert reductions == len(distinct), (reductions, distinct)

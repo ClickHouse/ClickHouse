@@ -96,13 +96,10 @@ Chunk KafkaSource::generateImpl()
     if (!consumer)
     {
         auto timeout = saturatedMilliseconds(context->getSettingsRef()[Setting::kafka_max_wait_ms].totalMilliseconds());
-        consumer = storage.popConsumer(timeout);
+        consumer = storage.popConsumer(timeout, poll_batch_size);
 
         if (!consumer)
             return {};
-
-        /// Before subscribing: `subscribe` itself polls, and that poll must honour the cap too.
-        consumer->setPollBatchSizeOverride(poll_batch_size);
 
         consumer->subscribe();
 
