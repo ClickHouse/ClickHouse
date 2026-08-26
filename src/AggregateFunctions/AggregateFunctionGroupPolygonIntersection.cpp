@@ -75,7 +75,10 @@ SELECT wkt(groupPolygonIntersection(geom)) AS result FROM test_polygons;
 
              if (argument_types.size() != 1 && argument_types.size() != 2)
                  throw Exception(
-                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires 1 or 2 arguments, got {}", name, argument_types.size());
+                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                     "Aggregate function {} requires 1 or 2 arguments, got {}",
+                     name,
+                     argument_types.size());
 
              bool correct_geometry = true;
              if (argument_types.size() == 2)

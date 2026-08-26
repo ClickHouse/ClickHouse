@@ -102,8 +102,7 @@ private:
                     boost::geometry::correct(result);
                 break;
             }
-            default:
-                UNREACHABLE();
+            default: UNREACHABLE();
         }
         return result;
     }
@@ -154,7 +153,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & state = this->data(place);
         const auto & rhs_state = this->data(rhs);
@@ -203,7 +202,7 @@ public:
         if (!state.has_value)
             return;
 
-        size_t wkt_size;
+        size_t wkt_size = 0;
         readVarUInt(wkt_size, buf);
 
         std::string wkt_str(wkt_size, '\0');

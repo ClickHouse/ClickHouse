@@ -63,7 +63,6 @@ public:
     static constexpr size_t kDefaultPruneInterval = 200;
 
 private:
-
     static void pruneAccumulated(Data & state)
     {
         if (!state.has_value || state.accumulated.empty())
@@ -224,15 +223,9 @@ public:
 
             switch (*geo_type)
             {
-                case GeometryColumnType::Point:
-                    accumulatePoint(state, getPointFromField<Point>(field), should_correct);
-                    break;
-                case GeometryColumnType::Ring:
-                    accumulateRing(state, getRingFromField<Point>(field), should_correct);
-                    break;
-                case GeometryColumnType::Polygon:
-                    accumulatePolygon(state, getPolygonFromField<Point>(field), should_correct);
-                    break;
+                case GeometryColumnType::Point: accumulatePoint(state, getPointFromField<Point>(field), should_correct); break;
+                case GeometryColumnType::Ring: accumulateRing(state, getRingFromField<Point>(field), should_correct); break;
+                case GeometryColumnType::Polygon: accumulatePolygon(state, getPolygonFromField<Point>(field), should_correct); break;
                 case GeometryColumnType::MultiPolygon:
                     accumulateMultiPolygon(state, getMultiPolygonFromField<Point>(field), should_correct);
                     break;
@@ -242,8 +235,8 @@ public:
                 case GeometryColumnType::MultiLinestring:
                     accumulateMultiLineString(state, getMultiLineStringFromField<Point>(field), should_correct);
                     break;
-                case GeometryColumnType::Null:
-                    break;
+                case GeometryColumnType::MultiPoint:
+                case GeometryColumnType::Null: break;
             }
         }
         else
@@ -255,26 +248,17 @@ public:
 
             switch (input_type)
             {
-                case WKBGeometry::Point:
-                    accumulatePoint(state, getPointFromField<Point>(field), should_correct);
-                    break;
-                case WKB_RING:
-                    accumulateRing(state, getRingFromField<Point>(field), should_correct);
-                    break;
-                case WKBGeometry::Polygon:
-                    accumulatePolygon(state, getPolygonFromField<Point>(field), should_correct);
-                    break;
+                case WKBGeometry::Point: accumulatePoint(state, getPointFromField<Point>(field), should_correct); break;
+                case WKB_RING: accumulateRing(state, getRingFromField<Point>(field), should_correct); break;
+                case WKBGeometry::Polygon: accumulatePolygon(state, getPolygonFromField<Point>(field), should_correct); break;
                 case WKBGeometry::MultiPolygon:
                     accumulateMultiPolygon(state, getMultiPolygonFromField<Point>(field), should_correct);
                     break;
-                case WKBGeometry::LineString:
-                    accumulateLineString(state, getLineStringFromField<Point>(field), should_correct);
-                    break;
+                case WKBGeometry::LineString: accumulateLineString(state, getLineStringFromField<Point>(field), should_correct); break;
                 case WKBGeometry::MultiLineString:
                     accumulateMultiLineString(state, getMultiLineStringFromField<Point>(field), should_correct);
                     break;
-                case WKB_GEOMETRY:
-                    break; /// Already handled above
+                case WKB_GEOMETRY: break; /// Already handled above
             }
         }
 
@@ -283,7 +267,7 @@ public:
             pruneAccumulated(state);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & state = this->data(place);
         const auto & rhs_state = this->data(rhs);
@@ -339,7 +323,7 @@ public:
         if (!state.has_value)
             return;
 
-        size_t wkt_size;
+        size_t wkt_size = 0;
         readVarUInt(wkt_size, buf);
 
         std::string wkt_str(wkt_size, '\0');
