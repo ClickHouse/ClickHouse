@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/Kusto/KQLExactArithmetic.h>
 #include <Interpreters/Context.h>
 #include <Parsers/Kusto/KQLLexer.h>
 #include <base/arithmeticOverflow.h>
@@ -101,14 +102,25 @@ public:
 
             auto values = ColumnInt64::create(input_rows_count);
             auto null_map = ColumnUInt8::create(input_rows_count);
+            constexpr Int64 nanoseconds_per_day_exact = 86'400'000'000'000;
             constexpr long double nanoseconds_per_day = 86'400'000'000'000.L;
             constexpr long double limit = static_cast<long double>(std::numeric_limits<Int64>::max()) + 1;
+            /// An integer or a decimal count of days converts exactly; only a float has to
+            /// go through `Float64`, which cannot spell every day count to the nanosecond.
+            const bool source_exact = KQLExact::isExactNumber(*nested);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (source_nulls && (*source_nulls)[i])
                 {
                     values->getData()[i] = 0;
                     null_map->getData()[i] = 1;
+                    continue;
+                }
+
+                if (source_exact)
+                {
+                    values->getData()[i] = KQLExact::scaledTicks(nanoseconds_per_day_exact, *source, *nested, i, getName());
+                    null_map->getData()[i] = 0;
                     continue;
                 }
 

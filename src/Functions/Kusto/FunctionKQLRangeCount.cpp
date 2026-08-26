@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/Kusto/KQLExactArithmetic.h>
 #include <Common/assert_cast.h>
 #include <base/arithmeticOverflow.h>
 
@@ -81,20 +82,15 @@ public:
 
         const Domain domain = classify(operands[0].type, operands[1].type, operands[2].type);
 
-        /// The exact decimal domain compares all three operands at one common scale.
+        /// The exact domain compares all three operands at one common scale.
         std::array<Int256, 3> rescale{1, 1, 1};
-        if (domain == Domain::Decimal)
+        if (domain == Domain::Exact)
         {
             UInt32 common_scale = 0;
             for (const Operand & operand : operands)
-                if (isDecimal(operand.type))
-                    common_scale = std::max(common_scale, getDecimalScale(*operand.type));
+                common_scale = std::max(common_scale, KQLExact::scaleOf(*operand.type));
             for (size_t i = 0; i < 3; ++i)
-            {
-                const UInt32 scale = isDecimal(operands[i].type) ? getDecimalScale(*operands[i].type) : 0;
-                for (UInt32 digit = scale; digit < common_scale; ++digit)
-                    rescale[i] *= 10;
-            }
+                rescale[i] = KQLExact::powerOfTen(common_scale - KQLExact::scaleOf(*operands[i].type));
         }
 
         auto result = ColumnUInt64::create(input_rows_count);
@@ -121,19 +117,13 @@ public:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'range' has too many rows to count");
                 counts[row] = steps < 0 ? 0 : static_cast<UInt64>(steps) + 1;
             }
-            else if (domain == Domain::Integral)
-            {
-                const Int128 span = integerAt(*operands[1].values, *operands[1].type, row) - integerAt(*operands[0].values, *operands[0].type, row);
-                const Int128 step = integerAt(*operands[2].values, *operands[2].type, row);
-                counts[row] = flooredCount(span, step);
-            }
-            else if (domain == Domain::Decimal)
+            else if (domain == Domain::Exact)
             {
                 /// Exact rational arithmetic: every operand as an integer at the common scale.
                 const auto scaled = [&](size_t i) -> Int256
                 {
                     Int256 value;
-                    if (common::mulOverflow(exactAt(*operands[i].values, *operands[i].type, row), rescale[i], value))
+                    if (common::mulOverflow(KQLExact::unscaledValue(*operands[i].values, *operands[i].type, row), rescale[i], value))
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The bounds and the step of a 'range' are too large to count");
                     return value;
                 };
@@ -158,22 +148,18 @@ private:
     enum class Domain : uint8_t
     {
         Numeric,
-        Integral,
-        Decimal,
+        Exact,
         Temporal,
     };
 
     Domain classify(const DataTypePtr & from, const DataTypePtr & to, const DataTypePtr & step) const
     {
-        /// Integers up to 64 bits count exactly: a `Float64` cannot tell integers above 2^53 apart.
-        if (isNativeInteger(from) && isNativeInteger(to) && isNativeInteger(step))
-            return Domain::Integral;
-
-        /// Decimals (possibly mixed with integers) count exactly too: `(0.3 - 0.1) / 0.1` as
+        /// Integers and decimals count exactly, in `Int256` over their unscaled values: a
+        /// `Float64` cannot tell integers above 2^53 apart, and `(0.3 - 0.1) / 0.1` as a
         /// `Float64` is 1.9999..., which floors one row short of the exact decimal sequence.
-        const auto is_exact = [](const DataTypePtr & type) { return isNativeInteger(type) || isDecimal(type); };
+        const auto is_exact = [](const DataTypePtr & type) { return KQLExact::isExactNumber(*type); };
         if (is_exact(from) && is_exact(to) && is_exact(step))
-            return Domain::Decimal;
+            return Domain::Exact;
 
         if (isNumber(from) && isNumber(to) && isNumber(step))
             return Domain::Numeric;
@@ -213,32 +199,6 @@ private:
         if (steps >= T(std::numeric_limits<UInt64>::max()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'range' has too many rows to count");
         return steps < 0 ? 0 : static_cast<UInt64>(steps) + 1;
-    }
-
-    /// A native integer of either sign, widened losslessly.
-    static Int128 integerAt(const IColumn & column, const IDataType & type, size_t row)
-    {
-        if (isNativeUInt(type))
-            return Int128(column.getUInt(row));
-        return Int128(column.getInt(row));
-    }
-
-    /// A native integer or a decimal, as its unscaled integer value, widened losslessly.
-    static Int256 exactAt(const IColumn & column, const IDataType & type, size_t row)
-    {
-        switch (WhichDataType(type).idx)
-        {
-            case TypeIndex::Decimal32:
-                return Int256(assert_cast<const ColumnDecimal<Decimal32> &>(column).getData()[row].value);
-            case TypeIndex::Decimal64:
-                return Int256(assert_cast<const ColumnDecimal<Decimal64> &>(column).getData()[row].value);
-            case TypeIndex::Decimal128:
-                return Int256(assert_cast<const ColumnDecimal<Decimal128> &>(column).getData()[row].value);
-            case TypeIndex::Decimal256:
-                return assert_cast<const ColumnDecimal<Decimal256> &>(column).getData()[row].value;
-            default:
-                return Int256(integerAt(column, type, row));
-        }
     }
 
     /// A datetime, or an interval of a fixed-length kind, as integer nanoseconds.

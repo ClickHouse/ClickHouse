@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/Kusto/KQLExactArithmetic.h>
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 
@@ -104,6 +105,9 @@ public:
             scale_column = &nullable->getNestedColumn();
         }
 
+        const DataTypePtr scale_nested_type = removeNullable(scale.type);
+        const bool scale_exact = KQLExact::isExactNumber(*scale_nested_type);
+
         auto result = ColumnInt64::create(input_rows_count);
         auto null_map = ColumnUInt8::create(input_rows_count);
         constexpr long double limit = static_cast<long double>(std::numeric_limits<Int64>::max()) + 1;
@@ -116,12 +120,21 @@ public:
                 continue;
             }
 
-            const long double product
-                = static_cast<long double>(interval_column->getInt(i)) * static_cast<long double>(scale_column->getFloat64(i));
-            if (!std::isfinite(product) || product < -limit || product >= limit)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} result does not fit a timespan", getName());
+            /// An integer or a decimal scales exactly; only a float has to go through `Float64`.
+            if (scale_exact)
+            {
+                result->getData()[i]
+                    = KQLExact::scaledTicks(interval_column->getInt(i), *scale_column, *scale_nested_type, i, getName());
+            }
+            else
+            {
+                const long double product
+                    = static_cast<long double>(interval_column->getInt(i)) * static_cast<long double>(scale_column->getFloat64(i));
+                if (!std::isfinite(product) || product < -limit || product >= limit)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} result does not fit a timespan", getName());
 
-            result->getData()[i] = static_cast<Int64>(std::trunc(product));
+                result->getData()[i] = static_cast<Int64>(std::trunc(product));
+            }
             null_map->getData()[i] = 0;
         }
 
