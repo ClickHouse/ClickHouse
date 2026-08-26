@@ -77,6 +77,7 @@ DROP TABLE IF EXISTS t_ret_probe;
 CREATE DATABASE db_ret_settings_b;
 CREATE TABLE t_ret_db (id UInt64) ENGINE = Memory;
 CREATE TABLE t_ret_probe (id UInt64) ENGINE = Memory;
+CREATE TABLE db_ret_settings_b.t_ret_db (id UInt64) ENGINE = Memory;
 CREATE TABLE db_ret_settings_b.t_ret_probe (id UInt64) ENGINE = Memory;
 INSERT INTO t_ret_probe VALUES (1);
 INSERT INTO db_ret_settings_b.t_ret_probe VALUES (1), (2);
@@ -85,6 +86,7 @@ SETTINGS database = 'db_ret_settings_b'
 RETURNING (SELECT count() FROM t_ret_probe);
 DROP TABLE t_ret_db;
 DROP TABLE t_ret_probe;
+DROP TABLE db_ret_settings_b.t_ret_db;
 DROP DATABASE db_ret_settings_b;
 
 -- Source-only custom settings must not leak into RETURNING settings context.
