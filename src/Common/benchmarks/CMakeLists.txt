@@ -1,34 +1,27 @@
-clickhouse_add_executable(integer_hash_tables_and_hashes integer_hash_tables_and_hashes.cpp orc_string_dictionary.cpp)
-target_link_libraries (integer_hash_tables_and_hashes PRIVATE
-    ch_contrib::gbenchmark_all
-    dbms
-    ch_contrib::abseil_swiss_tables
-    ch_contrib::sparsehash
-    ch_contrib::wyhash
-    ch_contrib::farmhash
-    ch_contrib::xxHash)
+clickhouse_add_microbenchmark(integer_hash_tables_and_hashes
+    SOURCES integer_hash_tables_and_hashes.cpp
+    LIBRARIES
+        clickhouse_common_io
+        ch_contrib::wyhash
+        ch_contrib::farmhash
+        ch_contrib::xxHash)
 
-clickhouse_add_executable(orc_string_dictionary orc_string_dictionary.cpp)
-target_link_libraries (orc_string_dictionary PRIVATE
-    ch_contrib::gbenchmark_all
-    dbms)
+clickhouse_add_microbenchmark(orc_string_dictionary
+    SOURCES orc_string_dictionary.cpp
+    LIBRARIES common)
 
-clickhouse_add_executable(benchmark_radix_sort radix_sort.cpp)
-target_link_libraries (benchmark_radix_sort PRIVATE
-    ch_contrib::gbenchmark_all
-    dbms)
+clickhouse_add_microbenchmark(benchmark_radix_sort
+    SOURCES radix_sort.cpp
+    LIBRARIES dbms)
 
-clickhouse_add_executable(wrap_in_nullable wrap_in_nullable.cpp)
-target_link_libraries (wrap_in_nullable PRIVATE
-    ch_contrib::gbenchmark_all
-    dbms)
+clickhouse_add_microbenchmark(wrap_in_nullable
+    SOURCES wrap_in_nullable.cpp
+    LIBRARIES dbms)
 
-clickhouse_add_executable(profile_events profile_events.cpp)
-target_link_libraries (profile_events PRIVATE
-    ch_contrib::gbenchmark_all
-    dbms)
+clickhouse_add_microbenchmark(profile_events
+    SOURCES profile_events.cpp
+    LIBRARIES clickhouse_common_io)
 
-clickhouse_add_executable(benchmark_sched_getcpu sched_getcpu.cpp)
-target_link_libraries (benchmark_sched_getcpu PRIVATE
-    ch_contrib::gbenchmark_all
-    dbms)
+clickhouse_add_microbenchmark(benchmark_sched_getcpu
+    SOURCES sched_getcpu.cpp
+    LIBRARIES ${CMAKE_DL_LIBS})
