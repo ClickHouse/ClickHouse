@@ -31,8 +31,8 @@ namespace
 {
 
 char WORD_BREAK_CHARACTERS[] = " \t\v\f\a\b\r\n";
-static constexpr const char * DEFAULT_HOST = "localhost";
-static constexpr const char * DEFAULT_PORT = "9181";
+constexpr const char * DEFAULT_HOST = "localhost";
+constexpr const char * DEFAULT_PORT = "9181";
 
 
 /// Unescape a bare (unquoted) path that may contain backslash escaping
@@ -713,12 +713,14 @@ void KeeperClient::connectToKeeper()
 
     const bool secure_config = config().has("secure");
 
-    auto add_host = [&](const String & host, const String & port) {
+    auto add_host = [&](const String & host, const String & port)
+    {
         if (secure_config)
             new_zk_args.hosts.push_back("secure://" + host + ":" + port);
         else
             new_zk_args.hosts.push_back(host + ":" + port);
     };
+
     if (!hosts.empty() && !ports.empty())
     {
         chassert(hosts.size() == ports.size());
