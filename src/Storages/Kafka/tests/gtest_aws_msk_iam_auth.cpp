@@ -226,11 +226,51 @@ TEST(AWSMSKIAMAuth, SetupRewritesPresetAWSMSKIAMToOAUTHBEARER)
     EXPECT_EQ(cfg.get("security.protocol"), "sasl_ssl");
 }
 
+/// Holds one process-wide AWS variable and puts back exactly what it found. `hide` clears the
+/// variable for the test's duration: S3CredentialsProviderChain consults web-identity and profile
+/// entries before EnvironmentAWSCredentialsProvider, so an IRSA-configured runner would resolve
+/// those instead and the environment-provider assertion would stop proving what it says.
+/// NOLINT(concurrency-mt-unsafe): single-threaded gtest, no concurrent getenv/setenv.
+class AwsEnvironmentVariableScope
+{
+public:
+    AwsEnvironmentVariableScope(const char * name, bool hide)
+    {
+        name_ = name;
+        const char * current = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
+        had_value_ = current != nullptr;
+        saved_value_ = had_value_ ? std::string(current) : std::string();
+        if (hide)
+            ::unsetenv(name); // NOLINT(concurrency-mt-unsafe)
+    }
+
+    ~AwsEnvironmentVariableScope()
+    {
+        if (had_value_)
+            ::setenv(name_, saved_value_.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        else
+            ::unsetenv(name_); // NOLINT(concurrency-mt-unsafe)
+    }
+
+private:
+    const char * name_ = nullptr;
+    bool had_value_ = false;
+    std::string saved_value_;
+};
+
 TEST(AWSMSKIAMAuth, SetupResolvesEnvironmentCredentials)
 {
     // Kafka AWS_MSK_IAM is server-side, operator-configured authentication, not a user S3 query. The S3
     // credential restriction (`forbid_implicit_credentials`, default true) must not apply here: with
     // `kafka.use_environment_credentials = 1` the provider chain must still resolve the environment credentials.
+    AwsEnvironmentVariableScope access_key("AWS_ACCESS_KEY_ID", /*hide=*/false);
+    AwsEnvironmentVariableScope secret_key("AWS_SECRET_ACCESS_KEY", /*hide=*/false);
+    AwsEnvironmentVariableScope metadata_disabled("AWS_EC2_METADATA_DISABLED", /*hide=*/false);
+    AwsEnvironmentVariableScope role("AWS_ROLE_ARN", /*hide=*/true);
+    AwsEnvironmentVariableScope token("AWS_WEB_IDENTITY_TOKEN_FILE", /*hide=*/true);
+    AwsEnvironmentVariableScope profile("AWS_PROFILE", /*hide=*/true);
+    AwsEnvironmentVariableScope default_profile("AWS_DEFAULT_PROFILE", /*hide=*/true);
+
     /// NOLINTBEGIN(concurrency-mt-unsafe): single-threaded gtest, no concurrent getenv/setenv.
     ::setenv("AWS_ACCESS_KEY_ID", "AKID_MSK_ENV_TEST", /*overwrite=*/1);
     ::setenv("AWS_SECRET_ACCESS_KEY", "secret_msk_env_test", /*overwrite=*/1);
@@ -248,12 +288,6 @@ TEST(AWSMSKIAMAuth, SetupResolvesEnvironmentCredentials)
     ASSERT_NE(ctx->provider, nullptr);
     /// With the restriction wrongly applied, the chain adds no environment provider and this is empty.
     EXPECT_EQ(ctx->provider->GetAWSCredentials().GetAWSAccessKeyId(), "AKID_MSK_ENV_TEST");
-
-    /// NOLINTBEGIN(concurrency-mt-unsafe): single-threaded gtest, no concurrent getenv/setenv.
-    ::unsetenv("AWS_ACCESS_KEY_ID");
-    ::unsetenv("AWS_SECRET_ACCESS_KEY");
-    ::unsetenv("AWS_EC2_METADATA_DISABLED");
-    /// NOLINTEND(concurrency-mt-unsafe)
 }
 
 TEST(AWSMSKIAMAuth, SetupThrowsOnRegionMismatchWithCachedContext)
