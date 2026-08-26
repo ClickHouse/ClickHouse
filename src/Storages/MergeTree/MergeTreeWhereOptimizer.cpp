@@ -540,6 +540,11 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             else if (rejected_rows <= 0)
                 /// Rejects no rows, so it is useless in PREWHERE regardless of its cost: schedule it last.
                 cond.cost_with_selectivity = std::numeric_limits<double>::infinity();
+            else if (total_size_of_queried_columns == 0)
+                /// No column has a measured size (compact parts): there is no byte-based score for a
+                /// type estimate to be compared against, and the estimate is too coarse to reorder on
+                /// its own, so order by selectivity. Consistent because it applies to every condition.
+                cond.cost_with_selectivity = static_cast<double>(cond.estimated_row_count);
             else
                 cond.cost_with_selectivity = approximateBytesPerRow(cond.table_columns) * static_cast<double>(total_rows) / rejected_rows;
 
