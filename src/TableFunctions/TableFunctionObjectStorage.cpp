@@ -2384,7 +2384,7 @@ deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure]
 
 deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 
-deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method] [,extra_credentials(client_id=, tenant_id=)])
 
 deltaLakeLocal(path, [,format])
 ```
@@ -2395,6 +2395,8 @@ The arguments for this table function are the same as for the `s3`, `azureBlobSt
 The `format` argument stands for the format of data files in the Delta lake table.
 
 An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
+
+For Azure (`deltaLakeAzure`), `extra_credentials` takes `client_id` and `tenant_id` for workload identity. The process must also have `AZURE_FEDERATED_TOKEN_FILE` set (`AZURE_TENANT_ID` / `AZURE_CLIENT_ID` if not passed explicitly; `AZURE_AUTHORITY_HOST` is optional).
 
 ## Returned value {#returned-value}
 
