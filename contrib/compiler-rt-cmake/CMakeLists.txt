@@ -11,7 +11,6 @@
 #   * clang_rt_tsan / tsan_cxx               — if SANITIZE = thread
 #   * clang_rt_ubsan_standalone / ubsan_standalone_cxx — if SANITIZE = undefined
 #   * clang_rt_xray                          — if ENABLE_XRAY
-#   * clang_rt_profile                       — if WITH_COVERAGE
 
 set(COMPILER_RT_DIR     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt")
 set(BUILTINS_SOURCE_DIR "${COMPILER_RT_DIR}/lib/builtins")
@@ -50,28 +49,10 @@ endif()
 # The previous external-cmake build (cmake/build_clang_builtin.cmake) avoided
 # this entirely by spawning a separate cmake invocation with only the toolchain
 # file and CMAKE_BUILD_TYPE=Release. Now that we build in-process, we have to
-# strip those flags explicitly. We keep:
-#   * --gcc-toolchain= / --no-default-config (toolchain bits from cmake/linux/toolchain-*.cmake)
-#   * -isystem +<path> / -nostdlibinc (musl header paths and the glibc-header
-#     opt-out added by the USE_MUSL toolchain — the runtime objects are linked
-#     into every musl executable and must honor the same "musl headers only"
-#     contract as the rest of the build)
-#   * -march= / -mcpu= / -mtune= (target microarchitecture from cmake/cpu_features.cmake)
-#   * -mpclmul / -maltivec (explicit ISA features added by cmake/cpu_features.cmake)
-# The --target= flag is applied automatically by cmake from CMAKE_<LANG>_COMPILER_TARGET.
-#
-# Keeping the -march/-m* ISA bits aligns the RTL with the rest of the build:
-# the RTL is then free to use the same baseline instructions as the main
-# binary (where useful). Note this does NOT eliminate vzeroupper insertion at
-# the boundary: LLVM's X86VZeroUpperInserter pass is purely caller-side and
-# does not consult callee target-features, so an AVX2-using caller still
-# emits a vzeroupper before any external call regardless of how the callee
-# was built (see contrib/llvm-project/llvm/lib/Target/X86/X86VZeroUpper.cpp).
-# Eliminating that overhead requires either dropping the upper-half live
-# state in the caller (e.g. -fsanitize-memory-track-origins=1 for MSan
-# drops the hot __msan_chain_origin calls; see cmake/sanitize.cmake),
-# or LTO so the inserter can see across the call boundary.
-set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config|-isystem +[^ ]+|-nostdlibinc|-march=[^ ]+|-mcpu=[^ ]+|-mtune=[^ ]+|-mpclmul|-maltivec)")
+# strip those flags explicitly. We keep only the toolchain bits added by
+# cmake/linux/toolchain-*.cmake (--gcc-toolchain, --no-default-config); the
+# --target= flag is applied automatically by cmake from CMAKE_<LANG>_COMPILER_TARGET.
+set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config)")
 foreach (lang C CXX ASM)
     string(REGEX MATCHALL "${_compiler_rt_keep_re}" _kept "${CMAKE_${lang}_FLAGS}")
     string(JOIN " " CMAKE_${lang}_FLAGS ${_kept})
@@ -266,9 +247,7 @@ target_link_libraries(global-libs INTERFACE clang_rt_builtins)
 # common-helper sources, matching the upstream layout (libclang_rt.asan.a,
 # libclang_rt.msan.a, ...).
 
-# $CACHE{}: contrib/CMakeLists.txt shadows WITH_COVERAGE to OFF in this scope,
-# so read the cache-level option instead.
-if (NOT (SANITIZE OR ENABLE_XRAY OR $CACHE{WITH_COVERAGE}))
+if (NOT (SANITIZE OR ENABLE_XRAY))
     return()
 endif()
 
@@ -306,10 +285,7 @@ set(SANITIZER_COMMON_FLAGS
     # RTTI is disabled by default in compiler-rt
     # (lib/sanitizer_common/CMakeLists.txt sets RTTI OFF; ubsan_cxx overrides).
     -fno-rtti
-    # The query profiler uses frame-pointer-based stack unwinding under sanitizers
-    # (via abseil), so sanitizer runtime frames (e.g. TSan interceptors) need frame
-    # pointers too. Override compiler-rt's default -fomit-frame-pointer.
-    -fno-omit-frame-pointer
+    -fomit-frame-pointer
     -funwind-tables
     -fno-stack-protector
     -fvisibility=hidden
@@ -691,44 +667,4 @@ if (ENABLE_XRAY)
     set_target_properties(clang_rt_xray PROPERTIES
         ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     _register_compiler_rt_target(clang_rt_xray)
-endif()
-
-#
-# ============================================================
-# 8. Profile (coverage instrumentation runtime)
-# ============================================================
-#
-# Source list mirrors PROFILE_SOURCES in
-# contrib/llvm-project/compiler-rt/lib/profile/CMakeLists.txt (the
-# non-baremetal, non-Windows branch). The COMPILER_RT_HAS_* defines replace
-# upstream's configure-time probes - all four hold on Linux.
-if ($CACHE{WITH_COVERAGE})
-    add_compiler_rt_runtime(profile
-        SOURCE_DIR "${COMPILER_RT_DIR}/lib/profile"
-        SOURCES
-            GCDAProfiling.c
-            InstrProfiling.c
-            InstrProfilingInternal.c
-            InstrProfilingBuffer.c
-            InstrProfilingFile.c
-            InstrProfilingMerge.c
-            InstrProfilingMergeFile.c
-            InstrProfilingNameVar.c
-            InstrProfilingVersionVar.c
-            InstrProfilingWriter.c
-            InstrProfilingPlatformAIX.c
-            InstrProfilingPlatformDarwin.c
-            InstrProfilingPlatformFuchsia.c
-            InstrProfilingPlatformLinux.c
-            InstrProfilingPlatformOther.c
-            InstrProfilingPlatformWindows.c
-            InstrProfilingRuntime.cpp
-            InstrProfilingUtil.c
-            InstrProfilingValue.c
-        DEFS
-            COMPILER_RT_HAS_ATOMICS=1
-            COMPILER_RT_HAS_FCNTL_LCK=1
-            COMPILER_RT_HAS_FLOCK=1
-            COMPILER_RT_HAS_UNAME=1
-    )
 endif()

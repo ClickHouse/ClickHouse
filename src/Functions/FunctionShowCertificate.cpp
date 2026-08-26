@@ -31,7 +31,7 @@ namespace
 {
 
 // showCertificate()
-class FunctionShowCertificate final : public IFunction
+class FunctionShowCertificate : public IFunction
 {
 public:
     static constexpr auto name = "showCertificate";
@@ -143,7 +143,7 @@ REGISTER_FUNCTION(ShowCertificate)
 {
     FunctionDocumentation::Description description = R"(
 Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured.
-See [Configuring TLS](/concepts/features/security/tls/configuring-tls) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
+See [Configuring TLS](/guides/sre/tls/configuring-tls) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
     )";
     FunctionDocumentation::Syntax syntax = "showCertificate()";
     FunctionDocumentation::Arguments arguments = {};

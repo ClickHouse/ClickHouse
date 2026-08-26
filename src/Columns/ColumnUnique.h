@@ -178,6 +178,10 @@ public:
     /// This is strange. Please remove this method as soon as possible.
     std::optional<UInt64> getOrFindValueIndex(std::string_view value) const override
     {
+        /// The reserved prefix slots are not in the reverse index, so match the default value here.
+        if (auto index = getNestedTypeDefaultValueIndex(); getRawColumnPtr()->getDataAt(index) == value)
+            return index;
+
         if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
             return res;
 
@@ -204,7 +208,7 @@ private:
     class IncrementalHash
     {
     private:
-        UInt128 hash{};
+        UInt128 hash;
         std::atomic<size_t> num_added_rows;
 
         std::mutex mutex;
@@ -529,7 +533,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer 
 {
     if (is_nullable)
     {
-        UInt8 val = 0;
+        UInt8 val;
         readBinaryLittleEndian<UInt8>(val, in);
 
         if (val)
@@ -549,7 +553,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer 
 
     /// String
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
-    size_t string_size = 0;
+    size_t string_size;
     readBinaryLittleEndian<size_t>(string_size, in);
     if (in.available() < string_size)
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize string value in ColumnUnique.");
@@ -564,7 +568,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValue
 {
     if (is_nullable)
     {
-        UInt8 val = 0;
+        UInt8 val;
         readBinaryLittleEndian<UInt8>(val, in);
 
         if (val)
@@ -586,7 +590,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValue
 
     /// String
     /// For compatibility, serialized string value contains zero byte at the end, we just ignore this byte.
-    size_t string_size_with_zero_byte = 0;
+    size_t string_size_with_zero_byte;
     readBinaryLittleEndian<size_t>(string_size_with_zero_byte, in);
     if (in.available() < string_size_with_zero_byte)
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize string value in ColumnUnique.");
@@ -653,7 +657,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     ReverseIndex<UInt64, ColumnType> * secondary_index,
     size_t max_dictionary_size)
 {
-    const ColumnType * src_column = nullptr;
+    const ColumnType * src_column;
     const NullMap * null_map = nullptr;
     auto & positions = positions_column->getData();
 

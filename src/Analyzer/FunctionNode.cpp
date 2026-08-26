@@ -143,11 +143,7 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
         buffer << ", nulls_action : IGNORE_NULLS";
 
     if (function)
-    {
         buffer << ", result_type: " + getResultType()->getName();
-        if (!isAggregateFunction() && !isWindowFunction() && getFunction()->isSpatialPredicate())
-            buffer << ", is_spatial_predicate: true";
-    }
 
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
@@ -170,7 +166,7 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     }
 }
 
-bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
+bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
 {
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
     if (function_name != rhs_typed.function_name || isAggregateFunction() != rhs_typed.isAggregateFunction()
@@ -179,6 +175,9 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*comp
         return false;
 
     /// is_operator is ignored here because it affects only AST formatting
+
+    if (!compare_options.compare_types)
+        return true;
 
     if (isResolved() != rhs_typed.isResolved())
         return false;
@@ -198,7 +197,7 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*comp
     return true;
 }
 
-void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
+void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
 {
     hash_state.update(function_name.size());
     hash_state.update(function_name);
@@ -208,6 +207,9 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*c
     hash_state.update(nulls_action);
 
     /// is_operator is ignored here because it affects only AST formatting
+
+    if (!compare_options.compare_types)
+        return;
 
     if (!isResolved())
         return;

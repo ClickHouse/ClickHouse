@@ -10,9 +10,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
 
-/// Disabled on macOS: the malloc-zone hook observes system-library allocations (e.g. dyld mallocs
-/// on a thread's first `absl::Mutex` lock) that can occur inside deny scopes and cannot be prevented.
-#if !defined(NDEBUG) && !defined(OS_DARWIN)
+#if !defined(NDEBUG)
 #define MEMORY_TRACKER_DEBUG_CHECKS
 #endif
 
@@ -89,12 +87,6 @@ private:
 
         /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
         /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
-        /// Requires acquire-release:
-        /// 1. Thread A constructs MemoryTracker object and attaches MemoryTracker pointer
-        ///    (e.g. ProcessList::insert where the user's MemoryTracker is constructed right before calling setParent).
-        /// 2. Thread B traverses the chain and dereferences each pointer (e.g. another thread in thread group).
-        /// 3. If Thread B sees a pointer, it should be guaranteed to see the object's memory without data races.
-        ///    Hence, we need the Thread A's pointer store to synchronize-with the Thread B's pointer load.
         std::atomic<MemoryTracker *> parent {};
 
         /// You could specify custom metric to track memory usage.
@@ -108,19 +100,19 @@ private:
         /// Only read on logging paths, not per allocation.
         alignas(DB::CH_CACHE_LINE_SIZE) std::atomic<const char *> description_ptr = nullptr;
 
-        std::atomic<Int64> profiler_step = 0;
+        Int64 profiler_step = 0;
 
         /// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
         std::atomic<double> fault_probability = 0;
 
         /// To randomly sample allocations and deallocations in trace_log.
-        std::atomic<double> sample_probability = -1;
+        double sample_probability = -1;
 
         /// Randomly sample allocations only larger or equal to this size
-        std::atomic<UInt64> min_allocation_size_bytes = 0;
+        UInt64 min_allocation_size_bytes = 0;
 
         /// Randomly sample allocations only smaller or equal to this size
-        std::atomic<UInt64> max_allocation_size_bytes = 0;
+        UInt64 max_allocation_size_bytes = 0;
 
         UInt64 jemalloc_flush_profile_interval_bytes = 0;
         bool jemalloc_flush_profile_on_memory_exceeded = false;
@@ -136,10 +128,8 @@ private:
     };
 #pragma clang diagnostic pop
 
-    bool updatePeak(Int64 will_be, bool log_memory_usage) noexcept;
+    bool updatePeak(Int64 will_be, bool log_memory_usage);
     void logMemoryUsage(Int64 current) const;
-    Int64 decrementLocalUsage(Int64 size) noexcept;
-    void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;
 
     void setOrRaiseProfilerLimit(Int64 value);
 
@@ -153,7 +143,7 @@ private:
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
-    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool enforce_memory_limit, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
+    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
     [[nodiscard]] AllocationTrace free(Int64 size, double _sample_probability = -1.0);
 public:
 
@@ -218,7 +208,10 @@ public:
 
     void injectFault() const;
 
-    void setSampleProbability(double value) { sample_probability.store(value, std::memory_order_relaxed); }
+    void setSampleProbability(double value)
+    {
+        sample_probability = value;
+    }
 
     struct SampleConfig
     {
@@ -234,18 +227,17 @@ public:
     /// leaves the group tracker at -1 and falls through to `total_memory_tracker_sample_probability`.
     SampleConfig getResolvedSampleConfig() const
     {
-        const auto probability = sample_probability.load(std::memory_order_relaxed);
-        if (probability >= 0)
-            return {
-                probability,
-                min_allocation_size_bytes.load(std::memory_order_relaxed),
-                max_allocation_size_bytes.load(std::memory_order_relaxed)};
-        if (auto * loaded_next = parent.load(std::memory_order_acquire))
+        if (sample_probability >= 0)
+            return {sample_probability, min_allocation_size_bytes, max_allocation_size_bytes};
+        if (auto * loaded_next = parent.load(std::memory_order_relaxed))
             return loaded_next->getResolvedSampleConfig();
         return {};
     }
 
-    void setSampleMinAllocationSize(UInt64 value) { min_allocation_size_bytes.store(value, std::memory_order_relaxed); }
+    void setSampleMinAllocationSize(UInt64 value)
+    {
+        min_allocation_size_bytes = value;
+    }
 
     void setJemallocFlushProfileInterval(UInt64 interval)
     {
@@ -262,11 +254,14 @@ public:
         jemalloc_flush_profile_on_memory_exceeded_interval_s = interval_s;
     }
 
-    void setSampleMaxAllocationSize(UInt64 value) { max_allocation_size_bytes.store(value, std::memory_order_relaxed); }
+    void setSampleMaxAllocationSize(UInt64 value)
+    {
+        max_allocation_size_bytes = value;
+    }
 
     void setProfilerStep(Int64 value)
     {
-        profiler_step.store(value, std::memory_order_relaxed);
+        profiler_step = value;
         setOrRaiseProfilerLimit(value);
     }
 
@@ -276,7 +271,7 @@ public:
 
     MemoryTracker * getParent()
     {
-        return parent.load(std::memory_order_acquire);
+        return parent.load(std::memory_order_relaxed);
     }
 
     /// The memory consumption could be shown in realtime via CurrentMetrics counter

@@ -84,20 +84,20 @@ BlockIO InterpreterRenameQuery::execute()
 
 BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards)
 {
-    chassert(!rename.rename_if_cannot_exchange || descriptions.size() == 1);
-    chassert(!(rename.rename_if_cannot_exchange && rename.exchange));
+    assert(!rename.rename_if_cannot_exchange || descriptions.size() == 1);
+    assert(!(rename.rename_if_cannot_exchange && rename.exchange));
     auto & database_catalog = DatabaseCatalog::instance();
 
     for (const auto & elem : descriptions)
     {
         if (elem.if_exists)
         {
-            chassert(!rename.exchange);
+            assert(!rename.exchange);
             if (!database_catalog.isTableExist(StorageID(elem.from_database_name, elem.from_table_name), getContext()))
                 continue;
         }
 
-        bool exchange_tables = false;
+        bool exchange_tables;
         if (rename.exchange)
         {
             exchange_tables = true;
@@ -112,13 +112,6 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             exchange_tables = false;
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
         }
-
-        /// Run the caller's pre-swap check while still holding `ddl_guards`. If it
-        /// throws, the guards release via RAII, no rename happens, and the caller's
-        /// catch path runs. Skip when the destination doesn't exist — there is no
-        /// storage to check (this is a plain `RENAME TO new_name`, not an exchange).
-        if (pre_swap_check && exchange_tables)
-            pre_swap_check(StorageID(elem.to_database_name, elem.to_table_name));
 
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
         if (database->shouldReplicateQuery(getContext(), query_ptr))
@@ -158,10 +151,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         }
         else
         {
-            /// The limit is derived from the receiver's own name, so the destination database
-            /// is the one that has to be able to hold the new name.
-            DatabasePtr to_database = database_catalog.getDatabase(elem.to_database_name);
-            to_database->checkTableNameLength(to_table_id.table_name);
+            database->checkTableNameLength(to_table_id.table_name);
 
             DatabaseCatalog::instance().checkTableCanBeRenamedWithNoCyclicDependencies(from_table_id, to_table_id);
             bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
@@ -204,20 +194,6 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id);
             if (exchange_tables)
                 NamedCollectionFactory::instance().renameDependencies(to_table_id, from_table_id);
-
-            /// The name -> storage mapping just changed. Drop the affected names from this query's
-            /// per-query storage cache so the query's own subsequent lookups resolve to the current
-            /// tables rather than the version pinned before the swap. In particular this lets the
-            /// internal DROP in `CREATE OR REPLACE ... POPULATE` target the old table by the
-            /// temporary name after the internal EXCHANGE (see #108726). Concurrent queries keep
-            /// their own per-query caches and remain isolated from this rename, so a running SELECT
-            /// still reads the version it was planned against (see 03915_exchange_tables_race).
-            if (getContext()->hasQueryContext())
-            {
-                auto query_context = getContext()->getQueryContext();
-                query_context->dropStorageCacheEntry(from_table_id);
-                query_context->dropStorageCacheEntry(to_table_id);
-            }
         }
         catch (...)
         {
@@ -236,9 +212,9 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
 
 BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const RenameDescriptions & descriptions)
 {
-    chassert(descriptions.size() == 1);
-    chassert(descriptions.front().from_table_name.empty());
-    chassert(descriptions.front().to_table_name.empty());
+    assert(descriptions.size() == 1);
+    assert(descriptions.front().from_table_name.empty());
+    assert(descriptions.front().to_table_name.empty());
 
     const auto & old_name = descriptions.front().from_database_name;
     const auto & new_name = descriptions.back().to_database_name;
@@ -302,7 +278,6 @@ void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
     }
 }
 
-void registerInterpreterRenameQuery(InterpreterFactory & factory);
 void registerInterpreterRenameQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

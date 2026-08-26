@@ -4,7 +4,6 @@
 #include <Poco/AutoPtr.h>
 #include <Common/Exception.h>
 #include <Access/KerberosInit.h>
-#include <Examples/clickhouse_examples.h>
 
 /** The example demonstrates using of kerberosInit function to obtain and cache Kerberos ticket-granting ticket.
   * The first argument specifies keytab file. The second argument specifies principal name.

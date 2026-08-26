@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeString.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -26,30 +25,29 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
 
     auto description = ColumnsDescription
     {
-        {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Whether the query is initial. Possible values: 1 — an initial (top-level) query, 0 — a child query initiated by another query, including queries for distributed execution and internal subqueries."},
+        {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Whether this query comes directly from user or was issues by ClickHouse server in a scope of distributed query execution."},
 
         {"user", std::make_shared<DataTypeString>(), "The user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the default user. The field contains the username for a specific query, not for a query that this query initiated."},
         {"query_id", std::make_shared<DataTypeString>(), "Query ID, if defined."},
         {"address", DataTypeFactory::instance().get("IPv6"), "The IP address the query was made from. The same for distributed processing. To track where a distributed query was originally made from, look at system.processes on the query requestor server."},
         {"port", std::make_shared<DataTypeUInt16>(), "The client port the query was made from."},
 
-        {"initial_user", std::make_shared<DataTypeString>(), "Name of the user who ran the initial query in the same query chain."},
-        {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query in the same query chain."},
-        {"initial_address", DataTypeFactory::instance().get("IPv6"), "IP address from which the initial query in the same query chain was launched."},
-        {"initial_port", std::make_shared<DataTypeUInt16>(), "Client port from which the initial query in the same query chain was launched."},
+        {"initial_user", std::make_shared<DataTypeString>(), "Name of the user who ran the initial query (for distributed query execution)."},
+        {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query (for distributed query execution)."},
+        {"initial_address", DataTypeFactory::instance().get("IPv6"), "IP address that the parent query was launched from."},
+        {"initial_port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the parent query."},
 
         {"interface", std::make_shared<DataTypeUInt8>(), "The interface which was used to send the query. TCP = 1, HTTP = 2, GRPC = 3, MYSQL = 4, POSTGRESQL = 5, LOCAL = 6, TCP_INTERSERVER = 7."},
 
         {"os_user", std::make_shared<DataTypeString>(), "Operating system username who runs clickhouse-client."},
         {"client_hostname", std::make_shared<DataTypeString>(), "Hostname of the client machine where the clickhouse-client or another TCP client is run."},
         {"client_name", std::make_shared<DataTypeString>(), "The clickhouse-client or another TCP client name."},
-        {"client_agent", low_cardinality_string, "The AI coding agent that invoked the client (e.g. `claude-code`, `cursor`), detected from environment variables. Empty if no agent was detected."},
         {"client_revision", std::make_shared<DataTypeUInt64>(), "Revision of the clickhouse-client or another TCP client."},
         {"client_version_major", std::make_shared<DataTypeUInt64>(), "Major version of the clickhouse-client or another TCP client."},
         {"client_version_minor", std::make_shared<DataTypeUInt64>(), "Minor version of the clickhouse-client or another TCP client."},
         {"client_version_patch", std::make_shared<DataTypeUInt64>(), "Patch component of the clickhouse-client or another TCP client version."},
 
-        {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 - The query was launched from the TCP interface, 1 - GET method was used, 2 - POST method was used, 4 - PUT method was used, 5 - DELETE method was used, 6 - HEAD method was used."},
+        {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 — The query was launched from the TCP interface. 1 — GET method was used. 2 — POST method was used."},
         {"http_user_agent", std::make_shared<DataTypeString>(), "HTTP header UserAgent passed in the HTTP query."},
         {"http_referer", std::make_shared<DataTypeString>(), "HTTP header Referer passed in the HTTP query (contains an absolute or partial address of the page making the query)."},
         {"forwarded_for", std::make_shared<DataTypeString>(), "HTTP header X-Forwarded-For passed in the HTTP query."},
@@ -116,7 +114,6 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(process.client_info.os_user);
         res_columns[i++]->insert(process.client_info.client_hostname);
         res_columns[i++]->insert(process.client_info.client_name);
-        res_columns[i++]->insert(process.client_info.client_agent);
         res_columns[i++]->insert(process.client_info.client_tcp_protocol_version);
         res_columns[i++]->insert(process.client_info.client_version_major);
         res_columns[i++]->insert(process.client_info.client_version_minor);
@@ -182,6 +179,3 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemProcesses) }

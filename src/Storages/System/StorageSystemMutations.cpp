@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemMutations.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -195,6 +194,3 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemMutations) }
