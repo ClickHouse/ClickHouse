@@ -156,9 +156,8 @@ public:
         }
 
         /// Empty set: return a constant result, checked before input_rows_count == 0 so that header
-        /// evaluation produces a `ColumnConst` detectable by `ConstantFilterDescription`. Only a set the
-        /// DAG node also folds qualifies: a constant header over a non-constant node cannot be converted.
-        if (isImmutableEmptySet(*future_set))
+        /// evaluation produces a `ColumnConst` detectable by `ConstantFilterDescription`.
+        if (set->getTotalRowCount() == 0 && canReportEmptySetAsConstant(*future_set))
             return ColumnConst::create(ColumnUInt8::create(1, negative), input_rows_count);
 
         /// Unwrap ColumnConst for the first argument if needed.
@@ -218,6 +217,15 @@ private:
 
         auto set = tuple_set->get();
         return set && set->getTotalRowCount() == 0;
+    }
+
+    /// A tuple set is reported as constant by the DAG node too, and a subquery set holds no value while
+    /// step headers are being declared. A storage-backed set is readable straight away and is not folded,
+    /// so a constant here would land in a declared header that the stream cannot fill.
+    static bool canReportEmptySetAsConstant(const FutureSet & future_set)
+    {
+        return typeid_cast<const FutureSetFromTuple *>(&future_set)
+            || typeid_cast<const FutureSetFromSubquery *>(&future_set);
     }
 
     String function_name;
