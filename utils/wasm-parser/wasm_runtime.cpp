@@ -134,7 +134,7 @@ void CurrentMemoryTracker::injectFault() {}
 void AllocationTrace::onAllocImpl(void *, size_t) const {}
 void AllocationTrace::onFreeImpl(void *, size_t) const {}
 
-thread_local constinit VariableContext MemoryTrackerBlockerInThread::level = VariableContext::Global;
+constinit FiberLocal<VariableContext, FiberLocalSlot::MEMORY_TRACKER_BLOCKER_LEVEL, /* default_value = */ VariableContext::Max> MemoryTrackerBlockerInThread::level;
 MemoryTrackerBlockerInThread::MemoryTrackerBlockerInThread(VariableContext) {}
 MemoryTrackerBlockerInThread::MemoryTrackerBlockerInThread(MemoryTrackerBlockerInThread &&) noexcept = default;
 MemoryTrackerBlockerInThread & MemoryTrackerBlockerInThread::operator=(MemoryTrackerBlockerInThread &&) noexcept = default;
@@ -158,9 +158,9 @@ namespace ProfileEvents
 #include <IO/ReadHelpers.h>
 #include <base/getPageSize.h>
 
-thread_local constinit uint64_t LockMemoryExceptionInThread::counter = 0;
-thread_local constinit VariableContext LockMemoryExceptionInThread::level = VariableContext::Global;
-thread_local constinit bool LockMemoryExceptionInThread::block_fault_injections = false;
+constinit FiberLocal<uint64_t, FiberLocalSlot::LOCK_MEMORY_EXCEPTION_COUNTER> LockMemoryExceptionInThread::counter;
+constinit FiberLocal<VariableContext, FiberLocalSlot::LOCK_MEMORY_EXCEPTION_LEVEL> LockMemoryExceptionInThread::level;
+constinit FiberLocal<bool, FiberLocalSlot::LOCK_MEMORY_EXCEPTION_BLOCK_FAULT_INJECTIONS> LockMemoryExceptionInThread::block_fault_injections;
 LockMemoryExceptionInThread::LockMemoryExceptionInThread(VariableContext, bool)
     : previous_level(VariableContext::Global), previous_block_fault_injections(false) {}
 LockMemoryExceptionInThread::~LockMemoryExceptionInThread() = default;

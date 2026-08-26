@@ -1594,6 +1594,9 @@ class JobConfigs:
                 "./ci/jobs/scripts/docs",
                 "./utils/generate-async-metrics-docs",
                 "./utils/generate-system-tables-docs",
+                # The source of truth for the generated Open source changelog
+                # page, so a change to it alone must still run this job.
+                "./CHANGELOG.md",
             ],
             # These files are internal inputs or contributor documentation, not
             # pages published by Mintlify.
@@ -1728,6 +1731,32 @@ class JobConfigs:
         requires=[ArtifactNames.CH_ARM_RELEASE],
         run_in_docker="clickhouse/stateless-test",
         timeout=10800,
+    )
+    docs_examples_job = Job.Config(
+        name=JobNames.DOCS_EXAMPLES,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command="python3 ./ci/jobs/docs_examples_job.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/docs_examples_job.py",
+                "./ci/jobs/scripts/server_cleanup.py",
+                "./tests/docs_examples/",
+                # The server of this job installs `programs/server/config.d` and
+                # `programs/server/users.d` dereferenced, and most of their entries are symlinks
+                # into `tests/config`, so the whole of it is an input of the job.
+                "./tests/config/",
+                "./programs/server/config.xml",
+                "./programs/server/config.d/",
+                "./programs/server/users.xml",
+                "./programs/server/users.d/",
+            ]
+            # The examples are extracted from server source registrations and validate server
+            # behavior, so every change that rebuilds the server must run this job too.
+            + build_digest_config.include_paths,
+        ),
+        requires=[ArtifactNames.CH_ARM_RELEASE],
+        run_in_docker="clickhouse/stateless-test",
+        timeout=3600,
     )
     sqlstorm_test_job = Job.Config(
         name=JobNames.SQL_STORM_TEST,
