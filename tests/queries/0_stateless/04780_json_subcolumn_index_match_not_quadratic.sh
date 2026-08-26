@@ -16,9 +16,9 @@ set -e
 
 REPEATS=100000
 MAX_RATIO_PERCENT=150
-# The reading is quantised by `min(max_untracked_memory, memory_profiler_step)` and scales with it,
-# so both are pinned below: the stateless profile sets `1Mi` while the source default is `4Mi`, and a
-# ratio calibrated without pinning them is calibrated for whichever server happens to run it.
+# The reading is quantised by `min(max_untracked_memory, memory_profiler_step)`, so both are pinned
+# below: the stateless profile sets `1Mi` while the source default is `4Mi`, and a ratio calibrated
+# without pinning them is calibrated for whichever server happens to run it.
 UNTRACKED_MEMORY_QUANTUM=1048576
 
 LONG_SUFFIX=$(printf 'a%.0s' $(seq 1 170))
