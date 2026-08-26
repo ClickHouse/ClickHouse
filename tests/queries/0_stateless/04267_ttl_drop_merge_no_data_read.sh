@@ -464,11 +464,10 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_regular_fallback;"
 # Case 9: a pending patch part disables the short-circuit
 #
 # The proof of expiry comes from each source part's own ttl_infos, which were
-# written before any lightweight update. A patch that moves the rows-TTL column
-# into the future keeps rows alive, so skipping the read pipeline here would
-# finalize an empty part and lose them. Patches are applied by the merge itself
-# (apply_patches_on_merge, on by default), so the shortcut must stand down
-# whenever the merge carries any.
+# written before any lightweight update and so cannot describe the patched rows.
+# Patches are applied by the merge itself (apply_patches_on_merge, on by
+# default), so a merge carrying one has real work to do and must not skip the
+# read pipeline.
 # -------------------------------------------------------------------
 echo "-- Case 9: pending patch part disables the short-circuit"
 
@@ -504,9 +503,24 @@ ${CLICKHOUSE_CLIENT} -q "
     OPTIMIZE TABLE t_ttl_patched FINAL;
 "
 
-# With ttl_only_drop_parts the part is dropped only when every row is expired, so once the
-# patch is applied nothing is removed and all 100 rows must survive. A short-circuited merge
-# would report 0 here instead.
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS part_log"
+
+# The merge must open the source parts, because the patch has to be applied before the rows can
+# be dropped. read_rows is what separates that from the short-circuit, which reports 0 -- the row
+# count cannot, since these rows are expired either way.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT DISTINCT
+        merge_reason,
+        rows,
+        read_rows
+    FROM system.part_log
+    WHERE
+        database = currentDatabase()
+        AND table = 't_ttl_patched'
+        AND event_type = 'MergeParts'
+        AND length(merged_from) > 0
+    ORDER BY merge_reason, rows, read_rows;
+"
+
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patched;"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patched WHERE event_time > now();"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patched;"
