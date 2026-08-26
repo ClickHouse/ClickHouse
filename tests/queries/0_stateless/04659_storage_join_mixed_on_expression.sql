@@ -34,6 +34,8 @@ DROP TABLE IF EXISTS sj_all_right;
 DROP TABLE IF EXISTS sj_all_full;
 DROP TABLE IF EXISTS mt_right;
 DROP TABLE IF EXISTS mem_right;
+DROP TABLE IF EXISTS sj_bool;
+DROP TABLE IF EXISTS sj_bool_nullable;
 
 CREATE TABLE t1 (key String, a UInt64) ENGINE = MergeTree ORDER BY key;
 INSERT INTO t1 VALUES ('k1', 1), ('k1', 2), ('k1', 3);
@@ -71,6 +73,12 @@ CREATE TABLE mt_right (key String, a UInt64) ENGINE = MergeTree ORDER BY key;
 INSERT INTO mt_right VALUES ('k1', 10), ('k1', 20);
 CREATE TABLE mem_right (key String, a UInt64) ENGINE = Memory;
 INSERT INTO mem_right VALUES ('k1', 10), ('k1', 20);
+
+-- flag distinguishes the two right rows, so a condition on it selects exactly one of them.
+CREATE TABLE sj_bool (key String, a UInt64, flag UInt8) ENGINE = Join(ALL, INNER, key);
+INSERT INTO sj_bool VALUES ('k1', 10, 0), ('k1', 20, 1);
+CREATE TABLE sj_bool_nullable (key String, a UInt64, flag Nullable(UInt8)) ENGINE = Join(ALL, INNER, key);
+INSERT INTO sj_bool_nullable VALUES ('k1', 10, 0), ('k1', 20, 1);
 
 SELECT '--- rejected: a mixed ON condition on a Join-engine table ---';
 
@@ -130,6 +138,28 @@ SELECT 'K9 any inner', count() FROM t1 ANY INNER JOIN sj_any_inner ON (t1.key = 
 SELECT 'K10 all inner', count() FROM t1 INNER JOIN sj_all_inner ON (t1.key = sj_all_inner.key) AND (t1.a < sj_all_inner.a);
 SELECT 'K11 right equi', count() FROM t1 RIGHT JOIN sj_all_right ON (t1.key = sj_all_right.key);
 
+-- ALL INNER applies a right-only conjunct after the join, so it never becomes a filter over the
+-- prebuilt join. K12 is the spelling optimize_and_compare_chain derives a third conjunct from,
+-- K13 and K14 are written by hand.
+SELECT 'K12 derived', count() FROM t1 INNER JOIN sj_all_inner ON (t1.key = 'k1') AND (t1.key = sj_all_inner.key) SETTINGS optimize_and_compare_chain = 1;
+-- K12 only carries a derived conjunct while that pass is on, so pin the count either way. Both
+-- arms state the setting explicitly because the test runner randomizes it.
+SELECT 'K12 equals nodes on', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t1 INNER JOIN sj_all_inner ON (t1.key = 'k1') AND (t1.key = sj_all_inner.key) SETTINGS optimize_and_compare_chain = 1) WHERE explain ILIKE '%function_name: equals%';
+SELECT 'K12 equals nodes off', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t1 INNER JOIN sj_all_inner ON (t1.key = 'k1') AND (t1.key = sj_all_inner.key) SETTINGS optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: equals%';
+SELECT 'K13 right-only key', count() FROM t1 INNER JOIN sj_all_inner ON (t1.key = sj_all_inner.key) AND (sj_all_inner.key = 'k1');
+-- Discriminating (only the a = 20 right row qualifies), asserted against the Memory twin.
+SELECT 'K14 join', t1.a, sj_all_inner.a FROM t1 INNER JOIN sj_all_inner ON (t1.key = sj_all_inner.key) AND (sj_all_inner.a > 15) ORDER BY t1.a, sj_all_inner.a;
+SELECT 'K14 oracle', t1.a, mem_right.a FROM t1 INNER JOIN mem_right ON (t1.key = mem_right.key) AND (mem_right.a > 15) ORDER BY t1.a, mem_right.a;
+-- The equi-only control keeps the plan assertion sensitive to the filter position.
+SELECT 'K15 post-join', count() > 0 FROM (EXPLAIN SELECT count() FROM t1 INNER JOIN sj_all_inner ON (t1.key = sj_all_inner.key) AND (sj_all_inner.a > 15)) WHERE explain ILIKE '%Filter (Post Join Actions)%';
+SELECT 'K15 control', count() > 0 FROM (EXPLAIN SELECT count() FROM t1 INNER JOIN sj_all_inner ON (t1.key = sj_all_inner.key)) WHERE explain ILIKE '%Filter (Post Join Actions)%';
+-- A UInt8 or Nullable(UInt8) column used directly as a condition stays a stored column instead of
+-- becoming a computed one, so it reaches the join by a different route than K12 to K14. The two
+-- directions select complementary rows, which catches a mask that is all-true or all-false.
+SELECT 'K16 flag', t1.a, sj_bool.a FROM t1 INNER JOIN sj_bool ON (t1.key = sj_bool.key) AND sj_bool.flag ORDER BY t1.a, sj_bool.a;
+SELECT 'K16 not flag', t1.a, sj_bool.a FROM t1 INNER JOIN sj_bool ON (t1.key = sj_bool.key) AND NOT sj_bool.flag ORDER BY t1.a, sj_bool.a;
+SELECT 'K16 nullable flag', t1.a, sj_bool_nullable.a FROM t1 INNER JOIN sj_bool_nullable ON (t1.key = sj_bool_nullable.key) AND sj_bool_nullable.flag ORDER BY t1.a, sj_bool_nullable.a;
+
 SELECT '--- other rejections keep their own error, the guard did not widen ---';
 
 -- Strictness mismatch against the engine declaration.
@@ -137,8 +167,11 @@ SELECT count() FROM t1 SEMI LEFT JOIN sj_all_left ON (t1.key = sj_all_left.key);
 -- A genuinely disjunctive ON is rejected earlier and independently, so centralizing the
 -- RIGHT/FULL rejection above did not swallow the OR path.
 SELECT count() FROM t1 LEFT JOIN sj_all_left ON (t1.key = sj_all_left.key) OR (t1.a = sj_all_left.a); -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
--- A right-only conjunct becomes a computed right-side column, a different limitation.
+-- An outer join evaluates its ON conditions during the join (non-matching rows are NULL-extended
+-- rather than dropped), so a right-only conjunct cannot move above the join the way K13 to K16 do.
 SELECT count() FROM t1 LEFT JOIN sj_all_left_2col ON (t1.key = sj_all_left_2col.key) AND (sj_all_left_2col.b > 150); -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+-- A derived join key is not a stored column of the engine, whichever side it is on.
+SELECT count() FROM t1 INNER JOIN sj_all_inner ON (t1.key = toString(sj_all_inner.key)); -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 
 DROP TABLE t1;
 DROP TABLE t1_lc;
@@ -155,3 +188,5 @@ DROP TABLE sj_all_right;
 DROP TABLE sj_all_full;
 DROP TABLE mt_right;
 DROP TABLE mem_right;
+DROP TABLE sj_bool;
+DROP TABLE sj_bool_nullable;
