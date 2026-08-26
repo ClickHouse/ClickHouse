@@ -202,23 +202,33 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
     }
 
     const auto [available_topic_partitions, active_replicas_info] = getAvailableTopicPartitions(all_topic_partitions);
+    /// The fast path above lets the next cycle poll on any non-empty assignment, so from here on the
+    /// assignment must be left either rewound to the committed offsets or empty.
+    try
     {
-        std::lock_guard lock(topic_partition_locks_mutex);
-        // These operations are expected to be fast, because they only modify in-memory data and read/write to Keeper. For huge number of topic partitions
-        updatePermanentLocksLocked(available_topic_partitions, all_topic_partitions.size(), active_replicas_info.active_replica_count);
-        lockTemporaryLocksLocked(available_topic_partitions, active_replicas_info.has_replica_without_locks);
-        poll_count = 0;
+        {
+            std::lock_guard lock(topic_partition_locks_mutex);
+            // These operations are expected to be fast, because they only modify in-memory data and read/write to Keeper. For huge number of topic partitions
+            updatePermanentLocksLocked(available_topic_partitions, all_topic_partitions.size(), active_replicas_info.active_replica_count);
+            lockTemporaryLocksLocked(available_topic_partitions, active_replicas_info.has_replica_without_locks);
+            poll_count = 0;
 
-        assigned_topic_partitions.reserve(permanent_locks.size() + tmp_locks.size());
-        appendToAssignedTopicPartitions(permanent_locks);
-        appendToAssignedTopicPartitions(tmp_locks);
+            assigned_topic_partitions.reserve(permanent_locks.size() + tmp_locks.size());
+            appendToAssignedTopicPartitions(permanent_locks);
+            appendToAssignedTopicPartitions(tmp_locks);
+        }
+        // In `rollbackToCommittedOffsets` `topic_partition_locks_mutex` is locked again, this means `getStat` can be called
+        // in-between the two locks. However this is not a problem, because in `getStat` the main source of information is
+        // the acquired locks and the information from KafkaConsumer2 about the offset are only used to provide more recent
+        // information about the offsets in case the consumer is polling message while `getStat` is called. Here this is not
+        // the case, so the offset values in the lock infos are good enough.
+        rollbackToCommittedOffsets();
     }
-    // In `rollbackToCommittedOffsets` `topic_partition_locks_mutex` is locked again, this means `getStat` can be called
-    // in-between the two locks. However this is not a problem, because in `getStat` the main source of information is
-    // the acquired locks and the information from KafkaConsumer2 about the offset are only used to provide more recent
-    // information about the offsets in case the consumer is polling message while `getStat` is called. Here this is not
-    // the case, so the offset values in the lock infos are good enough.
-    rollbackToCommittedOffsets();
+    catch (...)
+    {
+        assigned_topic_partitions.clear();
+        throw;
+    }
 
     if (assigned_topic_partitions.empty())
     {
