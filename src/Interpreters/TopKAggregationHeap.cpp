@@ -1,6 +1,7 @@
 #include <Interpreters/TopKAggregationHeap.h>
 
 #include <algorithm>
+#include <utility>
 
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnTuple.h>
@@ -130,6 +131,7 @@ void TopKAggregationHeapBase::freezeBase()
     boundary_row = invalid_row;
     boundary_is_shared = false;
     shared_cache_column = nullptr;
+    publish_pending = false;
     key_arena.reset();
     skip_bitmap = {};
     evicted_rows = {};
@@ -162,7 +164,7 @@ const UInt8 * TopKAggregationHeapBase::fillSkipBitmap(const void * source_typed_
 void TopKAggregationHeapBase::initBoundary()
 {
     withComparator([&](auto cmp) { boundary_row = *std::max_element(heap_indices.begin(), heap_indices.end(), cmp); });
-    publishBoundary();
+    publish_pending = true;
     updateBoundaryChoice();
 }
 
@@ -182,35 +184,34 @@ int TopKAggregationHeapBase::compareRanked(const IColumn & lhs, size_t lhs_row, 
     return 0;
 }
 
-void TopKAggregationHeapBase::publishBoundary()
-{
-    if (!shared_boundary)
-        return;
-
-    std::lock_guard lock(shared_boundary->mutex);
-
-    if (shared_boundary->key && compareRanked(*heap_column, boundary_row, *shared_boundary->key, 0) >= 0)
-        return;
-
-    auto key = heap_column->cloneEmpty();
-    key->insertFrom(*heap_column, boundary_row);
-    shared_boundary->key = std::move(key);
-    shared_boundary->version.fetch_add(1, std::memory_order_release);
-}
-
-void TopKAggregationHeapBase::refreshSharedBoundary()
+void TopKAggregationHeapBase::exchangeSharedBoundary()
 {
     if (!shared_boundary || frozen)
         return;
 
-    if (shared_boundary->version.load(std::memory_order_acquire) == shared_version_seen)
+    const bool publish = std::exchange(publish_pending, false);
+
+    if (!publish && shared_boundary->version.load(std::memory_order_acquire) == shared_version_seen)
         return;
 
     {
         std::lock_guard lock(shared_boundary->mutex);
-        chassert(shared_boundary->key);
-        shared_cache_column = shared_boundary->key->cloneResized(1);
-        shared_version_seen = shared_boundary->version.load(std::memory_order_relaxed);
+
+        if (publish && (!shared_boundary->key || compareRanked(*heap_column, boundary_row, *shared_boundary->key, 0) < 0))
+        {
+            auto key = heap_column->cloneEmpty();
+            key->insertFrom(*heap_column, boundary_row);
+            shared_boundary->key = std::move(key);
+            shared_boundary->version.fetch_add(1, std::memory_order_release);
+        }
+
+        const UInt64 version = shared_boundary->version.load(std::memory_order_relaxed);
+        if (version != shared_version_seen)
+        {
+            chassert(shared_boundary->key);
+            shared_cache_column = shared_boundary->key->cloneResized(1);
+            shared_version_seen = version;
+        }
     }
 
     updateBoundaryChoice();
@@ -255,7 +256,7 @@ void TopKAggregationHeapBase::trimToK()
 
     evicted_keys += evicted_rows.size();
 
-    publishBoundary();
+    publish_pending = true;
     updateBoundaryChoice();
 
     if (heap_indices.size() > next_trim_size)   /// a boundary tie-set blocked the trim

@@ -1981,7 +1981,7 @@ The effective window is at least twice the heap's reserved size, so a heap alway
 This has no effect on `GROUP BY keys LIMIT K` queries without `ORDER BY`, where the freeze is always disabled: that shape's plan contains a synthesized sort that only pays off while the heap bounds the hash table, so freezing the heap would leave a plan slower than the un-optimized one.
 )", EXPERIMENTAL) \
     DECLARE(Bool, group_by_top_k_optimization_shared_boundary, true, R"(
-For `enable_group_by_top_k_optimization`: share the tightest skip boundary between the aggregation threads. Each thread publishes the boundary of its own top-K set whenever it tightens, and every thread skips rows against the best published boundary instead of only its own. A set of `K` keys strictly better than a row proves the row cannot reach the final result regardless of which thread holds them, so the sharing does not change the result; it only lets threads whose local keys rank poorly (e.g. when the key values are clustered across the table) skip rows they would otherwise aggregate for nothing.
+For `enable_group_by_top_k_optimization`: share the tightest skip boundary between the aggregation threads. Each thread publishes the boundary of its own top-K set once per processed block when it has tightened, and every thread skips rows against the best published boundary instead of only its own. A set of `K` keys strictly better than a row proves the row cannot reach the final result regardless of which thread holds them, so the sharing does not change the result; it only lets threads whose local keys rank poorly (e.g. when the key values are clustered across the table) skip rows they would otherwise aggregate for nothing.
 
 Possible values:
 

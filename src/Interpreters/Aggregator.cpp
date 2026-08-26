@@ -1137,7 +1137,7 @@ void Aggregator::executeImpl(
             params.top_k->nulls_directions,
             params.top_k->observation_rows,
             params.top_k->shared_boundary ? &top_k_shared_boundary : nullptr);
-        method.top_k_heap.refreshSharedBoundary();
+        method.top_k_heap.exchangeSharedBoundary();
     }
 
     auto execute = [&]<bool prefetch_v, bool top_k_v>(bool no_more_keys_arg, bool use_compiled_functions)

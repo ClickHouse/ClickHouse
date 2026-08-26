@@ -30,8 +30,12 @@ namespace DB
   * the publishing thread - so every thread may skip against it (the same argument that
   * makes per-replica skipping sound). Publications only ever tighten the boundary.
   *
-  * Publish and refresh are off the hot path (a trim, a block start), so a mutex around
-  * the key plus a version counter for the cheap no-change check is enough.
+  * Publish and refresh both happen at most once per block per thread (a trim only marks
+  * the local boundary as pending), so a mutex around the key plus a version counter for
+  * the cheap no-change check is enough. Deferring the publications to the block boundary
+  * caps the sharing overhead when the local boundaries tighten on every trim while the
+  * shared one never produces a skip - e.g. a DESC ranking over data that ascends in step
+  * across all threads - at the cost of at most one block of staleness.
   */
 struct SharedTopKBoundary
 {
@@ -86,9 +90,10 @@ struct TopKAggregationHeapBase
     /// thread has published a shared boundary this thread can borrow.
     bool hasBoundary() const { return boundary_is_shared || boundary_row != invalid_row; }
 
-    /// Re-reads the shared boundary if another thread has tightened it since the last
-    /// refresh; one atomic load when nothing changed. Called once per block.
-    void refreshSharedBoundary();
+    /// Publishes the local boundary if a trim tightened it since the last exchange, and
+    /// re-reads the shared one if another thread has tightened it; one atomic load when
+    /// nothing changed on either side. Called once per block.
+    void exchangeSharedBoundary();
 
     /// Per-row on the paths the typed fast path does not cover (`String`, composite, and
     /// anything the numeric dispatch rejects), hence inline.
@@ -136,6 +141,7 @@ protected:
     UInt64 shared_version_seen = 0;         /// last `SharedTopKBoundary::version` copied into `shared_cache_column`
     MutableColumnPtr shared_cache_column;   /// single-row local copy of the shared boundary key; null until first refresh
     bool boundary_is_shared = false;        /// the effective boundary is `shared_cache_column[0]`, not `heap_column[boundary_row]`
+    bool publish_pending = false;           /// a trim tightened the local boundary since the last exchange
 
     /// Ranking configuration.
     std::vector<int> directions;            /// per ranked column: +1/-1 for ASC/DESC
@@ -321,9 +327,6 @@ private:
     /// The effective skip boundary: the shared one when it is strictly tighter than the local.
     const IColumn & boundaryColumn() const { return boundary_is_shared ? *shared_cache_column : *heap_column; }
     size_t boundaryRow() const { return boundary_is_shared ? 0 : boundary_row; }
-
-    /// Offers the local boundary to `shared_boundary`; replaces it only when strictly better.
-    void publishBoundary();
 
     /// Recomputes `boundary_is_shared` after either boundary moved.
     void updateBoundaryChoice();
