@@ -14,6 +14,10 @@ INSERT INTO t_fill_ser VALUES (10, 1), (20, 2), (30, 3), (40, 5);
 
 SET serialize_query_plan = 1;
 SET prefer_localhost_replica = 0;
+-- The row multiplicity below is per shard, so keep the reads out of parallel replicas: the
+-- parallel-replicas job enables it in the profile, and `automatic_parallel_replicas_mode` is randomized.
+SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
 
 SELECT '-- FROM 0 TO 6 INTERPOLATE, local';
 SELECT g, id FROM t_fill_ser ORDER BY g WITH FILL FROM 0 TO 6 INTERPOLATE (id AS id + 1);

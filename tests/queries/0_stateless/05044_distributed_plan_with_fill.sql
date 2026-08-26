@@ -12,8 +12,12 @@ DROP TABLE IF EXISTS t_fill_dist;
 CREATE TABLE t_fill_dist (a UInt64, b String) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_fill_dist SELECT number * 4, toString(number) FROM numbers(200);
 
-SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
-    distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0;
+SET make_distributed_plan = 1, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
+    distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0,
+    enable_join_runtime_filters = 0;
+-- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, and the functional-test
+-- profile (`tests/config/users.d/limits.yaml`) sets it to 10G, so pin it off.
+SET max_rows_to_group_by = 0;
 
 SELECT '-- STEP 2, whole stream';
 SELECT count(), sum(a) FROM (SELECT a FROM t_fill_dist ORDER BY a WITH FILL STEP 2)
