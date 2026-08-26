@@ -1186,13 +1186,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
-    /** The `f | g` operator parses into `compose(f, g)`, which is not a function but a rewrite
+    /** The `f | g` operator parses into `__compose(f, g)`, which is not a function but a rewrite
       * to a lambda (see FunctionCompositionRewrite.h), applied by the parent function when its
       * argument is a composition. A composition being resolved by itself denotes a function,
-      * not a value, so explain the operator instead of resolving further (a lambda bound to the
-      * name `compose` in an enclosing scope still takes priority, as for any function name).
+      * not a value, so explain the operator instead of resolving further. The name is internal,
+      * so the public name `compose` stays available for ordinary and user defined functions.
       */
-    if (function_name == "compose" && !lambda_expression_untyped)
+    if (function_name == function_composition_name && !lambda_expression_untyped)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The function composition `f | g` can be used only where a function is expected: "
             "as an argument of a higher-order function such as arrayMap. "
@@ -2025,19 +2025,23 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         for (auto & argument_node : argument_nodes)
         {
             const auto * argument_function = argument_node->as<FunctionNode>();
-            if (argument_function && argument_function->getFunctionName() == "compose")
+            if (argument_function && argument_function->getFunctionName() == function_composition_name)
                 argument_node = fuseCompositionToLambda(*argument_function, resolve_identifier_operand);
         }
 
         /// Free placeholders in the lambda position of a higher-order function lift the
         /// expression to a lambda: arrayMap(plus(_1, 1), x) is resolved as
-        /// arrayMap(_1 -> plus(_1, 1), x). Mirroring the bare-function-name rewrite above, the
-        /// lift applies only when the parent is a higher-order function, and only when none of
-        /// the placeholder names resolves to anything in scope, so columns and aliases keep
-        /// priority (a higher-order function like arrayPartialSort can legitimately take a
-        /// non-lambda first argument). Every query the lift activates on is an error without it,
-        /// so no previously valid query changes meaning.
-        if (argument_nodes.size() >= 2 && argument_nodes[0]->as<FunctionNode>())
+        /// arrayMap(_1 -> plus(_1, 1), x). This applies to any expression, including a bare
+        /// placeholder: arrayMap(_1, x) is the identity lambda. An argument that is already a
+        /// lambda is left alone: a free placeholder in its body is an ordinary identifier, and
+        /// lifting it would produce a lambda returning a lambda.
+        ///
+        /// Mirroring the bare-function-name rewrite above, the lift applies only when the parent
+        /// is a higher-order function, and only when none of the placeholder names resolves to
+        /// anything in scope, so columns and aliases keep priority (a higher-order function like
+        /// arrayPartialSort can legitimately take a non-lambda first argument). Every query the
+        /// lift activates on is an error without it, so no previously valid query changes meaning.
+        if (argument_nodes.size() >= 2 && argument_nodes[0]->getNodeType() != QueryTreeNodeType::LAMBDA)
         {
             auto parent_resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
             if (parent_resolver && parent_resolver->isHigherOrderFunction())

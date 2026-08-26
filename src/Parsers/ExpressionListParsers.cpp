@@ -3339,7 +3339,9 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::NOT_BETWEEN),   Operator("",                7,  0, OperatorType::StartNotBetween)},
     /// Function composition: `f | g` applies `f` and then `g`, and is resolved as a lambda
     /// where a higher-order function expects one. The single `|` is not bitwise OR (`bitOr`).
-    {"|",             Operator("compose",         8,  2)},
+    /// The internal name keeps the operator from stealing the public name `compose`; it must
+    /// stay in sync with `function_composition_name` in `FunctionCompositionRewrite.h`.
+    {"|",             Operator("__compose",       8,  2)},
     {"==",            Operator("equals",          9,  2, OperatorType::Comparison)},
     {"!=",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
     {"<=>",           Operator("isNotDistinctFrom", 9, 2, OperatorType::Comparison)},

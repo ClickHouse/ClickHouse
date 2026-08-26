@@ -577,7 +577,9 @@ Placeholders can also be used without the composition operator in the lambda pos
 
 The composition is resolved at query analysis time by inlining `f` into `g`, like SQL user defined functions are, and the result is an ordinary lambda. The right operand must be a function of one argument.
 
-Note that the single `|` is not bitwise OR; use the `bitOr` function for that.
+A bare placeholder is the identity function, so `_1 | toString` is the same as `toString(_1)`.
+
+Note that the single `|` is not bitwise OR; use the `bitOr` function for that. The operator has no user-visible function name of its own, so `compose` is an ordinary name that can be used for a user defined function.
 
 The following operators do not have a priority since they are brackets:
 

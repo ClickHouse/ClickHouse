@@ -4,6 +4,8 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/LambdaNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
 
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
@@ -128,7 +130,7 @@ struct PlaceholderCollector
             case QueryTreeNodeType::FUNCTION:
             {
                 /// Placeholders inside a nested composition belong to its own operands.
-                if (node->as<FunctionNode &>().getFunctionName() == "compose")
+                if (node->as<FunctionNode &>().getFunctionName() == function_composition_name)
                     return;
                 break;
             }
@@ -148,9 +150,38 @@ struct PlaceholderCollector
     }
 };
 
+/// Collect every name bound lexically inside a subquery: aliases (`SELECT 1 AS x`), CTE names,
+/// and lambda arguments. An identifier with such a name inside the subquery denotes that
+/// binding, not a value the composition would have to substitute in from the outside.
+void collectNamesBoundInsideSubquery(const QueryTreeNodePtr & node, NameSet & bound_names)
+{
+    if (!node)
+        return;
+
+    if (node->hasAlias())
+        bound_names.insert(node->getAlias());
+
+    if (const auto * query_node = node->as<QueryNode>())
+    {
+        if (query_node->isCTE())
+            bound_names.insert(query_node->getCTEName());
+    }
+    else if (const auto * union_node = node->as<UnionNode>())
+    {
+        if (union_node->isCTE())
+            bound_names.insert(union_node->getCTEName());
+    }
+    else if (const auto * lambda_node = node->as<LambdaNode>())
+    {
+        for (const auto & argument_name : lambda_node->getArguments().getNames())
+            bound_names.insert(argument_name);
+    }
+
+    for (const auto & child : node->getChildren())
+        collectNamesBoundInsideSubquery(child, bound_names);
+}
+
 /// Whether an identifier with the given first part occurs anywhere in the subtree.
-/// Deliberately does not account for shadowing: used only to fail cleanly instead of
-/// substituting into a subquery.
 bool containsIdentifier(const QueryTreeNodePtr & node, const String & name)
 {
     if (!node)
@@ -164,6 +195,25 @@ bool containsIdentifier(const QueryTreeNodePtr & node, const String & name)
             return true;
 
     return false;
+}
+
+/// Whether a subquery references the name from the outside, so that a substitution would have
+/// to descend into it. The name is bound inside the subquery when it is an alias, a CTE name,
+/// or a lambda argument there — the common case of a subquery that merely reuses the name
+/// locally, e.g. `(SELECT max(x) FROM (SELECT 1 AS x))` for the name `x`.
+///
+/// Whether a bare identifier resolves to a column of a table inside the subquery cannot be
+/// decided lexically: it needs the catalog, which is not available in this rewrite. So a name
+/// that is not bound by any of the constructs above is conservatively treated as referenced,
+/// and the composition fails cleanly instead of substituting into the subquery.
+bool subqueryReferencesIdentifier(const QueryTreeNodePtr & node, const String & name)
+{
+    NameSet bound_names;
+    collectNamesBoundInsideSubquery(node, bound_names);
+    if (bound_names.contains(name))
+        return false;
+
+    return containsIdentifier(node, name);
 }
 
 /// Replace free occurrences of the identifier `name` in the expression with (a clone of) the
@@ -210,14 +260,14 @@ void substituteIdentifier(QueryTreeNodePtr & node, const String & name, const Qu
             /// Placeholders inside a nested composition belong to its own operands: a nested
             /// composition rebinds them like a shadowing lambda, so a placeholder-named
             /// argument is never substituted into one. Any other name is an ordinary capture.
-            if (node->as<FunctionNode &>().getFunctionName() == "compose" && parsePlaceholderName(name))
+            if (node->as<FunctionNode &>().getFunctionName() == function_composition_name && parsePlaceholderName(name))
                 return;
             break;
         }
         case QueryTreeNodeType::QUERY:
         case QueryTreeNodeType::UNION:
         {
-            if (containsIdentifier(node, name))
+            if (subqueryReferencesIdentifier(node, name))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "A subquery inside an operand of the function composition operator `|` references {}, "
                     "which the composition would have to substitute into the subquery. This is not supported",
@@ -253,7 +303,7 @@ QueryTreeNodePtr normalizeOperandToLambda(
         case QueryTreeNodeType::FUNCTION:
         {
             const auto & function_operand = operand->as<FunctionNode &>();
-            if (function_operand.getFunctionName() == "compose")
+            if (function_operand.getFunctionName() == function_composition_name)
                 return fuseCompositionToLambda(function_operand, resolve_identifier_operand);
 
             if (collectFreePlaceholderNames(operand).empty())
@@ -263,6 +313,11 @@ QueryTreeNodePtr normalizeOperandToLambda(
         }
         case QueryTreeNodeType::IDENTIFIER:
         {
+            /// A bare placeholder is the identity function: `_1 | plus(_, 1)` is the same as
+            /// `(x -> x) | plus(_, 1)`.
+            if (tryGetPlaceholder(*operand))
+                return liftPlaceholdersToLambda(operand);
+
             /// The right operand is applied to exactly one value, so a variadic function name
             /// (e.g. toString) can be composed on the right; on the left the arity must be
             /// inferable from the function itself.
@@ -314,10 +369,22 @@ QueryTreeNodePtr liftPlaceholdersToLambda(const QueryTreeNodePtr & node)
     if (collector.anonymous_occurrences > 0)
     {
         /// Anonymous placeholders must be direct arguments of the call: at a deeper level
-        /// their left-to-right numbering would not be evident from the query text.
+        /// their left-to-right numbering would not be evident from the query text. The whole
+        /// expression being the placeholder itself is the identity function.
         auto * body_function = body->as<FunctionNode>();
         size_t direct_anonymous_occurrences = 0;
-        if (body_function)
+        if (auto body_placeholder = tryGetPlaceholder(*body); body_placeholder && *body_placeholder == 0)
+        {
+            if (body->as<IdentifierNode &>().getIdentifier().isCompound())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Member access on the anonymous argument placeholder `_` is not supported: {}. "
+                    "Use a numbered placeholder: `_1.name`",
+                    node->formatASTForErrorMessage());
+
+            direct_anonymous_occurrences = 1;
+            body = std::make_shared<IdentifierNode>(Identifier(placeholderName(1)));
+        }
+        else if (body_function)
         {
             for (auto & argument : body_function->getArguments().getNodes())
             {

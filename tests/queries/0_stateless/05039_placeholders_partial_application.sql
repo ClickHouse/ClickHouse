@@ -14,6 +14,11 @@ SELECT arrayMap(plus(5, _), [1, 3, 5]);
 SELECT arrayMap(concat(_, _), ['a', 'b'], ['x', 'y']);
 SELECT arrayMap(pow(_2, _1), [3, 2, 1], [9, 10, 11]);
 
+-- A bare placeholder is the identity lambda.
+SELECT arrayMap(_1, [1, 2, 3]);
+SELECT arrayMap(_, [1, 2, 3]);
+SELECT arrayFilter(_1, [0, 1, 0, 1]);
+
 -- A numbered placeholder can be repeated.
 SELECT arrayMap(multiply(_1, _1), [1, 2, 3]);
 

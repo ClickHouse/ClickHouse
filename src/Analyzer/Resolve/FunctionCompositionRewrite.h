@@ -5,12 +5,21 @@
 
 #include <functional>
 #include <optional>
+#include <string_view>
 
 namespace DB
 {
 
 class FunctionNode;
 class IdentifierNode;
+
+/** The internal name of the function node that the `f | g` operator parses into.
+  * It is deliberately not a name a user can write by accident, so the operator does not steal
+  * the public name `compose`: a built-in function or a user defined function named `compose`
+  * keeps working as an ordinary function. The parser (`ParserExpressionImpl::operators_table`)
+  * produces this name for the operator, and nothing else does.
+  */
+inline constexpr std::string_view function_composition_name = "__compose";
 
 /** Machinery behind the function composition operator `f | g` and the argument placeholders
   * `_`, `_1`, `_2`, ... Both are pure syntax sugar over lambdas and are resolved entirely at
@@ -26,7 +35,7 @@ class IdentifierNode;
 /** Collect the names of placeholder identifiers (`_` or `_N`) that occur free in an expression,
   * i.e. are not bound by an enclosing lambda inside the expression. The scan does not descend
   * into subqueries (placeholders are not supported there) and does not descend into nested
-  * `compose` nodes (their placeholders belong to their own operands).
+  * composition nodes (their placeholders belong to their own operands).
   *
   * A numbered placeholder is `_` followed by a positive integer without leading zeros.
   */
@@ -46,6 +55,11 @@ NameSet collectFreePlaceholderNames(const QueryTreeNodePtr & node);
   *   plus(5, _)     ->  _1 -> plus(5, _1)
   *   concat(_, _)   ->  (_1, _2) -> concat(_1, _2)
   *
+  * A bare placeholder is the identity function:
+  *
+  *   _1             ->  _1 -> _1
+  *   _              ->  _1 -> _1
+  *
   * Mixing anonymous and numbered placeholders in one expression is an error.
   */
 QueryTreeNodePtr liftPlaceholdersToLambda(const QueryTreeNodePtr & node);
@@ -58,7 +72,7 @@ QueryTreeNodePtr liftPlaceholdersToLambda(const QueryTreeNodePtr & node);
   */
 using ResolveIdentifierOperand = std::function<QueryTreeNodePtr(const IdentifierNode &, std::optional<size_t> required_arity)>;
 
-/** Fuse a `compose(f, g)` node (produced by the `f | g` operator) into a single unresolved
+/** Fuse a `__compose(f, g)` node (produced by the `f | g` operator) into a single unresolved
   * lambda `(args...) -> g(f(args...))` by substituting the body of `f` for the argument of `g`.
   *
   * Operands are normalized to lambdas first: explicit lambdas are taken as is, expressions
