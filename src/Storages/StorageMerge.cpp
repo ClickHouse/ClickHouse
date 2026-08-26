@@ -1410,6 +1410,45 @@ private:
     TableExpressionNodePtr replacement_table_expression;
 };
 
+/// Replaces every reference to the given columns of the child table expression by a fixed node,
+/// including the references inside subqueries.
+///
+/// `replaceColumns` deliberately stops at `QUERY`/`UNION` boundaries, so a correlated reference to
+/// a Merge virtual column - e.g. `WHERE EXISTS (SELECT 1 WHERE _table = 't')` - would keep its
+/// `ColumnNode` and be evaluated by the child itself. A delegating child evaluates it against the
+/// storage that eventually reads the rows, which is exactly the name the Merge virtual columns must
+/// not report.
+class ReplaceColumnsEverywhereVisitor : public InDepthQueryTreeVisitor<ReplaceColumnsEverywhereVisitor>
+{
+public:
+    ReplaceColumnsEverywhereVisitor(
+        QueryTreeNodePtr table_expression_node_,
+        std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node_)
+        : table_expression_node(std::move(table_expression_node_))
+        , column_name_to_node(std::move(column_name_to_node_))
+    {}
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return;
+
+        if (column_node->getColumnSourceOrNull() != table_expression_node)
+            return;
+
+        auto node_it = column_name_to_node.find(column_node->getColumnName());
+        if (node_it == column_name_to_node.end())
+            return;
+
+        node = node_it->second;
+    }
+
+private:
+    QueryTreeNodePtr table_expression_node;
+    std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
+};
+
 QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     QueryTreeNodePtr query,
     TableExpressionNodePtr original_table_expression,
@@ -1566,6 +1605,11 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         /// column referenced only by a filter is not requested at stages above `FetchColumns`,
         /// yet its references in the query tree are exactly the ones that must see the constant.
         /// `replaceColumns` does nothing when the query does not reference the column.
+        ///
+        /// A correlated reference from inside a subquery is replaced too, by a bare constant: it is
+        /// not part of the child plan header, so it needs no pinned action name.
+        std::unordered_map<std::string, QueryTreeNodePtr> virtual_column_name_to_constant;
+
         auto add_child_name_constant = [&](const String & column_name, const String & value)
         {
             if (!merge_storage_snapshot->metadata->isVirtualColumn(column_name))
@@ -1575,11 +1619,12 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             auto action_name_node = std::make_shared<ConstantNode>("__table1." + column_name);
 
             auto function_node = std::make_shared<FunctionNode>("__actionName");
-            function_node->getArguments().getNodes().push_back(std::move(value_node));
+            function_node->getArguments().getNodes().push_back(value_node);
             function_node->getArguments().getNodes().push_back(std::move(action_name_node));
             function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", modified_context));
 
             column_name_to_node.emplace(column_name, std::move(function_node));
+            virtual_column_name_to_constant.emplace(column_name, std::move(value_node));
         };
 
         add_child_name_constant("_database", database_name);
@@ -1683,6 +1728,14 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             replaceColumns(modified_query_info.query_tree,
                 replacement_table_expression,
                 column_name_to_node);
+        }
+
+        /// `replaceColumns` does not descend into subqueries, and a correlated reference to a Merge
+        /// virtual column must see the child's name as well.
+        if (!virtual_column_name_to_constant.empty())
+        {
+            ReplaceColumnsEverywhereVisitor visitor(replacement_table_expression, std::move(virtual_column_name_to_constant));
+            visitor.visit(modified_query_info.query_tree);
         }
 
         modified_query_info.query = queryNodeToSelectQuery(modified_query_info.query_tree);

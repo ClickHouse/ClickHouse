@@ -35,7 +35,11 @@ SELECT DISTINCT _table, _database = currentDatabase() FROM m_over_dist;
 SELECT DISTINCT _table FROM m_over_dist SETTINGS enable_analyzer = 0;
 
 SELECT '-- a remote GROUP BY over the virtual column';
-SELECT _table, count() FROM m_over_dist GROUP BY _table;
+-- Only the value of the grouping key is under test here - it must be the child's name, not the
+-- remote table's, and it must survive the shard-side `GROUP BY`. Whether the initiator merges the
+-- shards' partial aggregates into one row or returns them separately depends on the plan the
+-- distributed aggregation picks, so the counts are summed up again above the `Merge`.
+SELECT _table, sum(c) FROM (SELECT _table, count() AS c FROM m_over_dist GROUP BY _table) GROUP BY _table;
 
 SELECT '-- a filter on the child name keeps all rows, both analyzers';
 SELECT count() FROM m_over_dist WHERE _table = 't_dist';
@@ -64,6 +68,15 @@ CREATE TABLE t_buf AS t_leaf
 CREATE TABLE m_over_buf (s String) ENGINE = Merge(currentDatabase(), '^t_buf$');
 SELECT DISTINCT _table FROM m_over_buf;
 SELECT count() FROM m_over_buf WHERE _table = 't_buf';
+
+-- A correlated reference has to be qualified, otherwise `_table` resolves against the subquery's
+-- own table. A `Distributed` child is not covered: correlated subqueries are rejected outright for
+-- remote tables.
+SELECT '-- a correlated subquery over the virtual column also sees the child name';
+SELECT count() FROM m_outer WHERE EXISTS (SELECT 1 FROM numbers(1) WHERE m_outer._table = 'm_inner') SETTINGS enable_analyzer = 1;
+SELECT count() FROM m_outer WHERE EXISTS (SELECT 1 FROM numbers(1) WHERE m_outer._table = 't_leaf') SETTINGS enable_analyzer = 1;
+SELECT count() FROM m_over_buf WHERE EXISTS (SELECT 1 FROM numbers(1) WHERE m_over_buf._table = 't_buf') SETTINGS enable_analyzer = 1;
+SELECT count() FROM m_over_buf WHERE EXISTS (SELECT 1 FROM numbers(1) WHERE m_over_buf._table = 't_leaf') SETTINGS enable_analyzer = 1;
 
 SELECT '-- same-structure children never share a rewritten query that carries one child name';
 CREATE TABLE t_a (x UInt8) ENGINE = MergeTree ORDER BY x;
