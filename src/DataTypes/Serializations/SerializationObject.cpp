@@ -158,8 +158,9 @@ struct SerializeBinaryBulkStateObject: public ISerialization::SerializeBinaryBul
     /// If true, statistics will be recalculated during serialization.
     bool recalculate_statistics = false;
 
-    /// For flattened serialization only.
-    std::vector<std::pair<String, ColumnPtr>> flattened_paths;
+    /// For flattened serialization only. string_views reference path data inside the Object column
+    /// (shared data paths and dynamic paths map keys), which stays alive during serialization.
+    std::vector<std::pair<std::string_view, ColumnPtr>> flattened_paths;
 
     explicit SerializeBinaryBulkStateObject(SerializationObject::SerializationVersion serialization_version_)
         : serialization_version(serialization_version_)
@@ -370,7 +371,7 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
         {
             settings.path.push_back(Substream::ObjectDynamicPath);
             settings.path.back().object_path_name = path;
-            dynamic_serialization->serializeBinaryBulkStatePrefix(*path_column, settings, object_state->dynamic_path_states[path]);
+            dynamic_serialization->serializeBinaryBulkStatePrefix(*path_column, settings, object_state->dynamic_path_states[String(path)]);
             settings.path.pop_back();
         }
         settings.path.pop_back();
@@ -903,7 +904,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         {
             settings.path.push_back(Substream::ObjectDynamicPath);
             settings.path.back().object_path_name = path;
-            dynamic_serialization->serializeBinaryBulkWithMultipleStreams(*path_column, offset, limit, settings, object_state->dynamic_path_states[path]);
+            dynamic_serialization->serializeBinaryBulkWithMultipleStreams(*path_column, offset, limit, settings, object_state->dynamic_path_states[String(path)]);
             settings.path.pop_back();
         }
 
@@ -1022,7 +1023,7 @@ void SerializationObject::serializeBinaryBulkStateSuffix(
         {
             settings.path.push_back(Substream::ObjectDynamicPath);
             settings.path.back().object_path_name = path;
-            dynamic_serialization->serializeBinaryBulkStateSuffix(settings, object_state->dynamic_path_states[path]);
+            dynamic_serialization->serializeBinaryBulkStateSuffix(settings, object_state->dynamic_path_states[String(path)]);
             settings.path.pop_back();
         }
 
@@ -1448,14 +1449,19 @@ SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB
     return SerializationObjectTypedPath::create(prev, path);
 }
 
-void SerializationObject::updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const
+void SerializationObject::updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings)
 {
-    if (!format_settings.json.max_dynamic_subcolumns_in_json_type_parsing || !column.empty())
+    if (!format_settings.json.max_dynamic_subcolumns_in_json_type_parsing)
         return;
 
+    /// Not restricted to an empty column: rows inserted before the first parsed object (a default for
+    /// an absent field, a null) must not stop the limit from being applied.
     auto & column_object = assert_cast<ColumnObject &>(column);
-    if (*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing < column_object.getMaxDynamicPaths())
-        column_object.setMaxDynamicPaths(*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing);
+    /// Lower the upper bound and not just max_dynamic_paths, otherwise aggregating the parsed data
+    /// raises the limit back.
+    size_t limit = *format_settings.json.max_dynamic_subcolumns_in_json_type_parsing;
+    if (limit < column_object.getMaxDynamicPathsUpperBound() && limit >= column_object.getDynamicPaths().size())
+        column_object.setMaxDynamicPathsUpperBound(limit);
 }
 
 }

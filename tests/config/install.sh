@@ -147,6 +147,7 @@ ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/config.d/transactions_info_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/silk.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
@@ -224,7 +225,10 @@ ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/con
 ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
 function is_sanitizer_build()
 {
-    [ "$(clickhouse local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
+    # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). Do not test for
+    # -fsanitize=, which also matches CFI (cfi-vcall, cfi-derived-cast): its checks trap on a bad
+    # vcall or cast without a sanitizer runtime, so symbolization runs at full speed.
+    [ "$(clickhouse local --query "SELECT value LIKE '%-DSANITIZER%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
 }
 if is_sanitizer_build; then
     ln -sf $SRC_PATH/config.d/trace_log_no_symbolize.xml $DEST_SERVER_PATH/config.d/
@@ -283,6 +287,13 @@ ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
+# The http_allow_* settings are introduced by this feature and are not present in any
+# released version yet: 26.7 was released without them, so gate on 26.8 (the first version
+# that can contain them) to keep the previous-release server of the upgrade check bootable.
+if check_clickhouse_version 26.8; then
+    ln -sf $SRC_PATH/users.d/http_paths.xml $DEST_SERVER_PATH/users.d/
+    ln -sf $SRC_PATH/config.d/http_url_prefix.xml $DEST_SERVER_PATH/config.d/
+fi
 if check_clickhouse_version 26.1; then
     ln -sf $SRC_PATH/users.d/distributed_index_analysis.yaml $DEST_SERVER_PATH/users.d/
 fi
@@ -372,8 +383,8 @@ echo "Replacing create_snapshot_on_exit with $value_create_snapshot_on_exit"
 value_latest_logs_cache_size_threshold=$(((RANDOM + 100) * 2048))
 echo "Replacing latest_logs_cache_size_threshold with $value_latest_logs_cache_size_threshold"
 
-value_commit_logs_cache_size_threshold=$(((RANDOM + 100) * 2048))
-echo "Replacing commit_logs_cache_size_threshold with $value_commit_logs_cache_size_threshold"
+value_log_readahead_commit_window_bytes=$(((RANDOM + 100) * 2048))
+echo "Replacing log_readahead_commit_window_bytes with $value_log_readahead_commit_window_bytes"
 
 value=$((RANDOM % 2))
 echo "Replacing digest_enabled_on_commit with $value"
@@ -383,7 +394,7 @@ echo "Replacing nuraft_use_bg_thread_for_snapshot_io with $value_nuraft_use_bg_t
 
 sed -E "s|<create_snapshot_on_exit>[01]</create_snapshot_on_exit>|<create_snapshot_on_exit>$value_create_snapshot_on_exit</create_snapshot_on_exit>|; \
     s|<latest_logs_cache_size_threshold>[[:digit:]]+</latest_logs_cache_size_threshold>|<latest_logs_cache_size_threshold>$value_latest_logs_cache_size_threshold</latest_logs_cache_size_threshold>|; \
-    s|<commit_logs_cache_size_threshold>[[:digit:]]+</commit_logs_cache_size_threshold>|<commit_logs_cache_size_threshold>$value_commit_logs_cache_size_threshold</commit_logs_cache_size_threshold>|; \
+    s|<log_readahead_commit_window_bytes>[[:digit:]]+</log_readahead_commit_window_bytes>|<log_readahead_commit_window_bytes>$value_log_readahead_commit_window_bytes</log_readahead_commit_window_bytes>|; \
     s|<digest_enabled_on_commit>[01]</digest_enabled_on_commit>|<digest_enabled_on_commit>$value</digest_enabled_on_commit>|; \
     s|<nuraft_use_bg_thread_for_snapshot_io>[01]</nuraft_use_bg_thread_for_snapshot_io>|<nuraft_use_bg_thread_for_snapshot_io>$value_nuraft_use_bg_thread_for_snapshot_io</nuraft_use_bg_thread_for_snapshot_io>|" \
     $SRC_PATH/config.d/keeper_port.xml > $DEST_SERVER_PATH/config.d/keeper_port.xml
@@ -569,6 +580,7 @@ if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 || "$PREVIOUS_RELEASE_CONFIG" -eq 1 ]]; the
     }
 
     remove_keeper_config "nuraft_use_bg_thread_for_snapshot_io" "[[:digit:]]\+"
+    remove_keeper_config "log_readahead_commit_window_bytes" "[[:digit:]]\+"
 fi
 
 if [[ $REMOTE_DATABASE_DISK -eq 1 ]]; then

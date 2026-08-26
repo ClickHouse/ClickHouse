@@ -140,7 +140,8 @@ void StorageObjectStorageConfiguration::initialize(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
         }
     }
-    else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+    else if (!configuration_to_initialize.partition_strategy_was_set
+        && configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
         && configuration_to_initialize.getRawPath().hasPartitionWildcard()
         && local_context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value
             == FileLikeEngineDefaultPartitionStrategy::WILDCARD)
@@ -196,13 +197,33 @@ void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
 
 void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
+    /// An explicit `partition_strategy = 'none'` contradicts a `{_partition_id}` placeholder in
+    /// the path: only the `wildcard` strategy substitutes the placeholder, so under `none` it
+    /// would be read and written literally. Reject the definition, but only on `CREATE`: loading
+    /// from existing metadata must not throw, since that would abort server startup.
+    if (is_create_query
+        && partition_by
+        && partition_strategy_was_set
+        && partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+        && getRawPath().hasPartitionWildcard())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Partition strategy 'none' can not be used with a path containing a '{{_partition_id}}' placeholder; "
+            "use the 'wildcard' strategy or remove the placeholder from the path");
+    }
+
     /// Data lake engines (Iceberg, Delta Lake, etc.) implement their own partitioning and
     /// do not use the file-like `partition_strategy`. Skip applying a default strategy here.
     /// Also skip when there is no `PARTITION BY` - there is no strategy to apply, but we still
     /// fall through to `PartitionStrategyFactory::get` so that consistency checks (e.g. explicit
     /// `partition_columns_in_data_file = 0` combined with strategy `none`) keep raising.
-    if (partition_by && partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE && !isDataLakeConfiguration())
+    if (partition_by
+        && !partition_strategy_was_set
+        && partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+        && !isDataLakeConfiguration())
     {
+        partition_strategy_was_inferred = true;
         if (getRawPath().hasPartitionWildcard())
         {
             /// A `{_partition_id}` placeholder in the path is valid only under the `wildcard`
@@ -214,37 +235,32 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
             /// An explicit `partition_strategy = 'hive'` still rejects such paths.
             partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
         }
-        else if (!is_create_query)
+        else if (!getRawPath().hasGlobsIgnorePlaceholders())
         {
-            /// Backward compatibility on ATTACH / server startup / RESTORE / replicated-DDL replay:
-            /// for a table loaded from existing metadata the implicit strategy is deterministically
-            /// recoverable from the path alone, because the two strategies are mutually exclusive on
-            /// path shape — wildcard REQUIRES `{_partition_id}` in the path, hive FORBIDS it. Consulting
-            /// the mutable `file_like_engine_default_partition_strategy` default here instead would
-            /// refuse to load legitimately created tables whenever the default has changed since
-            /// creation (e.g. implicit-hive tables loaded under a `wildcard` default after a
-            /// downgrade), aborting server startup and breaking upgrades. Only a user-issued
-            /// `CREATE` applies the default.
-            partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
-        }
-        else
-        {
-            switch (context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
+            if (!is_create_query)
             {
-                case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
+                /// Backward compatibility on ATTACH / server startup / RESTORE / replicated-DDL replay:
+                /// derive the implicit strategy from the path rather than from the mutable default.
+                partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
+            }
+            else
+            {
+                switch (context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
                 {
-                    /// The path has no `{_partition_id}` placeholder (checked above), so
-                    /// `PartitionStrategyFactory::get` will raise `BAD_ARGUMENTS`.
-                    partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
-                    break;
-                }
-                case FileLikeEngineDefaultPartitionStrategy::HIVE:
-                {
-                    partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
-                    break;
+                    case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
+                    {
+                        /// Without `{_partition_id}`, preserve the pre-26.6 `NONE` strategy.
+                        break;
+                    }
+                    case FileLikeEngineDefaultPartitionStrategy::HIVE:
+                    {
+                        partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
+                        break;
+                    }
                 }
             }
         }
+        /// Globbed paths without `{_partition_id}` remain `NONE`, as they did before 26.6.
 
         /// The default for `partition_columns_in_data_file` was computed at parse time against
         /// `partition_strategy_type == NONE`. Recompute it now that the effective strategy is known,
@@ -376,6 +392,7 @@ void StorageObjectStorageConfiguration::initializeFromParsedArguments(const Stor
     compression_method = parsed_arguments.compression_method;
     structure = parsed_arguments.structure;
     partition_strategy_type = parsed_arguments.partition_strategy_type;
+    partition_strategy_was_set = parsed_arguments.partition_strategy_was_set;
     partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;
     partition_columns_in_data_file_was_set = parsed_arguments.partition_columns_in_data_file_was_set;
     partition_strategy = parsed_arguments.partition_strategy;

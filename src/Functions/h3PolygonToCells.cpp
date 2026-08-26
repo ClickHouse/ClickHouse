@@ -108,10 +108,10 @@ public:
 
         const auto & data_resolution = col_resolution->getData();
 
-        auto dst = ColumnArray::create(ColumnUInt64::create());
-        auto & dst_data = dst->getData();
-        auto & dst_offsets = dst->getOffsets();
-        dst_offsets.resize(input_rows_count);
+        auto dst_data_column = ColumnUInt64::create();
+        auto dst_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
+        auto & dst_data = *dst_data_column;
+        auto & dst_offsets = dst_offsets_column->getData();
 
         size_t current_offset = 0;
 
@@ -222,7 +222,8 @@ public:
                             "Failed to compute H3 polygon to cells in function {}: {}",
                             getName(), describeH3Error(fill_err));
 
-                    dst_data.reserve(dst_data.size() + vec_size);
+                    /// Go through PODArray::reserve: it grows capacity geometrically, IColumn::reserve sizes it exactly.
+                    dst_data.getData().reserve(dst_data.size() + vec_size);
                     for (auto hindex : hindex_vec)
                     {
                         if (hindex != 0)
@@ -243,7 +244,7 @@ public:
             }
         });
 
-        return dst;
+        return ColumnArray::create(std::move(dst_data_column), std::move(dst_offsets_column));
     }
 
 private:

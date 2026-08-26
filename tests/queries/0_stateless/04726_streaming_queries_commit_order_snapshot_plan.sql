@@ -7,6 +7,10 @@ SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET enable_streaming_queries = 1;
 
+-- This test inspects the plan shape and index pruning of the `commit_order` projection read,
+-- so pin the unrelated virtual row optimization off.
+SET read_in_order_use_virtual_row = 0;
+
 DROP TABLE IF EXISTS t_commit_order_snapshot SYNC;
 
 CREATE TABLE t_commit_order_snapshot

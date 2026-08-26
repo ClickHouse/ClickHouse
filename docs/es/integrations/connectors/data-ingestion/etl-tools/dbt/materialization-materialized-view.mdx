@@ -11,7 +11,7 @@ import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupp
 
 <ClickHouseSupportedBadge />
 
-La materialización `materialized_view` debe ser un `SELECT` sobre una tabla de origen existente. A diferencia de PostgreSQL, una vista materializada de ClickHouse no es &quot;estática&quot; (y no tiene una operación REFRESH equivalente). En cambio, actúa como un **disparador de inserción**: inserta nuevas filas en una tabla de destino aplicando la transformación `SELECT` definida a las filas que se insertan en la tabla de origen. Consulta la [documentación sobre vistas materializadas de ClickHouse](/es/concepts/features/materialized-views/index) para obtener más información sobre cómo funcionan las vistas materializadas en ClickHouse.
+La materialización `materialized_view` debe ser un `SELECT` sobre una tabla de origen existente. A diferencia de PostgreSQL, una vista materializada de ClickHouse no es &quot;estática&quot; (y no tiene una operación REFRESH equivalente). En cambio, actúa como un **desencadenador de inserción**: inserta nuevas filas en una tabla de destino aplicando la transformación `SELECT` definida a las filas que se insertan en la tabla de origen. Consulta la [documentación sobre vistas materializadas de ClickHouse](/es/concepts/features/materialized-views/index) para obtener más información sobre cómo funcionan las vistas materializadas en ClickHouse.
 
 <Note>
   Para consultar los conceptos generales de materialización y las configuraciones compartidas (engine, order&#95;by, partition&#95;by, etc.), consulta la página [Materializaciones](/es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).

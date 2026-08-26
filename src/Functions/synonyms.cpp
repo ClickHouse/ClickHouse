@@ -94,14 +94,14 @@ public:
         /// Create and fill the result array.
         const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*result_type).getNestedType();
 
-        auto out = ColumnArray::create(elem_type->createColumn());
-        IColumn & out_data = out->getData();
-        IColumn::Offsets & out_offsets = out->getOffsets();
+        auto out_data_column = elem_type->createColumn();
+        auto out_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
+        IColumn & out_data = *out_data_column;
+        IColumn::Offsets & out_offsets = out_offsets_column->getData();
 
         const ColumnString::Chars & data = word_col->getChars();
         const ColumnString::Offsets & offsets = word_col->getOffsets();
         out_data.reserve(input_rows_count);
-        out_offsets.resize(input_rows_count);
 
         IColumn::Offset current_offset = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -120,7 +120,7 @@ public:
             out_offsets[i] = current_offset;
         }
 
-        return out;
+        return ColumnArray::create(std::move(out_data_column), std::move(out_offsets_column));
     }
 };
 
@@ -154,7 +154,7 @@ The thesaurus must contain a WordNet sense index.
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns array of synonyms for the given word.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
-        {"Find synonyms", "SELECT synonyms('list', 'important')", "['important','big','critical','crucial']"}
+        {"Find synonyms", "SET allow_experimental_nlp_functions = 1;\nSELECT synonyms('en', 'important')", "['important','big','critical','crucial','essential']"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
