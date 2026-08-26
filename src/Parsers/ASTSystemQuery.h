@@ -83,8 +83,6 @@ public:
         RELOAD_DICTIONARIES,
         UNLOAD_DICTIONARY,
         UNLOAD_DICTIONARIES,
-        RELOAD_MODEL,
-        RELOAD_MODELS,
         RELOAD_FUNCTION,
         RELOAD_FUNCTIONS,
         RELOAD_EMBEDDED_DICTIONARIES,
@@ -185,7 +183,6 @@ public:
     void setDatabase(const String & name);
     void setTable(const String & name);
 
-    String target_model;
     String target_function;
     String replica;
     String shard;
