@@ -13,8 +13,10 @@ SETTINGS index_granularity_bytes = 0, index_granularity = 18446744073709551615, 
 
 INSERT INTO t_granularity_near_max SELECT number FROM numbers(10);
 
-SELECT 'written', count(), sum(x) FROM t_granularity_near_max SETTINGS optimize_trivial_count_query = 0;
-SELECT 'read', x FROM t_granularity_near_max ORDER BY x;
+-- Pinned local: a replica-side read still holding the table makes the `ATTACH` below fail.
+SELECT 'written', count(), sum(x) FROM t_granularity_near_max
+SETTINGS optimize_trivial_count_query = 0, enable_parallel_replicas = 0;
+SELECT 'read', x FROM t_granularity_near_max ORDER BY x SETTINGS enable_parallel_replicas = 0;
 
 -- Reloading the table must see the same rows the insert wrote.
 DETACH TABLE t_granularity_near_max;
@@ -40,11 +42,12 @@ SELECT 'skip index, filtered', count(), sum(y) FROM t_skip_granularity_near_max 
 -- above. The settings keep that path armed while the suite randomizes them.
 SELECT 'skip index, top-K read', y FROM t_skip_granularity_near_max ORDER BY y LIMIT 1
 SETTINGS max_block_size = 64, max_threads = 1, use_skip_indexes_on_data_read = 1,
-         use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1;
+         use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1,
+         enable_parallel_replicas = 0;
 
--- That part's single index granule starts at the smallest value in it, so a top-K threshold can never
--- exclude it, and no row or mark count separates a read that consulted the granules from one that did
--- not. This arm therefore asserts only that the granule filter is selected for the shape.
+-- That granule starts at the part's smallest value, so a top-K threshold can never exclude it, and no
+-- row or mark count separates a read that consulted the granules from one that did not. This arm only
+-- asserts the granule filter is selected for `MergeTreeDataSelectExecutor::getMinMaxIndexGranules`.
 SELECT 'skip index, top-K granule filter', countIf(explain LIKE '%Filter TopK Granules%')
 FROM (EXPLAIN indexes = 1 SELECT y FROM t_skip_granularity_near_max ORDER BY y LIMIT 1
       SETTINGS max_block_size = 64, max_threads = 1, use_skip_indexes_on_data_read = 1,
@@ -102,7 +105,8 @@ INSERT INTO t_reverse_granularity_near_max SELECT number FROM numbers(4096);
 -- Splitting the mark ranges of a reverse read must terminate. The memory limit bounds a
 -- non-terminating split, so it fails instead of running until the server is out of memory.
 SELECT 'reverse', x FROM t_reverse_granularity_near_max ORDER BY x DESC LIMIT 3
-SETTINGS optimize_read_in_order = 1, max_threads = 1, max_memory_usage = 200000000;
+SETTINGS optimize_read_in_order = 1, max_threads = 1, max_memory_usage = 200000000,
+         enable_parallel_replicas = 0;
 
 -- An ordinary sort returns those three rows as well, so this asserts that the plan which produced
 -- them is the one that splits mark ranges backwards.
