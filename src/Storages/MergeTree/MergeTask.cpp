@@ -1059,10 +1059,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             /// No rows at all, so nothing can be unexpired.
             if (part->isEmpty())
                 continue;
-            /// A finished table TTL was itself computed on a completely expired part, and
-            /// updatePartMinMaxTTL() skips such infos, leaving part_max_ttl at 0.
-            if (part->ttl_infos.table_ttl.finished())
-                continue;
             const time_t part_max_ttl = part->ttl_infos.part_max_ttl;
             if (!part_max_ttl || part_max_ttl > global_ctx->time_of_merge)
                 return false;
