@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <filesystem>
 #include <mutex>
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
@@ -11,6 +12,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <Storages/MergeTree/SharedPartColumns.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
@@ -22,7 +24,8 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
-#include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
+#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
+#include <Storages/MergeTree/PartDirIntent.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Statistics/Statistics.h>
@@ -48,6 +51,43 @@ struct FutureMergedMutatedPart;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
+/// Move-only owner of a reference to an interned `SharedPartColumns` bundle.
+///
+/// A reference can be obtained only from `MergeTreeData::getSharedPartColumnsForColumns` (this
+/// holder's constructor is private) and is returned to the per-table cache only by this holder's
+/// destructor or move-assignment (the sole caller of `MergeTreeData::releaseSharedPartColumns`).
+/// That makes the cache's reference accounting - and therefore the eviction of entries no part
+/// uses anymore - impossible to bypass from part code: a reference cannot be duplicated (the holder
+/// is non-copyable and the part is non-copyable), leaked, or hand-released. A default/moved-from
+/// holder owns the shared empty sentinel bundle and releases nothing.
+class SharedPartColumnsHolder
+{
+public:
+    SharedPartColumnsHolder() = default;
+    SharedPartColumnsHolder(SharedPartColumnsHolder && other) noexcept { *this = std::move(other); }
+    SharedPartColumnsHolder & operator=(SharedPartColumnsHolder && other) noexcept;
+    ~SharedPartColumnsHolder();
+
+    const SharedPartColumns & operator*() const { return *bundle; }
+    const SharedPartColumns * operator->() const { return bundle.get(); }
+    const SharedPartColumns * get() const { return bundle.get(); }
+
+private:
+    friend class MergeTreeData;
+    SharedPartColumnsHolder(const MergeTreeData & storage_, SharedPartColumnsPtr bundle_)
+        : storage(&storage_), bundle(std::move(bundle_))
+    {
+        bundle->onPartAcquire();
+    }
+
+    void release() noexcept;
+
+    const MergeTreeData * storage = nullptr;
+    SharedPartColumnsPtr bundle = SharedPartColumns::getEmpty();
+};
+
+static_assert(!std::is_copy_constructible_v<SharedPartColumnsHolder>, "a bundle reference must not be duplicable");
+
 class IMergeTreeReader;
 class MarkCache;
 class UncompressedCache;
@@ -65,6 +105,8 @@ class DeleteBitmapCache;
 using DeleteBitmapCachePtr = std::shared_ptr<DeleteBitmapCache>;
 
 class VersionMetadata;
+class WriteBuffer;
+class ReadBuffer;
 enum class DataPartRemovalState : uint8_t
 {
     NOT_ATTEMPTED,
@@ -91,7 +133,7 @@ public:
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using ColumnSizeByNameConstPtr = std::shared_ptr<const ColumnSizeByName>;
-    using NameToNumber = std::unordered_map<std::string, size_t>;
+    using NameToNumber = SharedPartColumns::NameToNumber;
 
     using Index = Columns;
     using IndexPtr = std::shared_ptr<const Index>;
@@ -108,7 +150,7 @@ public:
         const MutableDataPartStoragePtr & data_part_storage_,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_,
-        bool part_may_exist_on_disk = true);
+        PartDirIntent intent);
 
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;
@@ -163,7 +205,7 @@ public:
 
     /// Re-home the small, part-lifetime metadata that build paths may populate outside the
     /// dedicated MergeTree arena (`partition`, `ttl_infos`, `expired_columns`, and for patch parts
-    /// `source_parts_set`) into that arena. A cheap copy of small objects; call once these members
+    /// `patch_part_index`) into that arena. A cheap copy of small objects; call once these members
     /// are final. `columns` / `serializations` are handled by `setColumns`, the minmax index by
     /// `setMinMaxIndex` / the population sites.
     void moveMetadataToDedicatedArena();
@@ -173,10 +215,10 @@ public:
     void setMetadataVersion(int32_t metadata_version_) noexcept { metadata_version = metadata_version_; }
     void writeMetadataVersion(ContextPtr local_context, int32_t metadata_version, bool sync);
 
-    const NamesAndTypesList & getColumns() const { return columns; }
-    const ColumnsDescription & getColumnsDescription() const { return *columns_description; }
-    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return *columns_description_with_collected_nested; }
-    const ColumnsSubstreams & getColumnsSubstreams() const { return columns_substreams; }
+    const NamesAndTypesList & getColumns() const { return shared_part_columns->columns; }
+    const ColumnsDescription & getColumnsDescription() const { return *shared_part_columns->columns_description; }
+    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return *shared_part_columns->columns_description_with_collected_nested; }
+    const ColumnsSubstreams & getColumnsSubstreams() const { return *columns_substreams; }
     StorageMetadataPtr getMetadataSnapshot() const;
 
     NameAndTypePair getColumn(const String & name) const;
@@ -188,7 +230,7 @@ public:
 
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
 
-    const SerializationByName & getSerializations() const { return serializations; }
+    const PartSerializations & getSerializations() const { return *serializations; }
 
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
@@ -236,7 +278,7 @@ public:
     /// take place, you must take original name of column for this part from
     /// storage and pass it to this method.
     std::optional<size_t> getColumnPosition(const String & column_name) const;
-    const NameToNumber & getColumnPositions() const { return column_name_to_position; }
+    const NameToNumber & getColumnPositions() const { return shared_part_columns->column_name_to_position; }
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
@@ -290,14 +332,14 @@ public:
     /// to help avoid communication with keeper when temporary part is deleting.
     /// The common procedure is to ask the keeper with unlock request to release a references to the blobs.
     /// And then follow the keeper answer decide remove or preserve the blobs in that part from s3.
-    /// However in some special cases Clickhouse can make a decision without asking keeper.
+    /// However in some special cases ClickHouse can make a decision without asking keeper.
     enum class BlobsRemovalPolicyForTemporaryParts : uint8_t
     {
         /// decision about removing blobs is determined by keeper, the common case
         ASK_KEEPER,
-        /// is set when Clickhouse is sure that the blobs in the part are belong only to it, other replicas have not seen them yet
+        /// is set when ClickHouse is sure that the blobs in the part are belong only to it, other replicas have not seen them yet
         REMOVE_BLOBS,
-        /// is set when Clickhouse is sure that the blobs belong to other replica and current replica has not locked them on s3 yet
+        /// is set when ClickHouse is sure that the blobs belong to other replica and current replica has not locked them on s3 yet
         PRESERVE_BLOBS,
         /// remove blobs even if the part is not temporary
         REMOVE_BLOBS_OF_NOT_TEMPORARY,
@@ -394,6 +436,12 @@ public:
 
         void update(const Block & block, const NamesAndTypesList & columns);
         void merge(const MinMaxIndex & other);
+
+        /// Repair the block column ranges of an index inherited from `source_part` when that part does not
+        /// know them: grow the index to the current set of minmax columns and re-derive the ranges of
+        /// `_block_number` / `_block_offset` that came back as the whole universe. See the implementation
+        /// for when each range is recoverable. No-op for an uninitialized index, projection and patch parts.
+        void repairInheritedBlockColumns(const IMergeTreeDataPart & source_part, const StorageMetadataPtr & metadata_snapshot);
         Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
         /// For Store
         static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
@@ -418,6 +466,14 @@ public:
 
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
+
+    NameSet invalidated_system_columns;
+    bool isSystemColumnInvalidated(const String & column_name) const;
+    static void writeInvalidatedSystemColumns(WriteBuffer & out, const NameSet & columns);
+    static NameSet readInvalidatedSystemColumns(ReadBuffer & in);
+    static void writeInvalidatedSystemColumnsFile(IDataPartStorage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
+    static void writeInvalidatedSystemColumnsFile(IDisk & disk, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
+    static void writeInvalidatedSystemColumnsFile(IDiskTransaction & transaction, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
 
     CompressionCodecPtr default_codec;
 
@@ -518,8 +574,8 @@ public:
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
-    void setSourcePartsSet(SourcePartsSetForPatch source_parts_set_) { source_parts_set = std::move(source_parts_set_); }
-    const SourcePartsSetForPatch & getSourcePartsSet() const { return source_parts_set; }
+    void setPatchPartIndex(PatchPartIndex patch_part_index_);
+    const PatchPartIndex & getPatchPartIndex() const;
 
     /// Check if the part is in the `/moving` directory
     bool isMovingPart() const;
@@ -529,8 +585,8 @@ public:
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
-    MergeTreeDataPartBuilder
-    getProjectionPartBuilder(const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection = false);
+    MergeTreeDataPartBuilder getProjectionPartBuilder(
+        const String & projection_name, ProjectionDescriptionRawPtr projection, PartDirIntent intent, bool is_temp_projection = false);
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 
@@ -590,6 +646,9 @@ public:
     static constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
     static constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
+
+    /// File that lists persisted system columns whose stored values became stale.
+    static constexpr auto INVALIDATED_SYSTEM_COLUMNS_FILE_NAME = "invalidated_system_columns.txt";
 
     /// One of part files which is used to check how many references (I'd like
     /// to say hardlinks, but it will confuse even more) we have for the part
@@ -762,12 +821,6 @@ protected:
     UInt64 bytes_on_disk{0};
     UInt64 bytes_uncompressed_on_disk{0};
 
-    /// Columns description. Cannot be changed, after part initialization.
-    NamesAndTypesList columns;
-
-    /// List of substreams in order of serialization/deserialization for each column.
-    ColumnsSubstreams columns_substreams;
-
     const Type part_type;
 
     /// Not null when it's a projection part.
@@ -776,8 +829,8 @@ protected:
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    /// Set of source parts for patch parts. Empty for regular parts.
-    SourcePartsSetForPatch source_parts_set;
+    /// Index of source parts covered by a patch part. Non-empty only for patch parts.
+    std::optional<PatchPartIndex> patch_part_index;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
@@ -800,30 +853,33 @@ protected:
     /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
 
-    void initializeIndexGranularityInfo(const MergeTreeSettings & storage_settings);
-
     virtual void doCheckConsistency(bool require_part_metadata) const;
 
 private:
     String mutable_name;
     mutable std::atomic<MergeTreeDataPartState> state{MergeTreeDataPartState::Temporary};
 
-    /// In compact parts order of columns is necessary
-    NameToNumber column_name_to_position;
+    /// Schema-derived metadata shared with all other parts of the table that store the same
+    /// columns: the column list, the name-to-position map (in compact parts order of columns
+    /// is necessary) and the columns descriptions (for more convenient access to columns by
+    /// name and getting subcolumns; the collected-nested variant is used while reading from
+    /// wide parts). Cannot be changed after part initialization. Obtained from (and returned
+    /// to) the per-table cache in `MergeTreeData`, see `SharedPartColumns.h`. The holder makes the
+    /// reference accounting impossible to bypass (see `SharedPartColumnsHolder`).
+    SharedPartColumnsHolder shared_part_columns;
+
+    /// List of substreams in order of serialization/deserialization for each column.
+    /// Shared across parts of the table with the same substreams. Never null.
+    std::shared_ptr<const ColumnsSubstreams> columns_substreams = SharedPartColumns::getEmptyColumnsSubstreams();
 
     /// Map from name of column to its serialization info.
+    /// Kept per-part: it holds the row/default counters of this part's data.
     SerializationInfoByName serialization_infos{{}};
 
     /// Serializations for every columns and subcolumns by their names.
-    SerializationByName serializations;
-
-    /// Columns description for more convenient access
-    /// to columns by name and getting subcolumns.
-    std::shared_ptr<const ColumnsDescription> columns_description;
-
-    /// The same as above but after call of Nested::collect().
-    /// It is used while reading from wide parts.
-    std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
+    /// Shared across parts of the table with the same serialization kinds; the per-column pieces
+    /// inside are shared even when only some columns have the same kinds. Never null.
+    PartSerializationsPtr serializations = SharedPartColumns::getEmptySerializations();
 
     /// Small state of finalized statistics for suitable statistics types.
     /// Lazily initialized on a first access.
@@ -838,6 +894,9 @@ private:
 
     /// Reads columns substreams from columns_substreams.txt.
     void loadColumnsSubstreams();
+
+    /// Reads invalidated_system_columns.txt if present.
+    void loadInvalidatedSystemColumns();
 
     /// Loads marks index granularity into memory
     virtual void loadIndexGranularity();
@@ -869,7 +928,7 @@ private:
     /// if it not exists tries to deduce codec from compressed column without
     /// any specifial compression.
     void loadDefaultCompressionCodec();
-    void loadSourcePartsSet();
+    void loadPatchPartIndex();
 
     ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const;
     ColumnsStatistics loadStatisticsWide(const NameSet & required_columns) const;

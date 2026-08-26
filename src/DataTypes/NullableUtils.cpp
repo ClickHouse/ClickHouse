@@ -197,9 +197,13 @@ SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_
         /// (non-nullable) serialization so the on-disk stream layout is unchanged; the wrapper reads the
         /// `LowCardinality(T)` column and `applyParentNullMapToExtractedSubcolumn` promotes it to
         /// `LowCardinality(Nullable(T))` before folding in the outer null map, keeping the read
-        /// (type, column) pair consistent with the in-memory one.
-        if (canContainNull(*prev_type) || prev_type->lowCardinality())
+        /// (type, column) pair consistent with the in-memory one. `prev_type` is passed to the wrapper in
+        /// that case, because the promoted result column is not the on-disk representation to deserialize
+        /// into.
+        if (canContainNull(*prev_type))
             return SerializationNullableWithParentNullMap::create(prev_serialization);
+        if (prev_type->lowCardinality())
+            return SerializationNullableWithParentNullMap::create(prev_serialization, prev_type);
         return prev_serialization;
     }
 

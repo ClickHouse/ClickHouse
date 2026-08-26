@@ -2,6 +2,7 @@
 
 #if USE_ARROW
 
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
 #include <Processors/Port.h>
 #include <Core/Block.h>
@@ -404,6 +405,37 @@ void ArrowIPCBlockOutputFormat::resetFormatterImpl()
     record_blocks.clear();
     for (auto & state : dictionary_states)
         state = DictionaryColumnState{};
+}
+
+void registerOutputFormatArrow(FormatFactory & factory);
+void registerOutputFormatArrow(FormatFactory & factory)
+{
+    factory.registerOutputFormat(
+        "Arrow",
+        [](WriteBuffer & buf,
+           const Block & sample,
+           const FormatSettings & format_settings,
+           FormatFilterInfoPtr /*format_filter_info*/) -> OutputFormatPtr
+        {
+            return std::make_shared<ArrowIPCBlockOutputFormat>(buf, std::make_shared<const Block>(sample), false, format_settings);
+        });
+    factory.markFormatHasNoAppendSupport("Arrow");
+    factory.markOutputFormatNotTTYFriendly("Arrow");
+    factory.setContentType("Arrow", "application/octet-stream");
+
+    factory.registerOutputFormat(
+        "ArrowStream",
+        [](WriteBuffer & buf,
+           const Block & sample,
+           const FormatSettings & format_settings,
+           FormatFilterInfoPtr /*format_filter_info*/) -> OutputFormatPtr
+        {
+            return std::make_shared<ArrowIPCBlockOutputFormat>(buf, std::make_shared<const Block>(sample), true, format_settings);
+        });
+    factory.markFormatHasNoAppendSupport("ArrowStream");
+    factory.markOutputFormatPrefersLargeBlocks("ArrowStream");
+    factory.markOutputFormatNotTTYFriendly("ArrowStream");
+    factory.setContentType("ArrowStream", "application/octet-stream");
 }
 
 }
