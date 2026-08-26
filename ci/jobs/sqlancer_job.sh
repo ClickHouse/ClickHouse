@@ -3,7 +3,8 @@
 # SQLancer nightly job.
 #
 # Runs the ClickHouse SQLancer provider (https://github.com/ClickHouse/sqlancer,
-# branch `main`) against a server started from this workflow's ClickHouse binary.
+# at the revision pinned in `SQLANCER_REF` below) against a server started from
+# this workflow's ClickHouse binary.
 #
 # Console output is deliberately terse: one progress line every ~5 minutes plus a
 # summary at the end. Everything else is written to files that are attached to
@@ -206,16 +207,20 @@ chmod +x "$CLICKHOUSE_BIN"
 # ---------------------------------------------------------------------------
 # SQLancer checkout
 # ---------------------------------------------------------------------------
-# The image bakes a build of `ClickHouse/sqlancer@main` (see
+# The image bakes a build of the pinned revision (see
 # `ci/docker/sqlancer-test/Dockerfile`), but that image is only rebuilt when its
-# digest - the contents of the docker directory - changes, so the baked build
-# freezes at whatever `main` was when the Dockerfile was last touched. Re-clone
-# and rebuild `main` here so every nightly run actually fuzzes current `main`;
-# the baked build is the fallback (and its warm maven repo makes this rebuild
-# take ~1 minute). The resolved commit is reported in the job info so a finding
-# stays attributable.
+# digest - the contents of the docker directory - changes, so the baked build can
+# lag the ref below whenever this file is edited without touching the docker
+# directory. Re-clone and rebuild the ref here so every nightly run fuzzes what
+# this repository asks for; the baked build is the fallback (and its warm maven
+# repo makes this rebuild take ~1 minute). The resolved commit is reported in the
+# job info so a finding stays attributable.
+#
+# The ref is pinned rather than `main`: see the rationale next to `SQLANCER_REF`
+# in the Dockerfile. Keep the two in sync when bumping, and pass
+# `SQLANCER_REF=main` for a manual run against the fork's tip.
 SQLANCER_REPO="${SQLANCER_REPO:-https://github.com/ClickHouse/sqlancer}"
-SQLANCER_REF="${SQLANCER_REF:-main}"
+SQLANCER_REF="${SQLANCER_REF:-22550bfbcaf2f9b42a8545bf64fc835a74ad5aeb}"
 SQLANCER_BAKED_DIR=/sqlancer/sqlancer-main
 SQLANCER_RUN_DIR=/sqlancer/checkout
 SQLANCER_BUILD_LOG="$OUTPUT_PATH/sqlancer-build.log"
@@ -229,7 +234,7 @@ export HOME=/sqlancer
 #   1 - nothing was built for a reason outside this repository: the clone failed,
 #       or maven could not reach/resolve its dependencies. Transient - warn and
 #       fall back.
-#   2 - `main` was fetched and maven ran, but the code does not compile or no jar
+#   2 - the ref was fetched and maven ran, but the code does not compile or no jar
 #       came out. A real regression in the repository this job exists to fuzz, and
 #       the reason the run below is not testing what the job promises.
 # Maven reports both through a failed `package`, so the log decides. The patterns
@@ -238,8 +243,14 @@ MAVEN_TRANSIENT_PATTERN='Could not resolve dependencies|Could not transfer artif
 build_sqlancer() {
     local ref="$1" dest="$2"
     rm -rf "$dest"
-    git clone --quiet --depth 1 --branch "$ref" "$SQLANCER_REPO" "$dest" || return 1
-    # Remember what we fetched before anything else can fail: on a broken `main`
+    # `fetch <ref>` rather than `clone --branch <ref>`, because the ref is a commit sha and
+    # `--branch` only accepts a branch or tag. A full-length sha is required: GitHub serves
+    # `fetch --depth 1 <sha>` but cannot resolve an abbreviated one.
+    git init --quiet "$dest" \
+        && git -C "$dest" remote add origin "$SQLANCER_REPO" \
+        && git -C "$dest" fetch --quiet --depth 1 origin "$ref" \
+        && git -C "$dest" checkout --quiet FETCH_HEAD || return 1
+    # Remember what we fetched before anything else can fail: on a broken ref
     # this is the only place the offending revision is known, and the run has to
     # stay attributable exactly there.
     SQLANCER_FETCHED_COMMIT="$(git -c safe.directory='*' -C "$dest" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
@@ -273,7 +284,7 @@ if [ "${SQLANCER_BUILD_AT_RUNTIME:-1}" = "1" ]; then
         BUILD_WARNING="$SQLANCER_REF @ ${SQLANCER_FETCHED_COMMIT:-unknown} does not build, fell back to the image's build - this run does NOT test current $SQLANCER_REF"
         echo "ERROR: $BUILD_WARNING; see $SQLANCER_BUILD_LOG" >&2
         # Fuzz on with the baked build - some coverage beats none - but fail the
-        # job: a broken `main` is exactly what this job must not hide.
+        # job: a broken sqlancer revision is exactly what this job must not hide.
         add_test_result "sqlancer $SQLANCER_REF build" ERROR "$BUILD_WARNING" "$SQLANCER_BUILD_LOG"
     fi
 fi
