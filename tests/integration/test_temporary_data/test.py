@@ -30,8 +30,10 @@ def test_tmp_data_no_leftovers(start_cluster):
     settings = {
         "max_bytes_ratio_before_external_group_by": 0,
         "max_bytes_ratio_before_external_sort": 0,
+        "max_bytes_ratio_before_external_distinct": 0,
         "max_bytes_before_external_group_by": "10K",
         "max_bytes_before_external_sort": "10K",
+        "max_bytes_before_external_distinct": "10K",
         "join_algorithm": "grace_hash",
         "max_bytes_in_join": "10K",
         "grace_hash_join_initial_buckets": "16",
@@ -43,6 +45,7 @@ def test_tmp_data_no_leftovers(start_cluster):
         settings=settings,
     )
     q("SELECT * FROM system.numbers GROUP BY ALL", settings=settings)
+    q("SELECT DISTINCT * FROM system.numbers", settings=settings)
     q(
         "SELECT * FROM system.numbers as t1 JOIN system.numbers as t2 USING (number)",
         settings=settings,
