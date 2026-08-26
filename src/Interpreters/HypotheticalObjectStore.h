@@ -25,6 +25,7 @@ public:
     {
         StorageID table_id;
         IndexDescription index;
+        const String & name() const { return index.name; }
     };
     std::vector<Entry> getAll() const;
 
@@ -39,12 +40,11 @@ public:
     {
         StorageID table_id;
         ProjectionDescription projection;
+        const String & name() const { return projection.name; }
     };
     std::vector<ProjectionEntry> getAllProjections() const;
 
 private:
-    static bool sameTable(const StorageID & a, const StorageID & b);
-
     mutable std::mutex mutex;
     std::vector<Entry> entries;
     std::vector<ProjectionEntry> projection_entries;

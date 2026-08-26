@@ -29,6 +29,24 @@ $CLICKHOUSE_CLIENT -q "
     SELECT 'indexes:', count() FROM system.hypothetical_indexes WHERE table = 't_hypo_proj_ddl';
 "
 
+echo "--- and the mirror direction: dropping all indexes keeps projections ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_proj_ddl (b) TYPE minmax GRANULARITY 1;
+    CREATE HYPOTHETICAL PROJECTION p_norm ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);
+    DROP ALL HYPOTHETICAL INDEXES;
+    SELECT 'projections:', count() FROM system.hypothetical_projections WHERE table = 't_hypo_proj_ddl';
+    SELECT 'indexes:', count() FROM system.hypothetical_indexes WHERE table = 't_hypo_proj_ddl';
+"
+
+echo "--- an entry whose table was dropped is hidden ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_hypo_proj_gone;
+    CREATE TABLE t_hypo_proj_gone (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE HYPOTHETICAL PROJECTION p_gone ON t_hypo_proj_gone (SELECT a ORDER BY a);
+    DROP TABLE t_hypo_proj_gone;
+    SELECT count() FROM system.hypothetical_projections WHERE name = 'p_gone';
+"
+
 echo "--- IF NOT EXISTS / IF EXISTS ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_norm ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);

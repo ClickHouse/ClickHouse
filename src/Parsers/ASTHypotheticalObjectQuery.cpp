@@ -10,18 +10,11 @@ namespace DB
 String ASTHypotheticalObjectQuery::getID(char delim) const
 {
     const bool is_projection = object_kind == Projection;
-    switch (kind)
-    {
-        case Create:
-            return String(is_projection ? "CreateHypotheticalProjectionQuery" : "CreateHypotheticalIndexQuery")
-                + (delim + getDatabase()) + delim + getTable();
-        case Drop:
-            return String(is_projection ? "DropHypotheticalProjectionQuery" : "DropHypotheticalIndexQuery")
-                + (delim + getDatabase()) + delim + getTable();
-        case DropAll:
-            return is_projection ? "DropAllHypotheticalProjections" : "DropAllHypotheticalIndexes";
-    }
-    UNREACHABLE();
+    if (kind == DropAll)
+        return is_projection ? "DropAllHypotheticalProjections" : "DropAllHypotheticalIndexes";
+
+    const String prefix = kind == Create ? "CreateHypothetical" : "DropHypothetical";
+    return prefix + (is_projection ? "ProjectionQuery" : "IndexQuery") + (delim + getDatabase()) + delim + getTable();
 }
 
 ASTPtr ASTHypotheticalObjectQuery::clone() const
@@ -93,8 +86,7 @@ void ASTHypotheticalObjectQuery::formatQueryImpl(
 
     if (is_projection)
     {
-        /// The name was already printed after the statement keyword, so only the body of the
-        /// declaration is printed here; printing the declaration itself would repeat the name
+        /// the name is already printed, so print only the body, not the whole declaration
         chassert(projection_decl);
         const auto & declaration = projection_decl->as<const ASTProjectionDeclaration &>();
 

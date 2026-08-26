@@ -75,8 +75,7 @@ StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & contex
     return joined_tables.getLeftTableStorage();
 }
 
-/// Projections are stored but not estimated yet, so they are reported as candidates that
-/// EXPLAIN WHATIF cannot rate rather than being silently dropped from the output
+/// projections are stored but not estimated yet, so report them instead of dropping them
 void appendProjectionCandidates(WhatIfResult & result, const HypotheticalObjectStore & store, const StorageID & table_id)
 {
     for (const auto & projection : store.getProjectionsForTable(table_id))
@@ -90,7 +89,18 @@ void appendProjectionCandidates(WhatIfResult & result, const HypotheticalObjectS
     }
 }
 
-/// Nothing was scanned, so mark every candidate not-applicable with the same reason
+/// only when the store held nothing for this table
+void appendNoCandidatesRow(WhatIfResult & result)
+{
+    WhatIfCandidateResult none;
+    none.name = "(none)";
+    none.status = WhatIfCandidateResult::NotApplicable;
+    none.not_applicable_reason = "No hypothetical indexes or projections defined for this table. "
+        "Use CREATE HYPOTHETICAL INDEX or CREATE HYPOTHETICAL PROJECTION to define one.";
+    result.candidates.push_back(std::move(none));
+}
+
+/// nothing was scanned, so every candidate gets the same reason
 WhatIfResult buildResultWithoutScan(
     const MergeTreeData & data, const HypotheticalObjectStore & store, const String & reason)
 {
@@ -108,13 +118,7 @@ WhatIfResult buildResultWithoutScan(
     }
     appendProjectionCandidates(result, store, data.getStorageID());
     if (result.candidates.empty())
-    {
-        WhatIfCandidateResult none;
-        none.name = "(none)";
-        none.status = WhatIfCandidateResult::NotApplicable;
-        none.not_applicable_reason = "No hypothetical indexes defined for this table.";
-        result.candidates.push_back(std::move(none));
-    }
+        appendNoCandidatesRow(result);
     return result;
 }
 
@@ -460,22 +464,6 @@ WhatIfResult estimateHypotheticalIndexes(
     const auto & store = context->getHypotheticalObjectStore();
     auto hypo_indexes = store.getForTable(data.getStorageID());
 
-    if (hypo_indexes.empty())
-    {
-        appendProjectionCandidates(result, store, data.getStorageID());
-        if (result.candidates.empty())
-        {
-            WhatIfCandidateResult no_index;
-            no_index.name = "(none)";
-            no_index.status = WhatIfCandidateResult::NotApplicable;
-            no_index.not_applicable_reason = "No hypothetical indexes or projections defined for this table. "
-                "Use CREATE HYPOTHETICAL INDEX or CREATE HYPOTHETICAL PROJECTION to define one.";
-            result.candidates.push_back(std::move(no_index));
-        }
-        validate_forced_indices();
-        return result;
-    }
-
     String blanket_not_applicable_reason;
     if (query_with_final)
         blanket_not_applicable_reason = "EXPLAIN WHATIF cannot accurately model skip-index pruning under FINAL "
@@ -560,6 +548,9 @@ WhatIfResult estimateHypotheticalIndexes(
     }
 
     appendProjectionCandidates(result, store, data.getStorageID());
+
+    if (result.candidates.empty())
+        appendNoCandidatesRow(result);
 
     return result;
 }

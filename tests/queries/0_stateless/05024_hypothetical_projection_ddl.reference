@@ -5,6 +5,11 @@ after drop:	1
 --- DROP ALL is per kind, indexes are untouched ---
 projections:	0
 indexes:	1
+--- and the mirror direction: dropping all indexes keeps projections ---
+projections:	1
+indexes:	0
+--- an entry whose table was dropped is hidden ---
+0
 --- IF NOT EXISTS / IF EXISTS ---
 still one:	1
 --- a name taken by a real projection is rejected ---
