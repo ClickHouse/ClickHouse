@@ -308,3 +308,57 @@ TEST(TypesOnlyReturnTypePath, NaiveBayesClassifiersDeclineTheTypesOnlyPath)
         }
     }
 }
+
+/// `parseDateTime*` derives its result type from argument *values*: the timezone comes from the
+/// optional third argument and, for the Joda `DateTime64` variants, the scale is the number of
+/// `S` placeholders in the format string. The documentation-only signature can express neither,
+/// so the types-only entry point must decline rather than answer with a timezone-less `DateTime`
+/// or a scale-0 `DateTime64`.
+TEST(TypesOnlyReturnTypePath, ParseDateTimeDeclinesTheTypesOnlyPath)
+{
+    tryRegisterFunctions();
+
+    for (const auto & function_name :
+         {"parseDateTime", "parseDateTimeOrNull", "parseDateTimeOrZero",
+          "parseDateTimeInJodaSyntax", "parseDateTime64", "parseDateTime64OrNull",
+          "parseDateTime64InJodaSyntax", "parseDateTime64InJodaSyntaxOrNull"})
+    {
+        try
+        {
+            auto result = typesOnlyReturnType(function_name, {"String", "String", "String"});
+            FAIL() << function_name << " must not resolve on the types-only path, got " << result->getName();
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED) << function_name << ": " << e.message();
+        }
+    }
+
+    /// The authoritative, column-aware path keeps answering with the explicit timezone and with
+    /// the scale derived from the format string.
+    auto make_arguments = [](const std::vector<String> & constant_values)
+    {
+        auto type = DataTypeFactory::instance().get("String");
+        ColumnsWithTypeAndName columns;
+        columns.emplace_back(type->createColumn(), type, String{});
+        for (const auto & value : constant_values)
+            columns.emplace_back(type->createColumnConst(1, Field(value)), type, String{});
+        return columns;
+    };
+
+    auto column_path_return_type = [&](const String & function_name, const std::vector<String> & constant_values)
+    {
+        auto resolver = FunctionFactory::instance().get(function_name, getContext().context);
+        return getAdaptor(resolver).getReturnTypeImpl(make_arguments(constant_values))->getName();
+    };
+
+    EXPECT_EQ(column_path_return_type("parseDateTime", {"%Y-%m-%d %H:%i:%s", "UTC"}), "DateTime('UTC')");
+    EXPECT_EQ(
+        column_path_return_type("parseDateTimeOrNull", {"%Y-%m-%d %H:%i:%s", "UTC"}), "Nullable(DateTime('UTC'))");
+    EXPECT_EQ(
+        column_path_return_type("parseDateTime64InJodaSyntax", {"yyyy-MM-dd HH:mm:ss.SSS", "UTC"}),
+        "DateTime64(3, 'UTC')");
+    EXPECT_EQ(
+        column_path_return_type("parseDateTime64InJodaSyntax", {"yyyy-MM-dd HH:mm:ss.SSSSSS", "UTC"}),
+        "DateTime64(6, 'UTC')");
+}

@@ -632,6 +632,20 @@ namespace
             return "(String, [const String], [const String]) -> " + result;
         }
 
+        /// There is no types-only answer: the result type depends on the *values* of the optional
+        /// arguments — the timezone comes from the third argument and, for the `DateTime64`
+        /// non-MySQL syntax, the scale is the number of `S` placeholders in the format string.
+        /// Decline this entry point instead of letting the documentation-only signature above
+        /// answer with a timezone-less `DateTime`/scale-0 `DateTime64`.
+        DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "getReturnType is not implemented for {}: the result type can only be derived "
+                "when the values of the format and timezone arguments are known",
+                getName());
+        }
+
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             FunctionArgumentDescriptors mandatory_args{
