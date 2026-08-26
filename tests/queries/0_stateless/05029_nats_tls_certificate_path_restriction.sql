@@ -6,14 +6,10 @@
 --                drops the collection while others still use it).
 --   no-replicated-database: named collections are server-global, not database-scoped.
 
--- `nats_ca_file`, `nats_client_cert_file` and `nats_client_key_file` are paths on the server
--- filesystem, and the client certificate authenticates ClickHouse to `nats_url`. Like
--- `nats_credential_file`, they are accepted only from a named collection defined in the server
--- configuration file, with a destination that SQL does not override.
--- The paths used below are the server's own certificate and key, so they load: a definition which
--- passes the source policy reaches the connection attempt and fails with `CANNOT_CONNECT_NATS`
--- against `127.0.0.1:1`. A rejection is therefore distinguishable from a certificate that
--- simply cannot be read.
+-- The server opens the TLS paths itself, so like `nats_credential_file` they are accepted only from
+-- a named collection defined in the server configuration file, whose destination SQL cannot override.
+-- The paths below are the server's own certificate and key, so they load: a definition which passes
+-- the policy reaches the connection attempt and fails with `CANNOT_CONNECT_NATS` against `127.0.0.1:1`.
 
 -- The path in the `SETTINGS` clause of the query.
 CREATE TABLE nats_ca_in_settings (key UInt64) ENGINE = NATS
@@ -91,7 +87,7 @@ DROP TABLE nats_certificates_from_existing_sql_collection;
 DROP NAMED COLLECTION 05029_nats_existing_sql_collection;
 
 -- A certificate without its key, and certificates without `nats_secure`, are rejected wherever
--- they come from.
+-- they come from: neither can produce a working TLS connection.
 DROP NAMED COLLECTION IF EXISTS 05029_nats_certificate_without_key;
 CREATE NAMED COLLECTION 05029_nats_certificate_without_key AS
     nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
@@ -99,3 +95,11 @@ CREATE NAMED COLLECTION 05029_nats_certificate_without_key AS
     nats_client_cert_file = '/etc/clickhouse-server/server.crt';
 CREATE TABLE nats_certificate_without_key (key UInt64) ENGINE = NATS(05029_nats_certificate_without_key); -- { serverError BAD_ARGUMENTS }
 DROP NAMED COLLECTION 05029_nats_certificate_without_key;
+
+DROP NAMED COLLECTION IF EXISTS 05029_nats_certificates_without_secure;
+CREATE NAMED COLLECTION 05029_nats_certificates_without_secure AS
+    nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
+    nats_startup_connect_tries = 1, nats_reconnect_wait = 1,
+    nats_ca_file = '/etc/clickhouse-server/server.crt';
+CREATE TABLE nats_certificates_without_secure (key UInt64) ENGINE = NATS(05029_nats_certificates_without_secure); -- { serverError BAD_ARGUMENTS }
+DROP NAMED COLLECTION 05029_nats_certificates_without_secure;

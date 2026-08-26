@@ -40,17 +40,5 @@
             <nats_client_cert_file>/etc/clickhouse-server/no_such_cert.pem</nats_client_cert_file>
             <nats_client_key_file>/etc/clickhouse-server/nats_client_key.pem</nats_client_key_file>
         </nats_tls_unreadable_chain>
-        <nats_tls_certificate_without_key>
-            <nats_url>nats1:4444</nats_url>
-            <nats_format>JSONEachRow</nats_format>
-            <nats_secure>1</nats_secure>
-            <nats_ca_file>/etc/clickhouse-server/nats_ca.pem</nats_ca_file>
-            <nats_client_cert_file>/etc/clickhouse-server/nats_client_cert.pem</nats_client_cert_file>
-        </nats_tls_certificate_without_key>
-        <nats_tls_without_secure>
-            <nats_url>nats1:4444</nats_url>
-            <nats_format>JSONEachRow</nats_format>
-            <nats_ca_file>/etc/clickhouse-server/nats_ca.pem</nats_ca_file>
-        </nats_tls_without_secure>
     </named_collections>
 </clickhouse>

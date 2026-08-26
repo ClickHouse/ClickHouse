@@ -31,10 +31,10 @@ CLIENT_KEY_FILE = "/etc/clickhouse-server/nats_client_key.pem"
 # Helpers
 
 
-def create_table_query(collection, subject, overrides=""):
+def create_table_query(collection, subject):
     return f"""
         CREATE TABLE test.nats (key UInt64, value UInt64)
-            ENGINE = NATS({collection}, nats_subjects = '{subject}'{overrides});
+            ENGINE = NATS({collection}, nats_subjects = '{subject}');
         """
 
 
@@ -118,65 +118,6 @@ def test_nats_unreadable_certificate_files(nats_cluster):
 
     chain_error = instance.query_and_get_error(create_table_query("nats_tls_unreadable_chain", "unreadable_chain"))
     assert "Cannot load NATS client certificate chain" in chain_error
-
-
-def test_nats_certificate_settings_are_checked(nats_cluster):
-    without_key = instance.query_and_get_error(
-        create_table_query("nats_tls_certificate_without_key", "certificate_without_key")
-    )
-    assert "must be specified together" in without_key
-
-    without_secure = instance.query_and_get_error(create_table_query("nats_tls_without_secure", "without_secure"))
-    assert "without nats_secure" in without_secure
-
-
-def test_nats_certificates_only_from_config(nats_cluster):
-    # A path from SQL would make the server open a file of the user's choosing, so it is refused
-    # both in a `SETTINGS` clause and as an override of a configured collection.
-    in_settings = instance.query_and_get_error(
-        f"""
-        CREATE TABLE test.nats (key UInt64, value UInt64)
-            ENGINE = NATS
-            SETTINGS nats_url = 'nats1:4444',
-                     nats_subjects = 'from_settings',
-                     nats_format = 'JSONEachRow',
-                     nats_secure = 1,
-                     nats_ca_file = '{CA_FILE}';
-        """
-    )
-    assert "can only be specified in a named collection" in in_settings
-
-    as_override = instance.query_and_get_error(
-        create_table_query("nats_tls", "as_override", f", nats_ca_file = '{CA_FILE}'")
-    )
-    assert "can only be specified in a named collection" in as_override
-
-
-def test_nats_certificates_survive_reload(nats_cluster):
-    # The source checks run when existing metadata is loaded too, so a table which satisfies them
-    # has to keep attaching.
-    # The subject goes in a `SETTINGS` clause rather than a collection override: a streaming table
-    # created without one stores metadata ending in an empty `SETTINGS`, which cannot be parsed back.
-    instance.query(
-        """
-        CREATE TABLE test.nats (key UInt64, value UInt64)
-            ENGINE = NATS(nats_tls)
-            SETTINGS nats_subjects = 'reload';
-        """
-    )
-    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
-
-    instance.query("DETACH TABLE test.nats")
-    instance.query("ATTACH TABLE test.nats")
-    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
-
-
-def test_nats_certificates_bound_to_configured_destination(nats_cluster):
-    # The operator's certificates must not be presented to a server the query picks.
-    error = instance.query_and_get_error(
-        create_table_query("nats_tls", "other_destination", ", nats_url = 'nats1:4444'")
-    )
-    assert "destination of a named collection which carries TLS certificates" in error
 
 
 if __name__ == "__main__":

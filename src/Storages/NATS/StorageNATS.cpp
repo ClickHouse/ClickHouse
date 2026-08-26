@@ -925,16 +925,8 @@ constexpr std::string_view CREDENTIAL_FILE_ONLY_FROM_CONFIG_MESSAGE
     = "`nats_credential_file` can only be specified in a named collection defined in the server configuration file. "
       "Pass the contents of the file in `nats_credentials` instead";
 
-/// The TLS material names files the server opens with its own privileges, and the client certificate
-/// authenticates ClickHouse to whatever destination the table connects to. Both are operator decisions,
-/// so a path is accepted only from the server configuration file - directly, or through a named collection
-/// defined in it - and never from SQL. This mirrors `nats_credential_file`.
-/// Checked on provenance rather than on the resulting value: an override with the empty string carries no
-/// path of its own but still drops the one the operator configured.
-/// Enforced when loading existing metadata too. The exemption the credential rules need protects tables
-/// stored before those rules existed, and no stored table can carry a setting introduced here. A table
-/// which overrides the destination of a collection that has since been given certificates would
-/// otherwise start presenting them to the server its own definition selected.
+/// The server opens these paths with its own privileges and presents the client certificate to the
+/// table's destination, so they are taken only from a named collection defined in the server configuration.
 void resolveCertificateSource(
     const NATSSettings & nats_settings,
     bool collection_defined_in_config,
@@ -952,20 +944,18 @@ void resolveCertificateSource(
     bool has_certificates = false;
     for (const auto & [name, value, assigned_by_query] : paths)
     {
+        /// Rejected on provenance: an assignment of the empty string carries no path of its own,
+        /// but it drops the one the operator configured.
         if (assigned_by_query || (!value.empty() && !collection_defined_in_config))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "`{}` can only be specified in a named collection defined in the server configuration file. "
-                "The server opens the path with its own privileges, so a path taken from SQL would let anyone who can "
-                "define a `NATS` source probe the local filesystem and present the operator's certificates to a server "
-                "of their choosing",
+                "`{}` can only be specified in a named collection defined in the server configuration file",
                 name);
 
-        has_certificates = has_certificates || !value.empty();
+        has_certificates |= !value.empty();
     }
 
-    /// Certificates the operator configured must not be presented to an endpoint the query selected,
-    /// for the same reason the credentials of a configured named collection must not be.
+    /// The operator's certificates must not be presented to a destination the query selected.
     if (has_certificates && destination_assigned_by_query)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
