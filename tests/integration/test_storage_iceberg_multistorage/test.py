@@ -122,6 +122,15 @@ def modify_avro_file(avro_path: str, field_path: list, modifier_func) -> None:
         writer.close()
 
 
+def read_avro_records(avro_path: str) -> list:
+    """Read all records of an AVRO file without modifying it."""
+    with open(avro_path, 'rb') as f:
+        reader = avro.datafile.DataFileReader(f, avro.io.DatumReader())
+        records = list(reader)
+        reader.close()
+    return records
+
+
 def get_absolute_path(storage_type: str, cluster, relative_path: str) -> str:
     """Convert relative path to absolute path for given storage type."""
     relative_path = relative_path.lstrip("/")
@@ -531,9 +540,29 @@ def test_num_rows_cache_no_collision_across_buckets(started_cluster):
     # The same object key for both tables, each in its own bucket.
     shared_key = f"shared_count_cache_{get_uuid_str()}/data/part-0.parquet"
 
-    def prepare_table(table_name, values_sql, data_bucket):
-        spark.sql(f"CREATE TABLE {table_name} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
-        spark.sql(f"INSERT INTO {table_name} VALUES {values_sql}")
+    def prepare_table(table_name, kept_values_sql, kept_rows, data_bucket):
+        # A second append writes a second data file, and deleting one of its two rows
+        # merge-on-read leaves a live v2 position delete file. Per the Iceberg spec a delete file
+        # is applied only to the data file(s) it references, so the first data file -- the one
+        # relocated below -- keeps no deletes, while the table's exact row count is no longer
+        # derivable from the manifests: "Calculating `total_record_count` for a table with equality
+        # deletes or v2 position delete files requires reading data." That is what forces `count()`
+        # to open the first data file and therefore to consult the num-rows cache this test
+        # measures. The second file needs a row that survives: a predicate matching every row of a
+        # file is satisfied by dropping the file from the manifest, with no delete file written.
+        spark.sql(
+            f"""
+                CREATE TABLE {table_name} (id INT, value STRING)
+                USING iceberg
+                TBLPROPERTIES (
+                    'format-version' = '2',
+                    'write.delete.mode' = 'merge-on-read'
+                )
+            """
+        )
+        spark.sql(f"INSERT INTO {table_name} VALUES {kept_values_sql}")
+        spark.sql(f"INSERT INTO {table_name} VALUES (998, 'survivor'), (999, 'deleted')")
+        spark.sql(f"DELETE FROM {table_name} WHERE id = 999")
 
         default_upload_directory(started_cluster, "s3", f"/iceberg_data/default/{table_name}/", f"/iceberg_data/default/{table_name}/")
 
@@ -546,39 +575,50 @@ def test_num_rows_cache_no_collision_across_buckets(started_cluster):
         metadata_dir = os.path.join(host_path, "metadata")
         data_dir = os.path.join(host_path, "data")
 
-        data_files = find_files(data_dir, ".parquet")
-        assert len(data_files) == 1, f"Expected a single data file, got: {data_files}"
-
-        # Point the data file to the same object key in a different bucket.
         manifest_files = [f for f in find_files(metadata_dir, ".avro") if not os.path.basename(f).startswith("snap-")]
+
+        # `content` 0 is DATA and 1 is POSITION DELETES; `status` 2 is DELETED. Pick the live data
+        # file holding the kept rows -- the delete file references the other one, not this.
+        live_entries = [
+            r["data_file"] for mf in manifest_files for r in read_avro_records(mf) if r["status"] != 2
+        ]
+        assert any(e["content"] == 1 for e in live_entries), \
+            "Expected a live position delete file; is `write.delete.mode` still merge-on-read?"
+        kept_paths = {e["file_path"] for e in live_entries if e["content"] == 0 and e["record_count"] == kept_rows}
+        assert len(kept_paths) == 1, f"Expected one data file with {kept_rows} records, got: {live_entries}"
+        relocated_path = next(iter(kept_paths))
+
+        # Point that data file -- and only it -- at the same object key in a different bucket.
         for mf in manifest_files:
-            modify_avro_file(mf, ["data_file", "file_path"], lambda _: f"s3a://{data_bucket}/{shared_key}")
-            # Drop the statistics so that `count()` is not answered from metadata.
+            modify_avro_file(
+                mf,
+                ["data_file", "file_path"],
+                lambda p: f"s3a://{data_bucket}/{shared_key}" if p == relocated_path else p,
+            )
+            # `value_counts` is optional per the spec, and a table without it is an ordinary table
+            # written by a writer that collects no column statistics. Drop it so the per-file row
+            # count cannot be answered from the manifest either: that shortcut returns before the
+            # num-rows cache is consulted, which is the thing under test here.
             modify_avro_file(mf, ["data_file", "value_counts"], lambda _: None)
 
-        for mj in find_files(metadata_dir, ".metadata.json"):
-            with open(mj, 'r') as f:
-                data = json.load(f)
-            for snap in data.get("snapshots", []):
-                snap.get("summary", {}).pop("total-records", None)
-            with open(mj, 'w') as f:
-                json.dump(data, f, indent=2)
-
-        for f in manifest_files + find_files(metadata_dir, ".metadata.json"):
+        for f in manifest_files:
             rel = os.path.relpath(f, host_path)
             started_cluster.default_s3_uploader.upload_file(f, f"{base_path}/{rel}")
 
-        S3Uploader(started_cluster.minio_client, data_bucket).upload_file(data_files[0], shared_key)
+        relocated_basename = os.path.basename(relocated_path)
+        local_relocated = [f for f in find_files(data_dir, ".parquet") if os.path.basename(f) == relocated_basename]
+        assert len(local_relocated) == 1, f"Could not find {relocated_basename} under {data_dir}"
+        S3Uploader(started_cluster.minio_client, data_bucket).upload_file(local_relocated[0], shared_key)
 
         shutil.rmtree(temp_dir)
         return base_path
 
     # An entry is reused only for files older than it, so upload everything before querying.
     base_path_a = prepare_table(
-        f"test_count_cache_a_{get_uuid_str()}", "(1, 'a'), (2, 'b'), (3, 'c')", f"{base_bucket}-storage1"
+        f"test_count_cache_a_{get_uuid_str()}", "(1, 'a'), (2, 'b'), (3, 'c')", 3, f"{base_bucket}-storage1"
     )
     base_path_b = prepare_table(
-        f"test_count_cache_b_{get_uuid_str()}", "(1, 'a'), (2, 'b'), (3, 'c'), (4, 'd'), (5, 'e')", f"{base_bucket}-storage2"
+        f"test_count_cache_b_{get_uuid_str()}", "(1, 'a'), (2, 'b'), (3, 'c'), (4, 'd'), (5, 'e')", 5, f"{base_bucket}-storage2"
     )
     # Margin for the second-resolution `last_modified` comparison.
     time.sleep(3)
@@ -597,10 +637,12 @@ def test_num_rows_cache_no_collision_across_buckets(started_cluster):
         return result, cache_lookups
 
     # The first query populates the num-rows cache; the second one must not reuse its entry.
+    # Each table holds its relocated file plus the one row of the second file that survived the
+    # delete, so a reused entry from table `a` would show up as 4 rather than 6 for table `b`.
     count_a, cache_lookups_a = count(base_path_a, "count_cache_marker_a")
     count_b, cache_lookups_b = count(base_path_b, "count_cache_marker_b")
-    assert count_a == "3"
-    assert count_b == "5"
+    assert count_a == "4"
+    assert count_b == "6"
     # Both queries must actually consult the num-rows cache.
     assert cache_lookups_a >= 1
     assert cache_lookups_b >= 1
