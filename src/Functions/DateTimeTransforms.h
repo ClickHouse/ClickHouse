@@ -152,8 +152,19 @@ enum class DateRoundingInterval : UInt8
     ISOYear,
 };
 
+/// A `DateTime` without an explicit time zone keeps the one captured when the type was created, but
+/// literals compared against such a column are parsed in the session one.
+inline const DateLUTImpl & preimageParseTimeZone(const DataTypeDateTime & type)
+{
+    return type.hasExplicitTimeZone() ? type.getTimeZone() : DateLUT::instance();
+}
+
+/// `transform_time_zone` is the one the rounding function itself runs in; it differs from the parse
+/// time zone for implicit-time-zone columns, where `DateTimeTransformImpl` takes `Date` results from
+/// the argument type but `DateTime` results from the session-resolved result type.
 inline FieldIntervalPtr makeDateOrDateTimePreimageForDayRange(
-    const IDataType & type, ExtendedDayNum start_day, ExtendedDayNum end_day)
+    const IDataType & type, ExtendedDayNum start_day, ExtendedDayNum end_day,
+    const DateLUTImpl * transform_time_zone = nullptr)
 {
     /// Limited to `Date` and `DateTime`: `Date32` and `DateTime64` bounds clamp, wrap or depend on
     /// the scale, so they need result-type-aware bounds and sometimes several intervals.
@@ -173,20 +184,22 @@ inline FieldIntervalPtr makeDateOrDateTimePreimageForDayRange(
         return nullptr;
 
     /// Do not optimize partial civil days at the edges of the `DateTime` domain.
-    const auto & source_time_zone = date_time_type->getTimeZone();
+    const auto & source_time_zone = transform_time_zone ? *transform_time_zone : date_time_type->getTimeZone();
     const auto source_start = source_time_zone.fromDayNum(start_day);
     const auto source_end = source_time_zone.fromDayNum(end_day);
     if (source_start < 0 || source_end > std::numeric_limits<UInt32>::max())
         return nullptr;
 
-    /// The optimizer renders the bounds as UTC civil strings, so carry the source-time-zone local
-    /// components over. Boundaries need not be midnight (`America/Lima` started 1994 at 01:00:00),
-    /// and ambiguous local times may not round-trip, in which case decline.
+    /// The optimizer renders the bounds as UTC civil strings that are parsed back in the column's
+    /// parse time zone, so carry the local components of that time zone over. Boundaries need not be
+    /// midnight (`America/Lima` started 1994 at 01:00:00), and ambiguous local times may not
+    /// round-trip, in which case decline.
+    const auto & parse_time_zone = preimageParseTimeZone(*date_time_type);
     const auto make_utc_civil_time_surrogate =
         [&](DateLUTImpl::Time source_time) -> std::optional<DateLUTImpl::Time>
     {
-        const auto components = source_time_zone.toDateTimeComponents(source_time);
-        const auto reparsed_source_time = source_time_zone.makeDateTime(
+        const auto components = parse_time_zone.toDateTimeComponents(source_time);
+        const auto reparsed_source_time = parse_time_zone.makeDateTime(
             components.date.year,
             components.date.month,
             components.date.day,
@@ -318,10 +331,9 @@ inline FieldIntervalPtr getPreimageForStartOfDay(const IDataType & type, const F
 
     /// The default `DateTime` result for extended source types can have a non-contiguous preimage.
     const DateLUTImpl * source_time_zone = nullptr;
-    const bool source_is_date = isDate(type);
     if (const auto * date_time_type = checkAndGetDataType<DataTypeDateTime>(&type))
-        source_time_zone = &date_time_type->getTimeZone();
-    else if (source_is_date)
+        source_time_zone = &preimageParseTimeZone(*date_time_type);
+    else if (isDate(type))
         source_time_zone = &DateLUT::instance();
     else
         return nullptr;
@@ -330,28 +342,26 @@ inline FieldIntervalPtr getPreimageForStartOfDay(const IDataType & type, const F
     if (timestamp > std::numeric_limits<UInt32>::max())
         return nullptr;
 
-    const auto source_day = source_time_zone->toDayNum(static_cast<UInt32>(timestamp));
-    ExtendedDayNum start_day(static_cast<Int32>(source_day.toUnderType()));
-    const auto source_start = source_time_zone->fromDayNum(start_day);
-    if (source_start < 0 || static_cast<UInt64>(source_start) != timestamp)
+    /// Round through the transform itself rather than through day starts: a day skipped by a
+    /// time-zone shift shares its start with a neighbour (`Pacific/Apia` skipped 2011-12-30), and
+    /// days starting before the epoch saturate into the first representable one.
+    const auto rounds_to_point = [&](Int32 day)
+    {
+        return day >= 0 && day <= DATE_LUT_MAX_DAY_NUM
+            && source_time_zone->toDate(DayNum(static_cast<UInt16>(day))) == static_cast<DateLUTImpl::Time>(timestamp);
+    };
+
+    ExtendedDayNum start_day(static_cast<Int32>(source_time_zone->toDayNum(static_cast<UInt32>(timestamp)).toUnderType()));
+    if (!rounds_to_point(start_day.toUnderType()))
         return nullptr;
 
     ExtendedDayNum end_day(start_day.toUnderType() + 1);
+    while (rounds_to_point(start_day.toUnderType() - 1))
+        start_day = ExtendedDayNum(start_day.toUnderType() - 1);
+    while (rounds_to_point(end_day.toUnderType()))
+        end_day = ExtendedDayNum(end_day.toUnderType() + 1);
 
-    /// A civil day skipped by a time-zone shift shares its start with a neighbour, so several
-    /// source dates can round to the same timestamp. `Pacific/Apia` skipped 2011-12-30.
-    if (source_is_date)
-    {
-        const auto starts_at_point = [&](Int32 day)
-        { return day >= 0 && day <= DATE_LUT_MAX_DAY_NUM && source_time_zone->fromDayNum(ExtendedDayNum(day)) == source_start; };
-
-        while (starts_at_point(start_day.toUnderType() - 1))
-            start_day = ExtendedDayNum(start_day.toUnderType() - 1);
-        while (starts_at_point(end_day.toUnderType()))
-            end_day = ExtendedDayNum(end_day.toUnderType() + 1);
-    }
-
-    return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day);
+    return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day, source_time_zone);
 }
 
 template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>

@@ -124,7 +124,7 @@ public:
         if (!converter_base || !converter_base->hasInformationAboutPreimage())
             return;
 
-        if (!canCalculatePreimageForConstant(*converter_base->getResultType(), *literal->getResultType()))
+        if (!canCalculatePreimageForConstant(converter_base->getResultType(), literal->getResultType()))
             return;
 
         auto preimage_range = converter_base->getPreimage(*(column_id->getColumnType()), literal->getValue());

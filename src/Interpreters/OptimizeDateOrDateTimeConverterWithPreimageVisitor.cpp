@@ -5,6 +5,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FieldInterval.h>
 #include <Functions/FunctionFactory.h>
@@ -134,6 +135,24 @@ static bool canEvaluateConstantExpression(const ASTPtr & ast, const ContextPtr &
     return function_base && function_base->isDeterministicInScopeOfQuery() && function_base->isSuitableForConstantFolding();
 }
 
+/// This pass runs before type analysis, so an invalid comparison must still raise instead of being
+/// rewritten into a valid one.
+static bool canCompare(const String & name, const ColumnsWithTypeAndName & arguments, const ContextPtr & context)
+{
+    const auto resolver = FunctionFactory::instance().tryGet(name, context);
+    if (!resolver)
+        return false;
+
+    try
+    {
+        return resolver->build(arguments) != nullptr;
+    }
+    catch (const Exception &)
+    {
+        return false;
+    }
+}
+
 void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction & function, ASTPtr & ast, const Data & data)
 {
     const static std::unordered_map<String, String> swap_relations = {
@@ -195,6 +214,7 @@ void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction
         if (const auto * literal = function.arguments->children[constant_id]->as<ASTLiteral>())
         {
             point = literal->value;
+            point_type = applyVisitor(FieldToDataType(), point);
         }
         else
         {
@@ -211,7 +231,13 @@ void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction
         if (point.getType() != Field::Types::UInt64)
             continue;
 
-        if (point_type && !canCalculatePreimageForConstant(*converter_base->getResultType(), *point_type))
+        if (!canCalculatePreimageForConstant(converter_base->getResultType(), point_type))
+            continue;
+
+        ColumnsWithTypeAndName comparison_arguments(2);
+        comparison_arguments[func_id] = {nullptr, converter_base->getResultType(), ""};
+        comparison_arguments[constant_id] = {nullptr, point_type, ""};
+        if (!canCompare(function.name, comparison_arguments, data.context))
             continue;
 
         auto preimage_range = converter_base->getPreimage(*column_type, point);
