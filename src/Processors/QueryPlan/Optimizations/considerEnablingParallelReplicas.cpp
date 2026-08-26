@@ -328,12 +328,22 @@ void considerEnablingParallelReplicas(
     /// worth considering at all. The final check further down applies
     /// `automatic_parallel_replicas_min_bytes_per_replica` to the compressed bytes of the read that
     /// ends up being parallelized, which is not known until both plans are built and matched. Bound it
-    /// here by the largest read in the plan: the parallelized read is one of them, and uncompressed
-    /// bytes are never fewer than compressed ones, so a plan rejected here would have been rejected
-    /// there as well. A read whose size cannot be estimated counts as large enough, so the gate never
-    /// rejects on missing information. Mode 2 of `automatic_parallel_replicas_mode` only collects
-    /// statistics and never switches to parallel replicas, and the threshold does not apply to it, so
-    /// such queries are exempt and keep collecting statistics however little they read.
+    /// here by the largest read in the plan: the parallelized read is one of them, so no read in the
+    /// plan clearing the threshold means the parallelized one would not have cleared it either.
+    ///
+    /// The two byte counts are estimates of the same quantity but are not derived the same way: this
+    /// one sums the compressed sizes the parts record for the columns read, while `input_bytes` is
+    /// measured at runtime as in-memory bytes scaled by a sampled compression ratio. They agree
+    /// closely for fixed-width columns and can differ by ~40% for columns of mostly-short strings,
+    /// whose in-memory representation carries a per-row offset that the on-disk one does not. So a
+    /// query just above the threshold can be rejected here - which is the intended trade: the gate
+    /// exists to skip planning work, and the queries it can misjudge are the ones where parallel
+    /// replicas barely pay off anyway.
+    ///
+    /// A read whose size cannot be estimated counts as large enough, so the gate never rejects on
+    /// missing information. Mode 2 of `automatic_parallel_replicas_mode` only collects statistics and
+    /// never switches to parallel replicas, and the threshold does not apply to it, so such queries
+    /// are exempt and keep collecting statistics however little they read.
     const bool threshold_applies = optimization_settings.automatic_parallel_replicas_mode == 1
         && optimization_settings.automatic_parallel_replicas_min_bytes_per_replica != 0;
     if (threshold_applies)
@@ -349,7 +359,7 @@ void considerEnablingParallelReplicas(
             {
                 if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(frame_node.step.get()))
                 {
-                    if (const auto bytes_to_read = reading->estimateUncompressedBytesToRead())
+                    if (const auto bytes_to_read = reading->estimateCompressedBytesToRead())
                         max_bytes_to_read = std::max(max_bytes_to_read, *bytes_to_read);
                     else
                         all_reads_estimated = false;

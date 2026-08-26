@@ -1346,24 +1346,38 @@ static bool missingColumnReadsPhysicalColumns(
     return false;
 }
 
-/// Estimate the uncompressed size of `column_names` over the mark ranges actually selected in
-/// `parts_with_ranges`.
+/// Which of the two sizes a part records for a column the estimate below should sum up.
+enum class ReadBytesKind : uint8_t
+{
+    /// The bytes the values occupy once decoded, i.e. the amount of work the pipeline does.
+    Uncompressed,
+    /// The bytes the values occupy on disk, i.e. the amount of data the read pulls in.
+    Compressed,
+};
+
+/// Estimate the size of `column_names` over the mark ranges actually selected in `parts_with_ranges`.
 ///
-/// Returns nullopt if the estimate cannot be made conservatively, in which case the caller must not cap.
+/// Returns nullopt if the estimate cannot be made conservatively, in which case the caller must not
+/// rely on it.
 ///
-/// Uncompressed rather than compressed size is deliberate: the per-stream overhead we are trading
-/// against is proportional to the work done per stream, which scales with the number of values
-/// processed, not with how well they compress. A highly compressible column (e.g. a constant
-/// `UInt64` under `ZSTD(9)`, ~1400x) is tiny on disk yet still feeds every row through PREWHERE,
-/// expressions and aggregation.
+/// `kind` picks which size to sum, and the choice belongs to the caller's question. Stream capping
+/// wants `Uncompressed`: the per-stream overhead it trades against is proportional to the work done
+/// per stream, which scales with the number of values processed, not with how well they compress. A
+/// highly compressible column (e.g. a constant `UInt64` under `ZSTD(9)`, ~1400x) is tiny on disk yet
+/// still feeds every row through PREWHERE, expressions and aggregation. Sizing a read against a
+/// byte threshold wants `Compressed`, which is what the read actually pulls off disk.
 static std::optional<size_t> estimateReadBytes(
     const RangesInDataParts & parts_with_ranges,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
-    const Settings & settings)
+    const Settings & settings,
+    ReadBytesKind kind)
 {
+    const auto size_of = [kind](const ColumnSize & column_size)
+    { return kind == ReadBytesKind::Compressed ? column_size.data_compressed : column_size.data_uncompressed; };
+
     const bool use_subcolumn_sizes = settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
     const auto & virtuals = storage_snapshot->metadata->virtuals;
 
@@ -1506,7 +1520,7 @@ static std::optional<size_t> estimateReadBytes(
                 const auto & requested_name = *requested_names.begin();
                 const auto col = data_part.tryGetColumn(requested_name);
                 if (col && col->isSubcolumn() && use_subcolumn_sizes)
-                    col_bytes = data_part.getSubcolumnSize(requested_name).data_uncompressed;
+                    col_bytes = size_of(data_part.getSubcolumnSize(requested_name));
             }
 
             /// Multiple subcolumns may overlap in streams. The complete physical column is a safe
@@ -1521,7 +1535,7 @@ static std::optional<size_t> estimateReadBytes(
                     && (!physical_col || !canScaleSizeBySelectedRows(*physical_col->type)))
                     return std::nullopt;
 
-                col_bytes = data_part.getColumnSize(physical_name).data_uncompressed;
+                col_bytes = size_of(data_part.getColumnSize(physical_name));
             }
 
             if (col_bytes == 0)
@@ -1546,7 +1560,7 @@ static std::optional<size_t> estimateReadBytes(
             if (selected_rows < data_part.rows_count)
                 return std::nullopt;
 
-            part_bytes = data_part.getTotalColumnsSize().data_uncompressed;
+            part_bytes = size_of(data_part.getTotalColumnsSize());
         }
 
         const auto selected_bytes_wide
@@ -1632,8 +1646,8 @@ static void capStreamsByReadBytes(
     const Settings & settings,
     LoggerPtr log)
 {
-    const auto estimated_read_bytes
-        = estimateReadBytes(parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, settings);
+    const auto estimated_read_bytes = estimateReadBytes(
+        parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, settings, ReadBytesKind::Uncompressed);
     if (!estimated_read_bytes)
         return;
 
@@ -2667,7 +2681,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
         /*check_row_limits=*/false);
 }
 
-std::optional<size_t> ReadFromMergeTree::estimateUncompressedBytesToRead() const
+std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const
 {
     const auto analysis = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead();
     if (!analysis)
@@ -2675,15 +2689,21 @@ std::optional<size_t> ReadFromMergeTree::estimateUncompressedBytesToRead() const
 
     const auto & column_names = analysis->column_names_to_read.empty() ? all_column_names : analysis->column_names_to_read;
     if (const auto estimate = estimateReadBytes(
-            analysis->parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, context->getSettingsRef()))
+            analysis->parts_with_ranges,
+            column_names,
+            storage_snapshot,
+            mutations_snapshot,
+            context,
+            context->getSettingsRef(),
+            ReadBytesKind::Compressed))
         return estimate;
 
-    /// No conservative per-column estimate is available. Charge every selected part in full rather
-    /// than giving up: the caller needs a bound it can rely on, and an over-estimate is harmless.
+    /// No per-column estimate is available. Charge every selected part in full rather than giving up:
+    /// the caller needs a number it can act on, and over-estimating only makes it act less often.
     size_t total_bytes = 0;
     for (const auto & part : analysis->parts_with_ranges)
     {
-        if (__builtin_add_overflow(total_bytes, part.data_part->getTotalColumnsSize().data_uncompressed, &total_bytes))
+        if (__builtin_add_overflow(total_bytes, part.data_part->getTotalColumnsSize().data_compressed, &total_bytes))
             return std::numeric_limits<size_t>::max();
     }
     return total_bytes;
