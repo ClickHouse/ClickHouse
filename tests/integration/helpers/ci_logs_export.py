@@ -15,7 +15,8 @@ after the cluster is started:
 
 The destination tables are augmented with extra columns describing the CI job
 (repo, commit, check name, ...) plus two integration-test specific columns:
-`test_name` (the test module, e.g. `test_storage_s3`) and `node_name` (the name
+`test_name` (the test module, e.g. `test_storage_s3` or
+`test_prometheus_protocols/test_series_api`) and `node_name` (the name
 of the instance within the cluster, e.g. `node1`).
 
 The export is enabled by the CLICKHOUSE_CI_LOGS_HOST environment variable (set
@@ -29,12 +30,14 @@ them in the preprocessed config), and the values are passed into the containers
 through the docker compose process environment.
 """
 
+import hashlib
 import json
 import logging
 import os
 import re
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 # Extra columns added to every exported table, and the values for them.
@@ -124,12 +127,30 @@ def _cluster_name():
 
 
 def _cache_dir():
-    return Path(
-        os.environ.get(
-            "CLICKHOUSE_CI_LOGS_CACHE_DIR",
-            os.path.join(tempfile.gettempdir(), "clickhouse_ci_logs_export"),
+    """The directory with the marker files shared between all the tests and all
+    the pytest-xdist workers of one CI job.
+
+    The markers must not outlive the job that created them: a transient outage
+    in one run must not suppress the export in a later run that happens to land
+    on the same (reused) worker. The default location is therefore namespaced by
+    the identity of the job: the values for the extra columns (they contain the
+    check name, the commit and the check start time), the run id and the
+    destination host. A run without them (a manual local run) gets its own
+    namespace as well, shared for the whole checkout.
+    """
+    explicit = os.environ.get("CLICKHOUSE_CI_LOGS_CACHE_DIR")
+    if explicit:
+        return Path(explicit)
+    job_identity = "\n".join(
+        os.environ.get(name, "")
+        for name in (
+            "EXTRA_COLUMNS_EXPRESSION",
+            "INTEGRATION_TESTS_RUN_ID",
+            "CLICKHOUSE_CI_LOGS_HOST",
         )
     )
+    job_key = hashlib.sha1(job_identity.encode()).hexdigest()[:16]
+    return Path(tempfile.gettempdir()) / "clickhouse_ci_logs_export" / job_key
 
 
 def write_instance_config(config_d_dir):
@@ -192,7 +213,7 @@ def _adapt_create_statement(table, hash_value, statement):
     return "\n".join(result)
 
 
-def _run_remote_query(client_bin_path, sql, timeout=90):
+def _run_remote_query(client_bin_path, sql, timeout=90, extra_args=()):
     """Run a query on the CI Logs cluster. The password is passed through the
     environment so that it appears neither in logs nor in the process list."""
     command = [client_bin_path]
@@ -223,6 +244,7 @@ def _run_remote_query(client_bin_path, sql, timeout=90):
     ]
     if os.environ.get("CLICKHOUSE_CI_LOGS_SECURE", "1") != "0":
         command.append("--secure")
+    command += list(extra_args)
     env = os.environ.copy()
     env["CLICKHOUSE_PASSWORD"] = os.environ.get("CLICKHOUSE_CI_LOGS_PASSWORD", "")
     result = subprocess.run(
@@ -237,6 +259,43 @@ def _run_remote_query(client_bin_path, sql, timeout=90):
     if result.returncode != 0:
         raise RuntimeError(f"Query on the CI Logs cluster failed with code {result.returncode}: {result.stderr}")
     return result.stdout
+
+
+# The remote CI logs cluster occasionally fails a probe for reasons that are
+# transient and unrelated to our credentials: it resets the connection, or it is
+# momentarily over its memory limit and rejects the query. Only those cases are
+# worth retrying; anything else (auth, DNS, a real outage) will not recover, and
+# the probe must not slow down every test. Keep in sync with
+# check_logs_credentials in setup_log_cluster.sh.
+TRANSIENT_PROBE_ERRORS = ("Connection reset by peer", "MEMORY_LIMIT_EXCEEDED")
+PROBE_ATTEMPTS = 3
+
+
+def _probe_connection(client_bin_path):
+    """Check that the CI Logs cluster is reachable. Returns None on success and
+    the error of the last attempt otherwise."""
+    for attempt in range(1, PROBE_ATTEMPTS + 1):
+        try:
+            _run_remote_query(
+                client_bin_path,
+                "SELECT 1 FORMAT Null",
+                timeout=60,
+                extra_args=("--connect_timeout", "3"),
+            )
+            return None
+        except Exception as e:
+            error = e
+        if not any(marker in str(error) for marker in TRANSIENT_PROBE_ERRORS):
+            break
+        if attempt == PROBE_ATTEMPTS:
+            break
+        logging.info(
+            "CI logs export: attempt %s/%s to connect to the CI Logs cluster failed with a transient error, retrying",
+            attempt,
+            PROBE_ATTEMPTS,
+        )
+        time.sleep(attempt + 1)
+    return error
 
 
 def _ensure_remote_tables(client_bin_path, tables):
@@ -262,10 +321,9 @@ def _ensure_remote_tables(client_bin_path, tables):
         return set()
 
     if not (cache_dir / "connected").exists():
-        try:
-            _run_remote_query(client_bin_path, "SELECT 1 FORMAT Null", timeout=60)
-        except Exception as e:
-            reason = f"cannot connect to the CI Logs cluster: {e}"
+        error = _probe_connection(client_bin_path)
+        if error is not None:
+            reason = f"cannot connect to the CI Logs cluster: {error}"
             logging.warning("CI logs export: %s", reason)
             disabled_marker.write_text(reason)
             return set()
@@ -296,6 +354,18 @@ def _ensure_remote_tables(client_bin_path, tables):
     return created
 
 
+def _test_name(cluster):
+    """The name of the pytest module the cluster belongs to: the name of the
+    suite directory for a single-file suite (`test_storage_s3`), and the module
+    inside it for a multi-file suite (`test_prometheus_protocols/test_series_api`),
+    so that the exported logs identify the module that produced them."""
+    suite = os.path.basename(cluster.base_dir)
+    module = os.path.splitext(os.path.basename(cluster.base_path))[0]
+    if module == "test":
+        return suite
+    return f"{suite}/{module}"
+
+
 def setup_for_instance(cluster, instance):
     """Create the sender tables and the watcher materialized views on a started
     instance. Best effort: never raises."""
@@ -318,7 +388,7 @@ def _setup_for_instance(cluster, instance):
         )
         return
 
-    test_name = os.path.basename(cluster.base_dir)
+    test_name = _test_name(cluster)
     expression = _extra_columns_expression(test_name, instance.name)
 
     # Materialize all configured system log tables before reading their structure

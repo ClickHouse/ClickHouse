@@ -5178,7 +5178,6 @@ class ClickHouseInstance:
             and image == "clickhouse/integration-test"
             and tag == DOCKER_BASE_TAG
             and config_root_name == "clickhouse"
-            and main_config_name == "config.xml"
         )
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
