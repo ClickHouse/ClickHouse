@@ -16,7 +16,7 @@ doc_type: 'مرجع'
 ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]
     [{VALID UNTIL datetime | VALID FOR interval}]
-    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}]
+    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}] [GRANTS (privilege ON object [,...])]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
@@ -135,7 +135,7 @@ ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
   ## عبارة VALID FOR
 </div>
 
-تُعد عبارة `VALID FOR` اختصارًا مناسبًا لعبارة `VALID UNTIL`. فبدلًا من تاريخ ووقت محددين، تقبل [فاصلًا زمنيًا](/ar/reference/data-types/special-data-types/interval)، ويُحتسب موعد انتهاء الصلاحية بإضافة هذا الفاصل إلى الوقت الحالي عند تنفيذ الاستعلام. تُخزَّن النتيجة بصيغة `VALID UNTIL`، لذا يعرض `SHOW CREATE USER` دائمًا موعد انتهاء الصلاحية المطلق بعد حسمه. وتتبع قواعد الموضع نفسها الخاصة بـ `VALID UNTIL`: فإذا وردت قبل `IDENTIFIED` (أو في حال عدم وجود طريقة مصادقة)، كانت مهلة على مستوى المستخدم تنطبق على جميع الطرق، أما إذا وردت بعد طريقة مصادقة فلا تنطبق إلا على تلك الطريقة. يُخزَّن موعد انتهاء الصلاحية ويُفرض بدقة الثواني، لذا تُرفض الفواصل الزمنية التي تتضمن أجزاء من الثانية (`NANOSECOND` و`MICROSECOND` و`MILLISECOND`)؛ وأصغر وحدة مقبولة هي `SECOND`. ويُقبل الفاصل الزمني السالب لتمييز بيانات الاعتماد بأنها منتهية الصلاحية بالفعل؛ وإذا كان الموعد الناتج قبل `1970-01-01 00:00:01 UTC`، فيُحوَّل إلى التمثيل القياسي لتلك اللحظة، وهي أقدم لحظة ممكنة لانتهاء الصلاحية، وهذا ما يعرضه `SHOW CREATE USER` لاحقًا — بالتوقيت المعروض وفق المنطقة الزمنية للخادم أو للجلسة، كما هو موضح في [`VALID UNTIL`](#valid-until-clause).
+تُعد عبارة `VALID FOR` اختصارًا مناسبًا لعبارة `VALID UNTIL`. فبدلًا من تاريخ ووقت محددين، تقبل [فاصلًا زمنيًا](/ar/reference/data-types/special-data-types/interval)، ويُحتسب موعد انتهاء الصلاحية بإضافة هذا الفاصل إلى الوقت الحالي عند تنفيذ الاستعلام. تُخزَّن النتيجة بصيغة `VALID UNTIL`، لذا يعرض `SHOW CREATE USER` دائمًا موعد انتهاء الصلاحية المطلق بعد حسمه. وتتبع قواعد الموضع نفسها الخاصة بـ `VALID UNTIL`: فإذا وردت قبل `IDENTIFIED` (أو في حال عدم وجود طريقة مصادقة)، كانت مهلة على مستوى المستخدم تنطبق على جميع الطرق، أما إذا وردت بعد طريقة مصادقة فلا تنطبق إلا على تلك الطريقة. يُخزَّن موعد انتهاء الصلاحية ويُفرض بدقة الثواني، لذا تُرفض الفواصل الزمنية التي تتضمن أجزاء من الثانية (`NANOSECOND` و`MICROSECOND` و`MILLISECOND`)؛ وأصغر وحدة مقبولة هي `SECOND`. ويُقبل الفاصل الزمني السالب لتمييز بيانات الاعتماد بأنها منتهية الصلاحية بالفعل؛ وإذا كان الموعد الناتج قبل `1970-01-01 00:00:01 UTC`، فيُحوَّل إلى تلك اللحظة، وهي أقدم لحظة ممكنة لانتهاء الصلاحية، وهذا ما يعرضه `SHOW CREATE USER` لاحقًا — بالتوقيت المعروض وفق المنطقة الزمنية للخادم أو للجلسة، كما هو موضح في [`VALID UNTIL`](#valid-until-clause).
 
 أمثلة:
 
@@ -143,5 +143,17 @@ ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 * `ALTER USER name1 VALID FOR INTERVAL 3 MONTH`
 * `ALTER USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — تنطبق المهلة على مستوى المستخدم على كلتا الطريقتين.
 * `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — تنطبق المهلة على طريقة `bcrypt_password` فقط؛ ولا تنتهي صلاحية `plaintext_password` مطلقًا.
+
+<div id="grants-clause">
+  ## عبارة GRANTS
+</div>
+
+تتيح تقييد حقوق الوصول المتاحة لجلسة تمت مصادقتها باستخدام طريقة مصادقة محددة. راجع [عبارة GRANTS في CREATE USER](/ar/reference/statements/create/user#grants-clause) لمزيد من التفاصيل.
+
+وبالاقتران مع `ADD IDENTIFIED`، توفر هذه العبارة طريقة ملائمة لإنشاء رموز مميزة للتطبيقات: بيانات اعتماد إضافية بتاريخ انتهاء صلاحية ومجموعة محدودة من الامتيازات.
+
+مثال:
+
+* `ALTER USER name1 ADD IDENTIFIED WITH plaintext_password BY 'app_token' VALID UNTIL '2026-12-31' GRANTS (SELECT ON db.table, INSERT ON db.table)`
 
 {/*AUTOGENERATED_END*/}

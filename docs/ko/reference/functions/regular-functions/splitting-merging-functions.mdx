@@ -249,7 +249,7 @@ SELECT ngrams('ClickHouse', 3);
 
 도입 버전: v26.2.0
 
-지정한 구분자로 나뉜 문자열에서 하위 문자열의 순서를 뒤집습니다.
+지정한 구분자로 나뉜 문자열에서 부분 문자열의 순서를 뒤집습니다.
 이 함수는 문자열을 구분자로 분할한 뒤, 결과 파트의 순서를 반대로 바꾸고
 같은 구분자를 사용해 다시 결합합니다. 도메인 이름,
 파일 경로 또는 구성 요소의 순서를 반대로 바꿔야 하는 기타 계층형 데이터를 파싱할 때 유용합니다.
@@ -284,7 +284,7 @@ SELECT reverseBySeparator('www.google.com')
 ```
 
 ```response title=Response
-'com.google.www'
+com.google.www
 ```
 
 **경로 뒤집기**
@@ -294,7 +294,7 @@ SELECT reverseBySeparator('a/b/c', '/')
 ```
 
 ```response title=Response
-'c/b/a'
+c/b/a
 ```
 
 **사용자 정의 구분자**
@@ -304,17 +304,17 @@ SELECT reverseBySeparator('x::y::z', '::')
 ```
 
 ```response title=Response
-'z::y::x'
+z::y::x
 ```
 
-**점(.)이 포함된 경우의 예외**
+**점(.)이 포함된 예외 사례**
 
 ```sql title=Query
 SELECT reverseBySeparator('.a.b.', '.')
 ```
 
 ```response title=Response
-'.b.a.'
+.b.a.
 ```
 
 **단일 항목**
@@ -324,17 +324,17 @@ SELECT reverseBySeparator('single')
 ```
 
 ```response title=Response
-'single'
+single
 ```
 
-**빈 구분 기호**
+**빈 구분자**
 
 ```sql title=Query
 SELECT reverseBySeparator('abcde', '')
 ```
 
 ```response title=Response
-'edcba'
+edcba
 ```
 
 <div id="splitByChar">
@@ -381,9 +381,9 @@ SELECT splitByChar(',', '1,2,3,abcde');
 ```
 
 ```response title=Response
-┌─splitByChar(⋯2,3,abcde')─┐
-│ ['1','2','3','abcde']    │
-└──────────────────────────┘
+┌─splitByChar(',', '1,2,3,abcde')─┐
+│ ['1','2','3','abcde']           │
+└─────────────────────────────────┘
 ```
 
 <div id="splitByNonAlpha">
@@ -470,9 +470,9 @@ SELECT splitByRegexp('\\d+', 'a12bc23de345f');
 ```
 
 ```response title=Response
-┌─splitByRegex⋯c23de345f')─┐
-│ ['a12bc23de345f']        │
-└──────────────────────────┘
+┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
+│ ['a','bc','de','f']                    │
+└────────────────────────────────────────┘
 ```
 
 **빈 정규식**
@@ -520,7 +520,7 @@ splitByString(separator, s[, max_substrings])
 
 **반환 값**
 
-`s`에서 분할된 부분 문자열의 배열을 반환합니다. [`Array(String)`](/ko/reference/data-types/array)
+`s`에서 선택된 부분 문자열의 배열을 반환합니다. [`Array(String)`](/ko/reference/data-types/array)
 
 **예시**
 
@@ -531,12 +531,12 @@ SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
 ```
 
 ```response title=Response
-┌─splitByStrin⋯4,5, abcde')─┐
-│ ['1','2 3','4,5','abcde'] │
-└───────────────────────────┘
+┌─splitByString(', ', '1, 2 3, 4,5, abcde')─┐
+│ ['1','2 3','4,5','abcde']                 │
+└───────────────────────────────────────────┘
 ```
 
-**비어 있는 구분자**
+**빈 구분자**
 
 ```sql title=Query
 SELECT splitByString('', 'abcde');

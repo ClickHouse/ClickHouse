@@ -26,6 +26,16 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 自适应聚合器冻结线程本地哈希表时的键数量 (参见 `enable_adaptive_aggregator`) 。较小的值可使冻结后的表保持在缓存中，较大的值则可让其吸收更多高频键。值为 0 时，表会在首次有机会时冻结，这会使该算法的行为类似于分片聚合器 (`enable_sharding_aggregator`) ：每个键都根据其哈希进行路由，并由单个所有者聚合；区别仅在于，聚合会延后到合并阶段，而不是在扫描期间在线程之间交换。
 
+<div id="adaptive_aggregator_freeze_threshold_bytes">
+  ## adaptive_aggregator_freeze_threshold_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4194304" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "新增设置：以字节数限制自适应聚合器冻结本地表；该限制与键数量阈值中先达到者生效；0 将禁用字节限制。"}]}]} />
+
+自适应聚合器冻结线程本地哈希表时对应的内存大小 (请参阅 `enable_adaptive_aggregator`) 。此设置与 `adaptive_aggregator_freeze_threshold` 中任一阈值先达到时，表即会被冻结。该大小指本地表自身已分配的字节数 (包括其哈希表缓冲区和 Arena) ，在块之间进行检查。当键或聚合状态较宽时，字节限制尤为重要：仅使用键数量阈值会使这类表增长到超出 CPU 缓存容量。使用默认值时，键和状态宽度常规的表仍会按键数量冻结。0 将禁用字节限制，因此仅由键数量阈值决定。
+
 <div id="add_http_cors_header">
   ## add_http_cors_header
 </div>

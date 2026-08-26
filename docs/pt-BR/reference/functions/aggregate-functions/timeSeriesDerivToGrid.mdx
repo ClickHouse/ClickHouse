@@ -69,7 +69,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                              │
+│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                               │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -89,7 +89,7 @@ SELECT timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
 
 ```response title=Response
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                                │
+│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                                 │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

@@ -71,7 +71,7 @@ Retorna um nome de arquivo de código-fonte e um número de linha separados por 
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -91,7 +91,7 @@ trace:                   [140658411141617,94784174532828,94784076370703,94784076
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToLine(94784076370703) \G;
+SELECT addressToLine(94784076370703) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -110,7 +110,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -264,7 +264,7 @@ Retorna o símbolo dos arquivos-objeto do ClickHouse ou uma string vazia, se o e
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -284,7 +284,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToSymbol(94138803686098) \G;
+SELECT addressToSymbol(94138803686098) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -305,7 +305,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -360,12 +360,12 @@ Retorna o nome da função C++, ou uma string vazia se o símbolo não for váli
 **Selecionando a primeira string da tabela do sistema `trace_log`**
 
 ```sql title=Query
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
 -- The `trace` field contains the stack trace at the moment of sampling.
-Linha 1:
+Row 1:
 ──────
 event_date:    2019-11-20
 event_time:    2019-11-20 16:57:59
@@ -380,11 +380,11 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT demangle(addressToSymbol(94138803686098)) \G;
+SELECT demangle(addressToSymbol(94138803686098)) FORMAT Vertical;
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 demangle(addressToSymbol(94138803686098)): DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
 ```
@@ -401,11 +401,11 @@ SELECT
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 trace_functions: DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
 DB::Aggregator::executeWithoutKeyImpl(char*&, unsigned long, DB::Aggregator::AggregateFunctionInstruction*, DB::Arena*) const

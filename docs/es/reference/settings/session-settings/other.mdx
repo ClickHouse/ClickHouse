@@ -26,6 +26,16 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 El número de claves a partir del cual el agregador adaptativo congela la tabla hash local de un hilo (consulte `enable_adaptive_aggregator`). Los valores menores mantienen las tablas congeladas en caché, mientras que los valores mayores permiten que absorban más claves frecuentes. El valor 0 congela las tablas en la primera oportunidad, lo que hace que el algoritmo se comporte de forma similar al agregador con segmentación (`enable_sharding_aggregator`): cada clave se enruta según su hash y se agrega en un único propietario, pero se difiere a la fase de fusión en lugar de intercambiarse entre hilos durante el escaneo.
 
+<div id="adaptive_aggregator_freeze_threshold_bytes">
+  ## adaptive_aggregator_freeze_threshold_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4194304" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "Nueva configuración que limita en bytes las tablas locales congeladas del agregador adaptativo; se aplica el límite que se alcance primero entre este y el umbral de recuento de claves. 0 desactiva el límite de bytes."}]}]} />
+
+El tamaño de memoria a partir del cual el agregador adaptativo congela la tabla hash local de un hilo (consulta `enable_adaptive_aggregator`). Una tabla se congela al alcanzarse primero este valor o `adaptive_aggregator_freeze_threshold`. El tamaño corresponde a los bytes asignados por la propia tabla local (su búfer de tabla hash más sus arenas) y se comprueba entre bloques. El límite de bytes es relevante cuando las claves o los estados de agregación son anchos: el umbral de recuento de claves por sí solo permitiría que estas tablas superaran la capacidad de las cachés de CPU. Con el valor predeterminado, las tablas con claves y estados de ancho normal siguen congelándose según el recuento de claves. 0 desactiva el límite de bytes, por lo que decide únicamente el umbral de recuento de claves.
+
 <div id="add_http_cors_header">
   ## add_http_cors_header
 </div>

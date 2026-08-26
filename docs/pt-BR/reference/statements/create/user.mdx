@@ -15,7 +15,7 @@ Sintaxe:
 ```sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
     [{VALID UNTIL datetime | VALID FOR interval}]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}] [GRANTS (privilege ON object [,...])]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
@@ -234,6 +234,37 @@ Exemplos:
 * `CREATE USER name1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR`
 * `CREATE USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — o prazo no nível do usuário se aplica a ambos os métodos.
 * `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — o prazo se aplica apenas ao método `bcrypt_password`; `plaintext_password` nunca expira.
+
+<div id="grants-clause">
+  ## Cláusula GRANTS
+</div>
+
+Permite limitar os direitos de acesso disponíveis para uma sessão autenticada por um determinado método de autenticação. Aceita uma lista de privilégios, entre parênteses, no mesmo formato da instrução [GRANT](/pt-BR/reference/statements/grant). A cláusula é especificada após um método de autenticação (após a respectiva cláusula `VALID UNTIL`, se houver) e se aplica somente a esse método.
+
+Quando um usuário faz login com esse método de autenticação, os direitos de acesso da sessão são a interseção entre os direitos de acesso do usuário (incluindo os direitos provenientes das roles concedidas) e os privilégios listados na cláusula. A cláusula nunca adiciona direitos de acesso: se um privilégio listado não tiver sido concedido ao usuário, a sessão não o terá. Sessões autenticadas com esse método também não podem conceder privilégios (a `GRANT OPTION` nunca é mantida após a interseção) nem administrar roles. Administrar roles inclui não apenas criar, alterar, excluir, conceder e revogar roles, mas também alterar quais roles são ativadas por padrão para um usuário (`SET DEFAULT ROLE` e `ALTER USER ... DEFAULT ROLE`), o que também é rejeitado.
+
+`EXECUTE AS` altera o principal da sessão; portanto, uma instrução executada por impersonation é limitada pela interseção entre os direitos de acesso do usuário **target** e os privilégios listados, em vez dos direitos do usuário que fez login. O limite em si nunca é removido, e a impersonation exige que `IMPERSONATE ON target` tenha sido concedido ao usuário e esteja listado na cláusula. Assim, uma credencial limitada nunca pode ir além da credencial ilimitada do mesmo usuário.
+
+Isso oferece uma forma conveniente de criar tokens para aplicações: uma credencial adicional, com data de expiração e um conjunto limitado de privilégios, vinculada ao usuário — ela é exibida em `system.query_log` e `system.processes` como o usuário, deixa de funcionar se o usuário for excluído e perde direitos de acesso quando o usuário os perde.
+
+<Warning>
+  **A aplicação ocorre somente no initiator.** O limite `GRANTS` do método de autenticação e sua expiração `VALID UNTIL` são aplicados somente no node que recebe a consulta (o initiator). Eles **não** são propagados para outros nodes de um cluster; portanto, não use a cláusula para restringir a execução em todo o cluster. Os nodes remotos mantêm seu escopo habitual de roles. A cláusula também não está disponível em `users.xml`. O [query result cache](/pt-BR/concepts/features/performance/caches/query-cache) é compartilhado por todos os métodos de autenticação de um usuário: ele isola entradas por usuário e roles, e um acerto no cache não é verificado novamente em relação aos `GRANTS` do método com o qual a sessão fez login.
+</Warning>
+
+Exemplos:
+
+* `CREATE USER name1 IDENTIFIED BY 'qwerty' GRANTS (SELECT ON db.*)`
+* `ALTER USER name1 ADD IDENTIFIED WITH plaintext_password BY 'app_token' VALID UNTIL '2026-12-31' GRANTS (SELECT ON db.table, INSERT ON db.table)`
+
+Observe que o limite é uma propriedade do método de autenticação, registrada no momento do login: alterar a cláusula com `ALTER USER` afeta novas sessões, não as já estabelecidas.
+
+Grants de source filtrada, como `READ ON S3('s3://bucket/.*')`, ainda não são compatíveis com a cláusula: a interseção compara um Source filter como uma string opaca e não consegue restringir um filtro em relação a outro; por isso, esse grant é rejeitado em vez de silenciosamente não conceder acesso.
+
+A cláusula é compatível apenas com métodos de autenticação cujas credenciais são verificadas exclusivamente localmente pelo servidor. Para métodos cuja verificação entra em contato com um sistema externo (ou, no caso de `jwt`, pode entrar em contato — por exemplo, para buscar as chaves de assinatura) (`ldap`, `kerberos`, `http`, `jwt`), a cláusula é rejeitada: quando vários métodos de autenticação aceitam a mesma credencial, o limite é aplicado verificando novamente a credencial em relação aos outros métodos, e uma consulta adicional a um sistema externo não é segura; portanto, outro método que aceite a mesma credencial poderia contornar o limite.
+
+Quando a mesma credencial efetiva é aceita por mais de um método de autenticação, o login é limitado em modo fail-close por todos eles: a sessão recebe a interseção dos `GRANTS` de todos os métodos correspondentes e expira no `VALID UNTIL` mais próximo. O `VALID UNTIL` mais próximo prevalece mesmo que já tenha passado — o login é rejeitado, exatamente como se o único método correspondente tivesse expirado, de modo que a expiração de um token nunca concede silenciosamente à credencial compartilhada os direitos ou a duração de um método mais abrangente.
+
+Essa combinação é verificada apenas entre métodos de autenticação verificados localmente pelo servidor, pelo mesmo motivo pelo qual a própria cláusula é rejeitada para um método verificado externamente: verificar novamente a credencial nesse caso exigiria uma consulta adicional e insegura ao sistema externo. Portanto, se a mesma credencial também for aceita por um método verificado externamente (`ldap`, `kerberos`, `http`, `jwt`) para o mesmo usuário, o `VALID UNTIL` desse método não faz parte da combinação, e uma expiração anterior configurada nele não encurta a sessão obtida por meio do método verificado localmente.
 
 <div id="grantees-clause">
   ## Cláusula GRANTEES

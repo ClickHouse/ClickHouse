@@ -22,9 +22,9 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`adaptive_aggregator_freeze_threshold`개의 키에 도달하면 각 스레드의 로컬 해시 테이블을 고정하는 적응형 `GROUP BY` 집계를 활성화하는 새로운 설정입니다. 이에 따라 빈번한 키는 작은 로컬 테이블에서 계속 집계되고, 드문 키는 해시에 따라 버킷별 백로그로 전달되어 버킷 병렬 머지 내에서 정확히 한 번 집계됩니다. 따라서 드문 키는 스레드마다 한 번씩이 아니라 한 번만 저장하고 처리합니다."}]}]} />
 
-적응형 `GROUP BY` 알고리즘을 활성화합니다. 각 스레드는 `adaptive_aggregator_freeze_threshold`개의 키에 도달할 때까지 로컬 해시 테이블에서 집계한 후 테이블을 고정합니다. 그러면 이미 확인된(빈번한) 키의 행은 해당 테이블에서 계속 갱신되고, 새로운(드문) 키는 해시에 따라 버킷별 백로그로 전달되어 버킷 병렬 머지 내에서 정확히 한 번 집계됩니다. 빈번한 키는 캐시에 상주하는 작은 테이블에 유지되며, 드문 키는 스레드마다 한 번씩이 아니라 한 번만 저장하고 처리합니다.
+적응형 `GROUP BY` 알고리즘을 활성화합니다. 각 스레드는 `adaptive_aggregator_freeze_threshold`개의 키(또는 `adaptive_aggregator_freeze_threshold_bytes`만큼의 메모리)에 도달할 때까지 로컬 해시 테이블에서 집계한 후 테이블을 고정합니다. 그러면 이미 확인된(빈번한) 키의 행은 해당 테이블에서 계속 갱신되고, 새로운(드문) 키는 해시에 따라 버킷별 백로그로 전달되어 버킷 병렬 머지 내에서 정확히 한 번 집계됩니다. 빈번한 키는 캐시에 상주하는 작은 테이블에 유지되며, 드문 키는 스레드마다 한 번씩이 아니라 한 번만 저장하고 처리합니다.
 
-외부 집계 설정(`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`)도 적용됩니다. 임계값을 초과하면 백로그를 공유 테이블로 조기에 비우며, 그래도 임계값 아래로 내려가지 않으면 일반 외부 집계를 통해 공유 테이블을 디스크에 스필합니다.
+외부 집계 설정(`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`)도 적용됩니다. 임계값을 초과하면 백로그를 공유 테이블로 조기에 비우며, 그래도 임계값 아래로 내려가지 않으면 일반 외부 집계를 통해 공유 테이블을 디스크에 spill합니다.
 
 <div id="enable_adaptive_memory_spill_scheduler">
   ## enable_adaptive_memory_spill_scheduler

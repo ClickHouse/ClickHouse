@@ -20,11 +20,11 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "各スレッドのローカルハッシュテーブルが `adaptive_aggregator_freeze_threshold` 個のキーに達した時点で固定するアダプティブ `GROUP BY` 集計を有効にする新しい設定です。頻出キーは小さなローカルテーブルで集計を継続し、まれなキーはハッシュに基づいてバケットごとのバックログに振り分けられ、バケット並列マージ内で正確に1回だけ集計されます。これにより、まれなキーはスレッドごとではなく1回だけ保存・処理されます。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "各スレッドのローカルハッシュテーブルが `adaptive_aggregator_freeze_threshold` 個のキーに達した時点で固定するアダプティブ `GROUP BY` 集約を有効にする新しい設定です。頻出キーは小さなローカルテーブルで集約を継続し、まれなキーはハッシュに基づいてバケットごとのバックログに振り分けられ、バケット並列マージ内で正確に1回だけ集約されます。これにより、まれなキーはスレッドごとではなく1回だけ保存・処理されます。"}]}]} />
 
-アダプティブ `GROUP BY` アルゴリズムを有効にします。各スレッドは、ローカルハッシュテーブルが `adaptive_aggregator_freeze_threshold` 個のキーに達するまで集計を行い、その後テーブルは固定されます。すでに出現した頻出キーの行はそのテーブル内で更新され続ける一方、新しいまれなキーはハッシュに基づいてバケットごとのバックログに振り分けられ、バケット並列マージ内で正確に1回だけ集計されます。頻出キーはキャッシュに収まる小さなテーブルに保持され、まれなキーはスレッドごとではなく1回だけ保存・処理されます。
+アダプティブ `GROUP BY` アルゴリズムを有効にします。各スレッドは、ローカルハッシュテーブルが `adaptive_aggregator_freeze_threshold` 個のキー (または `adaptive_aggregator_freeze_threshold_bytes` のメモリ) に達するまで集約を行い、その後テーブルは固定されます。すでに出現した頻出キーの行はそのテーブル内で更新され続ける一方、新しいまれなキーはハッシュに基づいてバケットごとのバックログに振り分けられ、バケット並列マージ内で正確に1回だけ集約されます。頻出キーはキャッシュに収まる小さなテーブルに保持され、まれなキーはスレッドごとではなく1回だけ保存・処理されます。
 
-外部集計の設定 (`max_bytes_before_external_group_by`、`max_bytes_ratio_before_external_group_by`) も考慮されます。しきい値を超えると、バックログは早期に共有テーブルへ排出されます。それでも使用量をしきい値未満に戻せない場合は、通常の外部集計により共有テーブルがディスクにスピルされます。
+外部集約の設定 (`max_bytes_before_external_group_by`、`max_bytes_ratio_before_external_group_by`) も考慮されます。しきい値を超えると、バックログは早期に共有テーブルへ排出されます。それでも使用量をしきい値未満に戻せない場合は、通常の外部集約により共有テーブルがディスクにスピルされます。
 
 <div id="enable_adaptive_memory_spill_scheduler">
   ## enable_adaptive_memory_spill_scheduler

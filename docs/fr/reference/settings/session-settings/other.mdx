@@ -26,6 +26,16 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Nombre de clés à partir duquel l’agrégateur adaptatif fige la table de hachage locale d’un thread (voir `enable_adaptive_aggregator`). Des valeurs plus faibles maintiennent les tables figées dans le cache, tandis que des valeurs plus élevées leur permettent d’absorber davantage de clés fréquentes. La valeur 0 fige les tables dès que possible, ce qui fait que l’algorithme se comporte de manière similaire à l’agrégateur partitionné (`enable_sharding_aggregator`) : chaque clé est routée selon son hash et agrégée par un seul propriétaire, mais l’opération est reportée à la phase de fusion au lieu d’être échangée entre les threads pendant le parcours.
 
+<div id="adaptive_aggregator_freeze_threshold_bytes">
+  ## adaptive_aggregator_freeze_threshold_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4194304" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "Nouveau paramètre limitant, en octets, les tables locales figées de l’agrégateur adaptatif : la première limite atteinte entre celle-ci et le seuil du nombre de clés s’applique ; 0 désactive la limite en octets."}]}]} />
+
+Taille de mémoire à partir de laquelle l’agrégateur adaptatif fige la table de hachage locale d’un thread (voir `enable_adaptive_aggregator`). Une table est figée lorsque cette valeur ou `adaptive_aggregator_freeze_threshold` est atteinte en premier. La taille correspond aux octets effectivement alloués par la table locale (son tampon de table de hachage et ses arènes), vérifiés entre les blocs. La limite en octets est importante lorsque les clés ou les états d’agrégation sont volumineux : le seul seuil du nombre de clés permettrait à ces tables de dépasser la capacité des caches CPU. Avec la valeur par défaut, les tables dont les clés et les états sont de taille habituelle continuent d’être figées en fonction du nombre de clés. 0 désactive la limite en octets ; seul le seuil du nombre de clés s’applique alors.
+
 <div id="add_http_cors_header">
   ## add_http_cors_header
 </div>

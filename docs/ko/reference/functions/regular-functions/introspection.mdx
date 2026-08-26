@@ -71,7 +71,7 @@ addressToLine(address_of_binary_instruction)
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -87,11 +87,11 @@ query_id:                421b6855-1858-45a5-8f37-f383409d6d72
 trace:                   [140658411141617,94784174532828,94784076370703,94784076372094,94784076361020,94784175007680,140658411116251,140658403895439]
 ```
 
-**단일 주소의 소스 코드 파일 이름과 라인 번호 가져오기**
+**단일 주소의 소스 코드 파일 이름과 줄 번호 가져오기**
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToLine(94784076370703) \G;
+SELECT addressToLine(94784076370703) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -110,7 +110,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -264,7 +264,7 @@ addressToSymbol(address_of_binary_instruction)
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -284,7 +284,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToSymbol(94138803686098) \G;
+SELECT addressToSymbol(94138803686098) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -305,7 +305,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -360,7 +360,7 @@ C++ 함수의 이름을 반환하며, 심볼이 유효하지 않으면 빈 문�
 **`trace_log` 시스템 테이블에서 첫 번째 문자열 조회**
 
 ```sql title=Query
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -380,7 +380,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT demangle(addressToSymbol(94138803686098)) \G;
+SELECT demangle(addressToSymbol(94138803686098)) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -401,7 +401,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response

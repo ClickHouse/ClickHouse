@@ -15,7 +15,7 @@ doc_type: 'reference'
 ```sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
     [{VALID UNTIL datetime | VALID FOR interval}]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}] [GRANTS (privilege ON object [,...])]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
@@ -234,6 +234,37 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 * `CREATE USER name1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR`
 * `CREATE USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — 用户级截止时间适用于这两种方法。
 * `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — 截止时间仅适用于 `bcrypt_password` 方法；`plaintext_password` 永不过期。
+
+<div id="grants-clause">
+  ## GRANTS 子句
+</div>
+
+可限制通过特定身份验证方法登录的会话所拥有的访问权限。该子句接受一个用括号括起的特权列表，其格式与 [GRANT](/zh/reference/statements/grant) 语句相同。它应指定在身份验证方法之后 (如有 `VALID UNTIL` 子句，则位于其后) ，且仅适用于该方法。
+
+当用户通过此类身份验证方法登录时，会话的访问权限是用户访问权限 (包括已获授角色的权限) 与子句中列出特权的交集。该子句绝不会增加任何访问权限：如果列出的特权未授予该用户，会话便不具备该特权。通过此类方法进行身份验证的会话也不能授予特权 (`GRANT OPTION` 永远不会保留在交集中) ，也不能管理角色。管理角色不仅包括创建、修改、删除、授予和撤销角色，还包括更改默认情况下为用户激活的角色 (`SET DEFAULT ROLE` 和 `ALTER USER ... DEFAULT ROLE`) ；这些操作同样会被拒绝。
+
+`EXECUTE AS` 会切换会话的主体，因此，以模拟身份运行的语句受**目标**用户访问权限与所列特权交集的限制，而非登录用户的权限限制。该限制本身永远不会解除；此外，模拟身份要求 `IMPERSONATE ON target` 同时已授予该用户并列在子句中。因此，受限凭据的权限范围绝不会超过同一用户的不受限凭据。
+
+这为应用程序创建标记提供了一种便捷方式：创建一个绑定到该用户、具有到期日期和有限特权集的额外凭据。它会在 `system.query_log` 和 `system.processes` 中显示为该用户；用户被删除后便无法再使用；用户失去访问权限时，它也会失去相应权限。
+
+<Warning>
+  **仅在发起节点强制执行。** 身份验证方法的 `GRANTS` 限制及其 `VALID UNTIL` 到期时间仅在接收查询的节点 (发起节点) 上强制执行。它们**不会**传播到集群中的其他节点，因此请勿依赖该子句在集群级别限制执行。远程节点仍保留其通常的角色作用域。该子句在 `users.xml` 中也不可用。[查询结果缓存](/zh/concepts/features/performance/caches/query-cache)由同一用户的所有身份验证方法共享：它按用户和角色隔离缓存条目，且缓存命中时不会根据会话登录所用方法的 `GRANTS` 重新检查。
+</Warning>
+
+示例：
+
+* `CREATE USER name1 IDENTIFIED BY 'qwerty' GRANTS (SELECT ON db.*)`
+* `ALTER USER name1 ADD IDENTIFIED WITH plaintext_password BY 'app_token' VALID UNTIL '2026-12-31' GRANTS (SELECT ON db.table, INSERT ON db.table)`
+
+请注意，该限制是身份验证方法的属性，并在登录时确定：使用 `ALTER USER` 更改子句只会影响新会话，不会影响已建立的会话。
+
+该子句暂不支持带过滤器的源授权，例如 `READ ON S3('s3://bucket/.*')`：交集会将源过滤器视为不透明字符串进行比较，无法将一个过滤器缩小为另一个过滤器，因此此类授权会被拒绝，而不会静默地导致不授予任何访问权限。
+
+该子句仅支持凭据完全由服务器本地验证的身份验证方法。对于验证时会联系外部系统的方法 (对于 `jwt`，则可能会联系外部系统，例如获取签名密钥)  (`ldap`、`kerberos`、`http`、`jwt`) ，该子句会被拒绝：当多个身份验证方法接受同一凭据时，限制通过根据其他方法重新检查凭据来强制执行；额外探测外部系统并不安全，因此接受同一凭据的其他方法可能绕过该限制。
+
+当同一有效凭据被多个身份验证方法接受时，登录会以故障关闭的方式受所有这些方法限制：会话获得所有匹配方法的 `GRANTS` 的交集，并在最早的 `VALID UNTIL` 时到期。即使最早的 `VALID UNTIL` 已经过期，它仍然优先：登录会被拒绝，就如同唯一匹配的方法已过期一样。因此，标记过期绝不会悄然使共享凭据获得更宽泛方法的权限或有效期。
+
+出于同样的原因，此组合仅在由 服务器 本地验证的身份验证方法之间进行检查：如上所述，对于外部验证的方法，该子句本身会被拒绝，因为重新检查凭据需要对外部系统进行一次不安全的额外探测。因此，如果同一用户的外部验证方法 (`ldap`、`kerberos`、`http`、`jwt`) 恰好也接受相同的凭据，则该方法自身的 `VALID UNTIL` 不会纳入此组合，为其配置的较早到期时间也不会缩短通过本地验证方法获得的 会话。
 
 <div id="grantees-clause">
   ## GRANTEES 子句

@@ -347,7 +347,7 @@ greatest(x1[, x2, ...])
 
 **Valeur renvoyée**
 
-Renvoie la plus grande valeur parmi les arguments, promue au type compatible le plus large. [`Any`](/fr/reference/data-types/index)
+Renvoie la plus grande valeur parmi les arguments, promue au plus grand type compatible. [`Any`](/fr/reference/data-types/index)
 
 **Exemples**
 
@@ -364,7 +364,7 @@ SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 └────────┴─────────┘
 ```
 
-**tableau**
+**Tableaux**
 
 ```sql title=Query
 SELECT greatest(['hello'], ['there'], ['world']);
@@ -384,9 +384,9 @@ SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12
 ```
 
 ```response title=Response
-┌─greatest(toD⋯0.000', 3))─┐
-│  2025-01-02 12:00:00.000 │
-└──────────────────────────┘
+┌─greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3))─┐
+│                                                                   2025-01-02 12:00:00.000 │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="if">
@@ -472,7 +472,7 @@ least(x1[, x2, ...])
 
 **Valeur renvoyée**
 
-Renvoie la plus petite valeur parmi les arguments, promue au type compatible le plus large. [`Any`](/fr/reference/data-types/index)
+Renvoie la plus petite valeur parmi les arguments, promue au plus grand type compatible. [`Any`](/fr/reference/data-types/index)
 
 **Exemples**
 
@@ -496,9 +496,9 @@ SELECT least(['hello'], ['there'], ['world']);
 ```
 
 ```response title=Response
-┌─least(['hell⋯ ['world'])─┐
-│ ['hello']                │
-└──────────────────────────┘
+┌─least(['hello'], ['there'], ['world'])─┐
+│ ['hello']                              │
+└────────────────────────────────────────┘
 ```
 
 **Types DateTime**
@@ -509,9 +509,9 @@ SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00
 ```
 
 ```response title=Response
-┌─least(toDate⋯0.000', 3))─┐
-│  2025-01-01 12:00:00.000 │
-└──────────────────────────┘
+┌─least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3))─┐
+│                                                                2025-01-01 12:00:00.000 │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiIf">

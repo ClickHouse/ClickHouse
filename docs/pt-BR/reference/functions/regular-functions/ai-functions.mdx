@@ -228,6 +228,7 @@ Um dos rótulos de categoria fornecidos ou o valor padrão do tipo da coluna (st
 **Classificar o sentimento**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
 ```
 
@@ -238,6 +239,9 @@ positive
 **Classificar uma coluna com credenciais explícitas**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
@@ -290,18 +294,23 @@ O vetor de embedding, ou um array vazio se a entrada for NULL ou vazia, se a sol
 **Gerar o embedding de uma única string (`credentials` pode ser omitido se a configuração `ai_function_embedding_default_credentials` estiver definida)**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **Com dimensões explícitas**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))
 ```
 
 **Gere embeddings para uma coluna de textos**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (title String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
@@ -335,7 +344,7 @@ aiExtract(text, instruction_or_schema[, params])
 
 * `text` — Texto do qual extrair informações. [`String`](/pt-BR/reference/data-types/string)
 * `instruction_or_schema` — Instrução de extração em formato livre ou um objeto JSON constante que descreve os campos a serem extraídos. [`const String`](/pt-BR/reference/data-types/string)
-* `params` — `Map(String, String)` constante opcional de parâmetros. Chaves específicas da função: `temperature` (temperatura de amostragem que controla a aleatoriedade; padrão `0.0`), `max_tokens` (número máximo de tokens de saída por chamada; padrão `1024`). Os parâmetros comuns `credentials` e `model` também se aplicam (consulte [AI Functions](/pt-BR/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/pt-BR/reference/data-types/map)
+* `params` — `Map(String, String)` constante opcional de parâmetros. Chaves específicas da função: `temperature` (temperatura de amostragem que controla a aleatoriedade; padrão `0.0`), `max_tokens` (número máximo de tokens de saída por chamada; padrão `1024`). Os parâmetros comuns `credentials` e `model` também se aplicam (consulte [Funções de IA](/pt-BR/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/pt-BR/reference/data-types/map)
 
 **Valor retornado**
 
@@ -346,6 +355,7 @@ Um único valor extraído (modo de instrução) ou uma string contendo um objeto
 **Instrução em formato livre**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')
 ```
 
@@ -356,6 +366,9 @@ late and damaged package
 **Extração de esquema**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE reviews (review String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
@@ -405,12 +418,18 @@ aiFilter(text, condition[, params])
 **Filtrar avaliações irritadas**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE reviews (body String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The package arrived three days late.');
 SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
 ```
 
 **Filtre uma coluna usando credenciais explícitas**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
@@ -454,6 +473,7 @@ A resposta de texto gerada, ou o valor padrão do tipo de coluna (string vazia) 
 **Pergunta simples**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 ```
 
@@ -464,12 +484,16 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 **Com credenciais explícitas e prompt de sistema**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))
 ```
 
 **Resumir valores da coluna**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
@@ -528,6 +552,7 @@ O texto com as PII detectadas substituídas pelo token de ocultação ou o valor
 **Ocultar categorias específicas**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
 ```
 
@@ -538,6 +563,9 @@ Purchase was done by customer [REDACTED] with email [REDACTED]
 **Oculte as categorias de PII predefinidas com um token personalizado**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE tickets (body String) ENGINE = Memory;
+INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
@@ -587,18 +615,25 @@ A similaridade de cosseno em `[-1, 1]` ou NULL se um dos textos for NULL ou esti
 **Compare duas strings (`credentials` pode ser omitido se a configuração `ai_function_embedding_default_credentials` estiver definida)**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **Classifique as avaliações por similaridade com uma consulta**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE product_reviews (review String) ENGINE = Memory;
+INSERT INTO product_reviews VALUES ('It works well under rain.');
 SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
 ```
 
 **Deduplicação semântica com uma autorjunção**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE docs (id UInt64, title String) ENGINE = Memory;
+INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
@@ -639,6 +674,7 @@ O texto traduzido, ou o valor padrão do tipo da coluna (string vazia) se a requ
 **Traduzir para o francês**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiTranslate('Hello, world!', 'French')
 ```
 
@@ -649,6 +685,9 @@ Bonjour le monde!
 **Traduza para o japonês seguindo as instruções de estilo**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');
 SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5
 ```
 

@@ -284,17 +284,17 @@ SELECT reverseBySeparator('www.google.com')
 ```
 
 ```response title=Response
-'com.google.www'
+com.google.www
 ```
 
-**Обращение пути**
+**Инвертирование пути**
 
 ```sql title=Query
 SELECT reverseBySeparator('a/b/c', '/')
 ```
 
 ```response title=Response
-'c/b/a'
+c/b/a
 ```
 
 **Произвольный разделитель**
@@ -304,7 +304,7 @@ SELECT reverseBySeparator('x::y::z', '::')
 ```
 
 ```response title=Response
-'z::y::x'
+z::y::x
 ```
 
 **Особый случай с точками**
@@ -314,7 +314,7 @@ SELECT reverseBySeparator('.a.b.', '.')
 ```
 
 ```response title=Response
-'.b.a.'
+.b.a.
 ```
 
 **Один элемент**
@@ -324,7 +324,7 @@ SELECT reverseBySeparator('single')
 ```
 
 ```response title=Response
-'single'
+single
 ```
 
 **Пустой разделитель**
@@ -334,7 +334,7 @@ SELECT reverseBySeparator('abcde', '')
 ```
 
 ```response title=Response
-'edcba'
+edcba
 ```
 
 <div id="splitByChar">
@@ -381,9 +381,9 @@ SELECT splitByChar(',', '1,2,3,abcde');
 ```
 
 ```response title=Response
-┌─splitByChar(⋯2,3,abcde')─┐
-│ ['1','2','3','abcde']    │
-└──────────────────────────┘
+┌─splitByChar(',', '1,2,3,abcde')─┐
+│ ['1','2','3','abcde']           │
+└─────────────────────────────────┘
 ```
 
 <div id="splitByNonAlpha">
@@ -470,9 +470,9 @@ SELECT splitByRegexp('\\d+', 'a12bc23de345f');
 ```
 
 ```response title=Response
-┌─splitByRegex⋯c23de345f')─┐
-│ ['a12bc23de345f']        │
-└──────────────────────────┘
+┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
+│ ['a','bc','de','f']                    │
+└────────────────────────────────────────┘
 ```
 
 **Пустое регулярное выражение**
@@ -531,9 +531,9 @@ SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
 ```
 
 ```response title=Response
-┌─splitByStrin⋯4,5, abcde')─┐
-│ ['1','2 3','4,5','abcde'] │
-└───────────────────────────┘
+┌─splitByString(', ', '1, 2 3, 4,5, abcde')─┐
+│ ['1','2 3','4,5','abcde']                 │
+└───────────────────────────────────────────┘
 ```
 
 **Пустой разделитель**

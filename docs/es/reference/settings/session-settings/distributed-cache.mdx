@@ -38,6 +38,16 @@ Solo tiene efecto en ClickHouse Cloud. Es una configuración para pruebas; no la
 
 Solo tiene efecto en ClickHouse Cloud. Permite omitir el pool de conexiones de caché distribuida
 
+<div id="distributed_cache_client_id">
+  ## distributed_cache_client_id
+</div>
+
+<CloudOnlyBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nueva configuración (solo para pruebas de CI) para sobrescribir el ID de client de caché distribuida por consulta."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración (solo para pruebas de CI) para sobrescribir el ID de client de caché distribuida por consulta."}]}]} />
+
+Solo tiene efecto en ClickHouse Cloud. Configuración utilizada únicamente para pruebas de CI: cuando no está vacía, sobrescribe el ID de client de caché distribuida configurado en el registro para las solicitudes de esta consulta. Permite que las pruebas distribuyan los datos entre un conjunto limitado de ID de client, manteniendo los mismos datos en el mismo ID de client. Requiere que `ci_mode` esté habilitado en la configuración del client de caché distribuida: cuando no lo está (el valor predeterminado, como en producción), una consulta que enruta una lectura o escritura a través de la caché distribuida falla con `SUPPORT_IS_DISABLED` en lugar de recurrir silenciosamente al ID de client configurado. Las consultas que nunca alcanzan la caché distribuida no se ven afectadas, por lo que el valor se ignora en ellas.
+
 <div id="distributed_cache_connect_backoff_max_ms">
   ## distributed_cache_connect_backoff_max_ms
 </div>
@@ -188,7 +198,7 @@ Solo tiene efecto en ClickHouse Cloud. Número mínimo de bytes para realizar un
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4194304"},{"label": "Nueva configuración para descartar y volver a abrir una conexión de caché distribuida al realizar un reposicionamiento cuando, de otro modo, habría que descartar demasiados bytes en tránsito. El valor predeterminado es 4 MiB; 0 restaura el comportamiento anterior (reutilizar siempre la conexión mediante el ID del rango de lectura)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "Nueva configuración para descartar y volver a abrir una conexión de caché distribuida al realizar un reposicionamiento cuando, de otro modo, habría que descartar demasiados bytes en tránsito. El valor predeterminado es 4 MiB; 0 restaura el comportamiento anterior (reutilizar siempre la conexión mediante el ID del rango de lectura)."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "4194304"},{"label": "Nueva configuración para descartar y volver a abrir una conexión de caché distribuida al realizar un reposicionamiento cuando, de otro modo, habría que descartar demasiados bytes en tránsito. El valor predeterminado es 4 MiB; 0 restaura el comportamiento anterior (reutilizar siempre la conexión mediante el ID del rango de lectura)."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "4194304"},{"label": "Nueva configuración para descartar y volver a abrir una conexión de caché distribuida al realizar un reposicionamiento cuando, de otro modo, habría que descartar demasiados bytes en tránsito. El valor predeterminado es 4 MiB; 0 restaura el comportamiento anterior (reutilizar siempre la conexión mediante el ID del rango de lectura)."}]}]} />
 
 Solo tiene efecto en ClickHouse Cloud. Al reposicionarse desde la posición actual de un stream de caché distribuida abierto, si el número estimado de bytes en tránsito que habría que descartar para seguir reutilizando la conexión (mediante el mecanismo de ID del rango de lectura) supera este valor, descarte la conexión y abra una nueva. Esto evita tener que descartar una gran cantidad de datos no utilizados cuando los reposicionamientos son frecuentes. 0 deshabilita esta opción y reutiliza siempre la conexión.
 

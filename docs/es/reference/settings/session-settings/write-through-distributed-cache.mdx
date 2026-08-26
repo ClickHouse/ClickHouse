@@ -14,18 +14,6 @@ import { CloudOnlyBadge } from "/snippets/es/components/CloudOnlyBadge/CloudOnly
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="write_through_distributed_cache">
-  ## write_through_distributed_cache
-</div>
-
-<CloudOnlyBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "Un ajuste para ClickHouse Cloud"}]}]} />
-
-Solo tiene efecto en ClickHouse Cloud. Permite escribir en la caché distribuida (la escritura en S3 también la realizará la caché distribuida)
-
 <div id="write_through_distributed_cache_buffer_size">
   ## write_through_distributed_cache_buffer_size
 </div>

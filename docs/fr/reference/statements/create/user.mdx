@@ -15,7 +15,7 @@ Syntaxe :
 ```sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
     [{VALID UNTIL datetime | VALID FOR interval}]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}] [GRANTS (privilege ON object [,...])]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
@@ -234,6 +234,37 @@ Exemples :
 * `CREATE USER name1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR`
 * `CREATE USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — l&#39;échéance au niveau de l&#39;utilisateur s&#39;applique aux deux méthodes.
 * `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — l&#39;échéance ne s&#39;applique qu&#39;à la méthode `bcrypt_password` ; `plaintext_password` n&#39;expire jamais.
+
+<div id="grants-clause">
+  ## Clause GRANTS
+</div>
+
+Permet de limiter les droits d’accès disponibles pour une session authentifiée par une méthode d’authentification donnée. Elle accepte, entre parenthèses, une liste de privilèges sous la même forme que l’instruction [GRANT](/fr/reference/statements/grant). La clause est spécifiée après une méthode d’authentification (après sa clause `VALID UNTIL`, le cas échéant) et s’applique uniquement à cette méthode.
+
+Lorsqu’un utilisateur se connecte avec une telle méthode d’authentification, les droits d’accès de la session correspondent à l’intersection des droits d’accès de l’utilisateur (y compris ceux issus des rôles accordés) et des privilèges répertoriés dans la clause. La clause n’ajoute jamais de droits d’accès : si un privilège répertorié n’est pas accordé à l’utilisateur, la session ne le possède pas. Les sessions authentifiées avec une telle méthode ne peuvent pas non plus accorder de privilèges (l’option `GRANT OPTION` ne survit jamais à l’intersection) ni administrer des rôles. L’administration des rôles inclut non seulement leur création, modification, suppression, attribution et révocation, mais aussi la modification des rôles activés par défaut pour un utilisateur (`SET DEFAULT ROLE` et `ALTER USER ... DEFAULT ROLE`), qui est également refusée.
+
+`EXECUTE AS` change le principal de la session ; une instruction exécutée sous usurpation d’identité est donc limitée par l’intersection des droits d’accès de l’utilisateur **cible** et des privilèges répertoriés, plutôt que par les droits de l’utilisateur qui s’est connecté. Cette limite n’est jamais levée, et l’usurpation nécessite que `IMPERSONATE ON target` soit à la fois accordé à l’utilisateur et répertorié dans la clause ; ainsi, des identifiants limités ne peuvent jamais conférer davantage de droits que les identifiants illimités du même utilisateur.
+
+Cela offre un moyen pratique de créer des jetons pour les applications : des identifiants supplémentaires, assortis d’une date d’expiration et d’un ensemble limité de privilèges, liés à l’utilisateur — ils apparaissent dans `system.query_log` et `system.processes` sous le nom de l’utilisateur, cessent de fonctionner si l’utilisateur est supprimé et perdent leurs droits d’accès lorsque l’utilisateur les perd.
+
+<Warning>
+  **L’application est effectuée uniquement par l’initiateur.** La limite `GRANTS` de la méthode d’authentification et son expiration `VALID UNTIL` sont appliquées uniquement sur le nœud qui reçoit la requête (l’initiateur). Elles ne sont **pas** propagées aux autres nœuds d’un cluster ; ne vous fiez donc pas à cette clause pour contraindre l’exécution à l’échelle du cluster. Les nœuds distants conservent leur périmètre habituel de rôles. La clause n’est pas non plus disponible dans `users.xml`. Le [cache de résultats de requêtes](/fr/concepts/features/performance/caches/query-cache) est partagé par toutes les méthodes d’authentification d’un utilisateur : il isole les entrées par utilisateur et par rôles, et un résultat trouvé dans le cache n’est pas revérifié par rapport aux `GRANTS` de la méthode avec laquelle la session s’est connectée.
+</Warning>
+
+Exemples :
+
+* `CREATE USER name1 IDENTIFIED BY 'qwerty' GRANTS (SELECT ON db.*)`
+* `ALTER USER name1 ADD IDENTIFIED WITH plaintext_password BY 'app_token' VALID UNTIL '2026-12-31' GRANTS (SELECT ON db.table, INSERT ON db.table)`
+
+Notez que la limite est une propriété de la méthode d’authentification, déterminée au moment de la connexion : modifier la clause avec `ALTER USER` affecte les nouvelles sessions, et non celles déjà établies.
+
+Les autorisations sur des sources filtrées telles que `READ ON S3('s3://bucket/.*')` ne sont pas encore prises en charge dans la clause : l’intersection compare un filtre source comme une chaîne opaque et ne peut pas restreindre un filtre à un autre. Une telle autorisation est donc rejetée plutôt que de n’accorder silencieusement aucun accès.
+
+La clause est prise en charge uniquement pour les méthodes d’authentification dont les identifiants sont vérifiés exclusivement localement par le serveur. Pour les méthodes dont la vérification contacte (ou, dans le cas de `jwt`, peut contacter — par exemple pour récupérer les clés de signature) un système externe (`ldap`, `kerberos`, `http`, `jwt`), la clause est rejetée : lorsque plusieurs méthodes d’authentification acceptent les mêmes identifiants, la limite est appliquée en revérifiant les identifiants avec les autres méthodes, et une interrogation supplémentaire d’un système externe n’est pas sûre ; une autre méthode acceptant les mêmes identifiants pourrait donc contourner la limite.
+
+Lorsque les mêmes identifiants effectifs sont acceptés par plusieurs méthodes d’authentification, la connexion est limitée de manière restrictive par toutes ces méthodes : la session obtient l’intersection des `GRANTS` de toutes les méthodes correspondantes et expire à la plus proche de leurs dates `VALID UNTIL`. La date `VALID UNTIL` la plus proche prévaut même lorsqu’elle est déjà passée — la connexion est rejetée, exactement comme si l’unique méthode correspondante avait expiré ; ainsi, l’expiration d’un jeton ne confère jamais silencieusement aux identifiants partagés les droits ou la durée de vie d’une méthode plus permissive.
+
+Cette combinaison n’est vérifiée que parmi les méthodes d’authentification validées localement par le serveur, pour la même raison que la clause elle-même est refusée pour une méthode validée par un système externe : revérifier les identifiants exigerait une interrogation supplémentaire non sûre du système externe. Ainsi, si les mêmes identifiants sont également acceptés par une méthode validée par un système externe (`ldap`, `kerberos`, `http`, `jwt`) pour le même utilisateur, le `VALID UNTIL` de cette méthode ne fait pas partie de la combinaison et une expiration antérieure configurée pour celle-ci ne raccourcit pas la session obtenue via la méthode validée localement.
 
 <div id="grantees-clause">
   ## Clause GRANTEES

@@ -260,20 +260,20 @@ SELECT ngrams('ClickHouse', 3);
 * reverseBySeparator(&#39;a/b/c&#39;, &#39;/&#39;) تعيد &#39;c/b/a&#39;
 * reverseBySeparator(&#39;x::y::z&#39;, &#39;::&#39;) تعيد &#39;z::y::x&#39;
 
-**بناء الجملة**
+**بنية**
 
 ```sql
 reverseBySeparator(string[, separator])
 ```
 
-**الوسيطات**
+**وسيطة الدالة**
 
 * `string` — سلسلة الإدخال المطلوب عكس ترتيب أجزائها. [`String`](/ar/reference/data-types/string)
 * `separator` — سلسلة الفاصل المستخدمة لتحديد الأجزاء. إذا لم يتم توفيرها، فسيُستخدم &#39;.&#39; (نقطة). القيمة الافتراضية: &#39;.&#39; [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-تعيد سلسلة تكون فيها المقاطع الفرعية مرتبة من اليمين إلى اليسار مقارنةً بالسلسلة الأصلية، ومتصلة باستخدام الفاصل نفسه. [`String`](/ar/reference/data-types/string)
+تعيد سلسلة تكون فيها السلاسل الفرعية مرتبة من اليمين إلى اليسار مقارنةً بالسلسلة الأصلية، ومتصلة باستخدام الفاصل نفسه. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
@@ -284,7 +284,7 @@ SELECT reverseBySeparator('www.google.com')
 ```
 
 ```response title=Response
-'com.google.www'
+com.google.www
 ```
 
 **عكس ترتيب المسار**
@@ -294,7 +294,7 @@ SELECT reverseBySeparator('a/b/c', '/')
 ```
 
 ```response title=Response
-'c/b/a'
+c/b/a
 ```
 
 **فاصل مخصص**
@@ -304,7 +304,7 @@ SELECT reverseBySeparator('x::y::z', '::')
 ```
 
 ```response title=Response
-'z::y::x'
+z::y::x
 ```
 
 **حالة خاصة عند استخدام النقاط**
@@ -314,7 +314,7 @@ SELECT reverseBySeparator('.a.b.', '.')
 ```
 
 ```response title=Response
-'.b.a.'
+.b.a.
 ```
 
 **عنصر واحد**
@@ -324,7 +324,7 @@ SELECT reverseBySeparator('single')
 ```
 
 ```response title=Response
-'single'
+single
 ```
 
 **فاصل فارغ**
@@ -334,7 +334,7 @@ SELECT reverseBySeparator('abcde', '')
 ```
 
 ```response title=Response
-'edcba'
+edcba
 ```
 
 <div id="splitByChar">
@@ -356,13 +356,13 @@ SELECT reverseBySeparator('abcde', '')
 * وجود عدة فواصل متتالية
 * إذا كانت السلسلة الأصلية `s` فارغة
 
-**الصياغة**
+**بنية**
 
 ```sql
 splitByChar(separator, s[, max_substrings])
 ```
 
-**الوسيطات**
+**وسيطة الدالة**
 
 * `separator` — يجب أن يكون الفاصل حرفًا من بايت واحد. [`String`](/ar/reference/data-types/string)
 * `s` — السلسلة المراد تقسيمها. [`String`](/ar/reference/data-types/string)
@@ -381,9 +381,9 @@ SELECT splitByChar(',', '1,2,3,abcde');
 ```
 
 ```response title=Response
-┌─splitByChar(⋯2,3,abcde')─┐
-│ ['1','2','3','abcde']    │
-└──────────────────────────┘
+┌─splitByChar(',', '1,2,3,abcde')─┐
+│ ['1','2','3','abcde']           │
+└─────────────────────────────────┘
 ```
 
 <div id="splitByNonAlpha">
@@ -451,7 +451,7 @@ SELECT splitByNonAlpha('user@domain.com');
 splitByRegexp(regexp, s[, max_substrings])
 ```
 
-**المعاملات**
+**وسيطة الدالة**
 
 * `regexp` — تعبير نمطي. ثابت. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
 * `s` — السلسلة المراد تقسيمها. [`String`](/ar/reference/data-types/string)
@@ -470,9 +470,9 @@ SELECT splitByRegexp('\\d+', 'a12bc23de345f');
 ```
 
 ```response title=Response
-┌─splitByRegex⋯c23de345f')─┐
-│ ['a12bc23de345f']        │
-└──────────────────────────┘
+┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
+│ ['a','bc','de','f']                    │
+└────────────────────────────────────────┘
 ```
 
 **تعبير نمطي فارغ**
@@ -493,8 +493,8 @@ SELECT splitByRegexp('', 'abcde');
 
 أُضيف في: v1.1.0
 
-يقسّم سلسلة نصية باستخدام `separator` ثابت يتكوّن من عدة أحرف إلى مصفوفة من السلاسل الفرعية.
-إذا كانت السلسلة النصية `separator` فارغة، فسيُقسَّم النص `s` إلى مصفوفة من الأحرف المفردة.
+يقسّم سلسلة نصية باستخدام `separator` ثابت يتكوّن من عدة محارف إلى مصفوفة من السلاسل الفرعية.
+إذا كانت السلسلة النصية `separator` فارغة، فسيُقسَّم النص `s` إلى مصفوفة من المحارف المفردة.
 
 قد تظهر سلاسل فرعية فارغة في الحالات التالية:
 
@@ -512,7 +512,7 @@ SELECT splitByRegexp('', 'abcde');
 splitByString(separator, s[, max_substrings])
 ```
 
-**الوسائط**
+**وسيطة الدالة**
 
 * `separator` — الفاصل. [`String`](/ar/reference/data-types/string)
 * `s` — السلسلة النصية المراد تقسيمها. [`String`](/ar/reference/data-types/string)
@@ -531,9 +531,9 @@ SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
 ```
 
 ```response title=Response
-┌─splitByStrin⋯4,5, abcde')─┐
-│ ['1','2 3','4,5','abcde'] │
-└───────────────────────────┘
+┌─splitByString(', ', '1, 2 3, 4,5, abcde')─┐
+│ ['1','2 3','4,5','abcde']                 │
+└───────────────────────────────────────────┘
 ```
 
 **فاصل فارغ**

@@ -26,6 +26,16 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 アダプティブアグリゲータがスレッドのローカルハッシュテーブルをフリーズするキー数です (`enable_adaptive_aggregator` を参照) 。値を小さくすると、フリーズされたテーブルはキャッシュに収まりやすくなり、大きくすると頻出キーをより多く保持できます。0 を指定すると、最初の機会にテーブルをフリーズします。この場合、アルゴリズムは分片アグリゲータ (`enable_sharding_aggregator`) と同様に動作します。各キーは hash によってルーティングされ、単一の所有者によって集計されますが、スキャン中にスレッド間で交換されるのではなく、マージフェーズまで処理が延期されます。
 
+<div id="adaptive_aggregator_freeze_threshold_bytes">
+  ## adaptive_aggregator_freeze_threshold_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4194304" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "キー数のしきい値とこの値のうち先に達した方で、アダプティブアグリゲータの凍結対象となるローカルテーブルをバイト単位で制限する新しい設定。0 を指定するとバイト上限が無効になります。"}]}]} />
+
+アダプティブアグリゲータがスレッドのローカルハッシュテーブルを凍結するメモリサイズです (`enable_adaptive_aggregator` を参照) 。この値と `adaptive_aggregator_freeze_threshold` のうち、先に達した方でテーブルが凍結されます。サイズは、ローカルテーブル自体が割り当てたバイト数 (ハッシュテーブルの buffer とそのアリーナ) であり、block 間で確認されます。キーまたは aggregation state が wide な場合、このバイト上限が重要になります。キー数のしきい値だけでは、そのようなテーブルが CPU cache を超えるほど大きくなる可能性があります。デフォルト値では、通常のキー幅および state 幅のテーブルは引き続きキー数によって凍結されます。0 を指定するとバイト上限が無効になり、キー数のしきい値のみで決まります。
+
 <div id="add_http_cors_header">
   ## add_http_cors_header
 </div>

@@ -26,6 +26,16 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 O número de chaves a partir do qual o agregador adaptativo congela a tabela hash local de uma thread (consulte `enable_adaptive_aggregator`). Valores menores mantêm as tabelas congeladas na cache, enquanto valores maiores permitem que absorvam mais chaves frequentes. O valor 0 congela as tabelas na primeira oportunidade, fazendo com que o algoritmo se comporte de forma semelhante ao agregador com sharding (`enable_sharding_aggregator`): cada chave é roteada pelo seu hash e agregada por um único proprietário, mas apenas na fase de merge, em vez de ser trocada entre threads durante a varredura.
 
+<div id="adaptive_aggregator_freeze_threshold_bytes">
+  ## adaptive_aggregator_freeze_threshold_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4194304" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "Nova configuração que limita, em bytes, as tabelas locais congeladas do agregador adaptativo; prevalece o limite atingido primeiro, seja este ou o de contagem de chaves. 0 desativa o limite em bytes."}]}]} />
+
+O tamanho de memória em que o agregador adaptativo congela a tabela hash local de uma thread (consulte `enable_adaptive_aggregator`). Uma tabela é congelada quando este valor ou `adaptive_aggregator_freeze_threshold` é atingido primeiro. O tamanho corresponde aos bytes efetivamente alocados pela própria tabela local (seu buffer de tabela hash mais suas arenas) e é verificado entre blocos. O limite em bytes é importante quando as chaves ou os estados de agregação são largos: apenas o limite de contagem de chaves permitiria que essas tabelas ultrapassassem os caches da CPU. Com o valor padrão, tabelas com chaves e estados de largura comum continuam sendo congeladas pela contagem de chaves. O valor 0 desativa o limite em bytes, de modo que apenas o limite de contagem de chaves determina isso.
+
 <div id="add_http_cors_header">
   ## add_http_cors_header
 </div>

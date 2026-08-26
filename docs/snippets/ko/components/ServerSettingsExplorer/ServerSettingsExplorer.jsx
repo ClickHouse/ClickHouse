@@ -310,10 +310,12 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 2,
+      count: 4,
       settings: [
         { name: "enable_azure_sdk_logging", path: "/enable#enable_azure_sdk_logging", default: "0" },
-        { name: "enable_webterminal", path: "/enable#enable_webterminal", default: "1" }
+        { name: "enable_read_through_distributed_cache", path: "/enable#enable_read_through_distributed_cache", default: "0" },
+        { name: "enable_webterminal", path: "/enable#enable_webterminal", default: "1" },
+        { name: "enable_write_through_distributed_cache", path: "/enable#enable_write_through_distributed_cache", default: "0" }
       ],
       children: []
     },
@@ -1490,11 +1492,11 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
   }
 
   const filterEntry = (entry) => {
-    const 설정 = entry.설정.filter((설정) => matchesSearch(설정.name))
+    const settings = entry.settings.filter((setting) => matchesSearch(setting.name))
     const children = entry.children.map(filterEntry).filter(Boolean)
-    const count = 설정.length + children.reduce((total, child) => total + child.count, 0)
+    const count = settings.length + children.reduce((total, child) => total + child.count, 0)
     if (!count) return null
-    return { ...entry, count, 설정, children }
+    return { ...entry, count, settings, children }
   }
 
   const filteredEntries = isSearching ? entries.map(filterEntry).filter(Boolean) : entries
@@ -1531,8 +1533,8 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
   const renderGroup = (entry, continuations = [], isLast = false, path = []) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
-    const items = [...entry.설정.map((설정) => ({ type: "설정", value: 설정 })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "설정" : "설정"}`
+    const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
+    const countLabel = `${entry.count}개 설정`
 
     return (
       <div key={key} className="min-w-max">

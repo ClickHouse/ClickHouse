@@ -26,6 +26,16 @@ import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnly
 
 적응형 집계기가 스레드의 로컬 해시 테이블을 고정하는 키 수입니다(`enable_adaptive_aggregator` 참조). 값이 작을수록 고정된 테이블이 캐시에 상주하고, 값이 클수록 자주 사용되는 키를 더 많이 수용할 수 있습니다. 0으로 설정하면 가능한 첫 시점에 테이블을 고정하므로 알고리즘이 세그먼트 분할 집계기(`enable_sharding_aggregator`)와 유사하게 동작합니다. 즉, 모든 키는 해시에 따라 라우팅되어 단일 소유자가 집계하지만, 스캔 중 스레드 간에 교환하는 대신 머지 단계로 처리를 미룹니다.
 
+<div id="adaptive_aggregator_freeze_threshold_bytes">
+  ## adaptive_aggregator_freeze_threshold_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4194304" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "적응형 집계기의 고정된 로컬 테이블을 바이트 단위로 제한하는 새로운 설정입니다. 이 값과 키 개수 임계값 중 먼저 도달하는 기준이 적용되며, 0은 바이트 제한을 비활성화합니다."}]}]} />
+
+적응형 집계기가 스레드의 로컬 해시 테이블을 고정하는 메모리 크기입니다(`enable_adaptive_aggregator` 참조). 이 값과 `adaptive_aggregator_freeze_threshold` 중 먼저 도달하는 기준에서 테이블이 고정됩니다. 크기는 블록 사이에서 확인하며, 로컬 테이블 자체에 할당된 바이트 수(해시 테이블 버퍼와 해당 아레나의 합)입니다. 키 또는 집계 상태의 폭이 넓을 때는 바이트 제한이 중요합니다. 키 개수 임계값만으로는 이러한 테이블이 CPU 캐시보다 커질 수 있기 때문입니다. 기본값에서는 일반적인 폭의 키와 상태를 사용하는 테이블이 계속 키 개수 기준으로 고정됩니다. 0은 바이트 제한을 비활성화하므로 키 개수 임계값만으로 결정됩니다.
+
 <div id="add_http_cors_header">
   ## add_http_cors_header
 </div>

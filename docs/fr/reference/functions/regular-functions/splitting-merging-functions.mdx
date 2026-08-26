@@ -284,7 +284,7 @@ SELECT reverseBySeparator('www.google.com')
 ```
 
 ```response title=Response
-'com.google.www'
+com.google.www
 ```
 
 **Inversion du chemin**
@@ -294,7 +294,7 @@ SELECT reverseBySeparator('a/b/c', '/')
 ```
 
 ```response title=Response
-'c/b/a'
+c/b/a
 ```
 
 **Séparateur personnalisé**
@@ -304,7 +304,7 @@ SELECT reverseBySeparator('x::y::z', '::')
 ```
 
 ```response title=Response
-'z::y::x'
+z::y::x
 ```
 
 **Cas particulier avec des points**
@@ -314,7 +314,7 @@ SELECT reverseBySeparator('.a.b.', '.')
 ```
 
 ```response title=Response
-'.b.a.'
+.b.a.
 ```
 
 **Élément unique**
@@ -324,7 +324,7 @@ SELECT reverseBySeparator('single')
 ```
 
 ```response title=Response
-'single'
+single
 ```
 
 **Séparateur vide**
@@ -334,7 +334,7 @@ SELECT reverseBySeparator('abcde', '')
 ```
 
 ```response title=Response
-'edcba'
+edcba
 ```
 
 <div id="splitByChar">
@@ -347,7 +347,7 @@ Découpe une chaîne, séparée par la chaîne constante spécifiée `separator`
 Des sous-chaînes vides peuvent être renvoyées si le séparateur apparaît au début ou à la fin de la chaîne, ou s&#39;il y a plusieurs séparateurs consécutifs.
 
 <Note>
-  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si la chaîne restante est incluse dans le dernier élément du tableau résultant lorsque l&#39;argument `max_substrings > 0`.
+  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si le reste de la chaîne est inclus dans le dernier élément du tableau de résultats lorsque l&#39;argument `max_substrings > 0`.
 </Note>
 
 Des sous-chaînes vides peuvent être renvoyées dans les cas suivants :
@@ -381,9 +381,9 @@ SELECT splitByChar(',', '1,2,3,abcde');
 ```
 
 ```response title=Response
-┌─splitByChar(⋯2,3,abcde')─┐
-│ ['1','2','3','abcde']    │
-└──────────────────────────┘
+┌─splitByChar(',', '1,2,3,abcde')─┐
+│ ['1','2','3','abcde']           │
+└─────────────────────────────────┘
 ```
 
 <div id="splitByNonAlpha">
@@ -442,7 +442,7 @@ Des sous-chaînes vides peuvent être produites lorsque :
 * la chaîne d’origine est vide alors que l’expression régulière ne l’est pas.
 
 <Note>
-  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si la chaîne restante est incluse dans le dernier élément du tableau de résultats lorsque l’argument `max_substrings > 0`.
+  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si le reste de la chaîne est inclus dans le dernier élément du tableau de résultats lorsque l’argument `max_substrings > 0`.
 </Note>
 
 **Syntaxe**
@@ -470,9 +470,9 @@ SELECT splitByRegexp('\\d+', 'a12bc23de345f');
 ```
 
 ```response title=Response
-┌─splitByRegex⋯c23de345f')─┐
-│ ['a12bc23de345f']        │
-└──────────────────────────┘
+┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
+│ ['a','bc','de','f']                    │
+└────────────────────────────────────────┘
 ```
 
 **Expression régulière vide**
@@ -503,7 +503,7 @@ Des sous-chaînes vides peuvent être produites lorsque :
 * La chaîne d’origine `s` est vide alors que le séparateur ne l’est pas
 
 <Note>
-  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si la chaîne restante est incluse dans le dernier élément du tableau de résultats lorsque l’argument `max_substrings > 0`.
+  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si le reste de la chaîne est inclus dans le dernier élément du tableau de résultats lorsque l’argument `max_substrings > 0`.
 </Note>
 
 **Syntaxe**
@@ -515,7 +515,7 @@ splitByString(separator, s[, max_substrings])
 **Arguments**
 
 * `separator` — Le séparateur. [`String`](/fr/reference/data-types/string)
-* `s` — La chaîne à scinder. [`String`](/fr/reference/data-types/string)
+* `s` — La chaîne à découper. [`String`](/fr/reference/data-types/string)
 * `max_substrings` — Facultatif. Lorsque `max_substrings > 0`, le nombre de sous-chaînes renvoyées ne dépassera pas `max_substrings` ; sinon, la fonction renverra autant de sous-chaînes que possible. Valeur par défaut : `0`. [`Int64`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
@@ -531,9 +531,9 @@ SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
 ```
 
 ```response title=Response
-┌─splitByStrin⋯4,5, abcde')─┐
-│ ['1','2 3','4,5','abcde'] │
-└───────────────────────────┘
+┌─splitByString(', ', '1, 2 3, 4,5, abcde')─┐
+│ ['1','2 3','4,5','abcde']                 │
+└───────────────────────────────────────────┘
 ```
 
 **Séparateur vide**

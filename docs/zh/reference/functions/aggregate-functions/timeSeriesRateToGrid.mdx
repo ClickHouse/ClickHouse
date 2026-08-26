@@ -70,11 +70,11 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                         │
+│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                         │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**使用数组类型参数**
+**使用数组类型实参**
 
 ```sql title=Query
 SET allow_experimental_time_series_aggregate_functions = 1;
@@ -90,7 +90,7 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
 
 ```response title=Response
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                           │
+│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                           │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

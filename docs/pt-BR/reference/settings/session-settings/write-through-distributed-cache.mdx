@@ -14,18 +14,6 @@ import { CloudOnlyBadge } from "/snippets/pt-BR/components/CloudOnlyBadge/CloudO
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="write_through_distributed_cache">
-  ## write_through_distributed_cache
-</div>
-
-<CloudOnlyBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "Uma configuração do ClickHouse Cloud"}]}]} />
-
-Só tem efeito no ClickHouse Cloud. Permite gravar no cache distribuído (a gravação no S3 também será feita pelo cache distribuído)
-
 <div id="write_through_distributed_cache_buffer_size">
   ## write_through_distributed_cache_buffer_size
 </div>

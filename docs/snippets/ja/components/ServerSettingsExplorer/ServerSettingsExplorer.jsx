@@ -311,10 +311,12 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 2,
+      count: 4,
       settings: [
         { name: "enable_azure_sdk_logging", path: "/enable#enable_azure_sdk_logging", default: "0" },
-        { name: "enable_webterminal", path: "/enable#enable_webterminal", default: "1" }
+        { name: "enable_read_through_distributed_cache", path: "/enable#enable_read_through_distributed_cache", default: "0" },
+        { name: "enable_webterminal", path: "/enable#enable_webterminal", default: "1" },
+        { name: "enable_write_through_distributed_cache", path: "/enable#enable_write_through_distributed_cache", default: "0" }
       ],
       children: []
     },
@@ -1533,7 +1535,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "件の設定" : "件の設定"}`
+    const countLabel = `${entry.count} ${entry.count === 1 ? "setting" : "settings"}`
 
     return (
       <div key={key} className="min-w-max">
