@@ -6,4 +6,5 @@
     <listen_try>1</listen_try>
 
     <grpc_port>9200</grpc_port>
+    <arrowflight_port>8888</arrowflight_port>
 </clickhouse>

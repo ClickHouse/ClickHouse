@@ -1,3 +1,6 @@
+import socket
+import time
+
 import pyarrow.flight
 import pytest
 
@@ -27,6 +30,47 @@ all_unavailable_node = failed_cluster.add_instance(
 )
 
 
+def decode_proc_net_address(hex_address):
+    """Decode an address of `/proc/net/tcp` or `/proc/net/tcp6`: a hexadecimal dump of the raw
+    address whose every 4-byte word is in host byte order."""
+    raw = bytes.fromhex(hex_address)
+    raw = b"".join(raw[offset : offset + 4][::-1] for offset in range(0, len(raw), 4))
+    family = socket.AF_INET if len(raw) == 4 else socket.AF_INET6
+    return socket.inet_ntop(family, raw)
+
+
+def listening_addresses(node, port):
+    """The addresses of the sockets that listen on `port` inside the container, read from
+    `/proc/net/tcp` and `/proc/net/tcp6` so that no extra tools are needed. Unlike the log, this
+    observes the live listeners: a listener that was supposed to be replaced but is still around
+    shows up here."""
+    addresses = []
+    for proc_file in ("/proc/net/tcp", "/proc/net/tcp6"):
+        content = node.exec_in_container(["bash", "-c", f"cat {proc_file}"])
+        for line in content.splitlines()[1:]:
+            fields = line.split()
+            local_address, state = fields[1], fields[3]
+            if state != "0A":  # `TCP_LISTEN`
+                continue
+            hex_address, hex_port = local_address.rsplit(":", 1)
+            if int(hex_port, 16) == port:
+                addresses.append(decode_proc_net_address(hex_address))
+    return sorted(addresses)
+
+
+def wait_for_listening_addresses(node, port, expected, timeout=30):
+    """Wait until the sockets listening on `port` are exactly `expected`. A listener replaced by a
+    reload is destroyed - and its socket closed - only after the new one has been created, so the
+    settled state is what the test is about."""
+    deadline = time.monotonic() + timeout
+    while True:
+        addresses = listening_addresses(node, port)
+        if addresses == expected or time.monotonic() > deadline:
+            assert addresses == expected, f"port {port}: {addresses} != {expected}"
+            return
+        time.sleep(0.5)
+
+
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
@@ -39,7 +83,8 @@ def started_cluster():
 def test_one_grpc_listener_for_mixed_wildcard_listen_hosts():
     """gRPC binds a dual-stack socket for a wildcard `listen_host`, so it must replace any specific
     addresses that occur before or after it. A second listener would either fail to bind and take the
-    whole server down with it (Arrow Flight) or silently share the port with the first one (gRPC)."""
+    whole server down with it (Arrow Flight) or silently share the port with the first one (gRPC).
+    """
     assert wildcard_node.query("SELECT 1") == "1\n"
 
     assert (
@@ -83,13 +128,19 @@ def test_unavailable_listen_host_does_not_prevent_startup():
     )
 
 
-def test_runtime_reload_normalizes_grpc_listen_hosts():
-    """Reloading from a specific address to a wildcard must replace the existing gRPC listener.
-    Keeping the old listener while adding the wildcard one recreates the overlapping socket issue
-    that startup normalization avoids."""
+def test_runtime_reload_normalizes_grpc_and_arrowflight_listen_hosts():
+    """Reloading from a specific address to a wildcard must replace the existing gRPC and Arrow
+    Flight listeners. Keeping the old listener while adding the wildcard one recreates the
+    overlapping socket issue that startup normalization avoids."""
     assert reload_node.query("SELECT 1") == "1\n"
     assert len(reload_node.grep_in_log("Listening for gRPC protocol").splitlines()) == 1
+    assert listening_addresses(reload_node, 9200) == [reload_node.ip_address]
+    assert listening_addresses(reload_node, 8888) == [reload_node.ip_address]
 
+    # The Arrow Flight port changes with the reload: `updateServers` stops the old listener but
+    # destroys it only after `createServers` has bound the new one, and an Arrow Flight socket -
+    # unlike a plain gRPC one - is not bound with `SO_REUSEPORT`, so it cannot be rebound on the
+    # same port within a single reload.
     reload_node.exec_in_container(
         [
             "bash",
@@ -102,6 +153,7 @@ def test_runtime_reload_normalizes_grpc_listen_hosts():
     <listen_try>1</listen_try>
 
     <grpc_port>9200</grpc_port>
+    <arrowflight_port>8889</arrowflight_port>
 </clickhouse>
 EOF""",
         ]
@@ -109,8 +161,36 @@ EOF""",
     reload_node.query("SYSTEM RELOAD CONFIG")
 
     assert reload_node.query("SELECT 1") == "1\n"
+
     assert len(reload_node.grep_in_log("Listening for gRPC protocol").splitlines()) == 2
     assert reload_node.contains_in_log("Listening for gRPC protocol: 0.0.0.0:9200")
+    assert (
+        len(
+            reload_node.grep_in_log(
+                "Listening for Arrow Flight compatibility protocol"
+            ).splitlines()
+        )
+        == 2
+    )
+    assert reload_node.contains_in_log(
+        "Listening for Arrow Flight compatibility protocol: 0.0.0.0:8889"
+    )
+
+    # The log alone would also be satisfied by a broken reload that merely adds the wildcard
+    # listener next to the old specific one, so check the live listeners: the specific address is
+    # gone, and a single wildcard socket serves each port.
+    wait_for_listening_addresses(reload_node, 9200, ["0.0.0.0"])
+    wait_for_listening_addresses(reload_node, 8889, ["0.0.0.0"])
+    wait_for_listening_addresses(reload_node, 8888, [])
+
+    # The single Arrow Flight listener must serve IPv4 traffic on the new port.
+    reload_node.wait_until_port_is_ready(8889, timeout=10)
+    client = pyarrow.flight.FlightClient(f"grpc+tcp://{reload_node.ip_address}:8889")
+    try:
+        table = client.do_get(pyarrow.flight.Ticket(b"SELECT 1")).read_all()
+        assert table.column(0)[0].as_py() == 1
+    finally:
+        client.close()
 
 
 def test_all_unavailable_listen_hosts_prevent_startup():
@@ -126,7 +206,8 @@ def test_all_unavailable_listen_hosts_prevent_startup():
 
 def test_runtime_restart_reports_arrowflight_configuration_error():
     """`listen_try` only ignores unavailable listen addresses. A runtime listener restart must
-    still report an Arrow Flight configuration error that happens before binding a socket."""
+    still report an Arrow Flight configuration error that happens before binding a socket.
+    """
     wildcard_node.query("SYSTEM STOP LISTEN ARROW FLIGHT")
     wildcard_node.exec_in_container(
         [
