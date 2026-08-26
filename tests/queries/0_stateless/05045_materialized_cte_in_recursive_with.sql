@@ -1,9 +1,11 @@
 -- Pins that a non-recursive helper CTE with a plain `SELECT` body declared `MATERIALIZED`
 -- inside a `WITH RECURSIVE` clause is materialized once, and that every recursive iteration
 -- reads the same temporary result even when the helper is referenced only once syntactically
--- inside the recursive term. A helper whose body is a top-level set operation is out of scope
--- and still raises `UNSUPPORTED_METHOD`; the recursive CTE's own rejection is covered by
--- `03927_recursive_materialized_cte`.
+-- inside the recursive term. The same rule applies to a materialized CTE declared in an
+-- enclosing `WITH` and read from a recursive member, because it is about where a reference
+-- executes rather than where the CTE is declared. A helper whose body is a top-level set
+-- operation is out of scope and still raises `UNSUPPORTED_METHOD`; the recursive CTE's own
+-- rejection is covered by `03927_recursive_materialized_cte`.
 --
 -- Temporary table names created for a materialized CTE are random, so raw `EXPLAIN` output is
 -- never pinned directly; instead we count how many
@@ -115,14 +117,46 @@ WITH outer_helper AS MATERIALIZED
 )
 SELECT distinct_r FROM outer_helper UNION ALL SELECT distinct_r FROM outer_helper;
 
--- G. Negative: a helper whose body is a top-level set operation is out of scope for this
+-- G. A materialized CTE declared in an enclosing, non-recursive `WITH` and read once from an
+--    inner recursive term. This shape is accepted before this change too, and the helper was
+--    re-evaluated on every recursion step; it is now materialized once, because the marking
+--    follows where a reference executes and not where the CTE is declared. Pins that the marking
+--    is not narrowed to CTEs declared inside the `WITH RECURSIVE` clause.
+SELECT count() FROM (
+    EXPLAIN
+    WITH h AS MATERIALIZED (SELECT rand() AS r)
+    SELECT * FROM
+    (
+        WITH RECURSIVE walk AS
+        (
+            SELECT toUInt64(0) AS n, toUInt32(0) AS r
+            UNION ALL
+            SELECT n + 1, h.r FROM walk CROSS JOIN h WHERE n < 3
+        )
+        SELECT * FROM walk
+    )
+) WHERE explain LIKE '%MaterializingCTE (Materializing CTE: h)%';
+
+WITH h AS MATERIALIZED (SELECT rand() AS r)
+SELECT uniqExactIf(r, n > 0) FROM
+(
+    WITH RECURSIVE walk AS
+    (
+        SELECT toUInt64(0) AS n, toUInt32(0) AS r
+        UNION ALL
+        SELECT n + 1, h.r FROM walk CROSS JOIN h WHERE n < 3
+    )
+    SELECT * FROM walk
+);
+
+-- H. Negative: a helper whose body is a top-level set operation is out of scope for this
 --    implementation. At query tree build time it is indistinguishable from the recursive CTE
 --    itself, which is why both are rejected the same way.
 WITH RECURSIVE steps AS MATERIALIZED (SELECT toUInt64(1) AS step UNION ALL SELECT toUInt64(2) AS step),
 walk AS (SELECT toUInt64(0) AS x UNION ALL SELECT x + step FROM walk CROSS JOIN steps WHERE x < 2)
 SELECT * FROM walk ORDER BY x; -- { serverError UNSUPPORTED_METHOD }
 
--- H. That rejection is unconditional: it does not depend on `enable_materialized_cte`.
+-- I. That rejection is unconditional: it does not depend on `enable_materialized_cte`.
 SET enable_materialized_cte = 0;
 WITH RECURSIVE steps AS MATERIALIZED (SELECT toUInt64(1) AS step UNION ALL SELECT toUInt64(2) AS step),
 walk AS (SELECT toUInt64(0) AS x UNION ALL SELECT x + step FROM walk CROSS JOIN steps WHERE x < 2)

@@ -177,13 +177,7 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
-/// Marks every materialized CTE referenced from `node` as requiring materialization, i.e. as unsafe
-/// for the single-use inlining performed by `inlineMaterializedCTEIfNeeded`. Call it only on a
-/// subtree that is known to be evaluated more than once at runtime.
-///
-/// A materialized CTE's own subquery is a boundary: it is evaluated once while the temporary table
-/// is populated, no matter how often the reference site itself is executed, so the walk stops there.
-/// A recursive CTE nested inside such a subquery marks its own recursive members independently.
+/// Call only on a subtree known to be evaluated more than once at runtime. See the call site.
 void requireMaterializationForMaterializedCTEsInRepeatedSubtree(const QueryTreeNodePtr & node)
 {
     if (!node)
@@ -6982,6 +6976,10 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
         /// `queries_nodes[0]` once as the seed and re-evaluates `queries_nodes[1..]` once per
         /// recursion step. A materialized CTE referenced from a recursive member is therefore read
         /// repeatedly even when it has a single syntactic reference site.
+        ///
+        /// The walk stops at a materialized CTE's own subquery: that body is evaluated once while
+        /// the temporary table is populated, however often the reference site runs. A recursive CTE
+        /// nested inside such a body marks its own recursive members when it reaches this point.
         for (size_t i = 1; i < queries_nodes_size; ++i)
             requireMaterializationForMaterializedCTEsInRepeatedSubtree(queries_nodes[i]);
 
