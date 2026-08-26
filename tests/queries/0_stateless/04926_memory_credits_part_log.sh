@@ -12,7 +12,7 @@ for i in 0 1; do
 done
 
 ${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE memory_credits_part_log FINAL"
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS part_log"
 
 ${CLICKHOUSE_CLIENT} --query "SELECT ProfileEvents['MemoryCredits'] > 0 FROM system.part_log WHERE table = 'memory_credits_part_log' AND event_type = 'MergeParts' ORDER BY event_time_microseconds DESC LIMIT 1"
 
