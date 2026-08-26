@@ -3256,7 +3256,12 @@ ColumnPtr FunctionArrayElement<mode>::executeReplicated(
           || gatherReplicated<Int16>(index_column, replication_indexes, offsets, *data, *result, builder)
           || gatherReplicated<Int32>(index_column, replication_indexes, offsets, *data, *result, builder)
           || gatherReplicated<Int64>(index_column, replication_indexes, offsets, *data, *result, builder)))
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must have UInt or Int type", getName());
+    {
+        /// The index is not a plain numeric column (e.g. Nullable, or an array of indexes):
+        /// materialize the array and let the generic path handle it.
+        args[0].column = args[0].column->convertToFullColumnIfReplicated();
+        return executeImpl(args, result_type, input_rows_count);
+    }
 
     if (is_array_of_nullable)
         return ColumnNullable::create(
