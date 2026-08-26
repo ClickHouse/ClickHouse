@@ -9,6 +9,8 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -20,7 +22,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
+#include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
@@ -84,8 +88,13 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
     }
 
     std::vector<Target> targets;
-    for (auto target_kind : getTargetKinds())
+    for (auto target_kind : getAllTargetKinds())
     {
+        /// The recent samples target exists only if the normalized create query has a RECENT SAMPLES clause.
+        if ((target_kind == ViewTarget::RecentSamples)
+            && (!create_query.targets || !create_query.targets->tryGetTarget(target_kind)))
+            continue;
+
         Target target;
         target.kind = target_kind;
 
@@ -117,6 +126,7 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
 
         targets.emplace_back(std::move(target));
     }
+
     return targets;
 }
 
@@ -161,6 +171,33 @@ StorageTimeSeries::StorageTimeSeries(
 StorageTimeSeries::~StorageTimeSeries() = default;
 
 
+std::vector<ViewTarget::Kind> StorageTimeSeries::getTargetKinds() const
+{
+    std::vector<ViewTarget::Kind> kinds;
+    kinds.reserve(targets.size());
+    for (const auto & target : targets)
+        kinds.push_back(target.kind);
+    return kinds;
+}
+
+
+const StorageTimeSeries::Target * StorageTimeSeries::tryGetTarget(ViewTarget::Kind target_kind) const
+{
+    for (const auto & target : targets)
+    {
+        if (target.kind == target_kind)
+            return &target;
+    }
+    return nullptr;
+}
+
+
+bool StorageTimeSeries::hasTarget(ViewTarget::Kind target_kind) const
+{
+    return tryGetTarget(target_kind) != nullptr;
+}
+
+
 StoragePtr StorageTimeSeries::getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const
 {
     return getTargetTableImpl(target_kind, local_context, /* throw_if_not_found = */ true);
@@ -173,11 +210,20 @@ StoragePtr StorageTimeSeries::tryGetTargetTable(ViewTarget::Kind target_kind, co
 
 StoragePtr StorageTimeSeries::getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const
 {
-    /// `targets` is populated in the `getTargetKinds()` order.
-    auto index = static_cast<size_t>(target_kind - ViewTarget::Samples);
-    if (index >= targets.size() || targets[index].kind != target_kind)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {} (index={})", target_kind, index);
-    const auto & target = targets[index];
+    const auto * target_ptr = tryGetTarget(target_kind);
+    if (!target_ptr)
+    {
+        /// The recent samples target is optional.
+        if (target_kind == ViewTarget::RecentSamples)
+        {
+            if (throw_if_not_found)
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries table {} has no {} target table",
+                                getStorageID().getNameForLogs(), target_kind);
+            return nullptr;
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {}", target_kind);
+    }
+    const auto & target = *target_ptr;
 
     auto lookup = [&](const StorageID & id) -> StoragePtr
     {
@@ -250,11 +296,15 @@ StorageID StorageTimeSeries::tryGetTargetTableID(ViewTarget::Kind target_kind, c
 
 bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
 {
-    /// `targets` is populated in the `getTargetKinds()` order.
-    auto index = static_cast<size_t>(target_kind - ViewTarget::Samples);
-    if (index >= targets.size() || targets[index].kind != target_kind)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {} (index={})", target_kind, index);
-    return targets[index].is_inner_table;
+    const auto * target = tryGetTarget(target_kind);
+    if (!target)
+    {
+        /// The recent samples target is optional.
+        if (target_kind == ViewTarget::RecentSamples)
+            return false;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {}", target_kind);
+    }
+    return target->is_inner_table;
 }
 
 
@@ -277,8 +327,8 @@ void StorageTimeSeries::dropInnerTableIfAny(bool sync, ContextPtr local_context)
         {
             if (auto inner_table_id = tryGetTargetTableID(target_kind, local_context))
             {
-                /// Best-effort to make them work: the inner table name is almost always less than the TimeSeries name (so it's safe to lock DDLGuard).
-                /// (See the comment in StorageMaterializedView::dropInnerTableIfAny.)
+                /// DDLGuards must be locked in order of increasing table name, so the inner guard
+                /// may be requested only when this table's name sorts first.
                 bool may_lock_ddl_guard = getStorageID().getQualifiedName() < inner_table_id.getQualifiedName();
                 InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
                                                     sync, /* ignore_sync_setting= */ true, may_lock_ddl_guard);
@@ -323,6 +373,8 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
 }
 
 
+/// TODO: Return the row count of the inner "tags" table instead of the sum over all the inner tables:
+/// it matches `SELECT count()` without FINAL, allowing the trivial count optimization.
 std::optional<UInt64> StorageTimeSeries::totalRows(ContextPtr query_context) const
 {
     if (!hasInnerTables())
@@ -600,16 +652,27 @@ VirtualColumnsDescription StorageTimeSeries::createVirtuals()
 }
 
 void StorageTimeSeries::readImpl(
-    QueryPlan & /* query_plan */,
-    const Names & /* column_names */,
+    QueryPlan & query_plan,
+    const Names & column_names,
     const StorageSnapshotPtr & /* storage_snapshot */,
-    SelectQueryInfo & /* query_info */,
-    ContextPtr /* local_context */,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SELECT is not supported by storage {} yet", getName());
+    /// Run the generated read query on a child context with a few settings pinned so its results
+    /// don't depend on the caller's session/profile (see getSettingsForSelectFromTimeSeries).
+    auto read_context = Context::createCopy(local_context);
+    read_context->applySettingsChanges(getSettingsForSelectFromTimeSeries(query_info.isFinal()));
+
+    NameSet requested_columns{column_names.begin(), column_names.end()};
+    auto select_query = makeASTSelectFromTimeSeries(*this, requested_columns, query_info, read_context);
+    auto options = SelectQueryOptions(QueryProcessingStage::Complete, /* subquery_depth_ = */ 0, /* is_subquery_ = */ false,
+                                      query_info.settings_limit_offset_done);
+    InterpreterSelectQueryAnalyzer interpreter(select_query, read_context, options, column_names);
+    interpreter.addStorageLimits(*query_info.storage_limits);
+    query_plan = std::move(interpreter).extractQueryPlan();
 }
 
 
@@ -1078,6 +1141,9 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
+| `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
+| `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. Requires `recent_samples_ttl_seconds` to be non-zero |
+| `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. Requires `recent_samples_ttl_seconds` to be non-zero |
 
 # Functions {#functions}
 

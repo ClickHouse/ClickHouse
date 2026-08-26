@@ -494,7 +494,7 @@ hasAllTokens(input, needles)
 
 * `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Array(String)`](/ar/reference/data-types/array) أو [`Array(FixedString)`](/ar/reference/data-types/array)
 * `needles` — الرموز المراد البحث عنها. [`String`](/ar/reference/data-types/string) أو [`Array(String)`](/ar/reference/data-types/array)
-* `tokenizer` — مُجزِّئ الرموز المميزّة المراد استخدامه. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`icu('<locale>')` و`japanese` و`ngrams` و`sparseGrams` و`array`. وهو اختياري، وإذا لم يُحدَّد صراحةً، فستكون القيمة الافتراضية `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
+* `tokenizer` — مُجزِّئ الرموز المميزّة المراد استخدامه. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`chinese` و`icu('<locale>')` و`japanese` و`ngrams` و`sparseGrams` و`array`. وهو اختياري، وإذا لم يُحدَّد صراحةً، فستكون القيمة الافتراضية `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
@@ -724,7 +724,7 @@ hasAnyTokens(input, needles)
 
 * `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Nullable(String)`](/ar/reference/data-types/nullable) أو [`Nullable(FixedString)`](/ar/reference/data-types/nullable) أو [`Array(String)`](/ar/reference/data-types/array) أو [`Array(FixedString)`](/ar/reference/data-types/array) أو [`Array(Nullable(String))`](/ar/reference/data-types/array) أو [`Array(Nullable(FixedString))`](/ar/reference/data-types/array)
 * `needles` — الرموز المراد البحث عنها. [`String`](/ar/reference/data-types/string) أو [`Array(String)`](/ar/reference/data-types/array)
-* `tokenizer` — مُجزِّئ الرموز المستخدم. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`icu('<locale>')` و`japanese` و`ngrams` و`sparseGrams` و`array`. هذا الوسيط اختياري، وإذا لم يُحدَّد صراحةً، تكون القيمة الافتراضية `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
+* `tokenizer` — مُجزِّئ الرموز المستخدم. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`chinese` و`icu('<locale>')` و`japanese` و`ngrams` و`sparseGrams` و`array`. هذا الوسيط اختياري، وإذا لم يُحدَّد صراحةً، تكون القيمة الافتراضية `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
@@ -754,7 +754,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**حدِّد سلاسل البحث للبحث عنها كما هي (من دون تجزئة إلى رموز) ضمن مصفوفة**
+**حدِّد سلاسل البحث المراد البحث عنها كما هي (من دون تجزئة إلى رموز) في مصفوفة**
 
 ```sql title=Query
 CREATE TABLE doc (

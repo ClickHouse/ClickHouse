@@ -86,6 +86,7 @@ class Targeting:
         "ci/jobs/scripts/workflow_hooks/filter_job.py",
         "ci/jobs/scripts/workflow_hooks/store_data.py",
         "ci/jobs/scripts/server_cleanup.py",
+        "ci/praktika/info.py",
         "ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
         "ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
         "ci/praktika/cidb.py",

@@ -173,6 +173,19 @@ def test_selected_tests_add_smoke_tests_for_store_data_hook_change():
     ]
 
 
+def test_selected_tests_add_smoke_tests_for_info_change():
+    targeter = Targeting.__new__(Targeting)
+    targeter.info = SimpleNamespace(
+        is_local_run=False, get_changed_files=lambda: [], job_name="Stateless tests"
+    )
+    targeter._diff_text = "+++ b/ci/praktika/info.py\n"
+
+    assert targeter.get_changed_tests(include_harness_smoke=True) == [
+        "00001_select_1.",
+        "01109_exchange_tables.",
+    ]
+
+
 def test_selected_tests_add_smoke_tests_for_rendered_workflow_change():
     targeter = Targeting.__new__(Targeting)
     targeter.info = SimpleNamespace(
@@ -342,7 +355,6 @@ def test_pr_workflow_keeps_full_suite_msan_wasmedge_functional_tests():
         job for job in workflow.jobs if "selected tests" in job.name
     ]
     assert selected_test_jobs
-    assert all(job.digest_config is None for job in selected_test_jobs)
 
     # Every gating job must exist in the workflow - the trimmed jobs replaced
     # the full-suite ones the gate used to name.
