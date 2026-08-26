@@ -222,7 +222,11 @@ tables:            ['nyc_taxi.trips_small_inferred']
 
 The `query_duration_ms` field contains the query duration in milliseconds. In these results, the longest-running query took 2,967 ms.
 
-To find queries that place high demand on the system, inspect their memory and CPU usage:
+You can also identify candidate queries based on resource usage rather than query duration:
+
+<Accordion title="Find resource-intensive queries">
+
+This query ranks recent queries by memory usage and includes their CPU usage. Results vary by workload and deployment:
 
 <Tabs>
 <Tab title="Cluster">
@@ -280,6 +284,8 @@ LIMIT 30
 </Tab>
 </Tabs>
 
+</Accordion>
+
 </Step>
 
 <Step title="Choose a representative query run" id="choose-a-representative-query-run">
@@ -336,13 +342,13 @@ LIMIT 10;
 </Tab>
 </Tabs>
 
-Use the results to:
+1. Find runs with similar `read_rows` and `read_bytes`.
+2. Compare `query_duration_ms` and `memory_usage` for those runs.
+3. Select the `query_id` whose `query_duration_ms` is closest to the median.
 
-- Compare `query_duration_ms`, `read_rows`, `read_bytes`, and `memory_usage` across runs.
-- Note the range when the measurements vary significantly.
-- Select a `query_id` with measurements near the typical values, rather than choosing the fastest or slowest run.
-
-This step chooses a historically representative execution for an initial diagnosis. It does not establish a controlled performance baseline. If the query log does not contain enough completed runs, run the same query a few times while the dataset and available compute resources remain similar. Continue with [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks) to create controlled comparison runs with consistent cache settings, warm-up handling, and stage-by-stage measurements.
+<Note>
+Historical query-log results can vary with cache state and system load, so use them to choose a query to investigate, not to compare optimization changes. If the query log does not contain enough completed runs, run the query a few times under similar conditions. The next guide, [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks), explains how to collect controlled measurements for comparing changes.
+</Note>
 
 The example query-log results show that each candidate read approximately 329.04 million rows. For context, confirm the number of rows in the example table:
 
@@ -367,11 +373,9 @@ The table contains 329.04 million rows, approximately the same number reported i
 
 After choosing a representative run, use [`EXPLAIN`](/reference/statements/explain) to inspect how ClickHouse plans the query without running it. The output shows the operations ClickHouse expects to perform and how data moves between them, providing more context for the measurements in the query log.
 
-For a detailed introduction to the available output formats, see [Understanding query execution with the analyzer](/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer). This section focuses on index use and the query pipeline.
+For a detailed introduction to the available output formats, see [Understanding query execution with the analyzer](/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer). In this example, `EXPLAIN indexes = 1` shows how ClickHouse plans to read and filter the data and whether it can skip any of it.
 
-#### Inspect index use {#inspect-index-use}
-
-Start with `EXPLAIN indexes = 1` to inspect the query plan and index use. It returns a tree of operations that shows how ClickHouse expects to read, filter, and process the data. Read the plan from the bottom up.
+The output is a tree of operations that shows how ClickHouse expects to read, filter, and process the data. Child operations appear below their parents. Start with the deepest read operation, then follow the plan upward to see how ClickHouse transforms the data into the final result.
 
 Use the first long-running query from the query-log results:
 
@@ -397,43 +401,15 @@ Query id: f35c412a-edda-4089-914b-fa1622d69868
    └─────────────────────────────────────────────────────┘
 ```
 
-The plan reads data from `nyc_taxi.trips_small_inferred`, evaluates the computed values used by the `WHERE` clause, filters the rows, calculates the quantiles, and projects the result.
+From the bottom up, the plan maps to the query as follows:
 
-The example table does not define a primary key, so ClickHouse reads the table without primary-key pruning.
+1. `ReadFromMergeTree` reads from `nyc_taxi.trips_small_inferred`. The missing `Indexes` section, combined with `read_rows` matching the table's row count, shows that ClickHouse reads the entire table.
+2. `Filter (WHERE)` corresponds to `WHERE speed_mph > 30`. For every row read, ClickHouse calculates `trip_time` using `dateDiff`, calculates `speed_mph`, and then keeps only rows above 30 miles per hour.
+3. `Expression (Before GROUP BY)` passes the filtered `trip_distance` values to `quantiles`. ClickHouse uses this label for the step that prepares aggregate inputs even though this query has no `GROUP BY` clause.
+4. `Aggregating` calculates the quantiles.
+5. The top `Expression` produces the final result.
 
-#### Inspect the query pipeline {#inspect-the-query-pipeline}
-
-`EXPLAIN PIPELINE` expands the query plan into the processors ClickHouse expects to use. It also shows the planned concurrency between those processors.
-
-```sql
-EXPLAIN PIPELINE
-WITH
-    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
-    (trip_distance / trip_time) * 3600 AS speed_mph
-SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
-FROM nyc_taxi.trips_small_inferred
-WHERE speed_mph > 30
-```
-
-```response
-Query id: c7e11e7b-d970-4e35-936c-ecfc24e3b879
-
-    ┌─explain─────────────────────────────────────────────────────────────────────────────┐
- 1. │ (Expression)                                                                        │
- 2. │ ExpressionTransform × 59                                                            │
- 3. │   (Aggregating)                                                                     │
- 4. │   Resize 59 → 59                                                                    │
- 5. │     AggregatingTransform × 59                                                       │
- 6. │       StrictResize 59 → 59                                                          │
- 7. │         (Expression)                                                                │
- 8. │         ExpressionTransform × 59                                                    │
- 9. │           (Filter)                                                                  │
-10. │           FilterTransform × 59                                                      │
-11. │             (ReadFromMergeTree)                                                     │
-12. │             MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59 0 → 1 │
-```
-
-The `× 59` markers indicate that the pipeline contains 59 parallel instances of those processors. Actual concurrency and resource usage depend on the query settings and the resources available when the query runs.
+This plan identifies three sources of work to test: reading every row, calculating `speed_mph` while filtering, and calculating the quantiles.
 
 </Step>
 
@@ -441,4 +417,4 @@ The `× 59` markers indicate that the pipeline contains 59 parallel instances of
 
 ## Next steps {#next-steps}
 
-After choosing a representative run and inspecting its plan, continue with [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks) to compare progressively simpler forms of the query and validate which stage to investigate.
+Next, test these findings with the controlled comparison method in [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks). Because this query has no `GROUP BY`, skip the grouped comparison and compare it with a `count` that retains `WHERE speed_mph > 30`. This helps distinguish the quantile calculation from the scan-and-filter work.
