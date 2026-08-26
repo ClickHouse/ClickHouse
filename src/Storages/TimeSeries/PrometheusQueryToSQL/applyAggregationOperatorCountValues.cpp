@@ -119,12 +119,6 @@ SQLQueryPiece applyAggregationOperatorCountValues(
     checkArgumentTypes(operator_node, arguments, context);
 
     const auto * label_argument_node = operator_node->getArguments().at(0);
-    if (label_argument_node->node_type != NodeType::StringLiteral)
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-            "Aggregation operator 'count_values' expects its first argument to be a string literal");
-    }
     const auto * label_node = static_cast<const PrometheusQueryTree::StringLiteral *>(label_argument_node);
     const String & label_name = label_node->string;
     if (label_name.empty() || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
