@@ -36,8 +36,8 @@ extern "C"
 {
     /// The rseq area location of the libc registration, exported by glibc >= 2.35.
     /// Weak so the binary links against libcs without them; the address is then null.
-    extern const ptrdiff_t __rseq_offset __attribute__((weak));
-    extern const unsigned int __rseq_size __attribute__((weak));
+    extern const ptrdiff_t __rseq_offset __attribute__((weak)); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
+    extern const unsigned int __rseq_size __attribute__((weak)); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 }
 #pragma clang diagnostic pop
 
