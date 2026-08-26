@@ -311,7 +311,7 @@ GraceHashJoin::GraceHashJoin(
             .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
             .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
             .num_files = ProfileEvents::ExternalJoinWritePart,
-        }, table_join->temporaryFilesBufferSize(), table_join->temporaryFilesCodec(), table_join->allowExperimentalCodecs()))
+        }, table_join->temporaryFilesBufferSize(), table_join->temporaryFilesCodec(), table_join->spillCodecAuthorized()))
     , hash_join(makeInMemoryJoin("grace0"))
     , hash_join_sample_block(hash_join->savedBlockSample())
 {

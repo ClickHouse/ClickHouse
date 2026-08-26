@@ -10,6 +10,7 @@
 #include <Compression/CompressionFactory.h>
 
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/UUID.h>
 
@@ -58,6 +59,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsString temporary_files_codec;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -83,14 +89,15 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
     /// sort/join/aggregation spill, with a confusing message. Reject such codecs up front, mirroring
     /// the validation of the `marks_compression_codec` / `primary_key_compression_codec` MergeTree
     /// settings, which are likewise applied to untyped streams. Experimental codecs are a session-gated
-    /// policy: they are allowed when the query that set `temporary_files_codec` had
-    /// `allow_experimental_codecs` enabled (the flag is carried in the settings because the query
-    /// settings are no longer available at spill time).
-    if (codec->isExperimental() && !settings.allow_experimental_codecs)
+    /// policy: they are allowed when the session that set `temporary_files_codec` enabled that very codec
+    /// (its dedicated `enable_<family>_codec` setting, or the blanket `allow_experimental_codecs`). The
+    /// decision is carried in the settings because the query settings are no longer available at spill
+    /// time; see `spillCodecAuthorizedBySession`.
+    if (codec->isExperimental() && !settings.spill_codec_authorized)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Setting 'temporary_files_codec' cannot use the experimental codec {} without the "
-            "'allow_experimental_codecs' setting enabled",
+            "Setting 'temporary_files_codec' cannot use the experimental codec {}: the session did not enable it with the "
+            "codec's 'enable_<family>_codec' setting (or with 'allow_experimental_codecs')",
             settings.compression_codec);
     if (codec->requiresColumnTypeToCompress())
         throw Exception(
@@ -129,9 +136,14 @@ bool temporaryFilesCodecIsExperimental(const String & compression_codec)
     }
 }
 
-bool spillCodecNeedsExperimentalCodecsOptIn(bool spill_is_reachable, bool allow_experimental_codecs, const String & compression_codec)
+bool spillCodecAuthorizedBySession(const Settings & settings)
 {
-    return spill_is_reachable && allow_experimental_codecs && temporaryFilesCodecIsExperimental(compression_codec);
+    return CompressionCodecFactory::instance().areExperimentalCodecsEnabled(settings[Setting::temporary_files_codec], settings);
+}
+
+bool spillCodecAuthorizationMustBeSerialized(bool spill_is_reachable, bool spill_codec_authorized, const String & compression_codec)
+{
+    return spill_is_reachable && spill_codec_authorized && temporaryFilesCodecIsExperimental(compression_codec);
 }
 
 TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
@@ -417,7 +429,7 @@ TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag)
 }
 #endif
 
-TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_, String compression_codec_, bool allow_experimental_codecs_)
+TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_, String compression_codec_, bool spill_codec_authorized_)
 {
     TemporaryDataOnDiskSettings child_settings = settings;
     child_settings.metrics = metrics_;
@@ -427,7 +439,7 @@ TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(TemporaryDataMe
     {
         /// The experimental-codecs opt-in travels together with the codec it applied to.
         child_settings.compression_codec = compression_codec_;
-        child_settings.allow_experimental_codecs = allow_experimental_codecs_;
+        child_settings.spill_codec_authorized = spill_codec_authorized_;
     }
     return std::make_shared<TemporaryDataOnDiskScope>(shared_from_this(), child_settings);
 }

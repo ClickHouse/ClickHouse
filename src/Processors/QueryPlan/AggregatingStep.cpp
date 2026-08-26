@@ -71,7 +71,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
-    extern const QueryPlanSerializationSettingsBool allow_experimental_codecs;
+    extern const QueryPlanSerializationSettingsBool spill_codec_authorized;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
 }
 
@@ -1170,15 +1170,15 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge] = params.enable_parallel_single_level_merge;
 
     /// External aggregation on a remote shard has to spill with the initiator's
-    /// `temporary_files_codec`, buffer size, and `allow_experimental_codecs` opt-in. The temporary
+    /// `temporary_files_codec`, buffer size, and `spill_codec_authorized` opt-in. The temporary
     /// data scope is not part of the plan payload and can be absent on the initiator even though a
     /// worker has one, so the query settings travel independently with the step and are re-applied
     /// in `deserialize`.
     ///
-    /// `allow_experimental_codecs` is registered in serialization version 8. A pre-v8 peer cannot safely
+    /// `spill_codec_authorized` is registered in serialization version 8. A pre-v8 peer cannot safely
     /// execute a plan that can spill with an experimental codec because it would silently lose the opt-in.
     /// For v8 and later it goes on the wire only when the spill behavior of this step actually depends on it (see
-    /// `spillCodecNeedsExperimentalCodecsOptIn`): `Aggregator::executeOnBlock` reaches
+    /// `spillCodecAuthorizationMustBeSerialized`): `Aggregator::executeOnBlock` reaches
     /// `writeToTemporaryFile` only when `max_bytes_before_external_group_by` is set, only from a two-level
     /// hash-table state (which additionally needs a nonzero two-level threshold - both go to the receiver
     /// in the settings written above - and a method that can convert at all, see
@@ -1190,9 +1190,9 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     const bool external_aggregation_is_reachable = params.max_bytes_before_external_group_by != 0
         && (params.group_by_two_level_threshold != 0 || params.group_by_two_level_threshold_bytes != 0)
         && aggregationCanGoTwoLevel(*input_headers.front(), params.keys, grouping_sets_params);
-    if (spillCodecNeedsExperimentalCodecsOptIn(
+    if (spillCodecAuthorizationMustBeSerialized(
             external_aggregation_is_reachable,
-            params.allow_experimental_codecs,
+            params.spill_codec_authorized,
             params.temporary_files_codec))
     {
         if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC)
@@ -1200,7 +1200,7 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
                 "An experimental temporary-files codec requires query plan serialization version >= {}",
                 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC);
 
-        settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
+        settings[QueryPlanSerializationSetting::spill_codec_authorized] = true;
     }
 
     /// `QueryPlanSerializationSettings` is a strict named schema, so these two names may go on the wire only
@@ -1403,7 +1403,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
             /* metrics */ {},
             ctx.settings[QueryPlanSerializationSetting::temporary_files_buffer_size],
             ctx.settings[QueryPlanSerializationSetting::temporary_files_codec],
-            ctx.settings[QueryPlanSerializationSetting::allow_experimental_codecs]);
+            ctx.settings[QueryPlanSerializationSetting::spill_codec_authorized]);
 
     Aggregator::Params params{
         keys,
@@ -1417,7 +1417,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::empty_result_for_aggregation_by_empty_set],
         tmp_data_scope,
         ctx.settings[QueryPlanSerializationSetting::temporary_files_codec],
-        ctx.settings[QueryPlanSerializationSetting::allow_experimental_codecs],
+        ctx.settings[QueryPlanSerializationSetting::spill_codec_authorized],
         ctx.settings[QueryPlanSerializationSetting::temporary_files_buffer_size],
         0, //settings[QueryPlanSerializationSetting::max_threads],
         ctx.settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data],

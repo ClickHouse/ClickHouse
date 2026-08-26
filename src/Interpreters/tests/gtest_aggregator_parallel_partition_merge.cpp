@@ -59,7 +59,7 @@ Aggregator::Params makeParams(const Names & keys, const AggregateDescriptions & 
         /*empty_result_for_aggregation_by_empty_set_=*/false,
         /*tmp_data_scope_=*/nullptr,
         /*temporary_files_codec_=*/"LZ4",
-        /*allow_experimental_codecs_=*/false,
+        /*spill_codec_authorized_=*/false,
         /*temporary_files_buffer_size_=*/DBMS_DEFAULT_BUFFER_SIZE,
         /*max_threads_=*/2,
         /*min_free_disk_space_=*/0,

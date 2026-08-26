@@ -17,7 +17,7 @@ namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
-    extern const QueryPlanSerializationSettingsBool allow_experimental_codecs;
+    extern const QueryPlanSerializationSettingsBool spill_codec_authorized;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 }
@@ -66,7 +66,7 @@ SharedHeader makeHeader()
 Aggregator::Params makeParams(
     bool serialize_string_with_zero_byte,
     const String & temporary_files_codec = "LZ4",
-    bool allow_experimental_codecs = false,
+    bool spill_codec_authorized = false,
     size_t temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE)
 {
     return Aggregator::Params(
@@ -81,7 +81,7 @@ Aggregator::Params makeParams(
         /*empty_result_for_aggregation_by_empty_set=*/false,
         /*tmp_data_scope=*/nullptr,
         temporary_files_codec,
-        allow_experimental_codecs,
+        spill_codec_authorized,
         temporary_files_buffer_size,
         /*max_threads=*/1,
         /*min_free_disk_space=*/0,
@@ -98,18 +98,19 @@ Aggregator::Params makeParams(
         /*enable_parallel_single_level_merge=*/false,
         /*enable_packed_string_keys=*/true,
         /*enable_adaptive_aggregator=*/false,
-        /*adaptive_aggregator_freeze_threshold=*/0);
+        /*adaptive_aggregator_freeze_threshold=*/0,
+        /*adaptive_aggregator_freeze_threshold_bytes=*/0);
 }
 
 std::unique_ptr<AggregatingStep> makeAggregatingStep(
     bool serialize_string_with_zero_byte,
     const String & temporary_files_codec = "LZ4",
-    bool allow_experimental_codecs = false,
+    bool spill_codec_authorized = false,
     size_t temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE)
 {
     return std::make_unique<AggregatingStep>(
         makeHeader(),
-        makeParams(serialize_string_with_zero_byte, temporary_files_codec, allow_experimental_codecs, temporary_files_buffer_size),
+        makeParams(serialize_string_with_zero_byte, temporary_files_codec, spill_codec_authorized, temporary_files_buffer_size),
         GroupingSetsParamsList{},
         /*final=*/true,
         /*max_block_size=*/65536,
@@ -172,7 +173,7 @@ TEST(AggregatingStepSettingsRoundTrip, SpillSettingsSurviveWithoutInitiatorTempo
     const auto step = makeAggregatingStep(
         /*serialize_string_with_zero_byte=*/false,
         /*temporary_files_codec=*/"ZXC",
-        /*allow_experimental_codecs=*/true,
+        /*spill_codec_authorized=*/true,
         /*temporary_files_buffer_size=*/123456);
     QueryPlanSerializationSettings written;
     step->serializeSettings(written, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
@@ -184,7 +185,7 @@ TEST(AggregatingStepSettingsRoundTrip, SpillSettingsSurviveWithoutInitiatorTempo
     read.readBinary(in);
 
     EXPECT_EQ(read[QueryPlanSerializationSetting::temporary_files_codec].value, "ZXC");
-    EXPECT_TRUE(read[QueryPlanSerializationSetting::allow_experimental_codecs]);
+    EXPECT_TRUE(read[QueryPlanSerializationSetting::spill_codec_authorized]);
     EXPECT_EQ(read[QueryPlanSerializationSetting::temporary_files_buffer_size], 123456);
 }
 
@@ -196,7 +197,7 @@ TEST(AggregatingStepSettingsRoundTrip, ExperimentalSpillCodecOptInIsVersioned)
     const auto step = makeAggregatingStep(
         /*serialize_string_with_zero_byte=*/false,
         /*temporary_files_codec=*/"ZXC",
-        /*allow_experimental_codecs=*/true);
+        /*spill_codec_authorized=*/true);
     QueryPlanSerializationSettings settings;
     EXPECT_THROW(
         step->serializeSettings(settings, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1), Exception);
@@ -204,7 +205,7 @@ TEST(AggregatingStepSettingsRoundTrip, ExperimentalSpillCodecOptInIsVersioned)
     step->serializeSettings(settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     WriteBufferFromOwnString out;
     settings.writeChangedBinary(out);
-    EXPECT_TRUE(out.str().contains("allow_experimental_codecs"));
+    EXPECT_TRUE(out.str().contains("spill_codec_authorized"));
 }
 
 TEST(MergingAggregatedStepSettingsRoundTrip, SerializeStringWithZeroByteFalseSurvives)

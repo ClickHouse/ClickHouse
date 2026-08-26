@@ -92,7 +92,6 @@ namespace Setting
     extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsString temporary_files_codec;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
-    extern const SettingsBool allow_experimental_codecs;
 }
 
 namespace QueryPlanSerializationSetting
@@ -109,7 +108,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsOverflowMode sort_overflow_mode;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
-    extern const QueryPlanSerializationSettingsBool allow_experimental_codecs;
+    extern const QueryPlanSerializationSettingsBool spill_codec_authorized;
 }
 
 namespace ErrorCodes
@@ -167,7 +166,7 @@ SortingStep::Settings::Settings(const DB::Settings & settings)
     read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
     temporary_files_codec = settings[Setting::temporary_files_codec];
     temporary_files_buffer_size = settings[Setting::temporary_files_buffer_size];
-    allow_experimental_codecs = settings[Setting::allow_experimental_codecs];
+    spill_codec_authorized = spillCodecAuthorizedBySession(settings);
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)
@@ -192,7 +191,7 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
 
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
     temporary_files_buffer_size = settings[QueryPlanSerializationSetting::temporary_files_buffer_size];
-    allow_experimental_codecs = settings[QueryPlanSerializationSetting::allow_experimental_codecs];
+    spill_codec_authorized = settings[QueryPlanSerializationSetting::spill_codec_authorized];
 }
 
 void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings, bool sorting_is_reachable, UInt64 version) const
@@ -209,22 +208,22 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
-    /// `allow_experimental_codecs` is registered in serialization version 8. A pre-v8 peer cannot safely
+    /// `spill_codec_authorized` is registered in serialization version 8. A pre-v8 peer cannot safely
     /// execute a plan that can spill with an experimental codec because it would silently lose the opt-in.
     /// For v8 and later it goes on the wire only when the spill behavior of this step actually depends on it:
     /// `MergeSortingTransform::consume`
     /// touches the temporary data only when `max_bytes_before_external_sort` is set, so a sort that stays
     /// in memory never resolves the codec and must not carry the opt-in. See the matching comment in
-    /// `AggregatingStep::serializeSettings` and `spillCodecNeedsExperimentalCodecsOptIn`.
-    if (spillCodecNeedsExperimentalCodecsOptIn(
-            sorting_is_reachable && max_bytes_in_block_before_external_sort != 0, allow_experimental_codecs, temporary_files_codec))
+    /// `AggregatingStep::serializeSettings` and `spillCodecAuthorizationMustBeSerialized`.
+    if (spillCodecAuthorizationMustBeSerialized(
+            sorting_is_reachable && max_bytes_in_block_before_external_sort != 0, spill_codec_authorized, temporary_files_codec))
     {
         if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "An experimental temporary-files codec requires query plan serialization version >= {}",
                 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC);
 
-        settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
+        settings[QueryPlanSerializationSetting::spill_codec_authorized] = true;
     }
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
 }
@@ -497,7 +496,7 @@ void SortingStep::mergeSorting(
             .bytes_compressed = ProfileEvents::ExternalSortCompressedBytes,
             .bytes_uncompressed = ProfileEvents::ExternalSortUncompressedBytes,
             .num_files = ProfileEvents::ExternalSortWritePart},
-            sort_settings.temporary_files_buffer_size, sort_settings.temporary_files_codec, sort_settings.allow_experimental_codecs);
+            sort_settings.temporary_files_buffer_size, sort_settings.temporary_files_codec, sort_settings.spill_codec_authorized);
 
     if (sort_settings.max_bytes_in_block_before_external_sort && tmp_data_on_disk == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external sorting is not provided");

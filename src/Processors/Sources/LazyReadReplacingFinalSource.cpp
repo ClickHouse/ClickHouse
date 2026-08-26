@@ -29,7 +29,6 @@ namespace Setting
 extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
 extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
 extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
-extern const SettingsBool allow_experimental_codecs;
 extern const SettingsBool collect_hash_table_stats_during_aggregation;
 extern const SettingsBool enable_adaptive_aggregator;
 extern const SettingsBool enable_packed_string_keys_in_aggregation;
@@ -276,7 +275,7 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*empty_result_for_aggregation_by_empty_set_=*/true,
             /*tmp_data_scope_=*/nullptr,
             settings[Setting::temporary_files_codec],
-            settings[Setting::allow_experimental_codecs],
+            spillCodecAuthorizedBySession(settings),
             settings[Setting::temporary_files_buffer_size],
             /*max_threads_=*/settings[Setting::max_threads],
             /*min_free_disk_space_=*/0,

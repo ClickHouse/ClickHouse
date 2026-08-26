@@ -106,6 +106,21 @@ public:
     /// fail later, at the first mark / primary key / part write. `setting_name` is only used in the message.
     void checkCodecStringSafeForUntypedData(const String & compression_codec, std::string_view setting_name) const;
 
+    /// Name of the dedicated setting that enables the experimental codec family `family_name`.
+    static String experimentalCodecEnableSettingName(const String & family_name);
+
+    /// Whether `settings` enable the experimental codec family `family_name`: its dedicated
+    /// `enable_<family>_codec` setting, or the blanket `allow_experimental_codecs` escape hatch.
+    /// Throws `LOGICAL_ERROR` if the family declares no dedicated setting.
+    static bool isExperimentalCodecEnabled(const String & family_name, const Settings & settings);
+
+    /// Whether `settings` enable every experimental codec in the chain `compression_codec` (a codec name
+    /// or chain such as `"PCO, LZ4"`). Unlike `validateCodecString` this classifies instead of throwing:
+    /// it is meant for callers that record the session's authorization long before the codec is resolved
+    /// (the `temporary_files_codec` spill settings), so an unresolvable or untyped-unsafe codec string is
+    /// reported as authorized here and fails later, where it is actually used, with a precise message.
+    bool areExperimentalCodecsEnabled(const String & compression_codec, const Settings & settings) const;
+
     /// Get codec by AST and possible column_type. Some codecs can use
     /// information about type to improve inner settings, but every codec should
     /// be able to work without information about type. Also AST can contain

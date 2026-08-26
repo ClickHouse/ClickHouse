@@ -154,7 +154,7 @@ struct JoinSettings
     /* Full sorting merge join settings */
     UInt64 max_rows_in_set_to_optimize_join;
     String temporary_files_codec;
-    bool allow_experimental_codecs = false;
+    bool spill_codec_authorized = false;
     /// Whether this query can create temporary on-disk storage. Hash joins silently remain
     /// in memory when it is unavailable, so their external-join threshold cannot reach
     /// `temporary_files_codec` in that case.

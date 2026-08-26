@@ -42,6 +42,76 @@ extern const SettingsBool allow_experimental_codecs;
 }
 
 
+String CompressionCodecFactory::experimentalCodecEnableSettingName(const String & family_name)
+{
+    return fmt::format("enable_{}_codec", Poco::toLower(family_name));
+}
+
+bool CompressionCodecFactory::isExperimentalCodecEnabled(const String & family_name, const Settings & settings)
+{
+    const String enable_setting_name = experimentalCodecEnableSettingName(family_name);
+    Field enable_setting_value;
+    if (!settings.tryGet(enable_setting_name, enable_setting_value))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Experimental codec {} has no dedicated '{}' setting. Every experimental codec must declare one",
+            family_name,
+            enable_setting_name);
+
+    return enable_setting_value.safeGet<bool>() || settings[Setting::allow_experimental_codecs];
+}
+
+bool CompressionCodecFactory::areExperimentalCodecsEnabled(const String & compression_codec, const Settings & settings) const
+{
+    if (compression_codec.empty())
+        return true;
+
+    /// This runs where no codec is being resolved yet (e.g. when a query starts, to record whether the
+    /// session authorized the `temporary_files_codec` it configured), so it must classify rather than
+    /// throw: a codec string that cannot be resolved at all, or that can never work on untyped data,
+    /// fails later with its own precise message wherever it is actually used.
+    try
+    {
+        ParserCodec codec_parser;
+        auto ast = parseQuery(
+            codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        upperCaseCodecFamilyNames(ast);
+
+        const auto * func = ast->as<ASTFunction>();
+        if (!func || !func->arguments)
+            return true;
+
+        for (const auto & inner_codec_ast : func->arguments->children)
+        {
+            String codec_family_name;
+            ASTPtr codec_arguments;
+            if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
+                codec_family_name = family_name->name();
+            else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
+            {
+                codec_family_name = ast_func->name;
+                codec_arguments = ast_func->arguments;
+            }
+            else
+                return true;
+
+            /// `Default` is an alias for the server default codec, which is never experimental.
+            if (codec_family_name == DEFAULT_CODEC_NAME)
+                continue;
+
+            auto codec = getImpl(codec_family_name, codec_arguments, nullptr);
+            if (codec->isExperimental() && !isExperimentalCodecEnabled(codec_family_name, settings))
+                return false;
+        }
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+
+    return true;
+}
+
 void CompressionCodecFactory::validateCodec(
     const String & family_name, std::optional<int> level, const CodecValidationSettings & validation_settings) const
 {
@@ -196,25 +266,13 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                     result_codec = getImpl(codec_family_name, codec_arguments, nullptr);
                 }
 
-                if (settings && result_codec->isExperimental())
-                {
-                    const String enable_setting_name = fmt::format("enable_{}_codec", Poco::toLower(codec_family_name));
-                    Field enable_setting_value;
-                    if (!settings->tryGet(enable_setting_name, enable_setting_value))
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Experimental codec {} has no dedicated '{}' setting. Every experimental codec"
-                            " must declare one",
-                            codec_family_name,
-                            enable_setting_name);
-                    if (!enable_setting_value.safeGet<bool>() && !(*settings)[Setting::allow_experimental_codecs])
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "Codec {} is experimental and not meant to be used in production."
-                            " You can enable it with the '{}' setting",
-                            codec_family_name,
-                            enable_setting_name);
-                }
+                if (settings && result_codec->isExperimental() && !isExperimentalCodecEnabled(codec_family_name, *settings))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Codec {} is experimental and not meant to be used in production."
+                        " You can enable it with the '{}' setting",
+                        codec_family_name,
+                        experimentalCodecEnableSettingName(codec_family_name));
 
                 /// Lossy codecs must not be applied to Map columns: a Map exposes its keys as a substream
                 /// (a float key would be accepted by a float-only codec like SZ3), and lossily compressing

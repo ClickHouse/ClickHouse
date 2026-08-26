@@ -96,7 +96,7 @@ namespace DB
     \
     DECLARE(UInt64, max_rows_in_set_to_optimize_join, 0, "Maximal size of the set to filter joined tables by each other's row sets before joining.", 0) \
     DECLARE(String, temporary_files_codec, "LZ4", "Sets compression codec for temporary files used in sorting and joining operations on disk.", 0) \
-    DECLARE(Bool, allow_experimental_codecs, false, "Whether the session that provided `temporary_files_codec` allowed experimental codecs.", 0) \
+    DECLARE(Bool, spill_codec_authorized, false, "Whether the session that provided `temporary_files_codec` allowed experimental codecs.", 0) \
     DECLARE(NonZeroUInt64, temporary_files_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, "Size of the buffer for temporary files writers. Larger buffer size means less system calls, but more memory consumption.", 0) \
     \
     DECLARE(Bool, collect_hash_table_stats_during_joins, true, "Enable collecting hash table statistics to optimize memory allocation", 0) \

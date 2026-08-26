@@ -61,7 +61,6 @@ namespace Setting
     extern const SettingsUInt64 max_joined_block_size_rows;
     extern const SettingsUInt64 max_joined_block_size_bytes;
     extern const SettingsString temporary_files_codec;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
     extern const SettingsUInt64 join_to_sort_minimum_perkey_rows;
@@ -116,7 +115,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_rows;
     extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_bytes;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
-    extern const QueryPlanSerializationSettingsBool allow_experimental_codecs;
+    extern const QueryPlanSerializationSettingsBool spill_codec_authorized;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const QueryPlanSerializationSettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
     extern const QueryPlanSerializationSettingsUInt64 join_to_sort_minimum_perkey_rows;
@@ -179,7 +178,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     parallel_hash_join_threshold = query_settings[Setting::parallel_hash_join_threshold];
 
     temporary_files_codec = query_settings[Setting::temporary_files_codec];
-    allow_experimental_codecs = query_settings[Setting::allow_experimental_codecs];
+    spill_codec_authorized = spillCodecAuthorizedBySession(query_settings);
     temporary_files_buffer_size = query_settings[Setting::temporary_files_buffer_size];
     join_output_by_rowlist_perkey_rows_threshold = query_settings[Setting::join_output_by_rowlist_perkey_rows_threshold];
     join_to_sort_minimum_perkey_rows = query_settings[Setting::join_to_sort_minimum_perkey_rows];
@@ -234,7 +233,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     max_joined_block_size_rows = settings[QueryPlanSerializationSetting::max_joined_block_size_rows];
     max_joined_block_size_bytes = settings[QueryPlanSerializationSetting::max_joined_block_size_bytes];
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
-    allow_experimental_codecs = settings[QueryPlanSerializationSetting::allow_experimental_codecs];
+    spill_codec_authorized = settings[QueryPlanSerializationSetting::spill_codec_authorized];
     temporary_files_buffer_size = settings[QueryPlanSerializationSetting::temporary_files_buffer_size];
     join_output_by_rowlist_perkey_rows_threshold = settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold];
     join_to_sort_minimum_perkey_rows = settings[QueryPlanSerializationSetting::join_to_sort_minimum_perkey_rows];
@@ -290,23 +289,23 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::max_joined_block_size_rows] = max_joined_block_size_rows;
     settings[QueryPlanSerializationSetting::max_joined_block_size_bytes] = max_joined_block_size_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
-    /// `allow_experimental_codecs` is a plan-setting name older peers do not know, and
+    /// `spill_codec_authorized` is a plan-setting name older peers do not know, and
     /// `QueryPlanSerializationSettings::readBinary` throws on an unknown name, so it goes on the wire only
     /// when the spill behavior of this join actually depends on it: a join that can never reach temporary
     /// files (see `canSpillToTemporaryFiles`) never resolves the codec and must not carry the opt-in. See
     /// the matching comment in `AggregatingStep::serializeSettings` and
-    /// `spillCodecNeedsExperimentalCodecsOptIn`.
+    /// `spillCodecAuthorizationMustBeSerialized`.
     /// The setting was added in serialization version 10. Older workers cannot safely execute a plan that
     /// can spill with an experimental codec because they would silently lose the opt-in.
-    if (spillCodecNeedsExperimentalCodecsOptIn(
-            canSpillToTemporaryFiles(join_operator), allow_experimental_codecs, temporary_files_codec))
+    if (spillCodecAuthorizationMustBeSerialized(
+            canSpillToTemporaryFiles(join_operator), spill_codec_authorized, temporary_files_codec))
     {
         if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "An experimental temporary-files codec requires query plan serialization version >= {}",
                 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC);
 
-        settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
+        settings[QueryPlanSerializationSetting::spill_codec_authorized] = true;
     }
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
     settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold] = join_output_by_rowlist_perkey_rows_threshold;

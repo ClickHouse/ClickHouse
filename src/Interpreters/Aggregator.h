@@ -141,7 +141,7 @@ public:
         /// Keep these query settings even when the initiator has no temporary-data scope:
         /// a remote shard can still create one and spill while executing this plan.
         String temporary_files_codec;
-        bool allow_experimental_codecs = false;
+        bool spill_codec_authorized = false;
         size_t temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
         size_t max_threads = 0;
         const size_t min_free_disk_space = 0;
@@ -224,7 +224,7 @@ public:
             bool empty_result_for_aggregation_by_empty_set_,
             TemporaryDataOnDiskScopePtr tmp_data_scope_,
             String temporary_files_codec_,
-            bool allow_experimental_codecs_,
+            bool spill_codec_authorized_,
             size_t temporary_files_buffer_size_,
             size_t max_threads_,
             size_t min_free_disk_space_,

@@ -16,7 +16,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool compile_aggregate_expressions;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
@@ -113,7 +112,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings[Setting::empty_result_for_aggregation_by_empty_set],
         storage_.getContext()->getTempDataOnDisk(),
         settings[Setting::temporary_files_codec],
-        settings[Setting::allow_experimental_codecs],
+        spillCodecAuthorizedBySession(settings),
         settings[Setting::temporary_files_buffer_size],
         settings[Setting::max_threads],
         settings[Setting::min_free_disk_space_for_temporary_data],

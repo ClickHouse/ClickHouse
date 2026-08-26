@@ -20,7 +20,7 @@
 
 using namespace DB;
 
-/// `allow_experimental_codecs` tells a remote shard that the initiator accepted an experimental
+/// `spill_codec_authorized` tells a remote shard that the initiator accepted an experimental
 /// `temporary_files_codec`, so the shard resolves the same codec when it spills.
 ///
 /// `QueryPlanSerializationSettings` is a strict named schema: `readBinary` throws on a name it does not know,
@@ -42,17 +42,17 @@ bool wireCarriesSetting(const QueryPlanSerializationSettings & settings)
 {
     WriteBufferFromOwnString out;
     settings.writeChangedBinary(out);
-    return out.str().contains("allow_experimental_codecs");
+    return out.str().contains("spill_codec_authorized");
 }
 
 bool sortingStepCarriesSetting(
-    const String & codec, bool allow_experimental_codecs, size_t max_bytes_before_external_sort,
+    const String & codec, bool spill_codec_authorized, size_t max_bytes_before_external_sort,
     bool sorting_is_reachable = true, UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
 {
     SortingStep::Settings sort_settings(/*max_block_size_=*/65536);
     sort_settings.temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     sort_settings.temporary_files_codec = codec;
-    sort_settings.allow_experimental_codecs = allow_experimental_codecs;
+    sort_settings.spill_codec_authorized = spill_codec_authorized;
     sort_settings.max_bytes_in_block_before_external_sort = max_bytes_before_external_sort;
 
     QueryPlanSerializationSettings settings;
@@ -60,12 +60,12 @@ bool sortingStepCarriesSetting(
     return wireCarriesSetting(settings);
 }
 
-JoinSettings makeJoinSettings(const String & codec, bool allow_experimental_codecs, std::vector<JoinAlgorithm> algorithms)
+JoinSettings makeJoinSettings(const String & codec, bool spill_codec_authorized, std::vector<JoinAlgorithm> algorithms)
 {
     JoinSettings join_settings(QueryPlanSerializationSettings{});
     join_settings.temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     join_settings.temporary_files_codec = codec;
-    join_settings.allow_experimental_codecs = allow_experimental_codecs;
+    join_settings.spill_codec_authorized = spill_codec_authorized;
     join_settings.join_algorithms = std::move(algorithms);
     join_settings.max_bytes_before_external_join = 0;
     join_settings.max_bytes_ratio_before_external_join = 0.;
@@ -111,22 +111,22 @@ TEST(ExperimentalSpillCodecPlanSetting, EmittedOnlyWhenSpillingCanReachTheCodec)
 {
     /// External aggregation: `Aggregator` reaches `writeToTemporaryFile` only with a non-zero
     /// `max_bytes_before_external_group_by`, which is what `AggregatingStep::serializeSettings` passes here.
-    EXPECT_TRUE(spillCodecNeedsExperimentalCodecsOptIn(/*spill_is_reachable=*/true, true, experimental_codec));
-    EXPECT_FALSE(spillCodecNeedsExperimentalCodecsOptIn(/*spill_is_reachable=*/false, true, experimental_codec));
+    EXPECT_TRUE(spillCodecAuthorizationMustBeSerialized(/*spill_is_reachable=*/true, true, experimental_codec));
+    EXPECT_FALSE(spillCodecAuthorizationMustBeSerialized(/*spill_is_reachable=*/false, true, experimental_codec));
 
     /// Nothing to communicate for a codec the receiver accepts without the opt-in, or when the initiator
     /// itself did not opt in.
-    EXPECT_FALSE(spillCodecNeedsExperimentalCodecsOptIn(true, true, plain_codec));
-    EXPECT_FALSE(spillCodecNeedsExperimentalCodecsOptIn(true, true, /*compression_codec=*/""));
-    EXPECT_FALSE(spillCodecNeedsExperimentalCodecsOptIn(true, false, experimental_codec));
+    EXPECT_FALSE(spillCodecAuthorizationMustBeSerialized(true, true, plain_codec));
+    EXPECT_FALSE(spillCodecAuthorizationMustBeSerialized(true, true, /*compression_codec=*/""));
+    EXPECT_FALSE(spillCodecAuthorizationMustBeSerialized(true, false, experimental_codec));
 
     /// A codec that cannot compress untyped data at all makes the spill itself fail with the same error
     /// on every peer, with and without the opt-in, so there is nothing to communicate - and classifying
     /// it must not throw at plan-serialization time, because the query may never actually spill. The same
     /// goes for a codec string that does not resolve at all.
-    EXPECT_FALSE(spillCodecNeedsExperimentalCodecsOptIn(true, true, "ALP"));
-    EXPECT_FALSE(spillCodecNeedsExperimentalCodecsOptIn(true, true, "T64('bit')"));
-    EXPECT_FALSE(spillCodecNeedsExperimentalCodecsOptIn(true, true, "NO_SUCH_CODEC"));
+    EXPECT_FALSE(spillCodecAuthorizationMustBeSerialized(true, true, "ALP"));
+    EXPECT_FALSE(spillCodecAuthorizationMustBeSerialized(true, true, "T64('bit')"));
+    EXPECT_FALSE(spillCodecAuthorizationMustBeSerialized(true, true, "NO_SUCH_CODEC"));
 }
 
 TEST(ExperimentalSpillCodecPlanSetting, SortingStepEmitsItOnlyForAnExternalSort)

@@ -182,7 +182,6 @@ namespace Setting
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
     extern const SettingsString temporary_files_codec;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsBool make_distributed_plan;
     extern const SettingsBool query_plan_enable_optimizations;
@@ -666,7 +665,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             /* metrics */ {},
             settings[Setting::temporary_files_buffer_size],
             settings[Setting::temporary_files_codec],
-            settings[Setting::allow_experimental_codecs]);
+            spillCodecAuthorizedBySession(settings));
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
@@ -682,7 +681,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
                 && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
         tmp_data_scope,
         settings[Setting::temporary_files_codec],
-        settings[Setting::allow_experimental_codecs],
+        spillCodecAuthorizedBySession(settings),
         settings[Setting::temporary_files_buffer_size],
         getMaxThreadsForAvailableMemory(settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]),
         settings[Setting::min_free_disk_space_for_temporary_data],

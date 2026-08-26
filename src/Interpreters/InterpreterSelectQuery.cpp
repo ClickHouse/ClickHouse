@@ -138,7 +138,6 @@ namespace Setting
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool async_socket_for_remote;
@@ -3089,7 +3088,7 @@ static Aggregator::Params getAggregatorParams(
                 && query_analyzer.hasConstAggregationKeys()),
         context.getTempDataOnDisk(),
         settings[Setting::temporary_files_codec],
-        settings[Setting::allow_experimental_codecs],
+        spillCodecAuthorizedBySession(settings),
         settings[Setting::temporary_files_buffer_size],
         getMaxThreadsForAvailableMemory(settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]),
         settings[Setting::min_free_disk_space_for_temporary_data],

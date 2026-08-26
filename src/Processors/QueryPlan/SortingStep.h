@@ -56,7 +56,7 @@ public:
         bool read_in_order_use_virtual_row_per_block = false;
         size_t temporary_files_buffer_size = 0;
         String temporary_files_codec = {};
-        bool allow_experimental_codecs = false;
+        bool spill_codec_authorized = false;
 
         explicit Settings(const DB::Settings & settings);
         explicit Settings(size_t max_block_size_);
@@ -64,7 +64,7 @@ public:
 
         /// `sorting_is_reachable` is false when these settings ride along a step that may never sort
         /// (a join whose enabled algorithms include no sorting-based one): the spill-codec opt-in must
-        /// then stay off the wire (see `spillCodecNeedsExperimentalCodecsOptIn`).
+        /// then stay off the wire (see `spillCodecAuthorizationMustBeSerialized`).
         void updatePlanSettings(QueryPlanSerializationSettings & settings, bool sorting_is_reachable, UInt64 version) const;
 
         bool operator==(const Settings & other) const = default;
