@@ -37,9 +37,9 @@ struct ProgressValues
 
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
-    /// accepted_rows/accepted_bytes are only written when write_accepted_fields is set:
+    /// accepted_rows/accepted_bytes are only written when write_zero_values is set (Verbose mode):
     /// they belong to the final X-ClickHouse-Summary, not to incremental progress updates.
-    void writeJSON(WriteBuffer & out, bool write_zero_values, bool write_accepted_fields) const;
+    void writeJSON(WriteBuffer & out, bool write_zero_values) const;
 };
 
 struct ReadProgress
