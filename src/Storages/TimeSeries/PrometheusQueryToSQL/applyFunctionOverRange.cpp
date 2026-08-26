@@ -78,37 +78,30 @@ namespace
              {
                  "timeSeriesRateToGrid",
                  /* drop_metric_name = */ true,
-                 "timeSeriesHistogramRateToGrid",
              }},
 
             {"increase",
              {
                  "timeSeriesIncreaseToGrid",
                  /* drop_metric_name = */ true,
-                 "timeSeriesHistogramIncreaseToGrid",
              }},
 
             {"irate",
              {
                  "timeSeriesInstantRateToGrid",
                  /* drop_metric_name = */ true,
-                 "timeSeriesHistogramInstantRateToGrid",
-                 /* histogram_instant = */ true,
              }},
 
             {"delta",
              {
                  "timeSeriesDeltaToGrid",
                  /* drop_metric_name = */ true,
-                 "timeSeriesHistogramDeltaToGrid",
              }},
 
             {"idelta",
              {
                  "timeSeriesInstantDeltaToGrid",
                  /* drop_metric_name = */ true,
-                 "timeSeriesHistogramInstantDeltaToGrid",
-                 /* histogram_instant = */ true,
              }},
 
             {"last_over_time",
