@@ -25,6 +25,10 @@ SET group_by_two_level_threshold = 10000;
 SET group_by_two_level_threshold_bytes = 1;
 SET max_threads = 16;
 SET distributed_aggregation_memory_efficient = 1;
+-- `EXPLAIN PLAN distributed = 1` prints a shipped shard plan as it was shipped, and a shard plan is
+-- shipped before the distributed rewrite runs on it, so the rows below read the rewrite only when the
+-- shard receives the query as text.
+SET serialize_query_plan = 0;
 
 -- Arming, asserted separately from the results below, on the same rewritten plan the guard acts on:
 -- `distributed = 1` shows the per-shard plans, and the settings sit on the inner query because the
@@ -81,6 +85,10 @@ SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucke
     SETTINGS distributed_plan_force_shuffle_aggregation = 1;
 SELECT k FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY ALL FORMAT Null
     SETTINGS distributed_plan_force_shuffle_aggregation = 1;
+-- A shipped shard plan is rewritten by the shard that receives it rather than by the initiator, so the
+-- demotion has to hold on that side as well.
+SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k FORMAT Null
+    SETTINGS distributed_plan_force_shuffle_aggregation = 1, serialize_query_plan = 1;
 
 -- The keys and the aggregate values must match the plain plan, not merely avoid the rejection. A
 -- single group keeps the output deterministic without an ORDER BY, which this plan cannot distribute.
@@ -116,6 +124,27 @@ SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT k, sum(v) FROM t_shuffl
                  enable_memory_bound_merging_of_aggregation_results = 1,
                  distributed_plan_force_shuffle_aggregation = 1)
     WHERE explain ILIKE '%by hash(%'
+    SETTINGS make_distributed_plan = 0;
+
+-- Either setting alone creates the promise, so the shuffle is demoted with only memory-bound merging
+-- on as well. The second row is the boundary of that: the merge over the shard output is not the
+-- memory-efficient one there, so in this combination the demotion costs a plan shape and nothing reads
+-- the bucket order it preserves.
+SELECT count() = 0 FROM
+    (EXPLAIN PLAN actions = 1, distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k
+        SETTINGS make_distributed_plan = 1,
+                 distributed_aggregation_memory_efficient = 0,
+                 enable_memory_bound_merging_of_aggregation_results = 1,
+                 distributed_plan_force_shuffle_aggregation = 1)
+    WHERE explain ILIKE '%by hash(%'
+    SETTINGS make_distributed_plan = 0;
+SELECT count() = 0 FROM
+    (EXPLAIN PLAN actions = 1, distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k
+        SETTINGS make_distributed_plan = 1,
+                 distributed_aggregation_memory_efficient = 0,
+                 enable_memory_bound_merging_of_aggregation_results = 1,
+                 distributed_plan_force_shuffle_aggregation = 1)
+    WHERE explain ILIKE '%memory-efficient%'
     SETTINGS make_distributed_plan = 0;
 
 DROP TABLE t_shuffle_bucket_order;
