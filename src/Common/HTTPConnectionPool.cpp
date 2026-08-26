@@ -427,14 +427,6 @@ static bool isProxyBypassedForHost(const std::string & host, const Poco::Net::HT
             Poco::RegularExpression::RE_CASELESS | Poco::RegularExpression::RE_ANCHORED);
 }
 
-/// An IPv6 literal needs brackets around the host part, the way `SocketAddress::toString()` prints it.
-static String formatHostAndPort(const String & host, UInt16 port)
-{
-    if (host.contains(':'))
-        return fmt::format("[{}]:{}", host, port);
-    return fmt::format("{}:{}", host, port);
-}
-
 template <class Session>
 class EndpointConnectionPool : public std::enable_shared_from_this<EndpointConnectionPool<Session>>, public IExtendedPool
 {
@@ -667,24 +659,11 @@ private:
             Session::connect(address);
         }
 
-        /// The endpoint `Session::reconnect` actually dials, which is what a connect failure is about:
-        /// the proxy when one is in use, otherwise the address the resolver picked for this connection.
-        /// The logical request host would name neither, so it must not stand in for them here.
+        /// The endpoint `Session::reconnect` last dialled; `PooledConnection::connect` stashes it
+        /// before any TCP connect can fail, so a deferred connect error can always name it.
         String connectEndpoint() const
         {
-            /// For a DNS-backed proxy with several records only the stashed address can name the
-            /// one that actually refused; the fallbacks reconstruct the endpoint from the config.
-            if (!dialled_address.empty())
-                return dialled_address;
-
-            const auto & proxy_config = Session::getProxyConfig();
-            if (!proxy_config.host.empty() && !isProxyBypassedForHost(Session::getHost(), proxy_config))
-                return formatHostAndPort(proxy_config.host, proxy_config.port);
-
-            /// The address `setResolvedHost` picked, falling back to the request host when Poco
-            /// resolves it itself (`getResolvedAddress()` concatenates, which breaks IPv6 literals).
-            const String resolved_host = Session::getResolvedHost();
-            return formatHostAndPort(resolved_host.empty() ? Session::getHost() : resolved_host, Session::getPort());
+            return dialled_address;
         }
 
         void doConnect(UInt64 * connect_time)
