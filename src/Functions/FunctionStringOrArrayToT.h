@@ -55,6 +55,13 @@ public:
         return false;
     }
 
+    bool isVolumeReducing() const override
+    {
+        if constexpr (requires { Impl::is_volume_reducing; })
+            return Impl::is_volume_reducing;
+        return false;
+    }
+
     String getSignatureString() const override
     {
         /// `QBit` is accepted only by Impls that opt in (e.g. `length`): there the result is a

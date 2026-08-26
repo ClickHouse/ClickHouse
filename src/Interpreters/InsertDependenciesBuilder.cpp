@@ -1492,6 +1492,17 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
     if (materialized_view && current != init_table_id)
     {
+        /// A view selects from its own source, never from the view that forwards into it, so on a target edge
+        /// the check below is never satisfied and the path is abandoned with no output header. Abandoning is
+        /// right for a view reached as a dependent, which is skipped, but `createPreSink` requires the header
+        /// of the view the insert addresses.
+        if (parent == init_table_id && isView(parent) && inner_tables.at(parent) == current)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Table '{}' is a materialized view, so it cannot be the target of materialized view '{}'. "
+                "Use the target table of '{}' instead.",
+                current, parent, current);
+
         StorageIDMaybeEmpty select_table_id = metadata->getSelectQuery().select_table_id;
         if (select_table_id != parent)
         {

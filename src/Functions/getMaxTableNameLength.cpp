@@ -75,9 +75,9 @@ REGISTER_FUNCTION(getMaxTableName)
             {"typical",
             "SELECT getMaxTableNameLengthForDatabase('default');",
             R"(
-            ┌─getMaxTableNameLengthForDatabase('default')─┐
-            │                                         206 │
-            └─────────────────────────────────────────────┘
+┌─getMaxTableNameLengthForDatabase('default')─┐
+│                                         206 │
+└─────────────────────────────────────────────┘
             )"
         }},
         .introduced_in = {25, 1},

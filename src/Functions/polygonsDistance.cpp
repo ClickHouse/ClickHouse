@@ -161,7 +161,7 @@ Using this type of coordinate system speeds up execution, but of course is not p
 SELECT polygonsDistanceSpherical([[[(0, 0), (0, 0.1), (0.1, 0.1), (0.1, 0)]]], [[[(10., 10.), (10., 40.), (40., 40.), (40., 10.), (10., 10.)]]])
         )",
         R"(
-0.24372872211133834
+0.24372872211133823
         )"
     }
     };

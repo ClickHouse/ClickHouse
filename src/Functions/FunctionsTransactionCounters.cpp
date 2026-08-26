@@ -36,6 +36,9 @@ public:
     /// (CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE).
     String getSignatureString() const override { return "() -> " + getTransactionIDDataType()->getName(); }
 
+    /// Reads the executing node's transaction state.
+    bool isServerConstant() const override { return true; }
+
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionID>(context); }
     explicit FunctionTransactionID(ContextPtr context) : FunctionConstantBase(getValue(context->getCurrentTransaction()), context->isDistributed()) {}
 };
@@ -58,6 +61,9 @@ public:
     bool isDeterministic() const override { return false; }
     bool isSuitableForConstantFolding() const override { return !getContext()->isDistributed(); }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+
+    /// Reads the executing node's transaction state.
+    bool isServerConstant() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override
     {

@@ -80,7 +80,7 @@ SELECT timezoneOf(now());
         )",
         R"(
 ┌─timezoneOf(now())─┐
-│ Europe/Amsterdam  │
+│ Etc/UTC           │
 └───────────────────┘
         )"}
     };

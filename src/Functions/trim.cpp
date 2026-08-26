@@ -329,9 +329,9 @@ By default, removes common whitespace (ASCII) characters.
         "Usage example",
         "SELECT trimLeft('ClickHouse', 'Click');",
         R"(
-┌─trimLeft('Cl⋯', 'Click')─┐
-│ House                    │
-└──────────────────────────┘
+┌─trimLeft('ClickHouse', 'Click')─┐
+│ House                           │
+└─────────────────────────────────┘
         )"
     }
     };
@@ -354,9 +354,9 @@ By default, removes common whitespace (ASCII) characters.
         "Usage example",
         "SELECT trimRight('ClickHouse','House');",
         R"(
-┌─trimRight('C⋯', 'House')─┐
-│ Click                    │
-└──────────────────────────┘
+┌─trimRight('ClickHouse', 'House')─┐
+│ Click                            │
+└──────────────────────────────────┘
         )"
     }
     };
@@ -377,9 +377,9 @@ By default, removes common whitespace (ASCII) characters.
         "Usage example",
         "SELECT trimBoth('$$ClickHouse$$', '$')",
         R"(
-┌─trimBoth('$$⋯se$$', '$')─┐
-│ ClickHouse               │
-└──────────────────────────┘
+┌─trimBoth('$$ClickHouse$$', '$')─┐
+│ ClickHouse                      │
+└─────────────────────────────────┘
         )"
     }
     };

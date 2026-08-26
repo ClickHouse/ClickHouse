@@ -56,6 +56,9 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
+
+    /// Read per executing node, so two nodes can disagree.
+    bool isServerConstant() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
@@ -89,6 +92,9 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool isDeterministic() const override { return false; }
+
+    /// Read per executing node, so two nodes can disagree.
+    bool isServerConstant() const override { return true; }
 
     String getSignatureString() const override
     {
