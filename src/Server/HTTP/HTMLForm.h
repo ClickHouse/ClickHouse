@@ -69,6 +69,15 @@ public:
     /// Uploaded files are silently discarded.
     void load(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody);
 
+    /// Reads only the body of the given HTTP request, keeping the fields that are already in the form.
+    /// Unlike `load`, the URL query string is not re-parsed: it was parsed before authentication (the name
+    /// of the user is one of its parameters) and re-validated against the authenticated user's limits by
+    /// `checkFieldLimits`, which exempts the parameters that select the session. Re-parsing it here would
+    /// apply the user's limits to those exempt parameters as well, and only after the named session has
+    /// already been acquired.
+    /// Uploaded files are passed to the given PartHandler.
+    void loadBody(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler);
+
     /// Reads the URL-encoded form data from the given input stream.
     /// Note that read() does not clear the form before reading the new values.
     void read(ReadBuffer & in);

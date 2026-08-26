@@ -1687,7 +1687,7 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     /// The form was constructed with the server default settings before authentication;
     /// re-apply the body-parsing limits from the authenticated user's settings.
     params.applyBodyLimits(context->getSettingsRef());
-    params.load(request, body, handler);
+    params.loadBody(request, body, handler);
 
     std::string full_query;
     NameToNameMap query_parameters = context->getQueryParameters();
@@ -1830,10 +1830,10 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
         if (wants_request_body)
         {
             auto body_copy = preserve_raw_body();
-            params.load(request, *body_copy, handler);
+            params.loadBody(request, *body_copy, handler);
         }
         else
-            params.load(request, body, handler);
+            params.loadBody(request, body, handler);
         body_fields_loaded = true;
     }
     else if (unlikely(startsWith(request.getContentType(), "application/x-www-form-urlencoded")))
