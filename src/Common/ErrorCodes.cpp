@@ -668,6 +668,7 @@
     M(902, PROTOCOL_VERSION_MISMATCH) \
     M(903, DISTRIBUTED_CACHE_REGISTRY_SHUTDOWN) \
     M(904, TOO_MANY_UNAVAILABLE_SHARDS) \
+    M(905, DISTRIBUTED_CACHE_SERVER_IN_BACKOFF) \
 \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
@@ -684,6 +685,8 @@
     M(1011, HANDLER_ALREADY_EXISTS) \
     M(1012, HANDLER_DOESNT_EXIST) \
     M(1013, AMBIGUOUS_HANDLER) \
+    M(1014, TRANSACTION_ROLLBACK_PARTIAL_FAILURE) \
+    M(1015, FILE_CHANGED_DURING_READ) \
     /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -700,7 +703,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1013;
+    constexpr ErrorCode END = 1015;
 
 #if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
     /** One `ErrorPairHolder` per error code, each holding two `Error` structs - the last message,

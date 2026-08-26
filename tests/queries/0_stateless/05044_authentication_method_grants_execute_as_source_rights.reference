@@ -1,0 +1,16 @@
+-- the user itself cannot read the table it does not hold, listed by the token or not
+ACCESS_DENIED
+ACCESS_DENIED
+-- impersonation runs as the target: the listed privilege of the target is available
+-- to the token exactly as it is to the user's unlimited credential
+2
+2
+2
+2
+-- a privilege of the target that the token does not list stays denied to the token
+ACCESS_DENIED
+ACCESS_DENIED
+-- and is available to the unlimited credential
+3
+-- impersonation itself requires the privilege to be both granted and listed
+ACCESS_DENIED

@@ -110,9 +110,9 @@ SELECT YYYYMMDDToDate(20230911);
 ```
 
 ```response title=Response
-┌─toYYYYMMDD(20230911)─┐
-│           2023-09-11 │
-└──────────────────────┘
+┌─YYYYMMDDToDate(20230911)─┐
+│               2023-09-11 │
+└──────────────────────────┘
 ```
 
 ## YYYYMMDDToDate32 {#YYYYMMDDToDate32}
@@ -181,13 +181,13 @@ Returns a `DateTime` value from the provided arguments [`DateTime`](/reference/d
 **Example**
 
 ```sql title=Query
-SELECT YYYYMMDDToDateTime(20230911131415);
+SELECT YYYYMMDDhhmmssToDateTime(20230911131415);
 ```
 
 ```response title=Response
-┌──────YYYYMMDDhhmmssToDateTime(20230911131415)─┐
-│                           2023-09-11 13:14:15 │
-└───────────────────────────────────────────────┘
+┌─YYYYMMDDhhmmssToDateTime(20230911131415)─┐
+│                      2023-09-11 13:14:15 │
+└──────────────────────────────────────────┘
 ```
 
 ## YYYYMMDDhhmmssToDateTime64 {#YYYYMMDDhhmmssToDateTime64}
@@ -224,9 +224,9 @@ SELECT YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul');
 ```
 
 ```response title=Response
-┌─YYYYMMDDhhmm⋯/Istanbul')─┐
-│  2023-09-11 13:14:15.000 │
-└──────────────────────────┘
+┌─YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul')─┐
+│                                        2023-09-11 13:14:15.000 │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ## addDate {#addDate}
@@ -261,9 +261,9 @@ SELECT addDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
 ```
 
 ```response title=Response
-┌─addDate(toDa⋯valYear(3))─┐
-│               2021-01-01 │
-└──────────────────────────┘
+┌─addDate(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                       2021-01-01 │
+└──────────────────────────────────────────────────┘
 ```
 
 ## addDays {#addDays}
@@ -316,9 +316,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 day)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯valDay(10))─┐
-│               1998-06-26 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalDay(10))─┐
+│                                          1998-06-26 │
+└─────────────────────────────────────────────────────┘
 ```
 
 ## addHours {#addHours}
@@ -371,9 +371,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 hour)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯alHour(10))─┐
-│      1998-06-16 10:00:00 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalHour(10))─┐
+│                                  1998-06-16 10:00:00 │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## addInterval {#addInterval}
@@ -472,9 +472,9 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 10 microsecond)
 ```
 
 ```response title=Response
-┌─plus(CAST('19⋯osecond(10))─┐
-│ 1998-06-16 00:00:00.000010 │
-└────────────────────────────┘
+┌─plus(CAST('1998-06-16', 'DateTime'), toIntervalMicrosecond(10))─┐
+│                                      1998-06-16 00:00:00.000010 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## addMilliseconds {#addMilliseconds}
@@ -525,9 +525,9 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 10 millisecond)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯second(10))─┐
-│  1998-06-16 00:00:00.010 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'DateTime'), toIntervalMillisecond(10))─┐
+│                                         1998-06-16 00:00:00.010 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## addMinutes {#addMinutes}
@@ -580,9 +580,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 minute)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯Minute(10))─┐
-│      1998-06-16 00:10:00 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalMinute(10))─┐
+│                                    1998-06-16 00:10:00 │
+└────────────────────────────────────────────────────────┘
 ```
 
 ## addMonths {#addMonths}
@@ -635,9 +635,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 month)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯lMonth(10))─┐
-│               1999-04-16 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalMonth(10))─┐
+│                                            1999-04-16 │
+└───────────────────────────────────────────────────────┘
 ```
 
 ## addNanoseconds {#addNanoseconds}
@@ -688,9 +688,9 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 1000 nanosecond)
 ```
 
 ```response title=Response
-┌─plus(CAST('199⋯osecond(1000))─┐
-│ 1998-06-16 00:00:00.000001000 │
-└───────────────────────────────┘
+┌─plus(CAST('1998-06-16', 'DateTime'), toIntervalNanosecond(1000))─┐
+│                                    1998-06-16 00:00:00.000001000 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ## addQuarters {#addQuarters}
@@ -743,9 +743,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 quarter)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯uarter(10))─┐
-│               2000-12-16 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalQuarter(10))─┐
+│                                              2000-12-16 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ## addSeconds {#addSeconds}
@@ -798,9 +798,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 second)
 ```
 
 ```response title=Response
-┌─dateAdd('1998-06-16'::Date, INTERVAL 10 second)─┐
-│                             1998-06-16 00:00:10 │
-└─────────────────────────────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalSecond(10))─┐
+│                                    1998-06-16 00:00:10 │
+└────────────────────────────────────────────────────────┘
 ```
 
 ## addTupleOfIntervals {#addTupleOfIntervals}
@@ -890,9 +890,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 week)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯alWeek(10))─┐
-│               1998-08-25 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalWeek(10))─┐
+│                                           1998-08-25 │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## addYears {#addYears}
@@ -945,9 +945,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 year)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯alYear(10))─┐
-│               2008-06-16 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalYear(10))─┐
+│                                           2008-06-16 │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## age {#age}
@@ -1515,7 +1515,7 @@ SELECT formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')
 
 ```response title=Response
 ┌─formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')─┐
-│ 1234560                                                             │
+│ 123456                                                              │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1760,12 +1760,12 @@ SELECT fromModifiedJulianDayOrNull(60000000); -- invalid argument, returns NULL
 ```
 
 ```response title=Response
-┌─fromModified⋯Null(58849)─┐
-│ 2020-01-01               │
-└──────────────────────────┘
-┌─fromModified⋯l(60000000)─┐
-│ ᴺᵁᴸᴸ                     │
-└──────────────────────────┘
+┌─fromModifiedJulianDayOrNull(58849)─┐
+│ 2020-01-01                         │
+└────────────────────────────────────┘
+┌─fromModifiedJulianDayOrNull(60000000)─┐
+│ ᴺᵁᴸᴸ                                  │
+└───────────────────────────────────────┘
 ```
 
 ## fromUTCTimestamp {#fromUTCTimestamp}
@@ -1848,7 +1848,7 @@ SELECT fromUnixTimestamp(423543535)
 
 ```response title=Response
 ┌─fromUnixTimestamp(423543535)─┐
-│          1983-06-04 10:58:55 │
+│          1983-06-04 02:58:55 │
 └──────────────────────────────┘
 ```
 
@@ -1860,7 +1860,7 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime
 
 ```response title=Response
 ┌─DateTime────────────┐
-│ 2009-02-11 14:42:23 │
+│ 2009-02-11 06:42:23 │
 └─────────────────────┘
 ```
 
@@ -2416,7 +2416,7 @@ SELECT serverTimeZone()
 
 ```response title=Response
 ┌─serverTimeZone()─┐
-│ UTC              │
+│ Etc/UTC          │
 └──────────────────┘
 ```
 
@@ -2507,9 +2507,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 day)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯valDay(10))─┐
-│               1998-06-06 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalDay(10))─┐
+│                                           1998-06-06 │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## subtractHours {#subtractHours}
@@ -2562,9 +2562,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 hour)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯alHour(10))─┐
-│      1998-06-15 14:00:00 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalHour(10))─┐
+│                                   1998-06-15 14:00:00 │
+└───────────────────────────────────────────────────────┘
 ```
 
 ## subtractInterval {#subtractInterval}
@@ -2662,9 +2662,9 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 microsecond)
 ```
 
 ```response title=Response
-┌─minus(CAST('1⋯osecond(10))─┐
-│ 1998-06-15 23:59:59.999990 │
-└────────────────────────────┘
+┌─minus(CAST('1998-06-16', 'DateTime'), toIntervalMicrosecond(10))─┐
+│                                       1998-06-15 23:59:59.999990 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ## subtractMilliseconds {#subtractMilliseconds}
@@ -2715,9 +2715,9 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 millisecond)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯second(10))─┐
-│  1998-06-15 23:59:59.990 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'DateTime'), toIntervalMillisecond(10))─┐
+│                                          1998-06-15 23:59:59.990 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ## subtractMinutes {#subtractMinutes}
@@ -2770,9 +2770,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 minute)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯Minute(10))─┐
-│      1998-06-15 23:50:00 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalMinute(10))─┐
+│                                     1998-06-15 23:50:00 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ## subtractMonths {#subtractMonths}
@@ -2825,9 +2825,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 month)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯lMonth(10))─┐
-│               1997-08-16 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalMonth(10))─┐
+│                                             1997-08-16 │
+└────────────────────────────────────────────────────────┘
 ```
 
 ## subtractNanoseconds {#subtractNanoseconds}
@@ -2878,9 +2878,9 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 nanosecond)
 ```
 
 ```response title=Response
-┌─minus(CAST('19⋯anosecond(10))─┐
-│ 1998-06-15 23:59:59.999999990 │
-└───────────────────────────────┘
+┌─minus(CAST('1998-06-16', 'DateTime'), toIntervalNanosecond(10))─┐
+│                                   1998-06-15 23:59:59.999999990 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## subtractQuarters {#subtractQuarters}
@@ -2988,9 +2988,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 second)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯Second(10))─┐
-│      1998-06-15 23:59:50 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalSecond(10))─┐
+│                                     1998-06-15 23:59:50 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ## subtractTupleOfIntervals {#subtractTupleOfIntervals}
@@ -3024,9 +3024,9 @@ WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVA
 ```
 
 ```response title=Response
-┌─subtractTupl⋯alYear(1)))─┐
-│               2016-12-31 │
-└──────────────────────────┘
+┌─subtractTupleOfIntervals(date, (toIntervalDay(1), toIntervalYear(1)))─┐
+│                                                            2016-12-31 │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
 ## subtractWeeks {#subtractWeeks}
@@ -3079,9 +3079,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 week)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯alWeek(10))─┐
-│               1998-04-07 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalWeek(10))─┐
+│                                            1998-04-07 │
+└───────────────────────────────────────────────────────┘
 ```
 
 ## subtractYears {#subtractYears}
@@ -3134,9 +3134,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 year)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯alYear(10))─┐
-│               1988-06-16 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalYear(10))─┐
+│                                            1988-06-16 │
+└───────────────────────────────────────────────────────┘
 ```
 
 ## timeDiff {#timeDiff}
@@ -3421,7 +3421,7 @@ SELECT timezoneOf(now());
 
 ```response title=Response
 ┌─timezoneOf(now())─┐
-│ Europe/Amsterdam  │
+│ Etc/UTC           │
 └───────────────────┘
 ```
 
@@ -3665,9 +3665,9 @@ SELECT toDaysSinceYearZero(toDate('2023-09-08'))
 ```
 
 ```response title=Response
-┌─toDaysSinceYearZero(toDate('2023-09-08')))─┐
-│                                     713569 │
-└────────────────────────────────────────────┘
+┌─toDaysSinceYearZero(toDate('2023-09-08'))─┐
+│                                    739136 │
+└───────────────────────────────────────────┘
 ```
 
 ## toHour {#toHour}
@@ -3794,8 +3794,8 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 ```
 
 ```response title=Response
-┌─week1─┬─week2─┐
-│    40 │    40 │
+┌─year1─┬─year2─┐
+│  2024 │  2024 │
 └───────┴───────┘
 ```
 
@@ -3883,10 +3883,10 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-23
-toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-22
-toLastDayOfWeek(toDate('2023-04-23')):                   2023-04-23
-toLastDayOfWeek(toDate('2023-04-23'), 1):                2023-04-23
+toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):    2023-04-22
+toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1): 2023-04-23
+toLastDayOfWeek(toDate('2023-04-23')):                 2023-04-29
+toLastDayOfWeek(toDate('2023-04-23'), 1):              2023-04-23
 ```
 
 ## toMicrosecond {#toMicrosecond}
@@ -3958,9 +3958,9 @@ SELECT toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3));
 ```
 
 ```response title=Response
-┌──toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3))─┐
-│                                                        456 │
-└────────────────────────────────────────────────────────────┘
+┌─toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3))─┐
+│                                                       456 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## toMinute {#toMinute}
@@ -4066,12 +4066,12 @@ SELECT toModifiedJulianDayOrNull('0000-00-00'); -- invalid date, returns NULL
 ```
 
 ```response title=Response
-┌─toModifiedJu⋯020-01-01')─┐
-│                    58849 │
-└──────────────────────────┘
-┌─toModifiedJu⋯000-00-00')─┐
-│                     ᴺᵁᴸᴸ │
-└──────────────────────────┘
+┌─toModifiedJulianDayOrNull('2020-01-01')─┐
+│                                   58849 │
+└─────────────────────────────────────────┘
+┌─toModifiedJulianDayOrNull('0000-00-00')─┐
+│                                    ᴺᵁᴸᴸ │
+└─────────────────────────────────────────┘
 ```
 
 ## toMonday {#toMonday}
@@ -4290,9 +4290,9 @@ SELECT toRelativeDayNum(toDate('2023-04-01')) - toRelativeDayNum(toDate('2023-01
 ```
 
 ```response title=Response
-┌─minus(toRela⋯3-01-01')))─┐
-│                       90 │
-└──────────────────────────┘
+┌─minus(toRelativeDayNum(toDate('2023-04-01')), toRelativeDayNum(toDate('2023-01-01')))─┐
+│                                                                                    90 │
+└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## toRelativeHourNum {#toRelativeHourNum}
@@ -4549,9 +4549,9 @@ SELECT toRelativeYearNum('2010-10-01'::DateTime) - toRelativeYearNum('2000-01-01
 ```
 
 ```response title=Response
-┌─minus(toRela⋯ateTime')))─┐
-│                       10 │
-└──────────────────────────┘
+┌─minus(toRelativeYearNum(CAST('2010-10-01', 'DateTime')), toRelativeYearNum(CAST('2000-01-01', 'DateTime')))─┐
+│                                                                                                          10 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## toSecond {#toSecond}
@@ -4757,9 +4757,9 @@ SELECT
 ```
 
 ```response title=Response
-┌─────────────────res─┬─toTypeName(res)─┐
-│ 2023-04-21 10:00:00 │ DateTime        │
-└─────────────────────┴─────────────────┘
+┌─toStartOfHour(toDateTime('2023-04-21 10:20:30'))─┐
+│                              2023-04-21 10:00:00 │
+└──────────────────────────────────────────────────┘
 ```
 
 ## toStartOfISOYear {#toStartOfISOYear}
@@ -4863,9 +4863,9 @@ SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
 ```
 
 ```response title=Response
-┌─toStartOfInt⋯alMonth(1))─┐
-│               2023-01-01 │
-└──────────────────────────┘
+┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
+│                                                               2023-01-01 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Using origin point**
@@ -4875,9 +4875,9 @@ SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, t
 ```
 
 ```response title=Response
-┌─toStartOfInt⋯14:35:30'))─┐
-│      2023-01-01 14:44:30 │
-└──────────────────────────┘
+┌─toStartOfInterval(toDateTime('2023-01-01 14:45:00'), toIntervalMinute(1), toDateTime('2023-01-01 14:35:30'))─┐
+│                                                                                          2023-01-01 14:44:30 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## toStartOfMicrosecond {#toStartOfMicrosecond}
@@ -4926,7 +4926,7 @@ SELECT toStartOfMicrosecond(dt64, 'Asia/Istanbul');
 
 ```response title=Response
 ┌─toStartOfMicrosecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 12:20:30.999999000 │
+│               2020-01-01 13:20:30.999999000 │
 └─────────────────────────────────────────────┘
 ```
 
@@ -4976,7 +4976,7 @@ SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
 
 ```response title=Response
 ┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 12:20:30.999000000 │
+│               2020-01-01 13:20:30.999000000 │
 └─────────────────────────────────────────────┘
 ```
 
@@ -5108,7 +5108,7 @@ SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
 
 ```response title=Response
 ┌─toStartOfNanosecond(dt64, 'Asia/Istanbul')─┐
-│              2020-01-01 12:20:30.999999999 │
+│              2020-01-01 13:20:30.999999999 │
 └────────────────────────────────────────────┘
 ```
 
@@ -5288,11 +5288,11 @@ SELECT
 
 ```response title=Response
 Row 1:
-    ──────
-    toStartOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-17
-    toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-17
-    toStartOfWeek(toDate('2023-04-24')):                   2023-04-24
-    toStartOfWeek(toDate('2023-04-24'), 1):                2023-04-24
+──────
+toStartOfWeek(toDateTime('2023-04-21 10:20:30')):    2023-04-16
+toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1): 2023-04-17
+toStartOfWeek(toDate('2023-04-24')):                 2023-04-23
+toStartOfWeek(toDate('2023-04-24'), 1):              2023-04-24
 ```
 
 ## toStartOfYear {#toStartOfYear}
@@ -5655,7 +5655,7 @@ SELECT toYYYYMM(now(), 'US/Eastern')
 
 ```response title=Response
 ┌─toYYYYMM(now(), 'US/Eastern')─┐
-│                        202303 │
+│                        202608 │
 └───────────────────────────────┘
 ```
 
@@ -5683,16 +5683,16 @@ Returns a `UInt32` number containing the year, month and day (YYYY * 10000 + MM 
 
 **Examples**
 
-**Convert current date to YYYYMMDD format**
+**Convert a date to YYYYMMDD format in another time zone**
 
 ```sql title=Query
-SELECT toYYYYMMDD(now(), 'US/Eastern')
+SELECT toYYYYMMDD(toDateTime('2026-01-02 03:04:05', 'UTC'), 'US/Eastern')
 ```
 
 ```response title=Response
-┌─toYYYYMMDD(now(), 'US/Eastern')─┐
-│                        20230302 │
-└─────────────────────────────────┘
+┌─toYYYYMMDD(toDateTime('2026-01-02 03:04:05', 'UTC'), 'US/Eastern')─┐
+│                                                           20260101 │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 ## toYYYYMMDDhhmmss {#toYYYYMMDDhhmmss}
@@ -5720,16 +5720,16 @@ Returns a `UInt64` number containing the year, month, day, hour, minute and seco
 
 **Examples**
 
-**Convert current date and time to YYYYMMDDhhmmss format**
+**Convert a date and time to YYYYMMDDhhmmss format**
 
 ```sql title=Query
-SELECT toYYYYMMDDhhmmss(now(), 'US/Eastern')
+SELECT toYYYYMMDDhhmmss(toDateTime('2023-03-02 16:22:09', 'UTC'), 'US/Eastern')
 ```
 
 ```response title=Response
-┌─toYYYYMMDDhhmmss(now(), 'US/Eastern')─┐
-│                        20230302112209 │
-└───────────────────────────────────────┘
+┌─toYYYYMMDDhhmmss(toDateTime('2023-03-02 16:22:09', 'UTC'), 'US/Eastern')─┐
+│                                                           20230302112209 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## toYear {#toYear}
@@ -5765,7 +5765,7 @@ SELECT toYear(toDateTime('2023-04-21 10:20:30'))
 
 ```response title=Response
 ┌─toYear(toDateTime('2023-04-21 10:20:30'))─┐
-│                                     2023  │
+│                                      2023 │
 └───────────────────────────────────────────┘
 ```
 
@@ -5883,7 +5883,7 @@ SELECT today() AS today, curdate() AS curdate, current_date() AS current_date FO
 ┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
 ┃      today ┃    curdate ┃ current_date ┃
 ┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2025-03-03 │ 2025-03-03 │   2025-03-03 │
+│ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
 ```
 
@@ -5894,10 +5894,8 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 ```
 
 ```response title=Response
-┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
-┃      TODAY ┃    CURDATE ┃ CURRENT_DATE ┃
-┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2025-03-04 │ 2025-03-04 │   2025-03-04 │
+┌──────TODAY─┬────CURDATE─┬─CURRENT_DATE─┐
+│ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
 ```
 
@@ -5937,10 +5935,10 @@ SELECT today() - 1;
 
 ```response title=Response
 ┌─yesterday()─┐
-│  2025-06-09 │
+│  2026-08-01 │
 └─────────────┘
 ┌─minus(today(), 1)─┐
-│        2025-06-09 │
+│        2026-08-01 │
 └───────────────────┘
 ```
 {/*AUTOGENERATED_END*/}
