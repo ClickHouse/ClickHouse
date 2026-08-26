@@ -673,8 +673,8 @@ void fillMissingColumns(
         if (!current_offsets.empty())
         {
             /// The subcolumn path and the storage type must come from the metadata shape, not from
-            /// the possibly remapped pair: `getBaseTypeOfArray` silently stops descending when a
-            /// name does not resolve, so a mismatched pair yields a column of the wrong type.
+            /// the possibly remapped pair: `getBaseTypeOfArray` stops descending when a name does
+            /// not resolve, so a mismatched pair yields a column of the wrong type.
             auto column_in_storage = tryGetColumnInStorage(storage_snapshot, *requested_column);
             const auto & column_for_type = column_in_storage ? *column_in_storage : *requested_column;
 
@@ -695,16 +695,39 @@ void fillMissingColumns(
                     tuple_elements.push_back(path.back().name_of_substream);
             }, ISerialization::SubstreamData(serialization));
 
-            /// The number of dimensions that belongs to the array itself but not shared in Nested column.
-            /// For example for column "n Nested(a UInt64, b Array(UInt64))" this value is 0 for `n.a` and 1 for `n.b`.
-            size_t num_empty_dimensions = num_dimensions - current_offsets.size();
+            size_t num_consumed_tuple_elements = 0;
+            auto base_type = getBaseTypeOfArray(column_for_type.getTypeInStorage(), tuple_elements, num_consumed_tuple_elements);
 
-            auto base_type = getBaseTypeOfArray(column_for_type.getTypeInStorage(), tuple_elements);
+            /// Only the names the descent consumed are represented by `base_type`. The rest of the path
+            /// stays in the subcolumn name and is resolved by `IDataType::getSubcolumn` below.
+            Names consumed_tuple_elements(tuple_elements.begin(), tuple_elements.begin() + num_consumed_tuple_elements);
+            auto subcolumn_name = removeTupleElementsFromSubcolumn(requested_subcolumn_name, consumed_tuple_elements);
+
+            /// Array dimensions of an unresolved path are created by that subcolumn extraction.
+            size_t num_dimensions_in_subcolumn = 0;
+            if (!subcolumn_name.empty())
+            {
+                auto subcolumn_type = base_type->getSubcolumnType(subcolumn_name);
+                if (const auto * subcolumn_array = typeid_cast<const DataTypeArray *>(subcolumn_type.get()))
+                    num_dimensions_in_subcolumn = subcolumn_array->getNumberOfDimensions();
+            }
+
+            /// The number of dimensions that belongs to the array itself but not shared in Nested column
+            /// and not created by the subcolumn extraction. For example for column
+            /// "n Nested(a UInt64, b Array(UInt64))" this value is 0 for `n.a` and 1 for `n.b`.
+            size_t num_dimensions_below = current_offsets.size() + num_dimensions_in_subcolumn;
+            if (num_dimensions < num_dimensions_below)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot fill missing column {} of type {}: type {} in storage accounts for {} array "
+                    "dimensions out of the requested {}",
+                    requested_column->name, requested_column->type->getName(),
+                    column_for_type.getTypeInStorage()->getName(), num_dimensions_below, num_dimensions);
+
+            size_t num_empty_dimensions = num_dimensions - num_dimensions_below;
+
             auto scalar_type = createArrayOfType(base_type, num_empty_dimensions);
             size_t data_size = assert_cast<const ColumnUInt64 &>(*current_offsets.back()).getData().back();
 
-            /// Remove names of tuple elements because they are already processed by 'getBaseTypeOfArray'.
-            auto subcolumn_name = removeTupleElementsFromSubcolumn(requested_subcolumn_name, tuple_elements);
             res_columns[i] = createColumnWithDefaultValue(*scalar_type, subcolumn_name, data_size);
 
             for (auto it = current_offsets.rbegin(); it != current_offsets.rend(); ++it)
