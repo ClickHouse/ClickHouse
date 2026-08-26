@@ -317,7 +317,7 @@ inline std::optional<EncodedValueInfo> encodeValueTo(
         = complete ? value.size() : std::min(value.size(), getTruncatedValuePrefixSize(value_capacity));
     result.assign(prefix);
     result.push_back(static_cast<char>(complete ? complete_kind : truncated_kind));
-    result.append(value.data(), value_prefix_size);
+    result.append(value.substr(0, value_prefix_size));
 
     if (!complete)
     {
@@ -399,7 +399,7 @@ inline std::optional<EncodedValueInfo> encodeMapEntryTo(
     const size_t value_prefix_size
         = complete ? value.size() : std::min(value.size(), getTruncatedValuePrefixSize(value_capacity));
     result[kind_position] = static_cast<char>(complete ? Kind::MapEntryComplete : Kind::MapEntryTruncated);
-    result.append(value.data(), value_prefix_size);
+    result.append(value.substr(0, value_prefix_size));
     if (!complete)
     {
         if (!value_hash)
