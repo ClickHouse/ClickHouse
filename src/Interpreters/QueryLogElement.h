@@ -13,6 +13,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <type_traits>
 #include <unordered_set>
 
 namespace ProfileEvents
@@ -126,4 +127,7 @@ struct QueryLogElement
 
     static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);
 };
+
+/// Keep the moves implicit: the trait must reflect the members, not a declaration.
+static_assert(std::is_nothrow_move_constructible_v<QueryLogElement>);
 }

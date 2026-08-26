@@ -425,6 +425,14 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             if (statistics_decl && statistics_decl->as<ASTStatisticsDeclaration &>().types)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "MATERIALIZE STATISTICS must not carry a TYPE list ('statistics_decl' 'types') during AST JSON deserialization");
+            /// `IF EXISTS` and `IN PARTITION` are parsed only in the column-list branch, so the `ALL` form
+            /// (null declaration) never carries either, and `formatImpl` has nowhere to print them.
+            if (if_exists && !statistics_decl)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "MATERIALIZE STATISTICS ALL (no 'statistics_decl') must not set 'if_exists' during AST JSON deserialization");
+            if (partition && !statistics_decl)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "MATERIALIZE STATISTICS ALL (no 'statistics_decl') must not set 'partition' during AST JSON deserialization");
             break;
         case ASTAlterCommand::DROP_STATISTICS:
             /// `CLEAR STATISTICS ALL` (`clear_statistics`) is parser-produced with a null declaration; plain
@@ -435,6 +443,15 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             if (statistics_decl && statistics_decl->as<ASTStatisticsDeclaration &>().types)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "DROP/CLEAR STATISTICS must not carry a TYPE list ('statistics_decl' 'types') during AST JSON deserialization");
+            /// `IF EXISTS` and `IN PARTITION` are parsed only where a column-list declaration is also
+            /// required, so the `CLEAR STATISTICS ALL` form (null declaration) never carries either:
+            /// `IF EXISTS ALL` reparses as a column named `ALL`, `ALL IN PARTITION p` not at all.
+            if (if_exists && !statistics_decl)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "CLEAR STATISTICS ALL (no 'statistics_decl') must not set 'if_exists' during AST JSON deserialization");
+            if (partition && !statistics_decl)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "CLEAR STATISTICS ALL (no 'statistics_decl') must not set 'partition' during AST JSON deserialization");
             break;
         case ASTAlterCommand::ADD_CONSTRAINT:
             require(constraint_decl, "constraint_decl");
@@ -443,6 +460,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             require(constraint, "constraint");
             break;
         case ASTAlterCommand::ADD_PROJECTION:
+        case ASTAlterCommand::MODIFY_PROJECTION:
             require(projection_decl, "projection_decl");
             break;
         case ASTAlterCommand::DROP_PROJECTION:
@@ -721,7 +739,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     }
     else if (type == ASTAlterCommand::MATERIALIZE_INDEX)
     {
-        ostr << "MATERIALIZE INDEX ";
+        ostr << "MATERIALIZE INDEX " << (if_exists ? "IF EXISTS " : "");
         index->format(ostr, settings, state, frame);
         if (partition)
         {
@@ -762,6 +780,9 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << "MATERIALIZE STATISTICS ";
         if (statistics_decl)
         {
+            /// Only the column-list form accepts `IF EXISTS`; on the `ALL` form the clause would
+            /// reparse as a column named `ALL`.
+            ostr << (if_exists ? "IF EXISTS " : "");
             statistics_decl->format(ostr, settings, state, frame);
             if (partition)
             {
@@ -814,6 +835,11 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             projection->format(ostr, settings, state, frame);
         }
     }
+    else if (type == ASTAlterCommand::MODIFY_PROJECTION)
+    {
+        ostr << "MODIFY PROJECTION " << (if_exists ? "IF EXISTS " : "");
+        projection_decl->format(ostr, settings, state, frame);
+    }
     else if (type == ASTAlterCommand::DROP_PROJECTION)
     {
         ostr << (clear_projection ? "CLEAR " : "DROP ") << "PROJECTION "
@@ -827,7 +853,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     }
     else if (type == ASTAlterCommand::MATERIALIZE_PROJECTION)
     {
-        ostr << "MATERIALIZE PROJECTION ";
+        ostr << "MATERIALIZE PROJECTION " << (if_exists ? "IF EXISTS " : "");
         projection->format(ostr, settings, state, frame);
         if (partition)
         {
@@ -1181,6 +1207,11 @@ bool ASTAlterQuery::isFetchAlter() const
 bool ASTAlterQuery::isDropPartitionAlter() const
 {
     return isOneCommandTypeOnly(ASTAlterCommand::DROP_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::DROP_DETACHED_PARTITION);
+}
+
+bool ASTAlterQuery::isReplacePartitionAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::REPLACE_PARTITION);
 }
 
 bool ASTAlterQuery::isCommentAlter() const
