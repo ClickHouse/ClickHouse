@@ -576,18 +576,19 @@ class Utils:
             # CI passes --cgroupns=host, so only this file names the job's own cgroup.
             _, controllers, path = line.split(":", 2)
             if not controllers:
-                limit_file = Path("/sys/fs/cgroup", path.lstrip("/"), "memory.max")
+                root, name = Path("/sys/fs/cgroup"), "memory.max"
             elif "memory" in controllers.split(","):
-                limit_file = Path(
-                    "/sys/fs/cgroup/memory", path.lstrip("/"), "memory.limit_in_bytes"
-                )
+                root, name = Path("/sys/fs/cgroup/memory"), "memory.limit_in_bytes"
             else:
                 continue
-            if not limit_file.is_file():
-                continue
-            value = limit_file.read_text().strip()
-            if value.isdigit():
-                return min(int(value), physical)
+            parts = Path(path.lstrip("/")).parts
+            # A cgroup inherits its ancestors' limits, so the effective one is the smallest.
+            for depth in range(len(parts), -1, -1):
+                limit_file = root.joinpath(*parts[:depth], name)
+                if limit_file.is_file():
+                    value = limit_file.read_text().strip()
+                    if value.isdigit():
+                        physical = min(physical, int(value))
         return physical
 
     @staticmethod
