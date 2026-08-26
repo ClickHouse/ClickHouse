@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -132,6 +133,27 @@ void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, c
 
 namespace
 {
+
+/// True when the index column is an `Array` and the slice holds an empty array.
+bool indexHasEmptyArray(const DataTypePtr & index_type, const ColumnPtr & column, size_t row_size)
+{
+    if (!WhichDataType(index_type).isArray())
+        return false;
+
+    const auto * array_column = checkAndGetColumn<ColumnArray>(column.get());
+    if (!array_column)
+        return true;
+
+    const auto & offsets = array_column->getOffsets();
+    for (size_t row = 0; row < row_size; ++row)
+    {
+        /// Offsets are a prefix sum, and offsets[-1] reads as 0 (PaddedPODArray left padding).
+        if (offsets[row] == offsets[row - 1])
+            return true;
+    }
+
+    return false;
+}
 
 ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
 {
@@ -566,7 +588,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
         out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
 
-        if (function_name == "in"  || function_name == "globalIn")
+        /// An `Array` index holds one hash per element, so a set array is looked up by its
+        /// elements. An empty set array contributes no element, so nothing in the filter can
+        /// stand for it and a granule holding `[]` is not kept.
+        const bool set_has_empty_array = indexHasEmptyArray(index_type, converted_column, row_size);
+
+        if ((function_name == "in"  || function_name == "globalIn") && !set_has_empty_array)
             out.function = RPNElement::FUNCTION_IN;
 
         if (function_name == "notIn"  || function_name == "globalNotIn")
