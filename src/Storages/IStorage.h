@@ -192,6 +192,10 @@ public:
     /// A storage that cannot serve synthesised subcolumns such as `.null`/`.size0` as standalone
     /// inputs may enable this while keeping supportsOptimizationToSubcolumns() false.
     virtual bool supportsOptimizationToTupleElementSubcolumns() const { return supportsOptimizationToSubcolumns(); }
+    /// True when a subcolumn read under FINAL equals the function computed on the merged column.
+    /// Safe for engines whose FINAL merge selects whole rows (Replacing/Collapsing/VersionedCollapsing);
+    /// unsafe for value-combining engines (Summing/Graphite/Coalescing) that recompute column values.
+    virtual bool supportsSubcolumnOptimizationWithFinal() const { return false; }
 
     /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
     /// Storage may throw an exception later if some query kind is not fully supported.

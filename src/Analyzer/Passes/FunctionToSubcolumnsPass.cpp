@@ -90,6 +90,16 @@ bool columnSourceHasFinal(const QueryTreeNodePtr & column_source)
     return false;
 }
 
+/// FINAL blocks the rewrite unless the engine reports it safe (see supportsSubcolumnOptimizationWithFinal);
+/// an unknown storage is treated as unsafe.
+bool columnSourceFinalBlocksOptimization(const QueryTreeNodePtr & column_source)
+{
+    if (!columnSourceHasFinal(column_source))
+        return false;
+    auto storage = getStorageForColumnSource(column_source);
+    return !storage || !storage->supportsSubcolumnOptimizationWithFinal();
+}
+
 /// Keyed on the source NODE, not the StorageID: every `file()`/`s3()`/`url()` resolves to
 /// `_table_function.<name>`, so two such sources in one query would otherwise share a key.
 struct ColumnInSource
@@ -1148,7 +1158,7 @@ private:
     {
         /// For queries with FINAL converting function to subcolumn may alter
         /// special merging algorithms and produce wrong result of query.
-        if (columnSourceHasFinal(column_source))
+        if (columnSourceFinalBlocksOptimization(column_source))
             return;
 
         const auto & column = first_argument_column_node.getColumn();
@@ -1173,7 +1183,7 @@ private:
         const FunctionNode & function_node, const ColumnNode & first_argument_column_node,
         const QueryTreeNodePtr & column_source, std::vector<FunctionNode *> & intermediates)
     {
-        if (columnSourceHasFinal(column_source))
+        if (columnSourceFinalBlocksOptimization(column_source))
             return;
 
         const auto & column = first_argument_column_node.getColumn();

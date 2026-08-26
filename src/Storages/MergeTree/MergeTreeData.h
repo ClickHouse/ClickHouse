@@ -573,6 +573,8 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    bool supportsSubcolumnOptimizationWithFinal() const override;
+
     bool supportsTTL() const override { return true; }
 
     bool supportsStatistics() const override { return true; }

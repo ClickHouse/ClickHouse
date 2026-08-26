@@ -1,0 +1,20 @@
+-- ReplacingMergeTree (safe): surviving row is ver=2, m={'x':9}, n=5 --
+length(m): rewritten
+m['x']: rewritten
+isNull(n): rewritten
+1	9	0	0
+-- CollapsingMergeTree (safe): surviving row is m={'x':9,'y':8}, n=5 --
+length(m): rewritten
+m['x']: rewritten
+isNull(n): rewritten
+2	9	0	0
+-- VersionedCollapsingMergeTree (safe): surviving row is m={'p':1,'q':2,'r':3}, n=7 --
+length(m): rewritten
+m['p']: rewritten
+isNull(n): rewritten
+3	1	0	0
+-- SummingMergeTree (unsafe): rewrite blocked under FINAL, allowed without FINAL --
+length(m) FINAL: not rewritten
+m['a'] FINAL: not rewritten
+length(m) no FINAL: rewritten
+m['a'] no FINAL: rewritten
