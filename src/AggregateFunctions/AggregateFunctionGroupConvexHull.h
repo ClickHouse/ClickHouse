@@ -259,6 +259,7 @@ public:
                     accumulateMultiLineString(state, getMultiLineStringFromField<Point>(field), should_correct);
                     break;
                 case WKB_GEOMETRY: break; /// Already handled above
+                default: break; /// MultiPoint and other unsupported types are ignored
             }
         }
 
