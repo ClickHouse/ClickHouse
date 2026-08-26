@@ -2617,10 +2617,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
-ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWithoutQueryConditionCache() const
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToRead(bool skip_query_condition_cache) const
 {
-    /// Deliberately not stored in `analyzed_result_ptr`: the result must not become the analysis of the
-    /// executed read, which has to re-analyze once its final shape (and with it the TopK gate) is known.
+    /// A local `indexes` on purpose: reusing the member would leave `applyFilters` nothing to rebuild.
+    std::optional<Indexes> estimate_indexes;
     return selectRangesToRead(
         getParts(),
         mutations_snapshot,
@@ -2635,10 +2635,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWith
         data_settings,
         all_column_names,
         log,
-        indexes,
+        estimate_indexes,
         /*find_exact_ranges=*/false,
         is_parallel_reading_from_replicas,
-        /*allow_query_condition_cache_=*/false,
+        !skip_query_condition_cache && allow_query_condition_cache,
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/true);
 }

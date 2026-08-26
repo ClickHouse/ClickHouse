@@ -341,13 +341,10 @@ public:
     /// or memoizing the result. The executed read analyzes again after its final mode is known.
     AnalysisResultPtr selectRangesToReadForEstimation() const;
 
-    /// Analyze the ranges to read for a throwaway pre-plan estimate, without consulting or populating
-    /// the query condition cache and without caching the analysis on the step. Used for the automatic
-    /// parallel-replicas sizing of a query which may still become a TopK read: that estimate runs before
-    /// `tryOptimizeTopK`, so it cannot know whether the `use_query_condition_cache_for_top_k` gate
-    /// applies, and the read that actually executes analyzes again with the gate that matches its final
-    /// shape.
-    AnalysisResultPtr estimateRangesToReadWithoutQueryConditionCache() const;
+    /// Analyze the ranges to read for the automatic parallel-replicas sizing, sharing no state with the
+    /// executed read: this runs before `tryOptimizeTopK`, so the read analyzes again for its final shape.
+    /// `skip_query_condition_cache` is set while that gate is undecided, so the cache must not be used.
+    AnalysisResultPtr estimateRangesToRead(bool skip_query_condition_cache) const;
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
