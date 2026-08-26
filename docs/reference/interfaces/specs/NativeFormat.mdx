@@ -200,6 +200,8 @@ The `count` is the full stack length **including the leading `DEFAULT` entry** t
 
 At revision `54493` and above, `JSON` with declared typed paths uses the same recursive shape: `[json_kind][path_0_kind]...[path_n_kind]`. Typed paths are ordered lexicographically by their full declared path names; dynamic paths and shared data do not have entries in this metadata. Below revision `54493`, declared paths are materialized dense and only the outer `JSON` kind is present.
 
+When `Nullable` wraps a composite that carries recursive serialization info, such as `Nullable(JSON(...))`, it adds no kind-stack node of its own: the payload is the wrapped composite's recursive payload. A `Nullable` that is itself sparse instead has the single sparse kind described below.
+
 The `has_custom_serialization` byte (field 3) is set whenever a composite's own info or any recursively described child is non-default. A decoder that reads only the single leading enum byte will stop too early and misread the remaining child-kind bytes as column data.
 
 **Sparse wire format.** When `kind_stack = 0x01`, the column `data` is two streams written back-to-back in the single shared TCP stream:

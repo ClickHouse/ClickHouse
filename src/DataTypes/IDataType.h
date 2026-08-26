@@ -175,7 +175,7 @@ public:
 
     /** Create empty column for corresponding type and serialization.
      */
-    MutableColumnPtr createColumn(const ISerialization & serialization) const;
+    virtual MutableColumnPtr createColumn(const ISerialization & serialization) const;
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */

@@ -20,6 +20,7 @@ public:
     void updateHashImpl(SipHash & hash) const override;
 
     MutableColumnPtr createColumn() const override;
+    MutableColumnPtr createColumn(const ISerialization & serialization) const override;
     MutableColumnPtr createUninitializedColumnWithSize(size_t size) const override;
 
     Field getDefault() const override;
@@ -50,6 +51,13 @@ public:
     getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
     bool supportsSparseSerialization() const override { return nested_data_type->supportsSparseSerialization(); }
     bool canBeInsideSparseColumns() const override { return nested_data_type->canBeInsideSparseColumns(); }
+    bool hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const override;
+
+    SerializationPtr getSerialization(const SerializationInfo & info) const override;
+    SerializationPtr getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const override;
+    MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
+    SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const override;
+    using IDataType::getSerializationInfo;
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 
