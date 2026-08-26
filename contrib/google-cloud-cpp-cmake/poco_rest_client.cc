@@ -225,12 +225,24 @@ class SessionPool {
 };
 
 // Identifies connections that are interchangeable: same transport endpoint and
-// same proxy. Anything that changes the socket's peer has to be part of the key.
-std::string SessionKey(Poco::URI const& uri, std::string const& proxy_host,
-                       Poco::UInt16 proxy_port) {
+// same proxy. Anything that changes the socket's peer, or the way the request
+// travels to it, has to be part of the key. The proxy *mode* matters as much as
+// its address: a tunnelled (CONNECT) socket carries the request to the origin
+// server while a non-tunnelled one carries it to the proxy itself, and the
+// proxy protocol, credentials and bypass pattern decide how the connection is
+// established. Handing a session opened under one mode to a request configured
+// for another would silently apply the first mode (the proxy configuration of a
+// pooled session is not reapplied). ClickHouse's own `HTTPConnectionPool` keys
+// on the same discriminators.
+std::string SessionKey(
+    Poco::URI const& uri,
+    Poco::Net::HTTPClientSession::ProxyConfig const& proxy) {
   return uri.getScheme() + "://" + uri.getHost() + ":" +
-         std::to_string(uri.getPort()) + "|" + proxy_host + ":" +
-         std::to_string(proxy_port);
+         std::to_string(uri.getPort()) + "|" + proxy.host + ":" +
+         std::to_string(proxy.port) + "|" + proxy.protocol + "|" +
+         (proxy.tunnel ? "tunnel" : "direct") + "|" +
+         proxy.originalRequestProtocol + "|" + proxy.username + "|" +
+         proxy.nonProxyHosts;
 }
 
 // Returns a connected-or-connectable session for `uri`, reusing a pooled one when
@@ -256,29 +268,34 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
       provider_proxy = provider();
     }
   }
-  std::string proxy_host;
-  Poco::UInt16 proxy_port = 0;
+  // The proxy configuration the session ends up with, in the exact shape Poco
+  // applies it. It is both what a freshly created session is configured with
+  // below and what the pool key is derived from, so a pooled session is only
+  // ever reused by a request whose proxy behaves the same way.
+  Poco::Net::HTTPClientSession::ProxyConfig effective_proxy;
   if (proxy_from_provider) {
-    proxy_host = provider_proxy.host;
-    proxy_port = provider_proxy.port;
+    effective_proxy = provider_proxy;
   } else if (options.has<ProxyOption>()) {
     auto const& proxy = options.get<ProxyOption>();
     if (!proxy.hostname().empty()) {
-      proxy_host = proxy.hostname();
+      effective_proxy.host = proxy.hostname();
       // ProxyConfig defaults the scheme to "https"; default the port to match
       // the configured scheme instead of always assuming the plain-HTTP port,
       // matching the `scheme://host[:port]` proxy URL used by the libcurl-based
       // transport.
-      proxy_port = proxy.scheme() == "https"
-                       ? Poco::Net::HTTPSClientSession::HTTPS_PORT
-                       : Poco::Net::HTTPSession::HTTP_PORT;
+      effective_proxy.port = proxy.scheme() == "https"
+                                 ? Poco::Net::HTTPSClientSession::HTTPS_PORT
+                                 : Poco::Net::HTTPSession::HTTP_PORT;
       if (!proxy.port().empty()) {
-        proxy_port = static_cast<Poco::UInt16>(std::stoi(proxy.port()));
+        effective_proxy.port = static_cast<Poco::UInt16>(std::stoi(proxy.port()));
       }
+      effective_proxy.username = proxy.username();
+      effective_proxy.password = proxy.password();
     }
   }
+  if (effective_proxy.host.empty()) effective_proxy = {};
 
-  auto const key = SessionKey(uri, proxy_host, proxy_port);
+  auto const key = SessionKey(uri, effective_proxy);
   if (session_key != nullptr) *session_key = key;
 
   // A pooled session already points at this endpoint through this proxy -- both
@@ -300,13 +317,15 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
     // ProxyOption: it already carries everything Poco needs (including tunneling
     // and the no-proxy host pattern), and it can change between two requests of
     // the same client. Both were resolved above, before the pool lookup.
-    if (proxy_from_provider) {
-      if (!provider_proxy.host.empty()) session->setProxyConfig(provider_proxy);
-    } else if (!proxy_host.empty()) {
-      session->setProxy(proxy_host, proxy_port);
-      auto const& proxy = options.get<ProxyOption>();
-      if (!proxy.username().empty()) {
-        session->setProxyCredentials(proxy.username(), proxy.password());
+    if (!effective_proxy.host.empty()) {
+      if (proxy_from_provider) {
+        session->setProxyConfig(effective_proxy);
+      } else {
+        session->setProxy(effective_proxy.host, effective_proxy.port);
+        if (!effective_proxy.username.empty()) {
+          session->setProxyCredentials(effective_proxy.username,
+                                       effective_proxy.password);
+        }
       }
     }
   }
@@ -695,6 +714,12 @@ class PocoRestClient : public RestClient {
         http_request.setContentLength(
             static_cast<std::streamsize>(payload_size));
       }
+    }
+
+    if (options.has<::ClickHouse::PocoRestRequestObserverOption>()) {
+      auto const& observer =
+          options.get<::ClickHouse::PocoRestRequestObserverOption>();
+      if (observer) observer(method, path);
     }
 
     auto& body_stream = session->sendRequest(http_request);

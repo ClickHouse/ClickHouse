@@ -419,6 +419,41 @@ def test_profile_events(started_cluster):
     node.query("DROP TABLE gcs_events SYNC")
 
 
+def test_profile_events_list_objects_counts_every_page(started_cluster):
+    """`GCSListObjects` counts REST calls, so a listing that the SDK pages through must be counted
+    once per page: the library fetches the later pages of a `ListObjectsReader` on its own as the
+    iteration advances, and counting only the first one would make the counter useless for
+    rate-limit and cost analysis (the S3 and Azure backends count per request too)."""
+    node = started_cluster.instances["node"]
+
+    objects = 6
+    page_size = 2
+    for i in range(objects):
+        node.query(
+            f"INSERT INTO FUNCTION gcs('{gcs_url(f'list_pages/part{i}.tsv')}', NOSIGN, 'TSV', 'a UInt64') "
+            "SELECT number FROM numbers(10) SETTINGS use_native_gcs = 1"
+        )
+
+    query_id = f"gcs_ev_list_{uuid.uuid4()}"
+    assert objects * 10 == int(
+        node.query(
+            f"SELECT count() FROM gcs('{gcs_url('list_pages/*.tsv')}', NOSIGN, 'TSV', 'a UInt64')",
+            settings={"use_native_gcs": 1, "s3_list_object_keys_size": page_size},
+            query_id=query_id,
+        )
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    list_calls = int(
+        node.query(
+            "SELECT ProfileEvents['GCSListObjects'] FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+    assert list_calls >= objects // page_size
+
+
 def test_profile_events_table_function_is_not_counted_as_disk(started_cluster):
     """`DiskGCS*` must count only server-configured disks, so that disk traffic can be told apart
     from `gcs()` traffic -- the same split the S3 backend makes with `DiskS3*`."""

@@ -12,6 +12,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTRefreshStrategy.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Poco/Net/NetException.h>
@@ -142,6 +143,33 @@ namespace
         expr.replace(
             expr.database_and_table_name,
             make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table));
+    }
+
+    /// `REFRESH ... DEPENDS ON db.tbl` names other tables, so the dependency list is a table reference
+    /// like any other. The refresh scheduler keys its dependency graph on these full names, so a
+    /// dependency naming the pre-rename database occupies a different graph slot than the renamed table.
+    void visitRefreshStrategy(ASTRefreshStrategy & refresh, const DDLRenamingVisitor::Data & data)
+    {
+        if (!refresh.dependencies)
+            return;
+
+        for (auto & child : refresh.dependencies->children)
+        {
+            const auto * identifier = child ? child->as<ASTTableIdentifier>() : nullptr;
+            /// A parameterized name is only known when the view is called, so it has no name to rename.
+            if (!identifier || identifier->isParam())
+                continue;
+
+            QualifiedTableName qualified_name{identifier->getDatabaseName(), identifier->shortName()};
+            if (qualified_name.database.empty() || qualified_name.table.empty())
+                continue;
+
+            auto new_qualified_name = data.renaming_map.getNewTableName(qualified_name);
+            if (new_qualified_name == qualified_name)
+                continue;
+
+            child = make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
+        }
     }
 
     /// ASTDictionary keeps a dictionary definition, for example
@@ -313,6 +341,8 @@ void DDLRenamingVisitor::visit(ASTPtr ast, const Data & data)
         visitCreateQuery(*create, data);
     else if (auto * expr = ast->as<ASTTableExpression>())
         visitTableExpression(*expr, data);
+    else if (auto * refresh = ast->as<ASTRefreshStrategy>())
+        visitRefreshStrategy(*refresh, data);
     else if (auto * function = ast->as<ASTFunction>())
         visitFunction(*function, data);
     else if (auto * dictionary = ast->as<ASTDictionary>())

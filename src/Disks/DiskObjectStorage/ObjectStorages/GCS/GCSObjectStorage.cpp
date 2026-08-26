@@ -23,11 +23,9 @@ namespace gcs = ::google::cloud::storage;
 namespace ProfileEvents
 {
     extern const Event GCSGetObjectMetadata;
-    extern const Event GCSListObjects;
     extern const Event GCSDeleteObjects;
     extern const Event GCSCopyObject;
     extern const Event DiskGCSGetObjectMetadata;
-    extern const Event DiskGCSListObjects;
     extern const Event DiskGCSDeleteObjects;
     extern const Event DiskGCSCopyObject;
 }
@@ -104,8 +102,7 @@ namespace
             String path_prefix_,
             String disk_name_,
             const std::optional<std::string> & start_after_,
-            size_t max_list_size_,
-            bool for_disk_)
+            size_t max_list_size_)
             : IObjectStorageIteratorAsync(
                 CurrentMetrics::ObjectStorageGCSThreads,
                 CurrentMetrics::ObjectStorageGCSThreadsActive,
@@ -117,7 +114,6 @@ namespace
             , disk_name(std::move(disk_name_))
             , start_after(start_after_.has_value() ? *start_after_ : "")
             , batch_size(listPageSize(max_list_size_))
-            , for_disk(for_disk_)
         {
         }
 
@@ -137,7 +133,9 @@ namespace
                 /// `StartOffset` is inclusive while `start_after` is exclusive (matching the S3
                 /// backend's ListObjectsV2 semantics), so an object named exactly `start_after`
                 /// is skipped below.
-                countRequest(ProfileEvents::GCSListObjects, ProfileEvents::DiskGCSListObjects, for_disk);
+                /// The `GCSListObjects` counter is incremented by the transport (see `getGCSClient`),
+                /// once per `objects.list` request: the library fetches the later pages of this reader
+                /// on its own as the iteration advances, so counting here would see only the first one.
                 if (start_after.empty())
                     reader.emplace(client->ListObjects(bucket, gcs::Prefix(path_prefix), gcs::MaxResults(batch_size)));
                 else
@@ -175,7 +173,6 @@ namespace
         const String disk_name;
         const String start_after;
         const size_t batch_size;
-        const bool for_disk;
 
         std::optional<gcs::ListObjectsReader> reader;
         std::optional<gcs::ListObjectsReader::iterator> reader_position;
@@ -284,7 +281,7 @@ void GCSObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
         page_size = std::min(page_size, max_keys);
 
     size_t count = 0;
-    countRequest(ProfileEvents::GCSListObjects, ProfileEvents::DiskGCSListObjects, snapshot->settings.for_disk);
+    /// Counted per request by the transport, as in `GCSIteratorAsync::getBatchAndCheckNext` above.
     for (auto && item : snapshot->client->ListObjects(bucket, gcs::Prefix(path), gcs::MaxResults(static_cast<Int64>(page_size))))
     {
         if (!item)
@@ -311,7 +308,7 @@ ObjectStorageIteratorPtr GCSObjectStorage::iterate(
     if (!max_keys)
         max_keys = snapshot->settings.list_object_keys_size;
     return std::make_shared<GCSIteratorAsync>(
-        snapshot->client, bucket, path_prefix, disk_name, start_after, max_keys, snapshot->settings.for_disk);
+        snapshot->client, bucket, path_prefix, disk_name, start_after, max_keys);
 }
 
 void GCSObjectStorage::removeObjectImpl(
