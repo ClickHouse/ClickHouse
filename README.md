@@ -48,7 +48,7 @@ Want to speak? Apply [here](https://forms.gle/3h4XCEENJZ3eaVGy7)
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Boston Trivia](https://luma.com/clickh-nw1d)- August 31t, 2026
+* [Boston Trivia](https://luma.com/clickh-thmi)- August 31st, 2026
 * [Bangkok Meetup](https://luma.com/clickh-ct1j) - September 1st, 2026
 * [The Agentic Data Stack: Berlin](https://luma.com/clickh-2ccj) - September 2nd, 2026
 * [Boston Hands-on training: Building agents with ClickHouse and LibreChat Boston](https://luma.com/clickh-nw1d)- August 31t, 2026
