@@ -41,7 +41,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/PerformanceAdaptors.h>
 #include <Common/TargetSpecific.h>
 #include <base/IPv4andIPv6.h>
 #include <base/range.h>
@@ -49,6 +48,7 @@
 #include <base/unaligned.h>
 
 #include <algorithm>
+#include <memory>
 
 namespace DB
 {
@@ -920,30 +920,38 @@ public:
 
 ) // DECLARE_MULTITARGET_CODE
 
+/// The implementation is picked once, from what the CPU supports. Everything except execution comes from
+/// the default implementation, which this class derives from.
 template <typename Impl, typename Name>
 class FunctionIntHash : public TargetSpecific::Default::FunctionIntHash<Impl, Name>
 {
 public:
-    explicit FunctionIntHash(ContextPtr context) : selector(context)
+    explicit FunctionIntHash([[maybe_unused]] ContextPtr context)
     {
-        selector.registerImplementation<TargetArch::Default,
-            TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
-
-    #if USE_MULTITARGET_CODE
-        /// The v3 registration is needed because `FunctionsHashingMisc.cpp` is compiled at `-march=x86-64-v2`
-        /// (to dodge an unrelated SLP regression), so the `Default` namespace inherits v2 codegen. Without this
-        /// per-function v3 attribute path, the dispatcher has no AVX2 specialization to pick and falls back to
-        /// the v2 body, regressing hash-on-UUID/Decimal queries by 12-18%.
-        selector.registerImplementation<TargetArch::x86_64_v3,
-            TargetSpecific::x86_64_v3::FunctionIntHash<Impl, Name>>();
-        selector.registerImplementation<TargetArch::x86_64_v4,
-            TargetSpecific::x86_64_v4::FunctionIntHash<Impl, Name>>();
-    #endif
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionIntHash<Impl, Name>>();
+            return;
+        }
+#endif
+#if USE_MULTITARGET_CODE && !defined(__AVX2__)
+        /// Only reached from the translation units pinned to `-march=x86-64-v2` in
+        /// `src/Functions/CMakeLists.txt` (`FunctionsHashingMisc.cpp`), where `Default` inherits v2
+        /// codegen and this per-function body is the only AVX2 one. Everywhere else `Default` is
+        /// already built for the AVX2 baseline, so there is nothing to choose between.
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            impl = std::make_unique<TargetSpecific::x86_64_v3::FunctionIntHash<Impl, Name>>();
+            return;
+        }
+#endif
+        impl = std::make_unique<TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        return impl->executeImpl(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(ContextPtr context)
@@ -952,7 +960,7 @@ public:
     }
 
 private:
-    ImplementationSelector<IFunction> selector;
+    std::unique_ptr<IFunction> impl;
 };
 
 DECLARE_MULTITARGET_CODE(
@@ -1656,26 +1664,35 @@ public:
 
 ) // DECLARE_MULTITARGET_CODE
 
+/// The implementation is picked once, from what the CPU supports. Everything except execution comes from
+/// the default implementation, which this class derives from.
 template <typename Impl, bool Keyed = false, typename KeyType = char, typename KeyColumnsType = char>
 class FunctionAnyHash : public TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>
 {
 public:
-    explicit FunctionAnyHash(ContextPtr context) : selector(context)
+    explicit FunctionAnyHash([[maybe_unused]] ContextPtr context)
     {
-        selector
-            .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-
 #if USE_MULTITARGET_CODE
-        /// See the note in `FunctionIntHash`: `FunctionsHashingMisc.cpp` is at v2, so `Default` is v2 and the runtime
-        /// dispatcher needs the per-function v3 specialization to recover AVX2 codegen.
-        selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-        selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+            return;
+        }
 #endif
+#if USE_MULTITARGET_CODE && !defined(__AVX2__)
+        /// See the note in `FunctionIntHash`: only the v2-pinned translation units get here.
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            impl = std::make_unique<TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+            return;
+        }
+#endif
+        impl = std::make_unique<TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        return impl->executeImpl(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(ContextPtr context)
@@ -1684,7 +1701,7 @@ public:
     }
 
 private:
-    ImplementationSelector<IFunction> selector;
+    std::unique_ptr<IFunction> impl;
 };
 
 

@@ -3,6 +3,8 @@
 #include <Functions/FunctionsRandom.h>
 #include <pcg-random/pcg_random.hpp>
 
+#include <random>
+
 namespace DB
 {
 
