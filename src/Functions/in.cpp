@@ -97,8 +97,8 @@ public:
         if (ignore_set || arguments.size() != 2)
             return nullptr;
 
-        /// A NULL left operand yields NULL whatever the set holds, so a Nullable result is not
-        /// determined by the set alone.
+        /// Fold only a non-`Nullable` result: a NULL left operand yields NULL, so the set no longer
+        /// determines the result on its own. `LowCardinality` does not affect the value.
         if (!isUInt8(removeLowCardinality(result_type)))
             return nullptr;
 
