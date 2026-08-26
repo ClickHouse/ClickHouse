@@ -16,6 +16,7 @@ namespace DB
 {
 
 class IMergeTreeDataPart;
+class MergeTreeData;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
 /// The only purpose of this struct is that serialize and deserialize methods
@@ -89,6 +90,15 @@ struct RangesInDataPartDescription
     void deserialize(ReadBuffer & in, UInt64 parallel_replicas_protocol_version);
     String getPartOrProjectionName() const;
 };
+
+/// Whether a part name of `storage` identifies the same content on every cluster member: the engine
+/// coordinates block numbers through Keeper (`ReplicatedMergeTree` and descendants), or all of the
+/// table's data lives on shared-metadata storage where every member enumerates the same parts.
+/// Otherwise part names are node-local and same-named parts may hold divergent content.
+///
+/// Deriving this inspects the table's storage policy, which takes a global lock, so callers that
+/// describe many parts of the same table should derive it once and pass it down as a hint.
+RangesInDataPartDescription::PartNameIdentity partNameIdentityOf(const MergeTreeData & storage);
 
 struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescription>
 {

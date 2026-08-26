@@ -1471,6 +1471,25 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
         }
     }
 
+    /// An announcement from a replica whose protocol predates
+    /// `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT` reports `PartNameIdentity::Unknown`
+    /// for every part, which by itself is not enough to tell whether same-named parts are safe to
+    /// merge without a content fingerprint. The initiator reads the same table, so its own
+    /// classification of that table (registered by `setAuthoritativePartNameIdentity`) is
+    /// authoritative and is applied here, before the identity checks in the per-stream coordinator
+    /// see the description. This closes the fail-open window on every path, including a remote-only
+    /// plan where no announcement is produced in process and therefore none is guaranteed to speak
+    /// the current protocol version.
+    if (const auto it = table_to_part_name_identity.find(String(tableNameOfParallelReplicasStream(announcement.stream_id)));
+        it != table_to_part_name_identity.end() && it->second != RangesInDataPartDescription::PartNameIdentity::Unknown)
+    {
+        for (auto & part : announcement.description)
+        {
+            if (part.part_name_identity == RangesInDataPartDescription::PartNameIdentity::Unknown)
+                part.part_name_identity = it->second;
+        }
+    }
+
     const bool first_announcement_for_stream = !stream_to_coordinator.contains(announcement.stream_id);
 
     auto coordinator = getOrCreateCoordinator(announcement.stream_id, announcement.mode);
@@ -1727,6 +1746,20 @@ void ParallelReplicasReadingCoordinator::setSnapshotReplicaNum(size_t replica_nu
             ErrorCodes::LOGICAL_ERROR, "Snapshot replica is already set to {}, cannot pin to {}", *snapshot_replica_num, replica_num);
     snapshot_replica_num = replica_num;
     LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Replica {} is set as the snapshot replica", replica_num);
+}
+
+void ParallelReplicasReadingCoordinator::setAuthoritativePartNameIdentity(
+    const String & table_name, RangesInDataPartDescription::PartNameIdentity identity)
+{
+    std::lock_guard lock(mutex);
+    const auto [it, inserted] = table_to_part_name_identity.emplace(table_name, identity);
+    if (!inserted && it->second != identity)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Part name identity of table {} is already set to {}, cannot set it to {}",
+            table_name,
+            magic_enum::enum_name(it->second),
+            magic_enum::enum_name(identity));
 }
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_)

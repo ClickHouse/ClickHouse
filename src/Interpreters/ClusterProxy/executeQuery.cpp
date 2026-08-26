@@ -1034,6 +1034,47 @@ static size_t findLocalReplicaIndexAndUpdatePools(std::vector<ConnectionPoolPtr>
     return *local_replica_index;
 }
 
+/// Registers the initiator's own classification of the table's part names on the coordinator, so
+/// that announcements from replicas whose protocol predates
+/// `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT` (they report
+/// `PartNameIdentity::Unknown`) are still checked against the right rule. See
+/// `ParallelReplicasReadingCoordinator::setAuthoritativePartNameIdentity`.
+///
+/// Reading the same table on the initiator is what makes its classification authoritative, so a
+/// table that the initiator cannot resolve (for example, one that only exists on the replicas) is
+/// left alone: the coordinator keeps relying on what the announcements themselves report.
+static void seedAuthoritativePartNameIdentity(
+    ParallelReplicasReadingCoordinator & coordinator, const StorageID & storage_id, const ContextPtr & context)
+{
+    const auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get());
+    if (!merge_tree)
+        return;
+
+    /// `stream_id` of every stream of this table is its full table name, plus a `#split_{i}` suffix
+    /// when the table is read as several streams (stripped by the coordinator).
+    coordinator.setAuthoritativePartNameIdentity(storage_id.getFullTableName(), partNameIdentityOf(*merge_tree));
+}
+
+/// Same as above for every `MergeTree` table read by `plan`, used where the initiator builds a plan
+/// fragment instead of naming a single table.
+static void seedAuthoritativePartNameIdentity(
+    ParallelReplicasReadingCoordinator & coordinator, const QueryPlan & plan, const ContextPtr & context)
+{
+    std::vector<const QueryPlan::Node *> stack{plan.getRootNode()};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
+            seedAuthoritativePartNameIdentity(coordinator, read_from_merge_tree->getStorageID(), context);
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+}
+
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
@@ -1063,6 +1104,7 @@ void executeQueryWithParallelReplicas(
 
     auto external_tables = new_context->getExternalTables();
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
+    seedAuthoritativePartNameIdentity(*coordinator, storage_id, new_context);
     auto scalars = new_context->hasQueryContext() ? new_context->getQueryContext()->getScalars() : Scalars{};
     const auto & shard = cluster->getShardsInfo().at(0);
 
@@ -1190,6 +1232,7 @@ QueryPlanPtr createParallelReplicasPlan(QueryPlanPtr plan_fragment, ContextPtr c
         return nullptr;
 
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
+    seedAuthoritativePartNameIdentity(*coordinator, *plan_fragment, new_context);
 
     if (canUseLocalPlanForParallelReplicas(new_context))
     {

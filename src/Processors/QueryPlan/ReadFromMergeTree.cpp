@@ -828,7 +828,7 @@ Pipe ReadFromMergeTree::readInOrder(
         /// When the whole table is read by a single pool, keep the bare table name.
         String stream_id = data.getStorageID().getFullTableName();
         if (split_index)
-            stream_id += fmt::format("#split_{}", *split_index);
+            stream_id += fmt::format("{}{}", PARALLEL_REPLICAS_STREAM_SPLIT_SUFFIX, *split_index);
 
         ParallelReadingExtension extension{
             all_ranges_callback.value(),

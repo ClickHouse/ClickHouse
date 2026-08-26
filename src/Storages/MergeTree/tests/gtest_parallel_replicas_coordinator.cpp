@@ -143,6 +143,41 @@ RangesInDataPartDescription makePartWithAnalyzedAndTotal(
     return desc;
 }
 
+/// Registers the initiator-derived authoritative part-name identity class of a table on the
+/// coordinator. Both the method and the enumerators are added by this PR, so everything is spelled
+/// dependently on `Desc` and probed with `requires`: on the merge base the helper compiles to a
+/// no-op and the tests below then demonstrate the fail-open bug at runtime.
+template <typename Desc = RangesInDataPartDescription, typename Coordinator>
+void setAuthoritativeNodeLocalPartNames(Coordinator & coordinator, const String & table_name)
+{
+    if constexpr (has_part_name_identity<Desc>)
+    {
+        if constexpr (requires { coordinator.setAuthoritativePartNameIdentity(table_name, Desc::PartNameIdentity::NodeLocal); })
+            coordinator.setAuthoritativePartNameIdentity(table_name, Desc::PartNameIdentity::NodeLocal);
+    }
+}
+
+template <typename Desc = RangesInDataPartDescription, typename Coordinator>
+void setAuthoritativeClusterWidePartNames(Coordinator & coordinator, const String & table_name)
+{
+    if constexpr (has_part_name_identity<Desc>)
+    {
+        if constexpr (requires { coordinator.setAuthoritativePartNameIdentity(table_name, Desc::PartNameIdentity::ClusterWide); })
+            coordinator.setAuthoritativePartNameIdentity(table_name, Desc::PartNameIdentity::ClusterWide);
+    }
+}
+
+InitialAllRangesAnnouncement makeAnnouncementForStream(size_t replica_num, RangesInDataPartsDescription parts, const String & stream_id)
+{
+    return InitialAllRangesAnnouncement(
+        CoordinationMode::WithOrder,
+        std::move(parts),
+        replica_num,
+        /*mark_segment_size=*/0,
+        /*min_marks_per_request=*/24,
+        stream_id);
+}
+
 InitialAllRangesAnnouncement makeAnnouncement(size_t replica_num, RangesInDataPartsDescription parts)
 {
     return InitialAllRangesAnnouncement(
@@ -691,6 +726,155 @@ TEST(ParallelReplicasCoordinator, InOrderAcceptsMatchingFingerprintOnNodeLocalPa
         parts.push_back(desc);
         EXPECT_NO_THROW(coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(replica_num, std::move(parts))));
     }
+}
+
+/// Closes the remote-only mixed-version hole in the fail-closed contract.
+///
+/// `part_name_identity` travels only since `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT`,
+/// so in a plan built without a local arm (no in-process announcement, hence none guaranteed to
+/// speak the current protocol version) every announcement of a pre-upgrade cluster reports
+/// `Unknown` and carries no fingerprint. Relying on the announcements alone would leave the
+/// mark-count fallback in charge and merge two divergent same-named parts whose mark counts happen
+/// to coincide. The initiator reads the same table, so its own classification of that table is
+/// authoritative and makes the coordinator fail closed.
+TEST(ParallelReplicasCoordinator, InOrderFailsClosedWhenInitiatorReportsNodeLocalPartNames)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+    setAuthoritativeNodeLocalPartNames(coordinator, "default.t2");
+
+    /// Both announcements come from replicas that predate the fingerprint protocol version: no
+    /// fingerprint, `part_name_identity` left at `Unknown`, and equal mark counts.
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    RangesInDataPartsDescription parts_old;
+    parts_old.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+    EXPECT_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/1, std::move(parts_old))),
+        DB::Exception);
+}
+
+/// The same rule in `Default` coordination mode.
+TEST(ParallelReplicasCoordinator, DefaultFailsClosedWhenInitiatorReportsNodeLocalPartNames)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+    setAuthoritativeNodeLocalPartNames(coordinator, "default.t2");
+
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    RangesInDataPartsDescription parts_old;
+    parts_old.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+    EXPECT_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(parts_old))),
+        DB::Exception);
+}
+
+/// A table read as several `#split_{i}` streams announces under `<full table name>#split_{i}`, while
+/// the initiator registers the identity class once under the bare table name. The coordinator must
+/// still find it, otherwise splitting a table would silently reopen the fail-open window.
+TEST(ParallelReplicasCoordinator, InOrderFailsClosedOnSplitStreamOfNodeLocalTable)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+    setAuthoritativeNodeLocalPartNames(coordinator, "default.t2");
+
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+        coordinator.handleInitialAllRangesAnnouncement(
+            makeAnnouncementForStream(/*replica_num=*/0, std::move(parts), "default.t2#split_1"));
+    }
+
+    RangesInDataPartsDescription parts_old;
+    parts_old.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+    EXPECT_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(
+            makeAnnouncementForStream(/*replica_num=*/1, std::move(parts_old), "default.t2#split_1")),
+        DB::Exception);
+}
+
+/// The authoritative class must not over-reject: a `ReplicatedMergeTree` (or a plain `MergeTree` on
+/// shared-metadata storage) classifies as `ClusterWide`, where a part name does imply identical
+/// content, so two pre-upgrade announcements of the same-named part keep working. This is what makes
+/// the fix safe for rolling upgrades of replicated tables.
+TEST(ParallelReplicasCoordinator, InOrderKeepsMarkFallbackWhenInitiatorReportsClusterWidePartNames)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+    setAuthoritativeClusterWidePartNames(coordinator, "default.t2");
+
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    RangesInDataPartsDescription parts_old;
+    parts_old.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+    EXPECT_NO_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/1, std::move(parts_old))));
+}
+
+/// ... and the mark-count check still catches divergent underlying parts on that same path, so
+/// `ClusterWide` is not a blanket "accept anything".
+TEST(ParallelReplicasCoordinator, InOrderStillRejectsDivergentMarksWhenInitiatorReportsClusterWidePartNames)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+    setAuthoritativeClusterWidePartNames(coordinator, "default.t2");
+
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    RangesInDataPartsDescription divergent;
+    divergent.push_back(makePart("all", 1, 1, 0, /*marks=*/61));
+    EXPECT_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/1, std::move(divergent))),
+        DB::Exception);
+}
+
+/// The authoritative class only fills in `Unknown`: an announcement that states its own class keeps
+/// it, so a table the initiator resolves differently from what the announcing replica reports
+/// (which should not happen, but must not become a false rejection) is decided by the replica that
+/// actually holds the part.
+TEST(ParallelReplicasCoordinator, InOrderAuthoritativeIdentityDoesNotOverrideAnnouncedIdentity)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+    setAuthoritativeNodeLocalPartNames(coordinator, "default.t2");
+
+    for (size_t replica_num = 0; replica_num < 2; ++replica_num)
+    {
+        RangesInDataPartsDescription parts;
+        auto desc = makePart("all", 1, 1, 0, /*marks=*/8);
+        setPartNameIdentityClusterWide(desc);
+        parts.push_back(desc);
+        EXPECT_NO_THROW(coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(replica_num, std::move(parts))));
+    }
+}
+
+/// A registered class applies to its own table only: announcements of another table are unaffected.
+TEST(ParallelReplicasCoordinator, InOrderAuthoritativeIdentityAppliesToItsOwnTableOnly)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+    setAuthoritativeNodeLocalPartNames(coordinator, "default.other_table");
+
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    RangesInDataPartsDescription parts_old;
+    parts_old.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+    EXPECT_NO_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/1, std::move(parts_old))));
 }
 
 /// Wire-format guard for the fields this change adds to `RangesInDataPartDescription`.

@@ -162,9 +162,6 @@ RangesInDataPart::RangesInDataPart(
         ranges.emplace_back(0, total_marks_count);
 }
 
-namespace
-{
-
 /// Whether a part name of `storage` identifies the same content on every cluster member.
 ///
 /// Two independent guarantees make it so:
@@ -211,8 +208,6 @@ RangesInDataPartDescription::PartNameIdentity partNameIdentityOf(const MergeTree
         }
     }
     return PartNameIdentity::ClusterWide;
-}
-
 }
 
 RangesInDataPartDescription RangesInDataPart::getDescription(
