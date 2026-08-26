@@ -140,8 +140,7 @@ TEST(ThreadGroupSwitcher, RestoresBorrowedThreadName)
 /// Reparenting a thread's `MemoryTracker` flushes the untracked balance the thread carried in, and that
 /// flush increments `MemoryAllocatedWithoutCheck` and `MemoryAllocatedWithoutCheckBytes` on whatever
 /// `ProfileEvents::Counters` chain is in force. Those bytes predate the group, so they must not appear on
-/// the group's counters -- `system.query_log` reports the group's counters as the query's. The invariant is
-/// stated on `MemoryTracker::setParent`, and `detachFromGroup` observes it on the way out.
+/// the group's counters: `system.query_log` reports the group's counters as the query's.
 TEST(ThreadGroupAttach, PreAttachUntrackedMemoryIsNotChargedToTheGroup)
 {
     /// A dedicated thread so `current_thread` starts as nullptr and the balance below is this thread's
