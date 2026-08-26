@@ -166,7 +166,7 @@ CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 ```
 
-Когда ClickHouse server выполняет много параллельных запросов с [несколькими потоками](/ru/reference/settings/session-settings#max_threads) и все слоты CPU заняты, система переходит в состояние перегрузки. В состоянии перегрузки каждый освобождённый слот CPU заново назначается соответствующей рабочей нагрузке в соответствии с политиками планирования. Для запросов, использующих одну и ту же рабочую нагрузку, слоты распределяются по алгоритму round-robin. Для запросов из разных рабочих нагрузок слоты распределяются в соответствии с весами, приоритетами и лимитами, заданными для этих рабочих нагрузок.
+Когда ClickHouse server выполняет много параллельных запросов с [несколькими потоками](/ru/reference/settings/session-settings/max-threads#max_threads) и все слоты CPU заняты, система переходит в состояние перегрузки. В состоянии перегрузки каждый освобождённый слот CPU заново назначается соответствующей рабочей нагрузке в соответствии с политиками планирования. Для запросов, использующих одну и ту же рабочую нагрузку, слоты распределяются по алгоритму round-robin. Для запросов из разных рабочих нагрузок слоты распределяются в соответствии с весами, приоритетами и лимитами, заданными для этих рабочих нагрузок.
 
 Время CPU потребляется потоками, когда они не заблокированы и выполняют ресурсоёмкие задачи. Для целей планирования различают два типа потоков:
 
@@ -198,18 +198,18 @@ CREATE WORKLOAD ingestion IN production
 
 Этот пример конфигурации задаёт независимые пулы слотов CPU для административной и продакшен-нагрузки. Пул продакшена совместно используется аналитикой и ингестией. Кроме того, если пул продакшена перегружен, 9 из 10 освобождённых слотов при необходимости будут переназначаться аналитическим запросам. Запросы ингестии в периоды перегрузки будут получать только 1 из 10 слотов. Это может уменьшить задержку пользовательских запросов. У аналитики есть собственный лимит в 60 параллельных потоков, поэтому для поддержки ингестии всегда остаётся как минимум 40 потоков. Когда перегрузки нет, ингестия может использовать все 100 потоков.
 
-Чтобы исключить запрос из планирования CPU, установите настройку запроса [use&#95;concurrency&#95;control](/ru/reference/settings/session-settings#use_concurrency_control) в 0.
+Чтобы исключить запрос из планирования CPU, установите настройку запроса [use&#95;concurrency&#95;control](/ru/reference/settings/session-settings/use#use_concurrency_control) в 0.
 
 Планирование CPU пока не поддерживается для слияний и мутаций.
 
 Чтобы обеспечить справедливое распределение ресурсов между рабочими нагрузками, во время выполнения запроса необходимо выполнять вытеснение и динамическое уменьшение числа потоков. Вытеснение включается настройкой сервера `cpu_slot_preemption`. Если она включена, каждый поток периодически продлевает свой слот CPU (в соответствии с настройкой сервера `cpu_slot_quantum_ns`). Такое продление может блокировать выполнение, если CPU перегружен. Если выполнение блокируется на длительное время (см. настройку сервера `cpu_slot_preemption_timeout_ms`), запрос уменьшает масштаб, и число одновременно работающих потоков динамически снижается. Обратите внимание, что справедливое распределение времени CPU гарантируется между рабочими нагрузками, но между запросами внутри одной и той же рабочей нагрузки в некоторых редких случаях оно может нарушаться.
 
 <Warning>
-  Планирование слотов позволяет управлять [параллелизмом запросов](/ru/reference/settings/session-settings#max_threads), но не гарантирует справедливое распределение времени CPU, если настройка сервера `cpu_slot_preemption` не установлена в `true`; в противном случае справедливость обеспечивается на основе количества выделений слотов CPU между конкурирующими рабочими нагрузками. Это не означает равное количество секунд CPU, потому что без вытеснения слот CPU может удерживаться неограниченно долго. Поток получает слот в начале работы и освобождает его после её завершения.
+  Планирование слотов позволяет управлять [параллелизмом запросов](/ru/reference/settings/session-settings/max-threads#max_threads), но не гарантирует справедливое распределение времени CPU, если настройка сервера `cpu_slot_preemption` не установлена в `true`; в противном случае справедливость обеспечивается на основе количества выделений слотов CPU между конкурирующими рабочими нагрузками. Это не означает равное количество секунд CPU, потому что без вытеснения слот CPU может удерживаться неограниченно долго. Поток получает слот в начале работы и освобождает его после её завершения.
 </Warning>
 
 <Note>
-  При объявлении ресурса CPU настройки [`concurrent_threads_soft_limit_num`](/ru/reference/settings/server-settings/settings#concurrent_threads_soft_limit_num) и [`concurrent_threads_soft_limit_ratio_to_cores`](/ru/reference/settings/server-settings/settings#concurrent_threads_soft_limit_ratio_to_cores) перестают действовать. Вместо них для ограничения числа CPU, выделяемых для конкретной рабочей нагрузки, используется настройка рабочей нагрузки `max_concurrent_threads`. Чтобы добиться прежнего поведения, создайте только ресурс WORKER THREAD, задайте для рабочей нагрузки `all` настройку `max_concurrent_threads` равной `concurrent_threads_soft_limit_num` и используйте настройку запроса `workload = "all"`. Эта конфигурация соответствует значению &quot;fair&#95;round&#95;robin&quot; для настройки [`concurrent_threads_scheduler`](/ru/reference/settings/server-settings/settings#concurrent_threads_scheduler).
+  При объявлении ресурса CPU настройки [`concurrent_threads_soft_limit_num`](/ru/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) и [`concurrent_threads_soft_limit_ratio_to_cores`](/ru/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores) перестают действовать. Вместо них для ограничения числа CPU, выделяемых для конкретной рабочей нагрузки, используется настройка рабочей нагрузки `max_concurrent_threads`. Чтобы добиться прежнего поведения, создайте только ресурс WORKER THREAD, задайте для рабочей нагрузки `all` настройку `max_concurrent_threads` равной `concurrent_threads_soft_limit_num` и используйте настройку запроса `workload = "all"`. Эта конфигурация соответствует значению &quot;fair&#95;round&#95;robin&quot; для настройки [`concurrent_threads_scheduler`](/ru/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler).
 </Note>
 
 <div id="threads_vs_cpus">
@@ -295,7 +295,7 @@ stateDiagram-v2
 
 Ожидающие выделения в листовой рабочей нагрузке обрабатываются в порядке FIFO. Если ожидающие выделения есть у нескольких рабочих нагрузок, они обрабатываются в соответствии с настройками старшинства и весов. Сначала обслуживаются рабочие нагрузки с более высоким старшинством. Дочерние рабочие нагрузки с одинаковым старшинством делят память в соответствии с весами по принципу max-min fairness, то есть первой обслуживается рабочая нагрузка с меньшим нормализованным использованием памяти (текущее использование плюс запрошенное увеличение, делённые на вес). При вытеснении применяется обратная логика. Когда нужно освободить память, первыми вытесняются рабочие нагрузки с меньшим старшинством и более высоким нормализованным использованием памяти.
 
-Обратите внимание: ресурсы с разделением по времени используют priority, а ресурсы с разделением пространства — старшинство. Это независимые настройки, и для них можно задавать разные значения. Более высокий priority подразумевает неразрушающее вытеснение (задержку или throttling), тогда как более высокое старшинство может подразумевать разрушающее вытеснение (остановку с ошибкой). Рабочая нагрузка может иметь высокий priority для планирования CPU, но то же значение старшинства для резервирования памяти, чтобы не вытеснять другие рабочие нагрузки и не терять уже выполненную ими работу.
+Обратите внимание: ресурсы с разделением по времени используют priority, а ресурсы с разделением по пространству — старшинство. Это независимые настройки, и для них можно задавать разные значения. Более высокий priority подразумевает неразрушающее вытеснение (задержку или throttling), тогда как более высокое старшинство может подразумевать разрушающее вытеснение (остановку с ошибкой). Рабочая нагрузка может иметь высокий priority для планирования CPU, но то же значение старшинства для резервирования памяти, чтобы не вытеснять другие рабочие нагрузки и не терять уже выполненную ими работу.
 
 Каждая рабочая нагрузка с ограничением `max_memory` гарантирует, что общий объём памяти, выделенной в её поддереве, не превышает этот лимит. Если ожидающее или увеличивающееся выделение превысит лимит, запускается процедура вытеснения для освобождения памяти. Процедура вытеснения выбирает жертву, которую нужно завершить. Рабочая нагрузка, являющаяся наименьшим общим предком для инициатора и жертвы, предотвращает вытеснение в следующих ситуациях:
 
@@ -305,7 +305,7 @@ stateDiagram-v2
   Если вытеснение предотвращено или не освобождает достаточно памяти, новое выделение блокируется до тех пор, пока не освободится достаточный объём памяти. Эти правила позволяют ставить избыточные запросы в очередь в зависимости от нагрузки на память и дают удобный способ избежать ошибок MEMORY&#95;LIMIT&#95;EXCEEDED.
 
 <Note>
-  Ограничения рабочей нагрузки не зависят от других способов ограничить потребление памяти, таких как настройка запроса [max&#95;memory&#95;usage](/ru/reference/settings/session-settings#max_memory_usage). Их можно использовать вместе для более точного контроля потребления памяти. Можно задавать независимые ограничения памяти на основе пользователей (а не рабочих нагрузок). Это менее гибко и не предоставляет таких возможностей, как резервирование памяти и постановка ожидающих запросов в очередь. См. [Memory overcommit](/ru/concepts/features/configuration/settings/memory-overcommit)
+  Ограничения рабочей нагрузки не зависят от других способов ограничить потребление памяти, таких как настройка запроса [max&#95;memory&#95;usage](/ru/reference/settings/session-settings/max-memory-usage#max_memory_usage). Их можно использовать вместе для более точного контроля потребления памяти. Можно задавать независимые ограничения памяти на основе пользователей (а не рабочих нагрузок). Это менее гибко и не предоставляет таких возможностей, как резервирование памяти и постановка ожидающих запросов в очередь. См. [Memory overcommit](/ru/concepts/features/configuration/settings/memory-overcommit)
 </Note>
 
 Настройка рабочей нагрузки `max_waiting_queries` ограничивает количество ожидающих выделений для рабочей нагрузки. Когда лимит достигнут, сервер возвращает ошибку `SERVER_OVERLOADED`. Обратите внимание, что `max_waiting_queries` не наследуется дочерними рабочими нагрузками и имеет смысл только для листовых рабочих нагрузок.
@@ -345,11 +345,11 @@ CREATE RESOURCE query (QUERY)
 CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_second = 10, max_burst_queries = 20
 ```
 
-Настройка рабочей нагрузки `max_concurrent_queries` ограничивает количество запросов, которые могут одновременно выполняться в рамках заданной рабочей нагрузки. Это аналог настройки запроса [`max_concurrent_queries_for_all_users`](/ru/reference/settings/session-settings#max_concurrent_queries_for_all_users) и настройки сервера [max&#95;concurrent&#95;queries](/ru/reference/settings/server-settings/settings#max_concurrent_queries). Запросы async insert и некоторые специальные запросы, такие как KILL, не учитываются в этом ограничении.
+Настройка рабочей нагрузки `max_concurrent_queries` ограничивает количество запросов, которые могут одновременно выполняться в рамках заданной рабочей нагрузки. Это аналог настройки запроса [`max_concurrent_queries_for_all_users`](/ru/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) и настройки сервера [max&#95;concurrent&#95;queries](/ru/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries). Запросы async insert и некоторые специальные запросы, такие как KILL, не учитываются в этом ограничении.
 
 Настройки рабочей нагрузки `max_queries_per_second` и `max_burst_queries` ограничивают количество запросов для рабочей нагрузки с помощью throttler&#39;а token bucket. Это гарантирует, что за любой интервал времени `T` начнут выполняться не более `max_queries_per_second * T + max_burst_queries` новых запросов.
 
-Настройка рабочей нагрузки `max_waiting_queries` ограничивает количество ожидающих запросов для рабочей нагрузки. Когда лимит достигнут, сервер возвращает ошибку `SERVER_OVERLOADED`. Обратите внимание, что `max_waiting_queries` не наследуется дочерними рабочими нагрузками и имеет смысл только для конечных рабочих нагрузок.
+Настройка рабочей нагрузки `max_waiting_queries` ограничивает количество ожидающих запросов для рабочей нагрузки. Когда лимит достигнут, сервер возвращает ошибку `SERVER_OVERLOADED`. Обратите внимание, что `max_waiting_queries` не наследуется дочерними рабочими нагрузками и имеет смысл только для листовых рабочих нагрузок.
 
 <Note>
   Заблокированные запросы будут ждать неограниченно долго и не будут отображаться в `SHOW PROCESSLIST`, пока не будут выполнены все ограничения.
@@ -508,12 +508,12 @@ graph TD
 * [system.scheduler](/ru/reference/system-tables/scheduler)
 * [system.workloads](/ru/reference/system-tables/workloads)
 * [system.resources](/ru/reference/system-tables/resources)
-* [merge&#95;workload](/ru/reference/settings/merge-tree-settings#merge_workload) настройка MergeTree
-* [merge&#95;workload](/ru/reference/settings/server-settings/settings#merge_workload) глобальная настройка сервера
-* [mutation&#95;workload](/ru/reference/settings/merge-tree-settings#mutation_workload) настройка MergeTree
-* [mutation&#95;workload](/ru/reference/settings/server-settings/settings#mutation_workload) глобальная настройка сервера
-* [workload&#95;path](/ru/reference/settings/server-settings/settings#workload_path) глобальная настройка сервера
-* [workload&#95;zookeeper&#95;path](/ru/reference/settings/server-settings/settings#workload_zookeeper_path) глобальная настройка сервера
-* [cpu&#95;slot&#95;preemption](/ru/reference/settings/server-settings/settings#cpu_slot_preemption) глобальная настройка сервера
-* [cpu&#95;slot&#95;quantum&#95;ns](/ru/reference/settings/server-settings/settings#cpu_slot_quantum_ns) глобальная настройка сервера
-* [cpu&#95;slot&#95;preemption&#95;timeout&#95;ms](/ru/reference/settings/server-settings/settings#cpu_slot_preemption_timeout_ms) глобальная настройка сервера
+* [merge&#95;workload](/ru/reference/settings/merge-tree-settings/merge#merge_workload) настройка MergeTree
+* [merge&#95;workload](/ru/reference/settings/server-settings/settings/merge#merge_workload) глобальная настройка сервера
+* [mutation&#95;workload](/ru/reference/settings/merge-tree-settings/other#mutation_workload) настройка MergeTree
+* [mutation&#95;workload](/ru/reference/settings/server-settings/settings/other#mutation_workload) глобальная настройка сервера
+* [workload&#95;path](/ru/reference/settings/server-settings/settings/workload#workload_path) глобальная настройка сервера
+* [workload&#95;zookeeper&#95;path](/ru/reference/settings/server-settings/settings/workload#workload_zookeeper_path) глобальная настройка сервера
+* [cpu&#95;slot&#95;preemption](/ru/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption) глобальная настройка сервера
+* [cpu&#95;slot&#95;quantum&#95;ns](/ru/reference/settings/server-settings/settings/cpu-slot#cpu_slot_quantum_ns) глобальная настройка сервера
+* [cpu&#95;slot&#95;preemption&#95;timeout&#95;ms](/ru/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption_timeout_ms) глобальная настройка сервера

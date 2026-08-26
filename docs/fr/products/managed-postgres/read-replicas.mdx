@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/read-replicas
 sidebarTitle: 'Répliques de lecture'
 title: 'Répliques de lecture'
 description: 'Mettez à l’échelle les charges de travail à forte lecture avec des répliques de lecture dans ClickHouse Managed Postgres'
-keywords: ['répliques de lecture', 'évolutivité', 'montée en charge en lecture', 'répliques Postgres', 'mise à l’échelle horizontale']
+keywords: ['répliques de lecture', 'évolutivité', 'read scaling', 'répliques Postgres', 'mise à l’échelle horizontale']
 doc_type: 'guide'
 ---
 
@@ -12,7 +12,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
-Les répliques de lecture vous permettent de créer une ou plusieurs copies de votre base de données Managed Postgres primaire. Ces répliques suivent en continu votre base de données primaire grâce à la réplication native de PostgreSQL, afin de rester synchronisées avec les changements.
+Les répliques de lecture vous permettent de créer une ou plusieurs copies de votre base de données ClickHouse Managed Postgres primaire. Ces répliques suivent en continu votre base de données primaire grâce à la réplication native de PostgreSQL, afin de rester synchronisées avec les changements.
 
 Pour gérer les répliques de lecture, cliquez sur l’icône de modification de votre warehouse :
 
@@ -64,7 +64,7 @@ Les répliques de lecture peuvent jouer un rôle crucial dans la reprise après 
   ## Fonctionnement des répliques de lecture
 </div>
 
-Dans Managed Postgres, les répliques de lecture reposent sur une architecture de WAL shipping plutôt que sur la réplication en continu. Ce choix de conception vise à minimiser l&#39;impact sur votre base de données principale.
+Dans ClickHouse Managed Postgres, les répliques de lecture reposent sur une architecture de WAL shipping plutôt que sur la réplication en continu. Ce choix de conception vise à minimiser l’impact sur votre base de données principale.
 
 <div id="wal-shipping-from-object-storage">
   ### WAL shipping depuis le stockage d’objets

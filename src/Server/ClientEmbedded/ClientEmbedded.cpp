@@ -54,8 +54,8 @@ void ClientEmbedded::printHelpMessage(const OptionsDescription & options_descrip
     if (options_description.hosts_and_ports_description.has_value())
         output_stream << options_description.hosts_and_ports_description.value() << "\n";
 
-    output_stream << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
-    output_stream << "See also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
+    output_stream << "All settings are documented at https://clickhouse.com/docs/reference/settings/session-settings.\n\n";
+    output_stream << "See also: https://clickhouse.com/docs/concepts/features/interfaces/client\n";
 }
 
 

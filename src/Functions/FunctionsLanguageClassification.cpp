@@ -233,15 +233,18 @@ using FunctionDetectLanguage = FunctionTextClassificationString<FunctionDetectLa
 REGISTER_FUNCTION(DetectLanguage)
 {
     FunctionDocumentation::Description description_detect = R"(
-Detects the language of the UTF8-encoded input string.
-The function uses the [CLD2 library](https://github.com/CLD2Owners/cld2) for detection and returns the 2-letter ISO language code.
-
-The longer the input, the more precise the language detection will be.
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 :::warning
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
 :::
+
+Detects the language of the UTF8-encoded input string.
+The function uses the [CLD2 library](https://github.com/CLD2Owners/cld2) for detection and returns the 2-letter ISO language code.
+
+The longer the input, the more precise the language detection will be.
 )";
     FunctionDocumentation::Syntax syntax_detect = "detectLanguage(s)";
     FunctionDocumentation::Arguments arguments_detect = {
@@ -249,7 +252,7 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
     };
     FunctionDocumentation::ReturnedValue returned_value_detect = {"Returns the 2-letter ISO code of the detected language. Other possible results: `un` = unknown, can not detect any language, `other` = the detected language does not have 2 letter code.", {"String"}};
     FunctionDocumentation::Examples examples_detect = {
-        {"Mixed language text", "SELECT detectLanguage('Je pense que je ne parviendrai jamais à parler français comme un natif. Where there\\'s a will, there\\'s a way.')", "fr"}
+        {"Basic usage", "SET allow_experimental_nlp_functions = 1;\nSELECT detectLanguage('Je pense que je ne parviendrai jamais à parler français comme un natif.')", "fr"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_detect = {22, 2};
     FunctionDocumentation::Category category_detect = FunctionDocumentation::Category::NLP;
@@ -258,12 +261,15 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
     factory.registerFunction<FunctionDetectLanguage>(documentation_detect);
 
     FunctionDocumentation::Description description_mixed = R"(
-Similar to the [`detectLanguage`](#detectLanguage) function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 :::warning
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
 :::
+
+Similar to the [`detectLanguage`](#detectLanguage) function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
 )";
     FunctionDocumentation::Syntax syntax_mixed = "detectLanguageMixed(s)";
     FunctionDocumentation::Arguments arguments_mixed = {
@@ -271,7 +277,7 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
     };
     FunctionDocumentation::ReturnedValue returned_value_mixed = {"Returns a map with keys which are 2-letter ISO codes and corresponding values which are a percentage of the text found for that language", {"Map(String, Float32)"}};
     FunctionDocumentation::Examples examples_mixed = {
-        {"Mixed languages", "SELECT detectLanguageMixed('二兎を追う者は一兎をも得ず二兎を追う者は一兎をも得ず A vaincre sans peril, on triomphe sans gloire.')", "{'ja':0.62,'fr':0.36}"}
+        {"Mixed languages", "SET allow_experimental_nlp_functions = 1;\nSELECT detectLanguageMixed('二兎を追う者は一兎をも得ず二兎を追う者は一兎をも得ず A vaincre sans peril, on triomphe sans gloire.')", "{'ja':0.62,'fr':0.36}"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_mixed = {22, 2};
     FunctionDocumentation::Category category_mixed = FunctionDocumentation::Category::NLP;
