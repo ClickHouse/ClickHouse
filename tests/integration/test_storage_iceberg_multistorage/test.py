@@ -1160,6 +1160,15 @@ def test_local_table_with_data_files_outside_table_directory(started_cluster):
     metadata_dir = os.path.join(host_path, "metadata")
     data_dir = os.path.join(host_path, "data")
 
+    # Spell the table location as a `file://` URI, the way a catalog with a `file:` warehouse writes
+    # it, so that the data paths below share its scheme and authority.
+    for metadata_json in find_files(metadata_dir, ".metadata.json"):
+        with open(metadata_json, "r") as f:
+            metadata = json.load(f)
+        metadata["location"] = f"file://{host_path}"
+        with open(metadata_json, "w") as f:
+            json.dump(metadata, f, indent=2)
+
     # Point every data file at a directory next to the table, not under it.
     for manifest in [f for f in find_files(metadata_dir, ".avro") if not os.path.basename(f).startswith("snap-")]:
         modify_avro_file(manifest, ["data_file", "file_path"], lambda p: f"file://{external_dir}/{os.path.basename(p)}")
