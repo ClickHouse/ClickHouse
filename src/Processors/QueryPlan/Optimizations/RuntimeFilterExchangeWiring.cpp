@@ -63,6 +63,7 @@ bool stageDependsOnTransitively(
 
 struct RuntimeFilterApplication
 {
+    String filter_name; /// const result_name = structural id (`_runtime_filter_<hash>`)
     String filter_key; /// value of the `__applyFilter` label const = rendezvous key
     String key_column; /// probed INPUT column name; empty when the key is not a plain column
 };
@@ -101,7 +102,8 @@ void collectRuntimeFilterApplications(const ActionsDAG & dag, std::vector<Runtim
                 break;
         }
         out.push_back(
-            {.filter_key = String(key_constant->getDataAt(0)),
+            {.filter_name = key_argument->result_name,
+             .filter_key = String(key_constant->getDataAt(0)),
              .key_column = probed->type == ActionsDAG::ActionType::INPUT ? probed->result_name : String{}});
     }
 }
@@ -129,6 +131,41 @@ struct FilterConsumerSite
     String key_column;
 };
 
+}
+
+void restoreRuntimeFilterRendezvousKeys(QueryPlan & plan)
+{
+    auto * root = plan.getRootNode();
+    if (!root)
+        return;
+
+    std::unordered_map<String, String> key_by_name;
+    std::vector<BuildRuntimeFilterStep *> builds;
+    std::vector<QueryPlan::Node *> stack{root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        for (auto * child : node->children)
+            stack.push_back(child);
+
+        if (auto * build = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()))
+            builds.push_back(build);
+
+        std::vector<RuntimeFilterApplication> applications;
+        collectStepApplications(*node->step, applications);
+        for (const auto & application : applications)
+            key_by_name.emplace(application.filter_name, application.filter_key);
+    }
+
+    for (auto * build : builds)
+    {
+        if (!build->getFilterKey().empty())
+            continue;
+        auto it = key_by_name.find(build->getFilterName());
+        if (it != key_by_name.end())
+            build->setFilterKey(it->second);
+    }
 }
 
 void wireRuntimeFilterExchangeTopology(
@@ -178,9 +215,9 @@ void wireRuntimeFilterExchangeTopology(
         {
             for (const auto & [stage_name, site] : consumers_it->second)
             {
-                /// Same-stage sites are not delivered over an exchange. When the step stays local they
-                /// are served by the local registration; when remote mode engages the step registers
-                /// nothing locally and same-stage sites run fail-open.
+                /// Same-stage sites are not delivered over an exchange: a self-edge would cycle the
+                /// scheduler. Local `__applyFilter` uses this task's lookup (transport mode registers
+                /// the merged partial after serialize).
                 if (stage_name == producer.stage)
                     continue;
                 consuming_stages.emplace(stage_name, site);

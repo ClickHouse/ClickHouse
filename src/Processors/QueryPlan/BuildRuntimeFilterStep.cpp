@@ -94,13 +94,19 @@ public:
         const DataTypePtr & filter_column_type_,
         size_t num_streams,
         size_t num_destinations_,
-        const RuntimeFilterGeometry & geometry)
+        const RuntimeFilterGeometry & geometry,
+        String filter_key_,
+        String filter_name_,
+        ContextPtr query_context_)
         : IProcessor({header}, {header, std::move(partials_header)})
         , task_filter(std::move(task_filter_))
         , num_destinations(num_destinations_)
         , filter_column_position(header->getPositionByName(filter_column_name_))
         , filter_column_original_type(header->getByPosition(filter_column_position).type)
         , filter_column_target_type(filter_column_type_)
+        , filter_key(std::move(filter_key_))
+        , filter_name(std::move(filter_name_))
+        , query_context(std::move(query_context_))
         , partial(
               std::make_unique<ApproximateRuntimeFilter>(
                   /*filters_to_merge_=*/num_streams - 1,
@@ -198,6 +204,14 @@ public:
 
         WriteBufferFromOwnString out;
         assert_cast<ApproximateRuntimeFilter &>(*task_filter->filter).serialize(out);
+        /// Same-stage `__applyFilter` is not on the exchange (that edge would cycle the scheduler).
+        /// Serialize before `add`: it takes ownership and `finishInsert`s.
+        if (!filter_key.empty())
+        {
+            if (!query_context)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context is not available for BuildRuntimeFilterPartialTransform");
+            query_context->getRuntimeFilterLookup()->add(filter_key, filter_name, std::move(task_filter->filter));
+        }
         ProfileEvents::increment(ProfileEvents::RuntimeFilterStatesSent, num_destinations);
         ProfileEvents::increment(ProfileEvents::RuntimeFilterStateBytesSent, out.str().size() * num_destinations);
         auto column = ColumnString::create();
@@ -216,6 +230,9 @@ private:
     const DataTypePtr filter_column_target_type;
     FunctionBasePtr cast_to_target_type;
 
+    const String filter_key;
+    const String filter_name;
+    ContextPtr query_context;
     UniqueRuntimeFilterPtr partial;
     Chunk data_chunk;
     Chunk partial_chunk;
@@ -358,7 +375,10 @@ void BuildRuntimeFilterStep::transformPipelineForTransport(QueryPipelineBuilder 
                     filter_column_type,
                     ports.size(),
                     destination_streams.size(),
-                    geometry);
+                    geometry,
+                    filter_key,
+                    filter_name,
+                    CurrentThread::get().tryGetQueryContext());
                 connect(*port, builder->getInputs().front());
                 connect(builder->getOutputs().back(), *resize_input++);
                 result.emplace_back(std::move(builder));

@@ -32,6 +32,12 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     const String & getFilterName() const { return filter_name; }
     const String & getFilterKey() const { return filter_key; }
+    /// Only for restoring a deserialized step from a sibling `__applyFilter` in the same fragment.
+    void setFilterKey(String filter_key_)
+    {
+        chassert(filter_key.empty());
+        filter_key = std::move(filter_key_);
+    }
     const DataTypePtr & getFilterColumnType() const { return filter_column_type; }
     bool allowsNotExactFilter() const { return allow_to_use_not_exact_filter; }
     const RuntimeFilterGeometry & getGeometry() const { return geometry; }
@@ -90,7 +96,8 @@ private:
     String filter_name;
     /// Random per-plan-build key the built filter is registered under in the `IRuntimeFilterLookup`;
     /// the matching `__applyFilter` looks it up by the same key. Kept off the plan (not shown, not
-    /// serialized) so it never enters a plan-step hash. Empty for a deserialized step (then inert).
+    /// serialized) so it never enters a plan-step hash. After deserialize it is restored from a
+    /// sibling `__applyFilter` in the same fragment.
     String filter_key;
 
     RuntimeFilterGeometry geometry;

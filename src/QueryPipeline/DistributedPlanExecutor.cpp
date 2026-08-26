@@ -25,6 +25,7 @@
 #include <QueryPipeline/printPipeline.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeFilterExchangeWiring.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/TemporaryFiles.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
@@ -846,6 +847,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
 
     {
         QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
+        QueryPlanOptimizations::restoreRuntimeFilterRendezvousKeys(query_plan);
 
         auto builder = query_plan.buildQueryPipeline(
                 optimization_settings,

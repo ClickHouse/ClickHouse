@@ -422,6 +422,93 @@ TEST_F(RuntimeFilterExchangeWiring, ApplicationInBuildStageStaysLocal)
     expectLocalBuild(plan, "both");
 }
 
+TEST_F(RuntimeFilterExchangeWiring, MixedLocalAndRemoteSkipsProducerStageExchange)
+{
+    /// Producer stage also applies the filter: skip that stage on the exchange, still wire the
+    /// remote stage. Mixed consumers must not put a receive descriptor on the producer.
+    DistributedQueryPlan plan;
+    DistributedQueryStage both;
+    QueryPlan both_fragment;
+    both_fragment.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(dataHeader()))));
+    both_fragment.addStep(
+        std::make_unique<BuildRuntimeFilterStep>(
+            dataHeader(),
+            "x",
+            std::make_shared<DataTypeUInt64>(),
+            "f",
+            "key",
+            testGeometry(),
+            /*allow_to_use_not_exact_filter_=*/true,
+            /*track_key_range_=*/false));
+    auto dag = makeApplyFilterDAG("key", "f");
+    const String filter_column_name = applyFilterResultName(dag);
+    both_fragment.addStep(std::make_unique<FilterStep>(dataHeader(), std::move(dag), filter_column_name, /*remove_filter_column_=*/true));
+    both.query_plan_fragment = std::move(both_fragment);
+    both.tasks.push_back(makeTask("both", 0));
+    plan.stages["both"] = std::move(both);
+    addConsumerStage(plan, "probe", 2, "key");
+
+    size_t next_exchange_id = 100;
+    wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
+
+    EXPECT_EQ(countStreams(plan), 2u);
+    EXPECT_TRUE(mergeStageNames(plan).empty());
+    expectWiredBuild(plan, "both", /*expect_merge_tree=*/false);
+    auto * build = findBuildStep(plan.stages.at("both").query_plan_fragment);
+    ASSERT_NE(build, nullptr);
+    expectConsumerDescriptors(plan, "probe", *build);
+    for (const auto & task : plan.stages.at("both").tasks)
+        EXPECT_TRUE(task.runtime_filter_descriptors.empty());
+    EXPECT_TRUE(plan.stage_depends_on.at("probe").contains("both"));
+}
+
+TEST_F(RuntimeFilterExchangeWiring, RestoresRendezvousKeyFromSiblingApply)
+{
+    QueryPlan fragment;
+    fragment.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(dataHeader()))));
+    fragment.addStep(
+        std::make_unique<BuildRuntimeFilterStep>(
+            dataHeader(),
+            "x",
+            std::make_shared<DataTypeUInt64>(),
+            "f",
+            /*filter_key_=*/"",
+            testGeometry(),
+            /*allow_to_use_not_exact_filter_=*/true,
+            /*track_key_range_=*/false));
+    auto dag = makeApplyFilterDAG("secret", "f");
+    const String filter_column_name = applyFilterResultName(dag);
+    fragment.addStep(std::make_unique<FilterStep>(dataHeader(), std::move(dag), filter_column_name, /*remove_filter_column_=*/true));
+
+    auto * build = findBuildStep(fragment);
+    ASSERT_NE(build, nullptr);
+    EXPECT_TRUE(build->getFilterKey().empty());
+
+    restoreRuntimeFilterRendezvousKeys(fragment);
+    EXPECT_EQ(build->getFilterKey(), "secret");
+}
+
+TEST_F(RuntimeFilterExchangeWiring, RestoreLeavesKeyEmptyWithoutSiblingApply)
+{
+    QueryPlan fragment;
+    fragment.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(dataHeader()))));
+    fragment.addStep(
+        std::make_unique<BuildRuntimeFilterStep>(
+            dataHeader(),
+            "x",
+            std::make_shared<DataTypeUInt64>(),
+            "f",
+            /*filter_key_=*/"",
+            testGeometry(),
+            /*allow_to_use_not_exact_filter_=*/true,
+            /*track_key_range_=*/false));
+
+    restoreRuntimeFilterRendezvousKeys(fragment);
+    auto * build = findBuildStep(fragment);
+    ASSERT_NE(build, nullptr);
+    EXPECT_TRUE(build->getFilterKey().empty());
+}
+
 TEST_F(RuntimeFilterExchangeWiring, PersistedDataEdgeMakesChainPersisted)
 {
     for (size_t build_tasks : {1, 8})

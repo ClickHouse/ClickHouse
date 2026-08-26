@@ -13,4 +13,8 @@ namespace DB::QueryPlanOptimizations
 void wireRuntimeFilterExchangeTopology(
     DistributedQueryPlan & distributed_plan, size_t & next_exchange_id, ExchangeDescription::Kind default_kind);
 
+/// After deserialize, copy `filter_key` from a sibling `__applyFilter` whose const result_name
+/// equals the step's structural id. The key is not serialized (it must not enter a plan-step hash).
+void restoreRuntimeFilterRendezvousKeys(QueryPlan & plan);
+
 }
