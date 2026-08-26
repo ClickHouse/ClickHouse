@@ -35,10 +35,6 @@ struct DynamicElementVariantReader
     ISerialization::DeserializeBinaryBulkStatePtr state;
     SerializationPtr null_map_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr null_map_state;
-    ColumnPtr column;
-    size_t column_size = 0;
-    ColumnPtr null_map;
-    size_t null_map_size = 0;
     bool reads_nested_subcolumn_directly = false;
 
     DynamicElementVariantReader clone() const
@@ -46,12 +42,17 @@ struct DynamicElementVariantReader
         auto new_reader = *this;
         new_reader.state = state ? state->clone() : nullptr;
         new_reader.null_map_state = null_map_state ? null_map_state->clone() : nullptr;
-        new_reader.column = nullptr;
-        new_reader.column_size = 0;
-        new_reader.null_map = nullptr;
-        new_reader.null_map_size = 0;
         return new_reader;
     }
+};
+
+/// Values of a single variant deserialized for the current range. They are deliberately not kept
+/// in the deserialization state: the state is cloned by the substreams cache, so it must not own
+/// data columns (see `SerializationVariantElement` and the shared variant handling below).
+struct DynamicElementVariantReaderData
+{
+    MutableColumnPtr column;
+    MutableColumnPtr null_map;
 };
 
 void insertSourceValueIntoColumn(MutableColumnPtr & dst, const IColumn & src, size_t row)
@@ -83,9 +84,8 @@ void insertSourceValueIntoColumn(MutableColumnPtr & dst, const IColumn & src, si
     }
 }
 
-void deserializeVariantReader(
+DynamicElementVariantReaderData deserializeVariantReader(
     DynamicElementVariantReader & reader,
-    size_t rows_offset,
     size_t limit,
     bool read_value,
     const IColumn & result_column_sample,
@@ -94,49 +94,39 @@ void deserializeVariantReader(
 {
     settings.path.push_back(ISerialization::Substream::DynamicData);
 
-    if (!reader.null_map)
-    {
-        reader.null_map = ColumnUInt8::create();
-        reader.null_map_size = 0;
-    }
+    DynamicElementVariantReaderData data;
+    data.null_map = ColumnUInt8::create();
 
     reader.null_map_serialization->deserializeBinaryBulkWithMultipleStreams(
-        reader.null_map, rows_offset, limit, settings, reader.null_map_state, cache);
+        *data.null_map, limit, settings, reader.null_map_state, cache);
 
-    if (reader.null_map->size() != reader.null_map_size + limit)
+    if (data.null_map->size() != limit)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Unexpected size of deserialized Dynamic variant null map: {} instead of {}",
-            reader.null_map->size(),
-            reader.null_map_size + limit);
-
-    reader.null_map_size = reader.null_map->size();
+            data.null_map->size(),
+            limit);
 
     if (read_value)
     {
-        if (!reader.column)
-        {
-            if (reader.reads_nested_subcolumn_directly)
-                reader.column = result_column_sample.cloneEmpty();
-            else
-                reader.column = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(reader.type)->createColumn();
-            reader.column_size = 0;
-        }
+        if (reader.reads_nested_subcolumn_directly)
+            data.column = result_column_sample.cloneEmpty();
+        else
+            data.column = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(reader.type)->createColumn();
 
         reader.serialization->deserializeBinaryBulkWithMultipleStreams(
-            reader.column, rows_offset, limit, settings, reader.state, cache);
+            *data.column, limit, settings, reader.state, cache);
 
-        if (reader.column->size() != reader.column_size + limit)
+        if (data.column->size() != limit)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Unexpected size of deserialized Dynamic variant column: {} instead of {}",
-                reader.column->size(),
-                reader.column_size + limit);
-
-        reader.column_size = reader.column->size();
+                data.column->size(),
+                limit);
     }
 
     settings.path.pop_back();
+    return data;
 }
 
 }
@@ -188,9 +178,6 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     std::vector<DynamicElementVariantReader> variant_readers;
     SerializationPtr shared_variant_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr shared_variant_state;
-    ColumnPtr shared_variant;
-    size_t shared_variant_size = 0;
-
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -201,38 +188,9 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
         for (const auto & reader : variant_readers)
             new_state->variant_readers.push_back(reader.clone());
         new_state->shared_variant_state = shared_variant_state ? shared_variant_state->clone() : nullptr;
-        new_state->shared_variant = nullptr;
-        new_state->shared_variant_size = 0;
         return new_state;
     }
 
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (shared_variant)
-            callback(shared_variant);
-        for (const auto & reader : variant_readers)
-        {
-            if (reader.column)
-                callback(reader.column);
-            if (reader.null_map)
-                callback(reader.null_map);
-        }
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (structure_state)
-            callback(structure_state);
-        if (shared_variant_state)
-            callback(shared_variant_state);
-        for (const auto & reader : variant_readers)
-        {
-            if (reader.state)
-                callback(reader.state);
-            if (reader.null_map_state)
-                callback(reader.null_map_state);
-        }
-    }
 };
 
 
@@ -392,8 +350,7 @@ void SerializationDynamicElement::serializeBinaryBulkWithMultipleStreams(const I
 }
 
 void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & result_column,
-    size_t rows_offset,
+    IColumn & result_column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -403,8 +360,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     {
         if (is_null_map_subcolumn)
         {
-            auto mutable_column = result_column->assumeMutable();
-            auto & data = assert_cast<ColumnUInt8 &>(*mutable_column).getData();
+            auto & data = assert_cast<ColumnUInt8 &>(result_column).getData();
             data.resize_fill(data.size() + limit, 1);
         }
 
@@ -412,62 +368,48 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     }
 
     auto * dynamic_element_state = checkAndGetState<DeserializeBinaryBulkStateDynamicElement>(state);
-    if (result_column->empty())
-    {
-        for (auto & reader : dynamic_element_state->variant_readers)
-        {
-            reader.column = nullptr;
-            reader.column_size = 0;
-            reader.null_map = nullptr;
-            reader.null_map_size = 0;
-        }
-
-        dynamic_element_state->shared_variant = nullptr;
-        dynamic_element_state->shared_variant_size = 0;
-    }
-
     auto requested_type = DataTypeFactory::instance().get(dynamic_element_name);
 
+    /// Deserialize every compatible variant of the current range into its own fresh columns.
+    std::vector<DynamicElementVariantReaderData> variant_readers_data;
+    variant_readers_data.reserve(dynamic_element_state->variant_readers.size());
     for (auto & reader : dynamic_element_state->variant_readers)
-        deserializeVariantReader(reader, rows_offset, limit, !is_null_map_subcolumn, *result_column, settings, cache);
+        variant_readers_data.push_back(
+            deserializeVariantReader(reader, limit, !is_null_map_subcolumn, result_column, settings, cache));
 
-    if (dynamic_element_state->shared_variant_serialization && !dynamic_element_state->shared_variant)
-    {
-        dynamic_element_state->shared_variant = makeNullable(ColumnDynamic::getSharedVariantDataType()->createColumn());
-        dynamic_element_state->shared_variant_size = 0;
-    }
-
-    ColumnPtr shared_variant_result_column;
-    ColumnPtr shared_variant_null_map_column = ColumnUInt8::create();
-    auto & shared_variant_result_null_map = assert_cast<ColumnUInt8 &>(*shared_variant_null_map_column->assumeMutable()).getData();
+    MutableColumnPtr shared_variant_result_column;
+    auto shared_variant_null_map_column = ColumnUInt8::create();
+    auto & shared_variant_result_null_map = shared_variant_null_map_column->getData();
 
     if (dynamic_element_state->shared_variant_serialization)
     {
-        MutableColumnPtr variant_column = is_null_map_subcolumn ? nullptr : result_column->cloneEmpty();
+        MutableColumnPtr variant_column = is_null_map_subcolumn ? nullptr : result_column.cloneEmpty();
         if (variant_column)
             variant_column->reserve(limit);
 
+        /// Deserialize the shared variant for the current range into a fresh column.
+        auto shared_variant_column
+            = ColumnNullable::create(ColumnDynamic::getSharedVariantDataType()->createColumn(), ColumnUInt8::create());
+
         settings.path.push_back(Substream::DynamicData);
         dynamic_element_state->shared_variant_serialization->deserializeBinaryBulkWithMultipleStreams(
-            dynamic_element_state->shared_variant, rows_offset, limit, settings, dynamic_element_state->shared_variant_state, cache);
-        size_t prev_shared_variant_size = dynamic_element_state->shared_variant_size;
-        dynamic_element_state->shared_variant_size = dynamic_element_state->shared_variant->size();
+            *shared_variant_column, limit, settings, dynamic_element_state->shared_variant_state, cache);
         settings.path.pop_back();
 
-        if (dynamic_element_state->shared_variant_size != prev_shared_variant_size + limit)
+        if (shared_variant_column->size() != limit)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Unexpected size of deserialized Dynamic shared variant column: {} instead of {}",
-                dynamic_element_state->shared_variant_size,
-                prev_shared_variant_size + limit);
+                shared_variant_column->size(),
+                limit);
 
         shared_variant_result_null_map.reserve(limit);
 
-        const auto & nullable_shared_variant = assert_cast<const ColumnNullable &>(*dynamic_element_state->shared_variant);
+        const auto & nullable_shared_variant = assert_cast<const ColumnNullable &>(*shared_variant_column);
         const auto & shared_null_map = nullable_shared_variant.getNullMapData();
         const auto & shared_variant = assert_cast<const ColumnString &>(nullable_shared_variant.getNestedColumn());
         const FormatSettings format_settings;
-        for (size_t i = prev_shared_variant_size; i != shared_variant.size(); ++i)
+        for (size_t i = 0; i != shared_variant.size(); ++i)
         {
             if (!shared_null_map[i])
             {
@@ -531,16 +473,15 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
 
     if (is_null_map_subcolumn)
     {
-        auto mutable_column = result_column->assumeMutable();
-        auto & data = assert_cast<ColumnUInt8 &>(*mutable_column).getData();
+        auto & data = assert_cast<ColumnUInt8 &>(result_column).getData();
         data.reserve(data.size() + limit);
         for (size_t i = 0; i != limit; ++i)
         {
             UInt8 is_null = shared_variant_result_null_map[i];
-            for (const auto & reader : dynamic_element_state->variant_readers)
+            for (const auto & reader_data : variant_readers_data)
             {
-                const auto & null_map = assert_cast<const ColumnUInt8 &>(*reader.null_map).getData();
-                if (!null_map[reader.null_map_size - limit + i])
+                const auto & null_map = assert_cast<const ColumnUInt8 &>(*reader_data.null_map).getData();
+                if (!null_map[i])
                 {
                     is_null = 0;
                     break;
@@ -553,32 +494,35 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         return;
     }
 
-    if (result_column->empty() && result_column->hasDynamicStructure())
+    if (result_column.empty() && result_column.hasDynamicStructure())
     {
-        for (const auto & reader : dynamic_element_state->variant_readers)
+        for (size_t reader_index = 0; reader_index != dynamic_element_state->variant_readers.size(); ++reader_index)
         {
-            if (reader.reads_nested_subcolumn_directly && reader.column && reader.column->hasDynamicStructure())
+            const auto & reader = dynamic_element_state->variant_readers[reader_index];
+            const auto & reader_column = variant_readers_data[reader_index].column;
+            if (reader.reads_nested_subcolumn_directly && reader_column && reader_column->hasDynamicStructure())
             {
-                result_column->assumeMutable()->takeExactDynamicStructureFrom(*reader.column);
+                result_column.takeExactDynamicStructureFrom(*reader_column);
                 break;
             }
         }
     }
 
-    auto variant_column = result_column->cloneEmpty();
+    auto variant_column = result_column.cloneEmpty();
     variant_column->reserve(limit);
     std::vector<ColumnPtr> variant_reader_columns;
     variant_reader_columns.reserve(dynamic_element_state->variant_readers.size());
-    for (const auto & reader : dynamic_element_state->variant_readers)
+    for (size_t reader_index = 0; reader_index != dynamic_element_state->variant_readers.size(); ++reader_index)
     {
+        const auto & reader = dynamic_element_state->variant_readers[reader_index];
+        ColumnPtr reader_column = std::move(variant_readers_data[reader_index].column);
         if (reader.reads_nested_subcolumn_directly)
         {
-            variant_reader_columns.push_back(reader.column);
+            variant_reader_columns.push_back(std::move(reader_column));
         }
         else
         {
             auto reader_result_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(reader.type);
-            ColumnPtr reader_column = reader.column;
             /// Read compatibility is path-local, so the variant may declare a different path set
             /// than the requested type (e.g. `JSON(a UInt64)` vs plain `JSON`), making their
             /// column layouts differ. Convert the variant column to the requested type first
@@ -601,12 +545,10 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         bool inserted = false;
         for (size_t reader_index = 0; reader_index != dynamic_element_state->variant_readers.size(); ++reader_index)
         {
-            const auto & reader = dynamic_element_state->variant_readers[reader_index];
-            const auto & null_map = assert_cast<const ColumnUInt8 &>(*reader.null_map).getData();
-            size_t row = reader.null_map_size - limit + i;
-            if (!null_map[row])
+            const auto & null_map = assert_cast<const ColumnUInt8 &>(*variant_readers_data[reader_index].null_map).getData();
+            if (!null_map[i])
             {
-                insertSourceValueIntoColumn(variant_column, *variant_reader_columns[reader_index], reader.column_size - limit + i);
+                insertSourceValueIntoColumn(variant_column, *variant_reader_columns[reader_index], i);
                 inserted = true;
                 break;
             }
@@ -622,7 +564,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
             variant_column->insertDefault();
     }
 
-    result_column->assumeMutable()->insertRangeFrom(*variant_column, 0, variant_column->size());
+    result_column.insertRangeFrom(*variant_column, 0, variant_column->size());
 }
 
 size_t SerializationDynamicElement::allocatedBytes() const

@@ -2366,6 +2366,10 @@ void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
         });
     int64_t num_rows = row_group.meta->num_rows;
 
+    /// A column chunk covers all rows of its row group, so the first page starts at row 0.
+    if (locations.front().first_row_index != 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid offset index: first page starts at row {}, expected 0", locations.front().first_row_index);
+
     int64_t prev_offset = meta.data_page_offset;
     int64_t prev_row_index = -1;
     for (const auto & loc : locations)
@@ -2750,7 +2754,7 @@ void Reader::skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & co
         auto data = prefetcher.getRangeData(page_info.prefetch);
         const char * ptr = data.data();
         if (!initializeDataPage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, *row_idx, column, column_info))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Page doesn't contain requested row");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Page doesn't contain requested row");
         found_page = true;
     }
 
