@@ -5275,13 +5275,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context, share_nested_offsets);
 
-    /// The sort direction of an existing sorting key column is immutable via ALTER. Existing parts stay physically
-    /// sorted in the directions the key had when they were written, and nothing on disk records those directions:
-    /// every reader takes them from the current metadata. A direction change in place would therefore make the
-    /// metadata describe an order the data does not have, and primary key index analysis compares boundary tuples in
-    /// the claimed order, so it would prune the wrong mark ranges and silently return wrong results.
-    /// `MODIFY ORDER BY` cannot express `ASC`/`DESC` (the ALTER parser reads a plain expression list), so on a table
-    /// with a descending key column every `MODIFY ORDER BY` drops that direction.
+    /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
+    /// stay physically sorted in the directions the key had when they were written, and nothing on disk records those
+    /// directions: every reader takes them from the current metadata. A direction change in place would therefore make
+    /// the metadata describe an order the data does not have, and primary key index analysis compares boundary tuples
+    /// in the claimed order, so it would prune the wrong mark ranges and silently return wrong results.
     {
         /// Under a Replicated database every replica re-runs this interpreter over an entry the initiator already
         /// committed. A replica catching up on an ALTER accepted by an older version must not be failed by a check
@@ -5303,12 +5301,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         const KeyDescription & old_sorting_key = old_metadata.getSortingKey();
         const KeyDescription & new_sorting_key = new_metadata.getSortingKey();
 
-        /// A key with no descending column cannot lose one. This is the fast path for almost every table.
-        const bool old_key_has_reversed
-            = std::find(old_sorting_key.reverse_flags.begin(), old_sorting_key.reverse_flags.end(), true)
-            != old_sorting_key.reverse_flags.end();
-
-        if (is_initial_alter && changes_order_by && old_key_has_reversed)
+        if (is_initial_alter && changes_order_by)
         {
             /// Positions beyond the stored flags are ascending, and an empty vector means the whole key is ascending
             /// (the `KeyOrder` convention).
