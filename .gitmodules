@@ -76,9 +76,6 @@
 [submodule "contrib/fastops"]
 	path = contrib/fastops
 	url = https://github.com/ClickHouse/fastops
-[submodule "contrib/orc"]
-	path = contrib/orc
-	url = https://github.com/ClickHouse/orc
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11
@@ -146,9 +143,6 @@
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
-[submodule "contrib/NuRaft"]
-	path = contrib/NuRaft
-	url = https://github.com/ClickHouse/NuRaft
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
 	url = https://github.com/apache/datasketches-cpp
@@ -209,9 +203,6 @@
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
 	url = https://github.com/ClickHouse/vectorscan.git
-[submodule "contrib/llvm-project"]
-	path = contrib/llvm-project
-	url = https://github.com/ClickHouse/llvm-project
 [submodule "contrib/corrosion"]
 	path = contrib/corrosion
 	url = https://github.com/corrosion-rs/corrosion
@@ -269,9 +260,6 @@
 [submodule "contrib/aws-c-sdkutils"]
 	path = contrib/aws-c-sdkutils
 	url = https://github.com/awslabs/aws-c-sdkutils
-[submodule "contrib/aws-c-http"]
-	path = contrib/aws-c-http
-	url = https://github.com/awslabs/aws-c-http
 [submodule "contrib/aws-c-s3"]
 	path = contrib/aws-c-s3
 	url = https://github.com/awslabs/aws-c-s3
@@ -318,9 +306,6 @@
 [submodule "contrib/google-cloud-cpp"]
 	path = contrib/google-cloud-cpp
 	url = https://github.com/ClickHouse/google-cloud-cpp.git
-[submodule "contrib/rust_vendor"]
-	path = contrib/rust_vendor
-	url = https://github.com/ClickHouse/rust_vendor.git
 [submodule "contrib/openssl"]
 	path = contrib/openssl
 	url = https://github.com/ClickHouse/openssl.git
@@ -357,9 +342,6 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
-[submodule "contrib/chdig"]
-	path = contrib/chdig
-	url = https://github.com/azat/chdig.git
 [submodule "contrib/ai-sdk-cpp"]
 	path = contrib/ai-sdk-cpp
 	url = https://github.com/ClickHouse/ai-sdk-cpp
@@ -378,6 +360,9 @@
 [submodule "contrib/antlr4-cpp-runtime"]
 	path = contrib/antlr4-cpp-runtime
 	url = https://github.com/antlr/antlr4.git
+[submodule "contrib/darts-clone"]
+	path = contrib/darts-clone
+	url = https://github.com/s-yata/darts-clone
 [submodule "contrib/libcotp"]
 	path = contrib/libcotp
 	url = https://github.com/paolostivanin/libcotp.git
@@ -417,6 +402,9 @@
 [submodule "contrib/libucontext"]
 	path = contrib/libucontext
 	url = https://github.com/kaniini/libucontext
+[submodule "contrib/Jieba-CPP"]
+	path = contrib/Jieba-CPP
+	url = https://github.com/amosbird/Jieba-CPP
 [submodule "contrib/MeCab"]
 	path = contrib/MeCab
 	url = https://github.com/taku910/mecab

@@ -1,0 +1,6 @@
+-- no-query path /db/my.table reads the dotted table
+42
+-- explicit FROM-less SELECT on /db/my.table resolves the dotted table
+42
+-- explicit FROM-less aggregate on /db/my.table resolves the dotted table
+1

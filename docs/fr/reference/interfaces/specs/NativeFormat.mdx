@@ -26,34 +26,13 @@ Tous les champs entiers sur plusieurs octets sont en little-endian. Les entiers 
   ## Vue d’ensemble
 </div>
 
-Tout ce qui transporte des lignes sur le réseau est un **Block** : un fragment auto-descriptif de lignes stockées colonne par colonne. Toutes les valeurs de la colonne 1 viennent d’abord, puis toutes celles de la colonne 2, et ainsi de suite. Un Block ne transporte que les colonnes auxquelles la requête fait référence, jamais la table entière.
+Tout ce qui transporte des lignes sur le réseau est un **bloc** : un fragment auto-descriptif de lignes stockées colonne par colonne. Toutes les valeurs de la colonne 1 viennent d’abord, puis toutes celles de la colonne 2, et ainsi de suite. Un bloc ne transporte que les colonnes auxquelles la requête fait référence, jamais la table entière.
 
 Le `data` d’une colonne est organisé selon la *famille* à laquelle appartient son type. Les familles, par complexité croissante du décodeur, sont :
 
-```mermaid
-flowchart TD
-    B[Block]
-    B --> BI[BlockInfo]
-    B --> NC[num_columns]
-    B --> NR[num_rows]
-    B --> Cs["columns[ ]"]
+<img className="w-full h-auto" src="/images/interfaces/native-format/block-structure.webp" alt="Structure d’un bloc sur le réseau en colonnes et de ses familles d’organisation des données" width="1568" height="976" loading="lazy" />
 
-    Cs --> Col[Column]
-    Col --> Cname[name]
-    Col --> Ctype[type]
-    Col --> Chcs[has_custom_serialization]
-    Col --> Cdata["data — layout depends on type family"]
-
-    Cdata --> Fixed["Fixed-width<br/>bytes_per_value × num_rows"]
-    Cdata --> Comp["Composite<br/>recursive, shape from type string"]
-    Cdata --> Ver["Versioned / stateful<br/>per-block version prefix"]
-
-    Fixed --> FixedEx["Int*, UInt*, Float*, Decimal*<br/>Date, DateTime, DateTime64<br/>UUID, IPv4, IPv6, FixedString(N)"]
-    Comp --> CompEx["Nullable(T), Array(T)<br/>Tuple(...), Map(K, V), Nested(...)"]
-    Ver --> VerEx["LowCardinality(T), JSON<br/>Variant(...), Dynamic"]
-```
-
-* Les types **à largeur fixe** présentent `data` sous la forme de `bytes_per_value × num_rows` octets bruts, sans encapsulation par ligne.
+* Les types **à taille fixe** présentent `data` sous la forme de `bytes_per_value × num_rows` octets bruts, sans encapsulation par ligne.
 * Les types **composites** (`Nullable`, `Array`, `Tuple`, `Map`, `Nested`) ont une structure récursive entièrement dérivable de la chaîne de type, sans préfixe de version ni état d&#39;un bloc à l&#39;autre.
 * Les types **versionnés / avec état** (`LowCardinality`, `JSON`, `Variant`, `Dynamic`) commencent chaque bloc non vide par un préfixe de version de sérialisation/état. Sur le wire `Native`, ce préfixe et tout dictionnaire sont **propres à chaque bloc** — le format ne transporte aucun état *d&#39;un bloc à l&#39;autre* (l&#39;émetteur crée un nouvel état de sérialisation pour chaque bloc et définit `low_cardinality_max_dictionary_size = 0`). L&#39;état entre blocs relève du stockage sur disque de MergeTree, pas du wire layout `Native`.
 
@@ -191,7 +170,7 @@ Les champs `1` et `2` ont une révision minimale de `0` ; ils sont donc présen
   ### Wire layout d’une colonne
 </div>
 
-Une colonne apparaît `num_columns` fois dans un Block.
+Une colonne apparaît `num_columns` fois dans un bloc.
 
 | # | Champ                            | Type                                 | Condition                                      | Description                                                                                                                                                                                                                                                                                                                                                                    |
 | - | -------------------------------- | ------------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -209,16 +188,7 @@ Un décodeur s’appuie sur la chaîne `type`. Les chaînes de type contiennent 
   Le champ `type` n’est une `String` textuelle qu’en mode par défaut. Lorsque le paramètre de requête `output_format_native_encode_types_in_binary_format = 1` est défini, ce champ contient à la place un **encodage binaire de type** — le même encodage à base de tags documenté dans [encodage binaire des types de données](/fr/reference/data-types/data-types-binary-encoding) — et les listes de types `Dynamic` aplaties utilisent le même encodage binaire pour leurs noms de type individuels. Un décodeur qui lirait toujours le champ 2 comme une chaîne préfixée par sa longueur interpréterait le premier tag binaire de type comme une longueur de chaîne et se désynchroniserait ; il doit donc savoir quel mode le flux utilise.
 </Info>
 
-```mermaid
-flowchart TD
-    T["type string<br/>(e.g. Array(String))"]
-    T --> P["strip outer (...)<br/>to find the base type"]
-    P --> F{"base type family?"}
-    F -->|fixed-width| FW["read bytes_per_value × num_rows<br/>(no per-row framing)"]
-    F -->|variable-length| VL["read per-value length prefixes"]
-    F -->|composite| CO["read each sub-stream;<br/>recurse on the inner types"]
-    F -->|versioned| VE["read state prefix (version)<br/>at the start of each non-empty block,<br/>then that block's payload"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="Routage du décodeur depuis une description de type vers sa famille d’encodage" width="1568" height="854" loading="lazy" />
 
 <div id="kind-stack-and-sparse-encoding">
   #### kind_stack et encodage sparse
@@ -947,16 +917,7 @@ Values (5 × UInt32 LE = 20 bytes):
 
 Chaque offset correspond à la *fin* cumulée de la portion du flux partagé des valeurs associée à une ligne ; le début est l’offset précédent (ou `0` pour la ligne 0). Deux offsets consécutifs identiques correspondent à une ligne vide :
 
-```mermaid
-flowchart LR
-    subgraph V["values stream: [10, 20, 30, 40, 50]"]
-        direction LR
-        v0["10"] --- v1["20"] --- v2["30"] --- v3["40"] --- v4["50"]
-    end
-    r0["row 0"] -->|"[0 .. offsets[0]=3)"| v0
-    r1["row 1"] -.->|"[3 .. offsets[1]=3) empty"| V
-    r2["row 2"] -->|"[offsets[1]=3 .. offsets[2]=5)"| v3
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/array-offsets.webp" alt="Les offsets associent les lignes à un flux de valeurs partagé" width="1568" height="388" loading="lazy" />
 
 `Array(String)` avec les lignes `[["a", "bb"], []]` (20 octets au total) :
 
@@ -976,7 +937,7 @@ Values (2 strings, 4 bytes total):
 * Le `Array(UInt32)` intermédiaire décode 3 lignes avec les offsets `[2, 3, 5]`.
 * Le `UInt32` le plus interne décode 5 valeurs : `[1, 2, 3, 4, 5]`.
 
-Cela donne 24 (offsets externes) + 24 (offsets intermédiaires) + 20 (valeurs) = 68 octets.
+Cela représente 24 (offsets externes) + 24 (offsets intermédiaires) + 20 (valeurs) = 68 octets.
 
 <div id="tuple">
   #### Tuple(T1, T2, ...)
@@ -1078,15 +1039,9 @@ Values (2 × UInt32 LE = 8 bytes):
   #### Nested(name1 T1, name2 T2, ...)
 </div>
 
-La représentation sur le wire de `Nested` dépend du paramètre `flatten_nested` côté serveur, ce qui donne lieu à deux cas distincts.
+La représentation on-wire de `Nested` dépend du paramètre `flatten_nested` côté serveur, ce qui donne lieu à deux cas distincts.
 
-```mermaid
-flowchart TD
-    N["column declared Nested(a T1, b T2, ...)"]
-    N --> Q{"flatten_nested?"}
-    Q -->|"= 1 (server default)"| A["N parallel Array(T_i) columns<br/>with dotted names (n.a, n.b)<br/>— no Nested wire type"]
-    Q -->|"= 0"| B["one column, type string Nested(...)<br/>laid out byte-identically to<br/>Array(Tuple(T1, ..., Tn))"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/nested-layout.webp" alt="Disposition des colonnes composites avec et sans aplatissement" width="1172" height="1068" loading="lazy" />
 
 **Cas A : `flatten_nested = 1` (valeur par défaut du serveur).** Lorsque la table a été créée avec les paramètres par défaut, `Nested` **n&#39;est pas un type wire**. Le serveur stocke et présente la colonne sous la forme de N colonnes `Array(T_i)` parallèles avec des **noms en notation pointée** (`outer.field1`, `outer.field2`, etc.). Au niveau du format, il n&#39;y a rien de nouveau — chaque colonne en notation pointée est un [Array](#array) classique :
 
@@ -1115,7 +1070,7 @@ Array(Tuple(a UInt8, b String)) bytes (after type string):
 
 La seule différence réside dans la chaîne de type : `Nested` préserve les noms de champ (`a`, `b`), alors que `Array(Tuple)` ne les conserve pas sous forme de positions nommées.
 
-La chaîne de type du cas B est une liste de paires (nom, type) séparées par des virgules. Le premier espace sépare un nom de son type ; le type lui-même peut contenir d&#39;autres espaces, virgules et parenthèses. L&#39;analyse nécessite donc le même découpeur tenant compte de la profondeur que celui utilisé pour `Tuple`. La représentation sur le wire :
+La chaîne de type du cas B est une liste de paires (nom, type) séparées par des virgules. Le premier espace sépare un nom de son type ; le type lui-même peut contenir d&#39;autres espaces, virgules et parenthèses. L&#39;analyse nécessite donc le même découpeur tenant compte de la profondeur que celui utilisé pour `Tuple`. La disposition sur le wire :
 
 ```text
 [offsets stream]    num_rows × UInt64 LE                       ← from Array
@@ -1200,19 +1155,7 @@ Le writer et le reader Native ne conservent **pas** l’état de sérialisation 
 
 Les header blocks (`rows = 0`) et les blocs vides n’émettent donc rien, et un décodeur doit relire le préfixe d’état au début de chaque bloc non vide. Un décodeur qui ne lit le préfixe qu’une seule fois et traite les blocs suivants comme ne contenant que le payload lira le préfixe du bloc suivant comme des données et se désynchronisera :
 
-```mermaid
-sequenceDiagram
-    participant S as Server (writer)
-    participant C as Client (decoder)
-    S->>C: Header block (num_rows = 0)
-    Note right of C: no state prefix
-    S->>C: First block with rows > 0
-    Note right of C: read state prefix,<br/>then block payload
-    S->>C: Next block with rows > 0
-    Note right of C: read state prefix again,<br/>then block payload
-    S->>C: Empty block (end marker)
-    Note right of C: no state prefix
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/state-prefix-per-block.webp" alt="Préfixe d’état répété pour chaque bloc non vide" width="1226" height="1162" loading="lazy" />
 
 <div id="serialization-version-reference">
   #### Référence des versions de sérialisation
@@ -1369,10 +1312,10 @@ Le préfixe d’état contient un mode de discriminateurs `UInt64 LE` : `0` = B
 
 Pour reconstruire, parcourez les discriminateurs de gauche à droite en maintenant un compteur courant pour chaque type. La ligne `r` avec le discriminateur `d` (≠ 255) prend la valeur à l’index `counter[d]` dans la séquence de valeurs du type de variante `d`, puis `counter[d]` est incrémenté. Les lignes dont le discriminateur vaut `255` sont `NULL` et ne consomment aucune valeur d’aucune séquence, de sorte que la somme des compteurs par type est égale au nombre de lignes non-`NULL`.
 
-Le préfixe d’état (le mode `UInt64`) est lu au début de chaque bloc contenant des lignes &gt; 0 ; l’en-tête et les blocs vides n’émettent rien. Chaque discriminateur non-`NULL` est inférieur au nombre de types de variante, et le type de variante `i` est décodé pour exactement `count[i]` lignes.
+Le préfixe d’état (le mode `UInt64`) est lu au début de chaque bloc contenant des lignes &gt; 0 ; le bloc d’en-tête et les blocs vides n’émettent rien. Chaque discriminateur non-`NULL` est inférieur au nombre de types de variante, et le type de variante `i` est décodé pour exactement `count[i]` lignes.
 
 <Note>
-  Les éléments de `Variant` qui conservent eux-mêmes un état (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) émettent leur propre préfixe d’état dans la phase de préfixe d’état par élément, après le mode `UInt64`. Les types feuilles et les composites simples (`Array`, `Tuple`, `Map` de types feuilles) ont des préfixes d’état vides et se composent librement.
+  Les éléments de `Variant` qui sont eux-mêmes Stateful (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) émettent leur propre préfixe d’état dans la phase de préfixe d’état par élément, après le mode `UInt64`. Les types feuilles et les composites simples (`Array`, `Tuple`, `Map` de types feuilles) ont des préfixes d’état vides et se composent librement.
 </Note>
 
 `Variant(String, UInt64)` avec les valeurs `[42, 'hi', NULL]` (l’ordre canonique place `String` avant `UInt64`, donc discriminateur 0 = String, 1 = UInt64) :
@@ -1388,24 +1331,7 @@ Reconstruction : ligne 0 = UInt64 run[0] = `42`; ligne 1 = String run[0] = `"hi
 
 Le flux de discriminateurs constitue l’index ; chaque discriminateur non-NULL prend la valeur suivante dans la séquence dense de son type, tandis que `255` (NULL) ne consomme rien. Ce même parcours reconstruit [Dynamic](#dynamic), qui ne diffère que par la façon dont NULL est encodé :
 
-```mermaid
-flowchart LR
-    subgraph D["discriminators (one per row)"]
-        direction TB
-        d0["row 0 → 1"]
-        d1["row 1 → 0"]
-        d2["row 2 → 255"]
-    end
-    subgraph SR["String run (discriminator 0)"]
-        s0["[0] = hi"]
-    end
-    subgraph UR["UInt64 run (discriminator 1)"]
-        u0["[0] = 42"]
-    end
-    d0 -->|"counter[1] = 0"| u0
-    d1 -->|"counter[0] = 0"| s0
-    d2 -.->|"255 = NULL,<br/>no value consumed"| X["(skip)"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/variant-discriminators.webp" alt="Discriminateurs sélectionnant des valeurs dans des séquences denses propres à chaque type" width="1568" height="624" loading="lazy" />
 
 <div id="dynamic">
   #### Dynamic
@@ -1552,19 +1478,7 @@ Ainsi, un client qui n’implémente que la structure non compressée `FORMAT Na
 
 La taille totale de la trame est `16 + compressed_size` = `16 + 9 + body_size` = `25 + body_size`. Notez bien la distinction suivante : la somme de contrôle couvre l’en-tête de 9 octets ainsi que le corps, tandis que `compressed_size` inclut l’en-tête et le corps, mais **pas** la somme de contrôle elle-même :
 
-```mermaid
-flowchart LR
-    CK["checksum<br/>16 B<br/>CityHash128"]
-    subgraph SPAN["counted by compressed_size (9 + N)"]
-        direction LR
-        M["method<br/>1 B"]
-        CS["compressed_size<br/>4 B LE"]
-        US["uncompressed_size<br/>4 B LE"]
-        BODY["compressed body<br/>N = compressed_size − 9 B"]
-        M --> CS --> US --> BODY
-    end
-    CK --> M
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/compression-frame.webp" alt="Champs de la trame de compression et limite de taille compressée" width="1568" height="206" loading="lazy" />
 
 <div id="method-byte-values">
   ### Valeurs des octets de méthode
