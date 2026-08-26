@@ -566,12 +566,6 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     established = false;
     sent_query = true;
-    /// Retry-commit point: the Query packet is on the wire, so under `was_cancelled_mutex` a concurrent
-    /// `finish()` can no longer abort this attempt before send. Discard deferred progress from a prior
-    /// failed attempt here — not earlier. Auxiliaries below (scalars / plan / external tables) may still
-    /// throw, but the remote query is already running; keeping old deferred progress would double-count
-    /// if this attempt is later retried after a network error.
-    deferred_progress.reset();
 
     sendScalars();
 
@@ -579,6 +573,12 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         connections->sendQueryPlan(*query_plan);
 
     sendExternalTables();
+
+    /// Retry-commit point: the Query packet and all pending request payloads (scalars / query plan /
+    /// external tables, including the terminating empty Data packet) have been sent. Only now can
+    /// deferred progress from a prior failed attempt be discarded. If a network error occurs during
+    /// any send above, the old progress is still available for a later retry or terminal flush.
+    deferred_progress.reset();
 }
 
 int RemoteQueryExecutor::sendQueryAsync()
