@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 # Tag no-fasttest: needs the secure ports (`https_port`) and `nc`.
+# Tag no-parallel: `SYSTEM DROP CONNECTIONS CACHE` drops the server-wide connection pool.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
