@@ -20,7 +20,7 @@ formats=$($CLICKHOUSE_CLIENT --query "
 schema_registry="http://127.0.0.1:8081"
 # Subject must be unique to avoid conflicts with other tests
 avro_settings="output_format_avro_confluent_subject=test_subject_03251&format_avro_schema_registry_url=$schema_registry"
-# ColumnBinary is experimental until its frame header is versioned.
+# ColumnBinary is experimental while its wire layout is still evolving.
 extra_settings="$avro_settings&allow_experimental_column_binary_format=1"
 
 $CLICKHOUSE_CLIENT --query "

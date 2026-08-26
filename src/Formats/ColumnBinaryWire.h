@@ -12,7 +12,8 @@
 ///
 /// ── Wire layout ─────────────────────────────────────────────────────────────
 ///
-///   [ 4 B num_rows | 4 B num_cols ]       ← FRAME_HEADER_BYTES = 8
+///   [ 4 B magic | 2 B version | 2 B reserved
+///     | 4 B num_rows | 4 B num_cols ]       ← FRAME_HEADER_BYTES = 16
 ///   [ ColDescriptor × num_cols    ]       ← COL_DESC_BYTES = 40 each
 ///   [ column data blobs ...       ]       ← at offsets given by descriptors
 ///
@@ -158,13 +159,66 @@ inline void checkColumnBinaryFormatIsAllowed(bool allow_experimental)
 {
     if (!allow_experimental)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "The 'ColumnBinary' format is experimental: its ColumnBinary wire layout is still "
-            "evolving and its frame header carries no version, so data written today may not be "
-            "readable by a future version. Set allow_experimental_column_binary_format = 1 to use it.");
+            "The 'ColumnBinary' format is experimental: its wire layout is still evolving, and "
+            "while the frame header carries a format version, no compatibility with earlier or "
+            "later versions is promised yet, so data written today may not be readable by a "
+            "future version. Set allow_experimental_column_binary_format = 1 to use it.");
 }
 
-constexpr uint32_t FRAME_HEADER_BYTES = 8;
+/// Frame magic, the ASCII bytes 'C', 'B', 'I', 'N' in wire order. A frame is a bare byte
+/// range with no container around it - a WASM guest buffer, a file, a socket - so it carries
+/// its own identity, and a reader that is handed the wrong bytes says so instead of decoding
+/// an arbitrary row and column count out of them.
+constexpr uint32_t FRAME_MAGIC = 0x4E494243; /// 'C' | 'B' << 8 | 'I' << 16 | 'N' << 24
+
+/// Version of the frame layout. Bump it whenever the meaning of any existing byte changes;
+/// a reader rejects any version it does not implement rather than guessing.
+constexpr uint16_t FRAME_VERSION = 1;
+
+/// [ 4 B magic | 2 B version | 2 B reserved | 4 B num_rows | 4 B num_cols ]
+///
+/// 16 bytes rather than the 10 the fields strictly need, so the descriptor table that follows
+/// starts 8-byte aligned and a guest can read `ColDescriptor` in place. `reserved` is written
+/// as 0 and required to be 0 on read, which keeps it available for frame-wide flags: an old
+/// reader then refuses a frame that uses one instead of silently ignoring it.
+constexpr uint32_t FRAME_HEADER_BYTES = 16;
 constexpr uint32_t COL_DESC_BYTES   = 40;
+
+inline void writeFrameHeader(uint8_t * dst, uint32_t num_rows, uint32_t num_cols)
+{
+    constexpr uint16_t reserved = 0;
+    std::memcpy(dst,      &FRAME_MAGIC,    4);
+    std::memcpy(dst + 4,  &FRAME_VERSION,  2);
+    std::memcpy(dst + 6,  &reserved,       2);
+    std::memcpy(dst + 8,  &num_rows,       4);
+    std::memcpy(dst + 12, &num_cols,       4);
+}
+
+/// Read and validate a frame header from `src`, which must hold at least FRAME_HEADER_BYTES.
+inline void readFrameHeader(const uint8_t * src, uint32_t & num_rows, uint32_t & num_cols)
+{
+    uint32_t magic = 0;
+    uint16_t version = 0;
+    uint16_t reserved = 0;
+    std::memcpy(&magic,    src,      4);
+    std::memcpy(&version,  src + 4,  2);
+    std::memcpy(&reserved, src + 6,  2);
+
+    if (magic != FRAME_MAGIC)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ColumnBinary: bad frame magic {:#010x}, expected {:#010x}", magic, FRAME_MAGIC);
+    if (version != FRAME_VERSION)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ColumnBinary: unsupported frame version {}, this server writes and reads version {}",
+            version, FRAME_VERSION);
+    if (reserved != 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ColumnBinary: reserved frame header field is {}, expected 0; the frame uses a "
+            "feature this version does not implement", reserved);
+
+    std::memcpy(&num_rows, src + 8,  4);
+    std::memcpy(&num_cols, src + 12, 4);
+}
 
 struct ColDescriptor
 {
@@ -1590,8 +1644,7 @@ inline MutableColumnPtr readColumnarOutput(
 
     uint32_t num_rows = 0;
     uint32_t num_cols = 0;
-    std::memcpy(&num_rows, buf.data(),     4);
-    std::memcpy(&num_cols, buf.data() + 4, 4);
+    readFrameHeader(buf.data(), num_rows, num_cols);
 
     if (num_rows != expected_rows)
         throw Exception(ErrorCodes::INCORRECT_DATA,

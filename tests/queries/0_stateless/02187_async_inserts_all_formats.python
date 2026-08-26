@@ -60,7 +60,7 @@ for data_format in formats:
             "wait_for_async_insert": 1,
             "output_format_avro_confluent_subject": "test_subject_02187", # Subject name should be unique to avoid conflicts with other tests
             "format_avro_schema_registry_url": "http://127.0.0.1:8081",
-            # ColumnBinary is experimental until its frame header is versioned
+            # ColumnBinary is experimental while its wire layout is still evolving
             "allow_experimental_column_binary_format": 1,
         },
     )

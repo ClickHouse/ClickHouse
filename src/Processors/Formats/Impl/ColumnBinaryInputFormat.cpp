@@ -147,8 +147,7 @@ Chunk ColumnBinaryInputFormat::read()
     if (in->available() >= ColumnBinaryWire::FRAME_HEADER_BYTES)
     {
         const auto * pos = reinterpret_cast<const uint8_t *>(in->position());
-        std::memcpy(&num_rows, pos, 4);
-        std::memcpy(&num_cols, pos + 4, 4);
+        ColumnBinaryWire::readFrameHeader(pos, num_rows, num_cols);
 
         checkNumCols(num_cols);
         hdr_desc_size = ColumnBinaryWire::FRAME_HEADER_BYTES + static_cast<size_t>(num_cols) * ColumnBinaryWire::COL_DESC_BYTES;
@@ -166,16 +165,15 @@ Chunk ColumnBinaryInputFormat::read()
 
     if (frame.empty())
     {
-        // Try to read the 8-byte header; a short read means the frame is truncated (a clean
-        // EOF was already handled above).
+        // Try to read the fixed-size frame header; a short read means the frame is truncated
+        // (a clean EOF was already handled above).
         char hdr_buf[ColumnBinaryWire::FRAME_HEADER_BYTES];
         size_t hdr_read = in->read(hdr_buf, ColumnBinaryWire::FRAME_HEADER_BYTES);
         if (hdr_read < ColumnBinaryWire::FRAME_HEADER_BYTES)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ColumnBinary: truncated frame header ({} of {} bytes)", hdr_read, ColumnBinaryWire::FRAME_HEADER_BYTES);
 
-        std::memcpy(&num_rows, hdr_buf, 4);
-        std::memcpy(&num_cols, hdr_buf + 4, 4);
+        ColumnBinaryWire::readFrameHeader(reinterpret_cast<const uint8_t *>(hdr_buf), num_rows, num_cols);
 
         checkNumCols(num_cols);
 

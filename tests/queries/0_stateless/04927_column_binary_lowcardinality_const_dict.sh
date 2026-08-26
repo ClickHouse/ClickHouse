@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `ColumnBinary` is experimental until its frame header is versioned.
+# `ColumnBinary` is experimental while its wire layout is still evolving.
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
 # The test uses `LowCardinality(UInt64)` because a fixed-width dictionary keeps the frame layout simple.
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_suspicious_low_cardinality_types 1"
@@ -22,19 +22,19 @@ import sys
 
 COL_FIXED64, COL_LOWCARD, COL_IS_CONST = 4, 8, 0x80
 
-# 8 header + 40 descriptor = 48, then
-#   48: index array uint8[1], padded to the 4-byte-aligned lowcard block
-#   52: lowcard block = uint32 dict_row_count + uint8 width + uint8[3] pad + ColDescriptor
-#  100: dictionary values uint64[2]
-frame = struct.pack("<II", 1, 1)
-frame += struct.pack("<QQQQQ", COL_LOWCARD, 0, 48, 52, 64)
+# 16 header + 40 descriptor = 56, then
+#   56: index array uint8[1], padded to the 4-byte-aligned lowcard block
+#   60: lowcard block = uint32 dict_row_count + uint8 width + uint8[3] pad + ColDescriptor
+#  108: dictionary values uint64[2]
+frame = struct.pack("<IHHII", 0x4E494243, 1, 0, 1, 1)
+frame += struct.pack("<QQQQQ", COL_LOWCARD, 0, 56, 60, 64)
 frame += bytes([0])
 frame += bytes(3)
 frame += struct.pack("<I", 2)
 frame += struct.pack("<BBBB", 1, 0, 0, 0)
-frame += struct.pack("<QQQQQ", COL_FIXED64 | COL_IS_CONST, 0, 0, 100, 16)
+frame += struct.pack("<QQQQQ", COL_FIXED64 | COL_IS_CONST, 0, 0, 108, 16)
 frame += struct.pack("<QQ", 0, 42)
-assert len(frame) == 116, len(frame)
+assert len(frame) == 124, len(frame)
 with open(sys.argv[1], "wb") as f:
     f.write(frame)
 EOF

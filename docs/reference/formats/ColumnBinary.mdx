@@ -20,9 +20,10 @@ doc_type: 'reference'
 **Experimental**
 
 `ColumnBinary` is experimental and disabled by default; set `allow_experimental_column_binary_format = 1` to use it.
-Its frame header carries no wire version, so the layout may change incompatibly and data written today
-may not be readable by a future version. Do not persist `ColumnBinary` data until the layout is frozen and the frame
-header is versioned.
+Its frame header carries a magic and a format version, so a reader rejects bytes it cannot interpret rather
+than misreading them, but no compatibility between versions is promised yet: the layout may still change
+incompatibly, and a future version may simply refuse data written today. Do not persist `ColumnBinary` data
+until the layout is frozen.
 </Info>
 
 `ColumnBinary` is a compact columnar binary format. It is also usable as the wire format of a WebAssembly UDF declared with `ABI BUFFERED_V1 ... SETTINGS serialization_format = 'ColumnBinary'` (see [WebAssembly UDFs](/reference/functions/regular-functions/wasm_udf)). Unlike [Native](/reference/formats/Native) and [Buffers](/reference/formats/Buffers), which serialize each column independently one after another, `ColumnBinary` writes a single frame per block: a header, a fixed-size descriptor table (one descriptor per column), and then every column's data packed contiguously. All numeric fields are little-endian.
@@ -30,12 +31,21 @@ header is versioned.
 A frame has the following layout:
 
 ```txt
-[Header: 8 bytes]
+[Header: 16 bytes]
 [ColDescriptor × num_columns: 40 bytes each]
 [Column data blocks]
 ```
 
-The 8-byte header contains two `uint32` fields: `num_rows` then `num_cols`.
+The 16-byte header contains, in order:
+
+- `magic` (4 bytes) — the ASCII bytes `CBIN`, identifying the frame
+- `version` (2 bytes) — `uint16` format version, currently `1`; a reader rejects a version it does not implement
+- `reserved` (2 bytes) — written as `0` and required to be `0` on read, reserved for frame-wide flags
+- `num_rows` (4 bytes) — `uint32`
+- `num_cols` (4 bytes) — `uint32`
+
+The header is 16 bytes rather than the 10 the fields strictly need, so that the descriptor table which follows
+starts 8-byte aligned and can be read in place.
 
 Each `ColDescriptor` is exactly 40 bytes and contains five `uint64` fields (all byte offsets are absolute from the start of the frame):
 

@@ -89,7 +89,9 @@ static int buf_push(Buffer * b, uint8_t byte) {
 #define COL_IS_NULLABLE 0x20u
 #define COL_IS_CONST   0x80u
 
-#define HEADER_BYTES   8u
+#define HEADER_BYTES   16u
+#define FRAME_MAGIC    0x4E494243u  /* 'C','B','I','N' */
+#define FRAME_VERSION  1u
 #define DESC_BYTES    40u  // 5 × uint64_t fields
 
 typedef struct {
@@ -99,6 +101,18 @@ typedef struct {
     uint64_t data_offset;
     uint64_t data_size;
 } ColDesc;
+
+// Frame header: [4 B magic | 2 B version | 2 B reserved | 4 B num_rows | 4 B num_cols].
+static void write_header(uint8_t * p, uint32_t num_rows, uint32_t num_cols) {
+    uint32_t magic = FRAME_MAGIC;
+    uint16_t version = (uint16_t)FRAME_VERSION;
+    uint16_t reserved = 0;
+    memcpy(p,      &magic,    4);
+    memcpy(p + 4,  &version,  2);
+    memcpy(p + 6,  &reserved, 2);
+    memcpy(p + 8,  &num_rows, 4);
+    memcpy(p + 12, &num_cols, 4);
+}
 
 // ── Input accessors ───────────────────────────────────────────────────────────
 
@@ -110,8 +124,8 @@ typedef struct {
 
 static ColBuf parse_input(const Buffer * b) {
     ColBuf cb;
-    memcpy(&cb.num_rows, b->data,     4);
-    memcpy(&cb.num_cols, b->data + 4, 4);
+    memcpy(&cb.num_rows, b->data + 8,  4);
+    memcpy(&cb.num_cols, b->data + 12, 4);
     cb.base = b->data;
     return cb;
 }
@@ -157,9 +171,7 @@ static Buffer * alloc_fixed_out(uint32_t num_rows, uint32_t col_type,
     uint8_t * p = out->data;
     memset(p, 0, total);
 
-    memcpy(p,     &num_rows, 4);
-    uint32_t one = 1;
-    memcpy(p + 4, &one, 4);
+    write_header(p, num_rows, 1u);
 
     ColDesc d = {0};
     d.type        = col_type;
@@ -255,9 +267,7 @@ Buffer * bytes_reverse_col(Buffer * ptr, uint32_t num_rows) {
 
     // Write header
     uint8_t * p = out->data;
-    memcpy(p, &num_rows, 4);
-    uint32_t one = 1;
-    memcpy(p + 4, &one, 4);
+    write_header(p, num_rows, 1u);
 
     // Wire the descriptor (null_offset and offsets_offset filled; data_size below)
     ColDesc od = {0};
@@ -342,9 +352,7 @@ Buffer * array_of_len_col(Buffer * ptr, uint32_t num_rows) {
     out->size = total_cap;
 
     uint8_t * p = out->data;
-    memcpy(p, &num_rows, 4);
-    uint32_t one = 1;
-    memcpy(p + 4, &one, 4);
+    write_header(p, num_rows, 1u);
 
     ColDesc od = {0};
     od.type        = COL_COMPLEX;

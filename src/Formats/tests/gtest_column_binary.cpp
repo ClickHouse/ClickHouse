@@ -1431,8 +1431,7 @@ TEST(ColumnBinary, FrameValidatorRejectsDataOffsetInsideHeader)
     const size_t hdr_desc_size = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::string frame(hdr_desc_size, '\0');
-    std::memcpy(frame.data(), &num_rows, 4);
-    std::memcpy(frame.data() + 4, &num_cols, 4);
+    ColumnBinaryWire::writeFrameHeader(reinterpret_cast<uint8_t *>(frame.data()), num_rows, num_cols);
 
     ColDescriptor desc{};
     desc.type = COL_FIXED64;
@@ -1460,8 +1459,7 @@ TEST(ColumnBinary, FrameValidatorRejectsNullOffsetInsideHeader)
     const uint64_t data_off = hdr_desc_size;
 
     std::string frame(hdr_desc_size + 8, '\0');
-    std::memcpy(frame.data(), &num_rows, 4);
-    std::memcpy(frame.data() + 4, &num_cols, 4);
+    ColumnBinaryWire::writeFrameHeader(reinterpret_cast<uint8_t *>(frame.data()), num_rows, num_cols);
 
     ColDescriptor desc{};
     desc.type = COL_FIXED64 | COL_IS_NULLABLE;
@@ -1498,8 +1496,7 @@ TEST(ColumnBinary, FrameValidatorRejectsCrossColumnNullOffset)
 
     // Genuine layout: col0 = [hdr_desc_size, 100), col1 = [100, 108).
     std::string frame(108, '\0');
-    std::memcpy(frame.data(), &num_rows, 4);
-    std::memcpy(frame.data() + 4, &num_cols, 4);
+    ColumnBinaryWire::writeFrameHeader(reinterpret_cast<uint8_t *>(frame.data()), num_rows, num_cols);
 
     ColDescriptor desc0{};
     desc0.type = COL_FIXED64 | COL_IS_NULLABLE;
@@ -1542,8 +1539,7 @@ TEST(ColumnBinary, FrameValidatorRejectsCrossColumnDataOffset)
     // stretched over [96, 104), col1's own range no longer starts at or after that region's
     // end, which is exactly what the check detects.
     std::string frame(hdr_desc_size + 16, '\0');
-    std::memcpy(frame.data(), &num_rows, 4);
-    std::memcpy(frame.data() + 4, &num_cols, 4);
+    ColumnBinaryWire::writeFrameHeader(reinterpret_cast<uint8_t *>(frame.data()), num_rows, num_cols);
 
     ColDescriptor desc{};
     desc.type = COL_FIXED64;
@@ -1579,8 +1575,7 @@ TEST(ColumnBinary, FrameValidatorRejectsCrossColumnStringOffsets)
     // row count worth of offsets out of col1's bytes.
     const uint64_t col1_data = hdr_desc_size + 16;
     std::string frame(col1_data + 24, '\0');
-    std::memcpy(frame.data(), &num_rows, 4);
-    std::memcpy(frame.data() + 4, &num_cols, 4);
+    ColumnBinaryWire::writeFrameHeader(reinterpret_cast<uint8_t *>(frame.data()), num_rows, num_cols);
 
     ColDescriptor desc0{};
     desc0.type = COL_BYTES;

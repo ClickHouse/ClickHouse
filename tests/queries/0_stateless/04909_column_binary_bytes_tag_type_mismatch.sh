@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `ColumnBinary` is experimental until its frame header is versioned.
+# `ColumnBinary` is experimental while its wire layout is still evolving.
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
 
 # The `COL_BYTES` branch of `readColumnFromDesc` always builds a `ColumnString`, unlike the
@@ -20,11 +20,11 @@ import sys
 
 COL_BYTES = 0
 
-# 8 header + 40 descriptor = 48, then
-#   48: offsets uint64[1]
-#   56: data bytes[8]
-frame = struct.pack("<II", 1, 1)
-frame += struct.pack("<QQQQQ", COL_BYTES, 0, 48, 56, 8)
+# 16 header + 40 descriptor = 56, then
+#   56: offsets uint64[1]
+#   64: data bytes[8]
+frame = struct.pack("<IHHII", 0x4E494243, 1, 0, 1, 1)
+frame += struct.pack("<QQQQQ", COL_BYTES, 0, 56, 64, 8)
 frame += struct.pack("<Q", 8)
 frame += b"abcdefgh"
 with open(sys.argv[1], "wb") as f:

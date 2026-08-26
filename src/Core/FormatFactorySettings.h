@@ -289,10 +289,11 @@ The way how to output UUID in MsgPack format.
     DECLARE(Bool, allow_experimental_column_binary_format, false, R"(
 Allow the experimental `ColumnBinary` input and output format.
 
-`ColumnBinary` exposes a flat columnar wire format, which is still evolving and carries
-no version field in its frame header, so a future incompatible layout change would misparse
-previously written data rather than reject it. Do not persist `ColumnBinary` data until the
-layout is frozen and the frame header is versioned.
+`ColumnBinary` exposes a flat columnar wire format. Its frame header carries a magic and a
+format version, so an incompatible layout change is rejected rather than misparsed, but the
+layout is still evolving and no compatibility between versions is promised yet: a future
+version may refuse data written today. Do not persist `ColumnBinary` data until the layout
+is frozen.
 )", EXPERIMENTAL) \
     DECLARE(Bool, column_binary_disable_preallocation, false, R"(
 Disable output buffer preallocation in ColumnBinary format. Useful for benchmarking and diagnostics.

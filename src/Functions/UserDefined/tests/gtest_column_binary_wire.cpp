@@ -55,9 +55,7 @@ std::vector<uint8_t> encodeCHColumn(const IColumn * col, uint32_t num_rows)
 
     std::vector<uint8_t> buf(cursor, 0);
 
-    uint32_t one = 1;
-    std::memcpy(buf.data(),     &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one,      4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
     std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     writeColData(col, /*is_nullable=*/false, num_rows, desc, {buf.data(), buf.size()});
@@ -214,9 +212,7 @@ TEST(ColumnBinaryWire, DecodeArrayOfTupleUInt64Float64)
     std::vector<uint8_t> buf(total, 0);
 
     // Header
-    std::memcpy(buf.data(),     &num_rows, 4);
-    uint32_t one = 1;
-    std::memcpy(buf.data() + 4, &one, 4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     // Descriptor — outer offsets embedded at start of data section
     ColDescriptor desc{};
@@ -501,9 +497,7 @@ TEST(ColumnBinaryWire, DecodeFixed8AsInt8)
     const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::vector<uint8_t> buf(data_off + num_rows, 0);
-    uint32_t one = 1;
-    std::memcpy(buf.data(),     &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one,      4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_FIXED8;
@@ -535,9 +529,7 @@ TEST(ColumnBinaryWire, BoundsCheckDataOverflow)
     const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::vector<uint8_t> buf(data_off + 10, 0);  // too small for 3×uint64
-    uint32_t one = 1;
-    std::memcpy(buf.data(),     &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one,      4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_FIXED64;
@@ -563,9 +555,7 @@ TEST(ColumnBinaryWire, BoundsCheckWireOffsetOutOfRange)
     const uint32_t data_size   = 5u;
 
     std::vector<uint8_t> buf(data_off + data_size, 0);
-    uint32_t one = 1;
-    std::memcpy(buf.data(),     &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one,      4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type           = COL_BYTES;
@@ -594,9 +584,7 @@ TEST(ColumnBinaryWire, BoundsCheckComplexArrayOffsetsOverflow)
     const uint32_t data_size = 4u;  // only 4 bytes — too small for (3+1)×4 = 16 offset bytes
 
     std::vector<uint8_t> buf(data_off + data_size, 0);
-    uint32_t one = 1;
-    std::memcpy(buf.data(),     &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one,      4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_COMPLEX;
@@ -623,9 +611,7 @@ TEST(ColumnBinaryWire, BoundsCheckComplexStringCharsOverflow)
     const uint32_t data_size = 2u * 8u + 2u * 8u;  // outer[2] + inner[2], uint64 each
 
     std::vector<uint8_t> buf(data_off + data_size, 0);
-    uint32_t one = 1;
-    std::memcpy(buf.data(),     &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one,      4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_COMPLEX;
@@ -659,9 +645,7 @@ TEST(ColumnBinaryWire, BoundsCheckComplexFixedDataOverflow)
     const uint32_t data_size = 16u;  // room for only 1 field (2×8), not 2
 
     std::vector<uint8_t> buf(data_off + data_size, 0);
-    uint32_t one = 1;
-    std::memcpy(buf.data(),     &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one,      4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_COMPLEX;
@@ -685,9 +669,7 @@ TEST(ColumnBinaryWire, BoundsCheckComplexArrayOffsetNotMonotonic)
     // Array(UInt64) for 2 rows: outer_offsets = [0, 3, 1] (not monotonic: 1 < 3)
     // total_elems = outer_offs[2] = 1
     std::vector<uint8_t> buf(data_off + 3 * 4);
-    uint32_t one = 1;
-    std::memcpy(buf.data(), &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one, 4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_COMPLEX;
@@ -716,9 +698,7 @@ TEST(ColumnBinaryWire, BoundsCheckComplexArrayOffsetExceedsTotal)
     // Actually: off[2]=5 is total_elems, off[1]=2 should be <= 5 — that's fine.
     // Let's make off[1]=10 > total=5.
     std::vector<uint8_t> buf(data_off + 3 * 4);
-    uint32_t one = 1;
-    std::memcpy(buf.data(), &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one, 4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_COMPLEX;
@@ -745,9 +725,7 @@ TEST(ColumnBinaryWire, BoundsCheckComplexStringOffsetNotMonotonic)
     // Array(String) for 1 row: wire_offsets = [0, 4, 2] (not monotonic: 2 < 4)
     // total_chars = wire_offs[1] = 2
     std::vector<uint8_t> buf(data_off + 3 * 4 + 4);  // offsets + 4 chars
-    uint32_t one = 1;
-    std::memcpy(buf.data(), &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one, 4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_COMPLEX;
@@ -773,9 +751,7 @@ TEST(ColumnBinaryWire, BoundsCheckComplexStringOffsetExceedsTotal)
 
     // Array(String) for 1 row: wire_offsets = [0, 10, 2] (off[1]=10 > total=2)
     std::vector<uint8_t> buf(data_off + 3 * 4 + 2);
-    uint32_t one = 1;
-    std::memcpy(buf.data(), &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one, 4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_COMPLEX;
@@ -802,9 +778,7 @@ TEST(ColumnBinaryWire, BoundsCheckComplexTotalElemsExceedsData)
     // Array(UInt64) for 1 row: outer_offsets = [0, 0xFFFFFFFF]
     // total_elems = outer_offs[n] = 0xFFFFFFFF — huge, but only 4 bytes of actual data
     std::vector<uint8_t> buf(data_off + 2 * 4);
-    uint32_t one = 1;
-    std::memcpy(buf.data(), &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one, 4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_COMPLEX;
@@ -830,9 +804,7 @@ TEST(ColumnBinaryWire, BoundsCheckComplexDataEndTruncated)
     // Buffer has 100 bytes but data_size says only 4 bytes of complex data.
     // The decoder must not read beyond data_size.
     std::vector<uint8_t> buf(100, 0);
-    uint32_t one = 1;
-    std::memcpy(buf.data(), &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one, 4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_COMPLEX;
@@ -864,9 +836,7 @@ TEST(ColumnBinaryWire, NullableDescriptorMissingNullMapRejected)
     const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::vector<uint8_t> buf(data_off + num_rows * 8u, 0);
-    uint32_t one = 1;
-    std::memcpy(buf.data(),     &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one,      4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_FIXED64 | COL_IS_NULLABLE;
@@ -894,9 +864,7 @@ TEST(ColumnBinaryWire, NullableBitAgainstNonNullableDeclaredTypeRejected)
     const uint32_t data_off = null_off + num_rows;
 
     std::vector<uint8_t> buf(data_off + num_rows * 8u, 0);
-    uint32_t one = 1;
-    std::memcpy(buf.data(),     &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one,      4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_FIXED64 | COL_IS_NULLABLE;
@@ -972,9 +940,7 @@ TEST(ColumnBinaryWire, BoundsCheckWrappedNullOffsetRejected)
     const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::vector<uint8_t> buf(data_off + num_rows * 8u, 0);
-    uint32_t one = 1;
-    std::memcpy(buf.data(),     &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one,      4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_FIXED64 | COL_IS_NULLABLE;
@@ -995,9 +961,7 @@ TEST(ColumnBinaryWire, BoundsCheckWrappedColBytesOffsetsOffsetRejected)
     const uint32_t data_size = 1u;
 
     std::vector<uint8_t> buf(data_off + data_size, 0);
-    uint32_t one = 1;
-    std::memcpy(buf.data(),     &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one,      4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type = COL_BYTES;
@@ -1019,9 +983,7 @@ TEST(ColumnBinaryWire, BoundsCheckWrappedLowCardIndexOffsetsOffsetRejected)
     const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::vector<uint8_t> buf(data_off + header_bytes, 0);
-    uint32_t one = 1;
-    std::memcpy(buf.data(),     &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one,      4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     // Minimal COL_LOWCARD header: dict_row_count=1, index_elem_width=1, empty dict_desc
     // (COL_BYTES, 0 rows, 0 bytes) so the dictionary decode itself succeeds trivially.
@@ -1062,9 +1024,7 @@ TEST(ColumnBinaryWire, BoundsCheckFixed64DataSizeMismatchRejected)
     const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::vector<uint8_t> buf(data_off + num_rows * 8u, 0);
-    uint32_t one = 1;
-    std::memcpy(buf.data(),     &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one,      4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_FIXED64;
@@ -1089,9 +1049,7 @@ TEST(ColumnBinaryWire, OutputRejectsDataOffsetInsideHeader)
     const uint32_t hdr_desc_size = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::vector<uint8_t> buf(hdr_desc_size, 0);
-    uint32_t one = 1;
-    std::memcpy(buf.data(),     &num_rows, 4);
-    std::memcpy(buf.data() + 4, &one,      4);
+    writeFrameHeader(buf.data(), num_rows, /*num_cols=*/1);
 
     ColDescriptor desc{};
     desc.type        = COL_FIXED64;

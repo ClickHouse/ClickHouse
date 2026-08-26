@@ -43,7 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
-            {"allow_experimental_column_binary_format", false, false, "New setting: gate the experimental `ColumnBinary` input and output format, whose frame header is not versioned yet."},
+            {"allow_experimental_column_binary_format", false, false, "New setting: gate the experimental `ColumnBinary` input and output format, whose wire layout is still evolving."},
             {"column_binary_disable_preallocation", false, false, "New setting: disable output buffer preallocation in ColumnBinary format. Useful for benchmarking and diagnostics."},
             {"column_binary_max_frame_size", 0, 1024ull * 1024 * 1024, "New setting: caps the total column data size of a single ColumnBinary frame, rejecting malformed frames before they can force an unreasonably large allocation."},
             {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},

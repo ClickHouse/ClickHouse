@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `ColumnBinary` is experimental until its frame header is versioned.
+# `ColumnBinary` is experimental while its wire layout is still evolving.
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
 # The test uses `LowCardinality(UInt64)` because a fixed-width dictionary keeps the frame layout simple.
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_suspicious_low_cardinality_types 1"
@@ -34,48 +34,48 @@ def desc(type_, null_offset, offsets_offset, data_offset, data_size):
 
 
 # ── Variant(UInt64), 1 row ───────────────────────────────────────────────────
-# Frame layout: header(8) + top descriptor(40) = 48, then
-#   48: discriminators uint8[1]
-#   49: row offsets uint32[1]
-#   56: variant block = uint32 K + K x { uint8 global_d, uint8[3] pad, ColDescriptor }
-#       payload for the sub-columns starts right after that header, at 56 + 4 + 44 = 104.
-# The malformed frame points the single sub-variant's data at 56 — inside the variant
+# Frame layout: header(16) + top descriptor(40) = 56, then
+#   56: discriminators uint8[1]
+#   57: row offsets uint32[1]
+#   64: variant block = uint32 K + K x { uint8 global_d, uint8[3] pad, ColDescriptor }
+#       payload for the sub-columns starts right after that header, at 64 + 4 + 44 = 112.
+# The malformed frame points the single sub-variant's data at 64 — inside the variant
 # header itself, which is still within the parent blob but before the payload region.
 num_rows = 1
-top_data_offset = 56
+top_data_offset = 64
 variant_header_bytes = 4 + (4 + DESC_BYTES)
 variant_data_size = variant_header_bytes + 8
 
 inner = desc(COL_FIXED64, 1, 0, top_data_offset, 8)  # null_offset repurposed as sub-row count
 block = struct.pack("<I", 1) + struct.pack("<BBBB", 0, 0, 0, 0) + inner + struct.pack("<Q", 0)
 
-frame = struct.pack("<II", num_rows, 1)
-frame += desc(COL_VARIANT, 48, 49, top_data_offset, variant_data_size)
+frame = struct.pack("<IHHII", 0x4E494243, 1, 0, num_rows, 1)
+frame += desc(COL_VARIANT, 56, 57, top_data_offset, variant_data_size)
 frame += bytes([0])                    # discriminator: alternative 0
 frame += struct.pack("<I", 0)          # row offset within the sub-column
-frame += bytes(top_data_offset - 53)   # pad up to the variant block
+frame += bytes(top_data_offset - 61)   # pad up to the variant block
 frame += block
 assert len(frame) == top_data_offset + variant_data_size, len(frame)
 with open(variant_path, "wb") as f:
     f.write(frame)
 
 # ── LowCardinality(UInt64), 1 row ────────────────────────────────────────────
-# Frame layout: header(8) + top descriptor(40) = 48, then
-#   48: index array uint8[1]
-#   56: lowcard block = uint32 dict_row_count + uint8 width + uint8[3] pad + ColDescriptor
-#       dictionary payload starts right after that header, at 56 + 48 = 104.
-# The malformed frame points the dictionary at 56 — inside the lowcard header itself.
+# Frame layout: header(16) + top descriptor(40) = 56, then
+#   56: index array uint8[1]
+#   64: lowcard block = uint32 dict_row_count + uint8 width + uint8[3] pad + ColDescriptor
+#       dictionary payload starts right after that header, at 64 + 48 = 112.
+# The malformed frame points the dictionary at 64 — inside the lowcard header itself.
 lc_header_bytes = 4 + 4 + DESC_BYTES
-lc_data_offset = 56
+lc_data_offset = 64
 lc_data_size = lc_header_bytes + 8
 
 dict_desc = desc(COL_FIXED64, 0, 0, lc_data_offset, 8)
 lc_block = struct.pack("<I", 1) + struct.pack("<BBBB", 1, 0, 0, 0) + dict_desc + struct.pack("<Q", 0)
 
-frame = struct.pack("<II", num_rows, 1)
-frame += desc(COL_LOWCARD, 0, 48, lc_data_offset, lc_data_size)
+frame = struct.pack("<IHHII", 0x4E494243, 1, 0, num_rows, 1)
+frame += desc(COL_LOWCARD, 0, 56, lc_data_offset, lc_data_size)
 frame += bytes([0])                  # index array: single index 0
-frame += bytes(lc_data_offset - 49)  # pad up to the lowcard block
+frame += bytes(lc_data_offset - 57)  # pad up to the lowcard block
 frame += lc_block
 assert len(frame) == lc_data_offset + lc_data_size, len(frame)
 with open(lowcard_path, "wb") as f:

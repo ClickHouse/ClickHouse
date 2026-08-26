@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `ColumnBinary` is experimental until its frame header is versioned.
+# `ColumnBinary` is experimental while its wire layout is still evolving.
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
 # `LowCardinality(Nullable(UInt64))` is a suspicious type; the fixed-width dictionary case
 # below needs it both to create the table and to cast in the `SELECT` that writes the frame.
@@ -48,19 +48,19 @@ def desc(type_, null_offset, offsets_offset, data_offset, data_size):
     return struct.pack("<QQQQQ", type_, null_offset, offsets_offset, data_offset, data_size)
 
 
-# 8 header + 40 top descriptor = 48, then
-#   48: index array uint8[1]
-#   52: lowcard block = uint32 dict_row_count + uint8 width + uint8[3] pad + ColDescriptor
-#  100: dictionary values uint64[1]
+# 16 header + 40 top descriptor = 56, then
+#   56: index array uint8[1]
+#   60: lowcard block = uint32 dict_row_count + uint8 width + uint8[3] pad + ColDescriptor
+#  108: dictionary values uint64[1]
 # A LowCardinality(Nullable(UInt64)) dictionary needs at least 2 rows (NULL sentinel +
 # nested default); this one claims exactly 1.
 dict_rows = 1
-lc_data_offset = 52
-dict_data_offset = 100
+lc_data_offset = 60
+dict_data_offset = 108
 lc_data_size = (dict_data_offset + dict_rows * 8) - lc_data_offset
 
-frame = struct.pack("<II", 1, 1)
-frame += desc(COL_LOWCARD, 0, 48, lc_data_offset, lc_data_size)
+frame = struct.pack("<IHHII", 0x4E494243, 1, 0, 1, 1)
+frame += desc(COL_LOWCARD, 0, 56, lc_data_offset, lc_data_size)
 frame += bytes([0])                 # index array: the single row points at dictionary slot 0
 frame += bytes(3)                   # pad to the 4-byte-aligned lowcard block
 frame += struct.pack("<I", dict_rows)

@@ -219,8 +219,7 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
     }
 
     // Write header and descriptor table.
-    std::memcpy(buf,     &num_rows, 4);
-    std::memcpy(buf + 4, &num_cols, 4);
+    ColumnBinaryWire::writeFrameHeader(buf, num_rows, num_cols);
     std::memcpy(buf + ColumnBinaryWire::FRAME_HEADER_BYTES,
                 descs.data(),
                 num_cols * ColumnBinaryWire::COL_DESC_BYTES);
