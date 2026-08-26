@@ -17,3 +17,5 @@ nogroup: hasAnyTokens([22]) -> 1
 1
 nogroup: hasAnyTokens([a]) -> (none, letters are never matches)
 DDL validation
+bool literal: hasAnyTokens([green]) -> 1
+1

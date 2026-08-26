@@ -85,13 +85,33 @@ SELECT id FROM tab_extract_phrase_pp WHERE hasPhrase(doc, 'red green') SETTINGS 
 
 DROP TABLE tab_extract_phrase_pp;
 
--- 4. DDL-time validation of the `extract` argument.
+-- 4. DDL-time validation of the `extract` argument, and the `true`/`false` literal form (equivalent
+-- to 1/0, and the recommended, self-documenting spelling - section 1 above already covers plain 1).
 
 SELECT 'DDL validation';
 
 DROP TABLE IF EXISTS tab_bad_extract;
 
--- extract must be 0 or 1
-CREATE TABLE tab_bad_extract (id UInt64, doc String, INDEX idx doc TYPE text(tokenizer = splitByRegexp('a', 2))) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+-- extract must be a Bool or an integer (truthy/falsy); a non-numeric type is rejected
+CREATE TABLE tab_bad_extract (id UInt64, doc String, INDEX idx doc TYPE text(tokenizer = splitByRegexp('a', 'x'))) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 -- splitByRegexp accepts at most 2 parameters
 CREATE TABLE tab_bad_extract (id UInt64, doc String, INDEX idx doc TYPE text(tokenizer = splitByRegexp('a', 1, 1))) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE IF EXISTS tab_extract_bool_literal;
+
+CREATE TABLE tab_extract_bool_literal
+(
+    id UInt64,
+    doc String,
+    INDEX idx doc TYPE text(tokenizer = splitByRegexp('tag:(\\w+)', true))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 2;
+
+INSERT INTO tab_extract_bool_literal VALUES (1, 'tag:red tag:green'), (2, 'tag:blue');
+
+SELECT 'bool literal: hasAnyTokens([green]) -> 1';
+SELECT id FROM tab_extract_bool_literal WHERE hasAnyTokens(doc, ['green']) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+
+DROP TABLE tab_extract_bool_literal;
