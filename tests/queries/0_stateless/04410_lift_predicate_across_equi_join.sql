@@ -193,6 +193,23 @@ FROM (
         ON o.orderkey = l.orderkey
 );
 
+-- `DISTINCT` keeps the rows and the names, so the walk goes through it to the target read
+SELECT 'distinct target lifts',
+       countIf(explain LIKE '%ilter column:%orderkey = 4242%') >= 2
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM lift_orders WHERE orderkey = 4242) AS o
+    INNER JOIN (SELECT DISTINCT orderkey FROM lift_lineitem) AS l ON o.orderkey = l.orderkey
+);
+
+SELECT 'distinct target lifts correctness',
+       (SELECT count() FROM (SELECT * FROM lift_orders WHERE orderkey = 4242) AS o
+        INNER JOIN (SELECT DISTINCT orderkey FROM lift_lineitem) AS l ON o.orderkey = l.orderkey)
+     - (SELECT count() FROM (SELECT * FROM lift_orders WHERE orderkey = 4242) AS o
+        INNER JOIN (SELECT DISTINCT orderkey FROM lift_lineitem) AS l ON o.orderkey = l.orderkey
+        SETTINGS query_plan_lift_predicate_across_join = 0);
+
 -- Both keys are in the target primary key, but `KeyCondition` cannot use `key = key`, so a
 -- key-vs-key predicate must stay on the source side
 SELECT 'key vs key',

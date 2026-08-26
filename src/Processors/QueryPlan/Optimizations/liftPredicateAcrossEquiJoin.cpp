@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/joinEquivalentSets.h>
 
 #include <Interpreters/ActionsDAG.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -21,7 +22,15 @@ namespace
 
 using SubstitutionMap = std::unordered_map<std::string, ColumnWithTypeAndName>;
 
-/// Walk down a single-child chain of Expression/Filter steps, until `predicate` matches or the chain ends
+/// Steps that keep every surviving row and every column name, so a filter below one of them still
+/// holds above it and `tryPushDownFilter` can move a lifted filter back down through it
+bool isTransparentForLift(const IQueryPlanStep * step)
+{
+    return typeid_cast<const ExpressionStep *>(step) || typeid_cast<const FilterStep *>(step)
+        || typeid_cast<const DistinctStep *>(step);
+}
+
+/// Walk down a single-child chain of transparent steps, until `predicate` matches or the chain ends
 template <typename Predicate>
 const QueryPlan::Node * walkDown(const QueryPlan::Node * node, Predicate && predicate)
 {
@@ -29,9 +38,7 @@ const QueryPlan::Node * walkDown(const QueryPlan::Node * node, Predicate && pred
     {
         if (predicate(node))
             return node;
-        const bool passthrough = typeid_cast<const ExpressionStep *>(node->step.get())
-            || typeid_cast<const FilterStep *>(node->step.get());
-        if (!passthrough || node->children.size() != 1)
+        if (!isTransparentForLift(node->step.get()) || node->children.size() != 1)
             return nullptr;
         node = node->children.front();
     }
@@ -161,13 +168,16 @@ std::optional<std::string> resolveDown(const QueryPlan::Node * node, std::string
         const auto * filter = typeid_cast<const FilterStep *>(node->step.get());
         if (filter && stop_at_filter)
             return resolveInsideDAG(filter->getExpression(), name);
-        const auto * expr = typeid_cast<const ExpressionStep *>(node->step.get());
-        if ((!filter && !expr) || node->children.size() != 1)
+        if (!isTransparentForLift(node->step.get()) || node->children.size() != 1)
             return name;
-        auto resolved = resolveInsideDAG(filter ? filter->getExpression() : expr->getExpression(), name);
-        if (!resolved)
-            return {};
-        name = std::move(*resolved);
+        const auto * expr = typeid_cast<const ExpressionStep *>(node->step.get());
+        if (filter || expr)
+        {
+            auto resolved = resolveInsideDAG(filter ? filter->getExpression() : expr->getExpression(), name);
+            if (!resolved)
+                return {};
+            name = std::move(*resolved);
+        }
         node = node->children.front();
     }
     return name;
