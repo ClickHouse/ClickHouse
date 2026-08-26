@@ -299,7 +299,8 @@ def terminal_build_failure(info: str) -> str:
     """Output of the step the build stopped on, fences included.
 
     A failed `docker buildx build --progress=plain` ends with the failing step's own
-    output fenced between `------` lines and then `ERROR: failed to solve: ...`.
+    output fenced between `------` lines and then
+    `ERROR: failed to build: failed to solve: ...`.
     Everything above that fence belongs to steps that succeeded. Empty when the shape
     is absent - a timed-out or truncated log - so callers fail closed.
     """
