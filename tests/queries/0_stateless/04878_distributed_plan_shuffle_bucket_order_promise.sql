@@ -57,6 +57,21 @@ SELECT count() = 0 FROM
     WHERE explain ILIKE '%by hash(%'
     SETTINGS make_distributed_plan = 0;
 
+-- And the strategy it demotes to is the partial aggregation plus its merge, each named at the site
+-- that builds it, so a plan left undistributed rather than demoted does not satisfy these two rows.
+SELECT count() > 0 FROM
+    (EXPLAIN PLAN actions = 1, distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k
+        SETTINGS make_distributed_plan = 1, distributed_aggregation_memory_efficient = 1,
+                 distributed_plan_force_shuffle_aggregation = 1)
+    WHERE explain ILIKE '%MergingAggregated (merge)%'
+    SETTINGS make_distributed_plan = 0;
+SELECT count() > 0 FROM
+    (EXPLAIN PLAN actions = 1, distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k
+        SETTINGS make_distributed_plan = 1, distributed_aggregation_memory_efficient = 1,
+                 distributed_plan_force_shuffle_aggregation = 1)
+    WHERE explain ILIKE '%Aggregating (partial)%'
+    SETTINGS make_distributed_plan = 0;
+
 -- The aggregation must complete. The shuffle strategy keeps the promise to produce results in bucket
 -- order while each of its instances orders only its own share, so the merge receives a bucket it has
 -- already merged and rejects the whole query. Two shapes, because the merge reaches the duplicate
