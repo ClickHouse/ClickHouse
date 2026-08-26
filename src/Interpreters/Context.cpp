@@ -308,8 +308,8 @@ namespace Setting
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool cloud_mode;
     extern const SettingsString default_format;
-    extern const SettingsBool read_through_distributed_cache;
-    extern const SettingsBool write_through_distributed_cache;
+    extern const SettingsBoolAuto force_read_through_distributed_cache;
+    extern const SettingsBoolAuto force_write_through_distributed_cache;
     extern const SettingsBool enable_filesystem_cache;
     extern const SettingsBool enable_filesystem_cache_log;
     extern const SettingsBool enable_filesystem_cache_on_write_operations;
@@ -429,6 +429,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
+    extern const ServerSettingsBool enable_read_through_distributed_cache;
+    extern const ServerSettingsBool enable_write_through_distributed_cache;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
     extern const ServerSettingsNonZeroUInt64 prefetch_threadpool_pool_size;
@@ -1365,6 +1367,9 @@ ContextData::ContextData(const ContextData &o) :
     input_blocks_reader(o.input_blocks_reader),
     user_id(o.user_id),
     current_roles(o.current_roles),
+    external_roles(o.external_roles),
+    authentication_grants(o.authentication_grants),
+    authentication_valid_until(o.authentication_valid_until),
     settings_constraints_and_current_profiles(o.settings_constraints_and_current_profiles),
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
@@ -2156,7 +2161,7 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_)
+void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_, const std::shared_ptr<const AccessRightsElements> & authentication_grants_, time_t authentication_valid_until_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
@@ -2181,6 +2186,8 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
 
     setCurrentRolesWithLock(default_roles, lock);
     setExternalRolesWithLock(external_roles_, lock);
+    setAuthenticationGrantsWithLock(authentication_grants_, lock);
+    setAuthenticationValidUntilWithLock(authentication_valid_until_, lock);
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
@@ -2226,15 +2233,54 @@ void Context::setCurrentRolesWithLock(const std::vector<UUID> & new_current_role
 
 void Context::setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> &)
 {
-    // External roles are roles received from other node, current roles is a collection of roles that were assigned locally
-    if (!new_external_roles.empty())
-    {
-        if (external_roles)
-            external_roles->insert(external_roles->end(), new_external_roles.begin(), new_external_roles.end());
-        else
-            external_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
-        need_recalculate_access = true;
-    }
+    // External roles are roles received from another node; current roles is a collection of roles that were assigned locally.
+    // Replace them unconditionally (rather than append) so that switching the principal via `setUser` clears any external
+    // roles carried over from a previous principal on the same or a copied context. `ContextData`'s copy constructor now
+    // preserves `external_roles`, so without this reset a context authenticated with pushed roles would keep them after
+    // `setUser(target_user)` (e.g. `EXECUTE AS target_user` via `impersonateSessionContext`), silently widening the
+    // target's privileges. This mirrors how `setAuthenticationGrants` and `setCurrentRoles` overwrite their state.
+    if (new_external_roles.empty())
+        external_roles = nullptr;
+    else
+        external_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
+    need_recalculate_access = true;
+}
+
+void Context::setAuthenticationGrantsWithLock(const std::shared_ptr<const AccessRightsElements> & authentication_grants_, const std::lock_guard<ContextSharedMutex> &)
+{
+    authentication_grants = authentication_grants_;
+    need_recalculate_access = true;
+}
+
+void Context::setAuthenticationGrants(const std::shared_ptr<const AccessRightsElements> & authentication_grants_)
+{
+    std::lock_guard lock(mutex);
+    setAuthenticationGrantsWithLock(authentication_grants_, lock);
+}
+
+std::shared_ptr<const AccessRightsElements> Context::getAuthenticationGrants() const
+{
+    SharedLockGuard lock(mutex);
+    return authentication_grants;
+}
+
+void Context::setAuthenticationValidUntilWithLock(time_t authentication_valid_until_, const std::lock_guard<ContextSharedMutex> &)
+{
+    /// This does not affect the access-rights calculation (unlike the grant limit), so there is no
+    /// need to invalidate the access cache: it is metadata for the deferred-execution expiry check.
+    authentication_valid_until = authentication_valid_until_;
+}
+
+void Context::setAuthenticationValidUntil(time_t authentication_valid_until_)
+{
+    std::lock_guard lock(mutex);
+    setAuthenticationValidUntilWithLock(authentication_valid_until_, lock);
+}
+
+time_t Context::getAuthenticationValidUntil() const
+{
+    SharedLockGuard lock(mutex);
+    return authentication_valid_until;
 }
 
 void Context::setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user)
@@ -2293,6 +2339,14 @@ void Context::setCurrentRolesDefault()
 std::vector<UUID> Context::getCurrentRoles() const
 {
     return getRolesInfo()->getCurrentRoles();
+}
+
+std::vector<UUID> Context::getExternalRoles() const
+{
+    SharedLockGuard lock(mutex);
+    if (external_roles)
+        return *external_roles;
+    return {};
 }
 
 std::vector<UUID> Context::getEnabledRoles() const
@@ -2355,7 +2409,7 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
             initial_user_id = getAccessControl().find<User>(client_info.initial_user);
 
         return ContextAccessParams{
-            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, *settings, current_database, client_info, initial_user_id};
+            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, authentication_grants, *settings, current_database, client_info, initial_user_id};
     };
 
     /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.
@@ -6562,6 +6616,44 @@ bool Context::getMessageQueueDisableInsertion() const
         || shared->server_settings[ServerSetting::disable_insertion_and_mutation];
 }
 
+bool Context::getReadThroughDistributedCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->server_settings[ServerSetting::enable_read_through_distributed_cache];
+}
+
+void Context::setReadThroughDistributedCache(bool read_through_distributed_cache) const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->server_settings.set("enable_read_through_distributed_cache", read_through_distributed_cache);
+}
+
+bool Context::getWriteThroughDistributedCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->server_settings[ServerSetting::enable_write_through_distributed_cache];
+}
+
+void Context::setWriteThroughDistributedCache(bool write_through_distributed_cache) const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->server_settings.set("enable_write_through_distributed_cache", write_through_distributed_cache);
+}
+
+bool Context::resolveReadThroughDistributedCache() const
+{
+    if (isGlobalContext())
+        return getReadThroughDistributedCache();
+    return getSettingsRef()[Setting::force_read_through_distributed_cache].valueOr(getReadThroughDistributedCache());
+}
+
+bool Context::resolveWriteThroughDistributedCache() const
+{
+    if (isGlobalContext())
+        return getWriteThroughDistributedCache();
+    return getSettingsRef()[Setting::force_write_through_distributed_cache].valueOr(getWriteThroughDistributedCache());
+}
+
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
     if (auto res = tryGetCluster(cluster_name))
@@ -8017,6 +8109,11 @@ void Context::increaseDistributedDepth()
     ++client_info.distributed_depth;
 }
 
+void Context::setClientTraceContext(const OpenTelemetry::TracingContext & trace_context)
+{
+    client_info.client_trace_context = trace_context;
+}
+
 
 StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where) const
 {
@@ -8659,7 +8756,7 @@ ReadSettings Context::getReadSettings() const
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
 
-    res.read_through_distributed_cache = settings_ref[Setting::read_through_distributed_cache];
+    res.read_through_distributed_cache = resolveReadThroughDistributedCache();
 #if ENABLE_DISTRIBUTED_CACHE
     res.distributed_cache_settings.load(settings_ref);
     res.distributed_cache_settings.validate();
@@ -8685,7 +8782,7 @@ WriteSettings Context::getWriteSettings() const
     res.remote_throttler = getRemoteWriteThrottler();
     res.local_throttler = getLocalWriteThrottler();
 
-    res.write_through_distributed_cache = settings_ref[Setting::write_through_distributed_cache];
+    res.write_through_distributed_cache = resolveWriteThroughDistributedCache();
 #if ENABLE_DISTRIBUTED_CACHE
     res.distributed_cache_settings.load(settings_ref);
 #endif
