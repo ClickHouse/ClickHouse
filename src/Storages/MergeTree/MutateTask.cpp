@@ -237,7 +237,8 @@ static bool rewritesAllPartColumns(
     const MergeTreeData::DataPartPtr & source_part,
     const MutationCommands & commands_for_part,
     const MutationsInterpreter * interpreter,
-    MergeTreeDataPartStorageType future_storage_type)
+    MergeTreeDataPartStorageType future_storage_type,
+    bool recompress_rewrites_whole_part)
 {
     return haveMutationsOfDynamicColumns(source_part, commands_for_part)
         || hasDynamicColumnsWithoutRecordedSubstreams(source_part)
@@ -246,6 +247,13 @@ static bool rewritesAllPartColumns(
         /// Per-file hardlink reuse needs source and result to share the storage format; a differing
         /// format (e.g. the packing threshold changed) needs a full rewrite.
         || source_part->getDataPartStorage().getType() != future_storage_type
+        /// `splitAndModifyMutationCommands` decided that a `RECOMPRESS COLUMN` of this part cannot use
+        /// the in-place path and has to go through the regular writer. That decision must not be
+        /// re-derived from `isAffectingAllColumns` here: the interpreter reads the columns the *part*
+        /// stores, so a part that predates an unrelated `ADD COLUMN` produces a header that is a strict
+        /// subset of the table's physical columns and would be routed to `MutateSomePartColumnsTask`,
+        /// which keeps `source_part->default_codec` and silently recompresses with the old codec.
+        || recompress_rewrites_whole_part
         || (interpreter && interpreter->isAffectingAllColumns());
 }
 
@@ -302,6 +310,7 @@ static void splitAndModifyMutationCommands(
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
     NameSet & for_recompression,
+    bool & recompress_rewrites_whole_part,
     bool suitable_for_ttl_optimization,
     LoggerPtr log)
 {
@@ -316,7 +325,7 @@ static void splitAndModifyMutationCommands(
     /// resolves through the same stored part default. Route those columns through the whole-part
     /// rewrite, which re-serializes every column with the *current* effective codec
     /// (`getCompressionCodecForPart`) and rewrites `default_compression_codec.txt`.
-    bool recompress_needs_full_rewrite = false;
+    recompress_rewrites_whole_part = false;
 
     /// Names (both old and new) of the columns that reach this part through a rename: a pending
     /// metadata-only RENAME COLUMN that this part has not materialized yet (it still stores the
@@ -350,7 +359,7 @@ static void splitAndModifyMutationCommands(
 
         if (renamed_column_names.contains(command.column_name))
         {
-            recompress_needs_full_rewrite = true;
+            recompress_rewrites_whole_part = true;
             break;
         }
 
@@ -359,7 +368,7 @@ static void splitAndModifyMutationCommands(
             const auto * column_desc = table_columns.tryGet(command.column_name);
             if (!column_desc || !column_desc->codec || codecDependsOnDefault(column_desc->codec))
             {
-                recompress_needs_full_rewrite = true;
+                recompress_rewrites_whole_part = true;
                 break;
             }
 
@@ -373,7 +382,7 @@ static void splitAndModifyMutationCommands(
             /// the whole-part rewrite hardlinking them unchanged is safe here.
             if (codecResolvesToLossyCompression(column_desc->codec, column_desc->type))
             {
-                recompress_needs_full_rewrite = true;
+                recompress_rewrites_whole_part = true;
                 break;
             }
         }
@@ -381,7 +390,7 @@ static void splitAndModifyMutationCommands(
 
     if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
         || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage())
-        || recompress_needs_full_rewrite)
+        || recompress_rewrites_whole_part)
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
@@ -778,7 +787,7 @@ static void splitAndModifyMutationCommands(
                 /// physically present in this part are recompressed. Dynamic-subcolumn types, columns
                 /// that inherit the table default codec, and columns whose codec references `Default`
                 /// are already routed to the whole-part rewrite branch above (haveMutationsOfDynamicColumns
-                /// / recompress_needs_full_rewrite), so here the column's codec never depends on the
+                /// / recompress_rewrites_whole_part), so here the column's codec never depends on the
                 /// source part's stored default codec.
                 if (part_columns.has(command.column_name))
                     for_recompression.insert(command.column_name);
@@ -1944,6 +1953,11 @@ struct MutationContext
     /// deserializing the values. Populated only for wide, full-storage parts; other cases fall
     /// back to a normal re-serializing rewrite.
     NamesAndTypesList columns_to_recompress;
+
+    /// Set by `splitAndModifyMutationCommands` when a `RECOMPRESS COLUMN` of this part cannot use the
+    /// in-place path and must be re-serialized through the regular writer, which rewrites the part as
+    /// a whole. Reused by the task selection so that both agree.
+    bool recompress_rewrites_whole_part = false;
 
     NamesAndTypesList storage_columns;
     NameSet materialized_indices;
@@ -4173,6 +4187,7 @@ bool MutateTask::prepare()
         ctx->for_interpreter,
         ctx->for_file_renames,
         columns_to_recompress,
+        ctx->recompress_rewrites_whole_part,
         suitable_for_ttl_optimization,
         ctx->log);
 
@@ -4253,7 +4268,8 @@ bool MutateTask::prepare()
     /// Decided once here and reused for the task selection below, so that the column list of the new
     /// part cannot disagree with the task that fills it.
     const bool rewrites_all_columns = MutationHelpers::rewritesAllPartColumns(
-        ctx->source_part, ctx->commands_for_part, ctx->interpreter.get(), ctx->future_part->part_format.storage_type);
+        ctx->source_part, ctx->commands_for_part, ctx->interpreter.get(), ctx->future_part->part_format.storage_type,
+        ctx->recompress_rewrites_whole_part);
 
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),

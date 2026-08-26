@@ -1,0 +1,5 @@
+part type	Wide
+none is large	1
+after	100000	100000	100000
+zstd is small	1
+1

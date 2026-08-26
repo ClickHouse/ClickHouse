@@ -12207,6 +12207,15 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
             {
                 const std::string action = (command.type == AlterCommand::DROP_COLUMN) ? "drop" : "rename";
 
+                /// A pending `RECOMPRESS COLUMN` only re-serializes the data streams of its own target
+                /// with the codec the column currently has, and it is skipped for every part once that
+                /// column is no longer stored (`canSkipMutationCommandForPart`). So it does not stand
+                /// in the way of dropping the column. `RENAME COLUMN` is deliberately not exempt: the
+                /// recompression is carried over to the new name and is executed there.
+                if (mutation_command.type == MutationCommand::Type::RECOMPRESS_COLUMN
+                    && command.type == AlterCommand::DROP_COLUMN)
+                    continue;
+
                 if (mutation_command.column_name == command.column_name)
                     throw_exception(mutation_name, action, "column", command.column_name);
 
