@@ -811,7 +811,21 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
                 // Start at least one thread, could block to acquire the first CPU slot
                 spawnThreads(cpu_slots->acquire());
             }
-            tasks.processAsyncTasks();
+
+            {
+                /// The calling thread is not idle while the spawned workers run: it executes
+                /// `IProcessor::onAsyncJobReady` callbacks (e.g. `RemoteSource` handling
+                /// parallel-replica control packets), so it accumulates its own
+                /// `max_untracked_memory` buffer and has to carry a reservation too.
+                SpeculativeMemoryReservation speculative_memory_reservation;
+                SCOPE_EXIT({
+                    if (speculative_memory_reservation.shouldFlushUntrackedMemory())
+                        CurrentThread::flushUntrackedMemory();
+                });
+
+                tasks.processAsyncTasks();
+            }
+
             pool->wait();
         }
         else
@@ -821,9 +835,9 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
 
             /// In single-threaded execution the calling thread is the only pipeline worker,
             /// so it carries the speculative reservation itself. In multi-threaded execution
-            /// each spawned worker job carries its own (see `spawnThreads`) while the calling
-            /// thread only waits. A throw lands in the surrounding `catch`, which cancels the
-            /// pipeline and rethrows to the caller.
+            /// each spawned worker job carries its own (see `spawnThreads`) and the calling
+            /// thread carries one while it processes async-job callbacks. A throw lands in the
+            /// surrounding `catch`, which cancels the pipeline and rethrows to the caller.
             SpeculativeMemoryReservation speculative_memory_reservation;
             SCOPE_EXIT({
                 if (speculative_memory_reservation.shouldFlushUntrackedMemory())
