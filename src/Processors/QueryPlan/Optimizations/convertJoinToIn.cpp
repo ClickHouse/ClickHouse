@@ -155,8 +155,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     const auto & join_operator = join->getJoinOperator();
 
-    /// Let's allow Strictness::All with a wrong result for now.
-    if (join_operator.strictness != JoinStrictness::Any && join_operator.strictness != JoinStrictness::All)
+    if (join_operator.strictness != JoinStrictness::Any)
         return 0;
 
     /// TODO: support left in the future
