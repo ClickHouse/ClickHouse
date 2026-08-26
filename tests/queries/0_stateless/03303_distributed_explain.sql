@@ -22,6 +22,11 @@ INSERT INTO test_parallel_replicas SELECT * FROM numbers(10);
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas=2, max_parallel_replicas=2, cluster_for_parallel_replicas='test_cluster_one_shard_two_replicas', parallel_replicas_for_non_replicated_merge_tree=1, parallel_replicas_local_plan=1;
 
+-- The two explains below assert the exact plan text, which the plan-based implementation of
+-- parallel replicas shapes differently (it ships a plan fragment reading the table instead of a
+-- query over it).
+SET parallel_replicas_plan_based = 0;
+
 explain actions=1, distributed=1 SELECT sum(number) from test_parallel_replicas group by bitAnd(number, 3) settings serialize_query_plan=0;
 
 select '----- pr, serialize_query_plan=1 -----';

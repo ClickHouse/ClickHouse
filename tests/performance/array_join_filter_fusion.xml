@@ -1,0 +1,31 @@
+<test>
+    <!-- A filter on the ARRAY JOINed element is fused into the ARRAY JOIN, so the arrays are filtered
+         before expansion instead of after. Filtered-out elements are never expanded into rows, and
+         passenger columns are never replicated for them. Queries use no PR-specific setting, so the
+         comparison is PR (fusion on by default) vs master (no fusion).
+
+         Note on lazy replication: master already wraps large/variable passenger columns (e.g. String) in
+         a lazy ColumnReplicated whose filter is index-only, so for those columns there is little to gain.
+         The fusion win shows up where replication is actually eager: a fixed-width passenger that
+         `isLazyReplicationUseful` skips (UInt64), or String with `enable_lazy_columns_replication = 0`. -->
+    <create_query>
+        CREATE TABLE array_join_filter_fusion (id UInt64, arr Array(String), payload String)
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+    <fill_query>
+        INSERT INTO array_join_filter_fusion
+        SELECT number, arrayMap(x -> concat('e', toString(x % 40)), range(40)), repeat('x', 256)
+        FROM numbers(3000000)
+    </fill_query>
+
+    <!-- fixed-width UInt64 passenger: master replicates it eagerly across all 40 elements, fusion filters
+         first so it is carried only for the ~1/40 survivors -->
+    <query>SELECT sum(id) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7'</query>
+    <!-- eager replication of the wide payload: the 256-byte string would be physically replicated per
+         element on master; fusion filters the elements first so it is replicated only for survivors -->
+    <query>SELECT sum(cityHash64(payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7' SETTINGS enable_lazy_columns_replication = 0</query>
+    <!-- regression guard: count() carries no passenger, so both paths do the same element comparisons -->
+    <query>SELECT count() FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7'</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_join_filter_fusion</drop_query>
+</test>
