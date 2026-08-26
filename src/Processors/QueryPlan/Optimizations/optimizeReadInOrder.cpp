@@ -1672,7 +1672,6 @@ static void preferMultipleStreamsForPushedDownLimitBy(
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = true,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join,
-        .read_in_order_through_spilling_join = optimization_settings.read_in_order_through_spilling_join,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
