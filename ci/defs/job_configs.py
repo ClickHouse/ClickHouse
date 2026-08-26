@@ -221,6 +221,25 @@ class JobConfigs:
         ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
     )
+    release_e2e = Job.Config(
+        name=JobNames.RELEASE_E2E,
+        runs_on=RunnerLabels.ARM_SMALL,
+        command="python3 ./ci/jobs/release_e2e_job.py",
+        timeout=900,
+        run_in_docker="clickhouse/style-test",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci",
+                # create_release.py imports s3_helper and ssh from tests/ci through a
+                # sys.path insert, and s3_helper imports compress_files and env_helper;
+                # a change to any of the four must run this job.
+                "./tests/ci/s3_helper.py",
+                "./tests/ci/ssh.py",
+                "./tests/ci/compress_files.py",
+                "./tests/ci/env_helper.py",
+            ]
+        ),
+    )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.AMD_LARGE,

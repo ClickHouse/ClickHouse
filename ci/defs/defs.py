@@ -443,6 +443,7 @@ class JobNames:
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
     COLLECT_CLICKHOUSE_PROFILES = "Collect ClickHouse Profiles (PGO, BOLT)"
     CI_TESTS = "CI Tests"
+    RELEASE_E2E = "Release Workflow E2E"
 
 
 class ToolSet:
