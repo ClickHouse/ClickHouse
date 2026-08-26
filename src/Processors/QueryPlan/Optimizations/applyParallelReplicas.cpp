@@ -99,6 +99,11 @@ static bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     if (read.isSelectedForTopKFilterOptimization())
         return false;
 
+    /// The pinned block-number boundary is not serialized: a follower rebuilds the read with
+    /// max_block_numbers_to_read = nullptr and would read past the initiator's snapshot boundary.
+    if (read.hasPinnedBlockNumbers())
+        return false;
+
     /// A non-replicated table can hold different data on each replica, so reading it remotely is opt-in.
     return mergetree_data.supportsReplication()
         || read.getContext()->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
