@@ -591,7 +591,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
     /// promise of bucket order while ordering only its own share, and the gather cannot restore a global
     /// order: it merges by a sort description, and the bucket number is chunk metadata, not a column.
     /// Shuffle is therefore impossible here, so `distributed_plan_force_shuffle_aggregation` cannot
-    /// apply either, as with GROUPING SETS below.
+    /// apply either, as with `GROUPING SETS` below.
     if (aggregating_step->shouldProduceResultsInBucketOrder())
     {
         if (!can_use_partial_aggregation)
