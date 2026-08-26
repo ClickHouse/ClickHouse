@@ -11,6 +11,8 @@ struct StorageParsedArguments
     String compression_method = "auto";
     String structure = "auto";
     PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
+    /// Whether `partition_strategy_type` came from an explicit argument or named-collection value.
+    bool partition_strategy_was_set = false;
     bool partition_columns_in_data_file = true;
     bool partition_columns_in_data_file_was_set = false;
     std::shared_ptr<IPartitionStrategy> partition_strategy;
