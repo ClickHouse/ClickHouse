@@ -267,8 +267,9 @@ size_t tryLiftPredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::
     if (op.kind == JoinKind::Full || op.kind == JoinKind::Paste)
         return 0;
 
-    EquivalentJoinKeySet equi_set;
-    auto equi_pairs = buildEquialentSetsForJoinStepLogical(equi_set, join, parent_node->children);
+    /// Only the keys of this join: a key proven equal through a nested join is of no use here,
+    /// because first-pass pushdown has already sunk any liftable filter below that nested join
+    auto equi_pairs = getJoiningKeysForJoinStep(op);
     if (equi_pairs.empty())
         return 0;
 
@@ -282,23 +283,12 @@ size_t tryLiftPredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::
     /// header - for a computed key like `ON l.k = r.k + 1` the rhs is `plus(...)`, which is not
     const auto & left_header  = *parent_node->children[0]->step->getOutputHeader();
     const auto & right_header = *parent_node->children[1]->step->getOutputHeader();
-    /// Keys proven equal through nested INNER joins can be substituted by `to` as well
-    auto collect = [&](JoinActionRef from, JoinActionRef to, bool from_left, SubstitutionMap & substitution)
-    {
-        substitution[from.getColumnName()] = to.getColumn();
-        for (const auto & eq_expr : equi_set.getClass(from))
-        {
-            if (eq_expr.isFromSameActions(from) && (from_left ? eq_expr.fromLeft() : eq_expr.fromRight())
-                && eq_expr.getColumn().type->equals(*to.getColumn().type))
-                substitution.emplace(eq_expr.getColumnName(), to.getColumn());
-        }
-    };
     for (const auto & [lhs, rhs] : equi_pairs)
     {
         if (!changes_right && right_header.has(rhs.getColumn().name))
-            collect(lhs, rhs, /*from_left=*/true, l_to_r);
+            l_to_r[lhs.getColumnName()] = rhs.getColumn();
         if (!changes_left && left_header.has(lhs.getColumn().name))
-            collect(rhs, lhs, /*from_left=*/false, r_to_l);
+            r_to_l[rhs.getColumnName()] = lhs.getColumn();
     }
 
     /// LEFT keeps unmatched left rows, so only L->R is safe there; mirrored for RIGHT, both for INNER

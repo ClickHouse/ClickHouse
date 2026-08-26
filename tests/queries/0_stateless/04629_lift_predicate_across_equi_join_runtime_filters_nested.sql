@@ -36,8 +36,8 @@ SELECT 'runtime filters on correctness',
         INNER JOIN lift_rf_lineitem AS l ON o.orderkey = l.orderkey
         SETTINGS enable_join_runtime_filters = 1, query_plan_lift_predicate_across_join = 0);
 
--- Nested join: `c.custkey = 42` is only transitively equal to the outer key `o.custkey`, and
--- pushdown moves it below the inner join before the lift runs, so nothing is lifted - check the answer
+-- Nested join: the pass only looks for a filter directly below a join child, and pushdown has
+-- already sunk `c.custkey = 42` below the inner join, so nothing is lifted - check the answer
 SELECT 'nested join correctness',
        (SELECT count()
         FROM lift_rf_orders AS o
