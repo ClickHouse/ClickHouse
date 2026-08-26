@@ -343,9 +343,8 @@ void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBu
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeBinaryBulk(PaddedPODArray<T> & x, ReadBuffer & istr, size_t rows_offset, size_t limit)
+void SerializationNumber<T>::deserializeBinaryBulk(PaddedPODArray<T> & x, ReadBuffer & istr, size_t limit)
 {
-    istr.ignore(sizeof(T) * rows_offset);
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);
     const size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(T) * limit);
@@ -357,9 +356,9 @@ void SerializationNumber<T>::deserializeBinaryBulk(PaddedPODArray<T> & x, ReadBu
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
-    deserializeBinaryBulk(typeid_cast<ColumnVector<T> &>(column).getData(), istr, rows_offset, limit);
+    deserializeBinaryBulk(typeid_cast<ColumnVector<T> &>(column).getData(), istr, limit);
 }
 
 template <typename T>

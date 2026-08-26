@@ -109,8 +109,7 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -211,9 +210,8 @@ private:
 
     static DeserializeBinaryBulkStatePtr deserializeStructureStatePrefix(DeserializeBinaryBulkSettings & settings, SubstreamsDeserializeStatesCache * cache);
 
-    /// Deserialize data from ObjectSharedDataStructure stream with specified offset/limit.
+    /// Deserialize data from ObjectSharedDataStructure stream with specified limit.
     static std::shared_ptr<StructureGranules> deserializeStructure(
-        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state,
@@ -293,30 +291,6 @@ private:
     struct SubstreamsCachePathsDataElement : public ISubstreamsCacheElement
     {
         explicit SubstreamsCachePathsDataElement(std::shared_ptr<PathsDataGranules> paths_data_granules_) : paths_data_granules(paths_data_granules_) {}
-
-        void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-        {
-            if (!paths_data_granules)
-                return;
-
-            for (const auto & granule : *paths_data_granules)
-            {
-                for (const auto & [path, column] : granule.paths_data)
-                {
-                    if (column)
-                        callback(column);
-                }
-
-                for (const auto & [path, subcolumns] : granule.paths_subcolumns_data)
-                {
-                    for (const auto & [subcolumn_name, column] : subcolumns)
-                    {
-                        if (column)
-                            callback(column);
-                    }
-                }
-            }
-        }
 
         std::shared_ptr<PathsDataGranules> paths_data_granules;
     };
