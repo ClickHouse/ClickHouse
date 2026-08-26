@@ -7,6 +7,9 @@
 --
 -- Join-order stats stay on so the planner AUTO path gets MergeTree `totalRows` (200).
 -- The legacy analyzer has no join-order pass; it walks `joined_plan` with `estimateReadRowsCount`.
+--
+-- Legacy `EXPLAIN PIPELINE` collapses identical fillers to `FillingRightJoinSide × N`.
+-- The analyzer writes N separate processors (squashing sits between them).
 
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;
@@ -28,7 +31,9 @@ SELECT 'legacy_analyzer_serial';
 SET enable_analyzer = 0;
 SET join_algorithm = 'hash';
 SET parallel_hash_join_threshold = 100000;
-SELECT countIf(explain LIKE '%FillingRightJoinSide%')
+SELECT coalesce(
+    nullIf(max(toUInt64OrZero(extract(explain, 'FillingRightJoinSide × (\\d+)'))), 0),
+    countIf(explain LIKE '%FillingRightJoinSide%'))
 FROM (
     EXPLAIN PIPELINE
     SELECT t1.n FROM t05045_l AS t1 INNER JOIN t05045_r AS t2 ON t1.n = t2.n
@@ -36,7 +41,9 @@ FROM (
 
 SELECT 'legacy_analyzer_parallel';
 SET parallel_hash_join_threshold = 1;
-SELECT countIf(explain LIKE '%FillingRightJoinSide%')
+SELECT coalesce(
+    nullIf(max(toUInt64OrZero(extract(explain, 'FillingRightJoinSide × (\\d+)'))), 0),
+    countIf(explain LIKE '%FillingRightJoinSide%'))
 FROM (
     EXPLAIN PIPELINE
     SELECT t1.n FROM t05045_l AS t1 INNER JOIN t05045_r AS t2 ON t1.n = t2.n
@@ -46,7 +53,9 @@ SELECT 'join_switcher_serial';
 SET enable_analyzer = 1;
 SET join_algorithm = 'auto';
 SET parallel_hash_join_threshold = 100000;
-SELECT countIf(explain LIKE '%FillingRightJoinSide%')
+SELECT coalesce(
+    nullIf(max(toUInt64OrZero(extract(explain, 'FillingRightJoinSide × (\\d+)'))), 0),
+    countIf(explain LIKE '%FillingRightJoinSide%'))
 FROM (
     EXPLAIN PIPELINE
     SELECT t1.n FROM t05045_l AS t1 INNER JOIN t05045_r AS t2 ON t1.n = t2.n
@@ -54,7 +63,9 @@ FROM (
 
 SELECT 'join_switcher_parallel';
 SET parallel_hash_join_threshold = 1;
-SELECT countIf(explain LIKE '%FillingRightJoinSide%')
+SELECT coalesce(
+    nullIf(max(toUInt64OrZero(extract(explain, 'FillingRightJoinSide × (\\d+)'))), 0),
+    countIf(explain LIKE '%FillingRightJoinSide%'))
 FROM (
     EXPLAIN PIPELINE
     SELECT t1.n FROM t05045_l AS t1 INNER JOIN t05045_r AS t2 ON t1.n = t2.n
