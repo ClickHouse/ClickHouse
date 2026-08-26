@@ -3971,6 +3971,7 @@ TEST(SchedulerWorkloadResourceManager, UnsubscribeSkipsHandlerNotYetReached)
     auto live = std::make_unique<UnsubscribeTestSubscriber>(
         storage, probe, UnsubscribeTestSubscriber::Role::CountLive);
 
+    // A deadlock escape that must never fire; the release after the unsubscribe below ends the hold.
     probe->blocker_hold = std::chrono::seconds(60);
     probe->armed.store(true);
 
@@ -3983,7 +3984,9 @@ TEST(SchedulerWorkloadResourceManager, UnsubscribeSkipsHandlerNotYetReached)
 
     // The notifier already copied all three handlers out of the list and is parked in the first
     // one, so this unsubscribe cannot wait for anything and must return immediately.
-    unsubscribed.reset();
+    // Only the guard is dropped: the subscriber stays alive so that a handler invoked in breach of
+    // the contract reads live state and fails the assertion below instead of reading freed memory.
+    unsubscribed->subscription.reset();
 
     {
         std::lock_guard lock{probe->mutex};
