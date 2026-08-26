@@ -488,7 +488,7 @@ add_object_library(clickhouse_processors_queryplan_optimizations_cascades_rules 
 # Work around LLVM x86 backend bug https://github.com/llvm/llvm-project/issues/191800
 # At -Og with AVX2+ targets, the compiler miscompiles functions that combine
 # floating-point return values with ymm-based memset zero-initialization.
-# Force -O2 for this file in debug x86 builds to avoid the buggy codegen.
+# Force -O2 for these files in debug x86 builds to avoid the buggy codegen.
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" AND ARCH_AMD64)
     set_source_files_properties(
         Processors/QueryPlan/Optimizations/joinOrder.cpp
