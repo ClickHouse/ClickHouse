@@ -53,8 +53,10 @@ ORDER BY ALL;
 
 -- Being opaque to the enclosing graph must not stop a view from reordering its OWN join. Only a costed
 -- relation carries a bracketed label, and the enclosing graph costs the view as a whole, so a label
--- naming the view's own relations and NOT the outer alias can only come from the view's own reordering.
--- Paired with a reordering-off control, so the arm cannot pass on the label text alone.
+-- naming the view's own relations and not the outer alias can only come from the view's own reordering.
+-- All THREE of its relations are required in ONE label, which is the view's topmost join: requiring
+-- only two also matches that join's own child, which survives even when the topmost one is left
+-- uncosted. Paired with a reordering-off control, so the arm cannot pass on the label text alone.
 SELECT '-- a view reorders its own join';
 SELECT count() > 0 FROM (
     EXPLAIN SELECT a.c0, v.c0
@@ -66,7 +68,7 @@ SELECT count() > 0 FROM (
     SETTINGS query_plan_optimize_join_order_limit = 16, query_plan_optimize_join_order_randomize = 0,
              query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1,
              enable_parallel_replicas = 0
-) WHERE explain LIKE '%x[%' AND explain LIKE '%z[%' AND explain NOT LIKE '%a[%';
+) WHERE explain LIKE '%x[%' AND explain LIKE '%y[%' AND explain LIKE '%z[%' AND explain NOT LIKE '%a[%';
 
 SELECT '-- and costs nothing once reordering is off';
 SELECT count() > 0 FROM (
@@ -78,7 +80,7 @@ SELECT count() > 0 FROM (
     ON a.c0 = v.c0
     SETTINGS query_plan_optimize_join_order_limit = 0, query_plan_merge_expression_into_join = 1,
              enable_parallel_replicas = 0
-) WHERE explain LIKE '%x[%' AND explain LIKE '%z[%' AND explain NOT LIKE '%a[%';
+) WHERE explain LIKE '%x[%' AND explain LIKE '%y[%' AND explain LIKE '%z[%' AND explain NOT LIKE '%a[%';
 
 SELECT '-- merge() inside a view';
 DROP VIEW IF EXISTS v_merge_05039;
