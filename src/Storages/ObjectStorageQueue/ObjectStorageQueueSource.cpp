@@ -1724,6 +1724,8 @@ void ObjectStorageQueueSource::finalizeCommit(
     {
         try
         {
+            bool processed = false;
+
             switch (file_state)
             {
                 case FileState::Processed:
@@ -1742,6 +1744,8 @@ void ObjectStorageQueueSource::finalizeCommit(
 
                             if (last_modified)
                                 files_metadata->updateNewestCommittedTimestamp(last_modified, storage_id);
+
+                            processed = true;
                         }
                     }
                     else if (file_metadata->wasProcessingResetWithoutFailure())
@@ -1811,7 +1815,7 @@ void ObjectStorageQueueSource::finalizeCommit(
 
             appendLogElement(
                 file_metadata,
-                /* processed */insert_succeeded && file_state == FileState::Processed,
+                processed,
                 commit_id,
                 commit_time,
                 transaction_start_time_);

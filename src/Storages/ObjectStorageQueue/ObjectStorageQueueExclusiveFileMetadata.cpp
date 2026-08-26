@@ -72,6 +72,12 @@ void ObjectStorageQueueExclusiveFileMetadata::prepareFailedRequestsImpl(Coordina
 
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueExclusiveFileMetadata::setProcessingImpl()
 {
+    if (file_status->state.load() == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed &&
+        (!file_status->retries || file_status->retries >= max_loading_retries))
+    {
+        return std::pair{false, ObjectStorageQueueIFileMetadata::FileStatus::State::Failed};
+    }
+
     if (!metadata.tryAcquireExclusiveProcessing(path))
         return std::pair{false, ObjectStorageQueueIFileMetadata::FileStatus::State::Processing};
     holds_processing_guard = true;

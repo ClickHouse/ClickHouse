@@ -167,11 +167,12 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     }
 
     LOG_TRACE(
-        log, "Mode: {}, buckets: {}, processing threads: {}, "
-        "result buckets num: {}, use persistent processing nodes: {}, "
+        log, "Mode: {}, buckets: {}, processing threads: {}, metadata_cache_size_bytes: {},"
+        "metadata_cache_size_elements: {}, result buckets num: {}, use persistent processing nodes: {}, "
         "cleanup processing files: {}, cleanup processed files: {}, cleanup failed files: {}",
         table_metadata.mode, table_metadata.buckets.load(),
-        table_metadata.processing_threads_num.load(), buckets_num,
+        table_metadata.processing_threads_num.load(), metadata_cache_size_bytes_,
+        metadata_cache_size_elements_, buckets_num,
         use_persistent_processing_nodes.load(), cleanup_processing_files, cleanup_processed_files, cleanup_failed_files);
 }
 

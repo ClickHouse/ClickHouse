@@ -755,7 +755,7 @@ def test_direct_select_file(started_cluster, mode):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
-            "commit_on_select": 1
+            **({"commit_on_select": 1} if mode != "exclusive" else {}),
         },
     )
 

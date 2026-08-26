@@ -324,11 +324,8 @@ def test_filtering_files_multinode(started_cluster, mode):
         time.sleep(1)
     assert expected_rows == get_count()
 
-    def log_line(failed_file):
-        return f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
-
     if mode == "exclusive":
-        log_line = lambda failed_file: f"StorageObjectStorageQueue({keeper_path}): File {failed_file} has non-processable state"
+        log_line = lambda failed_file: f"StorageObjectStorageQueue({keeper_path}): File {failed_file} failed to process and will not be retried"
     else:
         log_line = lambda failed_file: f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
 
