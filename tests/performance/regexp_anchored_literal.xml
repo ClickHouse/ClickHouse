@@ -1,5 +1,6 @@
-<!-- These functions use the single-string `OptimizedRegularExpression::match` overloads, which match `^lit`,
-     `lit$` and `^lit$` by comparison; `match` and `LIKE` over a column use `MatchImpl` instead. -->
+<!-- `^lit`, `lit$` and `^lit$` are matched by a comparison at a fixed offset. `extract`, `countMatches` and
+     `regexpPosition` reach it through the single-string `OptimizedRegularExpression::match` overloads,
+     `match` and `LIKE` over a column through `MatchImpl`. -->
 <test>
     <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https://'))</query>
     <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '\\.html$'))</query>
@@ -13,6 +14,16 @@
     <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https://')) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '\\.html$')) SETTINGS max_threads = 1</query>
 
+    <query>SELECT count() FROM test.hits WHERE match(URL, '^https://')</query>
+    <query>SELECT count() FROM test.hits WHERE match(URL, '\\.html$')</query>
+    <query>SELECT count() FROM test.hits WHERE match(URL, '^http://smeshariki\\.ru/$')</query>
+    <query>SELECT count() FROM test.hits WHERE match(URL, '\\.html$') SETTINGS max_threads = 1</query>
+
+    <!-- An affix `LIKE` over a plain column is rewritten to `startsWith` / `endsWith`, so it is disabled here. -->
+    <query>SELECT count() FROM test.hits WHERE URL LIKE 'http://smeshariki.ru/%' SETTINGS optimize_rewrite_like_perfect_affix = 0</query>
+    <query>SELECT count() FROM test.hits WHERE URL LIKE '%.html' SETTINGS optimize_rewrite_like_perfect_affix = 0</query>
+
     <!-- An unanchored literal keeps using the substring search; here to catch a regression on that path. -->
     <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, 'html'))</query>
+    <query>SELECT count() FROM test.hits WHERE URL LIKE '%.html%'</query>
 </test>

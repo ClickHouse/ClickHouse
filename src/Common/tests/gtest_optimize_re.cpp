@@ -130,3 +130,20 @@ TEST(OptimizeRE, anchoredLiteral)
     test_f("^ab\\", Kind::General);                 /// a dangling escape
     test_f("^\\Qa.c\\E$", Kind::General);
 }
+
+TEST(OptimizeRE, anchoredLiteralIsCaseSensitiveOnly)
+{
+    const DB::OptimizedRegularExpression case_sensitive("^abc");
+    EXPECT_EQ(case_sensitive.getMatchKind(), DB::RegexpMatchKind::Prefix);
+    EXPECT_EQ(case_sensitive.getRE2(), nullptr);
+    EXPECT_TRUE(case_sensitive.match("abcdef", 6));
+    EXPECT_FALSE(case_sensitive.match("ABCdef", 6));
+
+    /// A case-insensitive re2 folds Unicode, which a byte comparison cannot reproduce, so the pattern keeps
+    /// using re2 and gets no anchored kind.
+    const DB::OptimizedRegularExpression case_insensitive("^abc", DB::OptimizedRegularExpression::RE_CASELESS);
+    EXPECT_EQ(case_insensitive.getMatchKind(), DB::RegexpMatchKind::General);
+    EXPECT_NE(case_insensitive.getRE2(), nullptr);
+    EXPECT_TRUE(case_insensitive.match("ABCdef", 6));
+    EXPECT_FALSE(case_insensitive.match("xABCdef", 7));
+}
