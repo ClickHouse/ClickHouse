@@ -1483,6 +1483,21 @@ public:
 
         if (element.isArray())
         {
+            /// Positional fill from an array is only meaningful for unnamed tuples:
+            /// for named tuples, which array element lands in which field would
+            /// depend on the declaration order. Named tuples read from objects only
+            /// (like the scalar extraction path and the JSON input formats under
+            /// `input_format_json_named_tuples_as_objects`), unless the historical
+            /// positional behavior is requested via the setting. Only the JSON
+            /// functions set it, so the JSON data type's typed paths keep the
+            /// positional fill.
+            if (!name_to_index_map.empty() && format_settings.json.extract_named_tuples_as_objects)
+            {
+                error = "cannot read named Tuple value from JSON array. You can disable setting "
+                        "json_extract_named_tuples_as_objects to fill named tuples from arrays positionally";
+                return false;
+            }
+
             auto array = element.getArray();
             auto it = array.begin();
 
