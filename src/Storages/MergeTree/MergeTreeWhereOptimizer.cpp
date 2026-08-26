@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <Core/Settings.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
@@ -17,6 +18,7 @@
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/typeid_cast.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -44,6 +46,21 @@ static NameToIndexMap fillNamesPositions(const Names & names)
     }
 
     return names_positions;
+}
+
+/// Average bytes of one value of a type. Constants match `estimateColumnWidthFromType`.
+/// Uncompressed, unlike the stored column sizes, so it over-charges - the safe direction for a
+/// column whose real cost is unknown.
+static double estimateBytesPerValueFromType(const IDataType & type)
+{
+    static constexpr double default_string_size = 64;
+    static constexpr double default_complex_type_size = 128;
+
+    if (type.haveMaximumSizeOfValue())
+        return static_cast<double>(type.getMaximumSizeOfValueInMemory());
+    if (WhichDataType(type).isString())
+        return default_string_size;
+    return default_complex_type_size;
 }
 
 /// Find minimal position of any of the column in primary key.
@@ -521,12 +538,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             else if (rejected_rows <= 0)
                 /// Rejects no rows, so it is useless in PREWHERE regardless of its cost: schedule it last.
                 cond.cost_with_selectivity = std::numeric_limits<double>::infinity();
-            else if (cond.columns_size == 0)
-                /// Compact parts don't track per-column compressed sizes: fall back to pure selectivity,
-                /// otherwise every condition collapses to cost 0 and keeps its original position.
-                cond.cost_with_selectivity = static_cast<double>(cond.estimated_row_count);
             else
-                cond.cost_with_selectivity = static_cast<double>(cond.columns_size) / rejected_rows;
+                cond.cost_with_selectivity = getBytesPerRow(cond.table_columns) * static_cast<double>(total_rows) / rejected_rows;
 
             res.emplace_back(std::move(cond));
         }
@@ -711,6 +724,36 @@ UInt64 MergeTreeWhereOptimizer::getColumnsSize(const NameSet & columns) const
             size += column_sizes.at(column);
 
     return size;
+}
+
+double MergeTreeWhereOptimizer::getBytesPerRow(const NameSet & columns) const
+{
+    double bytes_per_row = 0;
+
+    for (const auto & column : columns)
+        bytes_per_row += getColumnBytesPerRow(column);
+
+    return bytes_per_row;
+}
+
+double MergeTreeWhereOptimizer::getColumnBytesPerRow(const String & column) const
+{
+    chassert(total_rows > 0);
+
+    if (auto it = column_sizes.find(column); it != column_sizes.end() && it->second != 0)
+        return static_cast<double>(it->second) / static_cast<double>(total_rows);
+
+    /// No stored size (compact part, or not a physical column). The score must stay in bytes per row,
+    /// so estimate from the type rather than substituting another quantity.
+    /// NOTE: a column the reader computes from a default expression is charged one value of its own
+    /// type, not the cost of that expression, so it is underestimated in parts that need the default.
+    if (auto column_in_storage = storage_metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, column))
+        return estimateBytesPerValueFromType(*column_in_storage->type);
+
+    if (auto virtual_column = storage_metadata->virtuals.tryGet(column, VirtualsKind::All, VirtualsMaterializationPlace::All))
+        return estimateBytesPerValueFromType(*virtual_column->type);
+
+    return 0;
 }
 
 bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) const

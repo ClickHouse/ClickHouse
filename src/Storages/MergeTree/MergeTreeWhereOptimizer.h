@@ -82,10 +82,10 @@ private:
         /// the lower the better
         UInt64 estimated_row_count = 0;
 
-        /// Combined I/O cost and selectivity score (lower is better): cost per rejected row,
-        /// columns_size / (total_rows - estimated_row_count). A condition that rejects no rows
-        /// gets +inf (scheduled last), and when per-column sizes are unavailable (columns_size=0,
-        /// e.g. compact parts) it falls back to estimated_row_count so selectivity ordering is kept.
+        /// Combined I/O cost and selectivity score (lower is better): bytes read per rejected row,
+        /// bytes_per_row * total_rows / (total_rows - estimated_row_count). +inf when the condition
+        /// rejects no rows, so it is scheduled last. Two scores are comparable only in the same unit,
+        /// hence a column of unknown size is charged an estimated per-row size, never a row count.
         double cost_with_selectivity = 0;
 
         /// Does the condition contain primary key column?
@@ -160,6 +160,10 @@ private:
     void optimizeArbitrary(ASTSelectQuery & select) const;
 
     UInt64 getColumnsSize(const NameSet & columns) const;
+
+    /// Bytes read per row to evaluate a condition over `columns`. Require total_rows > 0.
+    double getBytesPerRow(const NameSet & columns) const;
+    double getColumnBytesPerRow(const String & column) const;
 
     bool columnsSupportPrewhere(const NameSet & columns) const;
 
