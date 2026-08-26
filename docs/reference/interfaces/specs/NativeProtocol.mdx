@@ -76,6 +76,8 @@ TLS lives at the transport layer, below the protocol. When it is enabled the ent
 
 Authentication happens during the handshake, in the [`ClientHello`](#clienthello) message. The `user` and `password` fields travel as plaintext strings, so transport-level encryption (TLS) is what protects credentials in transit.
 
+An empty `user` field is interpreted by the server as its configured default session user: the `default_session_user` server setting (whose default value is `default`), possibly overridden per listener in the `protocols` section. If the server is configured with an empty default session user, or the server is older than 26.8, an empty `user` field is rejected with an exception. Note that `clickhouse-client` never sends an empty user name: it substitutes `default` on the client side.
+
 SSH challenge-response authentication is available from protocol version 54466 onward — see [SSH challenge-response authentication](#ssh-authentication).
 
 ### Inter-server secret {#inter-server-secret}
@@ -438,7 +440,7 @@ Client → Server. The first message after the TCP connection opens.
 | 3 | version_minor    | VarUInt | universal | Client minor version |
 | 4 | protocol_version | VarUInt | universal | Client's max supported protocol version |
 | 5 | database         | String  | universal | Default database name |
-| 6 | user             | String  | universal | Username for authentication |
+| 6 | user             | String  | universal | Username for authentication. Empty means the server's default session user (the `default_session_user` server setting; rejected by servers older than 26.8). See [Authentication](#authentication). |
 | 7 | password         | String  | universal | Password (plaintext) |
 
 ### ServerHello (packet type 0) {#serverhello}

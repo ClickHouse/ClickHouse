@@ -47,6 +47,7 @@ public:
         bool ssl_enabled,
         bool secure_required,
         uint32_t connection_id_,
+        std::optional<String> default_session_user_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
@@ -91,6 +92,9 @@ protected:
     bool secure_required = false;
     uint32_t connection_id = 0;
 
+    /// If set, overrides the `default_session_user` server setting for this listener.
+    std::optional<String> default_session_user;
+
     uint32_t server_capabilities = 0;
     uint32_t client_capabilities = 0;
     size_t max_packet_size = 0;
@@ -131,6 +135,7 @@ public:
         bool ssl_enabled,
         bool secure_required_,
         uint32_t connection_id_,
+        std::optional<String> default_session_user_,
         KeyPair & private_key_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());

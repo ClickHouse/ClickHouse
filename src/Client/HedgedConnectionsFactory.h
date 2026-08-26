@@ -4,8 +4,8 @@
 
 #include <Common/TimerDescriptor.h>
 #include <Common/Epoll.h>
-#include <Common/FiberStack.h>
-#include <Common/Fiber.h>
+#include <Common/CoroutineStack.h>
+#include <Common/StackfulCoroutine.h>
 #include <Client/ConnectionEstablisher.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <unordered_map>
