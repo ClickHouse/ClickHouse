@@ -1,4 +1,0 @@
-Variant(AggregateFunction(1, quantileDeterministic, UInt64, UInt64), AggregateFunction(quantileDeterministic, UInt64, UInt64))
-49.5
-BAD_ARGUMENTS
-BAD_ARGUMENTS

@@ -23,11 +23,11 @@ using FunctionIsNaN = FunctionNumericPredicate<IsNaNImpl>;
 
 REGISTER_FUNCTION(IsNaN)
 {
-    FunctionDocumentation::Description description = "Returns `1` if the Float32 or Float64, or BFloat16 argument is `NaN`, otherwise returns `0`.";
+    FunctionDocumentation::Description description = "Returns `1` if the Float32 and Float64 argument is `NaN`, otherwise returns `0`.";
     FunctionDocumentation::Syntax syntax = "isNaN(x)";
     FunctionDocumentation::Arguments arguments =
     {
-        {"x", "Argument to evaluate for if it is `NaN`.", {"Float*","BFloat16"}}
+        {"x", "Argument to evaluate for if it is `NaN`.", {"Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"`1` if `NaN`, otherwise `0`"};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT isNaN(NaN)", "1"}};

@@ -11,7 +11,7 @@ namespace
 
 /// Returns 1 if and only if the argument is constant expression.
 /// This function exists for development, debugging and demonstration purposes.
-class FunctionIsConstant final : public IFunction
+class FunctionIsConstant : public IFunction
 {
 public:
     static constexpr auto name = "isConstant";
@@ -32,8 +32,6 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    bool isDeterministic() const override { return false; }
 
     size_t getNumberOfArguments() const override
     {
@@ -59,7 +57,7 @@ REGISTER_FUNCTION(IsConstant)
     FunctionDocumentation::Description description = R"(
 Returns whether the argument is a constant expression.
 A constant expression is an expression whose result is known during query analysis, i.e. before execution.
-For example, expressions over [literals](/reference/syntax#literals) are constant expressions.
+For example, expressions over [literals](/sql-reference/syntax#literals) are constant expressions.
 This function is mostly intended for development, debugging and demonstration.
     )";
     FunctionDocumentation::Syntax syntax = "isConstant(x)";

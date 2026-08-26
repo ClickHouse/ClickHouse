@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/BoolMask.h>
 
 #include <Common/SharedMutex.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
 
 
@@ -15,7 +14,6 @@ namespace DB
 {
 
 struct Range;
-using Ranges = VectorWithMemoryTracking<Range>;
 
 class Context;
 class IFunctionBase;
@@ -23,7 +21,7 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 using Sizes = std::vector<size_t>;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 class Chunk;
 
@@ -37,8 +35,6 @@ public:
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
     Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_);
-
-    bool transformNullIn() const { return transform_null_in; }
 
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
@@ -61,9 +57,6 @@ public:
 
     /// finishInsert and isCreated are thread-safe
     bool isCreated() const { return is_created.load(); }
-
-    /// Whether the set building was stopped early because of size limits with OverflowMode::BREAK.
-    bool isTruncated() const { return is_truncated.load(); }
 
     void checkIsCreated() const;
 
@@ -138,9 +131,6 @@ private:
     /// Check if set contains all the data.
     std::atomic<bool> is_created = false;
 
-    /// Whether the set was truncated due to overflow with OverflowMode::BREAK.
-    std::atomic<bool> is_truncated = false;
-
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(
         const ColumnRawPtrs & key_columns,
@@ -203,6 +193,10 @@ using ConstSetPtr = std::shared_ptr<const Set>;
 using Sets = std::vector<SetPtr>;
 
 
+class IFunction;
+using FunctionPtr = std::shared_ptr<IFunction>;
+
+
 /// Class for checkInRange function.
 class MergeTreeSetIndex
 {
@@ -212,8 +206,8 @@ public:
       */
     struct KeyTuplePositionMapping
     {
-        size_t tuple_index{};
-        size_t key_index{};
+        size_t tuple_index;
+        size_t key_index;
         std::vector<FunctionBasePtr> functions;
     };
 
@@ -223,13 +217,7 @@ public:
 
     bool hasMonotonicFunctionsChain() const;
 
-    BoolMask checkInRange(const Ranges & key_ranges, const DataTypes & data_types, bool single_point = false) const;
-
-    /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
-    /// `key_col_to_sparse_pos` maps key index to position in `sparse_hyperrectangle`, or -1 if not tracked.
-    /// If some key column >= `key_col_to_sparse_pos`.size(), it is considered as not tracked.
-    /// See KeyCondition::checkInRange for explanation of relevant parameters.
-    BoolMask checkInRange(const std::vector<int> & key_col_to_sparse_pos, const Ranges & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point = false) const;
+    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
 
     const Columns & getOrderedSet() const { return ordered_set; }
 

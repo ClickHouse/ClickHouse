@@ -19,7 +19,7 @@ public:
 
 private:
     ProfileEvents::Event write_event;
-    char data[128]{};
+    char data[128];
 };
 
 /// Similar to above, but allocated memory,
