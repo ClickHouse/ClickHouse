@@ -51,9 +51,10 @@ SELECT count() FROM t_minmax_nan_mixed WHERE val > 500;
 SELECT count() FROM t_minmax_nan_mixed WHERE val > 500 SETTINGS use_skip_indexes = 0;
 SELECT countIf(explain LIKE '%Granules: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_minmax_nan_mixed WHERE val > 500);
 
--- Positive equality on a finite value sharing the NaN granule must still find it.
-SELECT count() FROM t_minmax_nan_mixed WHERE val = 100.0;
-SELECT count() FROM t_minmax_nan_mixed WHERE val = 100.0 SETTINGS use_skip_indexes = 0;
+-- 1.0 sits in the NaN granule, so positive equality on it must still find the row: only the stored
+-- max is widened to NaN, the min stays finite.
+SELECT count() FROM t_minmax_nan_mixed WHERE val = 1.0;
+SELECT count() FROM t_minmax_nan_mixed WHERE val = 1.0 SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_minmax_nan_mixed;
 
