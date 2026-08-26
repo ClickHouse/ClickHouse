@@ -1,6 +1,4 @@
 monotonic_wrapper
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_skip_idx_rewrites_wrapped)
     Indexes:
       PrimaryKey
@@ -15,8 +13,6 @@ Expression ((Project names + Projection))
         Granules: 2/25
       Ranges: 2
 deterministic_wrapper
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_skip_idx_rewrites_wrapped)
     Indexes:
       PrimaryKey

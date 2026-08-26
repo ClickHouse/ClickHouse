@@ -1,6 +1,4 @@
 alias_column
-Expression ((Project names + Projection))
-  Expression ((WHERE + (Change column names to column identifiers + Compute alias columns)))
     ReadFromMergeTree (default.test_skip_idx_rewrites)
     Indexes:
       PrimaryKey
@@ -15,8 +13,6 @@ Expression ((Project names + Projection))
         Granules: 1/25
       Ranges: 1
 verbatim_expression
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_skip_idx_rewrites)
     Indexes:
       PrimaryKey
@@ -31,8 +27,6 @@ Expression ((Project names + Projection))
         Granules: 1/25
       Ranges: 1
 multiif_to_if
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_skip_idx_rewrites)
     Indexes:
       PrimaryKey
@@ -47,8 +41,6 @@ Expression ((Project names + Projection))
         Granules: 2/25
       Ranges: 2
 rewrites_disabled
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_skip_idx_rewrites)
     Indexes:
       PrimaryKey
