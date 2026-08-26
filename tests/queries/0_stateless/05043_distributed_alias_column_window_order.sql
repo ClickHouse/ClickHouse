@@ -96,6 +96,26 @@ SELECT al, same, upper_al, cur, row_number() OVER (ORDER BY a) AS rn
 FROM remote('127.0.0.{1,2}', currentDatabase(), loc_win) ORDER BY rn;
 SELECT al, same, upper_al, cur, row_number() OVER (ORDER BY a) AS rn FROM loc_win ORDER BY rn;
 
+SELECT 'server dependent alias body';
+-- An ALIAS body whose value depends on which server evaluates it is not a function of the shard's
+-- columns, so it cannot be reconstructed from the shard header: the read is rejected instead of
+-- answering with the initiator's value. Every shard here is the same server, so no value oracle can
+-- tell the two answers apart, and each arm pins the rejection. `hostName` is constant-folded during
+-- analysis while `rand64` stays a function call, which are the two node shapes carrying the property.
+DROP TABLE IF EXISTS loc_srv;
+CREATE TABLE loc_srv (a UInt64, x String,
+                      srv String ALIAS concat(x, '_', hostName()),
+                      nd String ALIAS concat(x, '_', toString(rand64())))
+ENGINE = MergeTree ORDER BY a;
+INSERT INTO loc_srv (a, x) VALUES (1, 'row');
+SELECT srv, x, row_number() OVER (ORDER BY a) AS rn
+FROM remote('127.0.0.{1,2}', currentDatabase(), loc_srv) ORDER BY rn; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+SELECT nd, x, row_number() OVER (ORDER BY a) AS rn
+FROM remote('127.0.0.{1,2}', currentDatabase(), loc_srv) ORDER BY rn; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+-- Without a window function the whole query reaches the shard, which evaluates the body itself.
+SELECT srv = concat(x, '_', hostName()) FROM remote('127.0.0.{1,2}', currentDatabase(), loc_srv) ORDER BY x;
+DROP TABLE loc_srv;
+
 SELECT 'distributed engine table';
 -- A real Distributed engine table takes the same path as remote().
 SELECT al AS category, cur, row_number() OVER (PARTITION BY a ORDER BY dt DESC) AS rn

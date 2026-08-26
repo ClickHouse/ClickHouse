@@ -1219,6 +1219,29 @@ void collectLeafColumnActionNames(
             collectLeafColumnActionNames(child, planner_context, leaf_names);
 }
 
+/// True if `node`'s value depends on which server evaluates it: a function that is not deterministic (`rand`, `now`,
+/// ...), or a `ConstantNode` the analyzer produced by folding a server-local call (`hostName`, `tcpPort`, ...), which
+/// the fold marks non-deterministic while a plain literal stays deterministic.
+bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * function_node = node->as<FunctionNode>())
+        if (auto function = function_node->getFunction(); function && !function->isDeterministic())
+            return true;
+
+    if (const auto * constant_node = node->as<ConstantNode>())
+        if (!constant_node->isDeterministic())
+            return true;
+
+    for (const auto & child : node->getChildren())
+        if (containsNonDeterministicFunction(child))
+            return true;
+
+    return false;
+}
+
 /// Collect the set of genuine column-name tails of analyzer-generated table qualifiers in the query tree. A real
 /// qualifier in a column identifier has the form `__tableN.<tail>`, where `__tableN` is the alias
 /// `createUniqueAliasesIfNecessary` assigns to a table expression and `<tail>` is the rendered column name
@@ -1454,6 +1477,11 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
         auto alias_it = identifier_to_alias_expression.find(expected_name);
         if (alias_it == identifier_to_alias_expression.end())
             return {}; /// Cannot explain this column; let the caller fall back to its default reconciliation.
+
+        /// Evaluating the body here reproduces what the shard would have computed only while the body is a function of
+        /// the shard's columns alone. One whose value depends on the evaluating server would take this server's value.
+        if (containsNonDeterministicFunction(alias_it->second))
+            return {};
 
         shard_index_for_expected[i] = computed_from_expression;
         expression_for_expected[i] = alias_it->second;

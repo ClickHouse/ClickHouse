@@ -50,7 +50,10 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
   * `expected_header`) and its action name after inlining `ALIAS` columns (matching `shard_header`), and use this
   * translation to resolve which shard column feeds each expected column. A collapsed shard column is fanned back out to
   * every expected column that maps onto it. An expected column that no shard column can supply is computed from the
-  * shard header by evaluating the inlined `ALIAS` body, whose leaves are shard columns by construction.
+  * shard header by evaluating the inlined `ALIAS` body, which is done only while that body's value is a function of the
+  * shard's columns alone. A body whose value depends on the evaluating server (`hostName`, `tcpPort`, `rand`, ...) is
+  * declined instead, since evaluating it here would answer for the initiator rather than for the server that read the
+  * row, which is what `inlineAliasColumns` above exists to avoid.
   *
   * Returns the conversion `ActionsDAG` (input = `shard_header`, output = `expected_header` names), or `std::nullopt` when
   * the situation is not a recognized projection collapse, in which case the caller should fall back to its default
