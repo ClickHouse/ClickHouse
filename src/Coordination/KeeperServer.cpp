@@ -1096,9 +1096,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     ///       prepare+commit entries up to that point, and prepare entries above.
     ///       Then in commit callback skip processing the entries that were already processed at startup.
     ///       Remove localLogsPreprocessed and the whole dance.
-    ///       The batch log entry format already reserves a `committed_log_idx` field for this;
-    ///       see the TODO(keeper-batch2) on `KeeperRequestBatch::committed_log_idx` about
-    ///       assigning (patching) it on the leader.
     if (!keeper_context->localLogsPreprocessed())
     {
         const auto preprocess_logs = [&]

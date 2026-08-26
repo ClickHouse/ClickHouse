@@ -1695,11 +1695,6 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
         }
         else
         {
-            /// On leader, each log entry is preprocessed twice: in the PreAppendLogLeader
-            /// callback (before the entry is written to changelog) and in pre_commit (after,
-            /// when there's no way back). KeeperStateMachine::preprocessBatch detects the second
-            /// call at batch level (see tryMatchPreprocessedBatch) before calling here, so at
-            /// this point the zxid must be new.
             if (new_last_zxid <= last_zxid)
                 throw Exception(
                                 ErrorCodes::LOGICAL_ERROR,

@@ -108,7 +108,7 @@ struct KeeperRequestBatch
     /// Digest of the storage state after preprocessing the whole batch. Assigned by the leader
     /// together with `first_zxid`. nullopt only for legacy entries that predate digests.
     std::optional<KeeperDigest> digest{};
-    /// Index of the log entry containing this batch. 0 if not known (yet).
+    /// Index of the log entry containing this batch. 0 if not known (yet). Not serialized.
     int64_t log_idx{0};
 
     int64_t getZxid(size_t request_idx) const { return first_zxid == 0 ? 0 : first_zxid + static_cast<int64_t>(request_idx); }

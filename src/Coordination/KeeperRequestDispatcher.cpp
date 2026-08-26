@@ -701,6 +701,7 @@ void KeeperRequestDispatcher::dispatchThread()
             size_t max_read_batch_bytes_size = coordination_settings[CoordinationSetting::max_read_batch_bytes_size];
             bool optimize_read_order = coordination_settings[CoordinationSetting::optimize_read_order];
             bool is_exceeding_memory_soft_limit = server->isExceedingMemorySoftLimit();
+            bool use_batched_log_entries = coordination_settings[CoordinationSetting::use_batched_log_entries];
 
             /// Write requests to put in the batch.
             /// (And possibly some read requests that need to go through raft.)
@@ -916,13 +917,10 @@ void KeeperRequestDispatcher::dispatchThread()
 
                 LOG_TEST(log, "Starting batch {}, {} bytes, {} writes, {} reads ({} of them are at the end of batch). First request: {}", batch_idx, batch_bytes, requests.size(), reads_requests, late_reads.size(), requests[0].request->toString());
 
-                /// The whole batch becomes a single log entry, unless the compatibility setting
-                /// asks for one entry per request (needed until the whole cluster is upgraded to
-                /// a version that understands the batched format).
                 KeeperRequestBatch log_entry_batch;
                 log_entry_batch.requests = std::move(requests);
                 auto entries = KeeperStateMachine::serializeRequestBatch(
-                    log_entry_batch, coordination_settings[CoordinationSetting::use_batched_log_entries]);
+                    log_entry_batch, use_batched_log_entries);
 
                 /// Add information about the batch to the queue of in-flight requests.
 

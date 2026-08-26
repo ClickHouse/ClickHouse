@@ -610,6 +610,7 @@ bool KeeperStorage::tryMatchPreprocessedBatch(int64_t last_transaction_zxid, siz
     for (size_t i = 0; i < transaction_count; ++i)
     {
         --it;
+        chassert(it->log_idx == 0);
         it->log_idx = log_idx;
     }
     return true;

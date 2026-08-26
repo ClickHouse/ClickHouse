@@ -78,8 +78,7 @@ public:
     /// Batch log entry format. Distinguished from legacy single-request entries by the first
     /// int64: legacy entries start with a session id, which is never INT64_MIN.
     static constexpr int64_t BATCH_ENTRY_MARKER = std::numeric_limits<int64_t>::min();
-    static constexpr uint8_t BATCH_ENTRY_FORMAT_VERSION = 1;
-    static constexpr size_t BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET = sizeof(int64_t) + sizeof(uint8_t) + sizeof(uint32_t);
+    static constexpr size_t BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET = sizeof(int64_t) + sizeof(uint32_t);
 
     /// Serialize the batch into log entry buffers. With use_batched_format the whole batch
     /// becomes one entry in the batch format; otherwise one entry per request in the legacy
@@ -109,8 +108,7 @@ public:
         size_t * patched_fields_offset = nullptr);
 
     /// Preprocess all requests of the batch in order. The batch must have first_zxid assigned.
-    /// Returns the digest after the last request, or nullopt if the storage is finalized (in that
-    /// case any partially preprocessed prefix is rolled back).
+    /// Returns the digest after the last request, or nullopt if the storage is finalized.
     /// Idempotent on the leader: if the batch was already preprocessed (in the PreAppendLogLeader
     /// callback), only stamps batch.log_idx on its transactions.
     std::optional<KeeperDigest> preprocessBatch(const KeeperRequestBatch & batch, bool lock_mutex);

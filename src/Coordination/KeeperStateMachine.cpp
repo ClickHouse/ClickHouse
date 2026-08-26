@@ -226,7 +226,8 @@ void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uin
             {
                 /// A legacy entry from an older node that didn't assign zxids;
                 /// use the log_idx as the zxid, like the older nodes do on commit.
-                chassert(batch->requests.size() == 1);
+                if (batch->requests.size() != 1)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Request batch without zxid in log: log_idx={}, requests={}", log_idx, batch->requests.size());
                 batch->first_zxid = log_idx;
             }
             batch->log_idx = log_idx;
@@ -328,8 +329,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
     auto batch = parseRequestBatch(data, /*final=*/false);
     if (batch->first_zxid == 0)
     {
-        /// A legacy entry from an older node that didn't assign a zxid; use the log_idx as the zxid.
-        chassert(batch->requests.size() == 1);
+        if (batch->requests.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Request batch without zxid in log: log_idx={}, requests={}", log_idx, batch->requests.size());
         batch->first_zxid = log_idx;
     }
 
@@ -429,7 +430,7 @@ std::shared_ptr<KeeperRequestForSession> KeeperStateMachine::parseRequestInOldFo
     int32_t length = 0;
     Coordination::read(length, buffer);
     /// Request should not exceed max_request_size (this is verified in KeeperTCPHandler)
-    if (length < 0)
+    if (length < static_cast<int32_t>(sizeof(uint32_t)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid request length: {}", length);
 
     /// because of backwards compatibility, only 32bit xid could be written
@@ -529,7 +530,9 @@ std::vector<nuraft::ptr<nuraft::buffer>> KeeperStateMachine::serializeRequestBat
     DB::WriteBufferFromNuraftBuffer write_buf;
 
     writeIntBinary(BATCH_ENTRY_MARKER, write_buf);
-    writeIntBinary(BATCH_ENTRY_FORMAT_VERSION, write_buf);
+    /// New fields can be added at the end of header, increasing header_size. parseRequestBatch will
+    /// silently skip them. For forward-incompatible changes (while we'll hopefully never need),
+    /// increment BATCH_ENTRY_MARKER to make old parseRequestBatch reject the entry.
     constexpr uint32_t header_size = BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET
         + sizeof(int64_t) /*committed_log_idx*/ + sizeof(int64_t) /*first_zxid*/ + sizeof(uint8_t)
         + sizeof(uint64_t) /*digest*/ + sizeof(int32_t) /*dispatcher_server_id*/
@@ -560,7 +563,9 @@ std::vector<nuraft::ptr<nuraft::buffer>> KeeperStateMachine::serializeRequestBat
         if (request->tracing_context)
             request->tracing_context->serialize(write_buf);
 
-        writeIntBinary(static_cast<uint32_t>(Coordination::size(request->getOpNum()) + request->sizeImpl()), write_buf);
+        /// Similarly to header_size, new fields can be added after the request.
+        uint32_t request_size = static_cast<uint32_t>(Coordination::size(request->getOpNum()) + request->sizeImpl());
+        writeIntBinary(request_size, write_buf);
         Coordination::write(request->getOpNum(), write_buf);
         request->writeImpl(write_buf);
     }
@@ -611,12 +616,6 @@ std::shared_ptr<KeeperRequestBatch> KeeperStateMachine::parseRequestBatch(
 
     uint8_t format_version = 0;
     readIntBinary(format_version, buffer);
-    if (format_version != BATCH_ENTRY_FORMAT_VERSION)
-        throw Exception(
-            ErrorCodes::UNKNOWN_FORMAT_VERSION,
-            "Unsupported batch log entry format version {} (expected {})",
-            format_version,
-            BATCH_ENTRY_FORMAT_VERSION);
 
     if (serialization_version)
         *serialization_version = ZooKeeperLogSerializationVersion::REQUEST_BATCH;
@@ -671,7 +670,9 @@ std::shared_ptr<KeeperRequestBatch> KeeperStateMachine::parseRequestBatch(
     buffer.seek(header_size, SEEK_SET);
 
     const bool should_cache = min_request_size_to_cache != 0 && first_session_id != -1
-        && first_session_id != keeper_internal_ttl_garbage_collector_session_id && data.size() >= min_request_size_to_cache
+        && first_session_id != keeper_internal_ttl_garbage_collector_session_id
+        && first_session_id != keeper_internal_container_garbage_collector_session_id
+        && data.size() >= min_request_size_to_cache
         && std::all_of(
             non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return first_xid != non_cacheable_xid; });
 
@@ -777,10 +778,13 @@ std::optional<KeeperDigest> KeeperStateMachine::preprocessBatch(const KeeperRequ
         if (lock_mutex)
             lock.lock();
 
-        /// On the leader each log entry is preprocessed twice: in the PreAppendLogLeader callback
+        if (storage->isFinalized())
+            return std::nullopt;
+
+        /// On the leader preprocessBatch is called twice: in the PreAppendLogLeader callback
         /// (before the entry is written to the changelog and before the log idx is known) and in
-        /// pre_commit. Detect the second call by matching the batch's transactions against the
-        /// tail of the uncommitted transaction list, and only stamp the log idx on them.
+        /// pre_commit. Detect the second call using KeeperStorage's uncommitted transaction list,
+        /// to avoid (incorrectly) running request logic a second time.
         {
             size_t transaction_count = 0;
             int64_t last_transaction_zxid = 0;
@@ -805,17 +809,6 @@ std::optional<KeeperDigest> KeeperStateMachine::preprocessBatch(const KeeperRequ
             {
                 digest_after_preprocessing = storage->getNodesDigest(false, /*lock_transaction_mutex=*/true);
                 continue;
-            }
-
-            if (storage->isFinalized())
-            {
-                /// Roll back the already preprocessed prefix; the whole batch is rejected.
-                for (size_t j = i; j > 0; --j)
-                {
-                    if (!is_non_transactional(batch.requests[j - 1]))
-                        storage->rollbackRequest(batch.getZxid(j - 1), /*allow_missing=*/false);
-                }
-                return std::nullopt;
             }
 
             digest_after_preprocessing = storage->preprocessRequest(
@@ -929,8 +922,6 @@ KeeperResponseForSession KeeperStateMachine::processReconfiguration(
 //TODO(keeper-batch2) Process all requests of the batch under one storage-lock/process_and_responses_lock acquisition (splitting into runs where SessionID needs different handling), collect responses into one batched response_callback call, and keep per-request commit_callback for now.
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
-    const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
-
     auto batch = parseRequestBatch(data, true);
     if (batch->first_zxid == 0)
     {
@@ -946,6 +937,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
 
     for (size_t request_idx = 0; request_idx < batch->requests.size(); ++request_idx)
     {
+        const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
+
         const auto & request_for_session = batch->requests[request_idx];
 
         const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
