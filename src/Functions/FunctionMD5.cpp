@@ -983,7 +983,7 @@ Calculates the MD5 hash of the given string.
 SELECT HEX(MD5('abc'));
         )",
             R"(
-┌─hex(MD5('abc'))──────────────────┐
+┌─HEX(MD5('abc'))──────────────────┐
 │ 900150983CD24FB0D6963F7D28E17F72 │
 └──────────────────────────────────┘
         )"}};

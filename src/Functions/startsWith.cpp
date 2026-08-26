@@ -25,9 +25,9 @@ Checks whether a string begins with the provided string.
         "Usage example",
         "SELECT startsWith('ClickHouse', 'Click');",
         R"(
-┌─startsWith('⋯', 'Click')─┐
-│                        1 │
-└──────────────────────────┘
+┌─startsWith('ClickHouse', 'Click')─┐
+│                                 1 │
+└───────────────────────────────────┘
         )"
     }
     };
@@ -54,9 +54,9 @@ Checks whether a string begins with the provided case-insensitive string.
         "Usage example",
         "SELECT startsWithCaseInsensitive('ClickHouse', 'CLICK');",
         R"(
-┌─startsWithCaseInsensitive('⋯', 'CLICK')─┐
-│                                       1 │
-└─────────────────────────────────────────┘
+┌─startsWithCaseInsensitive('ClickHouse', 'CLICK')─┐
+│                                                1 │
+└──────────────────────────────────────────────────┘
         )"
     }
     };

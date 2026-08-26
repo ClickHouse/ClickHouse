@@ -9,6 +9,7 @@
 #include <Parsers/Access/ParserSettingsProfileElement.h>
 #include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/Access/ParserPublicSSHKey.h>
+#include <Parsers/Access/parseAccessRightsElements.h>
 #include <Parsers/Access/parseUserName.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -112,6 +113,28 @@ namespace
             }
 
             return false;
+        });
+    }
+
+    bool parseGrants(IParserBase::Pos & pos, Expected & expected, AccessRightsElements & grants)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{Keyword::GRANTS}.ignore(pos, expected))
+                return false;
+
+            if (!ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected))
+                return false;
+
+            AccessRightsElements elements;
+            if (!parseAccessRightsElementsWithoutOptions(pos, expected, elements))
+                return false;
+
+            if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
+                return false;
+
+            grants = std::move(elements);
+            return true;
         });
     }
 
@@ -308,6 +331,7 @@ namespace
             ASTPtr method_valid_until;
             if (parseValidUntil(pos, expected, method_valid_until, auth_data->valid_until_is_interval))
                 auth_data->setValidUntil(std::move(method_valid_until));
+            parseGrants(pos, expected, auth_data->grants);
 
             return true;
         });
@@ -372,6 +396,7 @@ namespace
                 ASTPtr method_valid_until;
                 if (parseValidUntil(pos, expected, method_valid_until, authentication_methods.back()->valid_until_is_interval))
                     authentication_methods.back()->setValidUntil(std::move(method_valid_until));
+                parseGrants(pos, expected, authentication_methods.back()->grants);
 
                 return true;
             }
@@ -854,7 +879,7 @@ Syntax:
 ```sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
     [{VALID UNTIL datetime | VALID FOR interval}]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}] [GRANTS (privilege ON object [,...])]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
@@ -1062,6 +1087,35 @@ Examples:
 - `CREATE USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — the user-level deadline applies to both methods.
 - `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — the deadline applies only to the `bcrypt_password` method; `plaintext_password` never expires.
 
+## GRANTS Clause {#grants-clause}
+
+Allows you to limit the access rights available to a session authenticated with a particular authentication method. It accepts a list of privileges in the same form as the [GRANT](/reference/statements/grant) statement, in parentheses. The clause is specified after an authentication method (after its `VALID UNTIL` clause, if any) and applies only to that method.
+
+When a user logs in with such an authentication method, the access rights of the session are the intersection of the user's access rights (including the rights from granted roles) with the privileges listed in the clause. The clause never adds any access rights: if a listed privilege is not granted to the user, the session does not have it. Sessions authenticated with such a method also cannot grant privileges (the `GRANT OPTION` never survives the intersection) or administer roles. Administering roles includes not only creating, altering, dropping, granting and revoking roles, but also changing which roles are activated by default for a user (`SET DEFAULT ROLE` and `ALTER USER ... DEFAULT ROLE`), which is rejected as well.
+
+`EXECUTE AS` switches the principal of the session, so a statement running under impersonation is limited by the intersection of the **target** user's access rights with the listed privileges, rather than by the rights of the user who logged in. The limit itself is never shed, and impersonating requires `IMPERSONATE ON target` to be both granted to the user and listed in the clause, so a limited credential can never reach further than the same user's unlimited credential.
+
+This provides a convenient way to create tokens for applications: an additional credential with an expiration date and a limited set of privileges, which is tied to the user - it is displayed in `system.query_log` and `system.processes` as the user, it stops working if the user is deleted, and it loses access rights when the user loses them.
+
+<Warning>
+**Enforcement is initiator-only.** The authentication-method `GRANTS` limit and its `VALID UNTIL` expiration are enforced only on the node that receives the query (the initiator). They are **not** propagated to other nodes of a cluster, so do not rely on the clause to constrain execution cluster-wide. Remote nodes retain their usual role scoping. The clause is also not available in `users.xml`. The [query result cache](/concepts/features/performance/caches/query-cache) is shared by all authentication methods of a user: it isolates entries by user and roles, and a cache hit is not re-checked against the `GRANTS` of the method the session logged in with.
+</Warning>
+
+Examples:
+
+- `CREATE USER name1 IDENTIFIED BY 'qwerty' GRANTS (SELECT ON db.*)`
+- `ALTER USER name1 ADD IDENTIFIED WITH plaintext_password BY 'app_token' VALID UNTIL '2026-12-31' GRANTS (SELECT ON db.table, INSERT ON db.table)`
+
+Note that the limit is a property of the authentication method, captured at the moment of the login: changing the clause with `ALTER USER` affects new sessions, not the already established ones.
+
+Filtered source grants such as `READ ON S3('s3://bucket/.*')` are not supported in the clause yet: the intersection compares a source filter as an opaque string and cannot narrow one filter to another, so such a grant is rejected rather than silently granting no access.
+
+The clause is supported only for authentication methods whose credentials are verified purely locally by the server. For methods whose verification contacts (or, in the case of `jwt`, may contact — for example to fetch the signing keys) an external system (`ldap`, `kerberos`, `http`, `jwt`) the clause is rejected: when several authentication methods accept the same credential, the limit is enforced by re-checking the credential against the other methods, and an extra probe of an external system is unsafe, so another method accepting the same credential could bypass the limit.
+
+When the same effective credential is accepted by more than one authentication method, the login is limited fail-close by all of them: the session gets the intersection of the `GRANTS` of all matching methods and expires at the earliest of their `VALID UNTIL`. The earliest `VALID UNTIL` wins even when it has already passed — the login is rejected, exactly as if the single matched method had expired, so the expiry of a token never silently hands the shared credential the rights or lifetime of a broader method.
+
+This combination is only checked among authentication methods verified locally by the server, for the same reason the clause itself is rejected on an externally verified method above: re-checking the credential there would require an unsafe extra probe of the external system. So if the same credential also happens to be accepted by an externally verified method (`ldap`, `kerberos`, `http`, `jwt`) on the same user, that method's own `VALID UNTIL` is not part of the combination, and an earlier expiry configured on it does not shorten the session obtained through the locally verified method.
+
 ## GRANTEES Clause {#grantees-clause}
 
 Specifies users or roles which are allowed to receive [privileges](/reference/statements/grant#privileges) from this user on the condition this user has also all required access granted with [GRANT OPTION](/reference/statements/grant#granting-privilege-syntax). Options of the `GRANTEES` clause:
@@ -1117,7 +1171,7 @@ CREATE USER {user:Identifier};
         .syntax = R"(
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
     [{VALID UNTIL datetime | VALID FOR interval}]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}] [GRANTS (privilege ON object [,...])]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
@@ -1142,7 +1196,7 @@ Syntax:
 ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]
     [{VALID UNTIL datetime | VALID FOR interval}]
-    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}]
+    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}] [GRANTS (privilege ON object [,...])]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
@@ -1259,12 +1313,22 @@ Examples:
 - `ALTER USER name1 VALID FOR INTERVAL 3 MONTH`
 - `ALTER USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — the user-level deadline applies to both methods.
 - `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — the deadline applies only to the `bcrypt_password` method; `plaintext_password` never expires.
+
+## GRANTS Clause {#grants-clause}
+
+Allows you to limit the access rights available to a session authenticated with a particular authentication method. See the [GRANTS clause of CREATE USER](/reference/statements/create/user#grants-clause) for details.
+
+Together with `ADD IDENTIFIED`, this provides a convenient way to create tokens for applications: an additional credential with an expiration date and a limited set of privileges.
+
+Example:
+
+- `ALTER USER name1 ADD IDENTIFIED WITH plaintext_password BY 'app_token' VALID UNTIL '2026-12-31' GRANTS (SELECT ON db.table, INSERT ON db.table)`
 )DOCS_MD",
         .syntax = R"(
 ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]
     [{VALID UNTIL datetime | VALID FOR interval}]
-    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}]
+    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}] [GRANTS (privilege ON object [,...])]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]

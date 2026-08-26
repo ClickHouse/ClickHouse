@@ -60,6 +60,7 @@ workflow = Workflow.Config(
         JobConfigs.sqltest_master_job,
         JobConfigs.sqllogic_test_master_job,
         JobConfigs.sqlstorm_test_job,
+        JobConfigs.docs_examples_job,
         JobConfigs.llvm_coverage_job,
     ],
     artifacts=[
