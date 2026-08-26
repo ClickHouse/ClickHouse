@@ -1314,7 +1314,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 for (const auto & column_desc : columns_desc)
                 {
-                    if (!column_desc.statistics.empty())
+                    if (!column_desc.statistics.empty() && columns_desc.hasPhysical(column_desc.name))
                     {
                         dependencies.emplace(column_desc.name, ColumnDependency::STATISTICS);
                         materialized_statistics.emplace(column_desc.name);
@@ -1323,6 +1323,15 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
             for (const auto & stat_column_name: command.statistics_columns)
             {
+                /// A column that is not physically stored has no data in any block, so there is
+                /// nothing to build. Such a definition can only be inherited from a version that
+                /// still accepted it; skip it so a queued mutation drains instead of failing.
+                if (columns_desc.has(stat_column_name) && !columns_desc.hasPhysical(stat_column_name))
+                {
+                    LOG_WARNING(logger, "Column {} is not physically stored, skipping statistics materialization", stat_column_name);
+                    continue;
+                }
+
                 if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())
                     throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Unknown statistics column: {}", stat_column_name);
 
