@@ -1,8 +1,10 @@
 #pragma once
+#include <cmath>
 #include <type_traits>
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/NaNUtils.h>
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -46,6 +48,36 @@ inline Int64 rescaleWholeToTicks(Int64 whole, Int64 multiplier, Int64 rem)
 {
     return static_cast<Int64>(static_cast<UInt64>(whole) * static_cast<UInt64>(multiplier) + static_cast<UInt64>(rem));
 }
+
+/// Adds a fractional number of seconds to a `DateTime64`/`Time64` tick value of the given scale.
+/// The whole part is scaled in Int64 to keep large deltas exact (a Float64 cannot hold 10^18 ticks); only
+/// the remainder goes through floating point, rounded to the nearest tick - truncating would turn
+/// `DateTime64(6) + 0.1` into 99999 ticks, as the closest double to 0.1 is slightly below it.
+inline Int64 addFractionalSeconds(Int64 t, Float64 delta, UInt16 scale)
+{
+    const Float64 whole = std::trunc(delta);
+
+    Int64 whole_seconds = 0;
+    if (!isFinite(delta) || !accurate::convertNumeric<Float64, Int64, false>(whole, whole_seconds))
+        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+
+    const Int64 multiplier = DecimalUtils::scaleMultiplier<Int64>(scale);
+    /// |delta - whole| < 1 and multiplier <= 10^9, so this cannot overflow.
+    const Int64 fractional_ticks = static_cast<Int64>(std::llround((delta - whole) * static_cast<Float64>(multiplier)));
+
+    Int64 result = 0;
+    if (!DecimalUtils::tryMultiplyAdd(whole_seconds, multiplier, t, result)
+        || common::addOverflow(result, fractional_ticks, result))
+        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+
+    return result;
+}
+
+/// Transforms that take a fractional delta instead of truncating it to whole units. `+`/`-` between a
+/// date/time and a number becomes `addSeconds`/`subtractSeconds`, which must keep the fraction of a second
+/// a `DateTime64`/`Time64` can hold: `now64(3) + 0.1` has to move the timestamp by 100 milliseconds. The
+/// other units are left out: days and longer depend on the time zone, sub-second ones change the scale.
+template <typename Transform> inline constexpr bool transform_supports_fractional_delta = false;
 
 /// Type of first argument of 'execute' function overload defines what INPUT DataType it is used for.
 /// Return type defines what is the OUTPUT (return) type of the CH function.
@@ -211,6 +243,15 @@ struct AddSecondsImpl
     {
         return DateTime64(DecimalUtils::multiplyAdd(delta, DecimalUtils::scaleMultiplier<Time64>(scale), t.value));
     }
+    /// A fractional delta, for the types whose scale can hold it - see `transform_supports_fractional_delta`.
+    static DateTime64 execute(DateTime64 t, Float64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    {
+        return DateTime64(addFractionalSeconds(t.value, delta, scale));
+    }
+    static Time64 execute(Time64 t, Float64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    {
+        return Time64(addFractionalSeconds(t.value, delta, scale));
+    }
     /// Compute in the UInt64 domain so an out-of-range delta wraps by construction instead of hitting
     /// signed overflow, which is UB even under NO_SANITIZE_UNDEFINED. FillingRow::doLongJump passes
     /// deltas from the whole Int64 range and relies on the wraparound. Bit-identical to the previous
@@ -246,7 +287,16 @@ struct AddSecondsImpl
         parseDateTime64BestEffort(t, scale, buf, time_zone, utc_time_zone);
         return execute(t, delta, time_zone, utc_time_zone, scale);
     }
+    static DateTime64 execute(std::string_view s, Float64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        ReadBufferFromString buf(s);
+        DateTime64 t;
+        parseDateTime64BestEffort(t, scale, buf, time_zone, utc_time_zone);
+        return execute(t, delta, time_zone, utc_time_zone, scale);
+    }
 };
+
+template <> inline constexpr bool transform_supports_fractional_delta<AddSecondsImpl> = true;
 
 struct AddMinutesImpl
 {
@@ -698,6 +748,15 @@ struct SubtractIntervalImpl : public Transform
         return Transform::execute(t, negated, time_zone, utc_time_zone, scale);
     }
 
+    /// Negating a fractional delta is always exact, unlike the Int64 case above. The static_assert keeps
+    /// transforms that only have an Int64 `execute` off this path, where it would silently narrow.
+    template <typename T>
+    auto execute(T t, Float64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
+    {
+        static_assert(transform_supports_fractional_delta<Transform>, "The transform does not support a fractional delta");
+        return Transform::execute(t, -delta, time_zone, utc_time_zone, scale);
+    }
+
     template <bool fixed_offset, typename T>
     auto executeWithOffsetMode(
         T t,
@@ -730,6 +789,7 @@ struct SubtractNanosecondsImpl : SubtractIntervalImpl<AddNanosecondsImpl> { stat
 struct SubtractMicrosecondsImpl : SubtractIntervalImpl<AddMicrosecondsImpl> { static constexpr auto name = "subtractMicroseconds"; };
 struct SubtractMillisecondsImpl : SubtractIntervalImpl<AddMillisecondsImpl> { static constexpr auto name = "subtractMilliseconds"; };
 struct SubtractSecondsImpl : SubtractIntervalImpl<AddSecondsImpl> { static constexpr auto name = "subtractSeconds"; };
+template <> inline constexpr bool transform_supports_fractional_delta<SubtractSecondsImpl> = true;
 struct SubtractMinutesImpl : SubtractIntervalImpl<AddMinutesImpl> { static constexpr auto name = "subtractMinutes"; };
 struct SubtractHoursImpl : SubtractIntervalImpl<AddHoursImpl> { static constexpr auto name = "subtractHours"; };
 struct SubtractDaysImpl : SubtractIntervalImpl<AddDaysImpl> { static constexpr auto name = "subtractDays"; };
@@ -737,6 +797,16 @@ struct SubtractWeeksImpl : SubtractIntervalImpl<AddWeeksImpl> { static constexpr
 struct SubtractMonthsImpl : SubtractIntervalImpl<AddMonthsImpl> { static constexpr auto name = "subtractMonths"; };
 struct SubtractQuartersImpl : SubtractIntervalImpl<AddQuartersImpl> { static constexpr auto name = "subtractQuarters"; };
 struct SubtractYearsImpl : SubtractIntervalImpl<AddYearsImpl> { static constexpr auto name = "subtractYears"; };
+
+
+/// A fractional delta also needs an argument type whose scale can hold it. A `String` is parsed into a
+/// `DateTime64(3)`, so it qualifies too.
+template <typename Transform, typename FromDataType, typename DeltaType>
+inline constexpr bool use_fractional_delta = transform_supports_fractional_delta<Transform>
+    && is_floating_point<DeltaType>
+    && (std::is_same_v<FromDataType, DataTypeDateTime64>
+        || std::is_same_v<FromDataType, DataTypeTime64>
+        || std::is_same_v<FromDataType, DataTypeString>);
 
 
 template <typename Transform, typename FromDataType>
@@ -757,8 +827,9 @@ struct Processor
 
     template <typename FromDataType,
         typename FromColumnType = typename FromDataType::ColumnType,
-        typename ToColumnType>
-    void NO_INLINE vectorConstant(const FromColumnType & col_from, ToColumnType & col_to, Int64 delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
+        typename ToColumnType,
+        typename DeltaType>
+    void NO_INLINE vectorConstant(const FromColumnType & col_from, ToColumnType & col_to, DeltaType delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
     {
         static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
 
@@ -771,7 +842,7 @@ struct Processor
             for (size_t i = 0 ; i < input_rows_count; ++i)
             {
                 std::string_view from = col_from.getDataAt(i);
-                vec_to[i] = executeTransform<FromDataType>(from, checkOverflow(delta), time_zone, utc_time_zone, scale);
+                vec_to[i] = executeTransform<FromDataType>(from, convertDelta<FromDataType>(delta), time_zone, utc_time_zone, scale);
             }
         }
         else
@@ -784,13 +855,14 @@ struct Processor
             if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
             {
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.executeForTime(vec_from[i], checkOverflow(delta), time_zone, utc_time_zone, scale));
+                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(
+                        transform.executeForTime(vec_from[i], convertDelta<FromDataType>(delta), time_zone, utc_time_zone, scale));
             }
             else
             {
                 for (size_t i = 0; i < input_rows_count; ++i)
                     vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(
-                        executeTransform<FromDataType>(vec_from[i], checkOverflow(delta), time_zone, utc_time_zone, scale));
+                        executeTransform<FromDataType>(vec_from[i], convertDelta<FromDataType>(delta), time_zone, utc_time_zone, scale));
             }
         }
     }
@@ -820,9 +892,9 @@ struct Processor
     }
 
 private:
-    template <typename FromDataType, typename T>
+    template <typename FromDataType, typename T, typename DeltaType>
     auto executeTransform(
-        T t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
+        T t, DeltaType delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
     {
         if constexpr (supports_fixed_offset_dispatch<Transform, FromDataType>)
             return transform.template executeWithOffsetMode<fixed_offset>(t, delta, time_zone, utc_time_zone, scale);
@@ -837,6 +909,16 @@ private:
         if (accurate::convertNumeric<Value, Int64, false>(val, result))
             return result;
         throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+    }
+
+    /// Whole units, except where the transform and the argument type keep a fractional delta.
+    template <typename FromDataType, typename Value>
+    static auto convertDelta(Value val)
+    {
+        if constexpr (use_fractional_delta<Transform, FromDataType, Value>)
+            return static_cast<Float64>(val);
+        else
+            return checkOverflow(val);
     }
 
     template <typename FromDataType,
@@ -858,7 +940,7 @@ private:
             {
                 std::string_view from = col_from.getDataAt(i);
                 vec_to[i] = executeTransform<FromDataType>(
-                    from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale);
+                    from, convertDelta<FromDataType>(delta.getData()[i]), time_zone, utc_time_zone, scale);
             }
         }
         else
@@ -871,13 +953,14 @@ private:
             if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
             {
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.executeForTime(vec_from[i], checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
+                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.executeForTime(
+                        vec_from[i], convertDelta<FromDataType>(delta.getData()[i]), time_zone, utc_time_zone, scale));
             }
             else
             {
                 for (size_t i = 0; i < input_rows_count; ++i)
                     vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(executeTransform<FromDataType>(
-                        vec_from[i], checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
+                        vec_from[i], convertDelta<FromDataType>(delta.getData()[i]), time_zone, utc_time_zone, scale));
             }
         }
     }
@@ -898,13 +981,14 @@ private:
         if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
         {
             for (size_t i = 0; i < input_rows_count; ++i)
-                vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.executeForTime(from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
+                vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.executeForTime(
+                    from, convertDelta<FromDataType>(delta.getData()[i]), time_zone, utc_time_zone, scale));
         }
         else
         {
             for (size_t i = 0; i < input_rows_count; ++i)
                 vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(executeTransform<FromDataType>(
-                    from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
+                    from, convertDelta<FromDataType>(delta.getData()[i]), time_zone, utc_time_zone, scale));
         }
     }
 };
@@ -951,7 +1035,21 @@ private:
         if (const auto * sources = checkAndGetColumn<FromColumnType>(&source_column))
         {
             if (const auto * delta_const_column = typeid_cast<const ColumnConst *>(&delta_column))
-                processor.template vectorConstant<FromDataType>(*sources, *col_to, delta_const_column->getInt(0), time_zone, scale, input_rows_count);
+            {
+                /// `getInt` would drop the fraction of a floating point constant before the transform sees it.
+                if constexpr (use_fractional_delta<Transform, FromDataType, Float64>)
+                {
+                    if (isFloat(arguments[1].type))
+                    {
+                        processor.template vectorConstant<FromDataType>(
+                            *sources, *col_to, delta_const_column->getFloat64(0), time_zone, scale, input_rows_count);
+                        return result_col;
+                    }
+                }
+
+                processor.template vectorConstant<FromDataType>(
+                    *sources, *col_to, delta_const_column->getInt(0), time_zone, scale, input_rows_count);
+            }
             else
                 processor.template vectorVector<FromDataType>(*sources, *col_to, delta_column, time_zone, scale, input_rows_count);
         }
@@ -1056,7 +1154,7 @@ public:
         using type = decltype(
             std::declval<Transform>().execute(
                 std::declval<FieldType>(),    // e.g. Int32, UInt16, Int64...
-                0,                            // delta
+                Int64{0},                     // delta - some transforms also have a Float64 overload
                 std::declval<DateLUTImpl>(),  // timezone
                 std::declval<DateLUTImpl>(),  // utc
                 0                             // scale
@@ -1072,7 +1170,7 @@ public:
         using type = decltype(
             std::declval<Transform>().executeForTime(
                 std::declval<FieldType>(),    // Int32
-                0,                            // delta
+                Int64{0},                     // delta
                 std::declval<DateLUTImpl>(),  // timezone
                 std::declval<DateLUTImpl>(),  // utc
                 0                             // scale

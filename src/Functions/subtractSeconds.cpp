@@ -12,6 +12,10 @@ REGISTER_FUNCTION(SubtractSeconds)
 {
     FunctionDocumentation::Description description = R"(
 Subtracts a specified number of seconds from a date, a date with time or a string-encoded date or date with time.
+
+For a `DateTime64` or a `Time64` argument, and for a string-encoded one, `num` may have a fractional part:
+it is rounded to the nearest tick of the result's scale. For the other argument types, whose resolution is
+one second or coarser, `num` is converted to a whole number of seconds.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 subtractSeconds(datetime, num)
