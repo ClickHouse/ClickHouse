@@ -63,19 +63,14 @@ PR_CACHE_WARMUP_BUILD_TYPES = set(PR_CACHE_WARMUP_TO_RELEASE)
 for _warmup_type, _release_type in PR_CACHE_WARMUP_TO_RELEASE.items():
     BUILD_TYPE_TO_CMAKE[_warmup_type] = BUILD_TYPE_TO_CMAKE[_release_type]
 
+# Only the release builds are packaged: their packages are what gets published, and what
+# the `Install packages` and `Compatibility check` jobs install. The debug, sanitizer and
+# CFI builds are consumed as the plain `clickhouse` binary, which every build uploads
+# anyway, so packaging them would only spend build time and storage.
 # TODO: for legacy packaging script - remove
 BUILD_TYPE_TO_DEB_PACKAGE_TYPE = {
-    BuildTypes.AMD_DEBUG: "debug",
     BuildTypes.AMD_RELEASE: "release",
     BuildTypes.ARM_RELEASE: "release",
-    BuildTypes.ARM_DEBUG: "debug",
-    BuildTypes.AMD_ASAN_UBSAN: "asan_ubsan",
-    BuildTypes.ARM_ASAN_UBSAN: "asan_ubsan",
-    BuildTypes.ARM_TSAN: "tsan",
-    BuildTypes.AMD_MSAN: "msan",
-    BuildTypes.ARM_MSAN: "msan",
-    BuildTypes.AMD_TSAN: "tsan",
-    BuildTypes.AMD_CFI: "cfi",
 }
 
 
@@ -590,7 +585,7 @@ def main():
                     f"rm -rf {build_dir_normalized}/root",
                     f"DESTDIR={build_dir_normalized}/root command time -v ninja programs/install",
                     f"ln -sf {build_dir_normalized}/root {Utils.cwd()}/packages/root",
-                    f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={temp_dir} BUILD_TYPE={BUILD_TYPE_TO_DEB_PACKAGE_TYPE[build_type]} VERSION_STRING={version.string} DEB_ARCH={deb_arch} ./build --deb {'--rpm --tgz' if 'release' in build_type else ''}",
+                    f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={temp_dir} BUILD_TYPE={BUILD_TYPE_TO_DEB_PACKAGE_TYPE[build_type]} VERSION_STRING={version.string} DEB_ARCH={deb_arch} ./build --deb --rpm --tgz",
                 ],
                 workdir=build_dir_normalized,
                 with_log=True,
