@@ -16,6 +16,7 @@ void registerStatements()
     registerStatementColumnsTransformers(factory);
     registerStatementCreate(factory);
     registerStatementCreateFunction(factory);
+    registerStatementCreateHandler(factory);
     registerStatementDelete(factory);
     registerStatementDescribeTable(factory);
     registerStatementDrop(factory);
