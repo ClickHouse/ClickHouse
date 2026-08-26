@@ -11,6 +11,9 @@ namespace DB
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
 class DataTypeArray;
 class ColumnArray;
 std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type);
@@ -39,6 +42,10 @@ public:
     /// For LEFT ARRAY JOIN.
     FunctionOverloadResolverPtr function_builder;
 
+    /// Optional element-space filter: drops elements before expansion so they're never replicated
+    ExpressionActionsPtr element_filter;
+    String element_filter_column_name;
+
     ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_);
     static void prepare(const NameSet & columns, ColumnsWithTypeAndName & sample);
     static void prepare(const Names & columns, ColumnsWithTypeAndName & sample);
@@ -58,6 +65,10 @@ public:
     bool hasNext() const;
 
 private:
+    /// Element-space filtered variant of next(): applies array_join->element_filter to the nested
+    /// element columns of one window and expands only the surviving elements.
+    Block nextWithElementFilter();
+
     const ArrayJoinAction * array_join;
     Block block;
     bool enable_lazy_columns_replication;
