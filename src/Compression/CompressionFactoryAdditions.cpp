@@ -197,12 +197,12 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
 
                 if (settings)
                 {
-                    const CodecEntry & entry = getEntry(codec_family_name);
-                    if (const std::optional<SettingsTierType> tier = getGateTier(entry))
+                    const String gate_setting_name = getGateSettingName(codec_family_name);
+                    if (const std::optional<SettingsTierType> tier = getGateTier(gate_setting_name))
                     {
                         const bool umbrella_bypass
                             = *tier == SettingsTierType::EXPERIMENTAL && (*settings)[Setting::allow_experimental_codecs];
-                        if (!settings->get(entry.gate_setting_name).safeGet<bool>() && !umbrella_bypass)
+                        if (!settings->get(gate_setting_name).safeGet<bool>() && !umbrella_bypass)
                         {
                             std::string_view reason;
                             switch (*tier)
@@ -224,7 +224,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                                 "Codec {} {}. You can enable it with the '{}' setting",
                                 codec_family_name,
                                 reason,
-                                entry.gate_setting_name);
+                                gate_setting_name);
                         }
                     }
                 }

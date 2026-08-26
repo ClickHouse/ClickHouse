@@ -147,24 +147,15 @@ CompressionCodecPtr CompressionCodecFactory::get(uint8_t byte_code) const
     return family_code_and_creator->second({}, nullptr);
 }
 
-const CompressionCodecFactory::CodecEntry & CompressionCodecFactory::getEntry(const String & family_name) const
+String CompressionCodecFactory::getGateSettingName(const String & family_name)
 {
-    const auto family_and_entry = family_name_with_codec.find(family_name);
-
-    if (family_and_entry == family_name_with_codec.end())
-        throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", family_name);
-
-    return family_and_entry->second;
+    return fmt::format("enable_{}_codec", Poco::toLower(family_name));
 }
 
-std::optional<SettingsTierType> CompressionCodecFactory::getGateTier(const CodecEntry & entry)
+std::optional<SettingsTierType> CompressionCodecFactory::getGateTier(const String & gate_setting_name)
 {
-    if (entry.gate_setting_name.empty())
-        return std::nullopt;
-    const std::optional<SettingsTierType> tier = Settings::tryGetTierOfBuiltin(entry.gate_setting_name);
-    if (!tier)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The gate setting '{}' is not a builtin session setting", entry.gate_setting_name);
-    if (*tier == SettingsTierType::OBSOLETE)
+    const std::optional<SettingsTierType> tier = Settings::tryGetTierOfBuiltin(gate_setting_name);
+    if (tier == SettingsTierType::OBSOLETE)
         return std::nullopt;
     return tier;
 }
@@ -172,9 +163,9 @@ std::optional<SettingsTierType> CompressionCodecFactory::getGateTier(const Codec
 Strings CompressionCodecFactory::getGateSettingNames() const
 {
     Strings result;
-    for (const auto & [name, entry] : family_name_with_codec)
-        if (!entry.gate_setting_name.empty())
-            result.push_back(entry.gate_setting_name);
+    for (const auto & family : family_name_with_codec)
+        if (String gate_setting_name = getGateSettingName(family.first); getGateTier(gate_setting_name))
+            result.push_back(std::move(gate_setting_name));
     return result;
 }
 
@@ -201,7 +192,7 @@ void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns
                 throw;
             }
 
-            const SettingsTierType tier = getGateTier(it.second).value_or(SettingsTierType::PRODUCTION);
+            const SettingsTierType tier = getGateTier(getGateSettingName(name)).value_or(SettingsTierType::PRODUCTION);
 
             res_columns[0]->insert(name);
             res_columns[1]->insert(tmp->getMethodByte());
@@ -252,41 +243,25 @@ CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name,
     if (family_name == "Multiple")
         throw Exception(ErrorCodes::UNKNOWN_CODEC, "Codec Multiple cannot be specified directly");
 
-    return getEntry(family_name).creator(arguments, column_type);
+    const auto family_and_entry = family_name_with_codec.find(family_name);
+
+    if (family_and_entry == family_name_with_codec.end())
+        throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", family_name);
+
+    return family_and_entry->second.creator(arguments, column_type);
 }
 
 void CompressionCodecFactory::registerCompressionCodecWithType(
     const String & family_name,
     std::optional<uint8_t> byte_code,
     CreatorWithType creator,
-    std::string_view gate_setting_name,
     std::source_location source)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressionCodecFactory: "
                         "the codec family {} has been provided a null constructor", family_name);
 
-    if (!gate_setting_name.empty())
-    {
-        const String expected_gate_name = fmt::format("enable_{}_codec", Poco::toLower(family_name));
-
-        if (gate_setting_name != expected_gate_name)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "CompressionCodecFactory: the gate setting of the codec family '{}' must be named '{}', got '{}'",
-                family_name,
-                expected_gate_name,
-                gate_setting_name);
-
-        if (!Settings::hasBuiltin(gate_setting_name))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "CompressionCodecFactory: the gate setting '{}' of the codec family '{}' is not a builtin session setting",
-                gate_setting_name,
-                family_name);
-    }
-
-    if (!family_name_with_codec.emplace(family_name, CodecEntry{creator, source.file_name(), String(gate_setting_name)}).second)
+    if (!family_name_with_codec.emplace(family_name, CodecEntry{creator, source.file_name()}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressionCodecFactory: the codec family name '{}' is not unique", family_name);
 
     if (byte_code)
@@ -300,20 +275,18 @@ void CompressionCodecFactory::registerCompressionCodec(
     const String & family_name,
     std::optional<uint8_t> byte_code,
     Creator creator,
-    std::string_view gate_setting_name,
     std::source_location source)
 {
     registerCompressionCodecWithType(family_name, byte_code, [family_name, creator](const ASTPtr & ast, const IDataType * /* data_type */)
     {
         return creator(ast);
-    }, gate_setting_name, source);
+    }, source);
 }
 
 void CompressionCodecFactory::registerSimpleCompressionCodec(
     const String & family_name,
     std::optional<uint8_t> byte_code,
     SimpleCreator creator,
-    std::string_view gate_setting_name,
     std::source_location source)
 {
     registerCompressionCodec(family_name, byte_code, [family_name, creator](const ASTPtr & ast)
@@ -321,7 +294,7 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(
         if (ast)
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Compression codec {} cannot have arguments", family_name);
         return creator();
-    }, gate_setting_name, source);
+    }, source);
 }
 
 

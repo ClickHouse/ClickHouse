@@ -2,8 +2,6 @@
 -- no-fasttest: `enable_sz3_codec` has no registered codec when the server is built without the sz3 library.
 
 -- Every non-obsolete builtin `enable_<family>_codec` setting must gate a registered codec of the same tier.
--- The reverse direction (a registered gate names an existing, correctly-named setting) is enforced at codec registration.
--- What is left to catch here is a setting whose codec was never given the gate at registration.
 SELECT s.name, s.tier, c.name, c.tier
 FROM system.settings AS s
 LEFT JOIN system.codecs AS c ON lower(c.name) = extract(s.name, '^enable_(.+)_codec$')

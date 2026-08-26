@@ -13,7 +13,6 @@
 #include <memory>
 #include <optional>
 #include <source_location>
-#include <string_view>
 #include <utility>
 
 #include <boost/noncopyable.hpp>
@@ -66,7 +65,6 @@ protected:
     {
         CreatorWithType creator;
         const char * source = nullptr;
-        String gate_setting_name; /// `enable_<lowercase family>_codec`
     };
 
     using CompressionCodecsDictionary = UnorderedMapWithMemoryTracking<String, CodecEntry>;
@@ -133,12 +131,10 @@ public:
 
     /// Register codec with parameters and column type. The `source` is captured automatically at the call site
     /// (the codec's registration), so it points to the source file that defines the codec; do not pass it explicitly.
-    /// A gated codec passes the name of its dedicated enable setting as `gate_setting_name`.
     void registerCompressionCodecWithType(
         const String & family_name,
         std::optional<uint8_t> byte_code,
         CreatorWithType creator,
-        std::string_view gate_setting_name = {},
         std::source_location source = std::source_location::current());
 
     /// Register codec with parameters
@@ -146,7 +142,6 @@ public:
         const String & family_name,
         std::optional<uint8_t> byte_code,
         Creator creator,
-        std::string_view gate_setting_name = {},
         std::source_location source = std::source_location::current());
 
     /// Register codec without parameters
@@ -154,7 +149,6 @@ public:
         const String & family_name,
         std::optional<uint8_t> byte_code,
         SimpleCreator creator,
-        std::string_view gate_setting_name = {},
         std::source_location source = std::source_location::current());
 
     Strings getAllRegisteredNames() const;
@@ -166,9 +160,11 @@ private:
     ASTPtr validateCodecAndGetPreprocessedASTImpl(
         const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
 
-    /// The registration entry (creator, source file, gate setting) of the codec family with the given name. May throw `UNKNOWN_CODEC`.
-    const CodecEntry & getEntry(const String & family_name) const;
-    static std::optional<SettingsTierType> getGateTier(const CodecEntry & entry);
+    /// Name of the gate setting: `enable_<lowercase family>_codec`.
+    static String getGateSettingName(const String & family_name);
+
+    /// Get setting tier of a codec. nullopt when the codec is ungated or the setting is obsolete (-> codec is GA)
+    static std::optional<SettingsTierType> getGateTier(const String & gate_setting_name);
 
     CompressionCodecsDictionary family_name_with_codec;
     CompressionCodecsCodeDictionary family_code_with_codec;

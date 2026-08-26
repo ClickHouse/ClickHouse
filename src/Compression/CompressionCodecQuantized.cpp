@@ -190,7 +190,7 @@ void registerCodecQuantized(CompressionCodecFactory & factory)
         if (!arguments)
             return std::make_shared<CompressionCodecQuantized>(QuantizedCodecParams{});
         return std::make_shared<CompressionCodecQuantized>(parseQuantizeCodecArguments(arguments));
-    }, "enable_quantized_codec");
+    });
 }
 
 }

@@ -443,7 +443,7 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS, "Codec SZ3 must have 0 or 3 arguments but {} arguments are given", arguments->children.size());
         }
     };
-    factory.registerCompressionCodecWithType("SZ3", method_code, codec_builder, "enable_sz3_codec");
+    factory.registerCompressionCodecWithType("SZ3", method_code, codec_builder);
 }
 
 CompressionCodecPtr getCompressionCodecSZ3(UInt8 float_bytes_size)
