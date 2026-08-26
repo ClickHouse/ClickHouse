@@ -698,6 +698,11 @@ public:
         projection_aliases_to_override = std::move(pr_aliases);
     }
 
+    const Names & getProjectionAliasesToOverride() const
+    {
+        return projection_aliases_to_override;
+    }
+
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
 
