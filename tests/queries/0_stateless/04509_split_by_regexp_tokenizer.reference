@@ -81,8 +81,7 @@ SELECT tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', 1);
 -- true is equivalent to 1, and is the recommended, self-documenting form
 SELECT tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', true) = tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', 1);
 1
--- Any nonzero integer is truthy, same as other Bool-documented arguments elsewhere (e.g. NPV's
--- start_from_zero) that traditionally accepted 0/1 before Bool existed
+-- Any nonzero integer is truthy, like other Bool-documented arguments that accept 0/1
 SELECT tokens('a', 'splitByRegexp', 'a', 2);
 ['a']
 -- No capture groups: falls back to the whole RE2 match
@@ -109,17 +108,14 @@ SELECT tokens('k=v k2=v2', 'splitByRegexp', '(\\w+)=(\\w+)', 1);
 -- the matches themselves
 SELECT tokens('xabcyabcz', 'splitByRegexp', 'abc', 1);
 ['abc','abc']
--- A pattern with a capture group is never "trivial" - any `(` unconditionally takes the pattern off
--- the plain-substring-search fast path (OptimizedRegularExpression.cpp), so the fast path can never
--- see a capture group and skip populating it
+-- A pattern with a capture group is never "trivial", so the substring-search fast path never applies
 SELECT tokens('abc', 'splitByRegexp', 'a(b)c', 1);
 ['b']
 -- A pattern that can only match the empty string yields no tokens, since an empty match is not
 -- treated as a match
 SELECT tokens('abc', 'splitByRegexp', 'z*', 1);
 []
--- A pattern that alternates between empty and non-empty matches does not stop scanning at the first
--- empty match: every later non-empty match is still found and extracted
+-- Scanning does not stop at the first empty match; later non-empty matches are still found
 SELECT tokens('123x45', 'splitByRegexp', '[0-9]*', 1);
 ['123','45']
 -- Multi-byte UTF-8 is preserved inside the capture group (byte offsets must not slice a character)

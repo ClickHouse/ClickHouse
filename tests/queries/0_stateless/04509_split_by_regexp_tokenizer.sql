@@ -1,10 +1,7 @@
 -- Detailed test of the `splitByRegexp` tokenizer through the `tokens` function.
 -- The regular expression plays the role of the separator; the tokens are the (non-empty) pieces of text
--- between successive matches. With the optional `extract` argument set to true (or any nonzero integer,
--- for consistency with how other Bool-documented arguments accept traditional 0/1 - see
--- checkAndGetLiteralArgument<bool>), this is reversed: `re` matches the tokens themselves (capture group
--- 1 of each match, or the whole match if `re` has no capture groups), and everything outside the matches
--- is discarded.
+-- between successive matches. With `extract` set to true (or any nonzero integer), this is reversed:
+-- `re` matches the tokens themselves (capture group 1, or the whole match if `re` has none).
 
 SELECT 'Negative tests';
 -- The regular expression argument is mandatory
@@ -16,8 +13,7 @@ SELECT tokens('a', 'splitByRegexp', ['c']); -- { serverError ILLEGAL_TYPE_OF_ARG
 SELECT tokens('a', 'splitByRegexp', materialize('c')); -- { serverError ILLEGAL_COLUMN }
 -- and must not be empty
 SELECT tokens('a', 'splitByRegexp', ''); -- { serverError BAD_ARGUMENTS }
--- The `extract` argument must be a const Bool (or an integer, treated like other Bool-documented
--- arguments as truthy/falsy - see the positive tests below); a non-numeric type is rejected
+-- `extract` must be a const Bool or integer (see positive tests below); other types are rejected
 SELECT tokens('a', 'splitByRegexp', 'a', 'x'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'splitByRegexp', 'a', materialize(true)); -- { serverError ILLEGAL_COLUMN }
 -- Too many arguments
@@ -79,8 +75,7 @@ SELECT tokens('a,b,c', 'splitByRegexp', ',') AS tokenized, toTypeName(tokenized)
 SELECT tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', 1);
 -- true is equivalent to 1, and is the recommended, self-documenting form
 SELECT tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', true) = tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', 1);
--- Any nonzero integer is truthy, same as other Bool-documented arguments elsewhere (e.g. NPV's
--- start_from_zero) that traditionally accepted 0/1 before Bool existed
+-- Any nonzero integer is truthy, like other Bool-documented arguments that accept 0/1
 SELECT tokens('a', 'splitByRegexp', 'a', 2);
 -- No capture groups: falls back to the whole RE2 match
 SELECT tokens('a1b22c333', 'splitByRegexp', '[0-9]+', 1);
@@ -99,15 +94,12 @@ SELECT tokens('k=v k2=v2', 'splitByRegexp', '(\\w+)=(\\w+)', 1);
 -- A trivial literal pattern (no groups, served by a plain substring search rather than RE2) yields
 -- the matches themselves
 SELECT tokens('xabcyabcz', 'splitByRegexp', 'abc', 1);
--- A pattern with a capture group is never "trivial" - any `(` unconditionally takes the pattern off
--- the plain-substring-search fast path (OptimizedRegularExpression.cpp), so the fast path can never
--- see a capture group and skip populating it
+-- A pattern with a capture group is never "trivial", so the substring-search fast path never applies
 SELECT tokens('abc', 'splitByRegexp', 'a(b)c', 1);
 -- A pattern that can only match the empty string yields no tokens, since an empty match is not
 -- treated as a match
 SELECT tokens('abc', 'splitByRegexp', 'z*', 1);
--- A pattern that alternates between empty and non-empty matches does not stop scanning at the first
--- empty match: every later non-empty match is still found and extracted
+-- Scanning does not stop at the first empty match; later non-empty matches are still found
 SELECT tokens('123x45', 'splitByRegexp', '[0-9]*', 1);
 -- Multi-byte UTF-8 is preserved inside the capture group (byte offsets must not slice a character)
 SELECT tokens('k:héllo k:wörld', 'splitByRegexp', 'k:(\\p{L}+)', 1);

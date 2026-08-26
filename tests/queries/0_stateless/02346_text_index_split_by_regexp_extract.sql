@@ -85,8 +85,7 @@ SELECT id FROM tab_extract_phrase_pp WHERE hasPhrase(doc, 'red green') SETTINGS 
 
 DROP TABLE tab_extract_phrase_pp;
 
--- 4. DDL-time validation of the `extract` argument, and the `true`/`false` literal form (equivalent
--- to 1/0, and the recommended, self-documenting spelling - section 1 above already covers plain 1).
+-- 4. DDL-time validation of `extract`, and the `true`/`false` literal form (section 1 already covers 1).
 
 SELECT 'DDL validation';
 
