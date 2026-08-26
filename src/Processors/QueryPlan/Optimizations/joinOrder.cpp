@@ -1075,6 +1075,12 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
 */
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
 {
+    /// DPsub uses the generic memo only for composite-expression statistics. Clear any
+    /// partial state left by an earlier algorithm in the fallback chain so this attempt
+    /// has the same cost model as a standalone DPsub run.
+    dp_table.clear();
+    expression_selectivity.clear();
+
     const size_t n = query_graph.relation_stats.size();
     using Bitvector = UInt32; // choose UInt64 or even UInt128 for larger sets
     // A budget cap on nr. of connected components considered by DPsub to avoid excessive optimization time on large join graphs.
