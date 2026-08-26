@@ -252,11 +252,46 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 └─────────┘
 ```
 
+**Example 4:** Materialized helper in a recursive query
+
+```sql
+CREATE TABLE nodes (id UInt32, enabled UInt8) ENGINE = Memory;
+INSERT INTO nodes VALUES (1, 1), (2, 1), (3, 0), (4, 1);
+
+CREATE TABLE edges (from UInt32, to UInt32) ENGINE = Memory;
+INSERT INTO edges VALUES (1, 2), (2, 3), (2, 4);
+
+SET enable_materialized_cte = 1;
+
+WITH RECURSIVE
+    allowed_nodes AS MATERIALIZED (SELECT id FROM nodes WHERE enabled),
+    walk AS
+    (
+        SELECT 1 AS id
+        UNION ALL
+        SELECT edges.to
+        FROM walk
+        INNER JOIN edges ON edges.from = walk.id
+        INNER JOIN allowed_nodes ON allowed_nodes.id = edges.to
+    )
+SELECT * FROM walk ORDER BY id;
+```
+
+```response
+┌─id─┐
+│  1 │
+│  2 │
+│  4 │
+└────┘
+```
+
+`allowed_nodes` is evaluated once; each recursive step joins against the stored result instead of re-running the filter.
+
 ### Restrictions {#materialized-cte-restrictions}
 
 - **Experimental setting required**: The setting `enable_materialized_cte` must be enabled.
 - **Analyzer required**: Materialized CTEs only work with the [analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) enabled (`enable_analyzer = 1`).
-- **Not supported with `RECURSIVE`**: Combining `MATERIALIZED` and `RECURSIVE` keywords is not allowed and results in an `UNSUPPORTED_METHOD` exception.
+- **Only plain `SELECT` helpers can be materialized inside `WITH RECURSIVE`**: a non-recursive helper CTE whose body is a plain `SELECT` may be declared `MATERIALIZED` in the same `WITH RECURSIVE` clause as a recursive CTE. When such a helper is read from a recursive member, it is materialized once and every recursive iteration reads the same temporary result, even if the helper is referenced only once. The recursive CTE itself cannot be `MATERIALIZED`, and neither can a helper whose body is a top-level set operation (`UNION`, `INTERSECT`, `EXCEPT`) - both raise an `UNSUPPORTED_METHOD` exception. Set-operation helpers are unsupported for now because a set-operation CTE inside `WITH RECURSIVE` is indistinguishable from the recursive CTE itself until the query is analyzed. These rejections are unconditional: the exception is raised regardless of whether `enable_materialized_cte` is enabled, whereas whether an accepted helper is actually materialized (rather than inlined like an ordinary CTE) still depends on that setting.
 - **Correlated CTEs are forbidden**: A materialized CTE cannot reference columns from outer query scopes.
 
 ## Common Scalar Expressions {#common-scalar-expressions}
