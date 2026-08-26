@@ -2,12 +2,14 @@
 set(LLVMOBJECTYAML_SOURCES
     ${LLVM_SOURCE_DIR}/lib/ObjectYAML/ArchiveEmitter.cpp
     ${LLVM_SOURCE_DIR}/lib/ObjectYAML/ArchiveYAML.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/BBAddrMapYAML.cpp
     ${LLVM_SOURCE_DIR}/lib/ObjectYAML/CodeViewYAMLDebugSections.cpp
     ${LLVM_SOURCE_DIR}/lib/ObjectYAML/CodeViewYAMLSymbols.cpp
     ${LLVM_SOURCE_DIR}/lib/ObjectYAML/CodeViewYAMLTypeHashing.cpp
     ${LLVM_SOURCE_DIR}/lib/ObjectYAML/CodeViewYAMLTypes.cpp
     ${LLVM_SOURCE_DIR}/lib/ObjectYAML/COFFEmitter.cpp
     ${LLVM_SOURCE_DIR}/lib/ObjectYAML/COFFYAML.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/ContiguousBlobAccumulator.cpp
     ${LLVM_SOURCE_DIR}/lib/ObjectYAML/DWARFEmitter.cpp
     ${LLVM_SOURCE_DIR}/lib/ObjectYAML/DWARFYAML.cpp
     ${LLVM_SOURCE_DIR}/lib/ObjectYAML/DXContainerEmitter.cpp

@@ -2,6 +2,7 @@
 
 # LoongArch Info sources
 set(LLVMLOONGARCHINFO_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/Target/LoongArch/LoongArchTargetObjectFile.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/LoongArch/TargetInfo/LoongArchTargetInfo.cpp
 )
 

@@ -242,6 +242,9 @@
 /* Define if ICU library is available */
 #define HAVE_ICU 0
 
+/* Define if Windows vendored ICU is available */
+#define HAVE_WINDOWS_ICU 0
+
 /* Define if iconv library is available */
 #define HAVE_ICONV 0
 

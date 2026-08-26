@@ -7,6 +7,7 @@ set(LLVMMCPARSER_SOURCES
     ${LLVM_SOURCE_DIR}/lib/MC/MCParser/DarwinAsmParser.cpp
     ${LLVM_SOURCE_DIR}/lib/MC/MCParser/ELFAsmParser.cpp
     ${LLVM_SOURCE_DIR}/lib/MC/MCParser/GOFFAsmParser.cpp
+    ${LLVM_SOURCE_DIR}/lib/MC/MCParser/LFIAsmParser.cpp
     ${LLVM_SOURCE_DIR}/lib/MC/MCParser/MasmParser.cpp
     ${LLVM_SOURCE_DIR}/lib/MC/MCParser/MCAsmParser.cpp
     ${LLVM_SOURCE_DIR}/lib/MC/MCParser/MCAsmParserExtension.cpp

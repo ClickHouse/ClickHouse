@@ -3,19 +3,23 @@ set(LLVMVECTORIZE_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/LoadStoreVectorizer.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/LoopIdiomVectorize.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/LoopVectorizationLegality.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/LoopVectorizationPlanner.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/LoopVectorize.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/DependencyGraph.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/InstrMaps.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/Interval.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/Legality.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/Passes/BottomUpVec.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/Passes/LoadStoreVec.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/Passes/PackReuse.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/Passes/RegionsFromBBs.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/Passes/RegionsFromMetadata.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/Passes/SeedCollection.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/Passes/TransactionAcceptOrRevert.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/Passes/TransactionSave.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/RegionWithScore.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/SandboxVectorizer.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/SandboxVectorizerIR.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/SandboxVectorizerPassBuilder.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/Scheduler.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/SeedCollector.cpp
@@ -28,7 +32,6 @@ set(LLVMVECTORIZE_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/VPlan.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/VPlanPredicator.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/VPlanRecipes.cpp
-    ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/VPlanSLP.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/VPlanTransforms.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/VPlanUnroll.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/VPlanUtils.cpp
