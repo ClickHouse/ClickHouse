@@ -35,6 +35,14 @@ class TestLegacyAdmonitionGuard(unittest.TestCase):
                 Path("ci/jobs/scripts/docs/autogenerate/sql/example.sql"),
                 "SELECT ':::note' || '\\nBody\\n:::';\n",
             ),
+            (
+                Path("src/example.cpp"),
+                'constexpr auto doc = ":::note" /* separator */ "\\nBody\\n:::";\n',
+            ),
+            (
+                Path("ci/jobs/scripts/docs/autogenerate/sql/example.sql"),
+                "SELECT ':::note' /* separator */ || '\\nBody\\n:::';\n",
+            ),
         ]
         for relative_path, content in fixtures:
             with self.subTest(relative_path=relative_path), self.temporary_repo() as root:
@@ -52,7 +60,9 @@ class TestLegacyAdmonitionGuard(unittest.TestCase):
         fixtures = [
             'constexpr auto syntax = ":::note";\n',
             'constexpr auto syntax = ":::note" "suffix";\n',
+            'constexpr auto syntax = ":::note" /* separator */ "suffix";\n',
             "SELECT ':::note' || 'suffix';\n",
+            "SELECT ':::note' /* separator */ || 'suffix';\n",
         ]
         for content in fixtures:
             with self.subTest(content=content), self.temporary_repo() as root:

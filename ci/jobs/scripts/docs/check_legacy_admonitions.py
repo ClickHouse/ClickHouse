@@ -11,10 +11,11 @@ LEGACY_ADMONITION_RE = re.compile(
     r"(?:[ \t\[].*)?$",
     re.MULTILINE,
 )
+TOKEN_SEPARATOR_RE = r"(?:[ \t\r\n]|/\*[\s\S]*?\*/)*"
 ESCAPED_ADMONITION_RE = re.compile(
     r":{3,}(?:note|warning|tip|info|caution|danger|important)"
-    r"(?:\\n|[ \t\[]|\"[ \t\r\n]*\"(?:\\n|[ \t\[])"
-    r"|'[ \t\r\n]*\|\|[ \t\r\n]*'(?:\\n|[ \t\[]))",
+    rf"(?:\\n|[ \t\[]|\"{TOKEN_SEPARATOR_RE}\"(?:\\n|[ \t\[])"
+    rf"|'{TOKEN_SEPARATOR_RE}\|\|{TOKEN_SEPARATOR_RE}'(?:\\n|[ \t\[]))",
 )
 SOURCE_EXTENSIONS = {".cpp", ".h", ".hpp", ".inc"}
 # This compatibility test intentionally exercises the legacy renderer syntax.
