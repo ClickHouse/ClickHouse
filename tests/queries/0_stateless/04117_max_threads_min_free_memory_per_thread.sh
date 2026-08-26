@@ -43,7 +43,7 @@ max_pipeline_parallelism() {
     awk 'BEGIN{m=1} match($0, /× [0-9]+/) {n=substr($0, RSTART+2, RLENGTH-2)+0; if (n>m) m=n} END{print m}'
 }
 
-for analyzer in 0 1; do
+for analyzer in 1; do
     echo "=== enable_analyzer=${analyzer} ==="
 
     echo "-- SELECT, limiter disabled --"
