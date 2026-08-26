@@ -513,8 +513,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 if (!left || !right)
                     continue;
 
-                /// Decimal bounds come back moved one integral unit outwards to undo Iceberg's
-                /// rounding, which can order an inverted pair, so the ordering is tested as declared.
+                /// Decimal bounds come back moved one integral unit outwards to undo Iceberg's rounding, which
+                /// can order an inverted pair, so the values as declared are tested alongside the pair that is used.
                 std::optional<DB::Field> declared_left = left;
                 std::optional<DB::Field> declared_right = right;
                 if (DB::WhichDataType(DB::removeNullable(name_and_type.type)).isDecimal())
@@ -523,14 +523,12 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                         left_str, name_and_type.type, true, /*compensate_rounding=*/false);
                     declared_right = deserializeFieldFromBinaryRepr(
                         right_str, name_and_type.type, false, /*compensate_rounding=*/false);
-                    if (!declared_left || !declared_right)
-                        continue;
                 }
 
                 /// Nothing orders the bounds read from the manifest, while `mayBeTrueInRange` requires a
                 /// lower bound that does not exceed the upper one. An inverted pair describes an empty
                 /// range, which would prune a file that holds matching rows.
-                if (accurateLess(*declared_right, *declared_left))
+                if (accurateLess(*declared_right, *declared_left) || accurateLess(*right, *left))
                 {
                     LOG_WARNING(
                         getLogger("ManifestFileIterator"),

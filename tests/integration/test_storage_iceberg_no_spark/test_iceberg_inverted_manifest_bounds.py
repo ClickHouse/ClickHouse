@@ -94,13 +94,25 @@ def _swap_one_field(lower_bounds, upper_bounds, field_id):
     return True
 
 
-def _swap_bounds_in_manifests(manifests, only_field_id=None):
-    """Exchange `data_file.lower_bounds` with `data_file.upper_bounds` in every manifest of the
-    table. With `only_field_id`, exchange just that one field id and leave the other columns well
-    formed. Returns the number of rewritten entries, which the caller asserts is non-zero.
+def _set_one_field(lower_bounds, upper_bounds, field_id, lower_raw, upper_raw):
+    """Overwrite the bound stored under `field_id` in both maps with a raw two's-complement
+    big-endian payload, leaving every other column untouched. Returns whether the id was present in
+    both."""
+    lower = next((entry for entry in lower_bounds if entry["key"] == field_id), None)
+    upper = next((entry for entry in upper_bounds if entry["key"] == field_id), None)
+    if lower is None or upper is None:
+        return False
+    lower["value"], upper["value"] = lower_raw, upper_raw
+    return True
+
+
+def _patch_manifests(manifests, patch_data_file):
+    """Apply `patch_data_file` to every manifest entry of the table that carries both bound maps, and
+    rewrite the manifests it changed. Returns the number of rewritten entries, which the caller
+    asserts is non-zero.
 
     Bound maps are keyed by Iceberg field id, which the ClickHouse writer assigns sequentially from
-    1 in declaration order and a pyiceberg schema states outright. Either way the id fails closed
+    1 in declaration order and a pyiceberg schema states outright. Either way an id fails closed
     rather than silently: one that does not exist leaves `patched` at 0, and one naming the wrong
     column reddens the pruning assertion of the column that was supposed to stay well formed."""
     patched = 0
@@ -120,7 +132,7 @@ def _swap_bounds_in_manifests(manifests, only_field_id=None):
                 records = list(reader)
                 reader.close()
 
-            swapped_here = 0
+            patched_here = 0
             for record in records:
                 data_file = record.get("data_file")
                 # Manifest-list entries carry manifest_path instead of data_file.
@@ -128,18 +140,10 @@ def _swap_bounds_in_manifests(manifests, only_field_id=None):
                     continue
                 if data_file.get("lower_bounds") is None or data_file.get("upper_bounds") is None:
                     continue
-                if only_field_id is None:
-                    data_file["lower_bounds"], data_file["upper_bounds"] = (
-                        data_file["upper_bounds"],
-                        data_file["lower_bounds"],
-                    )
-                    swapped_here += 1
-                elif _swap_one_field(
-                    data_file["lower_bounds"], data_file["upper_bounds"], only_field_id
-                ):
-                    swapped_here += 1
+                if patch_data_file(data_file):
+                    patched_here += 1
 
-            if swapped_here == 0:
+            if patched_here == 0:
                 continue
 
             with open(local_path, "wb") as f:
@@ -152,10 +156,44 @@ def _swap_bounds_in_manifests(manifests, only_field_id=None):
                 writer.close()
 
             manifests.put(local_path, remote_path)
-            patched += swapped_here
+            patched += patched_here
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
     return patched
+
+
+def _swap_bounds_in_manifests(manifests, only_field_id=None):
+    """Exchange `data_file.lower_bounds` with `data_file.upper_bounds` in every manifest of the
+    table. With `only_field_id`, exchange just that one field id and leave the other columns well
+    formed."""
+
+    def swap(data_file):
+        if only_field_id is None:
+            data_file["lower_bounds"], data_file["upper_bounds"] = (
+                data_file["upper_bounds"],
+                data_file["lower_bounds"],
+            )
+            return True
+        return _swap_one_field(
+            data_file["lower_bounds"], data_file["upper_bounds"], only_field_id
+        )
+
+    return _patch_manifests(manifests, swap)
+
+
+def _set_bounds_in_manifests(manifests, field_id, lower_raw, upper_raw):
+    """Replace both bounds of one column in every manifest of the table with raw payloads, which is
+    how a manifest spells a value outside the column's declared precision."""
+    return _patch_manifests(
+        manifests,
+        lambda data_file: _set_one_field(
+            data_file["lower_bounds"],
+            data_file["upper_bounds"],
+            field_id,
+            lower_raw,
+            upper_raw,
+        ),
+    )
 
 
 def test_iceberg_inverted_manifest_bounds(started_cluster_iceberg_no_spark):
@@ -217,7 +255,9 @@ def test_iceberg_inverted_manifest_bounds(started_cluster_iceberg_no_spark):
 
 def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spark):
     """Decimal bounds are decoded one integral unit outwards, so an inversion narrower than two
-    integral units still orders after that shift and only the values as declared reveal it.
+    integral units still orders after that shift and only the values as declared reveal it. The shift
+    can also invert a pair that is ordered as declared, which only the shifted values reveal, so both
+    columns below are needed: one inversion of each kind.
 
     pyiceberg writes the table because the ClickHouse Iceberg writer rejects Decimal, which is also
     why this exercises the S3 storage backend rather than the local one."""
@@ -243,6 +283,7 @@ def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spa
         schema=Schema(
             NestedField(1, "id", LongType(), required=False),
             NestedField(2, "d", DecimalType(10, 2), required=False),
+            NestedField(3, "e", DecimalType(9, 1), required=False),
         ),
         location=f"s3://{cluster.minio_bucket}/{key_prefix}",
         partition_spec=PartitionSpec(),
@@ -253,17 +294,26 @@ def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spa
         [
             pa.field("id", pa.int64(), True, metadata={b"PARQUET:field_id": b"1"}),
             pa.field("d", pa.decimal128(10, 2), True, metadata={b"PARQUET:field_id": b"2"}),
+            pa.field("e", pa.decimal128(9, 1), True, metadata={b"PARQUET:field_id": b"3"}),
         ]
     )
-    # One data file per append, with disjoint ranges in both columns. Every `d` range spans 1.50,
+    # One data file per append, with disjoint ranges in every column. Every `d` range spans 1.50,
     # which is below the two integral units the outward shift adds, so inverting it stays ordered
     # once shifted and is invisible to a check made after the shift.
     for lowest in (0, 10):
         table.append(
             pa.Table.from_pylist(
                 [
-                    {"id": lowest + 1, "d": decimal.Decimal(f"{lowest}.00")},
-                    {"id": lowest + 2, "d": decimal.Decimal(f"{lowest + 1}.50")},
+                    {
+                        "id": lowest + 1,
+                        "d": decimal.Decimal(f"{lowest}.00"),
+                        "e": decimal.Decimal(f"{lowest}.1"),
+                    },
+                    {
+                        "id": lowest + 2,
+                        "d": decimal.Decimal(f"{lowest + 1}.50"),
+                        "e": decimal.Decimal(f"{lowest + 1}.1"),
+                    },
                 ],
                 schema=arrow_schema,
             )
@@ -299,4 +349,14 @@ def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spa
     manifests = MinioManifests(cluster.minio_client, cluster.minio_bucket, key_prefix)
     assert _swap_bounds_in_manifests(manifests, only_field_id=2) > 0
     assert pruned_files(d_expr) == 0
+    assert pruned_files(id_expr) == 1
+
+    # `e` is a Decimal32, so its unscaled bound is closed by a cast to Int32. A bound out of the
+    # column's declared precision is still a legal encoding, and nothing rejects one: the pair below
+    # is ordered as declared, yet the upper bound leaves Int32 once shifted outwards and comes back
+    # negative, so only the shifted pair is inverted. It is the pair that reaches `mayBeTrueInRange`.
+    e_expr = "e < toDecimal32(0.5, 1)"
+    assert pruned_files(e_expr) == 1
+    assert _set_bounds_in_manifests(manifests, 3, b"\x7f\xff\xff\xf0", b"\x7f\xff\xff\xfa") > 0
+    assert pruned_files(e_expr) == 0
     assert pruned_files(id_expr) == 1
