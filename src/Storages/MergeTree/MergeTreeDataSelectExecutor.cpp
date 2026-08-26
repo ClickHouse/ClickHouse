@@ -2599,9 +2599,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     MarkRanges index_ranges;
     for (const auto & range : ranges)
     {
+        /// The end rounds up without forming the sum, which wraps when the granularity is close to the maximum of size_t.
         MarkRange index_range(
                 range.begin / skip_index_granularity,
-                (range.end + skip_index_granularity - 1) / skip_index_granularity);
+                range.end / skip_index_granularity + (range.end % skip_index_granularity != 0));
         index_ranges.push_back(index_range);
     }
 
@@ -2958,9 +2959,10 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
     MarkRanges index_ranges;
     for (const auto & range : ranges)
     {
+        /// The end rounds up without forming the sum, which wraps when the granularity is close to the maximum of size_t.
         MarkRange index_range(
             range.begin / skip_index_granularity,
-            (range.end + skip_index_granularity - 1) / skip_index_granularity);
+            range.end / skip_index_granularity + (range.end % skip_index_granularity != 0));
         index_ranges.push_back(index_range);
     }
 
