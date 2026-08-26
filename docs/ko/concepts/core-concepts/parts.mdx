@@ -40,13 +40,23 @@ ORDER BY (town, street);
 
 ClickHouse 서버가 위 다이어그램에 표시된 4개 행의 예시 삽입(예: [INSERT INTO 문](/ko/reference/statements/insert-into)을 통해)을 처리할 때는 여러 단계를 수행합니다:
 
-① **정렬**: 행은 테이블의 정렬 키 `(town, street)`를 기준으로 정렬되며, 정렬된 행에 대해 [희소 프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)가 생성됩니다.
+<Steps>
+  <Step title="정렬">
+    행은 테이블의 정렬 키 `(town, street)`를 기준으로 정렬되며, 정렬된 행에 대해 [희소 프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)가 생성됩니다.
+  </Step>
 
-② **분할**: 정렬된 데이터는 컬럼별로 분할됩니다.
+  <Step title="분할">
+    정렬된 데이터는 컬럼별로 분할됩니다.
+  </Step>
 
-③ **압축**: 각 컬럼은 [압축됩니다](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+  <Step title="압축">
+    각 컬럼은 [압축됩니다](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+  </Step>
 
-④ **디스크에 쓰기**: 압축된 컬럼은 삽입으로 생성된 데이터 파트를 나타내는 새 디렉터리 안에 바이너리 컬럼 파일로 저장됩니다. 희소 프라이머리 인덱스도 압축되어 같은 디렉터리에 저장됩니다.
+  <Step title="디스크에 쓰기">
+    압축된 컬럼은 삽입으로 생성된 데이터 파트를 나타내는 새 디렉터리 안에 바이너리 컬럼 파일로 저장됩니다. 희소 프라이머리 인덱스도 압축되어 같은 디렉터리에 저장됩니다.
+  </Step>
+</Steps>
 
 테이블의 구체적인 엔진에 따라 정렬과 함께 추가 변환이 [수행될 수 있습니다](/ko/reference/settings/session-settings).
 

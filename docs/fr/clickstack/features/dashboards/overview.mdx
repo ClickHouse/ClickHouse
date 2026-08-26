@@ -200,6 +200,47 @@ Pour supprimer, modifier ou dupliquer une visualisation, survolez-la, puis utili
 
 Chaque tuile dispose d’un volet **Paramètres d’affichage** proposant des options qui contrôlent la façon dont sa valeur est rendue. Ouvrez-le depuis l’éditeur de tuiles en cliquant sur **Paramètres d’affichage**. Les options disponibles dépendent du type de visualisation.
 
+<div id="number-tile-color">
+  #### Couleur des tuiles Number
+</div>
+
+Les tuiles Number prennent en charge un choix de **Couleur** statique issu de la palette de graphiques prédéfinie. Lorsqu&#39;une tuile Number est sélectionnée, ouvrez les **Paramètres d&#39;affichage** et utilisez le contrôle **Couleur** (intitulé **Couleur des tuiles Number** à des fins d&#39;accessibilité) pour choisir un échantillon, ou effacez la sélection afin d&#39;utiliser la couleur de texte par défaut.
+
+Les couleurs sont stockées sous forme de tokens de palette, et non de valeurs hexadécimales brutes, afin que la même tuile s&#39;affiche correctement dans les thèmes clair, sombre et IDE.
+
+**Tokens catégoriels** (teintes pour plusieurs séries) :
+
+| Token              | Libellé    |
+| ------------------ | ---------- |
+| `chart-blue`       | Bleu       |
+| `chart-orange`     | Orange     |
+| `chart-red`        | Rouge      |
+| `chart-cyan`       | Cyan       |
+| `chart-green`      | Vert       |
+| `chart-pink`       | Rose       |
+| `chart-purple`     | Violet     |
+| `chart-light-blue` | Bleu clair |
+| `chart-brown`      | Marron     |
+| `chart-gray`       | Gris       |
+
+**Tokens sémantiques** (orientés statut) :
+
+| Token           | Libellé       |
+| --------------- | ------------- |
+| `chart-success` | Succès        |
+| `chart-warning` | Avertissement |
+| `chart-error`   | Erreur        |
+
+Utilisez des tokens sémantiques lorsque le nombre représente un statut (par exemple, un nombre d&#39;erreurs avec `chart-error` ou un taux de bon fonctionnement avec `chart-success`). Utilisez des tokens catégoriels pour distinguer visuellement des tuiles KPI associées sans indiquer de statut.
+
+Les anciennes configurations peuvent encore stocker des tokens numériques legacy (`chart-1` à `chart-10`). Lors du chargement d&#39;un tableau de bord, ClickStack les associe aux tokens nommés d&#39;après les teintes ci-dessus.
+
+La même palette permet de définir des **règles de couleur** facultatives dans le même volet : des conditions ordonnées évaluées par rapport à la valeur affichée (la dernière correspondance l&#39;emporte). Lorsqu&#39;aucune règle ne correspond, la couleur statique s&#39;applique, puis la couleur de texte par défaut.
+
+<div id="number-tile-background-chart">
+  #### Graphique d’arrière-plan de la tuile Number
+</div>
+
 Les tuiles Number peuvent afficher un **graphique d’arrière-plan** : une mini-courbe de tendance tracée derrière la valeur, pour visualiser d’un coup d’œil son évolution sur l’intervalle de temps sélectionné. C’est utile pour les tuiles de SLO et de budget d’erreur, où la tendance d’une valeur compte autant que sa valeur actuelle.
 
 Avec une tuile Number sélectionnée, ouvrez **Paramètres d’affichage** et définissez **Graphique d’arrière-plan** sur **Ligne** ou **Zone** (ou **Aucun** pour le désactiver). La mini-courbe est dérivée d’une version de la requête de la tuile regroupée par intervalles de temps ; aucune configuration supplémentaire n’est donc nécessaire. Elle hérite par défaut de la couleur de la tuile ; définissez une **Couleur d’arrière-plan** pour la remplacer par une couleur précise de la palette.
@@ -215,6 +256,46 @@ Avec une tuile de tableau sélectionnée, ouvrez **Paramètres d’affichage** e
 <Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Volet Paramètres d’affichage pour une tuile de tableau, avec Arrière-plan alterné des lignes activé" size="lg" />
 
 Les tuiles de tableau conservent également un séparateur entre la ligne d’en-tête et les données pendant le défilement, afin que les en-têtes de colonnes restent bien distincts.
+
+<div id="api-number-tile-color">
+  #### API des tableaux de bord : couleur des tuiles Number
+</div>
+
+Lors de la création ou de la mise à jour de tableaux de bord via l’API externe (`POST` / `PUT` `/api/v2/dashboards`), définissez `color` sur un token de palette dans la config du builder d’une tuile Number. Les valeurs hex brutes sont rejetées.
+
+```json
+{
+  "name": "Error rate KPIs",
+  "tiles": [
+    {
+      "id": "65f5e4a3b9e77c001a222222",
+      "name": "Errors",
+      "x": 0,
+      "y": 0,
+      "w": 6,
+      "h": 4,
+      "config": {
+        "displayType": "number",
+        "sourceId": "<SOURCE_ID>",
+        "select": [
+          {
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "whereLanguage": "lucene",
+            "alias": "Errors"
+          }
+        ],
+        "color": "chart-error",
+        "backgroundChart": {
+          "type": "area"
+        }
+      }
+    }
+  ]
+}
+```
+
+`color` accepte n’importe quel token des listes catégorielles et sémantiques ci-dessus (par exemple `chart-blue` ou `chart-success`). Le paramètre facultatif `backgroundChart.color` remplace la couleur du sparkline par le même enum de token. Consultez la [référence de l’API ClickStack](/fr/use-cases/observability/clickstack/api-reference) pour l’authentification et les URL de base.
 
 <div id="dashboard-listing-search">
   ## Tableaux de bord - liste et recherche

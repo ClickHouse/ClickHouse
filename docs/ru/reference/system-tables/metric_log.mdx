@@ -296,7 +296,6 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_PatchesAppliedInAllReadTasks` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество применённых патч-частей во всех задачах чтения
 * `ProfileEvent_PatchesMergeAppliedInAllReadTasks` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество применённых патч-частей в режиме Merge во всех задачах чтения
 * `ProfileEvent_PatchesJoinAppliedInAllReadTasks` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество применённых патч-частей в режиме Join во всех задачах чтения
-* `ProfileEvent_PatchesMergeOnKeyAppliedInAllReadTasks` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество применённых патч-частей в режиме MergeOnKey (v2) во всех задачах чтения
 * `ProfileEvent_PatchesReadRows` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество строк, прочитанных из патч-частей
 * `ProfileEvent_PatchesReadUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество несжатых байт, прочитанных из патч-частей
 * `ProfileEvent_PatchesJoinRowsAddedToHashTable` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество строк, добавленных в хеш-таблицы при применении патч-частей в режиме Join
@@ -304,7 +303,6 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_ReadPatchesMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на чтение патч-частей
 * `ProfileEvent_BuildPatchesMergeMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на построение индексов для применения патч-частей в режиме Merge
 * `ProfileEvent_BuildPatchesJoinMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на построение индексов и хеш-таблиц для применения патч-частей в режиме Join
-* `ProfileEvent_ApplyPatchMergeOnKeyMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное в циклах слияния ключей сортировки в applyPatchesMergeOnKey
 * `ProfileEvent_AnalyzePatchRangesMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на анализ индекса патч-частей
 * `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество задач чтения, в которых была применена хотя бы одна мутация на лету
 * `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество мутаций, применённых на лету, во всех задачах чтения
@@ -921,6 +919,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/ru/reference/data-types/int-uint)) — Количество hash table, инициализированных как двухуровневые для aggregation.
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев преобразования одноуровневой хеш-таблицы агрегации в двухуровневую во время выполнения.
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/ru/reference/data-types/int-uint)) — Для скольких blocks была применена оптимизация равных диапазонов ключей
+* `ProfileEvent_AggregationTopKRowsSkipped` ([UInt64](/ru/reference/data-types/int-uint)) — Количество строк, пропущенных при агрегации, поскольку их ключ группировки не мог попасть в результат top-K (см. `enable_group_by_top_k_optimization`).
+* `ProfileEvent_AggregationTopKKeysEvicted` ([UInt64](/ru/reference/data-types/int-uint)) — Количество ключей группировки, вытесненных из ограниченной кучи top-K во время агрегации (см. `enable_group_by_top_k_optimization`).
+* `ProfileEvent_AggregationTopKKeysPruned` ([UInt64](/ru/reference/data-types/int-uint)) — Количество вытесненных ключей группировки, которые также были удалены из промежуточной хеш-таблицы вместе с уничтожением их состояний агрегатных функций (см. `enable_group_by_top_k_optimization`). Значение меньше `AggregationTopKKeysEvicted`, если метод агрегации не может удалять ключи или если ранжируется только префикс ключа: в таком случае куча всё равно пропускает строки, но хеш-таблица сохраняет каждую допущенную группу.
+* `ProfileEvent_AggregationTopKHeapsFrozen` ([UInt64](/ru/reference/data-types/int-uint)) — Количество замороженных куч агрегации top-K с переходом на обычную агрегацию. Либо куча почти ничего не отклонила в пределах окна наблюдения (например, число различных ключей группировки не превышает LIMIT), либо набор равных значений на границе кучи — который никогда не может быть вытеснен — разросся сверх неё (см. `enable_group_by_top_k_optimization`).
 * `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/ru/reference/data-types/int-uint)) — Количество элементов, предварительно выделенных в hash table для hash join.
 * `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда запрос metadata для Объектного хранилища был обработан из кэша без обращения к Keeper
 * `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда запрос metadata для Объектного хранилища пришлось обрабатывать через Keeper
@@ -1314,6 +1316,46 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperChangelogStartupReadBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество физических байтов (контрольная сумма + заголовок + blob), прочитанных из файлов changelog параллельным модулем чтения при запуске Keeper
 * `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество байтов, записанных в файлы снимков в Keeper
 * `ProfileEvent_KeeperSnapshotFileSyncMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на fsync для файлов снимков в Keeper
+* `ProfileEvent_KeeperLSMTFlushes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество успешно завершённых операций сброса memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTMerges` ([UInt64](/ru/reference/data-types/int-uint)) — Количество успешно завершённых слияний Keeper LSMT
+* `ProfileEvent_KeeperLSMTFlushExceptions` ([UInt64](/ru/reference/data-types/int-uint)) — Количество исключений при сбросе memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeExceptions` ([UInt64](/ru/reference/data-types/int-uint)) — Количество исключений при слиянии Keeper LSMT
+* `ProfileEvent_KeeperLSMTFileDeletionExceptions` ([UInt64](/ru/reference/data-types/int-uint)) — Количество исключений при удалении файлов Keeper LSMT
+* `ProfileEvent_KeeperLSMTFlushWrittenCompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество сжатых байтов, записанных в файлы при сбросе memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTFlushWrittenUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество несжатых байтов, записанных в файлы при сбросе memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeWrittenFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество выходных файлов, опубликованных при слиянии Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeWrittenCompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество сжатых байтов в выходных файлах, опубликованных при слиянии Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeWrittenUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество несжатых байтов в выходных файлах, опубликованных при слиянии Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeConsumedFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество входных файлов, полностью обработанных и удалённых при слиянии Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeConsumedUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество несжатых байтов во входных файлах, полностью обработанных и удалённых при слиянии Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedCreates` ([UInt64](/ru/reference/data-types/int-uint)) — Количество записей Create, добавленных в незафиксированные memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedCreateBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Сериализованные байты записей Create, добавленных в незафиксированные memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedUpdates` ([UInt64](/ru/reference/data-types/int-uint)) — Количество записей Update, добавленных в незафиксированные memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedUpdateBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Сериализованные байты записей Update, добавленных в незафиксированные memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedRemoves` ([UInt64](/ru/reference/data-types/int-uint)) — Количество записей Remove, добавленных в незафиксированные memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedRemoveBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Сериализованные байты записей Remove, добавленных в незафиксированные memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTCommittedEntryBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Сериализованные байты записей, добавленных в зафиксированную мемтаблицу Keeper LSMT
+* `ProfileEvent_KeeperLSMTThrottledWrites` ([UInt64](/ru/reference/data-types/int-uint)) — Количество операций записи, задержанных из-за отставания фоновых сбросов или слияний Keeper LSMT
+* `ProfileEvent_KeeperLSMTCommittedMemtablesCreated` ([UInt64](/ru/reference/data-types/int-uint)) — Количество зафиксированных мемтаблиц, созданных Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedMemtablesCreated` ([UInt64](/ru/reference/data-types/int-uint)) — Количество незафиксированных мемтаблиц, созданных Keeper LSMT
+* `ProfileEvent_KeeperLSMTGetUncommittedNodeHits` ([UInt64](/ru/reference/data-types/int-uint)) — Количество поисков узлов Keeper LSMT, при которых узел был найден в незафиксированных мемтаблицах
+* `ProfileEvent_KeeperLSMTGetUncommittedNodeMisses` ([UInt64](/ru/reference/data-types/int-uint)) — Количество поисков узлов Keeper LSMT, при которых узел не был найден в незафиксированных мемтаблицах и поиск продолжался в зафиксированном состоянии
+* `ProfileEvent_KeeperLSMTGetCommittedNodeFromMemory` ([UInt64](/ru/reference/data-types/int-uint)) — Количество поисков зафиксированных узлов Keeper LSMT, при которых блок узла уже находился в памяти
+* `ProfileEvent_KeeperLSMTGetCommittedNodeNonexistent` ([UInt64](/ru/reference/data-types/int-uint)) — Количество поисков зафиксированных узлов Keeper LSMT для несуществующих узлов
+* `ProfileEvent_KeeperLSMTGetCommittedNodeLoadedBlock` ([UInt64](/ru/reference/data-types/int-uint)) — Количество поисков зафиксированных узлов Keeper LSMT, при которых требовалось загрузить блок узла
+* `ProfileEvent_KeeperLSMTNodeCacheEntriesUpdated` ([UInt64](/ru/reference/data-types/int-uint)) — Количество записей кэша узлов Keeper LSMT, переназначенных на только что загруженный блок
+* `ProfileEvent_KeeperLSMTListNamesFromMemtables` ([UInt64](/ru/reference/data-types/int-uint)) — Имена дочерних узлов, включая маркеры удаления, полученные из мемтаблиц операциями list Keeper LSMT
+* `ProfileEvent_KeeperLSMTListNamesFromFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Имена дочерних узлов, включая маркеры удаления, полученные из файлов операциями list Keeper LSMT
+* `ProfileEvent_KeeperLSMTListScannedBlocks` ([UInt64](/ru/reference/data-types/int-uint)) — Блоки в файлах, просканированные операциями list Keeper LSMT
+* `ProfileEvent_KeeperLSMTListScannedEntries` ([UInt64](/ru/reference/data-types/int-uint)) — Записи в файлах, просканированные операциями list Keeper LSMT
+* `ProfileEvent_KeeperLSMTListFilterSkipped` ([UInt64](/ru/reference/data-types/int-uint)) — Количество сканирований файлов, пропущенных операциями list Keeper LSMT, поскольку фильтр родительских путей исключил наличие дочерних узлов
+* `ProfileEvent_KeeperLSMTListFilterFalsePositives` ([UInt64](/ru/reference/data-types/int-uint)) — Количество сканирований файлов, не пропущенных фильтром родительских путей Keeper LSMT, но не обнаруживших дочерних узлов
+* `ProfileEvent_KeeperLSMTListFilterTruePositives` ([UInt64](/ru/reference/data-types/int-uint)) — Количество сканирований файлов, не пропущенных фильтром родительских путей Keeper LSMT и обнаруживших дочерние узлы
+* `ProfileEvent_KeeperLSMTGetBlockFromWeakPtr` ([UInt64](/ru/reference/data-types/int-uint)) — Количество обращений к блокам Keeper LSMT, обслуженных слабым указателем в информации о блоке файла
+* `ProfileEvent_KeeperLSMTGetBlockFromCache` ([UInt64](/ru/reference/data-types/int-uint)) — Количество обращений к блокам Keeper LSMT, обслуженных кэшем блоков
+* `ProfileEvent_KeeperLSMTGetBlockLoadedGroup` ([UInt64](/ru/reference/data-types/int-uint)) — Количество обращений к блокам Keeper LSMT, при которых требовалось загрузить с диска группу блоков
+* `ProfileEvent_KeeperLSMTLoadedBlocks` ([UInt64](/ru/reference/data-types/int-uint)) — Количество блоков, загруженных Keeper LSMT с диска
+* `ProfileEvent_KeeperLSMTLoadedUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Несжатые байты блоков, загруженных Keeper LSMT с диска
 * `ProfileEvent_StorageConnectionsCreated` ([UInt64](/ru/reference/data-types/int-uint)) — Количество созданных подключений к хранилищу
 * `ProfileEvent_StorageConnectionsReused` ([UInt64](/ru/reference/data-types/int-uint)) — Количество повторно использованных подключений к хранилищу
 * `ProfileEvent_StorageConnectionsReset` ([UInt64](/ru/reference/data-types/int-uint)) — Количество сброшенных подключений к хранилищу
@@ -1439,6 +1481,8 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество случаев, когда не удалось отследить sample выделения памяти jemalloc
 * `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество случаев, когда не удалось отследить sample освобождения памяти jemalloc
 * `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Затраченное время на загрузку статистики из частей
+* `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/ru/reference/data-types/int-uint)) — Количество условий `IN`, которые оценщик селективности не смог проанализировать, поскольку набор ещё не был построен и он не должен выполнять подзапрос для его заполнения
+* `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/ru/reference/data-types/int-uint)) — Количество условий `IN`, селективность которых была оценена по размеру и границам набора, а не по его точным диапазонам, поскольку набор превышает `statistics_max_set_size_for_exact_selectivity_estimation`
 * `ProfileEvent_RuntimeDataflowStatisticsInputBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Собранная статистика по количеству байтов, которые реплики прочитали бы, если бы запрос выполнялся с параллельными репликами
 * `ProfileEvent_RuntimeDataflowStatisticsOutputBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Собранная статистика по количеству байтов, которые реплики отправили бы инициатору, если бы запрос выполнялся с параллельными репликами
 * `ProfileEvent_S3CachedCredentialsProvidersReused` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество провайдеров учетных данных, повторно использованных из кэша
@@ -1572,6 +1616,9 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `CurrentMetric_MergeTreeDataSelectExecutorThreads` ([Int64](/ru/reference/data-types/int-uint)) — Количество потоков в пуле потоков MergeTreeDataSelectExecutor.
 * `CurrentMetric_MergeTreeDataSelectExecutorThreadsActive` ([Int64](/ru/reference/data-types/int-uint)) — Количество потоков в пуле потоков MergeTreeDataSelectExecutor, выполняющих задачу.
 * `CurrentMetric_MergeTreeDataSelectExecutorThreadsScheduled` ([Int64](/ru/reference/data-types/int-uint)) — Количество задач в очереди или уже выполняющихся задач в пуле потоков MergeTreeDataSelectExecutor.
+* `CurrentMetric_BackgroundQueryThreads` ([Int64](/ru/reference/data-types/int-uint)) — Количество потоков в фоновом пуле потоков запросов.
+* `CurrentMetric_BackgroundQueryThreadsActive` ([Int64](/ru/reference/data-types/int-uint)) — Количество потоков в фоновом пуле потоков запросов, выполняющих задачу.
+* `CurrentMetric_BackgroundQueryThreadsScheduled` ([Int64](/ru/reference/data-types/int-uint)) — Количество задач в очереди или выполняющихся задач в фоновом пуле потоков запросов.
 * `CurrentMetric_BackupsThreads` ([Int64](/ru/reference/data-types/int-uint)) — Количество потоков в пуле потоков для BACKUP.
 * `CurrentMetric_BackupsThreadsActive` ([Int64](/ru/reference/data-types/int-uint)) — Количество потоков в пуле потоков для BACKUP, выполняющих задачу.
 * `CurrentMetric_BackupsThreadsScheduled` ([Int64](/ru/reference/data-types/int-uint)) — Количество задач для BACKUP в очереди или в активном состоянии.
@@ -2062,6 +2109,16 @@ CurrentMetric_DistributedFilesToInsert:                          0
 
 **Схема**
 Эту таблицу можно настроить, используя разные типы схем через XML-тег `<schema_type>`. Тип схемы по умолчанию — `wide`, при котором каждая метрика или событие профиля хранится в отдельном столбце. Эта схема обеспечивает наилучшую производительность и эффективность при чтении отдельных столбцов.
+
+Схема `bucketed` хранит все события профиля и текущие метрики в одном столбце `metrics` типа [Map](/ru/reference/data-types/map)([Enum16](/ru/reference/data-types/enum), [Int64](/ru/reference/data-types/int-uint)), поэтому таблица состоит из нескольких столбцов вместо тысяч. `Map` использует сериализацию Map по бакетам (`map_serialization_version = 'with_buckets'`) с фиксированным количеством 128 бакетов, поэтому при чтении одной метрики считывается только один из 128 бакетов. Нулевые значения не хранятся: при чтении отсутствующего ключа возвращается `0`. Каждая метрика также доступна через столбец `ALIAS`, названный в честь самой метрики (например, `ProfileEvent_Query UInt64 ALIAS metrics['ProfileEvent_Query']`), поэтому все запросы, написанные для схемы `wide`, продолжают работать. События профиля хранятся как приращения за интервал сбора, а текущие метрики — как значения на момент сбора.
+
+```xml
+<clickhouse>
+    <metric_log>
+        <schema_type>bucketed</schema_type>
+    </metric_log>
+</clickhouse>
+```
 
 Схема `transposed` хранит данные в формате, похожем на `system.asynchronous_metric_log`, где метрики и события хранятся в виде строк. Эта схема полезна в конфигурациях с ограниченными ресурсами, поскольку снижает потребление ресурсов во время слияний.
 

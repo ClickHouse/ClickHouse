@@ -200,6 +200,47 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
 
 每个卡片都有一个 **Display Settings** 抽屉，用于控制其数值的显示方式。在卡片编辑器中点击 **Display Settings** 即可打开。可用选项取决于可视化类型。
 
+<div id="number-tile-color">
+  #### 数值卡片颜色
+</div>
+
+数值卡片支持从精选图表调色板中选择静态 **颜色**。选中数值卡片后，打开 **Display Settings**，使用 **颜色** 控件 (为实现无障碍访问，该控件标注为 **数值卡片颜色**) 选择色块；或者清除选择，以使用默认文本颜色。
+
+颜色以调色板标记而非原始十六进制值的形式存储，因此同一卡片可在浅色、深色和 IDE 主题下正确适配。
+
+**categorical 标记** (多数据系列色相) ：
+
+| 标记                 | 标签  |
+| ------------------ | --- |
+| `chart-blue`       | 蓝色  |
+| `chart-orange`     | 橙色  |
+| `chart-red`        | 红色  |
+| `chart-cyan`       | 青色  |
+| `chart-green`      | 绿色  |
+| `chart-pink`       | 粉色  |
+| `chart-purple`     | 紫色  |
+| `chart-light-blue` | 浅蓝色 |
+| `chart-brown`      | 棕色  |
+| `chart-gray`       | 灰色  |
+
+**语义标记** (面向状态) ：
+
+| 标记              | 标签      |
+| --------------- | ------- |
+| `chart-success` | 成功      |
+| `chart-warning` | Warning |
+| `chart-error`   | 错误      |
+
+当数值表示状态时，请使用语义标记 (例如，使用 `chart-error` 表示错误计数，或使用 `chart-success` 表示健康率) 。如果希望在相关 KPI 卡片之间形成视觉区分，但不表达状态含义，请使用 categorical 标记。
+
+较旧的配置可能仍存储 legacy 数值标记 (`chart-1` 到 `chart-10`) 。加载 仪表盘 时，ClickStack 会将这些标记映射为上述以色相命名的标记。
+
+同一调色板还支持在同一抽屉中设置可选的 **颜色规则**：根据显示值评估有序条件 (最后匹配的规则生效) 。如果没有规则匹配，则应用静态颜色；若未设置静态颜色，则使用默认文本颜色。
+
+<div id="number-tile-background-chart">
+  #### 数值卡片背景图表
+</div>
+
 数值卡片可以显示**背景图表**：即在数值后方绘制一条趋势迷你线图，让你一眼就能看出它在所选时间范围内的变化。这对 SLO 和错误预算卡片尤其有用，因为数值的变化趋势与当前读数同样重要。
 
 选中数值卡片后，打开 **Display Settings**，将 **Background chart** 设置为 **Line** 或 **Area** (也可设为 **None** 将其关闭) 。这条迷你线图来自卡片查询按时间分桶后的结果，因此无需额外配置。默认情况下，它会继承卡片颜色；如果想改用调色板中的特定颜色，可以设置 **Background color** 进行覆盖。
@@ -215,6 +256,46 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
 <Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="表格卡片的 Display Settings 抽屉，其中已开启 Alternate Row Background" size="lg" />
 
 表格卡片在滚动时也会在表头与数据之间保留分隔线，因此列标题始终清晰可辨。
+
+<div id="api-number-tile-color">
+  #### 仪表盘 API：数值卡片颜色
+</div>
+
+通过外部 API (`POST` / `PUT` `/api/v2/dashboards`) 创建或更新仪表盘时，请将 builder 数值卡片配置中的 `color` 设为调色板标记。不支持原始十六进制值。
+
+```json
+{
+  "name": "Error rate KPIs",
+  "tiles": [
+    {
+      "id": "65f5e4a3b9e77c001a222222",
+      "name": "Errors",
+      "x": 0,
+      "y": 0,
+      "w": 6,
+      "h": 4,
+      "config": {
+        "displayType": "number",
+        "sourceId": "<SOURCE_ID>",
+        "select": [
+          {
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "whereLanguage": "lucene",
+            "alias": "Errors"
+          }
+        ],
+        "color": "chart-error",
+        "backgroundChart": {
+          "type": "area"
+        }
+      }
+    }
+  ]
+}
+```
+
+`color` 可接受上述 categorical 和语义列表中的任何标记 (例如 `chart-blue` 或 `chart-success`) 。可选的 `backgroundChart.color` 可使用相同的标记枚举覆盖迷你线图的颜色。有关身份验证和基础 URL，请参阅 [ClickStack API 参考文档](/zh/use-cases/observability/clickstack/api-reference)。
 
 <div id="dashboard-listing-search">
   ## 仪表盘 - 列表与搜索

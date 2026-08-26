@@ -955,11 +955,11 @@ CREATE TABLE regexp_device
 يمكن تعبئة هذه الجداول من ملفات CSV المستضافة علنًا التالية، باستخدام دالة الجدول url:
 
 ```sql
-INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 ```
 
 بعد تعبئة جداول الذاكرة، يمكننا تحميل قواميس التعبيرات النمطية. لاحظ أننا بحاجة إلى تحديد قيم المفاتيح كأعمدة، إذ ستكون هذه هي السمات التي يمكننا استخراجها من وكيل المستخدم.
@@ -1004,7 +1004,7 @@ LIFETIME(0)
 LAYOUT(regexp_tree);
 ```
 
-بعد تحميل هذه القواميس، يمكننا إدخال وكيل المستخدم نموذجي واختبار إمكانات الاستخراج الجديدة باستخدام القواميس:
+بعد تحميل هذه القواميس، يمكننا تقديم وكيل مستخدم نموذجي واختبار إمكانات استخراج القواميس الجديدة:
 
 ```sql
 WITH 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:127.0) Gecko/20100101 Firefox/127.0' AS user_agent

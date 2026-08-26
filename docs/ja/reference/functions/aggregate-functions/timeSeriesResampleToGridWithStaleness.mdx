@@ -17,6 +17,8 @@ doc_type: 'reference'
 
 Alias: `timeSeriesLastToGrid`.
 
+複数のサンプルのタイムスタンプが同じ場合は、そのうち 1 つのみが使用されます。最も大きい値を持つサンプルです。NaN 値は他のすべての値より優先度が低いため、このタイムスタンプのすべてのサンプルが NaN の場合にのみ使用されます。
+
 <Warning>
   この関数は実験的機能です。`allow_experimental_time_series_aggregate_functions=true` を設定して有効化してください。
 </Warning>

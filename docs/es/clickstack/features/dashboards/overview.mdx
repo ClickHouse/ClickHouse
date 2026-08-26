@@ -200,13 +200,54 @@ Para eliminar, editar o duplicar una visualización, pase el cursor sobre ella y
 
 Cada tile tiene un panel **Configuración de visualización** con opciones que controlan cómo se muestra su valor. Ábrelo desde el editor del tile haciendo clic en **Configuración de visualización**. Las opciones disponibles dependen del tipo de visualización.
 
-Los tiles de **Number** pueden mostrar un **gráfico de fondo**: una minigráfica de tendencia dibujada detrás del valor, para que su evolución en el intervalo de tiempo seleccionado pueda verse de un vistazo. Esto resulta útil en los tiles de SLO y de presupuesto de errores, donde la tendencia de un valor importa tanto como su lectura actual.
+<div id="number-tile-color">
+  #### Color del tile numérico
+</div>
 
-Con un tile de **Number** seleccionado, abre **Configuración de visualización** y establece **Gráfico de fondo** en **Línea** o **Área** (o **Ninguno** para desactivarlo). La minigráfica se deriva de una versión de la consulta del tile agrupada en intervalos de tiempo, por lo que no se necesita ninguna configuración adicional. Hereda el color del tile de forma predeterminada; establece un **Color de fondo** para sustituirlo por un color concreto de la paleta.
+Los tiles numéricos admiten una selección estática de **Color** de la paleta de gráficos seleccionada. Con un tile numérico seleccionado, abra **Configuración de visualización** y use el control **Color** (etiquetado como **Color del tile numérico** para fines de accesibilidad) para elegir una muestra de color o borrar la selección y usar el color de texto predeterminado.
 
-<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Panel Configuración de visualización de un tile Number, con Gráfico de fondo establecido en Área" size="lg" />
+Los colores se almacenan como tokens de paleta, no como valores hexadecimales sin procesar, por lo que el mismo tile se adapta correctamente a los temas claro, oscuro e IDE.
 
-Los gráficos de fondo se aplican a los tiles de **Number** del constructor de consultas. Los tiles de **Number** de Raw SQL devuelven un único valor sin dimensión temporal que pueda agruparse en intervalos, por lo que la opción aparece, pero está deshabilitada para ellos.
+**Tokens categóricos** (tonos para varias series):
+
+| Token              | Etiqueta   |
+| ------------------ | ---------- |
+| `chart-blue`       | Azul       |
+| `chart-orange`     | Naranja    |
+| `chart-red`        | Rojo       |
+| `chart-cyan`       | Cian       |
+| `chart-green`      | Verde      |
+| `chart-pink`       | Rosa       |
+| `chart-purple`     | Morado     |
+| `chart-light-blue` | Azul claro |
+| `chart-brown`      | Marrón     |
+| `chart-gray`       | Gris       |
+
+**Tokens semánticos** (orientados al estado):
+
+| Token           | Etiqueta    |
+| --------------- | ----------- |
+| `chart-success` | Correcto    |
+| `chart-warning` | Advertencia |
+| `chart-error`   | Error       |
+
+Use tokens semánticos cuando el número represente un estado (por ejemplo, un recuento de errores con `chart-error` o una tasa saludable con `chart-success`). Use tokens categóricos cuando desee distinguir visualmente entre tiles de KPI relacionados sin implicar un estado.
+
+Las configuraciones antiguas pueden seguir almacenando tokens numéricos heredados (de `chart-1` a `chart-10`). ClickStack los asigna a los tokens con nombres de tonos indicados anteriormente al cargar un dashboard.
+
+La misma paleta también permite definir **reglas de color** opcionales en el mismo panel lateral: condiciones ordenadas que se evalúan con respecto al valor mostrado (prevalece la última coincidencia). Cuando ninguna regla coincide, se aplica el color estático y, después, el color de texto predeterminado.
+
+<div id="number-tile-background-chart">
+  #### Gráfico de fondo del tile numérico
+</div>
+
+Los tiles numéricos pueden mostrar un **gráfico de fondo**: una minigráfica de tendencia dibujada detrás del valor, para que su evolución en el intervalo de tiempo seleccionado pueda verse de un vistazo. Esto resulta útil en los tiles de SLO y de presupuesto de errores, donde la tendencia de un valor importa tanto como su lectura actual.
+
+Con un tile numérico seleccionado, abre **Configuración de visualización** y establece **Gráfico de fondo** en **Línea** o **Área** (o **Ninguno** para desactivarlo). La minigráfica se deriva de una versión de la consulta del tile agrupada en intervalos de tiempo, por lo que no se necesita ninguna configuración adicional. Hereda el color del tile de forma predeterminada; establece un **Color de fondo** para sustituirlo por un color concreto de la paleta.
+
+<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Panel Configuración de visualización de un tile numérico, con Gráfico de fondo establecido en Área" size="lg" />
+
+Los gráficos de fondo se aplican a los tiles numéricos del constructor de consultas. Los tiles numéricos de Raw SQL devuelven un único valor sin dimensión temporal que pueda agruparse en intervalos, por lo que la opción aparece, pero está deshabilitada para ellos.
 
 Los tiles de tabla pueden alternar el fondo de sus filas con **Fondo alterno de fila**, que colorea una de cada dos filas para que las tablas anchas sean más fáciles de examinar. Está desactivado de forma predeterminada.
 
@@ -215,6 +256,46 @@ Con un tile de tabla seleccionado, abre **Configuración de visualización** y a
 <Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Panel Configuración de visualización de un tile de tabla, con Fondo alterno de fila activado" size="lg" />
 
 Los tiles de tabla también mantienen un separador entre la fila de encabezado y los datos mientras te desplazas, para que los encabezados de columna sigan distinguiéndose con claridad.
+
+<div id="api-number-tile-color">
+  #### API de Dashboards: color de un tile numérico
+</div>
+
+Al crear o actualizar dashboards mediante la API externa (`POST` / `PUT` `/api/v2/dashboards`), establezca `color` en la configuración de un tile numérico del constructor con un token de paleta. No se admiten valores hex sin procesar.
+
+```json
+{
+  "name": "Error rate KPIs",
+  "tiles": [
+    {
+      "id": "65f5e4a3b9e77c001a222222",
+      "name": "Errors",
+      "x": 0,
+      "y": 0,
+      "w": 6,
+      "h": 4,
+      "config": {
+        "displayType": "number",
+        "sourceId": "<SOURCE_ID>",
+        "select": [
+          {
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "whereLanguage": "lucene",
+            "alias": "Errors"
+          }
+        ],
+        "color": "chart-error",
+        "backgroundChart": {
+          "type": "area"
+        }
+      }
+    }
+  ]
+}
+```
+
+`color` acepta cualquier token de las listas categóricas y semánticas anteriores (por ejemplo, `chart-blue` o `chart-success`). De forma opcional, `backgroundChart.color` sobrescribe el color de la minigráfica con el mismo token de la enumeración. Consulta la [referencia de la API de ClickStack](/es/use-cases/observability/clickstack/api-reference) para obtener información sobre la autenticación y las URL base.
 
 <div id="dashboard-listing-search">
   ## Dashboards: listado y búsqueda

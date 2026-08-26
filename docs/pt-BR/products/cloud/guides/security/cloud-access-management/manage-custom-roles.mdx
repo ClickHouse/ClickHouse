@@ -86,6 +86,14 @@ Quando você adiciona permissões de dados a uma função personalizada, o Click
   As funções atribuídas manualmente no banco de dados usando a [convenção de nomenclatura `sql-console-role:<email>`](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) têm precedência sobre as funções atribuídas pelo console.
 </Info>
 
+<div id="manage-database-roles-prerequisites">
+  ### Pré-requisitos
+</div>
+
+As funções de banco de dados personalizadas em um serviço dependem da [autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) e não são aplicadas enquanto ela estiver desabilitada. Antes de adicionar permissões de dados a uma função, navegue até o serviço, abra `Settings` e localize o cartão `JWT authentication` na seção `Security`. Certifique-se de que o controle `SQL Console` esteja habilitado.
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="Cartão de autenticação JWT com o controle SQL Console habilitado" size="lg" force />
+
 <Steps>
   <Step title="Adicionar permissões de dados a uma função" id="add-data-permissions">
     [Crie uma função personalizada](#create-custom-role) ou edite uma existente. Na caixa de diálogo da função, clique no botão `Allow permissions` e selecione `Data`.

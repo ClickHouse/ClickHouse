@@ -162,6 +162,24 @@ CREATE TABLE test (id UInt32, vec QBit(BFloat16, 4096, 1024)) ENGINE = MergeTree
 
 축소 차원 검색을 실행하려면 전치 거리 함수의 네 번째 인수로 읽을 차원 수를 전달하십시오(아래 참조). 참조 벡터는 최소한 그 개수만큼의 원소를 가져야 하며(이를 초과하는 뒤쪽 원소는 무시됨), 이 값은 `stride`의 배수여야 합니다.
 
+<div id="qbit-element-access">
+  ## 원소 액세스 및 슬라이싱
+</div>
+
+[`arrayElement`](/ko/reference/functions/regular-functions/array-functions#arrayElement) (및 `vec[n]` 연산자)는 `n`번째 벡터 원소를 타입의 전체 정밀도로 복원해 반환합니다. 해당 원소가 포함된 stride 그룹의 비트 평면만 읽습니다. [`arraySlice`](/ko/reference/functions/regular-functions/array-functions#arraySlice)는 선택한 차원에 대해 `QBit`(차원 부분 집합으로의 프로젝션)을 반환합니다. `QBit`의 차원은 타입의 일부이므로 offset과 length는 상수여야 합니다. stride 그룹 경계에 맞춰 정렬된 slice는 stride를 유지하며, 복사 없이 저장된 비트 평면 스트림을 재사용합니다.
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]);
+SELECT vec[3], arraySlice(vec, 2, 3) FROM test;
+```
+
+```text
+┌─arrayElement(vec, 3)─┬─arraySlice(vec, 2, 3)─┐
+│                    3 │ [2,3,4]               │
+└──────────────────────┴───────────────────────┘
+```
+
 <div id="vector-search-functions">
   ## 벡터 검색 함수
 </div>

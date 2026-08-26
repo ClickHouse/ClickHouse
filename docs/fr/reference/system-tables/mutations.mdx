@@ -24,18 +24,19 @@ La table contient des informations sur les [mutations](/fr/reference/statements/
 * `mutation_id` ([String](/fr/reference/data-types/string)) — L’ID de la mutation. Pour les tables répliquées, ces ID correspondent aux noms de znode dans le répertoire `<table_path_in_clickhouse_keeper>/mutations/` de ClickHouse Keeper. Pour les tables non répliquées, les ID correspondent aux noms de fichiers dans le répertoire de données de la table.
 * `command` ([String](/fr/reference/data-types/string)) — La chaîne de commande de mutation (la partie de la requête après ALTER TABLE [db.]table).
 * `create_time` ([DateTime](/fr/reference/data-types/datetime)) — La date et l’heure auxquelles la commande de mutation a été soumise à l’exécution.
+* `finish_time` ([DateTime](/fr/reference/data-types/datetime)) — La date et l’heure auxquelles la mutation s’est terminée. Zéro si la mutation n’est pas encore terminée ou si son heure de fin est inconnue. Pour les tables non répliquées, la valeur est suivie en mémoire et est réinitialisée lorsque la table est rechargée (par exemple, au redémarrage du serveur). Pour les tables répliquées, la valeur est définie par réplique ; après un redémarrage, l’heure de fin de la mutation terminée la plus récente est restaurée depuis Keeper, tandis que les mutations terminées plus anciennes renvoient zéro.
 * `block_numbers.partition_id` ([Array(String)](/fr/reference/data-types/array)) — Pour les mutations de tables répliquées, le tableau contient les ID des partitions (un enregistrement par partition). Pour les mutations de tables non répliquées, le tableau est vide.
-* `block_numbers.number` ([Array(Int64)](/fr/reference/data-types/array)) — Pour les mutations de tables répliquées, le tableau contient un enregistrement par partition, avec le numéro de bloc obtenu par la mutation. Dans chaque partition, seules les parties contenant des blocs dont le numéro est inférieur à ce numéro seront mutées. Dans les tables non répliquées, les numéros de bloc de toutes les partitions forment une seule séquence. Par conséquent, pour les mutations de tables non répliquées, la colonne contient un enregistrement avec un unique numéro de bloc obtenu par la mutation.
+* `block_numbers.number` ([Array(Int64)](/fr/reference/data-types/array)) — Pour les mutations de tables répliquées, le tableau contient un enregistrement par partition, avec le numéro de bloc obtenu par la mutation. Dans chaque partition, seules les parties de données contenant des blocs dont le numéro est inférieur à ce numéro seront mutées. Dans les tables non répliquées, les numéros de bloc de toutes les partitions forment une seule séquence. Par conséquent, pour les mutations de tables non répliquées, la colonne contient un enregistrement avec un unique numéro de bloc obtenu par la mutation.
 * `parts_in_progress_names` ([Array(String)](/fr/reference/data-types/array)) — Un tableau des noms des parties de données en cours de mutation.
 * `parts_to_do_names` ([Array(String)](/fr/reference/data-types/array)) — Un tableau des noms des parties de données qui doivent être mutées pour que la mutation soit terminée.
 * `parts_to_do` ([Int64](/fr/reference/data-types/int-uint)) — Le nombre de parties de données qui doivent être mutées pour que la mutation soit terminée. Remarque : même si `parts_to_do` = 0, une mutation d’une table répliquée peut ne pas être encore terminée en raison d’un INSERT de longue durée créant une nouvelle partie de données qui devra être mutée.
-* `parts_postpone_reasons` ([Map(String, String)](/fr/reference/data-types/map)) — Une map associant les noms des parties aux raisons de leur report.
+* `parts_postpone_reasons` ([Map(String, String)](/fr/reference/data-types/map)) — Une map associant les noms des parties de données aux raisons de leur report.
 * `is_done` ([UInt8](/fr/reference/data-types/int-uint)) — Indique si la mutation est terminée. Valeurs possibles : 1 si la mutation est terminée, 0 si elle est toujours en cours.
 * `is_killed` ([UInt8](/fr/reference/data-types/int-uint)) — Indique si une mutation a été arrêtée. Disponible uniquement dans ClickHouse Cloud. Remarque : is&#95;killed=1 ne signifie pas nécessairement que la mutation est entièrement finalisée. Une mutation peut rester longtemps dans un état où is&#95;killed=1 et is&#95;done=0. Cela peut se produire si une autre mutation de longue durée bloque la mutation arrêtée. Il s’agit d’une situation normale.
-* `latest_failed_part` ([String](/fr/reference/data-types/string)) — Le nom de la dernière partie qui n’a pas pu être mutée.
-* `latest_fail_time` ([DateTime](/fr/reference/data-types/datetime)) — La date et l’heure du dernier échec de mutation d’une partie.
-* `latest_fail_reason` ([String](/fr/reference/data-types/string)) — Le message d’exception à l’origine du dernier échec de mutation d’une partie.
-* `latest_fail_error_code_name` ([String](/fr/reference/data-types/string)) — Le code d’erreur de l’exception à l’origine du dernier échec de mutation d’une partie.
+* `latest_failed_part` ([String](/fr/reference/data-types/string)) — Le nom de la dernière partie de données qui n’a pas pu être mutée.
+* `latest_fail_time` ([DateTime](/fr/reference/data-types/datetime)) — La date et l’heure du dernier échec de mutation d’une partie de données.
+* `latest_fail_reason` ([String](/fr/reference/data-types/string)) — Le message d’exception à l’origine du dernier échec de mutation d’une partie de données.
+* `latest_fail_error_code_name` ([String](/fr/reference/data-types/string)) — Le code d’erreur de l’exception à l’origine du dernier échec de mutation d’une partie de données.
 
 {/*AUTOGENERATED_END*/}
 
@@ -47,7 +48,7 @@ La table contient des informations sur les [mutations](/fr/reference/statements/
 * `is_killed` ([UInt8](/fr/reference/data-types/int-uint)) — Indique si une mutation a été arrêtée. **Disponible uniquement dans ClickHouse Cloud.**
 
 <Note>
-  `is_killed=1` ne signifie pas nécessairement que la mutation est entièrement terminée. Une mutation peut rester longtemps dans un état où `is_killed=1` et `is_done=0`. Cela peut se produire si une autre mutation de longue durée bloque la mutation arrêtée. Il s&#39;agit d&#39;une situation normale.
+  `is_killed=1` ne signifie pas nécessairement que la mutation est entièrement finalisée. Une mutation peut rester longtemps dans un état où `is_killed=1` et `is_done=0`. Cela peut se produire si une autre mutation de longue durée bloque la mutation arrêtée. Il s&#39;agit d&#39;une situation normale.
 </Note>
 
 * `is_done` ([UInt8](/fr/reference/data-types/int-uint)) — Indique si la mutation est terminée ou non. Valeurs possibles :

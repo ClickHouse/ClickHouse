@@ -716,17 +716,8 @@ try=# EXECUTE avg_durations_between_dates('2025-12-09', '2025-12-13');
 (5 rows)
 ```
 
-<Warning>
-  يمنع التنفيذ المعلَّم [http driver](#create-server) من
-  تحويل المناطق الزمنية لنوع DateTime بشكل صحيح في إصدارات ClickHouse الأقدم من 25.8،
-  حيث [أُصلِح الخلل الأساسي] [هناك]. لاحظ أن PostgreSQL قد يستخدم أحيانًا
-  خطة query معلَّمة حتى من دون استخدام `PREPARE`. بالنسبة إلى أي query
-  تتطلب تحويلًا دقيقًا للمنطقة الزمنية، وعندما لا يكون من الممكن الترقية إلى 25.8 أو
-  إصدار أحدث، فاستخدم [binary driver](#create-server) بدلًا من ذلك.
-</Warning>
-
-يقوم pg&#95;clickhouse، كالمعتاد، بتمرير aggregations إلى النظام البعيد، كما يظهر في
-مخرجات [EXPLAIN](#explain) verbose:
+يقوم pg&#95;clickhouse، كالمعتاد، بتمرير عمليات التجميع إلى النظام البعيد، كما يظهر في
+مخرجات [EXPLAIN](#explain) التفصيلية:
 
 ```pgsql
 try=# EXPLAIN (VERBOSE) EXECUTE avg_durations_between_dates('2025-12-09', '2025-12-13');

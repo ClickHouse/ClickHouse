@@ -670,7 +670,7 @@ LIMIT 3;
 
 <ExperimentalBadge />
 
-要启用 `Quantized` 编解码器，请先启用 `SET allow_experimental_codecs = 1`。
+要启用 `Quantized` 编解码器，请先运行 `SET enable_quantized_codec = 1`。
 如果你遇到问题，请在 [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues) 中提交 issue。
 
 <div id="quantized-codecs-introduction">
@@ -707,7 +707,7 @@ LIMIT 3;
 为 `Array(Float32)` (或 `Array(Float64)` / `Array(BFloat16)`) 列指定 `Quantized(...)` 编解码器。
 
 ```sql
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 CREATE TABLE vectors
 (

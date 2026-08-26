@@ -1,0 +1,317 @@
+---
+title: '配置'
+sidebarTitle: '配置'
+description: '配置 ClickHouse 连接器：ClickHouse 实例、运维人员 允许列表、网络策略、脱敏、私网 mirror 和存储'
+keywords: ['BYOC', 'cloud', '自备 Cloud', 'connector', 'configuration']
+doc_type: 'guide'
+---
+
+本页面介绍安装 ClickHouse 连接器后最常需要进行的配置更改。有关各项 key 的默认值及其含义，请参阅[配置参考](/zh/products/bring-your-own-cloud/connector/reference/configuration)；有关命令行 flags，请参阅 [命令行客户端 参考](/zh/products/bring-your-own-cloud/connector/reference/cli)。
+
+<div id="configuration-surfaces">
+  ## 配置方式
+</div>
+
+每种安装目标各有一种配置方式。
+
+<Tabs>
+  <Tab title="Kubernetes">
+    `clicklink clctl init` 会在工作目录中创建名为 `clicklink-values.yaml` 的配置值覆盖文件，并使用该文件部署 `clicklink-connector` 图表。该覆盖文件是部署配置的持久记录：除非传入 `--force`，否则重新运行 `init` 时会保留该文件，因此你的修改可在重新运行和恢复过程中保留。
+
+    <Note>
+      本页及[操作](/zh/products/bring-your-own-cloud/connector/operations)中的 Day-2 命令使用 `helm` 命令行客户端。只有 `init` 内置 Helm 客户端。
+    </Note>
+
+    编辑覆盖文件，然后应用：
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # 你在 init 时选择的连接器命名空间
+    CHART_VERSION="$(helm get metadata clicklink-connector -n "${CONNECTOR_NAMESPACE}" | awk '/^VERSION:/{print $2}')"
+    helm upgrade clicklink-connector clicklink-connector \
+      --repo https://releases.clicklink.clickhouse.com/charts \
+      --version "${CHART_VERSION}" \
+      --namespace "${CONNECTOR_NAMESPACE}" \
+      -f clicklink-values.yaml
+    ```
+
+    该命令会使用当前已安装的 图表 版本重新应用修改后的配置值，因此配置变更不会意外触发升级；升级到新版本需要有意执行，详见[操作](/zh/products/bring-your-own-cloud/connector/operations)。对于使用 图表 仓库的镜像安装，请将 `--repo` 替换为你的镜像仓库。
+
+    通过直接 图表 引用 (`oci://`、URL 或本地归档文件或目录；参见[私有镜像](#private-mirrors)) 安装时，没有可供解析的仓库。请使用安装时使用的引用重新运行升级命令：
+
+    ```bash
+    helm upgrade clicklink-connector <same-chart-reference> \
+      --version "${CHART_VERSION}" \
+      -n "${CONNECTOR_NAMESPACE}" \
+      -f clicklink-values.yaml
+    ```
+  </Tab>
+
+  <Tab title="Linux VM">
+    `clicklink clctl init` 会写入 `/etc/clicklink/config.yaml`。除非传入 `--force`，否则重新运行 `init` 时会保留现有配置，因此可以安全地手动编辑该文件。编辑后，重启守护进程并进行验证：
+
+    ```bash
+    sudo systemctl restart clicklink-scraper clicklink-troubleshooter
+    sudo clicklink clctl preflight
+    ```
+  </Tab>
+</Tabs>
+
+<div id="clickhouse-instances">
+  ## 添加或更改 ClickHouse 实例
+</div>
+
+`instances` 下的每个条目都定义了连接器要读取的 ClickHouse 原生协议端点：`host`、`port`、`database`、`secure`，以及 Kubernetes 环境中的 `namespace` 和 `cluster`。凭据绝不会存储在配置中；每个组件都会从预配过程创建的访问包中获取其只读 ClickHouse 用户。
+
+<Tabs>
+  <Tab title="Kubernetes">
+    将实例添加到 `clicklink-values.yaml` 中两个组件的映射内，并将其命名空间添加到 `networkPolicy.clickhouseNamespaces` (根据命名空间的 `kubernetes.io/metadata.name` 标签匹配) ：
+
+    ```yaml
+    scraper:
+      instances:
+        analytics:
+          host: "clickhouse-analytics.clickhouse.svc.cluster.local"
+          port: 9440
+          database: "default"
+          secure: true
+          namespace: "clickhouse"
+          cluster: "default"
+
+    troubleshooter:
+      instances:
+        analytics:
+          host: "clickhouse-analytics.clickhouse.svc.cluster.local"
+          port: 9440
+          database: "default"
+          secure: true
+          namespace: "clickhouse"
+          cluster: "default"
+
+    networkPolicy:
+      clickhouseNamespaces:
+        - "clickhouse"
+    ```
+
+    在工作站上为每个组件预配只读访问权限。`--apply-ch-grants` 会通过 `kubectl exec` 在 pod (容器组) 中应用生成的 ClickHouse 授权；如果不使用该选项，命令只会创建 Kubernetes 端的资源，并将 `ch-grants.sql` 保留在磁盘上供你自行应用。如果管理员用户设置了密码，请添加 `--ch-admin-password-stdin` 并通过管道传入密码。
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # 初始化时选择的连接器命名空间
+    clicklink clctl scraper access provision --target helm \
+      --target-namespace "${CONNECTOR_NAMESPACE}" \
+      --instance analytics --instance-namespace clickhouse \
+      --server <kubernetes-api-server-url> \
+      --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace clickhouse
+    clicklink clctl troubleshoot access provision --target helm \
+      --target-namespace "${CONNECTOR_NAMESPACE}" \
+      --instance analytics --instance-namespace clickhouse \
+      --server <kubernetes-api-server-url> \
+      --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace clickhouse
+    ```
+
+    对于由 Operator 管理且没有可执行 SQL 的管理员用户的实例，请将 `--apply-ch-grants` 替换为 `--ch-user-via cr` (保留 pod 选择标志) ；请参阅 [CLI 参考](/zh/products/bring-your-own-cloud/connector/reference/cli)。然后，将各命令创建的 Secret 和 ServiceAccount 对接入相应的 `accessBundles` 映射，并运行上文所示的 `helm upgrade`：
+
+    ```yaml
+    scraper:
+      accessBundles:
+        analytics:
+          secretName: clicklink-connector-scraper-access-analytics
+          serviceAccountName: pcm-scraper-analytics
+
+    troubleshooter:
+      accessBundles:
+        analytics:
+          secretName: clicklink-connector-troubleshooter-access-analytics
+          serviceAccountName: pcm-troubleshooter-analytics
+    ```
+  </Tab>
+
+  <Tab title="Linux VM">
+    将实例添加到 `/etc/clicklink/config.yaml`：
+
+    ```yaml
+    instances:
+      analytics:
+        host: "10.0.12.34"
+        port: 9440
+        database: "default"
+        secure: true
+        cluster: "default"
+    ```
+
+    然后以 root 身份在主机上为各组件预配访问权限。每条命令都会应用 ClickHouse 授权并重启对应的守护进程 (可使用 `--skip-restart` 跳过重启) ：
+
+    ```bash
+    sudo clicklink clctl scraper access provision --provider local \
+      --instance analytics --server <kubernetes-api-server-url>
+    sudo clicklink clctl troubleshoot access provision --provider local \
+      --instance analytics --server <kubernetes-api-server-url>
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  对同样的 `access provision` 命令添加 `--force`，即可轮换实例的 ClickHouse 凭据。请参阅[操作](/zh/products/bring-your-own-cloud/connector/operations)。
+</Tip>
+
+<div id="operator-allowlist">
+  ## 运维人员允许列表
+</div>
+
+网关管理的会话受运维人员电子邮件地址允许列表限制：发送至会话网关的每个请求都必须携带短时有效的 OIDC ID 标记，且其中经认证的电子邮件地址必须在列表中。允许列表为空时，网关将关闭，任何人都无法通过它打开会话。在 VM 上，主机的 root 用户还可以通过本地会话文件直接管理会话；允许列表仅约束经由网关的访问路径。有关完整的信任模型，请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
+
+<Tabs>
+  <Tab title="Kubernetes">
+    允许列表位于覆盖层中，并会渲染为 ConfigMap。要更改允许列表，请编辑该列表并运行 `helm upgrade`：
+
+    ```yaml
+    clctl:
+      gateway:
+        enabled: true
+        allowedOperators:
+          - "oncall@example.com"
+          - "dba@example.com"
+    ```
+  </Tab>
+
+  <Tab title="Linux VM">
+    `init` 会将允许列表写入 `/etc/clicklink/allowed-operators.txt`，每行一个电子邮件地址：
+
+    ```text
+    oncall@example.com
+    dba@example.com
+    ```
+
+    故障排查工具每 30 秒重新读取一次该文件，因此编辑后无需重启即可生效。
+  </Tab>
+</Tabs>
+
+<div id="network-policy">
+  ## 网络策略和出站流量
+</div>
+
+在 Kubernetes 中，图表 会部署一项默认拒绝的 NetworkPolicy，其中包含出站允许列表 (`networkPolicy.enabled: true`) 。只有 CNI 实际执行 NetworkPolicy 时，这些对象才会生效；在启用强制执行的 CNI 中，连接器不会产生任何出站流量，除非通过 `allowEgressCIDRs` 指定连接器 API 端点所在的 CIDR。
+
+```yaml
+networkPolicy:
+  enabled: true
+  # CIDRs behind your connector API endpoint. Required under an enforcing CNI.
+  allowEgressCIDRs:
+    - "203.0.113.0/24"
+  # Ports opened to allowEgressCIDRs.
+  allowEgressPorts:
+    - 443
+  # Namespaces of your ClickHouse Services, matched by the
+  # kubernetes.io/metadata.name label. Empty allows no in-cluster
+  # ClickHouse access.
+  clickhouseNamespaces:
+    - "clickhouse"
+  # Kubernetes API server CIDRs. On managed Kubernetes the API server sits
+  # outside the cluster network, so it cannot be matched with a selector.
+  apiserverCIDRs:
+    - "172.16.0.0/28"
+```
+
+以下两项规则需要特别注意：
+
+* **`apiserverCIDRs`**：留空时，图表 不会生成 API server 出站规则。守护进程首次请求 Kubernetes 标记时将因网络错误而失败，这表明需要设置此项。在托管 Kubernetes 环境中，请使用 cluster 的 API server 端点 CIDR。
+* **`clctl.gateway.jwksEgressCIDRs`**：启用会话网关后，故障排查工具会拉取身份提供商的 JWKS，以验证运维人员 标记。在默认拒绝策略下，留空会导致所有标记检查被阻止：
+
+```yaml
+clctl:
+  gateway:
+    jwksEgressCIDRs:
+      - "199.36.153.8/30"
+```
+
+示例为 `private.googleapis.com` 地址范围，其中包括通过 Private Google Access 访问的 Google 身份提供商；对于其他身份提供商，请提供相应提供商的地址范围 (或其前置出口代理的 CIDR) 。
+
+另外还有两个入口相关配置：`metricsScrapeSelector` 通过标签将指标抓取入口限制为特定 Prometheus 命名空间，而 `kubeletProbeCIDRs` 则会在默认严格拒绝的环境中显式允许 kubelet 健康探针。完整的键列表请参阅[配置参考](/zh/products/bring-your-own-cloud/connector/reference/configuration)。
+
+<div id="redaction-patterns">
+  ## 脱敏模式
+</div>
+
+故障排查工具 的输出在离开您的边界之前会进行脱敏处理。内置模式涵盖 `ipv4`、`ipv6`、`bearer-token`、`aws-access-key`、`email`、`jwt`、`ssh-private-key` 和 `connection-string-credentials`。您可以在 YAML 文件中添加自定义模式；这些模式会先按文件中的顺序执行，然后再执行内置模式。如果某个条目使用了与内置模式相同的 `name`，则会替换该内置模式。
+
+每个模式包含 `name` (必填且唯一) 、`regex` (必填，采用 Go RE2 语法) 、`replace` (默认为 `[REDACTED]`，支持 `$1` 捕获组引用) 和 `case_insensitive` (默认为 `false`) ：
+
+```yaml
+version: 1
+patterns:
+  - name: internal-hostname
+    regex: '\b[a-z0-9-]+\.corp\.example\.com\b'
+    replace: '[REDACTED:internal-host]'
+
+  # Reusing a built-in name replaces the built-in pattern.
+  - name: ipv4
+    regex: '\b(?:\d{1,3}\.){3}\d{1,3}\b'
+    replace: '[REDACTED:ip]'
+```
+
+在 VM 上，该文件位于 `/etc/clicklink/redaction-patterns.yaml`；安装程序会创建一份带注释的默认文件，并在升级时保留您修改后的版本。在 Kubernetes 上，将 YAML 放入 ConfigMap，并使用键名 `redaction-patterns.yaml`，然后将 `troubleshooter.redaction.patternsConfigMap` 设置为该 ConfigMap 的名称；chart 会将其挂载到相同路径。
+
+<Warning>
+  如果 patterns 文件存在但无效，故障排查工具 会拒绝启动，并记录无效条目。`clicklink clctl preflight` 会验证该文件，因此请在重启守护进程前运行此命令。
+</Warning>
+
+<div id="private-mirrors">
+  ## 私有镜像 和边界内端点
+</div>
+
+已发布的图表将 `image.repository` 预设为公网、多架构且经 cosign 签名的 connector 镜像，因此常规安装无需指定镜像配置值。要查看已发布的默认配置：
+
+```bash
+CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
+helm show values clicklink-connector \
+  --repo https://releases.clicklink.clickhouse.com/charts \
+  --version "${CLICKLINK_VERSION#v}"
+```
+
+如需通过自有 registry 拉取，请在 覆盖文件 中覆盖 repository：
+
+```yaml
+image:
+  repository: "registry.example.com/mirrors/clicklink"
+```
+
+要从 mirror 安装图表本身，`init` 的 `--chart` 参数可指定为在 `--chart-repo` 中解析的图表名称，也可直接指定 `oci://` 引用、URL、本地归档文件或目录。`--chart-version` 默认使用命令行客户端自身的版本，以确保 binary 与图表保持同步：
+
+```bash
+clicklink clctl init --handoff handoff.yaml --target helm \
+  --chart oci://registry.example.com/charts/clicklink-connector
+```
+
+当 connector API 端点位于边界内并由私有 CA 保护时，请向 `init` 传入 `--api-private-ca`：这会设置 `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`，使端点根据注册包中的 CA 证书链而非系统根证书进行验证。在 VM 上，对应配置为 `/etc/clicklink/config.yaml` 中的 `api.tls.ca_file`；`init` 会将包中的证书链安装到 `/etc/clicklink/tls/ca.crt`，并将其添加到系统根证书中用于验证。如需在完全隔离网络环境中进行注册和证书签名，请参阅 [onboarding](/zh/products/bring-your-own-cloud/connector/onboarding)。
+
+<div id="storage">
+  ## 存储
+</div>
+
+<Tabs>
+  <Tab title="Kubernetes">
+    故障排查工具会将其状态保存在 PersistentVolumeClaim 中，因此即使 pod (容器组) 被重新调度，会话状态和审计记录也能保留：
+
+    ```yaml
+    persistence:
+      enabled: true
+      storageClass: "gp3"
+      size: 5Gi
+    ```
+
+    将 `storageClass` 留空会使用集群的默认存储类。如果集群未设置默认存储类，`init` 会要求通过提示或 `--storage-class` 指定一个存储类。
+  </Tab>
+
+  <Tab title="Linux VM">
+    当 API 端点不可访问时，抓取器会将指标暂存到 `/var/lib/clicklink/buffer`，以确保至少一次交付；数据最多保留 168 小时或 1024 MB，默认上传限速为 1 MB/s：
+
+    ```yaml
+    scraper:
+      buffer:
+        path: /var/lib/clicklink/buffer
+        retention: 168h
+        max_size_mb: 1024
+    ```
+
+    `clicklink clctl preflight` 会检查缓冲目录和 `/var/log` 的磁盘空间。
+  </Tab>
+</Tabs>

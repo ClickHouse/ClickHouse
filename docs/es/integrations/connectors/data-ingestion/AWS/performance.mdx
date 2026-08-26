@@ -112,7 +112,7 @@ Hasta que se procesen todos los datos de todos los archivos, cada hilo de inserc
 Go to ①. 
 ```
 
-La cantidad de estos hilos de inserción en paralelo se puede configurar con la opción [`max_insert_threads`](/es/reference/settings/session-settings/max-insert#max_insert_threads). El valor predeterminado es `1` para ClickHouse de código abierto y 4 para [ClickHouse Cloud](https://clickhouse.com/cloud).
+La cantidad de estos hilos de inserción en paralelo se puede configurar con la opción [`max_insert_threads`](/es/reference/settings/session-settings/max-insert#max_insert_threads). Para ClickHouse de código abierto, el valor predeterminado desde la versión 26.8 es `0` (auto: la cantidad de núcleos de CPU, reducida bajo presión de memoria). Para [ClickHouse Cloud](https://clickhouse.com/cloud), el valor predeterminado es `1` para nodos con 8 GiB de memoria, `2` para nodos con 16 GiB y `4` para nodos más grandes.
 
 Con una gran cantidad de archivos, el procesamiento en paralelo mediante varios hilos de inserción funciona bien. Puede saturar por completo tanto los núcleos de CPU disponibles como el ancho de banda de la red (para descargas paralelas de archivos). En escenarios en los que solo se van a cargar en una tabla unos pocos archivos grandes, ClickHouse establece automáticamente un alto grado de paralelismo en el procesamiento de datos y optimiza el uso del ancho de banda de red creando hilos de lectura adicionales por cada hilo de inserción para leer (descargar) en paralelo más rangos distintos dentro de archivos grandes.
 
@@ -169,11 +169,11 @@ Tenga en cuenta que usamos Parquet por motivos de rendimiento, de acuerdo con nu
 Sin realizar ningún ajuste, mostramos el rendimiento de insertar este conjunto de datos en un motor de tabla MergeTree, así como de ejecutar una consulta para calcular qué usuarios hacen más preguntas. Ambas consultas requieren intencionadamente un escaneo completo de los datos.
 
 ```sql
--- Principales nombres de usuario
+-- Top usernames
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -194,9 +194,9 @@ Peak memory usage: 603.64 MiB.
 ```
 
 ```sql
--- Cargar en la tabla posts
+-- Load into posts table
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -228,7 +228,7 @@ Considere nuestra consulta anterior: duplicar `max_threads` a `16` (el valor pre
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -281,11 +281,11 @@ Hay una disyuntiva entre estos dos factores de rendimiento (además de otra con 
 Para obtener una descripción detallada de cómo el comportamiento de estos parámetros afecta al rendimiento y al uso de recursos, recomendamos [leer esta entrada del blog](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part2). Como se describe en esa entrada, el ajuste puede requerir un equilibrio cuidadoso entre ambos parámetros. Estas pruebas exhaustivas suelen ser poco prácticas, por lo que, en resumen, recomendamos:
 
 ```bash
-• max_insert_threads: elegir ~ la mitad de los núcleos de CPU disponibles para los hilos de inserción (para dejar suficientes núcleos dedicados a las fusiones en segundo plano)
+• max_insert_threads: choose ~ half of the available CPU cores for insert threads (to leave enough dedicated cores for background merges)
 
-• peak_memory_usage_in_bytes: elegir el uso máximo de memoria deseado; ya sea toda la RAM disponible (si se trata de una ingesta aislada) o la mitad o menos (para dejar margen a otras tareas concurrentes)
+• peak_memory_usage_in_bytes: choose an intended peak memory usage; either all available RAM (if it is an isolated ingest) or half or less (to leave room for other concurrent tasks)
 
-Luego:
+Then:
 min_insert_block_size_bytes = peak_memory_usage_in_bytes / (~3 * max_insert_threads)
 ```
 
@@ -299,14 +299,14 @@ Uso de esta fórmula con nuestro ejemplo anterior de Stack Overflow.
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
 0 rows in set. Elapsed: 128.566 sec. Processed 59.82 million rows, 24.03 GB (465.28 thousand rows/s., 186.92 MB/s.)
 ```
 
-Como se muestra, el ajuste de estos parámetros ha mejorado el rendimiento de inserción en más de un `33%`. Dejamos al lector comprobar si puede mejorar aún más el rendimiento de un solo nodo.
+Como se muestra, el ajuste de estos parámetros ha mejorado el rendimiento de inserción en más de un `33%`. Dejamos al lector comprobar si puede mejorar aún más el rendimiento de un nodo único.
 
 <div id="scaling-with-resources-and-nodes">
   ## Escalado con recursos y nodos
@@ -322,7 +322,7 @@ En todos los ajustes y consultas anteriores solo se ha utilizado un único nodo 
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -333,7 +333,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -369,7 +369,7 @@ Como se indica en [Utilizing Clusters](/es/integrations/connectors/data-ingestio
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -394,7 +394,7 @@ Del mismo modo, nuestra consulta de inserción también se puede distribuir, uti
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -408,7 +408,7 @@ Si se establece en `parallel_distributed_insert_select=2`, se garantiza que `SEL
 ```sql
 INSERT INTO posts
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
@@ -435,7 +435,7 @@ Aunque este comportamiento, que añade sobrecarga a la inserción, tiene sentido
 INSERT INTO posts
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
 ```
 
@@ -454,7 +454,7 @@ Deshabilitar esta configuración (`optimize_on_insert = 0`) omite la fusión dur
 
 ```sql
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0, optimize_on_insert = 0
 ```
 

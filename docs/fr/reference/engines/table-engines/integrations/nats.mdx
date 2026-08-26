@@ -42,7 +42,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_username = 'user',]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
-    [nats_credential_file = '/var/nats_credentials',]
+    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_commit_on_select = false,]
@@ -69,10 +69,11 @@ Paramètres facultatifs :
 * `nats_max_block_size` - Nombre de lignes collectées par poll(s) pour vider les données depuis NATS. Par défaut : [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `nats_flush_interval_ms` - Délai d’expiration pour le vidage des données lues depuis NATS. Par défaut : [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `nats_wait_for_flush_interval` - Si `true`, un cycle de streaming en arrière-plan reste ouvert pendant tout l’intervalle de vidage (`nats_flush_interval_ms`, ou `stream_flush_interval_ms` sinon) au lieu de se terminer dès que la queue du consommateur est vidée, ce qui permet d’accumuler davantage de messages dans un seul bloc au prix d’une latence d’ingestion supplémentaire pouvant aller jusqu’à un intervalle de vidage. Par défaut : `false` (comportement de vidage immédiat à faible latence).
-* `nats_username` - Nom d’utilisateur NATS.
-* `nats_password` - Mot de passe NATS.
-* `nats_token` - Jeton d’authentification NATS.
-* `nats_credential_file` - Chemin vers un fichier d’identifiants NATS.
+* `nats_username` - Nom d’utilisateur NATS. Lorsqu’il est stocké dans une collection nommée définie dans le fichier de configuration du serveur, la requête ne peut pas remplacer `nats_url` ou `nats_server_list` de la collection.
+* `nats_password` - Mot de passe NATS. Lorsqu’il est stocké dans une collection nommée définie dans le fichier de configuration du serveur, la requête ne peut pas remplacer `nats_url` ou `nats_server_list` de la collection.
+* `nats_token` - Jeton d’authentification NATS. Lorsqu’il est stocké dans une collection nommée définie dans le fichier de configuration du serveur, la requête ne peut pas remplacer `nats_url` ou `nats_server_list` de la collection.
+* `nats_credential_file` - Chemin vers un fichier d’identifiants NATS. Il est accepté uniquement depuis une collection nommée définie dans le fichier de configuration du serveur, dont `nats_url` et `nats_server_list` ne sont pas remplacés par la requête, car le serveur ouvre le chemin avec ses propres privilèges. Dans une requête, transmettez plutôt le contenu du fichier dans `nats_credentials`.
+* `nats_credentials` - Contenu des identifiants NATS (la même charge utile que dans un fichier `.creds` avec le JWT utilisateur et la seed). Comme c’est la seule syntaxe qu’une requête peut utiliser, elle remplace un `nats_credential_file` hérité d’une collection nommée au lieu d’entrer en conflit avec lui, sauf si l’opérateur a verrouillé ce chemin avec `<nats_credential_file overridable="false">`. Une chaîne vide ne peut pas lui être attribuée pour supprimer les identifiants fournis par une collection nommée.
 * `nats_startup_connect_tries` - Nombre de tentatives de connexion au démarrage. Par défaut : `5`.
 * `nats_max_rows_per_message` — Nombre maximal de lignes écrites dans un message NATS pour les formats basés sur les lignes. (par défaut : `1`).
 * `nats_commit_on_select` - Valider les messages lorsqu’une requête est effectuée. S’applique uniquement à JetStream ; NATS core ne comporte pas d’accusés de réception. Par défaut : `0`.

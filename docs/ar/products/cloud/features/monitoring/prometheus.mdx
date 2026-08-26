@@ -7,9 +7,12 @@ keywords: ['prometheus', 'grafana', 'المراقبة', 'المقاييس', 'ا�
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-تدعم هذه الميزة التكامل مع [Prometheus](https://prometheus.io/) لمراقبة خدمات ClickHouse Cloud. ويُتاح الوصول إلى مقاييس Prometheus عبر نقطة نهاية [ClickHouse Cloud واجهة برمجة تطبيقات](/ar/products/cloud/features/admin-features/api/api-overview)، ما يتيح لك الاتصال بأمان وتصدير المقاييس إلى مجمّع مقاييس Prometheus لديك. كما يمكن دمج هذه المقاييس مع لوحات المعلومات مثل Grafana وDatadog لعرضها بصريًا.
+تدعم هذه الميزة التكامل مع [Prometheus](https://prometheus.io/) لمراقبة خدمات ClickHouse Cloud. ويُتاح الوصول إلى مقاييس Prometheus عبر نقطة نهاية [واجهة برمجة تطبيقات ClickHouse Cloud](/ar/products/cloud/features/admin-features/api/api-overview)، ما يتيح لك الاتصال بأمان وتصدير المقاييس إلى مجمّع مقاييس Prometheus لديك. كما يمكن دمج هذه المقاييس مع لوحات المعلومات مثل Grafana وDatadog لعرضها بصريًا.
+
+تُضمَّن مقاييس [ClickPipes](/ar/integrations/clickpipes) المرتبطة بخدمة إلى جانب مقاييس ClickHouse الخاصة بتلك الخدمة.
 
 للبدء، [أنشئ مفتاح واجهة برمجة تطبيقات](/ar/products/cloud/features/admin-features/api/openapi).
 
@@ -20,21 +23,28 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <div id="api-reference">
-  ### مرجع API
+  ### مرجع واجهة برمجة تطبيقات
 </div>
 
-| الطريقة | المسار                                                                                                                          | الوصف                                 |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | يعيد المقاييس لخدمة محددة             |
-| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | يعيد المقاييس لجميع الخدمات ضمن مؤسسة |
+| الطريقة | المسار                                                                                                                          | الوصف                                                                                                                                           |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | يعيد المقاييس لخدمة محددة                                                                                                                       |
+| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | **مهمل.** يعيد المقاييس لجميع الخدمات ضمن مؤسسة                                                                                                 |
+| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]`           | يعيد أهداف scrape في Prometheus لجميع الخدمات ضمن مؤسسة، بتنسيق [اكتشاف الخدمات عبر HTTP](https://prometheus.io/docs/prometheus/latest/http_sd/) |
+
+<Note>
+  نقطة نهاية المقاييس على مستوى المؤسسة (`GET /v1/organizations/{organizationId}/prometheus`) مهملة لصالح [الاكتشاف التلقائي للخدمات](#automatic-service-discovery). يمكن للمؤسسات الحالية الاستمرار في استخدامها، بينما تستخدم المؤسسات المنشأة حديثًا نقطة نهاية الاكتشاف بدلًا منها. تواصل مع دعم ClickHouse إذا كنت بحاجة إلى الوصول إلى نقطة النهاية هذه.
+</Note>
 
 **معلمات الطلب**
 
-| الاسم                | الموقع         | النوع             |
-| -------------------- | -------------- | ----------------- |
-| Organization ID      | عنوان endpoint | uuid              |
-| Service ID           | عنوان endpoint | uuid (اختياري)    |
-| filtered&#95;metrics | معلمة query    | boolean (اختياري) |
+| الاسم                | الموقع           | النوع             |
+| -------------------- | ---------------- | ----------------- |
+| معرّف المؤسسة      | عنوان نقطة نهاية | uuid              |
+| معرّف الخدمة           | عنوان نقطة نهاية | uuid (اختياري)    |
+| filtered&#95;metrics | معلمة query      | boolean (اختياري) |
+
+تتوفر مخططات الطلب والاستجابة الكاملة لهذه الـنقاط النهاية في [مرجع Cloud واجهة برمجة تطبيقات](/ar/products/cloud/api-reference/prometheus).
 
 <div id="authentication">
   ### المصادقة
@@ -192,6 +202,56 @@ scrape_configs:
 ```
 
 لاحظ أن معلَمة الإعداد `honor_labels` يجب تعيينها إلى `true` لكي يُملأ وسم المثيل بشكل صحيح. بالإضافة إلى ذلك، ضُبطت `filtered_metrics` على `true` في المثال أعلاه، ولكن ينبغي تهيئتها وفقًا لتفضيل المستخدم.
+
+<div id="automatic-service-discovery">
+  ### الاكتشاف التلقائي للخدمات
+</div>
+
+<BetaBadge />
+
+تعرض نقطة نهاية الاكتشاف هدف جمع واحدًا لكل خدمة في مؤسستك، بتنسيق Prometheus [لاكتشاف الخدمات عبر HTTP](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`). يُحدِّث Prometheus قائمة الأهداف عند كل عملية poll للاكتشاف ويجري جمعًا لكل هدف مُكتشَف، لذلك تُكتشف الخدمات المنشأة حديثًا تلقائيًا وتُزال الخدمات المحذوفة من قائمة الأهداف. ولا تُدرج إلا الخدمات التي يملك مفتاح واجهة برمجة تطبيقات صلاحية عرضها؛ وتُستبعد الخدمات التي يجري حذفها أو التي حُذفت بالفعل.
+
+لاستخدامها، وجّه job [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) إلى نقطة نهاية الاكتشاف:
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "clickhouse"
+    http_sd_configs:
+      - url: https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/prometheus/discovery
+        refresh_interval: 60s
+        basic_auth:
+          username: <KEY_ID>
+          password: <KEY_SECRET>
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+    honor_labels: true
+```
+
+اضبط `basic_auth` في كلا الموضعين: إذ تتولى الكتلة ضمن `http_sd_configs` مصادقة عمليات استقصاء الاكتشاف، بينما تتولى الكتلة في مهمة الجمع مصادقة جمع المقاييس لكل خدمة. وكما في التكوين الثابت، اضبط `honor_labels: true` لضمان تعبئة تسمية المثيل بشكل صحيح.
+
+استجابة نموذجية للاكتشاف:
+
+```json
+[
+  {
+    "targets": ["api.clickhouse.cloud"],
+    "labels": {
+      "__scheme__": "https",
+      "__metrics_path__": "/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/prometheus",
+      "__param_filtered_metrics": "true",
+      "clickhouse_org_id": "<ORG_ID>",
+      "clickhouse_service_id": "<SERVICE_ID>",
+      "clickhouse_discovery_service_name": "my service"
+    }
+  }
+]
+```
+
+تجمع الأهداف المكتشفة المقاييس باستخدام `filtered_metrics=true`. ولاكتشاف الأهداف التي تجمع المجموعة الكاملة من المقاييس، أضف `?filtered_metrics=false` إلى URL الاكتشاف. تتوفر المواصفة الكاملة لنقطة النهاية في [مرجع Cloud واجهة برمجة تطبيقات](/ar/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get).
 
 <div id="integrating-with-grafana">
   ## التكامل مع Grafana

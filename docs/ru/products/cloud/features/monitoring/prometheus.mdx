@@ -7,9 +7,12 @@ keywords: ['prometheus', 'grafana', 'мониторинг', 'метрики', '�
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ru/components/Image.jsx";
 
 Эта возможность поддерживает интеграцию с [Prometheus](https://prometheus.io/) для мониторинга сервисов ClickHouse Cloud. Доступ к метрикам Prometheus предоставляется через конечную точку [ClickHouse Cloud API](/ru/products/cloud/features/admin-features/api/api-overview), которая позволяет безопасно подключаться и экспортировать метрики в ваш сборщик метрик Prometheus. Эти метрики можно интегрировать с панелями мониторинга, например Grafana и Datadog, для визуализации.
+
+Метрики [ClickPipes](/ru/integrations/clickpipes), подключённых к сервису, включаются вместе с метриками ClickHouse этого сервиса.
 
 Чтобы начать, [создайте ключ API](/ru/products/cloud/features/admin-features/api/openapi).
 
@@ -23,10 +26,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ### Справочник по API
 </div>
 
-| Метод | Путь                                                                                                                            | Описание                                         |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| GET   | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | Возвращает метрики для конкретного сервиса       |
-| GET   | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | Возвращает метрики для всех сервисов организации |
+| Метод | Путь                                                                                                                            | Описание                                                                                                                                                              |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET   | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | Возвращает метрики для конкретного сервиса                                                                                                                            |
+| GET   | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | **Устарело.** Возвращает метрики для всех сервисов организации                                                                                                        |
+| GET   | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]`           | Возвращает цели сбора метрик Prometheus для всех сервисов организации в формате [обнаружения сервисов по HTTP](https://prometheus.io/docs/prometheus/latest/http_sd/) |
+
+<Note>
+  Конечная точка метрик для всей организации (`GET /v1/organizations/{organizationId}/prometheus`) устарела в пользу [автоматического обнаружения сервисов](#automatic-service-discovery). Существующие организации могут продолжать её использовать; вновь созданные организации вместо неё используют конечную точку обнаружения. Если вам нужен доступ к этой конечной точке, обратитесь в службу поддержки ClickHouse.
+</Note>
 
 **Параметры запроса**
 
@@ -35,6 +43,8 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 | ID организации       | Конечная точка   | uuid                    |
 | ID сервиса           | Конечная точка   | uuid (необязательно)    |
 | filtered&#95;metrics | Параметр запроса | boolean (необязательно) |
+
+Полные схемы запросов и ответов для этих конечных точек доступны в [справочнике Cloud API](/ru/products/cloud/api-reference/prometheus).
 
 <div id="authentication">
   ### Аутентификация
@@ -192,6 +202,56 @@ scrape_configs:
 ```
 
 Обратите внимание: параметр конфигурации `honor_labels` должен быть установлен в `true`, чтобы метка `instance` заполнялась корректно. Кроме того, в приведённом выше примере параметр `filtered_metrics` установлен в `true`, однако это значение следует задавать в соответствии с предпочтениями пользователя.
+
+<div id="automatic-service-discovery">
+  ### Автоматическое обнаружение сервисов
+</div>
+
+<BetaBadge />
+
+Конечная точка обнаружения возвращает по одной цели сбора метрик для каждого сервиса в вашей организации в формате Prometheus [обнаружение сервисов по HTTP](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`). Prometheus обновляет список целей при каждом опросе обнаружения и собирает метрики с каждой обнаруженной цели, поэтому вновь созданные сервисы добавляются автоматически, а удалённые исключаются из списка целей. Включаются только сервисы, для просмотра которых авторизован ваш ключ API; сервисы, находящиеся в процессе удаления или уже удалённые, не включаются.
+
+Чтобы использовать её, укажите конечную точку обнаружения для задачи [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config):
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "clickhouse"
+    http_sd_configs:
+      - url: https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/prometheus/discovery
+        refresh_interval: 60s
+        basic_auth:
+          username: <KEY_ID>
+          password: <KEY_SECRET>
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+    honor_labels: true
+```
+
+Укажите `basic_auth` в обоих местах: блок в разделе `http_sd_configs` аутентифицирует запросы обнаружения, а блок в задаче scrape — сбор метрик для каждого сервиса. Как и при статической конфигурации, укажите `honor_labels: true`, чтобы метка instance заполнялась корректно.
+
+Пример ответа обнаружения:
+
+```json
+[
+  {
+    "targets": ["api.clickhouse.cloud"],
+    "labels": {
+      "__scheme__": "https",
+      "__metrics_path__": "/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/prometheus",
+      "__param_filtered_metrics": "true",
+      "clickhouse_org_id": "<ORG_ID>",
+      "clickhouse_service_id": "<SERVICE_ID>",
+      "clickhouse_discovery_service_name": "my service"
+    }
+  }
+]
+```
+
+Обнаруженные цели собирают метрики с параметром `filtered_metrics=true`. Чтобы обнаружить цели, собирающие полный набор метрик, добавьте `?filtered_metrics=false` к URL обнаружения. Полная спецификация конечной точки доступна в [справочнике Cloud API](/ru/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get).
 
 <div id="integrating-with-grafana">
   ## Интеграция с Grafana

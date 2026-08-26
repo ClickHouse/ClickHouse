@@ -740,6 +740,8 @@ valor padrão. Esse é o mesmo comportamento de um índice escalar `NULL`.
 
 O operador `[n]` fornece a mesma funcionalidade.
 
+O primeiro argumento também pode ser um [QBit](/pt-BR/reference/data-types/qbit): o n-ésimo elemento do vetor é reconstruído com a precisão total do tipo de elemento QBit, lendo apenas os planos de bits do grupo de stride que o contém.
+
 **Sintaxe**
 
 ```sql
@@ -748,7 +750,7 @@ arrayElement(arr, n)
 
 **Argumentos**
 
-* `arr` — O array em que pesquisar. [`Array(T)`](/pt-BR/reference/data-types/array). - `n` — Posição do elemento a ser obtido ou um array de posições. As posições podem ser `Nullable`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Array((U)Int*)`](/pt-BR/reference/data-types/array).
+* `arr` — O array em que pesquisar. [`Array(T)`](/pt-BR/reference/data-types/array) ou [`QBit`](/pt-BR/reference/data-types/qbit). - `n` — Posição do elemento a ser obtido ou um array de posições. As posições podem ser `Nullable`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Array((U)Int*)`](/pt-BR/reference/data-types/array).
 
 **Valor retornado**
 
@@ -1764,6 +1766,8 @@ e com as funções de agregação, que recebem um grupo de linhas e as &quot;com
 
 Todos os valores nas colunas são simplesmente copiados, exceto os valores da coluna à qual essa função é aplicada;
 eles são substituídos pelo valor correspondente do array.
+
+`unnest` (desde a versão 26.5) é um alias de `arrayJoin` que não diferencia maiúsculas de minúsculas na forma de chamada de função (`SELECT unnest(arr)`). A sintaxe do PostgreSQL para fonte de tabela não é compatível (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)` e `LATERAL`). Use a cláusula `ARRAY JOIN` para essas consultas.
 
 `arrayJoin`, inclusive por meio de seu alias `unnest`, não pode ser usado em uma condição `JOIN ON` avaliada durante o join, pois essa condição deve
 preservar o número de linhas. Uma condição que se aplica a apenas um lado e uma chave de igualdade sobre `arrayJoin` são
@@ -3668,6 +3672,8 @@ Introduzido em: v1.1.0
 
 Retorna uma parte do array, incluindo elementos `NULL`.
 
+O primeiro argumento também pode ser um [QBit](/pt-BR/reference/data-types/qbit): o resultado é um QBit nas dimensões selecionadas (uma projeção para um subconjunto de dimensões). Nesse caso, `offset` e `length` devem ser constantes, pois a dimensão de um QBit faz parte de seu tipo, e a fatia deve selecionar pelo menos uma dimensão. Uma fatia alinhada aos limites dos grupos de stride do QBit mantém o stride e reutiliza os fluxos de planos de bits armazenados sem cópia.
+
 **Sintaxe**
 
 ```sql
@@ -3676,7 +3682,7 @@ arraySlice(arr, offset [, length])
 
 **Argumentos**
 
-* `arr` — Array a ser fatiado. [`Array(T)`](/pt-BR/reference/data-types/array)
+* `arr` — Array a ser fatiado. [`Array(T)`](/pt-BR/reference/data-types/array) ou [`QBit`](/pt-BR/reference/data-types/qbit)
 * `offset` — Deslocamento a partir da borda do array. Um valor positivo indica um deslocamento à esquerda, e um valor negativo indica um recuo à direita. A numeração dos elementos do array começa em `1`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint)
 * `length` — O tamanho da fatia desejada. Se você especificar um valor negativo, a função retornará uma fatia aberta `[offset, array_length - length]`. Se você omitir o valor, a função retornará a fatia `[offset, the_end_of_array]`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint)
 

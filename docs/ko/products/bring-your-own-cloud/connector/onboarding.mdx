@@ -1,0 +1,218 @@
+---
+title: '온보딩'
+sidebarTitle: '온보딩'
+description: 'ClickHouse 커넥터를 설치하고 Kubernetes 또는 Linux VM에 온보딩합니다'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'onboarding']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+이 페이지에서는 등록 토큰을 사용해 정상적으로 검증된 커넥터를 구성하는 방법을 안내합니다. 커넥터는 Kubernetes 클러스터(Helm) 또는 Linux VM(systemd) 중 하나에 설치할 수 있습니다. 토큰 등록이 표준 절차이며, 환경에서 ClickHouse 엔드포인트에 직접 연결할 수 없는 경우 [에어갭 및 미러 설치](#air-gapped-and-mirrored-installs)를 참조하십시오.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+모든 설치에 필요합니다.
+
+* **커넥터 엔드포인트 및 등록 토큰**: 온보딩 과정에서 ClickHouse가 제공합니다(1단계 참조).
+* 설치 시 `https://<subdomain>.<connector-domain>` 및 `https://<subdomain>.enroll.<connector-domain>`, `releases.clicklink.clickhouse.com`, Amazon ECR Public에 대한 **포트 443 아웃바운드 연결**. 이들 중 하나라도 연결할 수 없으면 [에어갭 및 미러 설치](#air-gapped-and-mirrored-installs)를 참조하십시오.
+* 커넥터가 실행되는 위치에서 연결 가능한 **ClickHouse 네이티브 리스너**: 보안 포트(9440) 또는 plaintext 포트(9000)를 사용하며, Kubernetes에서는 자동으로 감지됩니다.
+* 프로비저닝을 위한 **ClickHouse 관리자 액세스**: 비밀번호 없는 `default` 사용자, 비밀번호(프롬프트에서 입력하거나 `--ch-admin-password-stdin`으로 제공), 또는 연산자가 관리하는 인스턴스가 필요합니다. 연산자 관리 인스턴스에서는 프로비저닝이 CR injection으로 전환되므로 비밀번호가 필요하지 않습니다.
+* 릴리스 아티팩트를 다운로드하는 모든 환경의 **cosign**. 설치 관리자는 항상 SHA-256 checksum을 검증하고, cosign이 설치된 경우 cosign 서명 검증도 수행합니다. `CLICKLINK_REQUIRE_COSIGN=1`을 설정하면 cosign 없이는 진행하지 않습니다.
+
+Kubernetes(Helm) 설치에 필요합니다.
+
+* **규격을 준수하는 Kubernetes 클러스터.**
+* 커넥터 네임스페이스를 생성하고 읽으며, 시크릿을 적용하고, ClickHouse 파드 내에서 exec를 실행하고(프로비저닝은 파드 내에서 `clickhouse-client`를 실행합니다), ServiceAccount, Role, RoleBinding을 생성하고, 차트를 설치할 수 있는 **kubeconfig**.
+* **기본 StorageClass** 또는 `--storage-class`로 전달할 클래스. troubleshooter는 PersistentVolumeClaim에 상태를 유지합니다.
+* **이미지 pull 액세스**: 클러스터 노드는 공개 ECR 이미지 또는 호스팅 중인 미러에서 이미지를 pull할 수 있어야 합니다.
+
+Linux VM(systemd) 설치에 필요합니다.
+
+* amd64 또는 arm64의 **systemd Linux 호스트**. Linux 빌드는 FIPS 모드에서 실행됩니다.
+* 설치 관리자 및 `init`를 위한 **root 액세스**.
+* 사용 가능한 포트 8080, 8082, 8084(상태 확인), 9090, 9092, 9094(메트릭) 및 지원 세션 gateway를 활성화한 경우 8443.
+* 프로비저닝을 위한 **Kubernetes API server 관리자 액세스**. 호스트의 kubeconfig, `--server` 및 `--ca-data`, 또는 프롬프트를 통해 제공합니다. 액세스 bundle은 두 대상 모두에서 Kubernetes ServiceAccount에 연결됩니다.
+
+<Note>
+  `--skip-provision`은 Kubernetes 요구 사항을 우회하는 유일한 방법이며, 준비 단계에서만 사용할 수 있습니다. ClickHouse 사용자 프로비저닝을 건너뛰고 VM에서는 unit 활성화 및 검증도 건너뛰므로, 이것만으로는 실행 중인 커넥터가 생성되지 않습니다.
+</Note>
+
+<div id="install-and-enroll">
+  ## 설치 및 등록
+</div>
+
+<Steps>
+  <Step title="커넥터 endpoint 및 등록 토큰 가져오기" id="get-endpoint-and-token">
+    ClickHouse는 온보딩 과정에서 connector endpoint와 일회용 등록 token을 제공합니다. endpoint 형식은 다음과 같습니다.
+
+    ```text
+    https://<subdomain>.<connector-domain>
+    ```
+
+    토큰은 일회용이며 빠르게 만료되므로, 받은 직후 등록을 실행할 수 있도록 준비하십시오. 토큰은 시크릿으로 취급해야 합니다. CLI는 명령줄 인수, 디스크 또는 로그가 아닌 숨겨진 프롬프트(또는 stdin의 첫 번째 줄)에서 토큰을 읽습니다. 사용하기 전에 토큰이 만료되면 ClickHouse 계정 팀에 문의하여 새 토큰을 받으십시오.
+  </Step>
+
+  <Step title="CLI 설치 및 확인" id="install-and-verify-the-cli">
+    하나의 명령으로 검증된 `clicklink` 바이너리를 설치할 수 있습니다. 플랫폼과 아키텍처(macOS 또는 Linux, amd64 또는 arm64)를 감지하고, 최신 릴리스를 다운로드한 후 SHA-256 체크섬 및 cosign이 설치된 경우 릴리스 서명을 검증하여 바이너리를 `PATH`에 설치합니다. Kubernetes에 설치하려면 클러스터에 kubeconfig를 통해 접근할 수 있는 워크스테이션에서 실행하십시오:
+
+    ```bash
+    curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | bash
+    ```
+
+    VM에 설치하는 경우 호스트에서 `--host` 옵션과 함께 동일한 스크립트를 실행하십시오. 다운로드가 검증되면 `clicklink` 시스템 사용자, `/etc/clicklink`, `/var/lib/clicklink`, `/var/log/clicklink` 디렉터리 및 systemd 유닛도 생성하고, 기본 `/etc/clicklink/redaction-patterns.yaml` 파일을 생성합니다(기존 파일이 있으면 유지됨). 따라서 다음 단계는 바로 등록부터 시작합니다:
+
+    ```bash
+    curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | sudo bash -s -- --host
+    ```
+
+    두 방식 모두 `--version vX.Y.Z`를 사용해 특정 릴리스로 고정할 수 있으며, 어느 쪽을 다시 실행해도 안전합니다. 호스트 설치 방식은 기존 바이너리를 백업하고 현재 구성을 유지합니다. 실행 전에 스크립트를 검토하거나 릴리스 tarball을 직접 다운로드하여 검증하려면 [수동 다운로드 및 검증](#manual-download-and-verification)을 참조하십시오.
+  </Step>
+
+  <Step title="커넥터 등록 및 설치" id="enroll-and-install">
+    등록은 단일 명령으로 완료됩니다. 이 명령은 토큰을 교환하고, ClickHouse 액세스를 프로비저닝하며, 서명된 클라이언트 인증서를 발급받고, 커넥터를 설치한 뒤 처음부터 끝까지 검증합니다.
+
+    <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="ClickHouse Connector 등록 흐름" />
+
+    <Tabs>
+      <Tab title="Kubernetes">
+        워크스테이션에서 다음 명령을 실행하십시오.
+
+        ```bash
+        clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm
+        ```
+
+        표시되지 않는 프롬프트에 등록 토큰을 붙여 넣으십시오. 그러면 CLI에서 다음 정보를 입력하라는 메시지가 표시됩니다.
+
+        * 커넥터 네임스페이스(기본값: `clicklink`)
+        * ClickHouse 인스턴스가 실행 중인 네임스페이스
+        * 감지된 ClickHouse 서비스에서 채워진 인스턴스 연결 정보
+        * 클러스터에 기본 StorageClass가 없는 경우에만 StorageClass
+        * 지원 세션 구성 및 활성화한 경우 운영자 이메일 허용 목록
+        * SQL 프로비저닝에 필요한 경우에만 ClickHouse 관리자 비밀번호
+
+        이 한 번의 호출로 전체 과정이 수행됩니다. 토큰을 교환하여 등록 번들을 작업 디렉터리에 `handoff.yaml`로 저장하고, Helm values 오버레이 `clicklink-values.yaml`을 준비하며, 네임스페이스를 생성하고, `clicklink-hmac` 및 `clicklink-mtls` Secret을 적용합니다. 또한 각 인스턴스에 읽기 전용 ClickHouse 사용자를 프로비저닝하며(Operator가 관리하는 인스턴스에서는 SQL 권한 부여 또는 CR 주입을 자동으로 선택), 개인 키와 CSR을 생성한 후 ClickHouse에서 클라이언트 인증서에 서명하도록 합니다. 이어서 내장 Helm 클라이언트로 `clicklink-connector` Helm 릴리스를 설치하고(`helm` 바이너리는 필요하지 않음), 상태를 검증합니다.
+
+        무인 실행에서는 프롬프트에 응답하는 대신 플래그를 사용하십시오. 비터미널 실행에서 `--enroll`은 stdin의 첫 번째 줄에서 등록 토큰을 읽으므로 리디렉션된 비밀번호를 소비할 수 있습니다. 따라서 저장된 번들을 진입점으로 사용하십시오.
+
+        ```bash
+        clicklink clctl init --handoff handoff.yaml --target helm \
+          --instance name=<name>,host=<service-host>,port=9440,secure=true,database=default,namespace=<clickhouse-namespace> \
+          --operators '<operator-email-1>,<operator-email-2>' \
+          --storage-class <storage-class> \
+          --ch-admin-password-stdin < admin-password.txt
+        ```
+
+        ClickHouse 인스턴스마다 `--instance`를 반복 지정하십시오. 지원 세션을 비활성화하려면 `--operators` 대신 `--no-gateway`를 전달하십시오. 두 플래그는 함께 사용할 수 없습니다.
+      </Tab>
+
+      <Tab title="Linux VM">
+        이전 단계에서 수행한 `--host` 설치로 바이너리, `clicklink` 시스템 사용자 및 디렉터리, systemd 유닛이 이미 설치되어 있습니다. root로 등록하십시오.
+
+        ```bash
+        sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain>
+        ```
+
+        표시되지 않는 프롬프트에 등록 토큰을 붙여 넣으십시오. 이 명령은 토큰을 교환하여 등록 번들을 `handoff.yaml`로 저장하고, `/etc/clicklink/config.yaml`을 작성하며, API 자격 증명과 CA 체인을 설치합니다. 또한 개인 키와 CSR을 생성한 후 ClickHouse에서 클라이언트 인증서에 서명하도록 하고, 두 데몬에 읽기 전용 ClickHouse 사용자를 프로비저닝하며, `clicklink-scraper` 및 `clicklink-troubleshooter` 서비스를 활성화하고 시작합니다. 각 서비스가 실행 상태를 보고할 때까지 기다린 뒤 전체 사전 점검 모음을 실행하여 마무리합니다.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="성공 확인" id="verify-success">
+    `init`는 성공을 보고하기 전에 설치를 검증합니다. Kubernetes에서는 활성화된 각 구성 요소의 `/livez` 엔드포인트를 최대 5분 동안 폴링하고, support-session gateway가 활성화된 경우에는 gateway가 인증되지 않은 프로브에 `401`로 응답해야 합니다. VM에서는 각 데몬의 `/livez`가 응답할 때까지 기다린 후 구성, 파일, 포트 충돌, 네트워크 연결성, ClickHouse 연결, systemd 유닛 상태, 구성 요소별 액세스, 디스크 및 redaction 패턴을 포함한 전체 Preflight 검사 모음을 실행합니다.
+
+    Kubernetes에서 수동으로 확인하려면:
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+    kubectl get pods -n "${CONNECTOR_NAMESPACE}"
+    ```
+
+    모든 커넥터 파드가 `Running` 상태이고 준비 완료 상태여야 합니다.
+
+    VM에서 직접 확인하려면 다음을 수행하십시오.
+
+    ```bash
+    sudo clicklink clctl preflight
+    ```
+
+    모든 검사가 통과하면 `0`으로 종료하며, 하나라도 실패하면 실패한 검사를 출력하고 `2`로 종료합니다.
+  </Step>
+
+  <Step title="정리" id="clean-up">
+    등록 번들 `handoff.yaml`(작업 디렉터리에 권한 모드 `0600`으로 저장됨)을 사용하면 설치 중 재실행하거나 복구할 때 두 번째 토큰이 필요하지 않습니다. 이 파일에는 커넥터의 API 시크릿이 평문으로 포함되어 있으므로 설치가 확인되면 삭제하십시오:
+
+    ```bash
+    rm handoff.yaml        # workstation (Kubernetes installs)
+    sudo rm handoff.yaml   # VM host (init ran as root, so the file is root-owned)
+    ```
+
+    실행 중인 connector는 자격 증명의 자체 사본을 보유하므로 운영 작업은 파일에 전혀 의존하지 않습니다. 업그레이드나 구성 변경 시에도 파일이 필요하지 않으며, 나중에 다시 `init`이 필요하면 ClickHouse 계정 팀에 새 등록 토큰을 요청한 후 `init --enroll --force`를 실행하십시오.
+  </Step>
+</Steps>
+
+<div id="air-gapped-and-mirrored-installs">
+  ## 에어갭 및 미러 설치
+</div>
+
+환경에서 연결할 수 있는 대상에 따라 두 가지 독립적인 작업을 대역 외 방식으로 처리할 수 있습니다.
+
+**번들 제공.** 온라인에서 토큰을 교환하지 않으려면 ClickHouse가 온보딩 중에 등록 번들을 직접 제공할 수 있습니다. `--enroll` 대신 `clicklink clctl init --handoff <bundle-file>`를 실행하십시오. `--handoff`는 토큰 교환만 대체합니다. 인증서 서명은 여전히 등록 엔드포인트를 통해 수행되므로, `init`를 실행하는 위치에서 해당 엔드포인트에 연결할 수 있을 때만 이 옵션을 사용하십시오.
+
+**대역 외 인증서 서명.** `init`를 실행하는 위치에서 등록 엔드포인트에 연결할 수 없으면 `--no-auto-sign`을 추가하십시오. `init`는 모든 항목을 준비하고 `clicklink.csr`을 작성합니다. 계정 팀을 통해 CSR을 ClickHouse에 전송한 후, 반환된 인증서와 체인을 사용해 설치를 완료하십시오. VM에서는 `sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt`를 실행하고, Kubernetes에서는 준비 단계에서 출력되는 전체 완료 명령( `--target helm` 포함)을 사용하십시오. 전송되는 것은 CSR뿐이며 private key는 환경 외부로 절대 유출되지 않습니다.
+
+Kubernetes에서 `--chart`는 `--chart-repo`로 해석되는 차트 이름, `oci://` 참조, 직접 URL, 로컬 아카이브 또는 디렉터리를 허용합니다. `--chart-version`은 기본적으로 CLI 자체 버전을 사용하므로 바이너리와 차트가 함께 배포됩니다. 자체 registry에서 이미지를 제공하려면 container image를 미러링하고 values 오버레이에서 `image.repository`를 설정하십시오. egress 경로가 커넥터에 사설 CA를 제시하면 `--api-private-ca`를 전달하여 system trust store 대신 등록 번들에 포함된 CA 체인으로 API 엔드포인트를 검증하십시오.
+
+설치 프로그램은 미러에서도 작동합니다. 자체 미러에서 릴리스 아티팩트와 `install.sh`를 호스팅하고 `CLICKLINK_MIRROR_URL`로 지정하십시오.
+
+<div id="manual-download-and-verification">
+  ### 수동 다운로드 및 검증
+</div>
+
+설치 프로그램을 파이프로 실행하지 않으려면 릴리스를 직접 다운로드하여 검증하십시오. 아래 블록은 플랫폼과 아키텍처를 감지하므로 macOS 또는 Linux, amd64 또는 arm64 환경에서 그대로 실행할 수 있습니다:
+
+```bash
+CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
+# Or pin a specific release: CLICKLINK_VERSION='v0.9.0'
+CLICKLINK_TARBALL="clicklink-${CLICKLINK_VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz"
+for suffix in '' .sha256 .sig .crt; do
+  curl -fsSLO "https://releases.clicklink.clickhouse.com/${CLICKLINK_TARBALL}${suffix}"
+done
+if command -v sha256sum >/dev/null; then
+  sha256sum -c "${CLICKLINK_TARBALL}.sha256"
+else
+  shasum -a 256 -c "${CLICKLINK_TARBALL}.sha256"
+fi
+```
+
+압축을 풀기 전에 cosign으로 서명을 확인하십시오:
+
+```bash
+cosign verify-blob \
+  --certificate "${CLICKLINK_TARBALL}.crt" \
+  --signature "${CLICKLINK_TARBALL}.sig" \
+  --certificate-identity-regexp "^https://github\.com/ClickHouse/data-plane-clicklink/\.github/workflows/release\.yaml@refs/tags/v" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "${CLICKLINK_TARBALL}"
+```
+
+워크스테이션(Kubernetes 설치)에서 tarball의 압축을 풀고 바이너리를 설치합니다:
+
+```bash
+tar -xzf "${CLICKLINK_TARBALL}"
+sudo install -m 0755 clicklink /usr/local/bin/clicklink
+```
+
+VM에서는 tarball의 압축을 풀고 추출한 디렉터리에서 `sudo ./install.sh`를 실행하십시오. 이 스크립트는 릴리스 아티팩트 옆에 설치되며, `--host`와 동일하게 호스트에 설치합니다.
+
+<div id="if-something-fails">
+  ## 문제가 발생한 경우
+</div>
+
+동일한 명령어를 다시 실행하십시오. `init`는 멱등성을 보장하므로 다시 실행해도 동일한 상태에 도달하며, 기존 구성과 스테이징된 파일은 유지되고 완료된 작업은 건너뜁니다. 단계 진행 중 실패하면 CLI가 상황에 맞는 정확한 복구 명령어를 출력하며, 출력된 명령어는 안전하게 반복 실행할 수 있습니다.
+
+등록이 거부되면 토큰이 이미 사용되었거나(최종 정리 단계 전까지 존재하는 `handoff.yaml`을 지정해 `--handoff handoff.yaml`과 함께 다시 실행하십시오), 유효하지 않거나 만료된 것입니다(새 토큰은 ClickHouse 계정 팀에 문의하십시오). 전송 오류로 등록에 실패한 경우 토큰은 사용되지 않았으므로 동일한 명령어를 다시 실행하십시오.
+
+`--force`는 일반적인 재시도가 아닌 명시적 재설정입니다. 유지된 구성 또는 values 오버레이를 덮어쓰고, 클라이언트 키를 다시 생성하며, 만료되지 않은 클라이언트 인증서를 대체합니다(서명 엔드포인트에서 `409`가 반환되면 이미 인증서가 존재한다는 의미입니다). 커넥터의 cluster UUID는 `--force`를 사용해도 유지되므로, 다시 초기화된 커넥터도 아이덴티티를 유지합니다. 자격 증명을 교체하거나 인증서를 대체해야 할 때 사용하십시오. 전체 재실행 및 복구 모델은 [운영](/ko/products/bring-your-own-cloud/connector/operations)을 참조하십시오.

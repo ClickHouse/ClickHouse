@@ -86,6 +86,14 @@ Lorsque vous ajoutez des permissions sur les données à un rôle personnalisé,
   Les rôles attribués manuellement dans la base de données à l&#39;aide de la [convention de nommage `sql-console-role:<email>`](/fr/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) prévalent sur les rôles attribués via la console.
 </Info>
 
+<div id="manage-database-roles-prerequisites">
+  ### Prérequis
+</div>
+
+Les rôles personnalisés de base de données d&#39;un service dépendent de l&#39;[authentification JWT](/fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) et ne sont pas appliqués lorsqu&#39;elle est désactivée. Avant d&#39;ajouter des permissions sur les données à un rôle, accédez au service, ouvrez `Settings`, puis recherchez la carte `JWT authentication` dans la section `Security`. Assurez-vous que le bouton bascule `SQL Console` est activé.
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="Carte d'authentification JWT avec le bouton bascule SQL Console activé" size="lg" force />
+
 <Steps>
   <Step title="Ajouter des permissions sur les données à un rôle" id="add-data-permissions">
     [Créez un rôle personnalisé](#create-custom-role) ou modifiez-en un existant. Dans la boîte de dialogue du rôle, cliquez sur le bouton `Allow permissions`, puis sélectionnez `Data`.

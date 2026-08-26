@@ -47,6 +47,10 @@ Pour activer cette fonction d’introspection :
 * Installez le paquet `clickhouse-common-static-dbg`.
 * Définissez le paramètre [`allow_introspection_functions`](/fr/reference/settings/session-settings/allow#allow_introspection_functions) sur `1`.
 
+<Note>
+  Cette fonction n’est pas déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -135,6 +139,10 @@ Pour activer cette fonction d’introspection :
 
 * Installez le paquet `clickhouse-common-static-dbg`.
 * Définissez le paramètre [`allow_introspection_functions`](/fr/reference/settings/session-settings/allow#allow_introspection_functions) sur `1`.
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents avec les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -231,6 +239,10 @@ WHERE
 Introduit dans : v20.1.0
 
 Convertit une adresse de mémoire virtuelle située dans le processus du serveur ClickHouse en un symbole provenant des fichiers objets de ClickHouse.
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents avec les mêmes arguments.
+</Note>
 
 **Syntaxe**
 

@@ -61,17 +61,17 @@ ClickHouse는 쿼리가 어떻게 실행되는지와 실행 과정에서 어떤 
 
 쿼리 성능에 접근하는 방식을 설명하기 위해 실제 예시를 사용하겠습니다. 
 
-NYC의 택시 운행 데이터가 포함된 NYC Taxi 데이터셋을 사용하겠습니다. 먼저 최적화 없이 NYC Taxi 데이터셋을 적재합니다.
+NYC의 택시 운행 데이터가 포함된 NYC Taxi 데이터셋을 사용하겠습니다. 먼저 최적화 없이 NYC Taxi 데이터셋을 수집합니다.
 
 아래는 테이블을 생성하고 S3 버킷에서 데이터를 삽입하는 명령입니다. 여기서는 의도적으로 데이터로부터 스키마(schema)를 추론하며, 이는 최적화되지 않은 방식입니다.
 
 ```sql
--- 추론된 스키마로 테이블 생성
+-- Create table with inferred schema
 CREATE TABLE trips_small_inferred
 ORDER BY () EMPTY
-AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet', NOSIGN);
 
--- 추론된 스키마를 가진 테이블에 데이터 삽입
+-- Insert data into table with inferred schema
 INSERT INTO trips_small_inferred
 SELECT *
 FROM s3Cluster
@@ -81,7 +81,7 @@ FROM s3Cluster
 데이터를 바탕으로 자동으로 추론된 테이블 스키마를 살펴보겠습니다.
 
 ```sql
---- 추론된 테이블 스키마 표시
+--- Display inferred table schema
 SHOW CREATE TABLE trips_small_inferred
 ```
 

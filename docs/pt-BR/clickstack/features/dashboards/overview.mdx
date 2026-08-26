@@ -200,13 +200,54 @@ Para remover, editar ou duplicar uma visualização, passe o cursor sobre ela e 
 
 Cada tile tem um painel **Configurações de exibição** com opções que controlam como seu valor é exibido. Abra-o no editor do tile clicando em **Configurações de exibição**. As opções disponíveis dependem do tipo de visualização.
 
-Tiles Number podem mostrar um **gráfico de fundo**: uma linha de tendência desenhada atrás do valor, para que sua variação ao longo do intervalo de tempo selecionado fique visível de relance. Isso é útil para tiles de SLO e de orçamento de erro, em que a tendência do valor importa tanto quanto a leitura atual.
+<div id="number-tile-color">
+  #### Cor do bloco numérico
+</div>
 
-Com um tile Number selecionado, abra **Configurações de exibição** e defina **Gráfico de fundo** como **Linha** ou **Área** (ou **Nenhum** para desativá-lo). A linha de tendência é derivada de uma versão da consulta do tile agrupada em buckets de tempo, portanto nenhuma configuração adicional é necessária. Por padrão, ela herda a cor do tile; defina uma **Cor de fundo** para substituí-la por uma cor específica da paleta.
+Os blocos numéricos permitem escolher uma **Cor** estática na paleta de gráficos selecionada. Com um bloco numérico selecionado, abra **Configurações de exibição** e use o controle **Cor** (identificado como **Cor do bloco numérico** para fins de acessibilidade) para escolher uma amostra de cor ou limpe a seleção para usar a cor de texto padrão.
 
-<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Painel Configurações de exibição de um tile Number, com Gráfico de fundo definido como Área" size="lg" />
+As cores são armazenadas como tokens de paleta, e não como valores hexadecimais brutos, para que o mesmo bloco seja exibido corretamente em temas claros, escuros e de IDE.
 
-Os gráficos de fundo se aplicam a tiles Number do construtor de consultas. Tiles Number de Raw SQL retornam um único valor sem dimensão de tempo para agrupar em buckets, portanto a opção aparece, mas fica desabilitada para eles.
+**Tokens categóricos** (matizes para várias séries):
+
+| Token              | Rótulo     |
+| ------------------ | ---------- |
+| `chart-blue`       | Azul       |
+| `chart-orange`     | Laranja    |
+| `chart-red`        | Vermelho   |
+| `chart-cyan`       | Ciano      |
+| `chart-green`      | Verde      |
+| `chart-pink`       | Rosa       |
+| `chart-purple`     | Roxo       |
+| `chart-light-blue` | Azul-claro |
+| `chart-brown`      | Marrom     |
+| `chart-gray`       | Cinza      |
+
+**Tokens semânticos** (orientados a status):
+
+| Token           | Rótulo  |
+| --------------- | ------- |
+| `chart-success` | Sucesso |
+| `chart-warning` | Aviso   |
+| `chart-error`   | Erro    |
+
+Use tokens semânticos quando o número representar um status (por exemplo, uma contagem de erros em `chart-error` ou uma taxa saudável em `chart-success`). Use tokens categóricos quando quiser diferenciar visualmente blocos de KPI relacionados sem indicar um status.
+
+Configurações mais antigas ainda podem armazenar tokens numéricos legados (`chart-1` a `chart-10`). O ClickStack os mapeia para os tokens nomeados por matiz acima ao carregar um dashboard.
+
+A mesma paleta também oferece **regras de cor** opcionais no mesmo painel lateral: condições ordenadas avaliadas em relação ao valor exibido (a última correspondência prevalece). Quando nenhuma regra corresponde, aplica-se a cor estática e, em seguida, a cor de texto padrão.
+
+<div id="number-tile-background-chart">
+  #### Gráfico de fundo do bloco numérico
+</div>
+
+Blocos numéricos podem mostrar um **gráfico de fundo**: uma linha de tendência desenhada atrás do valor, para que sua variação ao longo do intervalo de tempo selecionado fique visível de relance. Isso é útil para tiles de SLO e de orçamento de erro, em que a tendência do valor importa tanto quanto a leitura atual.
+
+Com um bloco numérico selecionado, abra **Configurações de exibição** e defina **Gráfico de fundo** como **Linha** ou **Área** (ou **Nenhum** para desativá-lo). A linha de tendência é derivada de uma versão da consulta do tile agrupada em buckets de tempo, portanto nenhuma configuração adicional é necessária. Por padrão, ela herda a cor do tile; defina uma **Cor de fundo** para substituí-la por uma cor específica da paleta.
+
+<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Painel Configurações de exibição de um bloco numérico, com Gráfico de fundo definido como Área" size="lg" />
+
+Os gráficos de fundo se aplicam a blocos numéricos do construtor de consultas. Blocos numéricos de Raw SQL retornam um único valor sem dimensão de tempo para agrupar em buckets, portanto a opção aparece, mas fica desabilitada para eles.
 
 Tiles de tabela podem aplicar listras às linhas com **Plano de fundo alternado das linhas**, que colore uma linha sim, outra não para facilitar a leitura de tabelas largas. Isso fica desativado por padrão.
 
@@ -215,6 +256,46 @@ Com um tile de tabela selecionado, abra **Configurações de exibição** e ativ
 <Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Painel Configurações de exibição de um tile de tabela, com Plano de fundo alternado das linhas ativado" size="lg" />
 
 Tiles de tabela também mantêm um separador entre a linha de cabeçalho e os dados enquanto você rola, para que os cabeçalhos das colunas permaneçam distintos.
+
+<div id="api-number-tile-color">
+  #### API de dashboards: cor do bloco numérico
+</div>
+
+Ao criar ou atualizar dashboards pela API externa (`POST` / `PUT` `/api/v2/dashboards`), defina `color` em uma configuração de bloco numérico do construtor como um token de paleta. Valores hex brutos são rejeitados.
+
+```json
+{
+  "name": "Error rate KPIs",
+  "tiles": [
+    {
+      "id": "65f5e4a3b9e77c001a222222",
+      "name": "Errors",
+      "x": 0,
+      "y": 0,
+      "w": 6,
+      "h": 4,
+      "config": {
+        "displayType": "number",
+        "sourceId": "<SOURCE_ID>",
+        "select": [
+          {
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "whereLanguage": "lucene",
+            "alias": "Errors"
+          }
+        ],
+        "color": "chart-error",
+        "backgroundChart": {
+          "type": "area"
+        }
+      }
+    }
+  ]
+}
+```
+
+`color` aceita qualquer token das listas categórica e semântica acima (por exemplo, `chart-blue` ou `chart-success`). Opcionalmente, `backgroundChart.color` substitui a cor do minigráfico pelo mesmo enum de token. Consulte a [referência da API do ClickStack](/pt-BR/use-cases/observability/clickstack/api-reference) para informações sobre autenticação e URLs base.
 
 <div id="dashboard-listing-search">
   ## Dashboard - listagem e busca

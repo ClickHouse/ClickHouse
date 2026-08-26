@@ -366,11 +366,11 @@ SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic"
 
 LLMプロバイダー を使用して指定されたテキストに対する自然言語の条件を評価し、`WHERE`、`PREWHERE`、`JOIN ... ON` で使用できるブール値 (`UInt8`) を返します。
 
-この関数は、モデルに小文字の `true` または `false` のみで応答するよう求めます。失敗したリクエスト (`ai_function_throw_on_error` が無効な場合) および認識できない応答は `0` にマッピングされるため、行は除外されます。
+この関数は、モデルに小文字の `true` または `false` のみで応答するよう求めます。`true` 以外の完全な応答 (`false` や認識できないテキストを含む) は `0` にマッピングされるため、行は除外されます。一方、プロバイダーから不完全と通知された応答 (切り詰められた応答、コンテンツフィルタリングされた応答、または追加のアクションが必要な応答) はエラーとして扱われます。`ai_function_throw_on_error` が有効な場合 (デフォルト) はクエリが中止され、無効な場合は行が `0` にマッピングされて除外されます。
 
 **警告:** `aiFilter` の結果を無批判に信用しないでください。LLM ベースの述語は不正確であったり、一貫性を欠いたりする可能性があります。偽陽性や偽陰性が許容される場合にのみ使用してください。
 
-認証情報 (provider、model、endpoint、および必要に応じて API key を指定する 名前付きコレクション) は、任意の パラメータマップ の `credentials` キーから取得されます。このキーが map で省略されている場合は、`ai_function_text_default_credentials` 設定から取得されます。
+認証情報 (プロバイダー、モデル、エンドポイント、および必要に応じて API key を指定する 名前付きコレクション) は、任意の パラメータマップ の `credentials` キーから取得されます。このキーが map で省略されている場合は、`ai_function_text_default_credentials` 設定から取得されます。
 
 注: `JOIN ... ON` で `aiFilter` を使用すると、候補ペアごとに LLM が一度評価されるため、コストが高くなる可能性があります。
 
@@ -493,8 +493,9 @@ parameter で設定可能) に置き換えられます。`categories` Array は�
 バイト単位で同一にはなりません。
 
 `aiRedact` は PII を置き換えた入力テキスト全体を返すため、出力は入力とほぼ同じ長さになります。
-`max_tokens` (デフォルトは `1024`) を、トークン単位の入力長より大きく設定してください。上限が低すぎて切り詰められた応答は
-不完全になります。
+`max_tokens` (デフォルトは `1024`) を、トークン単位の入力長より大きく設定してください。上限が低すぎて切り詰められた応答は、
+部分的にマスキングされたテキストを返すのではなく、`AI_PROVIDER_RESPONSE_TRUNCATED` により拒否されます
+(`ai_function_throw_on_error` が無効な場合はカラムのデフォルト値を返します) 。
 
 **構文**
 
@@ -508,7 +509,7 @@ aiRedact(text, categories[, params])
 
 * `text` — マスキング対象のテキスト。[`String`](/ja/reference/data-types/string)
 * `categories` — マスキングする PII カテゴリの定数リスト (例: `['name', 'ssn', 'credit_card']`) 。空の配列を指定すると、一般的なカテゴリ (名前、メールアドレス、電話番号、住所、クレジットカード、IP アドレス) のデフォルトセットが使用されます。[`Array(String)`](/ja/reference/data-types/array)
-* `params` — 任意の定数 `Map(String, String)` パラメータ。関数固有のキー: `temperature` (ランダム性を制御するサンプリング温度、デフォルト `0.0`) 、`max_tokens` (呼び出しごとの最大出力トークン数、デフォルト `1024` — `aiRedact` はテキスト全体を返すため、入力のトークン数より大きい値に設定してください。そうしないと、応答が切り詰められて不完全になる可能性があります) 、`replacement` (検出された各 PII span を置き換えるトークン、デフォルト `[REDACTED]`) 。共通パラメータの `credentials` と `model` も適用されます ([AI 関数](/ja/reference/functions/regular-functions/ai-functions)を参照) 。[`Map(String, String)`](/ja/reference/data-types/map)
+* `params` — 任意の定数 `Map(String, String)` パラメータ。関数固有のキー: `temperature` (ランダム性を制御するサンプリング温度、デフォルト `0.0`) 、`max_tokens` (呼び出しごとの最大出力トークン数、デフォルト `1024` — `aiRedact` はテキスト全体を返すため、入力のトークン数より大きい値に設定してください。上限が低すぎて切り詰められた応答は、部分的にマスキングされたテキストを返すのではなく拒否されます) 、`replacement` (検出された各 PII span を置き換えるトークン、デフォルト `[REDACTED]`) 。共通パラメータの `credentials` と `model` も適用されます ([AI 関数](/ja/reference/functions/regular-functions/ai-functions)を参照) 。[`Map(String, String)`](/ja/reference/data-types/map)
 
 **戻り値**
 

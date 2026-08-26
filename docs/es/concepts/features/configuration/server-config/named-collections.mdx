@@ -6,13 +6,13 @@ title: 'Colecciones con nombre'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-<CloudNotSupportedBadge />
-
 Las colecciones con nombre ofrecen una forma de almacenar colecciones de pares clave-valor para
 configurar integraciones con fuentes externas. Puede usar colecciones con nombre con
 diccionarios, tablas, funciones de tabla y almacenamiento de objetos.
+
+<Note>
+  Las colecciones con nombre creadas mediante DDL pueden habilitarse en determinados servicios de ClickHouse Cloud. Póngase en contacto con Support para confirmar la disponibilidad. Las colecciones con nombre definidas en archivos de configuración no están disponibles porque los usuarios no pueden modificar los archivos de configuración del servidor en ClickHouse Cloud.
+</Note>
 
 Las colecciones con nombre pueden configurarse mediante DDL o en archivos de configuración, y se aplican
 cuando se inicia ClickHouse. Simplifican la creación de objetos y permiten ocultar credenciales

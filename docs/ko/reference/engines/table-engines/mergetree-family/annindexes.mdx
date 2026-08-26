@@ -672,7 +672,7 @@ LIMIT 3;
 
 <ExperimentalBadge />
 
-`Quantized` 코덱을 활성화하려면 먼저 `SET allow_experimental_codecs = 1`을 설정하십시오.
+`Quantized` 코덱을 활성화하려면 먼저 `SET enable_quantized_codec = 1`을 실행하십시오.
 문제가 발생하면 [ClickHouse 리포지토리](https://github.com/clickhouse/clickhouse/issues)에 이슈를 등록해 주십시오.
 
 <div id="quantized-codecs-introduction">
@@ -709,7 +709,7 @@ LIMIT 3;
 `Array(Float32)`(또는 `Array(Float64)` / `Array(BFloat16)`) 컬럼에 `Quantized(...)` 코덱을 지정합니다.
 
 ```sql
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 CREATE TABLE vectors
 (

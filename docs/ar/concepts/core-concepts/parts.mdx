@@ -40,13 +40,23 @@ ORDER BY (town, street);
 
 عندما يعالج خادم ClickHouse مثال الإدراج الذي يحتوي على 4 صفوف (على سبيل المثال، عبر عبارة [INSERT INTO](/ar/reference/statements/insert-into)) الموضحة في المخطط أعلاه، فإنه ينفّذ عدة خطوات:
 
-① **الفرز**: تُفرَز الصفوف بحسب مفتاح الفرز الخاص بالجدول `(town, street)`، ويُنشأ [فهرس أساسي متناثر](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) للصفوف المُفرَزة.
+<Steps>
+  <Step title="الفرز">
+    تُفرَز الصفوف بحسب مفتاح الفرز الخاص بالجدول `(town, street)`، ويُنشأ [فهرس أساسي متناثر](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) للصفوف المُفرَزة.
+  </Step>
 
-② **التقسيم**: تُقسَّم البيانات المُفرَزة إلى أعمدة.
+  <Step title="التقسيم">
+    تُقسَّم البيانات المُفرَزة إلى أعمدة.
+  </Step>
 
-③ **الضغط**: يُصبح كل عمود [مضغوطًا](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+  <Step title="الضغط">
+    يُصبح كل عمود [مضغوطًا](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+  </Step>
 
-④ **الكتابة إلى القرص**: تُحفَظ الأعمدة المضغوطة كملفات أعمدة ثنائية داخل دليل جديد يمثّل جزء البيانات الخاص بعملية الإدراج. ويُضغط الفهرس الأساسي المتناثر أيضًا ويُخزَّن في الدليل نفسه.
+  <Step title="الكتابة إلى القرص">
+    تُحفَظ الأعمدة المضغوطة كملفات أعمدة ثنائية داخل دليل جديد يمثّل جزء البيانات الخاص بعملية الإدراج. ويُضغط الفهرس الأساسي المتناثر أيضًا ويُخزَّن في الدليل نفسه.
+  </Step>
+</Steps>
 
 اعتمادًا على المحرك المحدد للجدول، [قد](/ar/reference/settings/session-settings) تحدث تحويلات إضافية بالتوازي مع الفرز.
 

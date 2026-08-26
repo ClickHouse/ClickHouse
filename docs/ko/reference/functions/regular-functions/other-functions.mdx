@@ -4935,6 +4935,90 @@ SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
 └───┴───┴────────────────┴───────────────┘
 ```
 
+<div id="pgGetUserById">
+  ## pgGetUserById
+</div>
+
+도입 버전: v26.8.0
+
+PostgreSQL wire 프로토콜용 호환성 함수로, `pg_catalog.pg_get_userbyid`와 동일한 기능을 합니다.
+PostgreSQL 클라이언트(예: `psql`의 `\d` 명령)는 테이블 소유자를 표시하는 데 이 함수를 사용합니다.
+ClickHouse는 테이블 소유권을 추적하지 않으므로 이 함수는 인수를 무시하고 현재 사용자의 이름을 반환합니다.
+
+<Note>
+  이 함수는 비결정적이므로 동일한 인수에 대해 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
+**구문**
+
+```sql
+pgGetUserById(oid)
+```
+
+**별칭**: `pg_get_userbyid`
+
+**인수**
+
+* `oid` — 역할의 객체 식별자입니다. 이 값은 무시됩니다. [`UInt32`](/ko/reference/data-types/int-uint)
+
+**반환 값**
+
+현재 사용자의 이름을 반환합니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT pg_get_userbyid(10)
+```
+
+```response title=Response
+┌─pgGetUserById(10)─┐
+│ default           │
+└───────────────────┘
+```
+
+<div id="pgTableIsVisible">
+  ## pgTableIsVisible
+</div>
+
+도입 버전: v26.8.0
+
+PostgreSQL wire 프로토콜용 호환성 함수로, `pg_catalog.pg_table_is_visible`에 해당합니다.
+PostgreSQL 클라이언트(예: `psql`의 `\d` 명령)는 검색 경로에서 보이는 테이블을 필터링하는 데 이 함수를 사용합니다.
+ClickHouse가 에뮬레이션하는 `pg_class` 뷰는 모두 보이는 현재 데이터베이스의 테이블만 노출하므로, 이 함수는 항상 `1`을 반환합니다.
+
+**구문**
+
+```sql
+pgTableIsVisible(oid)
+```
+
+**별칭**: `pg_table_is_visible`
+
+**인수**
+
+* `oid` — 에뮬레이트된 `pg_class` 뷰에 노출된 테이블의 객체 식별자입니다. 이 값은 무시됩니다. [`UInt32`](/ko/reference/data-types/int-uint)
+
+**반환 값**
+
+항상 `1`을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT pg_table_is_visible(0)
+```
+
+```response title=Response
+┌─pgTableIsVisible(0)─┐
+│                   1 │
+└─────────────────────┘
+```
+
 <div id="queryID">
   ## queryID
 </div>
@@ -5564,7 +5648,12 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 도입 버전: v22.6.0
 
 현재 서버에 Secure Sockets Layer(SSL) 인증서가 구성된 경우 해당 정보를 표시합니다.
+서버에 인증서가 없으면 빈 맵을 반환합니다. 예를 들어 인증서가 ACME를 통해 프로비저닝되었지만 아직 발급되지 않은 경우가 이에 해당합니다.
 ClickHouse가 OpenSSL 인증서를 사용해 연결을 검증하도록 구성하는 방법에 대한 자세한 내용은 [TLS 구성](/ko/concepts/features/security/tls/configuring-tls)을 참조하십시오.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 

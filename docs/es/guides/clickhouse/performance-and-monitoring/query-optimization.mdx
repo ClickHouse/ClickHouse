@@ -66,12 +66,12 @@ Tomemos el conjunto de datos de NYC Taxi, que contiene datos de trayectos en tax
 A continuación se muestra el comando para crear la tabla e insertar datos desde un bucket de S3. Ten en cuenta que inferimos deliberadamente el esquema a partir de los datos, lo que no está optimizado.
 
 ```sql
--- Crear tabla con esquema inferido
+-- Create table with inferred schema
 CREATE TABLE trips_small_inferred
 ORDER BY () EMPTY
-AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet', NOSIGN);
 
--- Insertar datos en la tabla con esquema inferido
+-- Insert data into table with inferred schema
 INSERT INTO trips_small_inferred
 SELECT *
 FROM s3Cluster
@@ -81,7 +81,7 @@ FROM s3Cluster
 Veamos el esquema de la tabla inferido automáticamente a partir de los datos.
 
 ```sql
---- Mostrar el esquema de tabla inferido
+--- Display inferred table schema
 SHOW CREATE TABLE trips_small_inferred
 ```
 

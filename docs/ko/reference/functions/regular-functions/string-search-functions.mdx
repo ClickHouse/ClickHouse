@@ -456,14 +456,14 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 도입 버전: v25.10.0
 
-[`hasAnyTokens`](#hasAnyTokens)와 유사하지만, `needle` 문자열 또는 배열의 모든 토큰이 `input` 문자열과 일치하면 1을, 그렇지 않으면 0을 반환합니다. `input`이 컬럼인 경우, 해당 조건을 만족하는 모든 행을 반환합니다.
+[`hasAnyTokens`](#hasAnyTokens)와 유사하지만, `needle` 문자열 또는 배열의 모든 토큰이 `input` 문자열과 일치하면 1을 반환하고, 그렇지 않으면 0을 반환합니다. `input`이 컬럼인 경우 이 조건을 만족하는 모든 행을 반환합니다.
 
 <Note>
   최적의 성능을 위해 컬럼 `input`에는 [텍스트 인덱스](/ko/reference/engines/table-engines/mergetree-family/textindexes)가 정의되어 있어야 합니다.
   텍스트 인덱스가 정의되어 있지 않으면 함수는 브루트 포스(전체 스캔) 방식으로 컬럼을 스캔하며, 이는 인덱스 조회보다 훨씬 느립니다.
 </Note>
 
-검색 전에 함수가 토큰화를 수행합니다
+검색 전에 함수는 다음을 토큰화합니다.
 
 * `input` 인수(항상), 그리고
 * `needle` 인수([String](/ko/reference/data-types/string)로 지정된 경우)는
@@ -473,8 +473,8 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
   텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) 표현식이 구성되어 있으면, `needle`이 `String`으로 지정된 경우 토큰화 전에 전처리기가 적용됩니다.
   텍스트 인덱스에 [후처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) 표현식이 구성되어 있으면, 후처리기는 `needle` 토큰과 `input` 토큰 모두에 적용됩니다(즉, 둘 다 토큰화 이후에 적용됩니다).
 
-중복된 토큰(token)은 무시됩니다.
-예시: 검색 패턴 = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;]는 [&#39;ClickHouse&#39;]와 동일하게 처리됩니다.
+중복된 토큰은 무시됩니다.
+예: needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;]는 [&#39;ClickHouse&#39;]와 동일하게 처리됩니다.
 
 <Note>
   텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index)(예: `lowerUTF8`)가 정의되어 있으면, `hasAllTokens`는 이를 `input`에 적용하고, `needles`가 [String](/ko/reference/data-types/string)인 경우에는 토큰화 전에 `needles`에도 적용합니다. `needles`가 [Array(String)](/ko/reference/data-types/array)인 경우에는 그 요소가 있는 그대로 전달되며 전처리기는 적용되지 않습니다.
@@ -485,24 +485,24 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 **구문**
 
 ```sql
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 ```
 
 **별칭**: `hasAllToken`
 
 **인수**
 
-* `input` — 입력 컬럼. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Array(String)`](/ko/reference/data-types/array) 또는 [`Array(FixedString)`](/ko/reference/data-types/array)
+* `input` — 입력 컬럼. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Nullable(String)`](/ko/reference/data-types/nullable) 또는 [`Nullable(FixedString)`](/ko/reference/data-types/nullable) 또는 [`Array(String)`](/ko/reference/data-types/array) 또는 [`Array(FixedString)`](/ko/reference/data-types/array) 또는 [`Array(Nullable(String))`](/ko/reference/data-types/array) 또는 [`Array(Nullable(FixedString))`](/ko/reference/data-types/array)
 * `needles` — 검색할 토큰. [`String`](/ko/reference/data-types/string) 또는 [`Array(String)`](/ko/reference/data-types/array)
-* `tokenizer` — 사용할 토크나이저입니다. 유효한 인수는 `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, `array`입니다. 선택 사항이며, 명시적으로 설정하지 않으면 기본값으로 `splitByNonAlpha`가 사용됩니다. [`const String`](/ko/reference/data-types/string)
+* `tokenizer` — 사용할 토크나이저입니다. 유효한 인수는 `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, `array`입니다. 선택 사항이며, 명시적으로 설정하지 않으면 기본값으로 `splitByNonAlpha`가 사용됩니다. [`const String`](/ko/reference/data-types/string)
 
 **반환 값**
 
-모든 needle이 일치하면 1을, 그렇지 않으면 0을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint)
+모든 니들(needles)이 일치하면 1을 반환합니다. 그렇지 않으면 0을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint)
 
 **예시**
 
-**문자열 needle을 사용한 기본 사용법**
+**문자열 니들(needle)을 사용한 기본 사용법**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -524,7 +524,7 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**배열에서 토큰화하지 않고 있는 그대로 검색할 needle을 지정합니다**
+**배열에서 토큰화 없이 있는 그대로 검색할 니들(needle) 지정**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -715,7 +715,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 **구문**
 
 ```sql
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 ```
 
 **별칭**: `hasAnyToken`
@@ -724,7 +724,7 @@ hasAnyTokens(input, needles)
 
 * `input` — 입력 컬럼입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Nullable(String)`](/ko/reference/data-types/nullable) 또는 [`Nullable(FixedString)`](/ko/reference/data-types/nullable) 또는 [`Array(String)`](/ko/reference/data-types/array) 또는 [`Array(FixedString)`](/ko/reference/data-types/array) 또는 [`Array(Nullable(String))`](/ko/reference/data-types/array) 또는 [`Array(Nullable(FixedString))`](/ko/reference/data-types/array)
 * `needles` — 검색 대상 토큰입니다. [`String`](/ko/reference/data-types/string) 또는 [`Array(String)`](/ko/reference/data-types/array)
-* `tokenizer` — 사용할 토크나이저입니다. 유효한 인수는 `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, `array`입니다. 선택 사항이며, 명시적으로 설정하지 않으면 `splitByNonAlpha`가 기본값으로 사용됩니다. [`const String`](/ko/reference/data-types/string)
+* `tokenizer` — 사용할 토크나이저입니다. 유효한 인수는 `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, `array`입니다. 선택 사항이며, 명시적으로 설정하지 않으면 `splitByNonAlpha`가 기본값으로 사용됩니다. [`const String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -754,7 +754,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**배열에서 검색할 needle을 토큰화하지 않고 있는 그대로 지정합니다**
+**배열에서 토큰화 없이 있는 그대로 검색할 needle을 지정합니다**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -908,12 +908,13 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 <Note>
   컬럼 `input`에는 최적의 성능을 위해 [텍스트 인덱스](/ko/reference/engines/table-engines/mergetree-family/textindexes)가 정의되어 있어야 합니다.
-  텍스트 인덱스가 정의되어 있지 않으면 이 함수는 브루트 포스(전체 스캔) 컬럼 스캔을 수행하며, 이는 인덱스 조회보다 훨씬 느립니다.
+  텍스트 인덱스가 정의되어 있지 않으면 이 함수는 브루트 포스(전체 스캔)을 수행하며, 이는 인덱스 조회보다 훨씬 느립니다.
 </Note>
 
 검색 전에 이 함수는 텍스트 인덱스에 지정된 토크나이저를 사용해 `input` 인수와 `phrase` 인수를 모두 토큰화합니다.
 컬럼에 텍스트 인덱스가 정의되어 있지 않으면, 선택적 세 번째 인수로 토크나이저를 제공한 경우를 제외하고 `splitByNonAlpha` 토크나이저를 대신 사용합니다.
-토크나이저 인수는 `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `icu` 중 하나여야 합니다.
+토크나이저 인수는 `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, `icu` 중 하나여야 합니다.
+텍스트 인덱스에 후처리기도 정의되어 있으면 `hasPhrase`에서 `splitByRegexp`는 지원되지 않습니다.
 
 <Note>
   텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index)가 정의되어 있으면(예: `lowerUTF8`), `hasPhrase`는 토큰화 전에 이를 `input`과 `phrase` 모두에 적용합니다.
@@ -1538,7 +1539,7 @@ re2의 기본 동작과 달리 `.`은 줄바꿈과도 일치합니다. 이를 �
 
 부분 문자열을 검색하기만 하면 되는 경우에는 [`like`](#like) 또는 [`position`](#position) 함수를 대신 사용할 수 있으며, 이 함수들이 이 함수보다 훨씬 빠르게 동작합니다.
 
-대체 연산자 구문: `haystack REGEXP pattern`.
+대체 연산자 구문: `haystack REGEXP pattern` 또는 `haystack ~ pattern`(PostgreSQL 스타일)입니다.
 
 **구문**
 
@@ -1593,6 +1594,48 @@ SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')
 ┌─match('abcde', 'b.*d')─┬─match('abcde', '^b.*d$')─┐
 │                      1 │                        0 │
 └────────────────────────┴──────────────────────────┘
+```
+
+<div id="matchCaseInsensitive">
+  ## matchCaseInsensitive
+</div>
+
+도입 버전: v26.8.0
+
+[`match`](#match)와 유사하지만 대소문자를 구분하지 않고 일치시킵니다.
+
+이 함수는 RE2 정규식 라이브러리를 사용합니다. 지원되는 구문은 [re2](https://github.com/google/re2/wiki/Syntax)를 참조하십시오.
+
+대체 연산자 구문: `haystack ~* pattern`(PostgreSQL 스타일).
+
+**구문**
+
+```sql
+matchCaseInsensitive(haystack, pattern)
+-- haystack ~* pattern
+```
+
+**인수**
+
+* `haystack` — 패턴을 검색할 검색 대상 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `pattern` — 정규식 패턴입니다. 상수이거나 컬럼에서 가져올 수 있습니다. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+대소문자를 구분하지 않고 패턴이 일치하면 `1`을 반환하고, 그렇지 않으면 `0`을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT matchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' ~* 'HELLO.*'
+```
+
+```response title=Response
+┌─matchCaseIns⋯ 'hello.*')─┬─'Hello World' ~* 'HELLO.*'─┐
+│                        1 │                          1 │
+└──────────────────────────┴────────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAllIndices">
@@ -2892,6 +2935,90 @@ SELECT notLike('ClickHouse', '%SQL%');
 ┌─notLike('Cli⋯', '%SQL%')─┐
 │                        1 │
 └──────────────────────────┘
+```
+
+<div id="notMatch">
+  ## notMatch
+</div>
+
+도입 버전: v26.8.0
+
+[`match`](#match)와 유사하지만 결과를 부정합니다. 즉, 문자열이 정규식 패턴과 일치하지 않는지 확인합니다.
+
+이 함수는 RE2 정규식 라이브러리를 사용합니다. 지원되는 구문은 [re2](https://github.com/google/re2/wiki/Syntax)를 참조하십시오.
+
+대체 연산자 구문: `haystack !~ pattern` (PostgreSQL 스타일).
+
+**구문**
+
+```sql
+notMatch(haystack, pattern)
+-- haystack !~ pattern
+```
+
+**인수**
+
+* `haystack` — 패턴을 검색할 검색 대상 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `pattern` — 정규식 패턴입니다. 상수이거나 컬럼에서 가져올 수 있습니다. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+패턴이 일치하면 `0`을 반환하고, 그렇지 않으면 `1`을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT notMatch('Hello World', 'Hello.*'), 'Hello World' !~ 'goodbye.*'
+```
+
+```response title=Response
+┌─notMatch('He⋯ 'Hello.*')─┬─'Hello World⋯goodbye.*'─┐
+│                        0 │                       1 │
+└──────────────────────────┴─────────────────────────┘
+```
+
+<div id="notMatchCaseInsensitive">
+  ## notMatchCaseInsensitive
+</div>
+
+도입 버전: v26.8.0
+
+[`matchCaseInsensitive`](#matchCaseInsensitive)와 유사하지만 결과를 부정합니다. 즉, 문자열이 정규식 패턴과 대소문자를 구분하지 않고 일치하지 않는지 확인합니다.
+
+이 함수는 RE2 정규식 라이브러리를 사용합니다. 지원되는 구문은 [re2](https://github.com/google/re2/wiki/Syntax)를 참조하십시오.
+
+대체 연산자 구문: `haystack !~* pattern` (PostgreSQL 스타일).
+
+**구문**
+
+```sql
+notMatchCaseInsensitive(haystack, pattern)
+-- haystack !~* pattern
+```
+
+**인수**
+
+* `haystack` — 패턴을 검색할 검색 대상 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `pattern` — 정규식 패턴입니다. 상수이거나 컬럼에서 가져올 수 있습니다. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+패턴이 대소문자를 구분하지 않고 일치하면 `0`을 반환하고, 그렇지 않으면 `1`을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT notMatchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' !~* 'GOODBYE.*'
+```
+
+```response title=Response
+┌─notMatchCase⋯ 'hello.*')─┬─'Hello World⋯GOODBYE.*'─┐
+│                        0 │                       1 │
+└──────────────────────────┴─────────────────────────┘
 ```
 
 <div id="position">

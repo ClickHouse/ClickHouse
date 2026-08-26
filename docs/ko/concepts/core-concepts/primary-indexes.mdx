@@ -62,13 +62,23 @@ ClickHouse의 희소 프라이머리 인덱스는 테이블의 프라이머리 �
 
 <br />
 
-① 예시 쿼리에는 두 프라이머리 키 컬럼 모두에 대한 프레디케이트가 포함되어 있습니다: `town = 'LONDON' AND street = 'OXFORD STREET'`.
+<Steps>
+  <Step title="쿼리 프레디케이트 파싱">
+    예시 쿼리에는 두 프라이머리 키 컬럼 모두에 대한 프레디케이트가 포함되어 있습니다: `town = 'LONDON' AND street = 'OXFORD STREET'`.
+  </Step>
 
-② 쿼리 속도를 높이기 위해 ClickHouse는 테이블의 프라이머리 인덱스를 메모리에 로드합니다.
+  <Step title="프라이머리 인덱스 로드">
+    쿼리 속도를 높이기 위해 ClickHouse는 테이블의 프라이머리 인덱스를 메모리에 로드합니다.
+  </Step>
 
-③ 그런 다음 인덱스 항목을 스캔하여 어떤 그래뉼에 프레디케이트와 일치하는 행이 포함될 수 있는지, 다시 말해 어떤 그래뉼을 건너뛸 수 없는지를 식별합니다.
+  <Step title="일치하는 그래뉼 식별">
+    그런 다음 인덱스 항목을 스캔하여 어떤 그래뉼에 프레디케이트와 일치하는 행이 포함될 수 있는지, 다시 말해 어떤 그래뉼을 건너뛸 수 없는지를 식별합니다.
+  </Step>
 
-④ 이렇게 잠재적으로 관련 있는 그래뉼을 쿼리에 필요한 다른 컬럼의 해당 그래뉼과 함께 메모리로 로드한 다음 [처리합니다](/ko/concepts/core-concepts/query-parallelism).
+  <Step title="그래뉼 로드 및 처리">
+    이렇게 잠재적으로 관련 있는 그래뉼을 쿼리에 필요한 다른 컬럼의 해당 그래뉼과 함께 메모리로 로드한 다음 [처리합니다](/ko/concepts/core-concepts/query-parallelism).
+  </Step>
+</Steps>
 
 <div id="monitoring-primary-indexes">
   ## 프라이머리 인덱스 모니터링

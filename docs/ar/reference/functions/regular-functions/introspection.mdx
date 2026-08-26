@@ -47,13 +47,17 @@ doc_type: 'reference'
 * ثبّت الحزمة `clickhouse-common-static-dbg`.
 * اضبط الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings/allow#allow_introspection_functions) على `1`.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تعيد نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
 addressToLine(address_of_binary_instruction)
 ```
 
-**الوسيطات**
+**وسيطة الدالة**
 
 * `address_of_binary_instruction` — عنوان التعليمة في عملية قيد التشغيل. [`UInt64`](/ar/reference/data-types/int-uint)
 
@@ -136,13 +140,17 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 * ثبّت الحزمة `clickhouse-common-static-dbg`.
 * اضبط الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings/allow#allow_introspection_functions) على `1`.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
 addressToLineWithInlines(address_of_binary_instruction)
 ```
 
-**الوسيطات**
+**وسيطة الدالة**
 
 * `address_of_binary_instruction` — عنوان تعليمة في عملية قيد التشغيل. [`UInt64`](/ar/reference/data-types/int-uint)
 
@@ -228,17 +236,21 @@ WHERE
   ## addressToSymbol
 </div>
 
-استُحدث في: v20.1.0
+أُضيف في: v20.1.0
 
 يحوّل عنوانًا في الذاكرة الافتراضية داخل عملية خادم ClickHouse إلى رمز من ملفات الكائنات الخاصة بـ ClickHouse.
 
-**الصيغة**
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**البنية**
 
 ```sql
 addressToSymbol(address_of_binary_instruction)
 ```
 
-**المعاملات**
+**وسيطة الدالة**
 
 * `address_of_binary_instruction` — عنوان التعليمة ضمن عملية قيد التشغيل. [`UInt64`](/ar/reference/data-types/int-uint)
 
