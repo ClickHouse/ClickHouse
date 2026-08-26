@@ -13,6 +13,11 @@ INSERT INTO test_gradual_resize_grouping_sets SELECT number % 10, number FROM nu
 SET min_rows_per_stream_for_gradual_resize = 1000;
 SET min_bytes_per_stream_for_gradual_resize = 0;
 SET max_threads = 4;
+-- `max_threads` is silently lowered to the number of threads that fit into the free memory
+-- (`getMaxThreadsForAvailableMemory`), which on a loaded CI runner collapses the pipeline to a
+-- single stream and removes every resize processor. Pin it off, the assertions below are about
+-- the pipeline shape.
+SET max_threads_min_free_memory_per_thread = 0;
 -- Aggregation in order takes an entirely different pipeline branch that has no pre-aggregation
 -- resize at all, so the positive control below would see no `GradualResize` with it enabled.
 SET optimize_aggregation_in_order = 0;

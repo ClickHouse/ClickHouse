@@ -29,6 +29,11 @@ SET min_rows_per_stream_for_gradual_resize = 100000000;
 SET min_bytes_per_stream_for_gradual_resize = 0;
 SET min_outstreams_per_resize_after_split = 0;
 SET max_threads = 4;
+-- `max_threads` is silently lowered to the number of threads that fit into the free memory
+-- (`getMaxThreadsForAvailableMemory`), which on a loaded CI runner collapses the pipeline to a
+-- single stream and removes every resize processor. Pin it off, the assertions below are about
+-- the pipeline shape.
+SET max_threads_min_free_memory_per_thread = 0;
 SET max_rows_to_group_by = 10;
 SET group_by_overflow_mode = 'break';
 
