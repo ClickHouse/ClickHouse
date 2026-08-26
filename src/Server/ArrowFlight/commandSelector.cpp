@@ -189,7 +189,7 @@ static constexpr int32_t SQL_TYPE_TIME = 92;
 static constexpr int32_t SQL_TYPE_TIMESTAMP = 93;
 
 /// Verbose SQL data type used in sql_data_type for datetime rows,
-/// with the concise type reported in datetime_subcode (see FlightSql.proto).
+/// with the concise type reported in datetime_subcode (see FlightSQL.proto).
 static constexpr int32_t SQL_DATETIME = 9;
 static constexpr int32_t SQL_CODE_DATE = 1;
 static constexpr int32_t SQL_CODE_TIME = 2;
