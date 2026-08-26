@@ -191,9 +191,9 @@ SELECT countSubstringsCaseInsensitive('AAAA', 'aa');
 ```
 
 ```response title=Response
-┌─countSubstri⋯AAA', 'aa')─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitive('AAAA', 'aa')─┐
+│                                            2 │
+└──────────────────────────────────────────────┘
 ```
 
 **With start_pos argument**
@@ -203,9 +203,9 @@ SELECT countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4);
 ```
 
 ```response title=Response
-┌─countSubstri⋯, 'abc', 4)─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4)─┐
+│                                                           2 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## countSubstringsCaseInsensitiveUTF8 {#countSubstringsCaseInsensitiveUTF8}
@@ -240,9 +240,9 @@ SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картош�
 ```
 
 ```response title=Response
-┌─countSubstri⋯шка', 'КА')─┐
-│                        4 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА')─┐
+│                                                                  4 │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 **With start_pos argument**
@@ -252,9 +252,9 @@ SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картош�
 ```
 
 ```response title=Response
-┌─countSubstri⋯, 'КА', 13)─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13)─┐
+│                                                                      2 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## extract {#extract}
@@ -491,6 +491,8 @@ Returns 1, if all needles match. 0, otherwise. [`UInt8`](/reference/data-types/i
 **Basic usage with a string needle**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -513,6 +515,8 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 **Specify needles to be searched for AS-IS (no tokenization) in an array**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -535,6 +539,8 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
 **Generate needles using the `tokens` function**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -561,14 +567,16 @@ SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
 ```
 
 ```response title=Response
-┌─hasAllTokens⋯ngrams(3)')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
+│                                          1 │
+└────────────────────────────────────────────┘
 ```
 
 **Usage examples for array and map columns**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -588,6 +596,8 @@ INSERT INTO log VALUES
 **Example with an array column**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -615,6 +625,8 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 **Example with mapKeys**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -642,6 +654,8 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
 **Example with mapValues**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -719,6 +733,8 @@ Returns `1`, if there was at least one match. `0`, otherwise. [`UInt8`](/referen
 **Basic usage with a string needle**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -741,6 +757,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 **Specify needles to be searched for AS-IS (no tokenization) in an array**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -763,6 +781,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 **Generate needles using the `tokens` function**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -785,6 +805,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', 
 **Usage examples for array and map columns**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -804,6 +826,8 @@ INSERT INTO log VALUES
 **Example with an array column**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -831,6 +855,8 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 **Example with mapKeys**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -858,6 +884,8 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
 **Example with mapValues**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -1067,9 +1095,9 @@ SELECT hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая си
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯ 'СИСТЕМА')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА')─┐
+│                                                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequenceUTF8 {#hasSubsequenceUTF8}
@@ -1103,9 +1131,9 @@ SELECT hasSubsequenceUTF8('картошка', 'кошка');
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯', 'кошка')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasSubsequenceUTF8('картошка', 'кошка')─┐
+│                                       1 │
+└─────────────────────────────────────────┘
 ```
 
 **Non-matching subsequence**
@@ -1115,9 +1143,9 @@ SELECT hasSubsequenceUTF8('картошка', 'апельсин');
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯'апельсин')─┐
-│                        0 │
-└──────────────────────────┘
+┌─hasSubsequenceUTF8('картошка', 'апельсин')─┐
+│                                          0 │
+└────────────────────────────────────────────┘
 ```
 
 ## hasToken {#hasToken}
@@ -1241,9 +1269,9 @@ SELECT hasTokenOrNull('apple banana cherry', 'ban ana');
 ```
 
 ```response title=Response
-┌─hasTokenOrNu⋯ 'ban ana')─┐
-│                     ᴺᵁᴸᴸ │
-└──────────────────────────┘
+┌─hasTokenOrNull('apple banana cherry', 'ban ana')─┐
+│                                             ᴺᵁᴸᴸ │
+└──────────────────────────────────────────────────┘
 ```
 
 ## highlight {#highlight}
@@ -1409,9 +1437,9 @@ SELECT like('ClickHouse', 'Click_ouse');
 ```
 
 ```response title=Response
-┌─like('ClickH⋯lick_ouse')─┐
-│                        1 │
-└──────────────────────────┘
+┌─like('ClickHouse', 'Click_ouse')─┐
+│                                1 │
+└──────────────────────────────────┘
 ```
 
 **Non-matching pattern**
@@ -1596,9 +1624,9 @@ SELECT matchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' ~* 'HELLO.*
 ```
 
 ```response title=Response
-┌─matchCaseIns⋯ 'hello.*')─┬─'Hello World' ~* 'HELLO.*'─┐
-│                        1 │                          1 │
-└──────────────────────────┴────────────────────────────┘
+┌─matchCaseInsensitive('Hello World', 'hello.*')─┬─matchCaseInsensitive('Hello World', 'HELLO.*')─┐
+│                                              1 │                                              1 │
+└────────────────────────────────────────────────┴────────────────────────────────────────────────┘
 ```
 
 ## multiFuzzyMatchAllIndices {#multiFuzzyMatchAllIndices}
@@ -1632,9 +1660,9 @@ SELECT multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'C
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯, 'House'])─┐
-│ [3,1,4,2]                │
-└──────────────────────────┘
+┌─multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose', 'House'])─┐
+│ [3,1,4,2]                                                                                     │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiFuzzyMatchAny {#multiFuzzyMatchAny}
@@ -1675,9 +1703,9 @@ SELECT multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHos
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯lickHose'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose'])─┐
+│                                                                             1 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiFuzzyMatchAnyIndex {#multiFuzzyMatchAnyIndex}
@@ -1711,9 +1739,9 @@ SELECT multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'Clic
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯ickHouse'])─┐
-│                        2 │
-└──────────────────────────┘
+┌─multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'ClickHouse'])─┐
+│                                                                                  2 │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiMatchAllIndices {#multiMatchAllIndices}
@@ -1746,9 +1774,9 @@ SELECT multiMatchAllIndices('ClickHouse', ['[0-9]', 'House', 'Click', 'ouse']);
 ```
 
 ```response title=Response
-┌─multiMatchAl⋯', 'ouse'])─┐
-│ [3, 2, 4]                │
-└──────────────────────────┘
+┌─multiMatchAllIndices('ClickHouse', ['[0-9]', 'House', 'Click', 'ouse'])─┐
+│ [3,2,4]                                                                 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiMatchAny {#multiMatchAny}
@@ -1831,9 +1859,9 @@ SELECT multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click']);
 ```
 
 ```response title=Response
-┌─multiMatchAn⋯, 'Click'])─┐
-│                        3 │
-└──────────────────────────┘
+┌─multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click'])─┐
+│                                                             3 │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchAllPositions {#multiSearchAllPositions}
@@ -1905,9 +1933,9 @@ SELECT multiSearchAllPositionsCaseInsensitive('ClickHouse',['c','h'])
 ```
 
 ```response title=Response
-┌─multiSearchA⋯['c', 'h'])─┐
-│ [1,6]                    │
-└──────────────────────────┘
+┌─multiSearchAllPositionsCaseInsensitive('ClickHouse', ['c', 'h'])─┐
+│ [1,6]                                                            │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchAllPositionsCaseInsensitiveUTF8 {#multiSearchAllPositionsCaseInsensitiveUTF8}
@@ -1940,9 +1968,9 @@ SELECT multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!
 ```
 
 ```response title=Response
-┌─multiSearchA⋯й', 'МИР'])─┐
-│ [1, 13]                  │
-└──────────────────────────┘
+┌─multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!', ['здравствуй', 'МИР'])─┐
+│ [1,13]                                                                                │
+└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchAllPositionsUTF8 {#multiSearchAllPositionsUTF8}
@@ -2086,9 +2114,9 @@ SELECT multiSearchAnyCaseInsensitiveUTF8('Здравствуйте',['з'])
 ```
 
 ```response title=Response
-┌─multiSearchA⋯те', ['з'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchAnyCaseInsensitiveUTF8('Здравствуйте', ['з'])─┐
+│                                                        1 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchAnyUTF8 {#multiSearchAnyUTF8}
@@ -2157,9 +2185,9 @@ SELECT multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Serve
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'Server'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Server'])─┐
+│                                                                             1 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Case-sensitive behavior**
@@ -2169,9 +2197,9 @@ SELECT multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Serve
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'Server'])─┐
-│                        2 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Server'])─┐
+│                                                                             2 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **No match found**
@@ -2181,9 +2209,9 @@ SELECT multiSearchFirstIndex('Hello World', ['goodbye', 'test']);
 ```
 
 ```response title=Response
-┌─multiSearchF⋯', 'test'])─┐
-│                        0 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('Hello World', ['goodbye', 'test'])─┐
+│                                                         0 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchFirstIndexCaseInsensitive {#multiSearchFirstIndexCaseInsensitive}
@@ -2218,9 +2246,9 @@ SELECT multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello']);
 ```
 
 ```response title=Response
-┌─multiSearchF⋯, 'Hello'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello'])─┐
+│                                                                       1 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchFirstIndexCaseInsensitiveUTF8 {#multiSearchFirstIndexCaseInsensitiveUTF8}
@@ -2253,9 +2281,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK',
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'server'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK', 'data', 'server'])─┐
+│                                                                                            1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **UTF-8 case handling**
@@ -2265,9 +2293,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир'
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'ПРИВЕТ'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир', 'ПРИВЕТ'])─┐
+│                                                                         1 │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 **No match found**
@@ -2277,9 +2305,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test
 ```
 
 ```response title=Response
-┌─multiSearchF⋯', 'test'])─┐
-│                        0 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test'])─┐
+│                                                                            0 │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchFirstIndexUTF8 {#multiSearchFirstIndexUTF8}
@@ -2314,9 +2342,9 @@ SELECT multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', '
 ```
 
 ```response title=Response
-┌─multiSearchF⋯вствуйте'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', 'здравствуйте'])─┐
+│                                                                      1 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## multiSearchFirstPosition {#multiSearchFirstPosition}
@@ -2501,7 +2529,7 @@ SELECT ngramDistance('ClickHouse', 'ClickHouses')
 
 ```response title=Response
 ┌─ngramDistance('ClickHouse', 'ClickHouses')─┐
-│                                        0.1 │
+│                                 0.06666667 │
 └────────────────────────────────────────────┘
 ```
 
@@ -2538,9 +2566,9 @@ SELECT ngramDistanceCaseInsensitive('ClickHouse','clickhouse')
 ```
 
 ```response title=Response
-┌─ngramDistanceCaseInsensitive('ClickHouse','clickhouse')─┐
-│                                                       0 │
-└─────────────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitive('ClickHouse', 'clickhouse')─┐
+│                                                        0 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## ngramDistanceCaseInsensitiveUTF8 {#ngramDistanceCaseInsensitiveUTF8}
@@ -2577,9 +2605,9 @@ SELECT ngramDistanceCaseInsensitiveUTF8('abcde','CDE')
 ```
 
 ```response title=Response
-┌─ngramDistanceCaseInsensitiveUTF8('abcde','CDE')─┐
-│                                             0.5 │
-└─────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitiveUTF8('abcde', 'CDE')─┐
+│                                              0.5 │
+└──────────────────────────────────────────────────┘
 ```
 
 ## ngramDistanceUTF8 {#ngramDistanceUTF8}
@@ -2731,7 +2759,7 @@ SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз'
 
 ```response title=Response
 ┌─ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз')─┐
-│                                                        1 │
+│                                               0.57142854 │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -2769,7 +2797,7 @@ SELECT ngramSearchUTF8('абвгдеёжз', 'гдеёзд')
 
 ```response title=Response
 ┌─ngramSearchUTF8('абвгдеёжз', 'гдеёзд')─┐
-│                                      1 │
+│                                    0.5 │
 └────────────────────────────────────────┘
 ```
 
@@ -2805,9 +2833,9 @@ SELECT notILike('ClickHouse', '%house%');
 ```
 
 ```response title=Response
-┌─notILike('Cl⋯ '%house%')─┐
-│                        0 │
-└──────────────────────────┘
+┌─notILike('ClickHouse', '%house%')─┐
+│                                 0 │
+└───────────────────────────────────┘
 ```
 
 ## notLike {#notLike}
@@ -2842,9 +2870,9 @@ SELECT notLike('ClickHouse', '%House%');
 ```
 
 ```response title=Response
-┌─notLike('Cli⋯ '%House%')─┐
-│                        0 │
-└──────────────────────────┘
+┌─notLike('ClickHouse', '%House%')─┐
+│                                0 │
+└──────────────────────────────────┘
 ```
 
 **Non-matching pattern**
@@ -2854,9 +2882,9 @@ SELECT notLike('ClickHouse', '%SQL%');
 ```
 
 ```response title=Response
-┌─notLike('Cli⋯', '%SQL%')─┐
-│                        1 │
-└──────────────────────────┘
+┌─notLike('ClickHouse', '%SQL%')─┐
+│                              1 │
+└────────────────────────────────┘
 ```
 
 ## notMatch {#notMatch}
@@ -2895,9 +2923,9 @@ SELECT notMatch('Hello World', 'Hello.*'), 'Hello World' !~ 'goodbye.*'
 ```
 
 ```response title=Response
-┌─notMatch('He⋯ 'Hello.*')─┬─'Hello World⋯goodbye.*'─┐
-│                        0 │                       1 │
-└──────────────────────────┴─────────────────────────┘
+┌─notMatch('Hello World', 'Hello.*')─┬─notMatch('Hello World', 'goodbye.*')─┐
+│                                  0 │                                    1 │
+└────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
 ## notMatchCaseInsensitive {#notMatchCaseInsensitive}
@@ -2936,9 +2964,9 @@ SELECT notMatchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' !~* 'GOO
 ```
 
 ```response title=Response
-┌─notMatchCase⋯ 'hello.*')─┬─'Hello World⋯GOODBYE.*'─┐
-│                        0 │                       1 │
-└──────────────────────────┴─────────────────────────┘
+┌─notMatchCaseInsensitive('Hello World', 'hello.*')─┬─notMatchCaseInsensitive('Hello World', 'GOODBYE.*')─┐
+│                                                 0 │                                                   1 │
+└───────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
 ```
 
 ## position {#position}
@@ -3130,9 +3158,9 @@ SELECT positionUTF8('Motörhead', 'r')
 ```
 
 ```response title=Response
-┌─position('Motörhead', 'r')─┐
-│                          5 │
-└────────────────────────────┘
+┌─positionUTF8('Motörhead', 'r')─┐
+│                              5 │
+└────────────────────────────────┘
 ```
 {/*AUTOGENERATED_END*/}
 
