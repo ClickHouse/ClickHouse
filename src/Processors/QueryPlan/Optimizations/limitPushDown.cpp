@@ -178,17 +178,7 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
                 QueryPlan::Node * array_join_input_node = array_join_node->children.front();
                 if (!array_join->isLeft())
                 {
-                    Names source_columns;
-                    source_columns.reserve(array_join->getColumns().size());
-                    for (const auto & column_name : array_join->getColumns())
-                        source_columns.push_back(array_join->getSourceColumnName(column_name));
-
-                    if (!addArrayJoinEmptinessFilter(
-                            array_join_input_node,
-                            array_join->getColumns(),
-                            source_columns,
-                            *array_join->getInputHeaders().front(),
-                            new_nodes))
+                    if (!addArrayJoinEmptinessFilter(*array_join, array_join_input_node, new_nodes))
                         return 0;
 
                     ++num_guards;

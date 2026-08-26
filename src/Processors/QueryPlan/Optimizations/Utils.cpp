@@ -10,6 +10,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/typeid_cast.h>
@@ -245,14 +246,20 @@ bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & descr
 }
 
 bool addArrayJoinEmptinessFilter(
+    ArrayJoinStep & array_join,
     QueryPlan::Node *& input_node,
-    const Names & array_join_columns,
-    const Names & source_columns,
-    const Block & array_join_input_header,
     QueryPlan::Nodes & nodes)
 {
-    if (array_join_columns.empty() || array_join_columns.size() != source_columns.size())
+    const Names & array_join_columns = array_join.getColumns();
+    if (array_join_columns.empty())
         return false;
+
+    Names source_columns;
+    source_columns.reserve(array_join_columns.size());
+    for (const auto & column_name : array_join_columns)
+        source_columns.push_back(array_join.getSourceColumnName(column_name));
+
+    const Block & array_join_input_header = *array_join.getInputHeaders().front();
 
     ActionsDAG dag(input_node->step->getOutputHeader()->getColumnsWithTypeAndName());
 

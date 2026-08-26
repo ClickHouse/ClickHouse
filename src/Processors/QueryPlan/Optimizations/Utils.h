@@ -11,6 +11,7 @@ namespace DB
 {
 
 class ActionsDAG;
+class ArrayJoinStep;
 
 struct IDescriptionHolder
 {
@@ -110,20 +111,18 @@ enum class FilterResult
 /// Add a filter that removes rows for which all columns expanded by an inner `ARRAY JOIN` are empty.
 /// The condition is `length(c1) > 0 OR ... OR length(cn) > 0`, so rows with unequal non-zero array
 /// sizes still reach an aligned `ARRAY JOIN` and raise `SIZES_OF_ARRAYS_DONT_MATCH`.
-/// `source_columns` contains names from `input_node` before analyzer aliases. The lookup also
-/// tries the `ArrayJoinStep` column names themselves, so the filter can be built both immediately
-/// below the step (where the header uses those aliases) and further down the input (where original
-/// column names remain). The step header is used to recover constant ARRAY JOIN expressions that
+/// Column names are taken from `array_join`; source names are resolved via `ArrayJoinStep::getSourceColumnName`.
+/// The lookup also tries the joined column names themselves, so the filter can be built both immediately
+/// below the step (where the header uses analyzer aliases) and further down the input (where original
+/// column names remain). The step input header is used to recover constant ARRAY JOIN expressions that
 /// do not need to be read from `input_node`.
 ///
 /// `input_node` is updated to point to the inserted filter. If the condition is constant, no node
 /// is added because limiting the input cannot change whether a constant `ARRAY JOIN` emits rows.
 /// Returns false only if the condition cannot be constructed.
 [[nodiscard]] bool addArrayJoinEmptinessFilter(
+    ArrayJoinStep & array_join,
     QueryPlan::Node *& input_node,
-    const Names & array_join_columns,
-    const Names & source_columns,
-    const Block & array_join_input_header,
     QueryPlan::Nodes & nodes);
 
 struct NoOp

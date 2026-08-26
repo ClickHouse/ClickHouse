@@ -195,17 +195,7 @@ size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &
         if (array_join_step->isLeft())
             continue;
 
-        Names source_columns;
-        source_columns.reserve(array_join_step->getColumns().size());
-        for (const auto & column_name : array_join_step->getColumns())
-            source_columns.push_back(array_join_step->getSourceColumnName(column_name));
-
-        if (!addArrayJoinEmptinessFilter(
-                sorting_input_node,
-                array_join_step->getColumns(),
-                source_columns,
-                *array_join_step->getInputHeaders().front(),
-                nodes))
+        if (!addArrayJoinEmptinessFilter(*array_join_step, sorting_input_node, nodes))
             return 0;
     }
 
