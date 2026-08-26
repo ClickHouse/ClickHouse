@@ -927,7 +927,6 @@ public:
 ) // DECLARE_X86_64_V4_SPECIFIC_CODE
 
 
-
 #ifndef MD5_GTEST_UNIT_TEST
 
 /// The baseline kernel is fixed by the build flags, so the only thing left to decide at runtime is
