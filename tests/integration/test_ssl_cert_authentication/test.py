@@ -796,7 +796,7 @@ def test_x509_san_email_no_wildcard():
                 user="email_wildcard",
                 cert_name="client14",
             )
-            == "email_wildcard\\n"
+            == "email_wildcard\n"
         )
 
         # client13's certificate carries 'EMAIL:alice@example.com', which is not the literal
@@ -816,3 +816,52 @@ def test_x509_san_email_no_wildcard():
         assert "403" in str(err.value)
     finally:
         instance.query("DROP USER IF EXISTS email_wildcard")
+
+
+def test_x509_san_email_host_part_case():
+    # An 'EMAIL:' SAN is an rfc822Name (RFC 5280): the local part is case-sensitive, while the host
+    # part is a DNS name and is therefore compared case-insensitively. client13's certificate carries
+    # 'EMAIL:alice@example.com'.
+    instance.query("DROP USER IF EXISTS email_upper_host")
+    instance.query("DROP USER IF EXISTS email_upper_local")
+    instance.query(
+        "CREATE USER email_upper_host IDENTIFIED WITH ssl_certificate SAN 'EMAIL:alice@EXAMPLE.COM'"
+    )
+    instance.query(
+        "CREATE USER email_upper_local IDENTIFIED WITH ssl_certificate SAN 'EMAIL:ALICE@example.com'"
+    )
+    try:
+        # Only the host part differs in case, so the certificate must be accepted.
+        assert (
+            execute_query_native(
+                instance,
+                "SELECT currentUser()",
+                user="email_upper_host",
+                cert_name="client13",
+            )
+            == "email_upper_host\n"
+        )
+        assert (
+            execute_query_https(
+                "SELECT currentUser()", user="email_upper_host", cert_name="client13"
+            )
+            == "email_upper_host\n"
+        )
+
+        # The local part differs in case, so the certificate must be rejected.
+        with pytest.raises(Exception) as err:
+            execute_query_native(
+                instance,
+                "SELECT currentUser()",
+                user="email_upper_local",
+                cert_name="client13",
+            )
+        assert "AUTHENTICATION_FAILED" in str(err.value)
+        with pytest.raises(Exception) as err:
+            execute_query_https(
+                "SELECT currentUser()", user="email_upper_local", cert_name="client13"
+            )
+        assert "403" in str(err.value)
+    finally:
+        instance.query("DROP USER IF EXISTS email_upper_host")
+        instance.query("DROP USER IF EXISTS email_upper_local")
