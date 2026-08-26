@@ -56,6 +56,7 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
     extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
+    extern const SettingsBool iceberg_delete_data_on_drop;
 }
 
 namespace ErrorCodes
@@ -161,8 +162,10 @@ StorageObjectStorage::StorageObjectStorage(
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->partition_strategy
         && !configuration->isDataLakeConfiguration();
-    const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
-
+    const bool catalog_manages_created_location
+        = catalog_ && catalog_->managesTableLocation() && mode == LoadingStrictnessLevel::CREATE;
+    const bool do_lazy_init
+        = (lazy_init || catalog_manages_created_location) && !need_resolve_columns_or_format && !need_resolve_sample_path;
     LOG_DEBUG(
         log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, "
         "need_resolve_sample_path={}, is_table_function={}, is_datalake_query={}, columns_in_table_or_function_definition={}",
@@ -380,6 +383,18 @@ bool StorageObjectStorage::prefersLargeBlocks() const
 bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) const
 {
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
+}
+
+size_t StorageObjectStorage::getMaxReadStreams(size_t num_streams, ContextPtr)
+{
+    /// The key count of a globbed, archive, data lake or distributed read is unknown until the
+    /// storage is listed, which is too expensive at planning time, so report the request as is.
+    if (distributed_processing || configuration->isArchive() || configuration->supportsFileIterator()
+        || configuration->getPathForRead().hasGlobs())
+        return num_streams;
+
+    /// A static list of keys: the read creates at most one source per key.
+    return std::min(num_streams, std::max(1uz, configuration->getPaths().size()));
 }
 
 bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) const
@@ -869,13 +884,14 @@ void StorageObjectStorage::truncate(
 
 void StorageObjectStorage::drop()
 {
+    /// We cannot use query context here, because drop is executed in the background.
+    auto drop_context = Context::getGlobalContextInstance();
     if (catalog)
     {
         const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name);
+        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
     }
-    /// We cannot use query context here, because drop is executed in the background.
-    configuration->drop(Context::getGlobalContextInstance());
+    configuration->drop(drop_context);
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(

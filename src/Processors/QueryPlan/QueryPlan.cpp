@@ -22,6 +22,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/GatherSendStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -99,6 +101,7 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
     changes.emplace_back("column_structure", int(column_structure));
     changes.emplace_back("pretty", int(pretty));
     changes.emplace_back("compact", int(compact));
+    changes.emplace_back("estimates", int(estimates));
 
     return changes;
 }
@@ -407,6 +410,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
 
 static void explainStep(
     IQueryPlanStep & step,
+    const std::optional<CostEstimationInfo> & cost_estimation,
     IQueryPlanStep::FormatSettings & settings,
     const ExplainPlanOptions & options,
     size_t max_description_length,
@@ -429,6 +433,14 @@ static void explainStep(
         description = description.substr(0, max_description_length);
     if (options.description && !description.empty())
         settings.out <<" (" << description << ')';
+
+    if (options.estimates)
+    {
+        if (cost_estimation.has_value())
+            settings.out << fmt::format(" (rows: ~{:.1f}, cost: {:.1f})", cost_estimation->rows, cost_estimation->cost);
+        else
+            settings.out << " (rows: <unknown>, cost: <unknown>)";
+    }
 
     settings.out.write('\n');
 
@@ -536,7 +548,7 @@ std::string debugExplainStep(IQueryPlanStep & step)
     WriteBufferFromOwnString out;
     ExplainPlanOptions options{.actions = true};
     IQueryPlanStep::FormatSettings settings{.out = out, .header_prefix = "", .detail_prefix = "", .pretty_names = {}, .runtime_filter_names = {}};
-    explainStep(step, settings, options, 0);
+    explainStep(step, std::nullopt, settings, options, 0);
     return out.str();
 }
 
@@ -689,7 +701,7 @@ void QueryPlan::explainPlan(
             else
                 buildIndentOffset(stack, settings, offset);
 
-            explainStep(*frame.node->step, settings, options, max_description_length, steps_to_stats);
+            explainStep(*frame.node->step, frame.node->cost_estimation, settings, options, max_description_length, steps_to_stats);
             frame.is_description_printed = true;
         }
 
@@ -801,6 +813,11 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryPlanOptimizeMicroseconds);
 
+    /// Reject unsupported sets before the optimization passes: second-pass index analysis can
+    /// synchronously execute a set subquery, and no set should be built for a rejected query.
+    if (optimization_settings.make_distributed_plan)
+        validateSetsForDistributedPlan(*root);
+
     /// optimization need to be applied before "mergeExpressions" optimization
     /// it removes redundant sorting steps, but keep underlying expressions,
     /// so "mergeExpressions" optimization handles them afterwards
@@ -809,6 +826,14 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes, *this);
+
+    /// Defer set/CTE expansion: a distributed plan builds the sets on the initiator and ships
+    /// their values with the worker tasks, so the non-serializable `CreatingSetsStep` expansion
+    /// must not reach the fragment cut. `convertToDistributed` adds the sets back to the
+    /// initiator plan (or to the collapsed plan when it becomes a single local stage).
+    if (optimization_settings.make_distributed_plan)
+        return;
+
     /// `addStepsToBuildSets` is invoked before `resolveMaterializingCTEs` so
     /// that `DelayedCreatingSetsStep::makePlansForSets` (and any synchronous
     /// `buildSetInplace` / `buildOrderedSetInplace` it triggers via the
@@ -826,12 +851,46 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 namespace QueryPlanOptimizations
 {
 
+bool canExecuteRemotely(const QueryPlan::Node & node);
+bool planContainsLogicalExchange(const QueryPlan::Node & root);
+void convertLogicalJoinsForLocalExecution(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
 
 }
 
 void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
 {
+    if (!QueryPlanOptimizations::canExecuteRemotely(*root))
+    {
+        /// The plan cannot run on a worker (a leaf is neither a MergeTree read nor serializable). If it
+        /// still contains logical exchanges, running it locally would execute them as no-ops and drop
+        /// the merge or redistribution they stand for, giving wrong results, so throw. A plan with no
+        /// exchange runs correctly on one node, so fall back to it.
+        if (QueryPlanOptimizations::planContainsLogicalExchange(*root))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan cannot distribute this query: it contains distributed exchange "
+                "steps but a step that cannot run on a remote worker, and the exchanges would be no-ops "
+                "if executed locally (producing wrong results)");
+        /// Joins were kept logical for distributed planning; running locally needs them physical.
+        QueryPlanOptimizations::convertLogicalJoinsForLocalExecution(*root, nodes, optimization_settings);
+        /// `optimize` deferred set/CTE expansion for distributed planning; without it the plan
+        /// still carries `DelayedCreatingSets` placeholders, which cannot build a pipeline.
+        /// The expansion must use local settings: the set build plans execute in this process,
+        /// and with `make_distributed_plan` kept on, their own optimization would try to
+        /// distribute them again.
+        QueryPlanOptimizationSettings local_settings = optimization_settings;
+        local_settings.make_distributed_plan = false;
+        if (local_settings.build_sets)
+            QueryPlanOptimizations::addStepsToBuildSets(local_settings, *this, *root, nodes);
+        if (local_settings.materialize_ctes)
+            QueryPlanOptimizations::resolveMaterializingCTEs(local_settings, *this, *root, nodes);
+        return;
+    }
+
+    /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
+    /// fragments never carry their placeholder steps; the sets are added back below.
+    auto delayed_sets = extractSetsForDistributedPlan(root);
+
     SharedHeader result_header = root->step->getOutputHeader();
 
     QueryPlan::Nodes old_nodes = std::move(nodes);
@@ -847,20 +906,6 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             stage.first, fmt::join(dependencies, ", "), dumpQueryPlan(stage.second.query_plan_fragment));
     }
 
-    if (distributed_plan.stages.size() == 1)
-    {
-        /// For now just replace the plan with the first and only fragment, but preserve
-        /// table locks and storage holders accumulated during planning.
-        QueryPlanResourceHolder preserved_resources = std::move(resources);
-        *this = std::move(distributed_plan.stages.begin()->second.query_plan_fragment);
-        /// QueryPlanResourceHolder's move-assignment appends rhs into lhs without dropping existing entries.
-        resources = std::move(preserved_resources);
-
-        QueryPlanOptimizationSettings local_settings = optimization_settings;
-        local_settings.make_distributed_plan = false;
-        QueryPlanOptimizations::optimizeTreeSecondPass(local_settings, *root, nodes, *this);
-    }
-    else
     {
         ExchangeDescription final_result_exchange
         {
@@ -902,9 +947,13 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
 
         auto context = CurrentThread::tryGetQueryContext();
         chassert(context);
+        /// The query's single decision on where the plan runs. Every consumer below derives from it,
+        /// directly or from `task_to_host_map` being null, so none of them re-reads the setting from
+        /// the ambient context, which a subquery-scoped SETTINGS clause can leave disagreeing.
+        const bool execute_locally = optimization_settings.distributed_plan_execute_locally;
         /// Local execution runs every task in-process and needs no worker hosts; constructing
         /// TaskToHostMap would require a configured worker cluster and fail on a plain single server.
-        TaskToHostMapPtr task_to_host_map = optimization_settings.distributed_plan_execute_locally
+        TaskToHostMapPtr task_to_host_map = execute_locally
             ? nullptr
             : std::make_shared<TaskToHostMap>(distributed_plan, context);
 
@@ -930,7 +979,8 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             exchange_descriptions,
             task_to_host_map ? ExchangeStreamSources{task_to_host_map->getExchangeStreamSourceHosts()} : ExchangeStreamSources{},
             temporary_files,
-            context);
+            context,
+            execute_locally);
 
         auto lazily_create_result_reader = [result_header, exchange_lookup, result_stream_id]() -> QueryPipelineBuilder
         {
@@ -960,6 +1010,33 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         QueryPlanResourceHolder preserved_resources = std::move(resources);
         *this = std::move(read_from_distributed);
         resources = std::move(preserved_resources);
+
+        /// Sets that planning did not build (e.g. an `IN` whose result is used as a value) are
+        /// added here and expanded the ordinary way, so this pipeline builds them before the
+        /// distributed source sends the worker tasks with their values. The cache is skipped:
+        /// a cached set has no values.
+        bool has_sets_to_build = false;
+        for (const auto & future_set : delayed_sets)
+            has_sets_to_build |= future_set && !future_set->get();
+        if (has_sets_to_build && optimization_settings.build_sets)
+        {
+            for (const auto & future_set : delayed_sets)
+                if (future_set)
+                    future_set->prepareForDistributedPlan(context);
+
+            addStep(std::make_unique<DelayedCreatingSetsStep>(
+                getCurrentHeader(),
+                std::move(delayed_sets),
+                optimization_settings.network_transfer_limits,
+                /*prepared_sets_cache_=*/nullptr));
+
+            /// The build plans execute on the initiator: expand them with local settings, so a
+            /// source that was not converted, and any sets nested inside it, expand locally.
+            QueryPlanOptimizationSettings sets_expansion_settings = optimization_settings;
+            sets_expansion_settings.prepared_sets_cache = nullptr;
+            sets_expansion_settings.make_distributed_plan = false;
+            QueryPlanOptimizations::addStepsToBuildSets(sets_expansion_settings, *this, *root, nodes);
+        }
 
         /// In-memory exchanges (execute_locally) must outlive the executor: the result reader drains
         /// final_result after the driver has finished. Remove them when the pipeline resources go away.
