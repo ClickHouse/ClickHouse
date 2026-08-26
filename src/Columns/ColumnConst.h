@@ -357,6 +357,10 @@ public:
     const IColumn & getDataColumn() const { return *data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }
 
+    /// Replace the single broadcast value (the number of rows is unchanged). `value` must have exactly one row.
+    /// Only valid while building the column (uniquely owned), e.g. when a serialization fills the value it read.
+    void setValue(const ColumnPtr & value);
+
     Field getField() const { return getDataColumn()[0]; }
 
     /// The constant value. It is valid even if the size of the column is 0.

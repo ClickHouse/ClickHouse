@@ -115,8 +115,25 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
     const auto format_version = getFormatVersionFromManifestFileMetadata();
     FileContentType content_type = FileContentType::DATA;
     if (format_version > 1 && hasPath(c_data_file_content))
-        content_type = FileContentType(getValueFromRowByName(row_index, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
-    const auto status = ManifestEntryStatus(getValueFromRowByName(row_index, f_status, TypeIndex::Int32).safeGet<UInt64>());
+    {
+        /// The value comes from the file and has to be validated: casting an arbitrary integer to
+        /// the enum and switching over it below would be undefined behaviour.
+        const auto content_type_value = getValueFromRowByName(row_index, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>();
+        if (content_type_value > UInt64(FileContentType::EQUALITY_DELETE))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot read Iceberg table: unexpected value {} of 'data_file.content' in a manifest file",
+                content_type_value);
+        content_type = FileContentType(content_type_value);
+    }
+
+    const auto status_value = getValueFromRowByName(row_index, f_status, TypeIndex::Int32).safeGet<UInt64>();
+    if (status_value > UInt64(ManifestEntryStatus::DELETED))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cannot read Iceberg table: unexpected value {} of 'status' in a manifest file",
+            status_value);
+    const auto status = ManifestEntryStatus(status_value);
 
     const auto snapshot_id_value = getValueFromRowByName(row_index, f_snapshot_id);
     std::optional<Int64> snapshot_id;
@@ -362,6 +379,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 file_size_in_bytes);
         }
     }
+
+    throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+        "Cannot read Iceberg table: unexpected content type {} of a manifest file entry", UInt64(content_type));
 }
 
 

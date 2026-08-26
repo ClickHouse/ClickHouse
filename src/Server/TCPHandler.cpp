@@ -45,6 +45,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/saturatedDuration.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
@@ -85,6 +86,7 @@
 
 
 #include <Common/FailPoint.h>
+#include <base/sleep.h>
 
 using namespace std::literals;
 using namespace DB;
@@ -126,6 +128,7 @@ namespace Setting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsString default_session_user;
     extern const ServerSettingsBool validate_tcp_client_information;
     extern const ServerSettingsBool interserver_tables_status_require_auth;
     extern const ServerSettingsBool process_query_plan_packet;
@@ -136,6 +139,7 @@ namespace ServerSetting
 
 namespace FailPoints
 {
+extern const char parallel_replicas_delay_announcement[];
 extern const char parallel_replicas_reading_response_timeout[];
 extern const char tcp_handler_fail_connection_setup[];
 }
@@ -318,6 +322,7 @@ TCPHandler::TCPHandler(
     bool parse_proxy_protocol_,
     std::string server_display_name_,
     std::string host_name_,
+    std::optional<String> default_session_user_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -329,6 +334,7 @@ TCPHandler::TCPHandler(
     , write_event(write_event_)
     , server_display_name(std::move(server_display_name_))
     , host_name(std::move(host_name_))
+    , default_session_user(std::move(default_session_user_))
 {
 }
 
@@ -339,6 +345,7 @@ TCPHandler::TCPHandler(
     TCPProtocolStackData & stack_data,
     std::string server_display_name_,
     std::string host_name_,
+    std::optional<String> default_session_user_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -353,6 +360,7 @@ TCPHandler::TCPHandler(
     , default_database(stack_data.default_database)
     , server_display_name(std::move(server_display_name_))
     , host_name(std::move(host_name_))
+    , default_session_user(std::move(default_session_user_))
 {
     if (!forwarded_for.empty())
         LOG_TRACE(log, "Forwarded client address: {}", forwarded_for);
@@ -822,8 +830,25 @@ void TCPHandler::runImpl()
                         Stopwatch watch;
                         CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
 
+                        /// Stands in for a follower that is still planning while the initiator gives up on it.
+                        fiu_do_on(FailPoints::parallel_replicas_delay_announcement, { sleepForMilliseconds(3000); });
+
                         std::lock_guard lock(*callback_mutex);
 
+                        /// A `Cancel` during the announcement exchange must stop this replica, not turn into
+                        /// "return what you have": there is no partial result to return before the ranges have
+                        /// even been handed out, and `processCancel` would otherwise return without setting
+                        /// `stop_query`, letting the announcement go out to an initiator that has already
+                        /// disconnected (`Broken pipe`). Secondary queries inherit
+                        /// `partial_result_on_first_cancel` from the initiator, so this has to be turned off
+                        /// explicitly, the same way `readTemporaryTables` does it.
+                        auto off_setting_guard = TurnOffBoolSettingTemporary(query_state->allow_partial_result_on_first_cancel);
+
+                        /// The initiator may have given up on this replica while it was planning, and it
+                        /// stops waiting for this announcement when it does. Look for the `Cancel` packet
+                        /// now rather than at the next interactive-delay tick, so the announcement is not
+                        /// written into a socket nobody reads.
+                        receivePacketsExpectCancel(*query_state, /* force= */ true);
                         checkIfQueryCanceled(*query_state);
 
                         try
@@ -1486,8 +1511,9 @@ void TCPHandler::processInsertQuery(QueryState & state)
             state.io.resetPipeline(/*cancel=*/true);
             if (settings[Setting::wait_for_async_insert])
             {
-                size_t timeout_ms = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
-                auto wait_status = result.future.wait_for(std::chrono::milliseconds(timeout_ms));
+                auto timeout = saturatedMilliseconds(settings[Setting::wait_for_async_insert_timeout].totalMilliseconds());
+                size_t timeout_ms = timeout.count();
+                auto wait_status = result.future.wait_for(timeout);
 
                 if (wait_status == std::future_status::deferred)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got future in deferred state");
@@ -2092,8 +2118,29 @@ void TCPHandler::receiveHello()
     readStringBinary(user, *in, MAX_HELLO_STRING_SIZE);
     readStringBinary(password, *in, MAX_HELLO_STRING_SIZE);
 
+    /// An empty user name means the default session user: the `default_session_user`
+    /// server setting, possibly overridden for this listener in the `protocols` section.
+    /// The substitution is remembered to make sure that a connection with an empty user name
+    /// can never be treated as an interserver or SSH-marked connection, even if the configured
+    /// default session user is (mis)set to one of the marker values.
+    bool user_substituted_by_default = false;
     if (user.empty())
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (no user in Hello package)");
+    {
+        user = default_session_user ? *default_session_user
+                                    : String(server.context()->getServerSettings()[ServerSetting::default_session_user]);
+        user_substituted_by_default = true;
+
+        /// The default session user can be explicitly configured to be empty to prohibit
+        /// connections without a user name. The reject is recorded in `system.session_log` as a
+        /// login failure, so that prohibited anonymous attempts remain auditable.
+        if (user.empty())
+        {
+            auto exception = Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (no user in Hello package)");
+            session = makeSession();
+            session->onAuthenticationFailure(user, getClientAddress(session->getClientInfo()), exception);
+            throw exception; /// NOLINT
+        }
+    }
 
     auto users_to_ignore_early_memory_limit_check = server.context()->getUsersToIgnoreEarlyMemoryLimitCheck();
     if (!(users_to_ignore_early_memory_limit_check && users_to_ignore_early_memory_limit_check->contains(user)))
@@ -2107,7 +2154,7 @@ void TCPHandler::receiveHello()
         (!user.empty() ? ", user: " + user : "")
     );
 
-    is_interserver_mode = (user == EncodedUserInfo::USER_INTERSERVER_MARKER) && password.empty();
+    is_interserver_mode = !user_substituted_by_default && (user == EncodedUserInfo::USER_INTERSERVER_MARKER) && password.empty();
     if (is_interserver_mode)
     {
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
@@ -2150,7 +2197,7 @@ void TCPHandler::receiveHello()
         return;
     }
 
-    is_ssh_based_auth = user.starts_with(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
+    is_ssh_based_auth = !user_substituted_by_default && user.starts_with(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
     if (is_ssh_based_auth)
         user.erase(0, std::string_view(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
 
@@ -3083,9 +3130,9 @@ void TCPHandler::processCancel(QueryState & state)
     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
 }
 
-void TCPHandler::receivePacketsExpectCancel(QueryState & state)
+void TCPHandler::receivePacketsExpectCancel(QueryState & state, bool force)
 {
-    if (after_check_cancelled.elapsed() / 1000 < interactive_delay)
+    if (!force && after_check_cancelled.elapsed() / 1000 < interactive_delay)
         return;
 
     after_check_cancelled.restart();
