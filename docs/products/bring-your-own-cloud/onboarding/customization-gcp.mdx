@@ -32,7 +32,7 @@ Ensure your VPC has working DNS resolution and doesn't block, interfere with, or
 </Step>
 <Step title="Set up BYOC infrastructure" id="set-up-byoc-infrastructure">
 <Note>
-Before provisioning, run [pre-flight validation](/products/bring-your-own-cloud/onboarding/standard#validate-cloud-setup) from the console to confirm your customized VPC and account meet the requirements — it surfaces subnet, permission, and quota issues up front so you can fix them before setup begins.
+When you click **Set up Infrastructure**, ClickHouse Cloud automatically runs [pre-flight validation](/products/bring-your-own-cloud/onboarding/standard#preflight-validation) before provisioning. If your customized VPC or account doesn't meet the requirements, setup is halted with the specific issues to fix.
 </Note>
 
 In the ClickHouse Cloud console, configure the following when setting up new infrastructure:
