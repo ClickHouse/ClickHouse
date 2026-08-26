@@ -12,7 +12,6 @@ namespace TimeSeriesHistogramFlags
 {
     constexpr UInt8 IsFloat = 0x01;
     constexpr UInt8 CounterResetHintShift = 1;
-    constexpr UInt8 CounterResetHintMask = 0x06;  /// prometheus::Histogram::ResetHint (UNKNOWN/YES/NO/GAUGE) << 1
     /// 0x08 is reserved (was a gauge bit, dropped as redundant with reset hint == GAUGE).
     constexpr UInt8 StaleMarker = 0x10;
 }

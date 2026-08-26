@@ -52,10 +52,6 @@ namespace
         {
             return ViewTarget::Metrics;
         }
-        else if (str == "histograms")
-        {
-            return ViewTarget::Histograms;
-        }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected view target's kind {}", str);
     }
