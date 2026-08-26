@@ -16,20 +16,14 @@ namespace AdaptiveCodec
 
 /// Candidate codecs for `type`, in priority order. [0] is `NONE`: a block that no codec can shrink is stored uncompressed.
 /// [1] is the default codec, thus we get "no worse than the default" compression. Extra candidates come from a per-type table.
+/// Beyond [0] and [1], candidates must be ordered by descending decompression speed as draw in size should resolve to the fastest reads.
 Codecs poolForType(const IDataType & type, const CompressionCodecPtr & deployment_default);
-
-/// Pick the codec from `pool` whose compressed block is smallest.
-/// TODO: fold selection into `compress` and drop this function. Reserve `dest` for the best frame so far: each compress-priced
-/// candidate writes to `dest` if free, else to scratch, and an improvement is promoted into `dest`. Then every candidate is
-/// compressed at most once and only a cheap winner is recompressed.
-CompressionCodecPtr select(const Codecs & pool, const char * source, UInt32 source_size);
 
 /// The distinct types that can get a non-default codec.
 VectorWithMemoryTracking<TypeIndex> candidateTypeIndexes();
 
-/// Whether `type` has a candidate beyond `NONE` and the default. Only such types are wrapped: for the rest, selection would compress
-/// the default twice (once to measure, once to write) and could at best store a block raw, not worth the cost.
-/// TODO: once we save the compression result and reuse it, wrapping is free, wrap every type.
+/// Whether `type` has a candidate beyond `NONE` and the default. Only such types are wrapped for now.
+/// TODO: wrap every type, so a block the default expands falls back to `NONE` instead of being stored larger than raw.
 bool isCandidateType(const IDataType & type);
 
 }
@@ -45,8 +39,10 @@ public:
     uint8_t getMethodByte() const override;
     void updateHash(SipHash & hash) const override;
 
-    /// Selects the best codec for this block and delegates to it. The result carries the winner's method byte.
-    /// Runs on every block regardless of size. Selection cost scales with the block, so there is no small-block skip.
+    /// Compresses the block with whichever candidate produces the smallest output. Decompression cannot tell adaptive was involved.
+    /// Ties go to the earliest pool entry, so `NONE` beats an equal-sized compressor.
+    /// Candidates reporting their size via `tryGetCompressedSize` are compressed only if they win.
+    /// Selection cost scales with the block size, so there is no small-block skip.
     UInt32 compress(const char * source, UInt32 source_size, char * dest) const override;
 
     bool isCompression() const override { return true; }
