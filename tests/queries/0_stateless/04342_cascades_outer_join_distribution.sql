@@ -10,7 +10,6 @@ SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET distributed_plan_execute_locally = 1;
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET enable_join_runtime_filters = 0;
 -- The Fast test profile sets a non-zero max_rows_to_group_by, which keeps aggregations local.
 -- Pin it to 0 so the asserted distributed plans are exercised.

@@ -25,7 +25,6 @@ SET optimize_move_to_prewhere = 0;
 -- Parallel replicas split the plan into a different shape and do extra QCC lookups
 -- that this test doesn't expect.
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
 
 DROP TABLE IF EXISTS tab;

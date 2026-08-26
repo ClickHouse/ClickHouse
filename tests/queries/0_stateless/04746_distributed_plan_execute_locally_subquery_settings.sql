@@ -13,8 +13,8 @@ INSERT INTO t2_04746 SELECT number, toString(number) FROM numbers(100);
 -- re-read it from the ambient context used to select the remote executor with no worker hosts.
 
 -- max_rows_to_group_by is reset because the test profile sets it to a nonzero value and distributed
--- aggregation rejects any limit; automatic_parallel_replicas_mode is pinned off alongside
--- enable_parallel_replicas because the test runner randomizes it.
+-- aggregation rejects any limit; enable_parallel_replicas is pinned off because the test runner
+-- randomizes it.
 
 -- Local execution requested only inside the scalar subquery. Used to crash the server.
 SELECT (
@@ -22,7 +22,7 @@ SELECT (
     FROM t1_04746 INNER JOIN t2_04746 ON intDiv(t1_04746.key, 2) = t2_04746.key
     SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, serialize_query_plan = 1,
         distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0,
-        enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, max_rows_to_group_by = 0
+        enable_parallel_replicas = 0, max_rows_to_group_by = 0
 ) SETTINGS log_comment = 'local_direction_04746';
 
 -- The opposite direction: the subquery turns local execution off while the outer query has it on.
@@ -32,7 +32,7 @@ SELECT (
     FROM t1_04746 INNER JOIN t2_04746 ON intDiv(t1_04746.key, 2) = t2_04746.key
     SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 0, serialize_query_plan = 1,
         distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0,
-        enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, max_rows_to_group_by = 0
+        enable_parallel_replicas = 0, max_rows_to_group_by = 0
 ) SETTINGS distributed_plan_execute_locally = 1, log_comment = 'jointly_scoped_04746';
 
 -- Both modes return the same rows, so assert the execution mode itself. Aggregates keep exactly one
@@ -59,7 +59,7 @@ SELECT count() FROM (
     FROM t1_04746 INNER JOIN t2_04746 ON intDiv(t1_04746.key, 2) = t2_04746.key
 ) SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, serialize_query_plan = 1,
     distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0,
-    enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, max_rows_to_group_by = 0,
+    enable_parallel_replicas = 0, max_rows_to_group_by = 0,
     log_comment = 'control_04746';
 
 SYSTEM FLUSH LOGS query_log;

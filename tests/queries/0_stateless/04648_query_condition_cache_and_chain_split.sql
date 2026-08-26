@@ -8,7 +8,7 @@
 -- residual transform could record it.
 
 -- Does additional QCC lookups that the test doesn't expect
-set automatic_parallel_replicas_mode=0, enable_parallel_replicas=0;
+set enable_parallel_replicas=0;
 set parallel_replicas_local_plan=1;
 
 SET enable_analyzer = 1;
