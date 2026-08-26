@@ -1374,8 +1374,11 @@ def main():
             f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin {info.git_branch} ||:",
             verbose=True,
         )
+        # The test definitions must stay at the reference vintage (an old server cannot run new
+        # queries), but their runner `perf.py` is driven by this job and must match its version.
         Shell.check(
-            f"rm -rf ./tests/performance && git checkout {reference_sha} ./tests/performance",
+            f"rm -rf ./tests/performance && git checkout {reference_sha} ./tests/performance"
+            " && git checkout HEAD -- ./tests/performance/scripts/perf.py",
             verbose=True,
             strict=True,
         )
