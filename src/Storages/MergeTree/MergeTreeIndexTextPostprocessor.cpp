@@ -31,6 +31,9 @@ constexpr char postprocessor_lambda_arg[] = "__text_index_lambda_arg";
 /// Lambda argument used when tokenizing each element of an Array column in the row-level fallback.
 constexpr char postprocessor_element_arg[] = "__text_index_element";
 
+/// Bounds the per-granule token map state a filter can create; larger sets use the general vectorized path.
+constexpr size_t max_filter_set_size = 8192;
+
 bool isEmptyStringLiteral(const ASTPtr & ast)
 {
     const auto * literal = ast->as<ASTLiteral>();
@@ -130,8 +133,11 @@ std::optional<MergeTreeIndexTextInlineFilter> tryExtractInlineFilter(const ASTPt
         return {};
 
     MergeTreeIndexTextInlineFilter filter;
-    /// `NOT IN`: invert so `shouldDrop` fires for tokens outside the set.
     filter.drop_on_match = is_not_in ? !drop_on_condition : drop_on_condition;
+
+    if (literals.size() > max_filter_set_size)
+        return {};
+
     filter.tokens.reserve(literals.size());
     for (auto & literal : literals)
         filter.tokens.insert(std::move(literal));

@@ -1029,7 +1029,7 @@ void StorageDistributed::read(
             column.column = column.column->convertToFullColumnIfConst();
         header = std::make_shared<const Block>(std::move(block));
 
-        /// Convert grouping function specializations (e.g. groupingForGroupingSets -> grouping)
+        /// Convert grouping function specializations (e.g. __groupingForGroupingSets -> grouping)
         /// in a separate clone so the AST sent to shards contains the generic function name
         /// that can be re-resolved by the shard's analyzer.  The original query tree must keep
         /// the specialized functions because it is reused later for getSampleBlock / plan building
