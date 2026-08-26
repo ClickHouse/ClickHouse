@@ -28,7 +28,22 @@
 [('__name__','up'),('instance','host10'),('zone','z')]	2023-11-14 22:13:20.000	10
 [('__name__','up'),('instance','host2'),('zone','z')]	2023-11-14 22:13:20.000	2
 [('__name__','up'),('instance','host1'),('zone','z')]	2023-11-14 22:13:20.000	1
+-- sum by (instance) (sort(up)): aggregation after sort() must not reuse sort()'s stale rank map
+[('instance','host1')]	2023-11-14 22:13:20.000	1
+[('instance','host10')]	2023-11-14 22:13:20.000	10
+[('instance','host2')]	2023-11-14 22:13:20.000	2
+[('instance','host20')]	2023-11-14 22:13:20.000	20
+-- quantile(0.5, sort(up)): same for the quantile aggregation operator; median of 1,2,10,20 is 6
+[]	2023-11-14 22:13:20.000	6
+-- vector(scalar(sort(up))): same through scalar(); more than one series makes scalar() nan
+[]	2023-11-14 22:13:20.000	nan
 -- error: sort_by_label requires at least 2 arguments
 expects at least 2 arguments
 -- error: label arguments must be strings
 of type STRING
+-- error: sort_by_label's first argument must be an instant vector
+expects the first argument of type
+-- error: sort takes exactly 1 argument
+expects 1 argument
+-- error: sort's argument must be an instant vector
+expects an argument of type

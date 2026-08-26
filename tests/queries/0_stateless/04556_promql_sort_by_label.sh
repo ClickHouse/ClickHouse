@@ -69,11 +69,29 @@ promql_client -q "abs(sort_by_label(mem, 'host'))"
 echo "-- label_replace(sort_by_label_desc(up, 'instance'), ...): label changes keep the order"
 promql_client -q "label_replace(sort_by_label_desc(up, 'instance'), 'zone', 'z', 'instance', '.*')"
 
+echo "-- sum by (instance) (sort(up)): aggregation after sort() must not reuse sort()'s stale rank map"
+promql_client -q "sum by (instance) (sort(up))" | sort
+
+echo "-- quantile(0.5, sort(up)): same for the quantile aggregation operator; median of 1,2,10,20 is 6"
+promql_client -q "quantile(0.5, sort(up))"
+
+echo "-- vector(scalar(sort(up))): same through scalar(); more than one series makes scalar() nan"
+promql_client -q "vector(scalar(sort(up)))"
+
 echo "-- error: sort_by_label requires at least 2 arguments"
 promql_client -q "sort_by_label(up)" 2>&1 | grep -o "expects at least 2 arguments" | head -n 1
 
 echo "-- error: label arguments must be strings"
 promql_client -q "sort_by_label(up, 5)" 2>&1 | grep -o "of type STRING" | head -n 1
+
+echo "-- error: sort_by_label's first argument must be an instant vector"
+promql_client -q "sort_by_label(1, 'x')" 2>&1 | grep -o "expects the first argument of type" | head -n 1
+
+echo "-- error: sort takes exactly 1 argument"
+promql_client -q "sort()" 2>&1 | grep -o "expects 1 argument" | head -n 1
+
+echo "-- error: sort's argument must be an instant vector"
+promql_client -q "sort(1)" 2>&1 | grep -o "expects an argument of type" | head -n 1
 
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_data"
