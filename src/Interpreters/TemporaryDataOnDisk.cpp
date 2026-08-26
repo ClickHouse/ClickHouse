@@ -86,8 +86,6 @@ TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
     if (metrics.num_files)
         ProfileEvents::increment(metrics.num_files.value());
-
-    QueryExecutionCounters::markSpilledToDisk(metrics.spilled_to_disk_operator);
 }
 
 
@@ -503,6 +501,16 @@ void TemporaryDataBuffer::updateAllocAndCheck()
 
     ssize_t compressed_delta = new_compressed_size - stat.compressed_size;
     ssize_t uncompressed_delta = new_uncompressed_size - stat.uncompressed_size;
+
+    /// Report the operator only once the first bytes have reached the file, and not when the file is
+    /// created: a temporary file is often pre-created and never written to, e.g. `GraceHashJoin`
+    /// allocates the buffers of every bucket up front and can then join everything in memory.
+    if (compressed_delta > 0 && !reported_spilled_to_disk)
+    {
+        QueryExecutionCounters::markSpilledToDisk(metrics.spilled_to_disk_operator);
+        reported_spilled_to_disk = true;
+    }
+
     parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
     stat.compressed_size = new_compressed_size;
     stat.uncompressed_size = new_uncompressed_size;
