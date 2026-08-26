@@ -84,6 +84,16 @@ echo '--- restore without CREATE WORKLOAD/RESOURCE is denied (missing grants rep
 $CLICKHOUSE_CLIENT --user "${user}" -q "RESTORE TABLE system.workloads, TABLE system.resources FROM ${backup_name}" 2>&1 \
     | grep -o -E "CREATE WORKLOAD|CREATE RESOURCE" | sort -u
 
+# The privilege requirement tracks whether entities are actually restored (shouldRestoreTableData), not
+# structure_only: restore_table_data=true forces a restore even under structure_only, so it must still be gated.
+echo '--- restore with structure_only=1, restore_table_data=1 still requires CREATE WORKLOAD/RESOURCE (no bypass) ---'
+$CLICKHOUSE_CLIENT --user "${user}" -q "RESTORE TABLE system.workloads, TABLE system.resources FROM ${backup_name} SETTINGS structure_only = true, restore_table_data = true" 2>&1 \
+    | grep -o -E "CREATE WORKLOAD|CREATE RESOURCE" | sort -u
+
+# Conversely, restore_table_data=false creates nothing, so no CREATE/DROP privilege is demanded.
+echo '--- restore with restore_table_data=0 needs no CREATE/DROP and succeeds (nothing is created) ---'
+$CLICKHOUSE_CLIENT --user "${user}" -q "RESTORE TABLE system.workloads, TABLE system.resources FROM ${backup_name} SETTINGS restore_table_data = false" | cut -f2
+
 echo '--- after granting CREATE WORKLOAD and CREATE RESOURCE, restore succeeds ---'
 $CLICKHOUSE_CLIENT -q "GRANT CREATE WORKLOAD, CREATE RESOURCE ON *.* TO ${user}"
 $CLICKHOUSE_CLIENT --user "${user}" -q "RESTORE TABLE system.workloads, TABLE system.resources FROM ${backup_name}" | cut -f2

@@ -342,7 +342,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 {
                     /// CREATE_WORKLOAD privilege is required to restore WORKLOAD entities from the "system.workloads" table.
                     /// (RESTORE creates them via storeEntity(), bypassing InterpreterCreateWorkloadQuery's own access check.)
-                    if (!restore_settings.structure_only && table_info.has_data)
+                    if (table_info.has_data && restore_settings.shouldRestoreTableData())
                     {
                         required_access.emplace_back(AccessType::CREATE_WORKLOAD);
                         /// In 'replace' mode a restored entity can overwrite an existing one (storeEntity() with
@@ -356,7 +356,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 {
                     /// CREATE_RESOURCE privilege is required to restore RESOURCE entities from the "system.resources" table.
                     /// (RESTORE creates them via storeEntity(), bypassing InterpreterCreateResourceQuery's own access check.)
-                    if (!restore_settings.structure_only && table_info.has_data)
+                    if (table_info.has_data && restore_settings.shouldRestoreTableData())
                     {
                         required_access.emplace_back(AccessType::CREATE_RESOURCE);
                         /// In 'replace' mode a restored entity can overwrite an existing one (storeEntity() with

@@ -24,6 +24,11 @@ production	CREATE WORKLOAD production IN `all` SETTINGS priority = 1, weight = 9
 --- restore without CREATE WORKLOAD/RESOURCE is denied (missing grants reported) ---
 CREATE RESOURCE
 CREATE WORKLOAD
+--- restore with structure_only=1, restore_table_data=1 still requires CREATE WORKLOAD/RESOURCE (no bypass) ---
+CREATE RESOURCE
+CREATE WORKLOAD
+--- restore with restore_table_data=0 needs no CREATE/DROP and succeeds (nothing is created) ---
+RESTORED
 --- after granting CREATE WORKLOAD and CREATE RESOURCE, restore succeeds ---
 RESTORED
 --- create_workloads_and_resources=create fails when entities already exist ---
