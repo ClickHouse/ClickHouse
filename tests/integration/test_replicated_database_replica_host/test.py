@@ -346,3 +346,58 @@ def test_replica_host_cluster_view(started_cluster):
     # Cleanup
     node1.query("DROP DATABASE test_cluster SYNC")
     node2.query("DROP DATABASE test_cluster SYNC")
+
+
+def test_host_id_migration_with_stale_active_node(started_cluster):
+    """Test that a stale `/active` node left by our own previous session does not block the migration.
+
+    A server that is restarted before its previous ZooKeeper session expires still sees its own
+    ephemeral `/active` znode. That node belongs to this very server, so the host_id rewrite must
+    proceed; only an `/active` node owned by a different server may reject it.
+    """
+    db = "test_host_id_migration_stale_active"
+    zk_replica_path = f"/clickhouse/databases/{db}/replicas/shard1|node2"
+
+    node2.query(
+        f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', 'node2')"
+    )
+    node2.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+
+    current_host_id = node2.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '/clickhouse/databases/{db}/replicas' AND name = 'shard1|node2'"
+    ).strip()
+    assert current_host_id, "host_id not found in ZooKeeper"
+    uuid = current_host_id.rsplit(":", 1)[-1]
+
+    # The server UUID is persisted in the data directory, so it survives the restart below.
+    server_uuid = node2.query("SELECT serverUUID()").strip()
+
+    node2.stop_clickhouse()
+
+    zk = cluster.get_kazoo_client("zoo1")
+    zk.start()
+    # Stale hostname, same database UUID: the migration path.
+    zk.set(zk_replica_path, f"stale-old-hostname:9000:{uuid}".encode())
+    # Emulate the `/active` node left behind by the previous session of this same server.
+    # A persistent node is used because an ephemeral one would vanish with the kazoo session;
+    # `DatabaseReplicatedDDLWorker::initializeReplication` removes it either way.
+    active_path = f"{zk_replica_path}/active"
+    if zk.exists(active_path):
+        zk.set(active_path, server_uuid.encode())
+    else:
+        zk.create(active_path, server_uuid.encode())
+    zk.stop()
+
+    # Startup must succeed: the `/active` node belongs to this server.
+    node2.start_clickhouse()
+
+    updated_host_id = node2.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '/clickhouse/databases/{db}/replicas' AND name = 'shard1|node2'"
+    ).strip()
+    assert "stale-old-hostname" not in updated_host_id, \
+        f"Stale host_id was not replaced after restart: {updated_host_id}"
+    assert uuid in updated_host_id, \
+        f"UUID missing from updated host_id: {updated_host_id}"
+
+    node2.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+    node2.query(f"DROP DATABASE {db} SYNC")
