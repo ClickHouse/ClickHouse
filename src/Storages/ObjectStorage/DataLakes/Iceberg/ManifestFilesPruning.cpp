@@ -18,6 +18,7 @@
 #include <fmt/ranges.h>
 
 #include <Interpreters/ExpressionActions.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
@@ -52,7 +53,12 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
     return makeASTFunction(transform_and_argument->transform_name, make_intrusive<ASTIdentifier>(column_name));
 }
 
-std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const
+std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
+    const IcebergSchemaProcessor & schema_processor,
+    Int32 current_schema_id,
+    Int32 target_schema_id,
+    const DB::ActionsDAG * source_dag,
+    std::vector<Int32> & used_columns_in_filter)
 {
     const auto & inputs = source_dag->getInputs();
 
@@ -78,7 +84,7 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
             continue;
 
         /// We take data type from manifest schema, not latest type
-        auto column_from_manifest = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id);
+        auto column_from_manifest = schema_processor.tryGetFieldCharacteristics(target_schema_id, column_id);
         if (!column_from_manifest.has_value())
             continue;
 
@@ -91,7 +97,6 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
     result->removeUnusedActions();
     return result;
 }
-
 
 ManifestFilesPruner::ManifestFilesPruner(
     const IcebergSchemaProcessor & schema_processor_,
@@ -111,7 +116,8 @@ ManifestFilesPruner::ManifestFilesPruner(
 
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
-    transformed_dag = transformFilterDagForManifest(filter_dag, used_columns_in_filter);
+    transformed_dag = renameFilterDagColumnsToFieldIds(
+        schema_processor, current_schema_id, initial_schema_id, filter_dag, used_columns_in_filter);
     chassert(transformed_dag != nullptr);
 
     if (manifest_file.hasPartitionKey())
@@ -137,6 +143,50 @@ ManifestFilesPruner::ManifestFilesPruner(
         min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
     }
 }
+
+PartitionKeyFromSpec buildPartitionKeyFromSpec(
+    const Poco::JSON::Array::Ptr & partition_specification_json,
+    Int32 schema_id,
+    const IcebergSchemaProcessor & schema_processor,
+    DB::ContextPtr context)
+{
+    PartitionKeyFromSpec result;
+
+    DB::NamesAndTypesList partition_columns_description;
+    std::unordered_set<String> partition_columns_seen;
+    auto partition_key_ast = make_intrusive<ASTFunction>();
+    partition_key_ast->name = "tuple";
+    partition_key_ast->arguments = make_intrusive<DB::ASTExpressionList>();
+    partition_key_ast->children.push_back(partition_key_ast->arguments);
+
+    for (size_t i = 0; i != partition_specification_json->size(); ++i)
+    {
+        auto partition_specification_field = partition_specification_json->getObject(static_cast<UInt32>(i));
+
+        auto source_id = partition_specification_field->getValue<Int32>(f_source_id);
+        auto numeric_column_name = DB::backQuote(DB::toString(source_id));
+        std::optional<DB::NameAndTypePair> column_characteristics = schema_processor.tryGetFieldCharacteristics(schema_id, source_id);
+        if (!column_characteristics.has_value())
+            continue;
+        auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
+        auto partition_name = partition_specification_field->getValue<String>(f_partition_name);
+        result.partition_specification.emplace_back(source_id, transform_name, partition_name);
+        auto partition_ast = getASTFromTransform(transform_name, numeric_column_name);
+        if (partition_ast == nullptr)
+            continue;
+
+        partition_key_ast->as<ASTFunction>()->arguments->children.emplace_back(std::move(partition_ast));
+        if (partition_columns_seen.insert(numeric_column_name).second)
+            partition_columns_description.emplace_back(numeric_column_name, removeNullable(column_characteristics->type));
+    }
+
+    if (!partition_columns_description.empty())
+        result.key_description.emplace(DB::KeyDescription::getKeyFromAST(
+            std::move(partition_key_ast), ColumnsDescription(partition_columns_description), {}, context));
+
+    return result;
+}
+
 
 PruningReturnStatus ManifestFilesPruner::canBePruned(
     const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const

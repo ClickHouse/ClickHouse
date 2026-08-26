@@ -32,6 +32,25 @@ class ManifestFileIterator;
 
 DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name);
 
+struct PartitionKeyFromSpec
+{
+    PartitionSpecification partition_specification;
+    std::optional<DB::KeyDescription> key_description;
+};
+
+PartitionKeyFromSpec buildPartitionKeyFromSpec(
+    const Poco::JSON::Array::Ptr & partition_specification_json,
+    Int32 schema_id,
+    const IcebergSchemaProcessor & schema_processor,
+    DB::ContextPtr context);
+
+std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
+    const IcebergSchemaProcessor & schema_processor,
+    Int32 current_schema_id,
+    Int32 target_schema_id,
+    const DB::ActionsDAG * source_dag,
+    std::vector<Int32> & used_columns_in_filter);
+
 /// Prune specific data files based on manifest content
 class ManifestFilesPruner
 {
@@ -43,10 +62,6 @@ private:
     std::optional<DB::KeyCondition> partition_key_condition;
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
-    /// NOTE: tricky part to support RENAME column.
-    /// Takes ActionDAG representation of user's WHERE expression and
-    /// rename columns to the their origina numeric ID's in iceberg
-    std::unique_ptr<DB::ActionsDAG> transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const;
 
 public:
     ManifestFilesPruner(

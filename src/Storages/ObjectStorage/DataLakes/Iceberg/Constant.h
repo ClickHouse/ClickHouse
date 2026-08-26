@@ -188,6 +188,10 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, sort_order_id);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, record_count);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_size_in_bytes);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, key_metadata);
+DEFINE_ICEBERG_FIELD_COMPOUND(partitions, contains_null);
+DEFINE_ICEBERG_FIELD_COMPOUND(partitions, contains_nan);
+DEFINE_ICEBERG_FIELD_COMPOUND(partitions, lower_bound);
+DEFINE_ICEBERG_FIELD_COMPOUND(partitions, upper_bound);
 
 /// Fallback defaults for snapshot retention policy when table properties are absent.
 /// These values follow the Java reference implementation; the Iceberg spec does not

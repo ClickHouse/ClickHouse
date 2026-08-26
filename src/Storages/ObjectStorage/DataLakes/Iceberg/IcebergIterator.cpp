@@ -66,6 +66,7 @@ extern const Event IcebergMetadataReadWaitTimeMicroseconds;
 extern const Event IcebergMetadataReturnedObjectInfos;
 extern const Event IcebergMinMaxNonPrunedDeleteFiles;
 extern const Event IcebergMinMaxPrunedDeleteFiles;
+extern const Event IcebergPartitionPrunedManifestFiles;
 };
 
 
@@ -79,6 +80,7 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool use_iceberg_partition_pruning;
+extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
 extern const SettingsNonZeroUInt64 iceberg_delete_manifest_decode_concurrency;
 };
 
@@ -247,6 +249,13 @@ void SingleThreadIcebergKeysIterator::schedulePrefetchIfPossible()
         if (manifest_list_entry.content_type != manifest_file_content_type)
             continue;
 
+        if (manifest_list_pruner
+            && manifest_list_pruner->canBePruned(manifest_list_entry.partition_spec_id, manifest_list_entry.partition_summaries))
+        {
+            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedManifestFiles);
+            continue;
+        }
+
         auto fetch = [this,
                       path = manifest_list_entry.manifest_file_path,
                       bytes = manifest_list_entry.manifest_file_byte_size]()
@@ -284,6 +293,22 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     , prefetch_runner(threadPoolCallbackRunnerUnsafe<Iceberg::ManifestFileCacheableInfo>(
           getIOThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR))
 {
+    const bool per_entry_trace_requested
+        = getIcebergMetadataLogLevel(local_context) >= DB::IcebergMetadataLogLevel::ManifestFileEntry;
+
+    if (filter_dag && data_snapshot && table_snapshot && data_snapshot->partition_specs && !per_entry_trace_requested
+        && manifest_file_content_type == Iceberg::ManifestFileContentType::DATA
+        && local_context->getSettingsRef()[Setting::use_iceberg_manifest_list_partition_pruning])
+    {
+        manifest_list_pruner = std::make_unique<Iceberg::ManifestListPruner>(
+            *persistent_components.schema_processor,
+            table_snapshot->schema_id,
+            data_snapshot->schema_id_on_snapshot_commit,
+            data_snapshot->partition_specs,
+            filter_dag.get(),
+            local_context);
+    }
+
     /// Warm the first manifest fetch.
     schedulePrefetchIfPossible();
 }

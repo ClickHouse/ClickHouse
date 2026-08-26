@@ -5,6 +5,9 @@
 #include <limits>
 
 #include <Common/Exception.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 
@@ -98,7 +101,59 @@ std::vector<Int64> fieldToInt64Array(const Field & value, std::string_view conte
     return result;
 }
 
+namespace
+{
+
+template <typename DecimalType>
+std::optional<Field> deserializeDecimalFromBinaryRepr(const String & str, UInt32 scale, bool lower_bound)
+{
+    using NativeType = typename DecimalType::NativeType;
+    if (str.empty() || str.size() > sizeof(NativeType))
+        return std::nullopt;
+
+    Parquet::BigEndianHelper<NativeType> big_endian_helper(str.size());
+    NativeType unscaled_value = big_endian_helper.convertUnpaddedValue(std::span<const char>(str.data(), str.size()));
+
+    NativeType integral_unit = 1;
+    for (UInt32 i = 0; i < scale; ++i)
+        integral_unit *= 10;
+    if (scale != 0)
+        unscaled_value += lower_bound ? -integral_unit : integral_unit;
+
+    return DecimalField<DecimalType>(unscaled_value, scale);
 }
+
+}
+
+std::optional<Field> deserializeFieldFromBinaryRepr(const String & str, const DataTypePtr & expected_type, bool lower_bound)
+{
+    auto non_nullable_type = removeNullable(expected_type);
+    if (WhichDataType(non_nullable_type).isDecimal())
+    {
+        const UInt32 scale = getDecimalScale(*non_nullable_type);
+        if (checkDecimal<Decimal32>(*non_nullable_type))
+            return deserializeDecimalFromBinaryRepr<Decimal32>(str, scale, lower_bound);
+        if (checkDecimal<Decimal64>(*non_nullable_type))
+            return deserializeDecimalFromBinaryRepr<Decimal64>(str, scale, lower_bound);
+        if (checkDecimal<Decimal128>(*non_nullable_type))
+            return deserializeDecimalFromBinaryRepr<Decimal128>(str, scale, lower_bound);
+        if (checkDecimal<Decimal256>(*non_nullable_type))
+            return deserializeDecimalFromBinaryRepr<Decimal256>(str, scale, lower_bound);
+        return std::nullopt;
+    }
+    if (non_nullable_type->getTypeId() == TypeIndex::Variant)
+        return std::nullopt;
+
+    auto column = non_nullable_type->createColumn();
+    column->insertData(str.data(), str.length());
+    Field result;
+    column->get(0, result);
+    return result;
+
+}
+
+}
+
 }
 
 #endif
