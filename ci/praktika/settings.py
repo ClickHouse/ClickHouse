@@ -52,9 +52,20 @@ class _Settings:
     # runner heartbeat. This covers SQS wait time, ASG scale-out, EC2 boot,
     # controller startup, and the runner's first task pickup.
     RUNNER_PICKUP_TIMEOUT_S = 3600
-    # Maximum time, in seconds, a RUNNING job may go without a fresh heartbeat
-    # after the first heartbeat has been observed.
-    HEARTBEAT_TIMEOUT_S = 300
+    # First stage of RUNNING liveness: after this long without a heartbeat the
+    # runner is flagged unresponsive and the check says a retry is pending, but
+    # the job is NOT failed. Surfaces a lost runner quickly (well before the
+    # hard timeout) without turning a recoverable blip into a red check.
+    HEARTBEAT_STALL_S = 300
+    # Hard timeout: a RUNNING job silent this long is declared dead. Held well
+    # above the runner queue's visibility timeout so a runner that dies mid-job
+    # is recovered by redelivery first: the job_task reappears once the
+    # visibility window lapses (up to visibility_timeout later), a fresh runner
+    # - cold-launched by the autoscaler if the pool is empty - picks it up, and
+    # its first heartbeat (written at pickup, before checkout) resets the clock
+    # before this timeout. The gap above visibility_timeout budgets that
+    # redelivery plus a cold ASG launch and boot.
+    HEARTBEAT_TIMEOUT_S = 900
 
     ######################################
     #   S3 (artifact storage) settings   #
@@ -215,7 +226,9 @@ _USER_DEFINED_SETTINGS = [
     "MAX_RETRIES_ORCHESTRATOR",
     "HEARTBEAT_INTERVAL_S",
     "RUNNER_PICKUP_TIMEOUT_S",
+    "HEARTBEAT_STALL_S",
     "HEARTBEAT_TIMEOUT_S",
+    "DEAD_JOB_MAX_REDISPATCH",
     "VALIDATE_FILE_PATHS",
     "SECRET_DOCKER_REGISTRY",
     "DOCKERHUB_USERNAME",

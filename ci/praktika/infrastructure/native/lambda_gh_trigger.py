@@ -82,7 +82,9 @@ def _parse_allowed_users():
     if not isinstance(value, list):
         print("WARNING: ALLOWED_USERS_JSON must decode to a list")
         return set()
-    return {str(user).strip() for user in value if str(user).strip()}
+    # GitHub logins are case-insensitive; store casefolded so the membership
+    # check matches regardless of the casing a deployment configured.
+    return {str(user).strip().casefold() for user in value if str(user).strip()}
 
 
 ALLOWED_PUSH_BRANCHES = _parse_allowed_push_branches()
@@ -786,6 +788,19 @@ def _handle_external_rerun(workflow: dict, delivery_id: str, sender: str):
         print(f"SKIP: external PR rerun by non-maintainer {sender}")
         return
     state = _load_approval_state(workflow["repo"], workflow["pr_number"])
+    # Only a rerun of the CURRENT head may proceed. `workflow["head_sha"]` here
+    # is the SHA of the check being rerun (head A); if the PR head has since
+    # advanced (state["head_sha"] == B), this is a stale check. Rebinding it to
+    # the saved current workflow would approve/enqueue B off a rerun of A's
+    # check, breaking the "approve this exact commit" contract of the gate. Treat
+    # any mismatch as stale and stop before touching the saved (current) state.
+    rerun_sha = workflow.get("head_sha", "")
+    if not state or state.get("head_sha") != rerun_sha:
+        print(
+            f"SKIP: stale external rerun of PR#{workflow['pr_number']} "
+            f"sha={rerun_sha[:12]} current={(state or {}).get('head_sha', '')[:12]}"
+        )
+        return
     # `workflow` was reconstructed from the check_run/check_suite payload, which
     # doesn't carry the fork repo, labels, title, or draft flag. Reuse the
     # authentic PR metadata captured at pull_request time and stored in the
@@ -926,7 +941,7 @@ def lambda_handler(event, context):
     if ALLOWED_SENDERS and sender not in ALLOWED_SENDERS:
         print(f"SKIP: sender {sender} not in allowed list")
         return {"statusCode": 200, "body": "ok"}
-    if ALLOWED_USERS and sender not in ALLOWED_USERS:
+    if ALLOWED_USERS and sender.casefold() not in ALLOWED_USERS:
         print(f"SKIP: PR sender {sender} not in allowed users")
         return {"statusCode": 200, "body": "ok"}
 

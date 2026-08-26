@@ -439,22 +439,33 @@ class AnthropicProvider(AIProvider):
             self._client = anthropic.Anthropic()
         return self._client
 
-    def on_job_failure(self, observation) -> Turn:
-        # Pure model logic — observation/turn tracking and the AI Advisor check
-        # are handled by AIProvider.consult, which brackets this call.
+    def complete(
+        self,
+        system,
+        user_content,
+        tools=None,
+        tool_executor=None,
+        max_tokens=4000,
+        response_schema=None,
+    ) -> Turn:
+        """Run the Messages API tool-use loop and return the final raw text.
+
+        ``response_schema`` is accepted for interface parity but not yet used by
+        this provider (structured output is implemented in the bedrock-openai
+        provider); here the model is asked for JSON via the prompt and the
+        caller parses the returned text.
+
+        Shared by ``on_job_failure`` (orchestrator) and standalone callers such
+        as ``praktika review``. The loop drives the model until it stops calling
+        tools (or ``_MAX_TOOL_ROUNDS`` is reached), dispatching each tool call
+        to ``tool_executor(name, input) -> str``. The returned ``Turn`` carries
+        the model's final text in ``reasoning`` (unparsed) and the summed token
+        usage; ``decision`` is left empty for the caller to populate.
+        """
         client = self._get_client()
         model = self.resolved_model()
-
-        # Investigation toolset for this turn. This hook only fires on a
-        # failure, so the repo-read tools are always offered; fetch_log is added
-        # only when the observation carries log links (its allowlist).
-        allowed_urls = _collect_log_urls(observation)
-        tools = list(_REPO_TOOLS)
-        if allowed_urls:
-            tools.append(_FETCH_LOG_TOOL)
-        messages = [
-            {"role": "user", "content": json.dumps(observation.to_dict(), indent=2)}
-        ]
+        tools = list(tools or [])
+        messages = [{"role": "user", "content": user_content}]
         totals = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
         tool_calls = 0
 
@@ -463,8 +474,8 @@ class AnthropicProvider(AIProvider):
         for _ in range(_MAX_TOOL_ROUNDS + 1):
             kwargs = dict(
                 model=model,
-                max_tokens=4000,
-                system=_SYSTEM,
+                max_tokens=max_tokens,
+                system=system,
                 messages=messages,
             )
             if tools:
@@ -486,7 +497,11 @@ class AnthropicProvider(AIProvider):
             results = []
             for tu in tool_uses:
                 tool_calls += 1
-                out = _execute_tool(tu.name, tu.input, allowed_urls)
+                out = (
+                    tool_executor(tu.name, tu.input)
+                    if tool_executor is not None
+                    else f"error: no tool executor for {tu.name!r}"
+                )
                 results.append(
                     {
                         "type": "tool_result",
@@ -497,16 +512,40 @@ class AnthropicProvider(AIProvider):
             messages.append({"role": "user", "content": results})
         latency_ms = int((time.time() - t0) * 1000)
 
-        reasoning, decision = _parse(text)
         usage = self._usage(model, totals, latency_ms)
         print(
-            f"[AI {self.name}] on_job_failure: model={model} "
-            f"decision={[d.get('type') for d in decision if isinstance(d, dict)]} "
-            f"tool_calls={tool_calls} "
+            f"[AI {self.name}] complete: model={model} tool_calls={tool_calls} "
             f"tokens={usage.input_tokens}/{usage.output_tokens} "
             f"cost=${usage.cost_usd:.4f}"
         )
-        return Turn(reasoning=reasoning, decision=decision, usage=usage)
+        return Turn(reasoning=text, usage=usage)
+
+    def on_job_failure(self, observation) -> Turn:
+        # Pure model logic — observation/turn tracking and the AI Advisor check
+        # are handled by AIProvider.consult, which brackets this call.
+
+        # Investigation toolset for this turn. This hook only fires on a
+        # failure, so the repo-read tools are always offered; fetch_log is added
+        # only when the observation carries log links (its allowlist).
+        allowed_urls = _collect_log_urls(observation)
+        tools = list(_REPO_TOOLS)
+        if allowed_urls:
+            tools.append(_FETCH_LOG_TOOL)
+
+        turn = self.complete(
+            system=_SYSTEM,
+            user_content=json.dumps(observation.to_dict(), indent=2),
+            tools=tools,
+            tool_executor=lambda name, tool_input: _execute_tool(
+                name, tool_input, allowed_urls
+            ),
+        )
+        reasoning, decision = _parse(turn.reasoning)
+        print(
+            f"[AI {self.name}] on_job_failure: model={self.resolved_model()} "
+            f"decision={[d.get('type') for d in decision if isinstance(d, dict)]}"
+        )
+        return Turn(reasoning=reasoning, decision=decision, usage=turn.usage)
 
     def _usage(self, model, totals, latency_ms) -> Usage:
         inp = totals["input"]
@@ -532,8 +571,8 @@ class AnthropicProvider(AIProvider):
         )
 
 
-class BedrockProvider(AnthropicProvider):
-    """Same provider, served through Amazon Bedrock instead of the first-party API.
+class BedrockAnthropicProvider(AnthropicProvider):
+    """Anthropic Claude served through Amazon Bedrock instead of the first-party API.
 
     Only the transport differs: the Bedrock Runtime client authenticates with the
     standard AWS credential chain (env / shared profile / instance role — no
@@ -542,13 +581,17 @@ class BedrockProvider(AnthropicProvider):
     ``global.anthropic.*``. The prompt, structured-output schema, and
     decode/usage logic are inherited.
 
+    The registry name is ``"bedrock-anthropic"`` — specific about the model
+    family, to distinguish it from ``"bedrock-openai"`` (OpenAI models on
+    Bedrock, see ``bedrock_openai.py``).
+
     Region resolution: explicit ``aws_region`` arg → ``Settings.AWS_REGION`` →
     ``AWS_REGION`` / ``AWS_DEFAULT_REGION`` env. Bedrock Runtime has no region
     fallback, so a region must be resolvable or ``decide`` raises (→ advisor
     error Turn).
     """
 
-    name = "bedrock"
+    name = "bedrock-anthropic"
     DEFAULT_MODEL = "global.anthropic.claude-opus-4-8"
 
     def __init__(self, model="", aws_region=""):
@@ -576,7 +619,7 @@ class BedrockProvider(AnthropicProvider):
             except ImportError as e:  # optional dependency
                 raise RuntimeError(
                     "anthropic[bedrock] not installed; `pip install 'anthropic[bedrock]'` "
-                    "to use AI_PROVIDER='bedrock'"
+                    "to use AI_PROVIDER='bedrock-anthropic'"
                 ) from e
             region = self._region()
             if not region:

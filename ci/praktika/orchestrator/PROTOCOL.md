@@ -33,6 +33,7 @@ doc_type: reference
 - **Re-run (`check_suite` / `check_run.rerequested`) never sends a cancel.** A rerun spawns a new check run (new `run_id`, new queue). There is no previous run for that same queue to cancel into.
 - **Orchestrator owns the queue.** `WorkflowState.__init__` creates it; `WorkflowState.cleanup` (in an `orchestrate` `finally`) deletes it on every exit path — normal, cancelled, or errored.
 - **Infra failures retry on a *fresh* orchestrator, not the same one.** The orchestrator distinguishes "couldn't run the workflow" (startup/infra, `INFRA_EXIT_CODE = 100`) from "ran it, jobs failed" (`rc = 1`) via exit code. On `100` the controller releases the workflow message (visibility → 0) and self-terminates so the ASG launches a replacement, which re-receives the redelivered message — the right cure for instance-local faults (stale runtime venv, corrupt clone, bad AMI) that an in-process retry on the same box would just hit again. Bounded by SQS `ApproximateReceiveCount` vs `PRAKTIKA_INFRA_FAILURE_MAX_RECEIVES` (default 3); past the cap the message is dropped. The orchestrator finalizes its own top-level check as `failure` on **every** attempt (so a crash never leaves the check stuck `in_progress`), and surfaces `attempt N/M`, the orchestrator instance id, and the lifecycle phase (`starting`/`ai_setup`/`planning`/`running`/`finalizing`) in the check output so retries are visible. An `rc = 1` red build is a real result and is **not** retried. (Transient blips are absorbed earlier by a small in-process startup retry, `Settings.MAX_RETRIES_ORCHESTRATOR`.)
+- **A job whose runner dies mid-job is re-run by SQS redelivery, not by the orchestrator.** A runner extends its `job_task`'s visibility while it lives and deletes the message on completion; a runner that dies mid-job (crash, OOM, spot reclaim) never deletes it, so the message reappears once the visibility window lapses and a fresh runner re-runs the job against the same `heartbeat.json` / `final.json` keys. RUNNING liveness is two-stage: at `HEARTBEAT_STALL_S = 300` the runner is flagged unresponsive and the check shows a pending retry (fast, visible), and only at `HEARTBEAT_TIMEOUT_S = 900` — held well above the runner queue's `visibility_timeout` (600) so the gap budgets the redelivery wait plus a cold ASG launch and boot, the re-run's first heartbeat being written at pickup *before* checkout — is the job declared dead. So the redelivered run's first heartbeat resets `last_heartbeat_ts` before the timeout, and the per-job check rides through the recovery `in_progress`. It falls to `failure` only when redelivery stops producing heartbeats: the job is genuinely stuck, or SQS has exhausted `maxReceiveCount` (default 3) and dead-lettered it. The pickup path is not covered — an un-received `job_task` is still sitting in the queue, so there is nothing to redeliver. A re-run is not silent: the runner stamps the SQS receive count as `attempt` on every heartbeat, and when it bumps the orchestrator prints a `[RETRY]` line and updates the per-job check output to `re-running ... after the previous runner was lost (attempt N)`, so a recovered job is visible in the checks and the run log rather than looking like one uninterrupted run. The top-level workflow check also surfaces it: `md_status_summary` appends `(N retried, M runner-unresponsive)` and the per-job table carries a Notes column (`attempt N` / `runner unresponsive`).
 
 ## Limitations {#limitations}
 
@@ -178,7 +179,7 @@ S3 channels under `s3://<artifacts-bucket>/`:
 | Cancel request | Lambda → orchestrator | `runs/<run_id>/cancel-request` | Manual UI Cancel button — orchestrator's `sweep_cancel` sets `state.cancelled` |
 | Cancel-before | Lambda → orchestrators | `pr/<pr>/cancel-before-<scope>` (`{ts}`) | New-push fan-out inside one orchestrator scope — every run with `event_ts < ts` self-cancels |
 | Kill flag | Orchestrator → runners | `runs/<run_id>/cancel` | Once written, every running job in the run kills its subprocess |
-| Heartbeat | Runner → orchestrator | `runs/<run_id>/<normalized-job>/heartbeat.json` | Periodic `{ts, status}` proves the runner is alive |
+| Heartbeat | Runner → orchestrator | `runs/<run_id>/<normalized-job>/heartbeat.json` | Periodic `{ts, status, instance_id, phase, attempt}` proves the runner is alive; `attempt` is the SQS receive count, so a bump marks a re-run |
 | Final state | Runner → orchestrator | `runs/<run_id>/<normalized-job>/final.json` | `{rc, environment, ...}` on job exit |
 
 **Cancel request / cancel-before** — see [Cancel semantics](#cancel-semantics).
@@ -197,11 +198,26 @@ dead under two separate timeout rules:
 - **Runner pickup timeout** (default 3600 s): job is still `QUEUED`, no
   heartbeat ever observed, and `now - kicked_at > RUNNER_PICKUP_TIMEOUT_S` →
   covers queue/ASG/boot delays or a pool that never picks the job up.
-- **Heartbeat timeout** (default 300 s): job is `RUNNING` and
-  `now - last_heartbeat_ts > HEARTBEAT_TIMEOUT_S` → runner died mid-job.
+- **Heartbeat stall** (default 300 s): job is `RUNNING` and
+  `now - last_heartbeat_ts > HEARTBEAT_STALL_S` → runner flagged unresponsive.
+  The check flips to `RUNNING (runner unresponsive)` / `awaiting automatic
+  retry` and a `[STALE]` line is logged, but the job is **not** failed; a fresh
+  heartbeat clears the flag.
+- **Heartbeat timeout** (default 900 s): job is `RUNNING` and
+  `now - last_heartbeat_ts > HEARTBEAT_TIMEOUT_S` → runner declared dead.
 
-Either path completes the per-job check as `failure` and advances the DAG so
-downstream jobs cascade-cancel and `Finish Workflow` (always_run) still fires.
+A mid-job runner death is recovered by SQS, not by the orchestrator: the dead
+runner's `job_task` reappears once the runner queue's `visibility_timeout`
+(600 s) lapses, and a fresh runner re-runs the job, writing to the same
+`heartbeat.json` key. The heartbeat timeout sits above that visibility timeout
+plus a re-run's startup cost, so the redelivered run's first heartbeat resets
+`last_heartbeat_ts` and the check stays `in_progress` across the recovery — this
+is why the two values are tuned together (see [Design notes](#design-notes)).
+The heartbeat path completes the per-job check as `failure` only once
+redelivery stops producing heartbeats (stuck job, or `maxReceiveCount`
+exhausted); the pickup path fails as soon as its grace elapses. Either failure
+advances the DAG so downstream jobs cascade-cancel and `Finish Workflow`
+(always_run) still fires.
 
 **Final state** — written by `orchestrator/job_runner.py` after `Runner.run`
 returns. The runner includes `rc`, `environment`, and optional check

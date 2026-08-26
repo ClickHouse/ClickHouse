@@ -32,15 +32,7 @@ def project_slug() -> str:
             "Settings.PROJECT_SLUG is required to scope IAM policies to this "
             "project's resources. Set PROJECT_SLUG in ci/settings/settings.py "
             "(it should match the project/repo name, e.g. PROJECT_SLUG = "
-            '"my_project").'
-        )
-    if "-" in slug:
-        raise ValueError(
-            f"Settings.PROJECT_SLUG={slug!r} must not contain '-'; use '_' "
-            'instead (e.g. "clickhouse_private"). The slug is used as the '
-            '"{slug}-" resource-name prefix, so a "-" inside it would let this '
-            "project's scoped IAM wildcard also match another project's "
-            'resources (e.g. "clickhouse-*" would match "clickhouse-private-*").'
+            '"my-project").'
         )
     return slug
 

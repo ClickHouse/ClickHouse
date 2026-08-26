@@ -1,4 +1,5 @@
 import base64
+import json
 from typing import Any, Dict, List, Optional
 
 from ..image_builder import ImageBuilder
@@ -46,6 +47,18 @@ def _setup_component(name: str, *, with_docker: bool):
 def _ubuntu_setup_component(name: str, *, with_docker: bool):
     commands = [
         "export DEBIAN_FRONTEND=noninteractive",
+        # Stop stock Ubuntu background apt/snap upgrades from holding the dpkg
+        # lock -- both during this build (racing our own apt-get) and, once the
+        # AMI is baked, at runner boot (racing the agent's first heartbeat).
+        # Disabling the timers is not enough: a timer may have already activated
+        # apt-daily{,-upgrade}.service, which are separate units still holding
+        # the lock, so stop those too. Give every apt command a lock timeout
+        # (via a global config so all invocations below inherit it) to ride out
+        # any residual run rather than failing instantly on a held lock.
+        "echo 'DPkg::Lock::Timeout \"120\";' > /etc/apt/apt.conf.d/99praktika-lock-timeout",
+        "systemctl disable --now apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service || true",
+        "systemctl stop apt-daily.service apt-daily-upgrade.service || true",
+        "DEBIAN_FRONTEND=noninteractive apt-get purge -y unattended-upgrades || true",
         "apt-get update",
         "DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends apt-transport-https at atop binfmt-support build-essential ca-certificates curl git gnupg jq lsb-release moreutils pigz python3-dev python3-pip python3.12 python3.12-venv qemu-user-static ripgrep unzip wget zstd",
         "ln -sf /usr/bin/python3.12 /usr/local/bin/python3",
@@ -148,7 +161,34 @@ export PRAKTIKA_CONTROLLER_ROLE
 export PRAKTIKA_CONTROLLER_QUEUE
 exec /usr/local/bin/praktika-controller
 """
-    cloudwatch_configure = """#!/usr/bin/env bash
+    # Both streams are baked into every image. praktika-controller.log always
+    # has events; praktika-system.log only fills up when the streamer service
+    # is activated via the praktika_system_logs instance tag (see below), so
+    # its CloudWatch stream stays empty (and free) on pools that don't opt in.
+    collect_list: List[Dict[str, str]] = [
+        {
+            "file_path": "/var/log/praktika-controller.log",
+            "log_group_name": "/${PRAKTIKA_PROJECT_SLUG}/praktika-controller",
+            "log_stream_name": "{instance_id}",
+            "timezone": "UTC",
+        },
+        {
+            # Kernel / systemd / OOM-killer evidence lives in the journal, not
+            # in the controller's own log, so ship it to a separate stream.
+            "file_path": "/var/log/praktika-system.log",
+            "log_group_name": "/${PRAKTIKA_PROJECT_SLUG}/praktika-system",
+            "log_stream_name": "{instance_id}",
+            "timezone": "UTC",
+        },
+    ]
+    cloudwatch_config_json = json.dumps(
+        {"logs": {"logs_collected": {"files": {"collect_list": collect_list}}}},
+        indent=2,
+    )
+    # NOTE: unquoted heredoc so ${PRAKTIKA_PROJECT_SLUG} expands at runtime;
+    # {instance_id} has no leading $, so the CloudWatch agent resolves it.
+    cloudwatch_configure = (
+        """#!/usr/bin/env bash
 set -euo pipefail
 
 TOKEN=$(curl -fsS -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
@@ -159,23 +199,55 @@ if [ -z "$PRAKTIKA_PROJECT_SLUG" ]; then
 fi
 
 cat > /etc/praktika/amazon-cloudwatch-agent.json <<EOF
-{
-  "logs": {
-    "logs_collected": {
-      "files": {
-        "collect_list": [
-          {
-            "file_path": "/var/log/praktika-controller.log",
-            "log_group_name": "/${PRAKTIKA_PROJECT_SLUG}/praktika-controller",
-            "log_stream_name": "{instance_id}",
-            "timezone": "UTC"
-          }
-        ]
-      }
-    }
-  }
-}
+"""
+        + cloudwatch_config_json
+        + """
 EOF
+
+# The praktika-system-logs streamer (kernel/OOM/systemd-kill evidence) is baked
+# into every image but stays off unless the pool opts in via the
+# praktika_system_logs instance tag. Empty stream => no CloudWatch cost when off.
+PRAKTIKA_SYSTEM_LOGS=$(curl -fsS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/tags/instance/praktika_system_logs || true)
+case "$(printf '%s' "${PRAKTIKA_SYSTEM_LOGS:-}" | tr '[:upper:]' '[:lower:]')" in
+  1|true|yes|on|enabled)
+    systemctl enable --now praktika-system-logs || true
+    ;;
+  *)
+    systemctl disable --now praktika-system-logs || true
+    ;;
+esac
+"""
+    )
+    # Follow the journal for the reasons the controller process can die without
+    # leaving a trace in its own log: kernel OOM killer (_TRANSPORT=kernel),
+    # systemd manager kill/restart notices (_PID=1), systemd-oomd, and anything
+    # systemd logs about (or the controller's cgroup emits under) the unit.
+    system_log_stream = """#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p /var/lib/praktika
+exec journalctl \\
+  --output=short-iso \\
+  --follow \\
+  --cursor-file=/var/lib/praktika/system-log.cursor \\
+  _TRANSPORT=kernel + _PID=1 + _COMM=systemd-oomd \\
+  + UNIT=praktika-controller.service + _SYSTEMD_UNIT=praktika-controller.service
+"""
+    system_logs_unit = """[Unit]
+Description=Praktika System Log Streamer
+After=systemd-journald.service
+Wants=systemd-journald.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/praktika-system-log-stream
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/praktika-system.log
+StandardError=append:/var/log/praktika-system.log
+
+[Install]
+WantedBy=multi-user.target
 """
     unit = """[Unit]
 Description=Praktika Controller
@@ -193,28 +265,40 @@ StandardError=append:/var/log/praktika-controller.log
 [Install]
 WantedBy=multi-user.target
 """
+    commands = [
+        "mkdir -p /etc/praktika",
+        "touch /var/log/praktika-controller.log",
+        "chmod 0644 /var/log/praktika-controller.log",
+        _write_file_from_base64("/usr/local/bin/praktika-controller-start", launcher),
+        "chmod 0755 /usr/local/bin/praktika-controller-start",
+        _write_file_from_base64(
+            "/usr/local/bin/praktika-configure-cloudwatch-agent",
+            cloudwatch_configure,
+        ),
+        "chmod 0755 /usr/local/bin/praktika-configure-cloudwatch-agent",
+        _write_file_from_base64(
+            "/etc/systemd/system/praktika-controller.service", unit
+        ),
+        # Always baked; NOT enabled here. Activation is per-pool at boot via the
+        # praktika_system_logs instance tag, handled by the cloudwatch configure
+        # script above.
+        "touch /var/log/praktika-system.log",
+        "chmod 0644 /var/log/praktika-system.log",
+        _write_file_from_base64(
+            "/usr/local/bin/praktika-system-log-stream", system_log_stream
+        ),
+        "chmod 0755 /usr/local/bin/praktika-system-log-stream",
+        _write_file_from_base64(
+            "/etc/systemd/system/praktika-system-logs.service",
+            system_logs_unit,
+        ),
+        "systemctl daemon-reload || true",
+    ]
     return {
         "name": name,
         "platform": "Linux",
         "description": "Bake the Praktika controller service into the image",
-        "commands": [
-            "mkdir -p /etc/praktika",
-            "touch /var/log/praktika-controller.log",
-            "chmod 0644 /var/log/praktika-controller.log",
-            _write_file_from_base64(
-                "/usr/local/bin/praktika-controller-start", launcher
-            ),
-            "chmod 0755 /usr/local/bin/praktika-controller-start",
-            _write_file_from_base64(
-                "/usr/local/bin/praktika-configure-cloudwatch-agent",
-                cloudwatch_configure,
-            ),
-            "chmod 0755 /usr/local/bin/praktika-configure-cloudwatch-agent",
-            _write_file_from_base64(
-                "/etc/systemd/system/praktika-controller.service", unit
-            ),
-            "systemctl daemon-reload || true",
-        ],
+        "commands": commands,
     }
 
 
@@ -228,9 +312,13 @@ def _image_test_component(
         "test -x /usr/local/bin/praktika-controller",
         "test -x /usr/local/bin/praktika-controller-start",
         "test -x /usr/local/bin/praktika-configure-cloudwatch-agent",
+        "test -x /usr/local/bin/praktika-system-log-stream",
         "bash -n /usr/local/bin/praktika-controller-start",
         "bash -n /usr/local/bin/praktika-configure-cloudwatch-agent",
+        "bash -n /usr/local/bin/praktika-system-log-stream",
         "systemctl cat praktika-controller",
+        # Baked but intentionally not enabled at build time (tag-activated).
+        "systemctl cat praktika-system-logs",
         "test -x /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl",
         "aws --version",
         "git --version",

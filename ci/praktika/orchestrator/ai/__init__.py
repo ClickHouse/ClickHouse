@@ -17,7 +17,7 @@ injected patcher (triggering a fresh run), and cancels the superseded run.
 The default provider is ``mock``, which does nothing. Disabled by default
 (``Workflow.Config.ai_orchestrator.enabled``).
 
-Real providers (``anthropic`` / ``bedrock``) implement ``on_job_failure`` only,
+Real providers (``anthropic`` / ``bedrock-anthropic``) implement ``on_job_failure`` only,
 running a tool-use loop so the model can investigate the failure before deciding
 — reading the job's logs (``fetch_log``, restricted to URLs in the observation)
 and the checked-out PR source (``grep_repo`` / ``read_file``, rooted at the repo).

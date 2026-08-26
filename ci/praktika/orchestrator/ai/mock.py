@@ -14,6 +14,35 @@ from .provider import AIProvider, Turn, Usage
 class MockProvider(AIProvider):
     name = "mock"
 
+    def complete(
+        self,
+        system,
+        user_content,
+        tools=None,
+        tool_executor=None,
+        max_tokens=4000,
+        response_schema=None,
+    ) -> Turn:
+        """Return a canned, action-free review JSON without any model call.
+
+        Lets ``praktika review --provider mock`` (and tests) exercise the whole
+        gather → complete → apply flow deterministically: a summary and empty
+        ``inline_findings`` / ``thread_actions`` so nothing is ever posted or
+        resolved.
+        """
+        import json
+
+        text = json.dumps(
+            {
+                "change_summary": "(mock provider)",
+                "verdict": "no_issues",
+                "summary_md": "_(mock provider: no findings)_",
+                "inline_findings": [],
+                "thread_actions": [],
+            }
+        )
+        return Turn(reasoning=text, usage=Usage(provider=self.name, model=self.model))
+
     def on_job_failure(self, observation) -> Turn:
         failing = [
             c for c in observation.changed if c.get("status") in ("failure", "cancelled")

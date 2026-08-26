@@ -50,12 +50,27 @@ def _queue_prefix():
 #     mid-job after pickup.
 # Pickup grace covers queue/ASG delays before any runner has emitted a heartbeat.
 # Heartbeat timeout is intentionally longer than the heartbeat interval so
-# transient S3/read delays do not kill a live runner.
+# transient S3/read delays do not kill a live runner. It is also held above the
+# runner queue's visibility timeout plus a re-run's startup cost: a runner that
+# dies mid-job leaves its job_task to reappear once the visibility window
+# lapses, a fresh runner re-runs it against the same heartbeat/final S3 keys,
+# and the re-run's first heartbeat resets last_heartbeat_ts before this timeout
+# elapses. A dead runner is thus recovered by SQS redelivery, not by the
+# orchestrator; the job fails only when redelivery stops producing heartbeats
+# (genuinely stuck, or dead-lettered past the queue's maxReceiveCount). The
+# pickup path has no such recovery - an un-received job_task is still queued.
+#
+# The RUNNING path is two-stage. At HEARTBEAT_STALL_S a silent runner is flagged
+# unresponsive - the check says a retry is pending - but the job is not failed;
+# only at the longer HEARTBEAT_TIMEOUT_S is it declared dead. The stall stage
+# surfaces the loss quickly while the timeout budgets redelivery plus a cold
+# runner launch to re-heartbeat first.
 HEARTBEAT_INTERVAL_S = int(getattr(Settings, "HEARTBEAT_INTERVAL_S", 30) or 30)
 RUNNER_PICKUP_TIMEOUT_S = int(
     getattr(Settings, "RUNNER_PICKUP_TIMEOUT_S", 3600) or 3600
 )
-HEARTBEAT_TIMEOUT_S = int(getattr(Settings, "HEARTBEAT_TIMEOUT_S", 300) or 300)
+HEARTBEAT_STALL_S = int(getattr(Settings, "HEARTBEAT_STALL_S", 300) or 300)
+HEARTBEAT_TIMEOUT_S = int(getattr(Settings, "HEARTBEAT_TIMEOUT_S", 900) or 900)
 
 # wait() blocks for this long between S3 sweeps. Kept short so the
 # orchestrator reacts quickly to cancel signals and finished jobs (no
@@ -68,12 +83,13 @@ def _normalize_job_name_for_s3(name):
     return name.replace(" ", "_").replace("/", "_")
 
 
-def _build_check_output(result, rc, instance_id="", runner_pool="", report_url=""):
+def _build_check_output(result, rc, instance_id="", report_url="", pool=""):
     """Render a job's Result as the ``output`` dict for a check-run
     completion. ``result`` is a ``praktika.Result`` reconstructed from the
-    completion payload (the runner ships it in ``final.json``). Returns
-    None on any failure so the caller can fall back to a bodyless
-    completion."""
+    completion payload (the runner ships it in ``final.json``). ``pool`` is
+    the runner pool (the job's ``runs_on``) the job ran on, surfaced so a
+    reader can tell which pool/role executed it. Returns None on any failure
+    so the caller can fall back to a bodyless completion."""
     try:
         text = result.to_markdown(report_url=report_url)
         # Check API caps output.text at ~64 KB.
@@ -94,16 +110,15 @@ def _build_check_output(result, rc, instance_id="", runner_pool="", report_url="
         summary = f"**{displayed_status}**{dur}"
         if report_url:
             summary += f" — [CI Report]({report_url})"
+        details = []
         if instance_id:
             summary += f" — runner `{instance_id}`"
-            text = f"**Runner instance:** `{instance_id}`" + (
-                f"\n\n{text}" if text else ""
-            )
-        if runner_pool:
-            summary += f" in pool `{runner_pool}`"
-            text = f"{text}\n\n**Runner pool:** `{runner_pool}`" if text else (
-                f"**Runner pool:** `{runner_pool}`"
-            )
+            details.append(f"**Runner instance:** `{instance_id}`")
+        if pool:
+            summary += f" — pool `{pool}`"
+            details.append(f"**Runner pool:** `{pool}`")
+        if details:
+            text = "\n\n".join(details) + (f"\n\n{text}" if text else "")
         return {"title": displayed_status, "summary": summary, "text": text}
     except Exception as e:
         print(f"  [warn] could not render job Result as MD: {type(e).__name__}: {e}")
@@ -288,6 +303,10 @@ class JobState:
         self._workflow_state = workflow_state  # back-ref for SQS dispatch
         self.status = JobStatus.PENDING
         self.rc = None
+        # True when the job FAILED but opted out of blocking the pipeline via
+        # result.complete_job(do_not_block_pipeline_on_failure=True). Such a
+        # failure is advisory: dependents must still run (see get_ready).
+        self.non_blocking = False
         self.started_at = None
         self.finished_at = None
         self.filter_reason = None  # set by .skip() when Config Workflow skips it
@@ -298,6 +317,14 @@ class JobState:
         self.last_heartbeat_ts = None
         self.runner_instance_id = None
         self.last_heartbeat_phase = None
+        # SQS ApproximateReceiveCount the runner stamps on each heartbeat. It
+        # bumps when a dead runner's job_task is redelivered and re-run; the
+        # sweep surfaces the bump as a [RETRY] line and in the check output.
+        self.attempt = 1
+        # Set once the heartbeat gap crosses HEARTBEAT_STALL_S (runner flagged
+        # unresponsive, awaiting redelivery); cleared when a fresh heartbeat
+        # arrives. Keeps the [STALE] line and check update one-shot per stall.
+        self.stale_flagged = False
         # Raw job Result (plain dict) as shipped in the completion payload.
         # Populated by sweep_completions; rendered into the check-run output
         # and retained for AI observation.
@@ -412,30 +439,49 @@ class JobState:
         )
 
         print(f"[KICK ] {self.name:70s} runs_on={runs_on}  -> {target}")
-        if not ws._dispatch(self, target):
-            # Dispatch failed (e.g. SQS error, missing queue) — fail the job;
-            # nothing else will ever drive it forward. Pass an explicit output
-            # so the terminal check doesn't keep the earlier "QUEUED" summary.
+        ok, reason = ws._dispatch(self, target)
+        if not ok:
+            # Dispatch failed (e.g. SQS error) — fail the job with a clear
+            # message; nothing else will ever drive it forward. The most common
+            # cause is a runner pool that has no queue yet (not deployed), which
+            # surfaces as a QueueDoesNotExist error from get_queue_url.
+            not_deployed = (
+                "QueueDoesNotExist" in reason or "NonExistentQueue" in reason
+            )
+            hint = (
+                f" Runner pool `{runs_on}` has no SQS queue — it is likely not "
+                f"deployed. Deploy it (`praktika infrastructure --deploy`) and "
+                f"re-run."
+                if not_deployed
+                else ""
+            )
+            summary = (
+                f"Failed to dispatch job to runner pool `{runs_on}` "
+                f"(queue `{target}`).{hint}"
+            )
+            if reason:
+                summary += f"\n\nError: {reason}"
             self.finish(
                 success=False,
-                output={
-                    "title": "DISPATCH FAILED",
-                    "summary": (
-                        f"Failed to dispatch job to runner pool `{target}` "
-                        f"(its SQS queue is missing or unreachable)."
-                    ),
-                },
+                output={"title": "Dispatch failed", "summary": summary},
             )
 
-    def finish(self, success=True, output=None, details_url=None):
+    def finish(self, success=True, output=None, details_url=None, non_blocking=False):
         """Transition in-flight jobs -> SUCCESS/FAILURE and emit a finish line.
 
         The orchestrator owns the GitHub check lifecycle: runners publish
         final state to S3, and this method completes the check.
+
+        ``non_blocking`` records that a failing job asked not to block the
+        pipeline (``do_not_block_pipeline_on_failure``). The job's own status
+        stays FAILURE (its check goes red — the process exited non-zero), but
+        ``get_ready`` treats it as success-equivalent so dependents still run,
+        mirroring the GH-engine ``_pipeline_status`` behavior.
         """
         if self.status not in (JobStatus.QUEUED, JobStatus.RUNNING):
             return
         self.status = JobStatus.SUCCESS if success else JobStatus.FAILURE
+        self.non_blocking = bool(non_blocking) and not success
         self.finished_at = time.time()
         self.rc = 0 if success else 1
         self._update_check(
@@ -447,7 +493,8 @@ class JobState:
         )
         duration = self.finished_at - (self.started_at or self.finished_at)
         tag = "[DONE ]" if success else "[FAIL ]"
-        print(f"{tag} {self.name:70s} ({duration:.1f}s)")
+        attempt_note = f" (attempt {self.attempt})" if self.attempt > 1 else ""
+        print(f"{tag} {self.name:70s} ({duration:.1f}s){attempt_note}")
 
     def skip(self, reason="", output=None, details_url=None, post_check=False):
         """Transition PENDING -> SKIPPED.
@@ -822,6 +869,7 @@ class WorkflowState:
             # check-run output here (the orchestrator owns the check
             # lifecycle).
             output = None
+            non_blocking = False
             result_dict = payload.get("result")
             if isinstance(result_dict, dict):
                 js.result = result_dict
@@ -833,19 +881,28 @@ class WorkflowState:
                     # from_dict mutates its argument, so reconstruct from a
                     # copy to keep js.result a plain, serializable dict.
                     result = Result.from_dict(deepcopy(result_dict))
+                    # rc alone is not "block the DAG": a job may exit non-zero
+                    # yet ask not to block dependents (advisory jobs such as
+                    # bugfix validation / coverage). Honor the Result flag.
+                    non_blocking = result.do_not_block_pipeline_on_failure()
                     output = _build_check_output(
                         result,
                         rc,
                         instance_id=js.runner_instance_id or "",
-                        runner_pool=", ".join(js.job.runs_on) if js.job.runs_on else "",
                         report_url=details_url or "",
+                        pool=", ".join(js.job.runs_on) if js.job.runs_on else "",
                     )
                 except Exception as e:
                     print(
                         f"  [warn] could not render Result for {js.name!r}: "
                         f"{type(e).__name__}: {e}"
                     )
-            js.finish(success=(rc == 0), output=output, details_url=details_url)
+            js.finish(
+                success=(rc == 0),
+                output=output,
+                details_url=details_url,
+                non_blocking=non_blocking,
+            )
 
     def sweep_liveness(self, now=None):
         """Mark in-flight jobs whose runner stopped responding as FAILURE.
@@ -876,70 +933,60 @@ class WorkflowState:
                 hb = json.loads(body)
                 ts = float(hb.get("ts", 0))
                 if ts > 0:
-                    prev_phase = js.last_heartbeat_phase
                     js.last_heartbeat_ts = ts
+                    was_stale = js.stale_flagged
+                    js.stale_flagged = False
                     phase = str(hb.get("phase") or "").strip()
                     if phase:
                         js.last_heartbeat_phase = phase
                     instance_id = str(hb.get("instance_id") or "").strip()
                     if instance_id:
                         js.runner_instance_id = instance_id
+                    attempt = int(hb.get("attempt") or js.attempt)
+                    runner_note = f" on runner `{instance_id}`" if instance_id else ""
                     if js.status == JobStatus.QUEUED:
+                        js.attempt = attempt
                         js.status = JobStatus.RUNNING
-                        output = {
-                            "title": "RUNNING",
-                            "summary": "RUNNING: runner picked up the job.",
-                        }
-                        if js.runner_instance_id:
-                            output["summary"] = (
+                        summary = "RUNNING: runner picked up the job."
+                        if instance_id:
+                            summary = (
                                 f"RUNNING on runner `{instance_id}` in pool "
                                 f"`{runner_pool}`."
                             )
                         if phase:
-                            output["summary"] += f" Phase: `{phase}`."
-                        output["text"] = (
-                            f"**Runner instance:** `{instance_id}`"
-                            if js.runner_instance_id
-                            else ""
-                        )
-                        if runner_pool:
-                            output["text"] += (
-                                f"\n\n**Runner pool:** `{runner_pool}`"
-                                if output["text"]
-                                else f"**Runner pool:** `{runner_pool}`"
-                            )
-                        js._update_check(lambda c: c.set_in_progress(output=output))
-                    elif (
-                        phase
-                        and phase != prev_phase
-                        and js.check is not None
-                    ):
-                        output = {
-                            "title": "RUNNING",
-                            "summary": "RUNNING: runner picked up the job.",
-                        }
-                        if js.runner_instance_id:
-                            output["summary"] = (
-                                f"RUNNING on runner `{js.runner_instance_id}` in pool "
-                                f"`{runner_pool}`."
-                            )
-                        output["summary"] += f" Phase: `{phase}`."
-                        output["text"] = (
-                            f"**Runner instance:** `{js.runner_instance_id}`"
-                            if js.runner_instance_id
-                            else ""
-                        )
-                        if runner_pool:
-                            output["text"] += (
-                                f"\n\n**Runner pool:** `{runner_pool}`"
-                                if output["text"]
-                                else f"**Runner pool:** `{runner_pool}`"
-                            )
-                        js._update_check(
-                            lambda c: c.update(status="in_progress", output=output)
-                        )
+                            summary += f" Phase: `{phase}`."
+                        if attempt > 1:
+                            summary += f" Attempt {attempt}."
+                        output = {"title": "RUNNING", "summary": summary}
+                        js._update_check(lambda c, o=output: c.set_in_progress(output=o))
                         duration = now - (js.started_at or now)
                         print(f"[PICK ] {js.name:70s} ({duration:.1f}s)")
+                    elif attempt > js.attempt:
+                        # A redelivered job_task re-ran on a fresh runner after
+                        # the previous one was lost. Surface it rather than let
+                        # the check silently ride through the recovery.
+                        js.attempt = attempt
+                        summary = (
+                            f"RUNNING: re-running{runner_note} after the previous "
+                            f"runner was lost (attempt {attempt})."
+                        )
+                        output = {"title": "RUNNING", "summary": summary}
+                        js._update_check(lambda c, o=output: c.set_in_progress(output=o))
+                        duration = now - (js.started_at or now)
+                        print(
+                            f"[RETRY] {js.name:70s} ({duration:.1f}s) previous runner "
+                            f"lost; re-running{runner_note} (attempt {attempt})"
+                        )
+                    elif was_stale:
+                        # Same runner resumed after being flagged unresponsive -
+                        # clear the pending-retry note on the check.
+                        summary = f"RUNNING{runner_note}: heartbeat resumed."
+                        if phase:
+                            summary += f" Phase: `{phase}`."
+                        output = {"title": "RUNNING", "summary": summary}
+                        js._update_check(lambda c, o=output: c.set_in_progress(output=o))
+                        duration = now - (js.started_at or now)
+                        print(f"[ALIVE] {js.name:70s} ({duration:.1f}s) heartbeat resumed")
             except Exception as e:
                 if _is_missing_s3_key_error(e):
                     # Heartbeat file may not exist yet. If pickup grace
@@ -980,14 +1027,32 @@ class WorkflowState:
                             f"timeout={HEARTBEAT_TIMEOUT_S}s)"
                         )
                     js.fail_dead(reason)
+                elif age_since_hb > HEARTBEAT_STALL_S and not js.stale_flagged:
+                    js.stale_flagged = True
+                    runner = js.runner_instance_id
+                    where = f"runner `{runner}`" if runner else f"pool `{runs_on}`"
+                    summary = (
+                        f"RUNNING: {where} unresponsive for {int(age_since_hb)}s; "
+                        f"awaiting automatic retry (fails at {HEARTBEAT_TIMEOUT_S}s)."
+                    )
+                    output = {
+                        "title": "RUNNING (runner unresponsive)",
+                        "summary": summary,
+                    }
+                    js._update_check(lambda c, o=output: c.set_in_progress(output=o))
+                    print(
+                        f"[STALE] {js.name:70s} ({int(age_since_hb)}s) {where} "
+                        f"unresponsive; awaiting retry"
+                    )
 
     # ---------------------------------------------------------- dispatch
 
     def _dispatch(self, job_state, queue_name):
         """Send a ``job_task`` message to ``queue_name`` for ``job_state``.
 
-        Returns True on success, False on any failure (missing boto3, queue
-        doesn't exist, SQS error). On failure ``kick()`` fails the job —
+        Returns ``(ok, error)``: ``(True, "")`` on success, ``(False, reason)``
+        on any failure (missing boto3, queue doesn't exist, SQS error). On
+        failure ``kick()`` fails the job with ``reason`` surfaced on the check —
         nothing else will ever drive it forward.
         """
         task = {
@@ -1018,7 +1083,7 @@ class WorkflowState:
         }
 
         if self.local_mode:
-            return self._dispatch_local(job_state, task)
+            return self._dispatch_local(job_state, task), ""
 
         try:
             if self._sqs is None:
@@ -1033,13 +1098,14 @@ class WorkflowState:
                 self._queue_urls[queue_name] = url
 
             self._sqs.send_message(QueueUrl=url, MessageBody=json.dumps(task))
-            return True
+            return True, ""
         except Exception as e:
+            reason = f"{type(e).__name__}: {e}"
             print(
                 f"  [warn] dispatch of {job_state.name!r} to {queue_name!r} failed: "
-                f"{type(e).__name__}: {e}"
+                f"{reason}"
             )
-            return False
+            return False, reason
 
     def _dispatch_local(self, job_state, task):
         """Run the job synchronously as a subprocess.
@@ -1089,11 +1155,12 @@ class WorkflowState:
         """Promote PENDING jobs whose deps are resolved -> READY and return them.
 
         Normal jobs:
-          - any dep in FAILURE or CANCELLED ⇒ cascade this job to CANCELLED
-            (upstream failed / upstream cancelled, this can't proceed);
-          - every dep in SUCCESS or SKIPPED ⇒ promote to READY (SKIPPED
-            outputs still exist in S3 from a prior run — SUCCESS-equivalent
-            for dep resolution).
+          - any dep in blocking FAILURE or CANCELLED ⇒ cascade this job to
+            CANCELLED (upstream failed / upstream cancelled, this can't proceed);
+          - every dep in SUCCESS, SKIPPED, or non-blocking FAILURE ⇒ promote to
+            READY. SKIPPED outputs still exist in S3 from a prior run, and a
+            non-blocking FAILURE (do_not_block_pipeline_on_failure) is advisory —
+            both are SUCCESS-equivalent for dep resolution.
 
         ``always_run`` jobs (Finish Workflow is the only one
         today) promote to READY once every dep reaches *any* terminal
@@ -1105,19 +1172,30 @@ class WorkflowState:
         for name, js in self.jobs.items():
             if js.status != JobStatus.PENDING:
                 continue
-            dep_states = [self.jobs[d].status for d in self._deps.get(name, ())]
+            deps = [self.jobs[d] for d in self._deps.get(name, ())]
             if js.job.always_run:
-                if all(s in _TERMINAL for s in dep_states):
+                if all(d.status in _TERMINAL for d in deps):
                     js.status = JobStatus.READY
                     ready.append(js)
                 continue
-            if any(s == JobStatus.FAILURE for s in dep_states):
+            # A dep that FAILED but is non_blocking
+            # (do_not_block_pipeline_on_failure) counts as success-equivalent
+            # for dependency resolution: its failure is advisory, so it must
+            # neither cancel dependents nor hold them back.
+            if any(
+                d.status == JobStatus.FAILURE and not getattr(d, "non_blocking", False)
+                for d in deps
+            ):
                 js.cancel(reason="upstream failed")
                 continue
-            if any(s == JobStatus.CANCELLED for s in dep_states):
+            if any(d.status == JobStatus.CANCELLED for d in deps):
                 js.cancel(reason="upstream cancelled")
                 continue
-            if all(s in (JobStatus.SUCCESS, JobStatus.SKIPPED) for s in dep_states):
+            if all(
+                d.status in (JobStatus.SUCCESS, JobStatus.SKIPPED)
+                or (d.status == JobStatus.FAILURE and getattr(d, "non_blocking", False))
+                for d in deps
+            ):
                 js.status = JobStatus.READY
                 ready.append(js)
         return ready
@@ -1258,7 +1336,17 @@ class WorkflowState:
         for js in self.jobs.values():
             counts[js.status] += 1
         bits = [f"{counts[s]} {s.value}" for s in JobStatus if counts[s]]
-        return ", ".join(bits) or "no jobs"
+        summary = ", ".join(bits) or "no jobs"
+        retried = sum(1 for js in self.jobs.values() if js.attempt > 1)
+        unresponsive = sum(1 for js in self.jobs.values() if js.stale_flagged)
+        notes = []
+        if retried:
+            notes.append(f"{retried} retried")
+        if unresponsive:
+            notes.append(f"{unresponsive} runner-unresponsive")
+        if notes:
+            summary += " (" + ", ".join(notes) + ")"
+        return summary
 
     def md_status(self):
         """Markdown snapshot of the current run state for the top-level
@@ -1279,8 +1367,8 @@ class WorkflowState:
         lines.append("")
         lines.append(f"**Status:** {self.md_status_summary()}")
         lines.append("")
-        lines.append("| Job | Status | Duration |")
-        lines.append("|---|---|---|")
+        lines.append("| Job | Status | Duration | Notes |")
+        lines.append("|---|---|---|---|")
         now = time.time()
         for js in self.jobs.values():
             if js.started_at:
@@ -1288,5 +1376,11 @@ class WorkflowState:
                 dur = f"{int(end - js.started_at)}s"
             else:
                 dur = "—"
-            lines.append(f"| `{js.name}` | {js.status.value} | {dur} |")
+            note_bits = []
+            if js.attempt > 1:
+                note_bits.append(f"attempt {js.attempt}")
+            if js.stale_flagged:
+                note_bits.append("runner unresponsive")
+            note = ", ".join(note_bits) or "—"
+            lines.append(f"| `{js.name}` | {js.status.value} | {dur} | {note} |")
         return "\n".join(lines)

@@ -52,51 +52,72 @@ def lambda_handler(event, context):
     autoscaling = boto3.client("autoscaling", region_name=region)
 
     results = []
+    skipped = []
     for pool in _load_pool_configs():
         pool_name = str(pool["name"])
         queue_name = str(pool.get("queue_name") or pool_name)
         asg_name = str(pool.get("asg_name") or pool_name)
         capacity_reserve = max(0, int(pool.get("capacity_reserve") or 0))
 
-        queue_url = sqs.get_queue_url(QueueName=queue_name)["QueueUrl"]
-        queue_attrs = sqs.get_queue_attributes(
-            QueueUrl=queue_url,
-            AttributeNames=[
-                "ApproximateNumberOfMessages",
-                "ApproximateNumberOfMessagesNotVisible",
-            ],
-        )["Attributes"]
-        visible_messages = int(queue_attrs.get("ApproximateNumberOfMessages", "0"))
-        in_flight_messages = int(
-            queue_attrs.get("ApproximateNumberOfMessagesNotVisible", "0")
-        )
-
-        group = autoscaling.describe_auto_scaling_groups(
-            AutoScalingGroupNames=[asg_name]
-        )["AutoScalingGroups"]
-        if not group:
-            raise RuntimeError(f"Auto Scaling Group '{asg_name}' was not found")
-        group = group[0]
-        current_desired = int(group["DesiredCapacity"])
-        max_size = int(group["MaxSize"])
-
-        proposed_desired = _calculate_desired_capacity(
-            current_desired=current_desired,
-            max_size=max_size,
-            visible_messages=visible_messages,
-            in_flight_messages=in_flight_messages,
-            capacity_reserve=capacity_reserve,
-        )
-        # Defensive clamp: even if future _calculate_desired_capacity changes,
-        # this autoscaler must never scale a pool down. VM self-termination is
-        # the only supported scale-in path.
-        new_desired = max(current_desired, proposed_desired)
-        scaled = new_desired > current_desired
-        if scaled:
-            autoscaling.update_auto_scaling_group(
-                AutoScalingGroupName=asg_name,
-                DesiredCapacity=new_desired,
+        # A single pool whose SQS queue or ASG is missing (e.g. not deployed
+        # yet, renamed, or not covered by this role's IAM scope) must not abort
+        # the whole run: the remaining pools still need to be scaled. Log the
+        # reason and skip just this pool.
+        try:
+            queue_url = sqs.get_queue_url(QueueName=queue_name)["QueueUrl"]
+            queue_attrs = sqs.get_queue_attributes(
+                QueueUrl=queue_url,
+                AttributeNames=[
+                    "ApproximateNumberOfMessages",
+                    "ApproximateNumberOfMessagesNotVisible",
+                ],
+            )["Attributes"]
+            visible_messages = int(queue_attrs.get("ApproximateNumberOfMessages", "0"))
+            in_flight_messages = int(
+                queue_attrs.get("ApproximateNumberOfMessagesNotVisible", "0")
             )
+
+            group = autoscaling.describe_auto_scaling_groups(
+                AutoScalingGroupNames=[asg_name]
+            )["AutoScalingGroups"]
+            if not group:
+                raise RuntimeError(f"Auto Scaling Group '{asg_name}' was not found")
+            group = group[0]
+            current_desired = int(group["DesiredCapacity"])
+            max_size = int(group["MaxSize"])
+
+            proposed_desired = _calculate_desired_capacity(
+                current_desired=current_desired,
+                max_size=max_size,
+                visible_messages=visible_messages,
+                in_flight_messages=in_flight_messages,
+                capacity_reserve=capacity_reserve,
+            )
+            # Defensive clamp: even if future _calculate_desired_capacity changes,
+            # this autoscaler must never scale a pool down. VM self-termination is
+            # the only supported scale-in path.
+            new_desired = max(current_desired, proposed_desired)
+            scaled = new_desired > current_desired
+            if scaled:
+                autoscaling.update_auto_scaling_group(
+                    AutoScalingGroupName=asg_name,
+                    DesiredCapacity=new_desired,
+                )
+        except Exception as ex:
+            reason = f"{type(ex).__name__}: {ex}"
+            print(
+                f"[WARN] skipping pool '{pool_name}' "
+                f"(queue='{queue_name}', asg='{asg_name}'): {reason}"
+            )
+            skipped.append(
+                {
+                    "pool_name": pool_name,
+                    "asg_name": asg_name,
+                    "queue_name": queue_name,
+                    "error": reason,
+                }
+            )
+            continue
 
         results.append(
             {
@@ -116,4 +137,6 @@ def lambda_handler(event, context):
         "region": region,
         "pool_count": len(results),
         "results": results,
+        "skipped_count": len(skipped),
+        "skipped": skipped,
     }

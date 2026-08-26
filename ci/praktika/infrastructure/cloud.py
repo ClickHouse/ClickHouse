@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from .native.github_token_minter import GitHubTokenMinter
     from .native.pool_autoscaler import PoolAutoscaler
     from .native.runner_pool import RunnerPool
+    from .native.s3_proxy import S3Proxy
     from .secret_parameter import SecretParameter
     from .sqs_queue import SQSQueue
 
@@ -72,6 +73,7 @@ class CloudInfrastructure:
         orchestrator_pool: Optional["OrchestratorPool"] = None
         orchestrator_pools: List["OrchestratorPool"] = field(default_factory=list)
         cidb_cluster: Optional["CIDBCluster"] = None
+        s3_proxy: Optional["S3Proxy"] = None
         ext: Dict[str, Any] = field(default_factory=dict)
         _settings: Optional[_Settings] = None
         _pre_namespace_names: Dict[str, List[str]] = field(
@@ -105,6 +107,7 @@ class CloudInfrastructure:
                     "orchestrator_pool": self.orchestrator_pool,
                     "orchestrator_pools": self.orchestrator_pools,
                     "cidb_cluster": self.cidb_cluster,
+                    "s3_proxy": self.s3_proxy,
                 }
             )
             for key, value in cloned.items():
@@ -113,14 +116,15 @@ class CloudInfrastructure:
         def _project_prefix(self) -> str:
             # Project names are user-facing labels. Resource names need a
             # stable AWS-safe slug so all generated names line up across
-            # queues, ASGs, IAM roles, launch templates, etc.
+            # queues, ASGs, IAM roles, launch templates, etc. The slug also
+            # feeds DNS/Tailscale hostnames (e.g. the S3 report proxy).
             #
-            # Use "_" (not "-") as the intra-slug separator. The slug becomes
-            # the "{slug}-" resource-name prefix, so a "-" inside it would let
-            # one project's scoped IAM wildcard (e.g. "clickhouse-*") also match
-            # another project's resources (e.g. "clickhouse-private-*").
-            prefix = re.sub(r"[^a-z0-9]+", "_", (self.name or "").strip().lower())
-            prefix = re.sub(r"_{2,}", "_", prefix).strip("_")
+            # The slug must be purely alphanumeric — no "-" or "_". Resources
+            # are discovered by the "{slug}-" name prefix, so a slug that itself
+            # contained "-" would make one project's prefix match another's
+            # (e.g. "clickhouse-" would match the "clickhouse-private" project),
+            # so strip every separator rather than collapsing it to "-".
+            prefix = re.sub(r"[^a-z0-9]+", "", (self.name or "").strip().lower())
             if not prefix:
                 raise ValueError("CloudInfrastructure.Config.name must normalize to a non-empty project prefix")
             return prefix
@@ -250,6 +254,11 @@ class CloudInfrastructure:
                 _apply_pool_defaults(pool)
             for pool in self.orchestrator_pools:
                 _apply_pool_defaults(pool)
+            if self.s3_proxy:
+                # S3Proxy has the same vpc_name/security_group/launch_template/
+                # autoscaling_group shape as a pool, so it takes the same VPC and
+                # default security group defaults.
+                _apply_pool_defaults(self.s3_proxy)
 
             if self.cidb_cluster:
                 cluster = self.cidb_cluster
@@ -807,6 +816,78 @@ class CloudInfrastructure:
                         instance.iam_instance_profile_name = self._prefixed(instance.iam_instance_profile_name)
                         self._record_rename(replacements, old_instance_profile, instance.iam_instance_profile_name)
 
+            if self.s3_proxy:
+                proxy = self.s3_proxy
+                if proxy.vpc_name:
+                    old_vpc = proxy.vpc_name
+                    proxy.vpc_name = self._prefixed(proxy.vpc_name)
+                    self._record_rename(replacements, old_vpc, proxy.vpc_name)
+                proxy.security_group_names = [
+                    self._prefixed(name) for name in proxy.security_group_names
+                ]
+                old_role_name = proxy.ec2_role.name
+                proxy.ec2_role.name = self._prefixed(proxy.ec2_role.name)
+                self._record_rename(replacements, old_role_name, proxy.ec2_role.name)
+                old_profile_name = proxy.instance_profile.name
+                proxy.instance_profile.name = self._prefixed(proxy.instance_profile.name)
+                self._record_rename(
+                    replacements, old_profile_name, proxy.instance_profile.name
+                )
+                old_profile_role = proxy.instance_profile.role_name
+                proxy.instance_profile.role_name = self._prefixed(
+                    proxy.instance_profile.role_name
+                )
+                self._record_rename(
+                    replacements, old_profile_role, proxy.instance_profile.role_name
+                )
+                old_lt = proxy.launch_template.name
+                proxy.launch_template.name = self._prefixed(proxy.launch_template.name)
+                self._record_rename(replacements, old_lt, proxy.launch_template.name)
+                if getattr(proxy.launch_template, "vpc_name", ""):
+                    old_lt_vpc = proxy.launch_template.vpc_name
+                    proxy.launch_template.vpc_name = self._prefixed(
+                        proxy.launch_template.vpc_name
+                    )
+                    self._record_rename(
+                        replacements, old_lt_vpc, proxy.launch_template.vpc_name
+                    )
+                proxy.launch_template.iam_instance_profile_name = (
+                    proxy.instance_profile.name
+                )
+                proxy.launch_template.security_group_names = [
+                    self._prefixed(name)
+                    for name in proxy.launch_template.security_group_names
+                ]
+                old_asg = proxy.autoscaling_group.name
+                proxy.autoscaling_group.name = self._prefixed(
+                    proxy.autoscaling_group.name
+                )
+                self._record_rename(replacements, old_asg, proxy.autoscaling_group.name)
+                if getattr(proxy.autoscaling_group, "vpc_name", ""):
+                    old_asg_vpc = proxy.autoscaling_group.vpc_name
+                    proxy.autoscaling_group.vpc_name = self._prefixed(
+                        proxy.autoscaling_group.vpc_name
+                    )
+                    self._record_rename(
+                        replacements, old_asg_vpc, proxy.autoscaling_group.vpc_name
+                    )
+                proxy.autoscaling_group.launch_template_name = (
+                    proxy.launch_template.name
+                )
+                # hostname defaults to the component name; keep it in the project
+                # namespace only when the user left it at that default.
+                old_proxy_name = proxy.name
+                proxy.name = self._prefixed(proxy.name)
+                if proxy.hostname == old_proxy_name:
+                    proxy.hostname = proxy.name
+                # Serve every project bucket unless an explicit list was given.
+                # Storages are already namespaced above, so their names are final.
+                if not proxy.proxied_buckets:
+                    proxy.proxied_buckets = [config.name for config in self.storages]
+                # Re-derive the S3 IAM statement + user_data from the final
+                # hostname and bucket names.
+                proxy._refresh()
+
             for config in self.iam_roles:
                 config.inline_policies = self._replace_recursive(config.inline_policies, replacements)
             for config in self.lambda_functions:
@@ -1029,6 +1110,16 @@ class CloudInfrastructure:
                 _add_role(self.cidb_cluster.ec2_role)
                 _add_profile(self.cidb_cluster.instance_profile)
                 self.secret_parameters.append(self.cidb_cluster.admin_password_secret)
+
+            if self.s3_proxy:
+                # Register the proxy's IAM role/profile plus its (already
+                # namespaced) launch template and ASG so they roll out through
+                # the standard deploy passes. The single instance is managed by
+                # the ASG (min=max=desired=1), so no explicit instance launch.
+                _add_role(self.s3_proxy.ec2_role)
+                _add_profile(self.s3_proxy.instance_profile)
+                self.launch_templates.append(self.s3_proxy.launch_template)
+                self.autoscaling_groups.append(self.s3_proxy.autoscaling_group)
 
         def _verify_account(self):
             from botocore.exceptions import (

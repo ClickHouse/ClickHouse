@@ -3,37 +3,7 @@ import time
 import json
 from datetime import datetime
 
-import requests
-
 from praktika.utils import Shell
-
-# The JWT backend is imported lazily (see _jwt_backend) so importing this module
-# - and therefore runner.py - never requires pyjwt. Only GitHub App auth needs
-# it; local flows such as running integration tests must not depend on it.
-_JWT_BACKEND = None
-
-
-def _jwt_backend():
-    """Return (using_pyjwt, backend), importing the JWT library on first use.
-
-    backend is the ``jwt`` module when pyjwt is available, otherwise the
-    ``(jwk_from_pem, JWT)`` symbols from the legacy ``jwt`` package.
-    """
-    global _JWT_BACKEND
-    if _JWT_BACKEND is None:
-        try:
-            import jwt  # From pyjwt
-
-            assert hasattr(jwt, "encode"), "Invalid jwt module, 'encode' not found"
-            _JWT_BACKEND = (True, jwt)
-        except (ImportError, AssertionError):
-            print(
-                "Warning: pyjwt not available. Falling back to 'jwt' module (not recommended)"
-            )
-            from jwt import JWT, jwk_from_pem
-
-            _JWT_BACKEND = (False, (jwk_from_pem, JWT))
-    return _JWT_BACKEND
 
 # `gh auth login --with-token` validates the token against api.github.com. A single
 # transient GitHub API 5xx/timeout there would otherwise hard-fail the whole job.
@@ -195,100 +165,6 @@ class GHAuth:
         return body["token"]
 
     @classmethod
-    def _post_installation_token(cls, jwt_token: str, installation_id: int):
-        """POST the JWT for an installation access token; return (token, expires_at_epoch).
-
-        GitHub returns the token plus an ISO 8601 ``expires_at`` (~1h ahead).
-        We surface both so ``GHTokenProvider`` can refresh ahead of expiry.
-        """
-        headers = {
-            "Authorization": f"Bearer {jwt_token}",
-            "Accept": "application/vnd.github.v3+json",
-        }
-        response = requests.post(
-            f"https://api.github.com/app/installations/{installation_id}/access_tokens",
-            headers=headers,
-            timeout=10,
-        )
-        response.raise_for_status()
-        data = response.json()
-        token = data["token"]
-        expires_at_iso = data.get("expires_at")
-        if expires_at_iso:
-            expires_at = datetime.fromisoformat(
-                expires_at_iso.replace("Z", "+00:00")
-            ).timestamp()
-        else:
-            expires_at = time.time() + 3600
-        return token, expires_at
-
-    @classmethod
-    def _get_access_token_by_jwt(cls, jwt_token: str, installation_id: int) -> str:
-        token, _ = cls._post_installation_token(jwt_token, installation_id)
-        return token
-
-    @classmethod
-    def _get_access_token(cls, private_key: str, app_id: str, installation_id: int) -> str:
-        payload = {
-            "iat": int(time.time()) - 60,
-            "exp": int(time.time()) + (10 * 60),
-            "iss": app_id,
-        }
-
-        _, jwt = _jwt_backend()
-        jwt_instance = jwt.PyJWT()
-        encoded_jwt = jwt_instance.encode(payload, private_key, algorithm="RS256")
-        return cls._get_access_token_by_jwt(encoded_jwt, installation_id)
-
-    @classmethod
-    def _get_access_token_deprecated(cls, app_key, app_id, installation_id: int):
-        def _generate_jwt(client_id, pem):
-            _, (jwk_from_pem, JWT) = _jwt_backend()
-            pem = str.encode(pem)
-            signing_key = jwk_from_pem(pem)
-            payload = {
-                "iat": int(time.time()),
-                "exp": int(time.time()) + 600,
-                "iss": client_id,
-            }
-            # Create JWT
-            jwt_instance = JWT()
-            encoded_jwt = jwt_instance.encode(payload, signing_key, alg="RS256")
-            return encoded_jwt
-
-        jwt_token = _generate_jwt(app_id, app_key)
-        return cls._get_access_token_by_jwt(jwt_token, installation_id)
-
-    @classmethod
-    def auth_with_app(
-        cls, app_id, app_key, installation_id: int, no_strict: bool = False
-    ) -> bool:
-        """
-        Authenticate `gh` with a token minted from the GitHub App secrets.
-
-        By default an authentication failure raises; pass `no_strict=True` to
-        instead print a warning and return False.
-        """
-        try:
-            using_pyjwt, _ = _jwt_backend()
-            if using_pyjwt:
-                access_token = cls._get_access_token(app_key, app_id, installation_id)
-            else:
-                access_token = cls._get_access_token_deprecated(app_key, app_id, installation_id)
-            return Shell.check(
-                "gh auth login --with-token",
-                stdin_str=f"{access_token}\n",
-                strict=not no_strict,
-                retries=4,
-                retry_errors=_GH_AUTH_RETRY_ERRORS,
-            )
-        except Exception as e:
-            if not no_strict:
-                raise
-            print(f"WARNING: GH auth failed: {e}")
-            return False
-
-    @classmethod
     def auth_with_lambda(
         cls, lambda_name: str, region: str = "", no_strict: bool = False
     ) -> bool:
@@ -321,9 +197,8 @@ class GHAuth:
 
         A token is minted from the AWS Lambda configured for the workflow
         (Workflow.Config.gh_auth_lambda_name) or globally
-        (Settings.GH_AUTH_LAMBDA_NAME); if no lambda is set, the GitHub App
-        secret (SECRET_GH_APP) is used instead. When neither is configured,
-        the ambient `gh` token is assumed and this is a no-op.
+        (Settings.GH_AUTH_LAMBDA_NAME). When no lambda is configured, the
+        ambient `gh` token is assumed and this is a no-op.
 
         The token is minted at most once per process unless `force` is set.
 
@@ -339,22 +214,14 @@ class GHAuth:
             workflow.gh_auth_lambda_name if workflow else ""
         ) or Settings.GH_AUTH_LAMBDA_NAME
 
+        if not lambda_name:
+            # No lambda configured - rely on the ambient gh token.
+            return True
+
         try:
-            if lambda_name:
-                authenticated = cls.auth_with_lambda(
-                    lambda_name, Settings.GH_AUTH_LAMBDA_REGION, no_strict=no_strict
-                )
-            elif Settings.SECRET_GH_APP:
-                app_id, pem, installation_id = cls._read_app_credentials()
-                authenticated = cls.auth_with_app(
-                    app_id=app_id,
-                    app_key=pem,
-                    installation_id=installation_id,
-                    no_strict=no_strict,
-                )
-            else:
-                # No custom auth configured - rely on the ambient gh token.
-                return True
+            authenticated = cls.auth_with_lambda(
+                lambda_name, Settings.GH_AUTH_LAMBDA_REGION, no_strict=no_strict
+            )
         except Exception as e:
             if not no_strict:
                 raise
@@ -365,54 +232,22 @@ class GHAuth:
         return authenticated
 
     @classmethod
-    def _read_app_credentials(cls):
-        """Read (app_id, pem, installation_id) from Secrets Manager via the
-        Settings.SECRET_GH_APP entry. Shared by ``get_installation_token`` and
-        ``GHTokenProvider`` so both go through the same secret."""
-        from praktika.secret import Secret
-        from praktika.settings import Settings
-
-        app_id, pem, installation_id = Secret.Config(
-            name=[
-                f"{Settings.SECRET_GH_APP}.app-id",
-                f"{Settings.SECRET_GH_APP}.app-key",
-                f"{Settings.SECRET_GH_APP}.app-installation-id",
-            ],
-            type=Secret.Type.AWS_SSM_SECRET,
-            region=Settings.AWS_REGION,
-        ).get_value()
-        return app_id, pem, int(installation_id)
-
-    @classmethod
     def get_installation_token(cls, required_permissions=None) -> str:
-        """Return a raw GitHub App installation access token."""
-        from .settings import Settings
-
-        if Settings.GH_AUTH_LAMBDA_NAME:
-            token, _ = cls._get_lambda_token_with_expiry(
-                required_permissions=required_permissions
-            )
-            return token
-        app_id, pem, installation_id = cls._read_app_credentials()
-        return cls._get_access_token(pem, app_id, installation_id)
+        """Return a raw GitHub App installation access token minted via the
+        GH_AUTH_LAMBDA_NAME lambda (raises if no lambda is configured)."""
+        token, _ = cls._get_lambda_token_with_expiry(
+            required_permissions=required_permissions
+        )
+        return token
 
     @classmethod
     def get_installation_token_with_expiry(cls, required_permissions=None):
-        """Like ``get_installation_token`` but returns ``(token, expires_at_epoch)``."""
-        from .settings import Settings
+        """Like ``get_installation_token`` but returns ``(token, expires_at_epoch)``.
 
-        if Settings.GH_AUTH_LAMBDA_NAME:
-            return cls._get_lambda_token_with_expiry(
-                required_permissions=required_permissions
-            )
-        app_id, pem, installation_id = cls._read_app_credentials()
-        payload = {
-            "iat": int(time.time()) - 60,
-            "exp": int(time.time()) + (10 * 60),
-            "iss": app_id,
-        }
-        encoded_jwt = jwt.PyJWT().encode(payload, pem, algorithm="RS256")
-        return cls._post_installation_token(encoded_jwt, installation_id)
+        Minted via the GH_AUTH_LAMBDA_NAME lambda (raises if not configured)."""
+        return cls._get_lambda_token_with_expiry(
+            required_permissions=required_permissions
+        )
 
 
 class GHTokenProvider:
@@ -445,18 +280,3 @@ class GHTokenProvider:
 
     def __call__(self) -> str:
         return self.get()
-
-
-# if __name__ == "__main__":
-#     from praktika.secret import Secret
-#
-#     pem = Secret.Config(
-#         name="woolenwolf_gh_app.clickhouse-app-key",
-#         type=Secret.Type.AWS_SSM_SECRET,
-#     ).get_value()
-#     app_id = Secret.Config(
-#         name="woolenwolf_gh_app.clickhouse-app-id",
-#         type=Secret.Type.AWS_SSM_SECRET,
-#     ).get_value()
-#     print(app_id, pem)
-#     GHAuth.auth_with_app(app_id, pem)

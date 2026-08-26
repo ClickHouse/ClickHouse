@@ -6,6 +6,24 @@ from botocore.exceptions import ClientError
 from ._utils import aws_account_id, aws_client
 
 
+# S3 key prefixes that hold ephemeral praktika CI artifacts/state and are safe
+# to expire under the bucket's retention policy. Everything NOT listed here is
+# kept forever: root objects (the json.html / praktika.html report viewers) and
+# published wheels under packages/. Extend this when praktika starts writing a
+# new churny top-level prefix.
+RETENTION_PREFIXES = [
+    "PRs/",
+    "REFs/",
+    "pr/",
+    "runs/",
+    "ai-sessions/",
+    "ci_cache/",
+    "external-pr-approvals/",
+    "job-runner/",
+    "workflow-orchestrator/",
+]
+
+
 class Storage:
 
     @dataclass
@@ -17,8 +35,11 @@ class Storage:
         bucket policy is applied so objects are accessible via HTTPS without
         signing.
 
-        Objects are automatically deleted after `retention_days` days via a
-        lifecycle rule. Idempotent: all settings are reconciled on every deploy.
+        Objects are automatically deleted after `retention_days` days via
+        per-prefix lifecycle rules (see RETENTION_PREFIXES): only the ephemeral
+        praktika prefixes expire, while root objects (the json.html report
+        viewer) and unlisted prefixes (e.g. packages/) are kept forever.
+        Idempotent: all settings are reconciled on every deploy.
         """
 
         name: str
@@ -93,14 +114,21 @@ class Storage:
                 )
                 print(f"Bucket '{self.name}' configured for public read")
 
-            # Lifecycle rule — expire all objects after retention_days
-            rule_id = "retention"
+            # Lifecycle rules — expire only the ephemeral praktika prefixes after
+            # retention_days, so root objects (json.html) and unlisted prefixes
+            # (packages/) are kept forever.
+            desired_rules = [
+                {
+                    "ID": f"retention-{prefix.rstrip('/').replace('/', '-')}",
+                    "Status": "Enabled",
+                    "Filter": {"Prefix": prefix},
+                    "Expiration": {"Days": self.retention_days},
+                }
+                for prefix in RETENTION_PREFIXES
+            ]
             try:
                 current = s3.get_bucket_lifecycle_configuration(Bucket=self.name)
-                existing = next(
-                    (r for r in current.get("Rules", []) if r.get("ID") == rule_id), None
-                )
-                if existing and existing.get("Expiration", {}).get("Days") == self.retention_days:
+                if self._lifecycle_matches(current.get("Rules", []), desired_rules):
                     print(f"Lifecycle retention ({self.retention_days}d) already set for '{self.name}'")
                     self.ext["bucket_arn"] = f"arn:aws:s3:::{self.name}"
                     return self
@@ -110,18 +138,36 @@ class Storage:
 
             s3.put_bucket_lifecycle_configuration(
                 Bucket=self.name,
-                LifecycleConfiguration={
-                    "Rules": [{
-                        "ID": rule_id,
-                        "Status": "Enabled",
-                        "Filter": {"Prefix": ""},
-                        "Expiration": {"Days": self.retention_days},
-                    }],
-                },
+                LifecycleConfiguration={"Rules": desired_rules},
             )
-            print(f"Set retention {self.retention_days}d on bucket '{self.name}'")
+            print(
+                f"Set retention {self.retention_days}d on bucket '{self.name}' "
+                f"for prefixes {RETENTION_PREFIXES}"
+            )
             self.ext["bucket_arn"] = f"arn:aws:s3:::{self.name}"
             return self
+
+        @staticmethod
+        def _rule_signature(rule):
+            # Compare on the fields we manage (prefix + expiry + status),
+            # tolerant of the legacy top-level Prefix schema and And-filters.
+            flt = rule.get("Filter") or {}
+            prefix = flt.get("Prefix")
+            if prefix is None and isinstance(flt.get("And"), dict):
+                prefix = flt["And"].get("Prefix")
+            if prefix is None:
+                prefix = rule.get("Prefix", "")
+            return (
+                rule.get("Status"),
+                prefix or "",
+                (rule.get("Expiration") or {}).get("Days"),
+            )
+
+        @classmethod
+        def _lifecycle_matches(cls, current_rules, desired_rules):
+            return {cls._rule_signature(r) for r in current_rules} == {
+                cls._rule_signature(r) for r in desired_rules
+            }
 
         def delete(self):
             s3 = aws_client("s3", self.region, self.name)

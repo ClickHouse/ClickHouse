@@ -166,6 +166,17 @@ class RunnerPool:
     needed to register, receive commands/sessions, and reply. It still cannot
     issue SSM commands or start sessions against any runner.
 
+    `ext["system_logs"]` (truthy) tags instances so the baked
+    praktika-system-logs streamer runs at boot, shipping kernel/OOM/systemd-kill
+    evidence to the `/{slug}/praktika-system` CloudWatch log group. Off by
+    default; see docs/logging.md.
+
+    `ext["iam_statements"]` (list of IAM policy statement dicts) are appended to
+    the runner instance role's RunnerAccess inline policy, so a project can grant
+    pool-specific permissions (e.g. a code-review pool's `bedrock:InvokeModel`)
+    without editing this shared class. Applied only when the role is created here
+    (not when a custom `ec2_role` is supplied).
+
     All three AWS components are created at construction time and registered
     into CloudInfrastructure.Config automatically via its runner_pools list.
 
@@ -385,6 +396,14 @@ class RunnerPool:
                         "Resource": allowed_secret_resources,
                     }
                 )
+            # Extra IAM policy statements appended to RunnerAccess, so a project
+            # can grant pool-specific permissions (e.g. a code-review pool's
+            # Bedrock access) from its config without editing this shared class.
+            extra_iam_statements = self.ext.get("iam_statements", [])
+            assert isinstance(extra_iam_statements, list) and all(
+                isinstance(stmt, dict) for stmt in extra_iam_statements
+            ), "ext['iam_statements'] must be a list of IAM policy statement dicts"
+            runner_statements.extend(extra_iam_statements)
             self.ec2_role = IAMRole.Config(
                 name=f"{self.name}-role",
                 trust_service="ec2.amazonaws.com",
@@ -411,6 +430,10 @@ class RunnerPool:
             "praktika_scaling": self.scaling,
             "praktika_capacity_reserve": str(self.capacity_reserve),
         }
+        if self.ext.get("system_logs"):
+            # Activates the baked praktika-system-logs streamer at boot so
+            # kernel/OOM/systemd-kill evidence is shipped to CloudWatch.
+            runtime_tags["praktika_system_logs"] = "1"
         self.launch_template = LaunchTemplate.Config(
             name=launch_template_name,
             image_id=self.ami_id,
@@ -441,8 +464,13 @@ class RunnerPool:
             tags=runtime_tags,
             praktika_resource_tag="runner",
         )
+        # Held below HEARTBEAT_TIMEOUT_S (minus a re-run's startup-to-first-
+        # heartbeat cost) so a job whose runner died mid-job is redelivered and
+        # re-heartbeats before the orchestrator declares it dead. A live job
+        # stays hidden regardless of this base value because the runner's
+        # VisibilityHeartbeat re-arms it while the controller lives.
         self.queue = SQSQueue.Config(
             name=queue_name,
-            visibility_timeout=1800,
+            visibility_timeout=600,
             message_retention=86400,
         )

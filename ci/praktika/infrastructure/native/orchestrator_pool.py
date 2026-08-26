@@ -55,8 +55,8 @@ class OrchestratorPool:
     is required.
 
     `ext["allowed_push_branches"]` controls which GitHub push branch refs the
-    webhook Lambda accepts for this pool. The default is
-    `[Settings.MAIN_BRANCH]` (the project's main branch).
+    webhook Lambda accepts for this pool. The default is the project's
+    configured default branch, `[Settings.MAIN_BRANCH]`.
     `ext["allowed_users"]` optionally restricts pull_request webhook events to
     a fixed set of GitHub logins.
     `ext["allowed_repositories"]` optionally restricts the webhook Lambda to a
@@ -64,6 +64,10 @@ class OrchestratorPool:
     `ext["external_pr_autoapprove_paths"]` optionally lists glob patterns that
     may autoapprove a new external-PR head after a previously approved head,
     but only when the new delta touches files entirely within those patterns.
+    `ext["system_logs"]` (truthy) tags instances so the baked
+    praktika-system-logs streamer runs at boot, shipping kernel/OOM/systemd-kill
+    evidence to the `/{slug}/praktika-system` CloudWatch log group. Off by
+    default; see docs/logging.md.
 
     Registered into CloudInfrastructure.Config automatically via its
     orchestrator_pool field.
@@ -305,6 +309,10 @@ class OrchestratorPool:
             "praktika_scaling": self.scaling,
             "praktika_capacity_reserve": str(self.capacity_reserve),
         }
+        if self.ext.get("system_logs"):
+            # Activates the baked praktika-system-logs streamer at boot so
+            # kernel/OOM/systemd-kill evidence is shipped to CloudWatch.
+            runtime_tags["praktika_system_logs"] = "1"
         self.launch_template = LaunchTemplate.Config(
             name=self._launch_template_name(),
             image_id=self.ami_id,

@@ -2564,25 +2564,8 @@
                 .replace(/_+$/, '');
         }
 
-        function shouldIncludeWorkflowSegment(workflowName) {
-            const normalized = (workflowName || '').trim().toLowerCase();
-            if (!normalized) {
-                return false;
-            }
-            // Keep PR/Main/Master paths stable without a workflow segment:
-            // these are the workflows we usually inspect across commits, so the
-            // result URL should not depend on a specific workflow name. Other
-            // workflows keep the segment so scheduled/ad-hoc runs remain split.
-            return !normalized.startsWith('pr')
-                && !normalized.startsWith('main')
-                && !normalized.startsWith('master');
-        }
-
         function buildResultPath(baseUrl, suffix, shaValue, workflowName, taskName) {
-            let path = `${baseUrl}/${suffix}/${encodeURIComponent(shaValue)}`;
-            if (shouldIncludeWorkflowSegment(workflowName)) {
-                path += `/${encodeURIComponent(normalizeTaskName(workflowName))}`;
-            }
+            const path = `${baseUrl}/${suffix}/${encodeURIComponent(shaValue)}/${encodeURIComponent(normalizeTaskName(workflowName))}`;
             return `${path}/result_${taskName}.json`;
         }
 

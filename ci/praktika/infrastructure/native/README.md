@@ -268,6 +268,60 @@ within the VPC, write a separate JSON blob with `"user": "admin"` and the
 password from the auto-generated `praktika-cidb-admin-password` SSM
 parameter.
 
+### S3 Report Proxy
+
+[`s3_proxy.py`](s3_proxy.py) serves the project's **private** S3 report buckets
+to Tailscale users, read-only. Tailnet users open reports directly at
+`https://{hostname}.<tailnet>.ts.net/<bucket>/<key>` with no AWS credentials.
+
+```
+Tailscale user --[tailnet]--> Caddy (:443 TLS, :8080 HTTP, GET/HEAD only)
+                                --> signer.py (SigV4, EC2 instance role)
+                                --> S3 (buckets stay fully private)
+```
+
+#### Component layout
+
+`S3Proxy` is a singleton on `CloudInfrastructure.Config.s3_proxy`. It owns a
+self-healing single-instance `AutoScalingGroup` (min=max=desired=1), its
+`LaunchTemplate`, an `IAMRole`, and an `IAMInstanceProfile`. All are project
+namespaced and registered into the standard deploy passes automatically.
+
+#### Bootstrap ([s3_proxy_user_data.sh](s3_proxy_user_data.sh))
+
+On boot the instance:
+
+1. Reads a Tailscale OAuth client from SSM and mints an **ephemeral, tagged**
+   auth key via the Tailscale API, then `tailscale up` under `hostname`.
+2. Obtains a TLS cert with `tailscale cert` (renewed daily by a systemd timer).
+3. Runs [`s3_proxy_signer.py`](s3_proxy_signer.py) on `127.0.0.1:8081` — a
+   minimal SigV4 signing proxy that signs each request with the **EC2 instance
+   role** (resolved from IMDS) and streams the object from S3. The buckets keep
+   `public=False`; no anonymous access or bucket-policy change is required.
+4. Fronts the signer with Caddy on `:443` (TLS) and `:8080` (HTTP), GET/HEAD
+   only.
+
+No Tailscale or S3 credentials are written to disk — S3 uses the auto-rotating
+instance-role credentials, Tailscale uses a short-lived minted key.
+
+#### Setup
+
+Create the Tailscale OAuth client (Tailscale admin console → Settings → OAuth
+clients) with the `auth_keys` write scope and the ACL tag you pass as
+`tailscale_tag`, then store its id/secret in the SSM parameters named by
+`tailscale_oauth_client_id_ssm` / `tailscale_oauth_client_secret_ssm`. Then:
+
+```python
+s3_proxy=Components.S3Proxy(
+    hostname="my-project-ci-reports",
+    tailscale_tag="tag:ci-s3-proxy",
+    # proxied_buckets defaults to every project Storage bucket.
+)
+```
+
+`praktika init` offers to scaffold this component for private (non-OSS)
+projects.
+
 ## Planned Native Components
 
 Future native components under consideration:

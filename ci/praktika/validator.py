@@ -20,25 +20,23 @@ class Validator:
     def validate_infrastructure_deploy(cls, cloud):
         print("---Start validating Infrastructure and settings---")
 
-        # Intra-slug separator is "_" (matches CloudInfrastructure._project_prefix).
-        # Names are normalized the same way, so the prefix boundary is "_" too.
         project_prefix = re.sub(
-            r"_{2,}",
-            "_",
-            re.sub(r"[^a-z0-9]+", "_", (cloud.name or "").lower()),
-        ).strip("_")
+            r"-{2,}",
+            "-",
+            re.sub(r"[^a-z0-9]+", "-", (cloud.name or "").lower()),
+        ).strip("-")
         for group, names in getattr(cloud, "_pre_namespace_names", {}).items():
             for name in names:
                 normalized = re.sub(
-                    r"_{2,}",
-                    "_",
-                    re.sub(r"[^a-z0-9]+", "_", str(name).lstrip("/").lower()),
-                ).strip("_")
+                    r"-{2,}",
+                    "-",
+                    re.sub(r"[^a-z0-9]+", "-", str(name).lstrip("/").lower()),
+                ).strip("-")
                 cls.evaluate_check_simple(
                     not project_prefix
                     or (
                         normalized != project_prefix
-                        and not normalized.startswith(f"{project_prefix}_")
+                        and not normalized.startswith(f"{project_prefix}-")
                     ),
                     f"Infrastructure {group} item name [{name}] already includes "
                     f"project prefix [{project_prefix}]. Use project-local names; "
@@ -123,6 +121,18 @@ class Validator:
                     or Path(f"{Settings.WORKFLOWS_DIRECTORY}/{file}").is_file(),
                     f"Setting ENABLED_WORKFLOWS has non-existing workflow file [{file}]",
                 )
+
+        project_slug = getattr(Settings, "PROJECT_SLUG", "") or ""
+        if project_slug:
+            # The slug prefixes every AWS resource name ("{slug}-...") and
+            # resources are discovered by that prefix. A slug containing "-" (or
+            # any separator) would make one project's prefix match another's
+            # (e.g. "clickhouse-" matches the "clickhouse-private" project), so
+            # the slug must be purely lowercase-alphanumeric.
+            cls.evaluate_check_simple(
+                bool(re.fullmatch(r"[a-z0-9]+", project_slug)),
+                f"Setting PROJECT_SLUG [{project_slug}] must be non-empty and contain only lowercase letters and digits (no '-', '_' or other separators)",
+            )
 
         # NOTE: disabled — this is deploy-time validation (infra project-name
         # uniqueness) and requires ./ci/infrastructure/projects.py to exist.

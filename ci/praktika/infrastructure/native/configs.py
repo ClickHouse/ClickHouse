@@ -55,6 +55,9 @@ CIDB_ROLE_NAME = "cidb-role"
 CIDB_INSTANCE_PROFILE_NAME = "cidb-profile"
 CIDB_ADMIN_PASSWORD_SECRET_NAME = "cidb-admin-password"
 
+S3_PROXY_ROLE_NAME = "s3-proxy-role"
+S3_PROXY_INSTANCE_PROFILE_NAME = "s3-proxy-profile"
+
 lambda_gh_trigger_config = Lambda.Config(
     name="gh-trigger",
     path=f"{os.path.dirname(__file__)}/lambda_gh_trigger.py",

@@ -32,15 +32,17 @@ class InitAnswers:
     is_oss: bool = False
     image_base: str = "awslinux"
     enable_ai_capabilities: bool = False
+    enable_s3_proxy: bool = False
 
     @property
     def project_slug(self) -> str:
-        # Use "_" (not "-") as the intra-slug separator. The slug is used as
-        # the "{slug}-" resource-name prefix, so a "-" inside the slug would
-        # let one project's scoped IAM wildcard (e.g. "clickhouse-*") also
-        # match another project's resources (e.g. "clickhouse-private-*").
-        slug = re.sub(r"[^a-z0-9]+", "_", self.project_name.strip().lower())
-        slug = re.sub(r"_{2,}", "_", slug).strip("_")
+        # The slug prefixes every AWS resource name ("{slug}-...") and is used
+        # to discover a project's resources by prefix. If the slug itself could
+        # contain "-", one project's prefix would match another's (e.g.
+        # "clickhouse-" would match the "clickhouse-private" project's
+        # resources). Strip every separator so the slug is purely alphanumeric
+        # and "{slug}-" is an unambiguous boundary.
+        slug = re.sub(r"[^a-z0-9]+", "", self.project_name.strip().lower())
         if not slug:
             raise ValueError("Project name must normalize to a non-empty slug")
         return slug
@@ -51,9 +53,11 @@ class InitAnswers:
 
     @property
     def artifact_storage_name(self) -> str:
-        if self.is_oss:
-            return f"artifacts-{self.aws_region}"
-        return "artifacts"
+        # S3 bucket names are globally unique across all AWS accounts, so the
+        # artifact bucket always carries a region suffix (giving
+        # "{slug}-artifacts-{region}") regardless of public/private — a bare
+        # "{slug}-artifacts" is very likely already taken by another account.
+        return f"artifacts-{self.aws_region}"
 
     @property
     def image_builder_factory(self) -> str:
@@ -399,6 +403,12 @@ def _prompt_for_answers(
         enable_ai_capabilities = UserPrompt.confirm(
             "Enable AI capabilities for the pull request workflow?"
         )
+    enable_s3_proxy = False
+    if "infrastructure" in selected_components and not is_oss:
+        enable_s3_proxy = UserPrompt.confirm(
+            "Add a Tailscale S3 report proxy to serve private CI reports to "
+            "tailnet users? (requires a Tailscale OAuth client stored in SSM)"
+        )
     return InitAnswers(
         project_name=project_name,
         main_branch=main_branch,
@@ -409,15 +419,41 @@ def _prompt_for_answers(
         is_oss=is_oss,
         image_base=image_base,
         enable_ai_capabilities=enable_ai_capabilities,
+        enable_s3_proxy=enable_s3_proxy,
     )
 
 
 def _settings_template(answers: InitAnswers) -> str:
-    artifact_bucket_expr = (
-        'f"{PROJECT_SLUG}-artifacts-{AWS_REGION}"'
-        if answers.is_oss
-        else 'f"{PROJECT_SLUG}-artifacts"'
-    )
+    # Always region-suffixed: S3 bucket names are globally unique, so a bare
+    # "{slug}-artifacts" is likely taken by another account (403 on HeadBucket).
+    artifact_bucket_expr = 'f"{PROJECT_SLUG}-artifacts-{AWS_REGION}"'
+    if answers.enable_s3_proxy:
+        # Report links are served through the Tailscale S3 proxy instead of
+        # s3.amazonaws.com, so they resolve only for tailnet users.
+        s3_endpoint_block = textwrap.indent(
+            textwrap.dedent(
+                '''\
+                # Report links go through the Tailscale S3 proxy (ci/infrastructure).
+                # Fill in your tailnet DNS suffix from the Tailscale admin console
+                # (e.g. "tailXXXX.ts.net"); the hostname matches the S3Proxy config.
+                TAILSCALE_TAILNET = "<your-tailnet>.ts.net"
+                S3_REPORT_PROXY_FQDN = f"{PROJECT_SLUG}-ci-reports.{TAILSCALE_TAILNET}"
+                S3_BUCKET_TO_HTTP_ENDPOINT = {
+                    S3_REPORT_BUCKET: f"{S3_REPORT_PROXY_FQDN}/{S3_REPORT_BUCKET}",
+                }'''
+            ),
+            " " * 8,
+        )
+    else:
+        s3_endpoint_block = textwrap.indent(
+            textwrap.dedent(
+                '''\
+                S3_BUCKET_TO_HTTP_ENDPOINT = {
+                    S3_REPORT_BUCKET: f"{S3_REPORT_BUCKET}.s3.amazonaws.com",
+                }'''
+            ),
+            " " * 8,
+        )
     return textwrap.dedent(
         f"""\
         class RunnerLabels:
@@ -440,11 +476,8 @@ def _settings_template(answers: InitAnswers) -> str:
         S3_REPORT_BUCKET = S3_ARTIFACT_BUCKET
         CACHE_S3_PATH = f"{{S3_ARTIFACT_BUCKET}}/ci_cache"
         ENABLE_SUBMODULE_CACHE = True
-        S3_BUCKET_TO_HTTP_ENDPOINT = {{
-            S3_REPORT_BUCKET: f"{{S3_REPORT_BUCKET}}.s3.amazonaws.com",
-        }}
+{s3_endpoint_block}
 
-        USE_CUSTOM_GH_AUTH = True
         GH_AUTH_LAMBDA_NAME = f"{{PROJECT_SLUG}}-gh-token"
         GH_AUTH_LAMBDA_REGION = AWS_REGION
         PRAKTIKA_BASE_VENV = "praktika-runtime-{current_praktika_version()}"
@@ -462,7 +495,7 @@ def _pull_request_workflow_template(answers: InitAnswers) -> str:
                 """\
                 ai_orchestrator=Workflow.OrchestratorAI.Config(
                     enabled=True,
-                    provider="bedrock",
+                    provider="bedrock-anthropic",
                     model="global.anthropic.claude-sonnet-5",
                 ),
                 """
@@ -530,7 +563,10 @@ def _main_ci_workflow_template(answers: InitAnswers) -> str:
 def _infrastructure_template(answers: InitAnswers) -> str:
     optional_ai_package = ""
     optional_ai_permissions = ""
-    optional_ai_ext = ""
+    # The orchestrator's push-webhook Lambda only triggers Main CI for branches
+    # listed here, so scaffold the project's default branch explicitly instead of
+    # relying on the library default (which would silently be "main").
+    ext_entries = [f'"allowed_push_branches": [{answers.main_branch!r}]']
     if answers.enable_ai_capabilities:
         optional_ai_package = '                "anthropic[bedrock]",\n'
         optional_ai_permissions = """\
@@ -541,16 +577,38 @@ def _infrastructure_template(answers: InitAnswers) -> str:
             "Resource": "*",
         }
 """
-        optional_ai_ext = '\n                ext={"iam_statements": [_ORCHESTRATOR_BEDROCK_IAM_STATEMENT]},'
+        ext_entries.append('"iam_statements": [_ORCHESTRATOR_BEDROCK_IAM_STATEMENT]')
+    orchestrator_ext = "\n                    ext={" + ", ".join(ext_entries) + "},"
+    optional_slug_import = ", PROJECT_SLUG" if answers.enable_s3_proxy else ""
+    optional_s3_proxy = ""
+    if answers.enable_s3_proxy:
+        optional_s3_proxy = "\n" + textwrap.indent(
+            textwrap.dedent(
+                '''\
+                s3_proxy=Components.S3Proxy(
+                    # Report URL: https://{PROJECT_SLUG}-ci-reports.<tailnet>.ts.net/<bucket>/<key>
+                    hostname=f"{PROJECT_SLUG}-ci-reports",
+                    # Tailscale ACL tag applied to the proxy node and its auth key.
+                    tailscale_tag="tag:ci-s3-proxy",
+                    # SSM parameters holding a Tailscale OAuth client (create out of
+                    # band). The node mints an ephemeral, tagged auth key from these
+                    # at boot; no Tailscale or S3 credentials live on the instance.
+                    tailscale_oauth_client_id_ssm="/praktika/tailscale/oauth-client-id",
+                    tailscale_oauth_client_secret_ssm="/praktika/tailscale/oauth-client-secret",
+                    # proxied_buckets defaults to every project Storage bucket.
+                ),'''
+            ),
+            " " * 16,
+        )
     return textwrap.dedent(
         f"""\
-        from ci.settings.settings import PROJECT_NAME, PRAKTIKA_BASE_VENV
+        from ci.settings.settings import PROJECT_NAME, PRAKTIKA_BASE_VENV{optional_slug_import}
         from praktika.infrastructure import Components, ImageBuilder, Storage, VPC
         from praktika.infrastructure.cloud import CloudInfrastructure
 
 
         # until published in pip
-        _PRAKTIKA_CONTROLLER_WHL = "https://praktika-artifacts-eu-north-1.s3.amazonaws.com/packages/praktika_controller-0.1.4-py3-none-any.whl"
+        _PRAKTIKA_CONTROLLER_WHL = "https://praktika-artifacts-eu-north-1.s3.amazonaws.com/packages/praktika_controller-0.1.9-py3-none-any.whl"
         # Floating compat alias: the latest backwards-compatible patch in the
         # {compat_version(current_praktika_version())} branch, so the project picks up BC bug fixes
         # without re-pinning on every Praktika release.
@@ -638,7 +696,7 @@ def _infrastructure_template(answers: InitAnswers) -> str:
                 ],
                 report_pages=[Components.report_page_config],
                 image_builders=_IMAGE_BUILDERS,
-                github_token_minters=[_GH_TOKEN_MINTER],
+                github_token_minters=[_GH_TOKEN_MINTER],{optional_s3_proxy}
                 orchestrator_pool=Components.OrchestratorPool(
                     instance_type="t4g.small",
                     scaling=Components.OrchestratorPool.Scaling.Auto,
@@ -646,7 +704,7 @@ def _infrastructure_template(answers: InitAnswers) -> str:
                     max_size=50,
                     volume_size_gb=100,
                     capacity_reserve=1,
-                    image_builder=_IMAGE_BUILDERS_BY_NAME["ci-arm64-image"],{optional_ai_ext}
+                    image_builder=_IMAGE_BUILDERS_BY_NAME["ci-arm64-image"],{orchestrator_ext}
                 ),
                 runner_pools=[
                     Components.RunnerPool(
