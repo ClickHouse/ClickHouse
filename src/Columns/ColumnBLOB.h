@@ -59,6 +59,15 @@ private:
         chassert(wrapped_column);
     }
 
+    /// Empty receiving BLOB carrying only the nested template column; the BLOB bytes, row count and
+    /// from_blob_task are filled in later by SerializationDetached during deserialization.
+    explicit ColumnBLOB(ColumnPtr wrapped_column_)
+        : rows(0)
+        , wrapped_column(std::move(wrapped_column_))
+    {
+        chassert(wrapped_column);
+    }
+
     // Only needed to make compiler happy.
     [[noreturn]] ColumnBLOB(const ColumnBLOB & other)
         : COWHelper(other)
@@ -79,6 +88,11 @@ public:
 
     BLOB & getBLOB() { return blob; }
     const BLOB & getBLOB() const { return blob; }
+
+    /// Set after the raw BLOB is read so that `size()` reports the number of rows in the block.
+    void setRows(size_t rows_) { rows = rows_; }
+    /// Install the task that reconstructs the original column from the BLOB (used later by `convertFrom`).
+    void setFromBLOBTask(FromBLOB task) { from_blob_task = std::move(task); }
 
     const ColumnPtr & getWrappedColumn() const
     {
@@ -117,7 +131,7 @@ public:
     /// Decompresses and deserializes the blob into the source column.
     static ColumnPtr fromBLOB(
         const BLOB & blob,
-        ColumnPtr nested,
+        MutableColumnPtr nested,
         SerializationPtr nested_serialization,
         size_t rows,
         const FormatSettings * format_settings)
@@ -125,7 +139,7 @@ public:
         ReadBufferFromMemory rbuf(blob.data(), blob.size());
         CompressedReadBuffer decompressed_buffer(rbuf);
         chassert(nested->empty());
-        NativeReader::readData(*nested_serialization, nested, decompressed_buffer, format_settings, rows, nullptr, nullptr);
+        NativeReader::readData(*nested_serialization, *nested, decompressed_buffer, format_settings, rows, nullptr, nullptr);
         return nested;
     }
 
@@ -209,8 +223,7 @@ private:
     /// Compressed and serialized representation of the wrapped column.
     BLOB blob;
 
-    /// Always set
-    const size_t rows;
+    size_t rows;
     ColumnPtr wrapped_column;
 
     /// Set only in cast of "from" conversion
