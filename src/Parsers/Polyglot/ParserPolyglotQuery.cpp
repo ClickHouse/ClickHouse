@@ -28,10 +28,13 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     /// misconfigured profiles (e.g. `SET dialect = 'clickhouse'`). Only an input that
     /// unambiguously starts a SET statement is taken from the foreign text, so that the
     /// `SET <setting>` shorthand does not swallow statements merely starting with `set`.
+    /// Falling through on failure matters here: ParserSetQuery declines `SET TRANSACTION ...`,
+    /// which the transpiler below can still take as foreign text.
     if (isCommittedToSetQuery(pos))
     {
         ParserSetQuery set_p;
-        return set_p.parse(pos, node, expected);
+        if (set_p.parse(pos, node, expected))
+            return true;
     }
 
     if (!feature_enabled)
