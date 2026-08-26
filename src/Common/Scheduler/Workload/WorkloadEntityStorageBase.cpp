@@ -348,7 +348,7 @@ WorkloadEntityStorageBase::WorkloadEntityStorageBase(ContextPtr global_context_,
 WorkloadEntityStorageBase::~WorkloadEntityStorageBase()
 {
     /// The chain subscription must be dropped before members are destroyed: its handler reads
-    /// `log` and `global_context`, which are declared after `subscription` and would die first.
+    /// `log`, which is declared after `subscription` and would die first.
     subscription.reset();
 }
 

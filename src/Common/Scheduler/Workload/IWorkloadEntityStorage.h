@@ -84,6 +84,7 @@ public:
 
     /// Gets all current entries, pass them through `handler` and subscribes for all later changes.
     /// Destroying the returned guard stops further calls and, if `handler` is already running, waits for it to return.
+    /// Destroy it before any state `handler` reads.
     virtual scope_guard getAllEntitiesAndSubscribe(const OnChangedHandler & handler) = 0;
 
     /// Returns the name of resource used for CPU scheduling of the master query threads

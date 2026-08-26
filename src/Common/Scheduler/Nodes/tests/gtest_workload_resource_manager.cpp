@@ -3855,6 +3855,9 @@ struct UnsubscribeProbe
     std::mutex mutex;
     std::condition_variable blocker_entered_cv;
     bool blocker_entered = false;
+    std::condition_variable release_cv;
+    bool release_blocker = false;
+    std::chrono::seconds blocker_hold{2};
     std::atomic<bool> armed{false};
     std::atomic<int> blocker_in_flight{0};
     std::atomic<int> unsubscribed_handler_calls{0};
@@ -3895,8 +3898,12 @@ struct UnsubscribeTestSubscriber
                             shared_probe->blocker_entered = true;
                         }
                         shared_probe->blocker_entered_cv.notify_all();
-                        // Widens the window; no test asserts on this duration.
-                        std::this_thread::sleep_for(std::chrono::seconds(2));
+                        // Held until the test releases it, or for blocker_hold if the test has nothing to signal.
+                        {
+                            std::unique_lock lock{shared_probe->mutex};
+                            shared_probe->release_cv.wait_for(
+                                lock, shared_probe->blocker_hold, [&] { return shared_probe->release_blocker; });
+                        }
                         shared_probe->blocker_in_flight.fetch_sub(1);
                         break;
                     }
@@ -3942,6 +3949,7 @@ TEST(SchedulerWorkloadResourceManager, UnsubscribeWaitsForInFlightNotification)
     EXPECT_EQ(probe->blocker_in_flight.load(), 1) << "Handler is not in flight, so the barrier was never exercised";
 
     // Destroys the scope_guard returned by getAllEntitiesAndSubscribe.
+    // The handler must still be running when unsubscribe is entered, so only the blocked thread could signal a release.
     blocker.reset();
 
     EXPECT_EQ(probe->blocker_in_flight.load(), 0) << "Unsubscribe returned while the handler was still running";
@@ -3963,6 +3971,7 @@ TEST(SchedulerWorkloadResourceManager, UnsubscribeSkipsHandlerNotYetReached)
     auto live = std::make_unique<UnsubscribeTestSubscriber>(
         storage, probe, UnsubscribeTestSubscriber::Role::CountLive);
 
+    probe->blocker_hold = std::chrono::seconds(60);
     probe->armed.store(true);
 
     ThreadFromGlobalPool notifier([&storage]
@@ -3975,6 +3984,12 @@ TEST(SchedulerWorkloadResourceManager, UnsubscribeSkipsHandlerNotYetReached)
     // The notifier already copied all three handlers out of the list and is parked in the first
     // one, so this unsubscribe cannot wait for anything and must return immediately.
     unsubscribed.reset();
+
+    {
+        std::lock_guard lock{probe->mutex};
+        probe->release_blocker = true;
+    }
+    probe->release_cv.notify_all();
 
     notifier.join();
 
