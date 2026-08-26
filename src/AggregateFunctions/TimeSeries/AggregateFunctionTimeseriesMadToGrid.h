@@ -36,9 +36,6 @@ struct AggregateFunctionTimeseriesMadToGridTraits
     static Float64 quantileR7Sorted(const std::vector<ValueType> & sorted, Float64 phi) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         const size_t n = sorted.size();
-        if (n == 1)
-            return static_cast<Float64>(sorted[0]);
-
         const Float64 rank = phi * static_cast<Float64>(n - 1);
         const size_t lower = static_cast<size_t>(std::floor(rank));
         const size_t upper = static_cast<size_t>(std::ceil(rank));
