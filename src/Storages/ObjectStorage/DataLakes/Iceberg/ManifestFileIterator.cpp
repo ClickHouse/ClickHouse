@@ -21,6 +21,7 @@
 #include <Poco/String.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
@@ -510,6 +511,21 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
                 if (!left || !right)
                     continue;
+
+                /// Nothing orders the bounds read from the manifest, while `mayBeTrueInRange` requires a
+                /// lower bound that does not exceed the upper one. An inverted pair describes an empty
+                /// range, which would prune a file that holds matching rows.
+                if (accurateLess(*right, *left))
+                {
+                    LOG_WARNING(
+                        getLogger("ManifestFileIterator"),
+                        "Manifest file '{}' declares a lower bound above the upper bound for column id "
+                        "{} of data file '{}'; skipping min/max pruning for this column",
+                        path_to_manifest_file,
+                        column_id,
+                        parsed_entry->file_path_key.serialize());
+                    continue;
+                }
 
                 hyperrectangles.emplace(column_id, DB::Range(*left, true, *right, true));
             }
