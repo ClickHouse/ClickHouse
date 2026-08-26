@@ -43,15 +43,15 @@ SELECT count() FROM logs_merge
 PREWHERE hasAnyTokens(mapValues(attributes), '192.168.1.1')
 WHERE has(mapValues(attributes), '192.168.1.1');
 
--- Direct read must stay engaged over the SAME Merge topology (optimization preserved, not silently
--- disabled by the fix): the synthetic __text_index_attributes_vals_idx column is present in the plan
--- with the setting on, and absent with it off (discriminating oracle). enable_analyzer stays 0 at
--- session level so the EXPLAIN subquery is valid.
+-- Direct read must stay engaged over the SAME Merge topology: the synthetic
+-- __text_index_attributes_vals_idx column is present in the plan with the setting on and absent with
+-- it off. The toLowCardinality needle is load-bearing: with a plain String needle this shape does not
+-- reach the path the first query above exercises, so the oracle would pass without covering it.
 SELECT count() > 0 FROM
 (
     EXPLAIN actions = 1
     SELECT count() FROM logs_merge
-    PREWHERE hasAnyTokens(mapValues(attributes), '192.168.1.1')
+    PREWHERE hasAnyTokens(mapValues(attributes), toLowCardinality('0'))
     WHERE has(mapValues(attributes), '192.168.1.1')
     SETTINGS query_plan_direct_read_from_text_index = 1
 )
@@ -61,7 +61,7 @@ SELECT count() > 0 FROM
 (
     EXPLAIN actions = 1
     SELECT count() FROM logs_merge
-    PREWHERE hasAnyTokens(mapValues(attributes), '192.168.1.1')
+    PREWHERE hasAnyTokens(mapValues(attributes), toLowCardinality('0'))
     WHERE has(mapValues(attributes), '192.168.1.1')
     SETTINGS query_plan_direct_read_from_text_index = 0
 )
