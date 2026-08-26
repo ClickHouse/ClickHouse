@@ -1,9 +1,6 @@
 export const ExperimentalBadge = () => {
     return (
-        <a
-            href="https://clickhouse.com/docs/reference/settings/beta-and-experimental-features#experimental-features"
-            className="experimentalBadge"
-        >
+        <div className="experimentalBadge">
             <div className="experimentalIcon">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path strokeWidth="1.25" d="M5.5 2H10.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"/>
@@ -11,8 +8,7 @@ export const ExperimentalBadge = () => {
                 <path strokeWidth="1.25" d="M4.47656 9.56754C5.30344 9.41254 6.47656 9.47942 7.99969 10.25C10.0153 11.2707 11.4216 11.0569 12.2184 10.7282" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
         </div>
-            実験的な機能
-        </a>
+            実験的な機能です。&nbsp;<u><a href='/docs/beta-and-experimental-features#experimental-features'>詳細を見る。</a></u>
+        </div>
     )
 }
-export default ExperimentalBadge;

@@ -137,7 +137,9 @@ PoolWithFailover::PoolWithFailover(
         const RemoteDescription & addresses,
         const std::string & user,
         const std::string & password,
-        const SSLParams & ssl_params,
+        const std::string & ssl_ca,
+        const std::string & ssl_cert,
+        const std::string & ssl_key,
         unsigned default_connections_,
         unsigned max_connections_,
         size_t max_tries_,
@@ -155,7 +157,7 @@ PoolWithFailover::PoolWithFailover(
     for (const auto & [host, port] : addresses)
     {
         replicas_by_priority[0].emplace_back(std::make_shared<Pool>(database,
-            host, user, password, port, ssl_params,
+            host, user, password, port, ssl_ca, ssl_cert, ssl_key,
             /* socket_ = */ "",
             connect_timeout_,
             rw_timeout_,

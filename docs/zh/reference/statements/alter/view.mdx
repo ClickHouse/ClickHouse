@@ -205,24 +205,20 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 
 调度 (`EVERY` 或 `AFTER`) 是必需的：该语句会一次性替换*所有*刷新参数。任何未指定的子句——`RANDOMIZE FOR`、`DEPENDS ON` 或 `SETTINGS`——都会被移除或重置为默认值。若只想更改刷新设置，请重复当前调度。
 
-该命令会就地更新现有视图的刷新配置，无需重新创建 materialized view 或其目标表，也不会清除现有目标数据或取消正在进行的刷新。更改配置期间，读取操作会继续针对现有目标表进行。
-
-使用相同的完整 `REFRESH` 规范重复执行该命令是安全的。请务必重复应保留配置的每个子句，因为如上所述，每次执行都会替换所有刷新参数。
-
 ```sql
--- Change the schedule.
+-- 更改刷新调度。
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
 
--- Change retry settings (schedule must be repeated).
-ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
+-- 更改重试设置（需重新指定调度计划）。
+ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR
 SETTINGS refresh_retries = 5,
          refresh_retry_initial_backoff_ms = 500,
          refresh_retry_max_backoff_ms = 60000;
 
--- Add or keep a dependency.
+-- 添加或保留依赖项。
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 
--- Drop the dependency by omitting `DEPENDS ON`.
+-- 省略 `DEPENDS ON` 以移除依赖项。
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 

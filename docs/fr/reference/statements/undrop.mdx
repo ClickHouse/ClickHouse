@@ -8,12 +8,9 @@ doc_type: 'référence'
 
 Annule la suppression de la table.
 
-À partir de la version 23.3 de ClickHouse, vous pouvez récupérer une table dans une base de données `Atomic` avec `UNDROP TABLE`
-pendant le délai défini par [`database_atomic_delay_before_drop_table_sec`](/fr/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec) (8 minutes par défaut) suivant l’exécution de `DROP TABLE`.
-Les tables supprimées des bases de données `Atomic` sont répertoriées dans `system.dropped_tables`.
-
-Pour une base de données `Shared` dans ClickHouse Cloud, ce délai est plutôt contrôlé par [`database_shared_drop_table_delay_seconds`](/fr/reference/settings/session-settings/database#database_shared_drop_table_delay_seconds), dont la valeur par défaut est de 8 heures.
-Les tables supprimées des bases de données `Shared` ne sont pas répertoriées dans `system.dropped_tables`.
+À partir de la version 23.3 de ClickHouse, il est possible d’exécuter UNDROP sur une table dans une base de données Atomic
+pendant le délai `database_atomic_delay_before_drop_table_sec` (8 minutes par défaut) après l’exécution de l’instruction DROP TABLE. Les tables supprimées sont répertoriées dans
+une table système appelée `system.dropped_tables`.
 
 Si vous avez une vue matérialisée sans clause `TO` associée à la table supprimée, vous devrez également exécuter UNDROP sur la table interne de cette vue.
 

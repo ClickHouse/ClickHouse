@@ -11,7 +11,6 @@ integration:
 ---
 
 import { Image } from "/snippets/fr/components/Image.jsx";
-import { IAMAuthentication } from "/snippets/fr/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## Versions de Postgres prises en charge
@@ -98,17 +97,7 @@ Connectez-vous à votre instance writer Aurora PostgreSQL en tant qu’utilisate
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-La publication `clickpipes` définit l’ensemble des tables dont les événements de modification seront transmis à ClickPipes. Nous déconseillons d’utiliser `FOR ALL TABLES` sauf si vous avez l’intention de répliquer chaque table, car l’inclusion de tables inutiles augmente le trafic WAL de Postgres vers ClickPipes et réduit l’efficacité globale de la réplication.
-
-<div id="iam-authentication">
-  ### Utilisation de l’authentification IAM (facultatif)
-</div>
-
-<IAMAuthentication engine="postgres" service="aurora">
-  <Note>
-    L’authentification IAM pour la réplication nécessite que le paramètre `rds.iam_auth_for_replication` soit défini sur `1`.
-  </Note>
-</IAMAuthentication>
+La publication `clickpipes` contiendra l’ensemble des événements de modification générés à partir des tables spécifiées et sera ensuite utilisée pour ingérer le flux de réplication.
 
 <div id="configure-network-access">
   ## Configurer l’accès au réseau
@@ -118,7 +107,7 @@ La publication `clickpipes` définit l’ensemble des tables dont les événemen
   ### Contrôle d’accès basé sur l’adresse IP
 </div>
 
-Si vous souhaitez restreindre le trafic vers votre cluster Aurora, ajoutez les [adresses IP NAT statiques documentées](/fr/integrations/clickpipes/networking/static-ips) aux `Inbound rules` de votre groupe de sécurité Aurora.
+Si vous souhaitez restreindre le trafic vers votre cluster Aurora, ajoutez les [adresses IP NAT statiques documentées](/fr/integrations/clickpipes/home#list-of-static-ips) aux `Inbound rules` de votre groupe de sécurité Aurora.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Où trouver le groupe de sécurité dans Aurora PostgreSQL ?" size="lg" border />
 

@@ -296,11 +296,11 @@ rewrite: Nullable(K) key, opt off
 rewrite: LC(Nullable(K)) key - plan
 SELECT count() AS `count()`
 FROM default.data_str_lc_nullable AS __table1
-WHERE in(__table1.id, (
+WHERE _CAST(in(__table1.id, (
     SELECT id AS id
     FROM dictionary(\'dict_string\')
     WHERE equals(name, \'abc\')
-))
+)), \'LowCardinality(Nullable(UInt8))\')
 SETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: LC(Nullable(K)) key
 1

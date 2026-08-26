@@ -63,9 +63,9 @@ Le diagramme ci-dessous illustre comment les INSERT dans une table distribuée s
 
 <br />
 
-① Un INSERT (avec une seule ligne) ciblant la table distribuée est envoyé à un serveur ClickHouse qui héberge la table, soit directement, soit via un répartiteur de charge.
+① Un INSERT (avec une seule ligne) visant la table distribuée est envoyé à un serveur ClickHouse qui héberge la table, soit directement, soit via un répartiteur de charge.
 
-② Pour chaque ligne de l’INSERT (une seule dans notre exemple), ClickHouse évalue la clé de sharding (ici, rand()), prend le résultat modulo le nombre de serveurs de shard, et utilise cette valeur comme ID du serveur cible (les ID commencent à 0 et sont incrémentés de 1). La ligne est ensuite transmise puis ③ insérée dans le shard de table du serveur correspondant.
+② Pour chaque ligne de l’INSERT (une seule dans notre exemple), ClickHouse évalue la clé de sharding (ici, rand()), calcule le modulo du résultat par le nombre de serveurs shards, et utilise la valeur obtenue comme ID du serveur cible (les ID commencent à 0 et sont incrémentés de 1). La ligne est ensuite transmise puis ③ insérée dans le shard de table du serveur correspondant.
 
 La section suivante explique comment fonctionne le transfert des SELECT.
 
@@ -109,7 +109,7 @@ Le traitement des requêtes fonctionne de manière similaire aux configurations 
 
 La suite fonctionne de la [même manière](#select-forwarding) que dans les configurations sans répliques et n’est pas représentée dans le schéma ci-dessus. Le serveur ClickHouse hébergeant la table distribuée initialement ciblée collecte tous les résultats locaux, les fusionne en un résultat global final, puis le renvoie à l’émetteur de la requête.
 
-Notez que ClickHouse permet de configurer la stratégie de transfert des requêtes pour ②. Par défaut — contrairement au schéma ci-dessus — la table distribuée [privilégie](/fr/reference/settings/session-settings/prefer#prefer_localhost_replica) une réplique locale si elle est disponible, mais d’autres [stratégies](/fr/reference/settings/session-settings/load-balancing#load_balancing) d’équilibrage de charge peuvent être utilisées.
+Notez que ClickHouse permet de configurer la stratégie de transfert des requêtes pour ②. Par défaut — contrairement au schéma ci-dessus — la table distribuée [privilégie](/fr/reference/settings/session-settings#prefer_localhost_replica) une réplique locale si elle est disponible, mais d’autres [stratégies](/fr/reference/settings/session-settings#load_balancing) d’équilibrage de charge peuvent être utilisées.
 
 <div id="where-to-find-more-information">
   ## Où trouver plus d’informations

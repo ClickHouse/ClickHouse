@@ -438,10 +438,6 @@ void ColumnVariant::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t
         return;
     }
 
-    /// Include the global discriminator in the result so values of different variants get different names.
-    if (options.notFull(name_buf))
-        name_buf << static_cast<size_t>(globalDiscriminatorByLocal(discr)) << '_';
-
     variants[discr]->getValueNameImpl(name_buf, offsetAt(n), options);
 }
 

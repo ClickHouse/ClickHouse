@@ -1,74 +1,20 @@
 ---
-description: 'Documentation de l’instruction ALTER ROW POLICY'
+description: 'Documentation d’ALTER ROW POLICY'
 sidebarTitle: 'ROW POLICY'
 slug: /sql-reference/statements/alter/row-policy
 title: 'ALTER ROW POLICY'
 doc_type: 'reference'
 ---
 
-Modifie une ROW POLICY.
+Modifie la ROW POLICY.
 
 Syntaxe :
 
 ```sql
--- Rename: exactly one fully qualified policy (one name on one target).
--- RENAME TO may be combined with the same optional alteration clauses as below.
-ALTER [ROW] POLICY [IF EXISTS] name
-    ON { [database.]table | database.* }
-    RENAME TO new_name
-    [ON CLUSTER cluster_name]
+ALTER [ROW] POLICY [IF EXISTS] name1 [ON CLUSTER cluster_name1] ON [database1.]table1 [RENAME TO new_name1]
+        [, name2 [ON CLUSTER cluster_name2] ON [database2.]table2 [RENAME TO new_name2] ...]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [FOR SELECT]
     [USING {condition | NONE}][,...]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
-
--- Multiple names on one table target (no RENAME)
-ALTER [ROW] POLICY [IF EXISTS] name [, ...]
-    [ON CLUSTER cluster_name]
-    ON { [database.]table | database.* }
-    [AS {PERMISSIVE | RESTRICTIVE}]
-    [FOR SELECT]
-    [USING {condition | NONE}][,...]
-    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
-
--- One name on multiple table targets (no RENAME)
-ALTER [ROW] POLICY [IF EXISTS] name
-    [ON CLUSTER cluster_name]
-    ON { [database.]table | database.* } [, ...]
-    [AS {PERMISSIVE | RESTRICTIVE}]
-    [FOR SELECT]
-    [USING {condition | NONE}][,...]
-    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
-
--- Mixed packing: each name paired with its own table target (no RENAME)
-ALTER [ROW] POLICY [IF EXISTS]
-    name ON { [database.]table | database.* } [, name ON { [database.]table | database.* } ...]
-    [ON CLUSTER cluster_name]
-    [AS {PERMISSIVE | RESTRICTIVE}]
-    [FOR SELECT]
-    [USING {condition | NONE}][,...]
-    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
-```
-
-`RENAME TO` n’est accepté que lorsque l’instruction désigne **exactement une** politique pour **une** table cible. Les listes regroupant plusieurs noms ou plusieurs tables ne peuvent pas inclure `RENAME TO` : renommez ces politiques dans des instructions distinctes. Dans cette forme à politique unique, `RENAME TO` peut néanmoins être combiné à d’autres modifications, telles que `AS`, `USING` et `TO`, dans la même instruction.
-
-Sans `RENAME TO`, le regroupement est conforme à `ParserRowPolicyNames` : plusieurs noms pour **une** cible, un nom pour **plusieurs** cibles ou des paires mixtes `name ON target`. Plusieurs noms × plusieurs tables (`p1, p2 ON t1, t2`) ne sont **pas** acceptés. L’option `ON CLUSTER` s’applique une seule fois à l’ensemble de l’instruction ; exécutez des instructions `ALTER ROW POLICY` distinctes si différents clusters sont nécessaires.
-
-Exemples :
-
-```sql
--- Single-policy rename
-ALTER ROW POLICY p1 ON db.table RENAME TO p1_new;
-
--- Rename plus other alterations on the same single policy
-ALTER POLICY old_name ON db.table RENAME TO new_name USING id > 10;
-
--- Multiple names, one table
-ALTER POLICY p1, p2 ON db.table TO ALL;
-
--- One name, multiple tables
-ALTER POLICY p1 ON db.table, db.table2 USING NONE;
-
--- Mixed targets without rename
-ALTER POLICY p1 ON db.table, p2 ON db2.table2 TO ALL;
 ```

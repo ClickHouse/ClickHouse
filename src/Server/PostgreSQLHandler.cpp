@@ -17,8 +17,6 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
-#include <Common/SettingSource.h>
-#include <Common/SettingsChanges.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
@@ -68,6 +66,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int OPENSSL_ERROR;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+    extern const int UNKNOWN_PACKET_FROM_CLIENT;
 }
 
 namespace
@@ -434,15 +433,7 @@ bool PostgreSQLHandler::startup()
         session->makeSessionContext();
         session->sessionContext()->setDefaultFormat("PostgreSQLWire");
         if (!start_up_msg->database.empty())
-        {
-            /// `database` is a real setting, so enforce its constraints on the startup-message
-            /// database too, consistently with `USE`, `SET database = ...` and the HTTP
-            /// `?database=...` parameter.
-            SettingsChanges database_change;
-            database_change.setSetting("database", start_up_msg->database);
-            session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
             session->sessionContext()->setCurrentDatabase(start_up_msg->database);
-        }
     }
     catch (const Exception & exc)
     {
@@ -566,9 +557,18 @@ void PostgreSQLHandler::cancelRequest()
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
 {
+    /// The declared size is read from the wire before any authentication, and the message is read
+    /// into memory in full, so it has to be bounded. PostgreSQL uses the same limit.
+    static constexpr Int32 max_startup_message_size = 10000;
+
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> message;
     try
     {
+        if (payload_size < 8 || payload_size > max_startup_message_size)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                "Startup message declares a size of {} bytes, while it must be between 8 and {} bytes",
+                payload_size, max_startup_message_size);
+
         message = message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::StartupMessage>(payload_size - 8);
     }
     catch (const Exception &)

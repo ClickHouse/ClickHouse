@@ -1,0 +1,124 @@
+---
+noindex: true
+title: "إعداد Hydra (فصل الحوسبة عن الحوسبة)"
+sidebarTitle: "إعداد Hydra (فصل الحوسبة)"
+description: "يرشدك هذا الدليل إلى كيفية تهيئة المثيلات الفرعية لـ Hydra لعنقود ClickHouse Private حالي."
+---
+
+يرشدك هذا الدليل إلى كيفية تهيئة المثيلات الفرعية لـ Hydra لعنقود ClickHouse Private حالي. يتيح لك Hydra تشغيل عدة مجموعات حوسبة مستقلة على مجموعة بيانات مشتركة، بحيث يكون لكل مجموعة تحجيمها ونقطة النهاية الخاصة بها.
+
+للحصول على نظرة عامة مفاهيمية حول كيفية عمل Hydra، راجع [Hydra Compute Separation](/ar/products/clickhouse-private/explanation/hydra-compute-separation).
+
+<div id="prerequisites">
+  ## المتطلبات المسبقة
+</div>
+
+* عنقود ClickHouse Private قيد التشغيل ليكون **الأصل** (يستخدم هذا الدليل `default-xx-01`)
+
+* تثبيت ClickHouse Operator مع تمكين علامة ميزة Hydra:
+
+  ```text
+  --set operator.featureFlags.privateHydraEnabled="true"
+  ```
+
+  إذا كان المشغّل قد ثُبِّت بدون هذه العلامة، فقم بترقيته مع ضبط العلامة على `true` قبل المتابعة.
+
+* الوصول إلى سجل Helm ومخطط `onprem-clickhouse-cluster`
+
+<Steps>
+  <Step>
+    ## 1. حدِّد العنقود الأصل
+
+    قبل إنشاء مثيل فرعي، دوّن **الاسم** و**مساحة الاسم** للعنقود الأصل. يجب أن يكون الأصل في حالة تشغيل -- إذ لا يمكن إنشاء المثيلات الفرعية إذا كان الأصل متوقفًا أو منهيًا أو في حالة خمول.
+
+    بالنسبة إلى عنقود باسم `default-xx-01`، تكون القيم الافتراضية كما يلي:
+
+    | الخاصية     | القيمة             |
+    | ----------- | ------------------ |
+    | اسم العنقود | `default-xx-01`    |
+    | مساحة الاسم | `ns-default-xx-01` |
+  </Step>
+
+  <Step>
+    ## 2. أنشئ مثيلًا فرعيًا
+
+    <Warning>
+      يجب أن يكون كل مثيل `ClickHouseCluster` ضمن مساحة اسم خاصة به. لا تنشر مثيلًا فرعيًا في مساحة الاسم نفسها الخاصة بالأصل. يفترض المشغّل وجود `ClickHouseCluster` واحد فقط لكل مساحة اسم، ومخالفة ذلك تؤدي إلى تدهور حالة العناقيد.
+    </Warning>
+
+    انشر `ClickHouseCluster` جديدًا باستخدام مخطط Helm نفسه الذي استخدمته للأصل، مع إضافة قيم `parentCluster` لربطه به:
+
+    ```bash
+    helm install default-xx-02 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-02 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    سيقوم المثيل الفرعي بما يلي:
+
+    * مشاركة مجموعة ClickHouse Keeper الخاصة بالأصل (من دون الحاجة إلى نشر Keeper منفصل)
+    * مشاركة بادئة بيانات S3 الخاصة بالأصل
+    * تشغيل وحدات pod الخاصة بـ ClickHouse server مع تخصيصات موارد مستقلة
+    * إتاحة نقطة نهاية خدمة Kubernetes خاصة به
+  </Step>
+
+  <Step>
+    ## 3. أنشئ مثيلًا فرعيًا للقراءة فقط (اختياري)
+
+    لإنشاء مثيل فرعي يمكنه الاستعلام عن البيانات من دون الكتابة إليها، أضف العلامة `isReadonly`:
+
+    ```bash
+    helm install default-xx-03 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-03 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json='isReadonly=true' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    تُعدّ المثيلات الفرعية للقراءة فقط مناسبةً لأحمال عمل التقارير ولوحات المعلومات أو التحليلات التي لا تتطلب صلاحية الكتابة.
+  </Step>
+
+  <Step>
+    ## 4. تحقّق من المثيل الفرعي
+
+    بعد نشر المثيل الفرعي، تحقّق من أنه قيد التشغيل:
+
+    ```bash
+    kubectl get clickhousecluster -n ns-default-xx-02
+    ```
+
+    اتصل عبر نقطة نهاية الخدمة الخاصة بالمثيل الفرعي:
+
+    ```bash
+    kubectl port-forward svc/c-default-xx-02-server-any 9000:9000 -n ns-default-xx-02
+    clickhouse client --host localhost --port 9000 --password $PASSWORD
+    ```
+
+    شغّل استعلامًا لتأكيد إمكانية الوصول إلى البيانات:
+
+    ```sql
+    SELECT count() FROM system.tables;
+    ```
+  </Step>
+</Steps>
+
+<div id="limitations">
+  ## القيود
+</div>
+
+1. **يجب أن يكون المثيل الأصل قيد التشغيل.** لا يمكنك إنشاء مثيلات فرعية إذا كان المثيل الأصل متوقفًا أو منتهيًا أو في حالة خمول. يجب أن يكون المثيل الأصل في حالة تشغيل لأن المثيلات الفرعية تعتمد على Keeper ensemble الخاص بالمثيل الأصل وعلى تهيئة البيانات المشتركة الخاصة بها.
+
+2. **احذف المثيلات الفرعية قبل الأصل.** يجب عليك حذف جميع المثيلات الفرعية قبل حذف العنقود الأصل. ستفشل محاولة حذف أصل لديه مثيلات فرعية نشطة.
+
+3. **تنطبق إعادة تعيين كلمة المرور على الأصل.** لا يمكن إجراء إعادة تعيين كلمة المرور على المثيلات الفرعية في Hydra. لإعادة تعيين كلمة المرور لمثيل فرعي، أعد تعيينها على المثيل الأصل بدلًا من ذلك. راجع [how-to/reset-passwords.md](/ar/products/clickhouse-private/guides/reset-user-passwords).

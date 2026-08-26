@@ -7,18 +7,18 @@ keywords: ['sécurité Postgres', 'filtrage par adresses IP', 'chiffrement', 'TL
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
 
-ClickHouse Managed Postgres est conçu avec des fonctionnalités de sécurité de niveau entreprise afin de protéger vos données et de répondre aux exigences de conformité. Cette page présente la sécurité réseau, le chiffrement et les politiques de conservation des sauvegardes.
+Managed Postgres est conçu avec des fonctionnalités de sécurité de niveau entreprise afin de protéger vos données et de répondre aux exigences de conformité. Cette page présente la sécurité réseau, le chiffrement et les politiques de conservation des sauvegardes.
 
 <div id="ip-whitelisting">
-  ## Filtrage par adresses IP
+  ## Liste blanche d’IP
 </div>
 
-Les filtres IP déterminent quelles adresses IP source sont autorisées à se connecter à votre instance ClickHouse Managed Postgres, assurant un contrôle d’accès au niveau du réseau afin de protéger votre base de données contre les connexions non autorisées.
+Les filtres IP déterminent quelles adresses IP source sont autorisées à se connecter à votre instance Managed Postgres, assurant un contrôle d’accès au niveau du réseau afin de protéger votre base de données contre les connexions non autorisées.
 
 <Image img="/images/managed-postgres/ip-filters.webp" alt="Configuration de la liste d’accès IP" size="md" border />
 
@@ -55,13 +55,13 @@ Vous pouvez spécifier :
   ## Chiffrement
 </div>
 
-ClickHouse Managed Postgres chiffre vos données au repos comme en transit afin d’assurer une protection complète.
+Managed Postgres chiffre vos données au repos comme en transit afin d’assurer une protection complète.
 
 <div id="encryption-at-rest">
   ### Chiffrement au repos
 </div>
 
-Toutes les données stockées par ClickHouse Managed Postgres sont chiffrées au repos afin de les protéger contre tout accès non autorisé à l’infrastructure de stockage sous-jacente.
+Toutes les données stockées par Managed Postgres sont chiffrées au repos afin de les protéger contre tout accès non autorisé à l’infrastructure de stockage sous-jacente.
 
 <div id="nvme-encryption">
   #### Chiffrement du stockage NVMe
@@ -82,14 +82,14 @@ Les sauvegardes et les archives du Write-Ahead Log (WAL) stockées dans le stock
 Toutes les données de sauvegarde sont stockées dans des buckets de stockage dédiés et isolés, avec des identifiants propres à chaque instance, de sorte qu’elles restent sécurisées et accessibles uniquement aux systèmes autorisés.
 
 <Info>
-  Le chiffrement au repos est activé par défaut pour toutes les instances ClickHouse Managed Postgres et ne peut pas être désactivé. Aucune configuration supplémentaire n’est nécessaire.
+  Le chiffrement au repos est activé par défaut pour toutes les instances Managed Postgres et ne peut pas être désactivé. Aucune configuration supplémentaire n’est nécessaire.
 </Info>
 
 <div id="encryption-in-transit">
   ### Chiffrement des données en transit
 </div>
 
-Toutes les connexions réseau à ClickHouse Managed Postgres sont sécurisées à l’aide de TLS (Transport Layer Security) afin de protéger les données pendant leur transfert entre vos applications et la base de données.
+Toutes les connexions réseau à Managed Postgres sont sécurisées à l’aide de TLS (Transport Layer Security) afin de protéger les données pendant leur transfert entre vos applications et la base de données.
 
 <div id="tls-ssl">
   #### Configuration TLS/SSL
@@ -103,7 +103,7 @@ Pour plus de détails sur la configuration TLS et les options de connexion, cons
   ## Private Link
 </div>
 
-Private Link permet une connectivité privée entre votre instance ClickHouse Managed Postgres et votre Virtual Private Cloud (VPC), sans exposer le trafic à l’internet public. Cela ajoute une couche supplémentaire d’isolation réseau et de sécurité.
+Private Link permet une connectivité privée entre votre instance Managed Postgres et votre Virtual Private Cloud (VPC), sans exposer le trafic à l’internet public. Cela ajoute une couche supplémentaire d’isolation réseau et de sécurité.
 
 <Info>
   **Configuration manuelle requise**
@@ -115,7 +115,7 @@ Private Link permet une connectivité privée entre votre instance ClickHouse Ma
   ### Demander la configuration de Private Link
 </div>
 
-Pour activer Private Link pour votre instance ClickHouse Managed Postgres :
+Pour activer Private Link pour votre instance Managed Postgres :
 
 1. **Contactez le support ClickHouse** en créant un ticket de support
 
@@ -126,7 +126,7 @@ Pour activer Private Link pour votre instance ClickHouse Managed Postgres :
      * (Facultatif) Toute Region autre que celle de l’instance Postgres depuis laquelle vous souhaitez vous connecter
 
 3. **Le support ClickHouse** :
-   * Provisionnera le endpoint Private Link côté ClickHouse Managed Postgres
+   * Provisionnera le endpoint Private Link côté Managed Postgres
    * Vous fournira les connection details du endpoint, que vous pourrez utiliser pour créer une interface endpoint.
 
 4. **Configurez votre Private Link** :
@@ -137,7 +137,7 @@ Pour activer Private Link pour votre instance ClickHouse Managed Postgres :
   ## Rétention des sauvegardes
 </div>
 
-ClickHouse Managed Postgres sauvegarde automatiquement vos données pour les protéger contre les suppressions accidentelles, la corruption et d’autres scénarios de perte de données.
+Managed Postgres sauvegarde automatiquement vos données pour les protéger contre les suppressions accidentelles, la corruption et d’autres scénarios de perte de données.
 
 <div id="retention-policy">
   ### Politique de rétention

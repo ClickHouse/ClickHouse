@@ -1,4 +1,3 @@
-#include <Common/StringUtils.h>
 #include <IO/ReadHelpers.h>
 #include <Access/IAccessStorage.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -13,6 +12,10 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseIntervalKind.h>
 #include <base/range.h>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
 
 
@@ -55,15 +58,9 @@ namespace
             if (!parseIdentifiersOrStringLiterals(pos, expected, names))
                 return false;
 
-            String name;
-            for (const auto & part : names)
-            {
-                if (!name.empty())
-                    name += "_or_";
-                name += part;
-            }
-            toLowerASCII(name);
-            std::replace(name.begin(), name.end(), ' ', '_');
+            String name = boost::algorithm::join(names, "_or_");
+            boost::to_lower(name);
+            boost::replace_all(name, " ", "_");
 
             for (auto kt : collections::range(QuotaKeyType::MAX))
             {
@@ -151,7 +148,7 @@ namespace
     T fieldToNumber(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return static_cast<T>(parseWithSizeSuffix<QuotaValue>(trim(f.safeGet<std::string>(), isWhitespaceASCII)));
+            return static_cast<T>(parseWithSizeSuffix<QuotaValue>(boost::algorithm::trim_copy(f.safeGet<std::string>())));
         return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 
@@ -166,7 +163,7 @@ namespace
         if (type_info.output_denominator == 1)
             max_value = fieldToNumber<QuotaValue>(max_field);
         else
-            max_value = type_info.scaleToValue(fieldToNumber<double>(max_field));
+            max_value = static_cast<QuotaValue>(fieldToNumber<double>(max_field) * static_cast<double>(type_info.output_denominator));
         return true;
     }
 

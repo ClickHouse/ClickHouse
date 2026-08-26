@@ -10,10 +10,9 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ru/components/Image.jsx";
-import ChangingTLSSettings from '/snippets/ru/clickpipes/_changing_tls_settings.mdx';
 
 Вы можете использовать ClickPipes для ингестии данных из исходной базы данных Postgres в ClickHouse Cloud. Исходная база данных Postgres может размещаться в собственной инфраструктуре или в облаке, включая Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase и другие сервисы.
 
@@ -76,7 +75,7 @@ ClickPipes для Postgres можно развертывать и настраи
 4. Заполните сведения о подключении к исходной базе данных Postgres, которую вы настроили на этапе предварительной подготовки.
 
 <Info>
-  Прежде чем вводить сведения о подключении, убедитесь, что IP-адреса ClickPipes добавлены в белый список IP-адресов в правилах вашего межсетевого экрана. Список IP-адресов ClickPipes можно найти [здесь](/ru/integrations/clickpipes/networking/static-ips).
+  Прежде чем вводить сведения о подключении, убедитесь, что IP-адреса ClickPipes добавлены в белый список в правилах вашего межсетевого экрана. Список IP-адресов ClickPipes можно найти [здесь](/ru/integrations/clickpipes/home#list-of-static-ips).
   Дополнительные сведения см. в руководствах по настройке исходной базы данных Postgres, ссылки на которые приведены [в верхней части этой страницы](#prerequisites).
 </Info>
 
@@ -88,13 +87,7 @@ ClickPipes для Postgres можно развертывать и настраи
 
 Вы можете использовать AWS Private Link для подключения к исходной базе данных Postgres, если она размещена в AWS. Это полезно, если вы
 хотите, чтобы передача данных оставалась закрытой.
-Вы можете воспользоваться [руководством по настройке подключения](/ru/integrations/clickpipes/networking/aws-privatelink).
-
-<div id="optional-changing-tls-settings">
-  #### (Необязательно) Изменение настроек TLS
-</div>
-
-<ChangingTLSSettings />
+Вы можете воспользоваться [руководством по настройке подключения](/ru/integrations/clickpipes/aws-privatelink).
 
 <div id="optional-setting-up-ssh-tunneling">
   #### (Необязательно) Настройка SSH-туннелирования
@@ -113,7 +106,7 @@ ClickPipes для Postgres можно развертывать и настраи
 4. Нажмите &quot;Verify Connection&quot;, чтобы проверить подключение.
 
 <Note>
-  Убедитесь, что [IP-адреса ClickPipes](/ru/integrations/clickpipes/networking/static-ips) добавлены в белый список IP-адресов в правилах межсетевого экрана для SSH-бастиона, чтобы ClickPipes мог установить SSH-туннель.
+  Убедитесь, что [IP-адреса ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips) добавлены в список разрешённых в правилах межсетевого экрана для SSH-бастиона, чтобы ClickPipes мог установить SSH-туннель.
 </Note>
 
 После заполнения сведений о подключении нажмите &quot;Next&quot;.
@@ -149,12 +142,8 @@ ClickPipes для Postgres можно развертывать и настраи
 7. Вы можете выбрать таблицы, которые хотите реплицировать из исходной базы данных Postgres. При выборе таблиц можно также переименовать их в целевой базе данных ClickHouse и исключить отдельные столбцы.
 
 <Warning>
-  Если вы задаёте ключ упорядочивания в ClickHouse иначе, чем на основе первичного ключа в Postgres, не забудьте ознакомиться со всеми [особенностями](/ru/integrations/clickpipes/postgres/ordering-keys), связанными с этим.
+  Если вы задаёте ключ сортировки в ClickHouse иначе, чем на основе первичного ключа в Postgres, не забудьте ознакомиться со всеми [особенностями](/ru/integrations/clickpipes/postgres/ordering-keys), связанными с этим.
 </Warning>
-
-8. Кроме того, вы можете указать собственное выражение `PARTITION BY <expr>` для управления [партиционированием таблиц ClickHouse](/ru/concepts/core-concepts/partitions).
-
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="Partition by" size="lg" border />
 
 <div id="review-permissions-and-start-the-clickpipe">
   ### Проверьте разрешения и запустите ClickPipe

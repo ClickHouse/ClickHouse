@@ -29,7 +29,7 @@ ClickStack は ClickHouse Cloud を通じて認証されます。ClickStack の�
 
 | Cloud SQL Console access              | ClickStack access                                                        |
 | ------------------------------------- | ------------------------------------------------------------------------ |
-| **SQL Console Admin** (Full Access)   | ClickStack へのフルアクセス。[アラート](/ja/clickstack/features/alerts) を有効にするために必要です。 |
+| **SQL Console Admin** (Full Access)   | ClickStack へのフルアクセス。[alerts](/ja/clickstack/features/alerts) を有効にするために必要です。 |
 | **SQL Console Read Only** (Read Only) | オブザーバビリティデータを表示し、ダッシュボードを作成できます。                                         |
 | **No access**                         | ClickStack にアクセスできません。                                                   |
 
@@ -81,17 +81,23 @@ ClickStack には、3 つのシステムロールが用意されています。�
 </div>
 
 <Steps>
-  <Step title="Team Settings に移動する" id="step-navigate">
+  <Step>
+    ### Team Settings に移動する
+
     **Team Settings** を開き、**RBAC Roles** までスクロールします。
 
     <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC Roles" size="lg" />
   </Step>
 
-  <Step title="新しいロールを追加する" id="step-add-role">
+  <Step>
+    ### 新しいロールを追加する
+
     **+ Add Role** をクリックします。**Role Name** を入力し、必要に応じて **Description** を追加します。
   </Step>
 
-  <Step title="権限を設定して保存する" id="step-configure">
+  <Step>
+    ### 権限を設定して保存する
+
     ロールの権限を設定して、**Create Role** をクリックします。
 
     <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="Add Role モーダル" size="md" />
@@ -146,7 +152,7 @@ ClickStack には、3 つのシステムロールが用意されています。�
 
 各リソースタイプには、**アクセス制御モード**があります。
 
-* **デフォルトアクセス** — そのタイプのすべてのリソースに、単一のアクセスレベル (アクセスなし、閲覧、または管理) を適用します。
+* **デフォルトアクセス** — そのタイプのすべてのリソースに、単一のアクセスレベル (アクセスなし、読み取り、または管理) を適用します。
 * **詳細な制御** — 条件に一致する特定のリソースに対するアクセスルールを定義できます。どのルールにも一致しないリソースは、デフォルトでアクセスなしになります。
 
 モードを切り替えるには、ロールエディタでリソースタイプを展開するシェブロンをクリックし、**アクセス制御モード**を切り替えます。

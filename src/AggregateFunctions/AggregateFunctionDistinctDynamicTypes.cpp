@@ -160,7 +160,7 @@ void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & fa
 {
     /// distinctDynamicTypes documentation
     FunctionDocumentation::Description description_distinctDynamicTypes = R"(
-Calculates the list of distinct data types stored in [Dynamic](/reference/data-types/dynamic) column.
+Calculates the list of distinct data types stored in [Dynamic](https://clickhouse.com/docs/sql-reference/data-types/dynamic) column.
     )";
     FunctionDocumentation::Syntax syntax_distinctDynamicTypes = R"(
 distinctDynamicTypes(dynamic)

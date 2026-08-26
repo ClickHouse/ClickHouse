@@ -6,6 +6,10 @@ tags: ['Desempenho e otimizações']
 keywords: ['Threads disponíveis']
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 <div id="increasing-the-number-of-threads-in-clickhouse">
   ## Aumentando o número de threads no ClickHouse
 </div>
@@ -30,4 +34,4 @@ Você também pode liberar recursos se o seu servidor tiver muitas threads ocios
 <max_thread_pool_free_size>2000</max_thread_pool_free_size>
 ```
 
-Consulte a [documentação](/pt-BR/reference/settings/server-settings/settings/max-thread#max_thread_pool_size) para mais detalhes sobre as configurações acima e outras que afetam o pool global de threads.
+Consulte a [documentação](/pt-BR/reference/settings/server-settings/settings#max_thread_pool_size) para mais detalhes sobre as configurações acima e outras que afetam o pool global de threads.

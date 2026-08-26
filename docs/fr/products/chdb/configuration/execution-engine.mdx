@@ -1,0 +1,369 @@
+---
+title: 'Configuration du moteur d’exécution'
+sidebarTitle: 'Moteur d’exécution'
+slug: /chdb/configuration/execution-engine
+description: 'Configurer le moteur d’exécution de DataStore : auto, chdb ou pandas'
+keywords: ['chdb', 'datastore', 'exécution', 'moteur', 'chdb', 'pandas', 'auto']
+doc_type: 'guide'
+---
+
+DataStore peut exécuter des opérations via différents backends. Ce guide explique comment configurer et optimiser le choix du moteur.
+
+<div id="engines">
+  ## Moteurs disponibles
+</div>
+
+| Moteur   | Description                                                          | Idéal pour                                               |
+| -------- | -------------------------------------------------------------------- | -------------------------------------------------------- |
+| `auto`   | Sélectionne automatiquement le meilleur moteur pour chaque opération | Utilisation générale (par défaut)                        |
+| `chdb`   | Exécute toutes les opérations via ClickHouse SQL                     | Grands ensembles de données, agrégations                 |
+| `pandas` | Exécute toutes les opérations via pandas                             | Tests de compatibilité, fonctionnalités propres à pandas |
+
+<div id="setting">
+  ## Définir le moteur
+</div>
+
+<div id="global">
+  ### Configuration globale
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Option 1: Using set method
+config.set_execution_engine('auto')    # Default
+config.set_execution_engine('chdb')    # Force ClickHouse
+config.set_execution_engine('pandas')  # Force pandas
+
+# Option 2: Using shortcuts
+config.use_auto()     # Auto-select
+config.use_chdb()     # Force ClickHouse
+config.use_pandas()   # Force pandas
+```
+
+<div id="checking">
+  ### Vérifier le moteur actuel
+</div>
+
+```python
+print(config.execution_engine)  # 'auto', 'chdb', or 'pandas'
+```
+
+***
+
+<div id="auto-mode">
+  ## mode auto
+</div>
+
+En mode `auto` (par défaut), DataStore choisit le moteur le plus adapté à chaque opération :
+
+<div id="auto-chdb">
+  ### Opérations exécutées dans chDB
+</div>
+
+* Filtrage de type SQL (`filter()`, `where()`)
+* Sélection de colonnes (`select()`)
+* Tri (`sort()`, `orderby()`)
+* Regroupement et agrégation (`groupby().agg()`)
+* Jointures (`join()`, `merge()`)
+* Déduplication (`distinct()`, `drop_duplicates()`)
+* Limitation (`limit()`, `head()`, `tail()`)
+
+<div id="auto-pandas">
+  ### Opérations effectuées dans pandas
+</div>
+
+* Fonctions apply personnalisées (`apply(custom_func)`)
+* Tableaux croisés dynamiques complexes avec des agrégations personnalisées
+* Opérations impossibles à exprimer en SQL
+* Lorsque l’entrée est déjà un DataFrame pandas
+
+<div id="auto-example">
+  ### Exemple
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+config.use_auto()  # Default
+
+ds = pd.read_csv("data.csv")
+
+# This uses chDB (SQL)
+result = (ds
+    .filter(ds['amount'] > 100)   # SQL: WHERE
+    .groupby('region')            # SQL: GROUP BY
+    .agg({'amount': 'sum'})       # SQL: SUM()
+)
+
+# This uses pandas (custom function)
+result = ds.apply(lambda row: complex_calculation(row), axis=1)
+```
+
+***
+
+<div id="chdb-mode">
+  ## Mode chDB
+</div>
+
+Forcez toutes les opérations via ClickHouse SQL :
+
+```python
+config.use_chdb()
+```
+
+<div id="chdb-when">
+  ### Quand l’utiliser
+</div>
+
+* Traitement de grands volumes de données (des millions de lignes)
+* Charges de travail d’agrégation intensives
+* Lorsque vous recherchez une optimisation SQL maximale
+* Comportement cohérent pour toutes les opérations
+
+<div id="chdb-performance">
+  ### Caractéristiques en matière de performances
+</div>
+
+| Type d’opération            | Performances                          |
+| --------------------------- | ------------------------------------- |
+| GroupBy/Agrégation          | Excellentes (jusqu’à 20x plus rapide) |
+| Filtrage complexe           | Excellentes                           |
+| Tri                         | Très bonnes                           |
+| Filtres simples individuels | Bonnes (léger surcoût)                |
+
+<div id="chdb-limitations">
+  ### Limites
+</div>
+
+* Les fonctions Python personnalisées peuvent ne pas être prises en charge
+* Certaines fonctionnalités propres à pandas nécessitent une conversion
+
+***
+
+<div id="pandas-mode">
+  ## Mode pandas
+</div>
+
+Forcer toutes les opérations via pandas :
+
+```python
+config.use_pandas()
+```
+
+<div id="pandas-when">
+  ### Quand utiliser
+</div>
+
+* Tests de compatibilité avec pandas
+* Utilisation de fonctionnalités propres à pandas
+* Débogage des problèmes liés à pandas
+* Lorsque les données sont déjà au format pandas
+
+<div id="pandas-performance">
+  ### Caractéristiques de performances
+</div>
+
+| Type d&#39;opération       | Performance          |
+| -------------------------- | -------------------- |
+| Opérations simples         | Bonne                |
+| Fonctions personnalisées   | Excellente           |
+| Agrégations complexes      | Plus lentes que chDB |
+| Jeux de données volumineux | Gourmands en mémoire |
+
+***
+
+<div id="cross-datastore">
+  ## Moteur Cross-DataStore
+</div>
+
+Configurez le moteur pour les opérations combinant des colonnes de différents DataStores :
+
+```python
+# Set cross-DataStore engine
+config.set_cross_datastore_engine('auto')
+config.set_cross_datastore_engine('chdb')
+config.set_cross_datastore_engine('pandas')
+```
+
+<div id="auto-example">
+  ### Exemple
+</div>
+
+```python
+ds1 = pd.read_csv("sales.csv")
+ds2 = pd.read_csv("inventory.csv")
+
+# This operation involves two DataStores
+result = ds1.join(ds2, on='product_id')
+# Uses cross_datastore_engine setting
+```
+
+***
+
+<div id="selection-logic">
+  ## Logique de sélection du moteur
+</div>
+
+<div id="decision-tree">
+  ### Arbre de décision du mode Auto
+</div>
+
+```text
+Operation requested
+    │
+    ├─ Can be expressed in SQL?
+    │      │
+    │      ├─ Yes → Use chDB
+    │      │
+    │      └─ No → Use pandas
+    │
+    └─ Cross-DataStore operation?
+           │
+           └─ Use cross_datastore_engine setting
+```
+
+<div id="function-override">
+  ### Surcharge au niveau de la fonction
+</div>
+
+Certaines fonctions peuvent avoir leur moteur configuré explicitement :
+
+```python
+from chdb.datastore.config import function_config
+
+# Force specific functions to use specific engine
+function_config.use_chdb('length', 'substring')
+function_config.use_pandas('upper', 'lower')
+```
+
+Voir [Configuration des fonctions](/fr/products/chdb/configuration/function-config) pour plus de détails.
+
+***
+
+<div id="performance-comparison">
+  ## Comparaison des performances
+</div>
+
+Résultats du benchmark sur 10 M lignes :
+
+| Opération            | pandas (ms) | chdb (ms) | Accélération |
+| -------------------- | ----------- | --------- | ------------ |
+| GroupBy count        | 347         | 17        | 19.93x       |
+| Opérations combinées | 1,535       | 234       | 6.56x        |
+| Pipeline complexe    | 2,047       | 380       | 5.39x        |
+| Filter+Sort+Head     | 1,537       | 350       | 4.40x        |
+| GroupBy agg          | 406         | 141       | 2.88x        |
+| Filtre simple        | 276         | 526       | 0.52x        |
+
+**Points clés :**
+
+* chDB excelle pour les agrégations et les pipelines complexes
+* pandas est légèrement plus rapide pour les opérations simples prises isolément
+* Utilisez le mode `auto` pour profiter du meilleur des deux
+
+***
+
+<div id="best-practices">
+  ## Bonnes pratiques
+</div>
+
+<div id="start-with-auto-mode">
+  ### 1. Commencez par mode auto
+</div>
+
+```python
+config.use_auto()  # Let DataStore decide
+```
+
+<div id="profile-before-forcing">
+  ### 2. Définissez un profil avant de forcer
+</div>
+
+```python
+config.enable_profiling()
+# Run your workload
+# Check profiler report to see where time is spent
+```
+
+<div id="force-engine-for-specific-workloads">
+  ### 3. Forcer un moteur pour des charges de travail spécifiques
+</div>
+
+```python
+# For heavy aggregation workloads
+config.use_chdb()
+
+# For pandas compatibility testing
+config.use_pandas()
+```
+
+<div id="use-explain-to-understand-execution">
+  ### 4. Utilisez explain() pour comprendre l’exécution
+</div>
+
+```python
+ds = pd.read_csv("data.csv")
+query = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'sum'})
+
+# See what SQL will be generated
+query.explain()
+```
+
+***
+
+<div id="troubleshooting">
+  ## Dépannage
+</div>
+
+<div id="issue-operation-slower">
+  ### Problème : opération plus lente que prévue
+</div>
+
+```python
+# Check current engine
+print(config.execution_engine)
+
+# Enable debug to see what's happening
+config.enable_debug()
+
+# Try forcing specific engine
+config.use_chdb()  # or config.use_pandas()
+```
+
+<div id="issue-unsupported-operation">
+  ### Problème : opération non prise en charge en mode chdb
+</div>
+
+```python
+# Some pandas operations aren't supported in SQL
+# Solution: use auto mode
+config.use_auto()
+
+# Or explicitly convert to pandas first
+df = ds.to_df()
+result = df.some_pandas_specific_operation()
+```
+
+<div id="issue-memory-issues">
+  ### Problème : problèmes de mémoire avec de gros volumes de données
+</div>
+
+```python
+# Use chdb engine to avoid loading all data into memory
+config.use_chdb()
+
+# Filter early to reduce data size
+result = ds.filter(ds['date'] >= '2024-01-01').to_df()
+
+# For maximum throughput on large datasets, use performance mode
+# which enables parallel Parquet reading and single-SQL aggregation
+config.use_performance_mode()
+```
+
+<Tip>
+  **Performance Mode**
+
+  Si vous exécutez des charges d’agrégation importantes et que vous n’avez pas besoin d’une compatibilité exacte avec la sortie de pandas (ordre des lignes, MultiIndex, corrections de type), envisagez d’utiliser le [Performance Mode](/fr/products/chdb/configuration/performance-mode). Il définit automatiquement le moteur sur `chdb` et supprime toute la surcharge liée à la compatibilité avec pandas.
+</Tip>

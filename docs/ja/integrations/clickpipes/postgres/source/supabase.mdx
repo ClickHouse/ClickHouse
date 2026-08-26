@@ -62,7 +62,7 @@ ClickPipes で使用できるように Supabase Postgres を設定する方法�
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication は、変更イベントが ClickPipes にストリーミングされる対象テーブルの集合を定義します。すべてのテーブルをレプリケートする予定でない限り、`FOR ALL TABLES` の使用は推奨しません。不要なテーブルを含めると、Postgres から ClickPipes への WAL トラフィックが増加し、レプリケーション全体の効率が低下するためです。
+`clickpipes` publication には、指定したテーブルから生成された変更イベントの集合が含まれ、後でレプリケーションストリームを取り込むために使用されます。
 
 <div id="increase-max_slot_wal_keep_size">
   ## `max_slot_wal_keep_size` を増やす

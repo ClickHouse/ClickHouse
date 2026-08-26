@@ -185,7 +185,7 @@ De forma predeterminada, todas las entradas de protocolo `type=http` comparten l
 a una sección de configuración distinta. Esto permite que cada puerto HTTP sirva un
 conjunto diferente de reglas de enrutamiento HTTP.
 
-Por ejemplo, para ejecutar una API HTTP alternativa en el puerto 8124 con sus propios handler:
+Por ejemplo, para ejecutar una API HTTP alternativa en el puerto 8124 con sus propios manejadores:
 
 ```xml
 <protocols>
@@ -205,12 +205,12 @@ Por ejemplo, para ejecutar una API HTTP alternativa en el puerto 8124 con sus pr
 
 </protocols>
 
-<!-- Default handlers used by plain_http (port 8123) -->
+<!-- Handlers predeterminados usados por plain_http (puerto 8123) -->
 <http_handlers>
     <defaults/>
 </http_handlers>
 
-<!-- Alternative handlers used by alt_http (port 8124) -->
+<!-- Handlers alternativos usados por alt_http (puerto 8124) -->
 <http_handlers_alt>
     <rule>
         <url>/custom</url>
@@ -227,9 +227,9 @@ En este ejemplo, las solicitudes al puerto 8123 usan las reglas estándar de `<h
 mientras que las solicitudes al puerto 8124 usan las reglas de `<http_handlers_alt>`. Si se omite `<handlers>`,
 el endpoint vuelve al valor predeterminado `<http_handlers>`.
 
-La sección de handler personalizados sigue el mismo formato que
-[`<http_handlers>`](/es/reference/settings/server-settings/settings/http#http_handlers).
-Los cambios en la sección de handler personalizados se detectan durante la recarga de la configuración, y el
+La sección de handlers personalizados sigue el mismo formato que
+[`<http_handlers>`](/es/reference/settings/server-settings/settings#http_handlers).
+Los cambios en la sección de handlers personalizados se detectan durante la recarga de la configuración, y el
 endpoint correspondiente se reinicia automáticamente.
 
 <div id="some-modules-can-contain-specific-for-its-layer-parameters">

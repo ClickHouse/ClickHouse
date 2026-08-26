@@ -45,7 +45,9 @@ Docker Compose では、デフォルトの `otel-collector` セットアップ�
 <br />
 
 <Steps>
-  <Step title="リポジトリをクローンする" id="clone-the-repo">
+  <Step>
+    ### リポジトリをクローンする
+
     Docker Compose でデプロイするには、ClickStack リポジトリをクローンし、そのディレクトリに移動して `docker-compose up` を実行します。
 
     ```shell
@@ -54,7 +56,9 @@ Docker Compose では、デフォルトの `otel-collector` セットアップ�
     ```
   </Step>
 
-  <Step title="HyperDX UI を開く" id="navigate-to-hyperdx-ui">
+  <Step>
+    ### HyperDX UI を開く
+
     HyperDX UI にアクセスするには、[http://localhost:8080](http://localhost:8080) を開きます。
 
     要件を満たすユーザー名とパスワードを入力して、ユーザーを作成します。
@@ -72,7 +76,9 @@ Docker Compose では、デフォルトの `otel-collector` セットアップ�
     別の ClickHouse インスタンスを使用する例については、[&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud) を参照してください。
   </Step>
 
-  <Step title="接続情報を入力する" id="complete-connection-details">
+  <Step>
+    ### 接続情報を入力する
+
     デプロイした ClickHouse インスタンスに接続するには、**Create** をクリックしてデフォルト設定をそのまま使用します。
 
     独自の**外部 ClickHouse クラスター** (例: ClickHouse Cloud) に接続する場合は、接続認証情報を手動で入力できます。

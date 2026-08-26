@@ -31,7 +31,7 @@ CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT
 * `part_name`: (اختياري) إذا كنت تريد التحقق من جزء محدد في الجدول، يمكنك إضافة قيمة حرفية نصية لتحديد اسم الجزء.
 * `FORMAT format`: (اختياري) يتيح لك تحديد format الإخراج للنتيجة.
 * `SETTINGS`: (اختياري) يتيح لك إضافة إعدادات إضافية.
-  * (اختياري): [check&#95;query&#95;single&#95;value&#95;result](/ar/reference/settings/session-settings/check#check_query_single_value_result): يتحكم هذا الإعداد في ما إذا كان الإخراج مفصلًا (`0`) أو مُلخّصًا (`1`).
+  * (اختياري): [check&#95;query&#95;single&#95;value&#95;result](/ar/reference/settings/session-settings#check_query_single_value_result): يتحكم هذا الإعداد في ما إذا كان الإخراج مفصلًا (`0`) أو مُلخّصًا (`1`).
   * يمكن أيضًا تطبيق إعدادات أخرى. إذا لم تكن بحاجة إلى ترتيب حتمي للنتائج، يمكنك تعيين max&#95;threads إلى قيمة أكبر من واحد لتسريع الاستعلام.
 
 تعتمد استجابة الاستعلام على قيمة الإعداد `check_query_single_value_result`.
@@ -162,8 +162,6 @@ SETTINGS check_query_single_value_result = 0
 │ default  │ t1       │ all_7_38_2  │         1 │         │
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
-
-للتحقق من حالة قاعدة بيانات كاملة بدلًا من سلامة الجداول الفردية، استخدم استعلام [`CHECK DATABASE`](/ar/reference/statements/check-database). وهو مخصّص أساسًا لقواعد البيانات التي تستخدم المحرك [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake)، حيث يتحقق من إمكانية الوصول إلى الكتالوج الخارجي.
 
 <div id="if-the-data-is-corrupted">
   ## إذا كانت البيانات تالفة

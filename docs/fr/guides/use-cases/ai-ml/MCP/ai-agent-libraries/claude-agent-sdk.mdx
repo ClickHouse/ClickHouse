@@ -28,7 +28,9 @@ Dans ce guide, vous apprendrez à créer un [Claude Agent SDK](https://docs.clau
 Vous pouvez exécuter les étapes suivantes soit dans votre REPL Python, soit à l’aide d’un script.
 
 <Steps>
-  <Step title="Installer les bibliothèques" id="install-libraries">
+  <Step>
+    ## Installer les bibliothèques
+
     Installez la bibliothèque Claude Agent SDK en exécutant les commandes suivantes :
 
     ```python
@@ -38,7 +40,9 @@ Vous pouvez exécuter les étapes suivantes soit dans votre REPL Python, soit à
     ```
   </Step>
 
-  <Step title="Configurer les identifiants" id="setup-credentials">
+  <Step>
+    ## Configurer les identifiants
+
     Ensuite, vous devez fournir votre clé API Anthropic :
 
     ```python
@@ -63,9 +67,11 @@ Vous pouvez exécuter les étapes suivantes soit dans votre REPL Python, soit à
     ```
   </Step>
 
-  <Step title="Initialiser le serveur MCP et l’agent Claude Agent SDK" id="initialize-mcp-and-agent">
-    Configurez maintenant le serveur MCP ClickHouse pour qu’il pointe vers le SQL playground de ClickHouse
-    et initialisez également notre agent en lui posant une question :
+  <Step>
+    ## Initialiser le serveur MCP et l’agent Claude Agent SDK
+
+    Configurez maintenant le serveur MCP ClickHouse pour qu’il pointe vers le SQL playground de ClickHouse,
+    puis initialisez l’agent et posez-lui une question :
 
     ```python
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, UserMessage, TextBlock, ToolUseBlock

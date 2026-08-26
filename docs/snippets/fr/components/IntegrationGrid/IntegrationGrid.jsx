@@ -171,21 +171,21 @@ export const IntegrationGrid = () => {
   function getSectionDescription(type) {
     const descriptions = {
       ClickPipes: "ClickPipes est un moteur d'intégration qui simplifie l'ingestion de volumes massifs de données provenant de sources variées en quelques clics.",
-      "Data ingestion": "Rationalisez vos pipelines de données avec ClickHouse ! Des intégrations transparentes garantissent une ingestion efficace et optimisent l'analytique en temps réel.",
-      "Data visualization": "Donnez vie à vos données ! Les intégrations ClickHouse enrichissent la visualisation pour des insights plus parlants et exploitables.",
-      "SQL client": "Accédez aux bases de données ClickHouse et interrogez-les à l'aide d'outils et d'interfaces SQL client familiers.",
-      "Language client": "Codez dans votre environnement habituel ! Les intégrations de clients de langage ClickHouse facilitent l'accès aux données dans de nombreux langages de programmation.",
-      "AI/ML": "Exploitez ClickHouse pour vos charges de travail de machine learning et d'IA grâce à des outils et frameworks ML intégrés.",
+      "Data ingestion": "Optimisez vos pipelines de données avec ClickHouse ! Des intégrations transparentes garantissent une ingestion efficace et optimisent l'analytique en temps réel.",
+      "Data visualization": "Donnez vie à vos données ! Les intégrations ClickHouse enrichissent la visualisation, rendant les insights plus clairs et exploitables.",
+      "SQL client": "Accédez aux bases de données ClickHouse et interrogez-les à l'aide d'outils et d'interfaces SQL familiers.",
+      "Language client": "Développez dans votre environnement habituel ! Les intégrations de clients de langage ClickHouse facilitent l'accès aux données dans de nombreux langages de programmation.",
+      "AI/ML": "Exploitez ClickHouse pour vos charges de travail d'apprentissage automatique et d'IA grâce à des outils et frameworks ML intégrés.",
       "Data management": "Gérez, surveillez et optimisez vos données ClickHouse avec des outils de gestion spécialisés.",
       "Data integration": "Intégrez ClickHouse à votre infrastructure de données et à vos flux de travail existants.",
       "Security governance": "Mettez en œuvre des cadres de sécurité et de gouvernance pour votre environnement ClickHouse."
     }
-    return descriptions[type] || "Intégrez ClickHouse avec des outils et services spécialisés."
+    return descriptions[type] || "Intégrez ClickHouse à des outils et services spécialisés."
   }
 
-  // Plain render function (not a component) so cards reconcile by key instead of
-  // remounting on every IntegrationGrid render. isDark is passed in from the single
-  // top-level useDarkMode() call.
+  // Fonction de rendu simple (pas un composant) pour que les cartes soient réconciliées par clé
+  // plutôt que remontées à chaque rendu d'IntegrationGrid. isDark est transmis depuis l'unique
+  // appel useDarkMode() au niveau supérieur.
   function renderIntegrationCard(integration, isDark, key) {
     const getNavigationLink = (docsLink, slug) => {
       if (!docsLink) {
@@ -209,7 +209,7 @@ export const IntegrationGrid = () => {
 
     const linkTo = getNavigationLink(integration.docsLink, integration.slug)
 
-    // External links point outside the docs (not to clickhouse.com/docs)
+    // Les liens externes pointent en dehors de la documentation (pas vers clickhouse.com/docs)
     const isExternalLink = linkTo.startsWith("http") && !linkTo.includes("clickhouse.com/docs")
 
     return (
@@ -233,7 +233,7 @@ export const IntegrationGrid = () => {
           {integration.integration_tier && integration.integration_tier !== "community" && <div className="absolute top-3 right-3 opacity-70">{getTierIcon(integration.integration_tier)}</div>}
           <div className="w-full flex flex-col items-center justify-center gap-2">
             <div className="w-full flex items-center justify-center">
-              <img src={getLogoSrc()} alt={`${integration.integration_title || integration.slug} logo`} className="object-contain" style={{ width: "64px", height: "64px", pointerEvents: "none" }} />
+              <img src={getLogoSrc()} alt={`logo ${integration.integration_title || integration.slug}`} className="object-contain" style={{ width: "64px", height: "64px", pointerEvents: "none" }} />
             </div>
             <div className="w-full text-center text-sm font-semibold" style={{ color: "#000" }}>
               {integration.integration_title}
@@ -282,9 +282,10 @@ export const IntegrationGrid = () => {
   }
 
   function useCMSIntegrations() {
-    // Mintlify remounts the whole content subtree on a theme toggle, which would
-    // otherwise re-show the "Loading…" state and refetch. Seed state from a cross-remount
-    // cache on window so cards render instantly; the effect still refreshes in the background.
+    // Mintlify recharge l'intégralité du sous-arbre de contenu lors d'un changement de thème, ce qui
+    // afficherait à nouveau l'état "Chargement…" et déclencherait une nouvelle requête. L'état est
+    // initialisé depuis un cache inter-remontages sur window afin que les cartes s'affichent instantanément ;
+    // l'effet actualise tout de même les données en arrière-plan.
     const cached = (typeof window !== "undefined" && window.__chIntegrationsCache) || null
     const [integrations, setIntegrations] = useState(cached || [])
     const [loading, setLoading] = useState(!cached)
@@ -299,7 +300,7 @@ export const IntegrationGrid = () => {
           const controller = new AbortController()
           const timeoutId = setTimeout(() => {
             controller.abort()
-            console.log("CMS request timed out after 8 seconds")
+            console.log("La requête CMS a expiré après 8 secondes")
           }, 8000)
 
           const response = await fetch(
@@ -315,7 +316,7 @@ export const IntegrationGrid = () => {
           clearTimeout(timeoutId)
 
           if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`)
+            throw new Error(`Erreur HTTP ! statut : ${response.status}`)
           }
 
           const data = await response.json()
@@ -324,13 +325,13 @@ export const IntegrationGrid = () => {
           setIntegrations(transformedData)
           cacheIntegrations(transformedData)
           setError(null)
-          console.log("Successfully updated with fresh CMS data")
+          console.log("Mise à jour réussie avec les données CMS récentes")
         } catch (cmsErr) {
           if (cmsErr instanceof Error) {
             if (cmsErr.name === "AbortError") {
-              console.log("La requête CMS a été annulée en raison d'un délai d'attente dépassé")
+              console.log("La requête CMS a été annulée en raison d'un délai d'attente dépassé, utilisation des données de secours")
             } else {
-              console.error("Error loading integrations from CMS:", cmsErr.message)
+              console.error("Erreur lors du chargement des intégrations depuis le CMS :", cmsErr.message)
             }
           }
 
@@ -595,7 +596,7 @@ export const IntegrationGrid = () => {
           color: #fff;
         }
         .dark .integration-external-overlay svg {
-          color: #fff;
+          color: #1f1f1f;
         }
         .integration-card:hover .integration-external-overlay {
           opacity: 1;
@@ -617,7 +618,7 @@ export const IntegrationGrid = () => {
             </svg>
             <input
               type="text"
-              placeholder="Rechercher par intégration"
+              placeholder="Search by integration"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full text-sm border rounded-xl focus:outline-none bg-[#F6F7FA] dark:bg-[#282828] text-black dark:text-white border-gray-300 dark:border-gray-600 focus:border-[#FAFF69]"
@@ -642,7 +643,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedFilter("All")}
             >
-              Tout
+              All
             </button>
             {integrationTypes.map((type) => (
               <button

@@ -2,9 +2,7 @@
 
 #include <atomic>
 #include <vector>
-#include <base/defines.h>
 #include <Common/BitHelpers.h>
-#include <Common/CacheLine.h>
 
 /// Vyukov queue.
 /// https://web.archive.org/web/20170205113402/http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue
@@ -82,13 +80,13 @@ public:
 
     /// `value` is moved-out iff the return value is true.
     ///
-    /// TSAN very rarely reports a data race between the `slot.value` write in `tryPush` and the
+    /// TSan very rarely reports a data race between the `slot.value` write in `tryPush` and the
     /// `slot.value` read in `tryPop`, even though the acquire/release operations on `slot.pos`
     /// make such a race impossible (the code is isomorphic to Vyukov's original implementation).
     /// Those reports are suppressed at runtime, per instantiation, by
     /// `__tsan_default_suppressions` in base/sanitizer_options.h. A `NO_SANITIZE_THREAD` attribute
-    /// here does not work: the reported access happens in the element type's move assignment,
-    /// which is a separate function that stays instrumented.
+    /// here does not work: the reported access happens in the element type's move assignment, which
+    /// is a separate function that stays instrumented.
     ///
     /// The suppression lists only `tryPush`. `tryPop` writes the payload too (it moves out of
     /// `slot.value`), but the `dequeue_pos` CAS gives one consumer sole ownership of a slot before
@@ -125,7 +123,6 @@ public:
         }
     }
 
-    /// See the comment on `tryPush` about TSAN.
     bool tryPop(T & out_value)
     {
         chassert(mask);
@@ -164,17 +161,6 @@ public:
         size_t x = enqueue_pos.load(std::memory_order_relaxed);
         return x - std::min(x, y); // max(0, x - y)
     }
-
-    /// Number of pushes ever started. Unlike `size`, this is an exact boundary for a drain, but only
-    /// through happens-before: producers advance the counter with a relaxed CAS, so this load alone does
-    /// not synchronize with them. If a completed `tryPush` happens-before this load (e.g. the caller
-    /// requested a flush after the push, and the draining thread read that request before this call),
-    /// read-write coherence guarantees the returned value covers that push's position. Slot contents don't
-    /// need to be visible at this point: `tryPop` synchronizes with each push via acquire on the slot,
-    /// waiting out a slot whose position is taken but not yet published.
-    size_t enqueuePosition() const { return enqueue_pos.load(std::memory_order_acquire); }
-    /// Number of pops ever completed. Only meaningful to the (single) consumer, which owns dequeue_pos.
-    size_t dequeuePosition() const { return dequeue_pos.load(std::memory_order_relaxed); }
 
 private:
     struct alignas(DB::CH_CACHE_LINE_SIZE) Slot

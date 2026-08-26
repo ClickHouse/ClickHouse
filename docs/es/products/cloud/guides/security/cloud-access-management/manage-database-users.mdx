@@ -23,16 +23,12 @@ Los usuarios de Consola SQL se crean para cada sesión y se autentican mediante 
 
 Los roles básicos de la Consola SQL pueden asignarse a usuarios con permisos Service Read Only y Service Admin. Para obtener más información, consulta [Manage SQL Console Role Assignments](/es/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). En esta guía se muestra cómo crear un rol personalizado para un usuario de la Consola SQL.
 
-<Note>
-  **Administrar roles de base de datos desde la consola (beta)**
-
-  También puedes administrar roles de base de datos directamente desde la consola de ClickHouse Cloud añadiendo permisos de datos a roles personalizados. Esta función está en beta y está disponible para servicios que ejecutan ClickHouse versión 26.4 y posteriores. Los roles asignados manualmente mediante la convención de nomenclatura `sql-console-role:<email>` tienen prioridad sobre los roles asignados a través de la consola. Para obtener más información, consulta [Manage database roles](/es/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles).
-</Note>
-
 Para crear un rol personalizado para un usuario de la Consola SQL y asignarle un rol general, ejecuta los siguientes comandos. La dirección de correo electrónico debe coincidir con la dirección de correo electrónico del usuario en la consola.
 
 <Steps>
-  <Step title={<>Crear <code>database_developer</code> y otorgar permisos</>} id="create-role-grant-permissions">
+  <Step>
+    #### Crear `database_developer` y otorgar permisos
+
     Crea el rol `database_developer` y otórgale permisos `SHOW`, `CREATE`, `ALTER` y `DELETE`.
 
     ```sql
@@ -44,7 +40,9 @@ Para crear un rol personalizado para un usuario de la Consola SQL y asignarle un
     ```
   </Step>
 
-  <Step title="Crear el rol de usuario de la Consola SQL" id="create-sql-console-user-role">
+  <Step>
+    #### Crear el rol de usuario de la Consola SQL
+
     Crea un rol para el usuario de la Consola SQL my.user@domain.com y asígnale el rol database&#95;developer.
 
     ```sql
@@ -53,7 +51,9 @@ Para crear un rol personalizado para un usuario de la Consola SQL y asignarle un
     ```
   </Step>
 
-  <Step title="El usuario recibe el nuevo rol cuando usa la Consola SQL" id="use-assigned-new-role">
+  <Step>
+    #### El usuario recibe el nuevo rol cuando usa la Consola SQL
+
     Al usuario se le asignará el rol asociado a su dirección de correo electrónico cada vez que use la Consola SQL.
   </Step>
 </Steps>
@@ -98,9 +98,9 @@ Para obtener una guía detallada con ejemplos, consulta [Cómo conectarse a Clic
 
 Configure lo siguiente en los servicios y las bases de datos mediante la sentencia SQL [GRANT](/es/reference/statements/grant).
 
-| Role    | Description                                                                   |
-| :------ | :---------------------------------------------------------------------------- |
-| Default | Acceso administrativo completo a los servicios                                |
+| Role    | Description                                                                |
+| :------ | :------------------------------------------------------------------------- |
+| Default | Acceso administrativo completo a los servicios                             |
 | Custom  | Configure mediante la sentencia SQL [`GRANT`](/es/reference/statements/grant) |
 
 * Los roles de base de datos son aditivos. Esto significa que, si un usuario es miembro de dos roles, tendrá el nivel de acceso más alto concedido por cualquiera de ellos. No pierde acceso al añadir roles.
@@ -137,7 +137,9 @@ Puede usar un generador de hash SHA256 o una función como `hashlib` en Python p
 El siguiente proceso puede utilizarse para generar un listado completo de acceso en la consola SQL y en las bases de datos de su organización.
 
 <Steps>
-  <Step title="Obtener una lista de todos los permisos de la base de datos" id="get-a-list-of-all-database-grants">
+  <Step>
+    #### Obtener una lista de todos los permisos de la base de datos
+
     Ejecute las siguientes consultas para obtener una lista de todos los permisos de la base de datos.
 
     ```sql
@@ -163,10 +165,12 @@ El siguiente proceso puede utilizarse para generar un listado completo de acceso
     ```
   </Step>
 
-  <Step title="Asociar la lista de permisos a los usuarios de la consola con acceso a la consola SQL" id="associate-grant-list-to-console-users-with-access-to-sql-console">
-    Asocie esta lista con los usuarios de la consola que tienen acceso a la consola SQL.
+  <Step>
+    #### Asociar la lista de permisos a los usuarios de Console con acceso a la consola SQL
 
-    a. Vaya a la consola.
+    Asocie esta lista con los usuarios de Console que tienen acceso a la consola SQL.
+
+    a. Vaya a Console.
 
     b. Seleccione el servicio correspondiente.
 

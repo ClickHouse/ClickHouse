@@ -1,4 +1,3 @@
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -129,11 +128,8 @@ namespace
         if (new_qualified_name == qualified_name)
             return;
 
-        /// `database_and_table_name` is registered as a child, so appending the renamed identifier
-        /// would leave the pre-rename one behind next to it. `replace` swaps both slots at once.
-        expr.replace(
-            expr.database_and_table_name,
-            make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table));
+        expr.database_and_table_name = make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
+        expr.children.push_back(expr.database_and_table_name);
     }
 
     /// ASTDictionary keeps a dictionary definition, for example
