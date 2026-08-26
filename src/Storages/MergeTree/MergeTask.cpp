@@ -1066,14 +1066,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         return true;
     };
 
-    /// `need_remove_expired_values` is the same gate the pipeline below uses to decide whether rows may
-    /// be dropped at all, so it is false once SYSTEM STOP TTL MERGES cancelled TTL removal for this merge.
-    /// Patches are applied by the merge itself, so a part's own `ttl_infos` cannot prove expiry once
-    /// there are any: a lightweight UPDATE may set the rows-TTL column to a value that keeps rows alive.
+    /// Each conjunct names work the pipeline would otherwise do: TTL removal may be cancelled for this
+    /// merge, patches still have to be applied, and only createMergedStream() re-checks cleanup here.
     const bool can_short_circuit_fully_expired_merge =
         ctx->need_remove_expired_values
         && global_ctx->metadata_snapshot->hasOnlyRowsTTL()
         && global_ctx->future_part->patch_parts.empty()
+        && !global_ctx->cleanup
         && (global_ctx->future_part->merge_type == MergeType::TTLDrop || all_source_parts_fully_expired());
 
     if (can_short_circuit_fully_expired_merge)
