@@ -40,9 +40,9 @@ SELECT
 SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 quarter)
         )",
         R"(
-┌─plus(CAST('1⋯uarter(10))─┐
-│               2000-12-16 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalQuarter(10))─┐
+│                                              2000-12-16 │
+└─────────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
