@@ -1085,7 +1085,7 @@ FROM <left_subquery>
 Supported types of `ARRAY JOIN` are listed below:
 
 - `ARRAY JOIN` - In base case, empty arrays are not included in the result of `JOIN`.
-- `LEFT ARRAY JOIN` - The result of `JOIN` contains rows with empty arrays. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL).
+- `LEFT ARRAY JOIN` - The result of `JOIN` contains rows with empty arrays. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL), or to `NULL` when the `array_join_use_nulls` setting is enabled - see [Processing of empty arrays with NULL](#processing-of-empty-arrays-with-null).
 
 ## Basic ARRAY JOIN Examples {#basic-array-join-examples}
 
@@ -1443,6 +1443,49 @@ The query execution order is optimized when running `ARRAY JOIN`. Although `ARRA
 [Short-circuit function evaluation](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) is a feature that optimizes the execution of complex expressions in specific functions such as `if`, `multiIf`, `and`, and `or`. It prevents potential exceptions, such as division by zero, from occurring during the execution of these functions.
 
 `arrayJoin` is always executed and not supported for short circuit function evaluation. That's because it's a unique function processed separately from all other functions during query analysis and execution and requires additional logic that doesn't work with short circuit function execution. The reason is that the number of rows in the result depends on the arrayJoin result, and it's too complex and expensive to implement lazy execution of `arrayJoin`.
+
+### Processing of empty arrays with NULL {#processing-of-empty-arrays-with-null}
+
+While using `LEFT ARRAY JOIN`, rows with empty arrays produce placeholder values. The setting `array_join_use_nulls` defines how ClickHouse fills these cells.
+
+If `array_join_use_nulls = 0` (default), empty arrays produce the default value of the element type (e.g. `0` for integers, `''` for strings).
+
+If `array_join_use_nulls = 1`, the type of the array-joined column is converted to [Nullable](/reference/data-types/nullable), and empty arrays produce [NULL](/reference/syntax#null). This is analogous to how [join_use_nulls](/reference/settings/session-settings/join#join_use_nulls) works for `JOIN`.
+
+```sql
+SELECT s, arr
+FROM arrays_test
+LEFT ARRAY JOIN arr
+SETTINGS array_join_use_nulls = 1;
+```
+
+```response
+┌─s───────────┬──arr─┐
+│ Hello       │    1 │
+│ Hello       │    2 │
+│ World       │    3 │
+│ World       │    4 │
+│ World       │    5 │
+│ Goodbye     │ ᴺᵁᴸᴸ │
+└─────────────┴──────┘
+```
+
+This setting only affects `LEFT ARRAY JOIN`. Regular `ARRAY JOIN` drops rows with empty arrays regardless of this setting.
+
+Just like [join_use_nulls](/reference/settings/session-settings/join#join_use_nulls), the setting applies only to element types that can be placed inside [Nullable](/reference/data-types/nullable). For an element type that cannot - such as `Array`, `Map` or `AggregateFunction` - the array-joined column keeps its original type, and rows with an empty array keep getting the default value of that type (`[]`, `{}`, ...) rather than `NULL`:
+
+```sql
+SELECT x, toTypeName(x)
+FROM (SELECT CAST([], 'Array(Array(UInt8))') AS arr)
+LEFT ARRAY JOIN arr AS x
+SETTINGS array_join_use_nulls = 1;
+```
+
+```response
+┌─x──┬─toTypeName(x)─┐
+│ [] │ Array(UInt8)  │
+└────┴───────────────┘
+```
 
 ## Related content {#related-content}
 
