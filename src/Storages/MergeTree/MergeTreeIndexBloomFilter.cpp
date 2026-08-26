@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Formats/ParseError.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
@@ -37,6 +36,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_)
@@ -703,7 +703,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 }
 
 
-/// Like convertFieldToType, but a literal with no representation in the index type yields a null
+/// Like convertFieldToType, but a string naming no element of an Enum index type yields a null
 /// Field instead of throwing: every caller already treats null as "the index cannot be used".
 static Field convertFieldToIndexType(
     const Field & value_field, const IDataType & actual_type, const IDataType * value_type_hint = nullptr)
@@ -714,7 +714,7 @@ static Field convertFieldToIndexType(
     }
     catch (const Exception & e)
     {
-        if (!isParseError(e.code()))
+        if (e.code() != ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
             throw;
         return {};
     }

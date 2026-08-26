@@ -39,7 +39,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
-#include <Formats/ParseError.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
@@ -70,6 +69,7 @@ namespace Setting
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 const KeyCondition::AtomMap KeyCondition::atom_map
@@ -4092,10 +4092,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         }
                         catch (const Exception & e)
                         {
-                            if (!isParseError(e.code()))
+                            if (e.code() != ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
                                 throw;
-                            /// A literal with no representation in the key type is not a point in
-                            /// the key domain, so this atom cannot be analyzed.
+                            /// A string naming no element of the Enum key is not a point in the key
+                            /// domain, so this atom cannot be analyzed.
                             return false;
                         }
                         if (const_value.isNull())

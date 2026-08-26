@@ -3,11 +3,15 @@
 
 #include <Common/Exception.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Formats/ParseError.h>
 #include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
+}
 
 /// Extract the JSON path from a subcolumn name, stripping any `.:\`Type\`` suffix.
 /// For example:
@@ -138,7 +142,7 @@ bool isJSONPathFilterSafe(
     }
     catch (const Exception & e)
     {
-        if (!isParseError(e.code()))
+        if (e.code() != ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
             throw;
         return false;
     }
