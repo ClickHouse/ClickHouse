@@ -6,6 +6,8 @@ import requests
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 from .prometheus_test_utils import (
+    execute_query_via_http_api,
+    execute_range_query_via_http_api,
     get_response_to_remote_write,
     remote_pb2,
     send_protobuf_to_remote_write,
@@ -421,3 +423,114 @@ def test_invalid_histograms_rejected():
             timestamp=1704067221000,
         )
     )
+
+
+# The HTTP JSON rendering of a coarse exponential schema: bucket indexes are negative on both
+# sides here, so the boundary computation must scale by the (negative) schema without UB and
+# produce the same boundaries Prometheus does (2^(idx * 2) for schema -1).
+def test_http_json_coarse_schema():
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS store_native_histograms = 1"
+    )
+    histogram = types_pb2.Histogram(
+        count_int=4,
+        sum=-20.75,
+        schema=-1,
+        zero_threshold=0.001,
+        zero_count_int=0,
+        positive_spans=[types_pb2.BucketSpan(offset=-1, length=1)],
+        positive_deltas=[1],  # bucket index -1: (2^-4, 2^-2]
+        negative_spans=[types_pb2.BucketSpan(offset=1, length=2)],
+        negative_deltas=[1, 1],  # bucket indexes 1, 2: [-4, -1) and [-16, -4)
+        timestamp=1704067201000,
+    )
+    send(make_write_request({"__name__": "test_hist_coarse", "job": "test"}, [histogram]))
+
+    data = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", "test_hist_coarse", timestamp=1704067201
+    )
+    assert data == {
+        "resultType": "vector",
+        "result": [
+            {
+                "metric": {"__name__": "test_hist_coarse", "job": "test"},
+                "histogram": [
+                    1704067201,
+                    {
+                        "count": "4",
+                        "sum": "-20.75",
+                        "buckets": [
+                            [1, "-16", "-4", "2"],
+                            [1, "-4", "-1", "1"],
+                            [0, "0.0625", "0.25", "1"],
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+
+
+# The HTTP JSON rendering of an NHCB (schema -53) histogram: every custom bucket uses boundary
+# rule 0, including the first one, whose lower bound is -Inf.
+def test_http_json_nhcb():
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS store_native_histograms = 1"
+    )
+    histogram = types_pb2.Histogram(
+        count_int=3,
+        sum=4.5,
+        schema=-53,
+        zero_threshold=0.0,
+        zero_count_int=0,
+        positive_spans=[types_pb2.BucketSpan(offset=0, length=2)],
+        positive_deltas=[2, -1],  # decoded to absolute values [2, 1]
+        custom_values=[1.0, 2.5],
+        timestamp=1704067202000,
+    )
+    send(make_write_request({"__name__": "test_hist_nhcb", "job": "test"}, [histogram]))
+
+    data = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", "test_hist_nhcb", timestamp=1704067202
+    )
+    assert data == {
+        "resultType": "vector",
+        "result": [
+            {
+                "metric": {"__name__": "test_hist_nhcb", "job": "test"},
+                "histogram": [
+                    1704067202,
+                    {
+                        "count": "3",
+                        "sum": "4.5",
+                        "buckets": [
+                            [0, "-Inf", "1", "2"],
+                            [0, "1", "2.5", "1"],
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+
+
+# A series whose histogram samples are all stale markers must be dropped from a query_range
+# response entirely: emitting it would produce a matrix element with neither "values" nor
+# "histograms".
+def test_http_query_range_stale_only_series():
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS store_native_histograms = 1"
+    )
+    stale = types_pb2.Histogram(sum=STALE_NAN, timestamp=1704067203000)
+    send(make_write_request({"__name__": "test_hist_stale_range", "job": "test"}, [stale]))
+
+    data = execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        "test_hist_stale_range",
+        1704067200,
+        1704067260,
+        15,
+    )
+    assert data == {"resultType": "matrix", "result": []}
