@@ -1,0 +1,29 @@
+---
+title: 创建 S3 ClickPipe
+---
+
+import S3DataSource from '/snippets/zh/clickpipes/object-storage/amazon-s3/_1-data-source.mdx';
+import S3Connection from '/snippets/zh/clickpipes/object-storage/amazon-s3/_2-connection.mdx';
+import CommonSteps from '/snippets/zh/_create_clickpipe.mdx';
+
+<Steps>
+  <Step title="选择数据源" id="1-select-the-data-source">
+    **1.** 在 ClickHouse Cloud 中，从主导航菜单中选择 **数据源**，然后点击 **创建 ClickPipe**。
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="选择导入" />
+    </Frame>
+
+    <S3DataSource />
+  </Step>
+
+  <Step title="设置 ClickPipe 连接" id="2-setup-your-clickpipe-connection">
+    **1.** 要设置新的 ClickPipe，您需要提供对象存储服务的连接和身份验证详细信息。
+
+    <S3Connection />
+
+    **2.** 点击 **传入数据**。ClickPipes 会从您的存储桶中拉取元数据，用于下一步。
+  </Step>
+
+  <CommonSteps />
+</Steps>

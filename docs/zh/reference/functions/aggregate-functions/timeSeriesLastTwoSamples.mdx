@@ -43,7 +43,8 @@ timeSeriesLastTwoSamples(timestamp, value)
 **原始数据示例表，以及一个用于存储重采样后数据的表**
 
 ```sql title=Query
--- 原始数据表
+SET allow_experimental_time_series_aggregate_functions = 1;
+-- Table for raw data
 CREATE TABLE t_raw_timeseries
 (
     metric_id UInt64,
@@ -53,17 +54,17 @@ CREATE TABLE t_raw_timeseries
 ENGINE = MergeTree()
 ORDER BY (metric_id, timestamp);
 
--- 将数据重采样到更大时间步长（15 秒）的表
+-- Table with data re-sampled to bigger (15 sec) time steps
 CREATE TABLE t_resampled_timeseries_15_sec
 (
     metric_id UInt64,
-    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD), -- 对齐到 15 秒的时间戳
+    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD), -- Timestamp aligned to 15 sec
     samples AggregateFunction(timeSeriesLastTwoSamples, DateTime64(3, 'UTC'), Float64)
 )
 ENGINE = AggregatingMergeTree()
 ORDER BY (metric_id, grid_timestamp);
 
--- 用于填充重采样表的物化视图
+-- MV for populating re-sampled table
 CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_sec
 (
     metric_id UInt64,
@@ -72,15 +73,15 @@ CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_se
 )
 AS SELECT
     metric_id,
-    ceil(toUnixTimestamp(timestamp + interval 999 millisecond) / 15, 0) * 15 AS grid_timestamp, -- 将时间戳向上取整到下一个网格点
+    ceil(toUnixTimestamp(timestamp + interval 999 millisecond) / 15, 0) * 15 AS grid_timestamp, -- Round timestamp up to the next grid point
     initializeAggregation('timeSeriesLastTwoSamplesState', timestamp, value) AS samples
 FROM t_raw_timeseries
 ORDER BY metric_id, grid_timestamp;
 
--- 插入一些数据
+-- Insert some data
 INSERT INTO t_raw_timeseries(metric_id, timestamp, value) SELECT number%10 AS metric_id, '2024-12-12 12:00:00'::DateTime64(3, 'UTC') + interval ((number/10)%100)*900 millisecond as timestamp, number%3+number%29 AS value FROM numbers(1000);
 
--- 查看原始数据
+-- Check raw data
 SELECT *
 FROM t_raw_timeseries
 WHERE metric_id = 3 AND timestamp BETWEEN '2024-12-12 12:00:12' AND '2024-12-12 12:00:31'
@@ -111,10 +112,48 @@ ORDER BY metric_id, timestamp;
 3    2024-12-12 12:00:30.869    25
 ```
 
-**查询时间戳 &#39;2024-12-12 12:00:15&#39; 和 &#39;2024-12-12 12:00:30&#39; 的最近 2 个样本**
+**查询时间戳为 &#39;2024-12-12 12:00:15&#39; 和 &#39;2024-12-12 12:00:30&#39; 的最后 2 个样本**
 
 ```sql title=Query
--- 检查重采样数据
+SET allow_experimental_time_series_aggregate_functions = 1;
+-- Table for raw data
+CREATE TABLE t_raw_timeseries
+(
+    metric_id UInt64,
+    timestamp DateTime64(3, 'UTC') CODEC(DoubleDelta, ZSTD),
+    value Float64 CODEC(DoubleDelta)
+)
+ENGINE = MergeTree()
+ORDER BY (metric_id, timestamp);
+
+-- Table with data re-sampled to bigger (15 sec) time steps
+CREATE TABLE t_resampled_timeseries_15_sec
+(
+    metric_id UInt64,
+    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD), -- Timestamp aligned to 15 sec
+    samples AggregateFunction(timeSeriesLastTwoSamples, DateTime64(3, 'UTC'), Float64)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY (metric_id, grid_timestamp);
+
+-- MV for populating re-sampled table
+CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_sec
+(
+    metric_id UInt64,
+    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD),
+    samples AggregateFunction(timeSeriesLastTwoSamples, DateTime64(3, 'UTC'), Float64)
+)
+AS SELECT
+    metric_id,
+    ceil(toUnixTimestamp(timestamp + interval 999 millisecond) / 15, 0) * 15 AS grid_timestamp, -- Round timestamp up to the next grid point
+    initializeAggregation('timeSeriesLastTwoSamplesState', timestamp, value) AS samples
+FROM t_raw_timeseries
+ORDER BY metric_id, grid_timestamp;
+
+-- Insert some data
+INSERT INTO t_raw_timeseries(metric_id, timestamp, value) SELECT number%10 AS metric_id, '2024-12-12 12:00:00'::DateTime64(3, 'UTC') + interval ((number/10)%100)*900 millisecond as timestamp, number%3+number%29 AS value FROM numbers(1000);
+
+-- Check re-sampled data
 SELECT metric_id, grid_timestamp, (finalizeAggregation(samples).1 as timestamp, finalizeAggregation(samples).2 as value)
 FROM t_resampled_timeseries_15_sec
 WHERE metric_id = 3 AND grid_timestamp BETWEEN '2024-12-12 12:00:15' AND '2024-12-12 12:00:30'
@@ -129,14 +168,28 @@ ORDER BY metric_id, grid_timestamp;
 **从原始数据计算 idelta 和 irate**
 
 ```sql title=Query
--- 聚合表仅存储每个 15 秒对齐时间戳的最后 2 个值。
--- 这样可以通过读取远少于原始表中存储的数据来计算类似 PromQL 的 irate 和 idelta。
+SET allow_experimental_time_series_aggregate_functions = 1;
+-- Table for raw data
+CREATE TABLE t_raw_timeseries
+(
+    metric_id UInt64,
+    timestamp DateTime64(3, 'UTC') CODEC(DoubleDelta, ZSTD),
+    value Float64 CODEC(DoubleDelta)
+)
+ENGINE = MergeTree()
+ORDER BY (metric_id, timestamp);
+
+-- Insert some data
+INSERT INTO t_raw_timeseries(metric_id, timestamp, value) SELECT number%10 AS metric_id, '2024-12-12 12:00:00'::DateTime64(3, 'UTC') + interval ((number/10)%100)*900 millisecond as timestamp, number%3+number%29 AS value FROM numbers(1000);
+
+-- The aggregated table stores only last 2 values for each 15-second aligned timestamp.
+-- This allows to calculate PromQL-like irate and idelta by reading much less data then is stored in the raw table.
 
 WITH
-    '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- 时间戳网格的起始点
-    start_ts + INTERVAL 60 SECOND AS end_ts,   -- 时间戳网格的结束点
-    15 AS step_seconds,   -- 时间戳网格的步长
-    45 AS window_seconds  -- "staleness" 窗口
+    '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- start of timestamp grid
+    start_ts + INTERVAL 60 SECOND AS end_ts,   -- end of timestamp grid
+    15 AS step_seconds,   -- step of timestamp grid
+    45 AS window_seconds  -- "staleness" window
 SELECT
     metric_id,
     timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value),
@@ -153,11 +206,49 @@ GROUP BY metric_id;
 **基于重采样后的数据计算 idelta 和 irate**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
+-- Table for raw data
+CREATE TABLE t_raw_timeseries
+(
+    metric_id UInt64,
+    timestamp DateTime64(3, 'UTC') CODEC(DoubleDelta, ZSTD),
+    value Float64 CODEC(DoubleDelta)
+)
+ENGINE = MergeTree()
+ORDER BY (metric_id, timestamp);
+
+-- Table with data re-sampled to bigger (15 sec) time steps
+CREATE TABLE t_resampled_timeseries_15_sec
+(
+    metric_id UInt64,
+    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD), -- Timestamp aligned to 15 sec
+    samples AggregateFunction(timeSeriesLastTwoSamples, DateTime64(3, 'UTC'), Float64)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY (metric_id, grid_timestamp);
+
+-- MV for populating re-sampled table
+CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_sec
+(
+    metric_id UInt64,
+    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD),
+    samples AggregateFunction(timeSeriesLastTwoSamples, DateTime64(3, 'UTC'), Float64)
+)
+AS SELECT
+    metric_id,
+    ceil(toUnixTimestamp(timestamp + interval 999 millisecond) / 15, 0) * 15 AS grid_timestamp, -- Round timestamp up to the next grid point
+    initializeAggregation('timeSeriesLastTwoSamplesState', timestamp, value) AS samples
+FROM t_raw_timeseries
+ORDER BY metric_id, grid_timestamp;
+
+-- Insert some data
+INSERT INTO t_raw_timeseries(metric_id, timestamp, value) SELECT number%10 AS metric_id, '2024-12-12 12:00:00'::DateTime64(3, 'UTC') + interval ((number/10)%100)*900 millisecond as timestamp, number%3+number%29 AS value FROM numbers(1000);
+
 WITH
-    '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- 时间戳网格的起始点
-    start_ts + INTERVAL 60 SECOND AS end_ts,   -- 时间戳网格的结束点
-    15 AS step_seconds,   -- 时间戳网格的步长
-    45 AS window_seconds  -- "staleness" 窗口
+    '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- start of timestamp grid
+    start_ts + INTERVAL 60 SECOND AS end_ts,   -- end of timestamp grid
+    15 AS step_seconds,   -- step of timestamp grid
+    45 AS window_seconds  -- "staleness" window
 SELECT
     metric_id,
     timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values),

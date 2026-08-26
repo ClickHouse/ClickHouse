@@ -1,14 +1,10 @@
 ---
 date: 2025-01-16
-title: "Comment supprimer l’utilisateur `default` ?"
-description: "Apprenez à supprimer l’utilisateur `default` dans ClickHouse Server."
-tags: ["Administration du serveur"]
-words: ["Supprimer l’utilisateur `default`", "ClickHouse Server"]
+title: Comment supprimer l’utilisateur default ?
+description: "Découvrez comment supprimer l’utilisateur default dans ClickHouse Server."
+tags: ['Administration du serveur']
+words: ['Supprimer l’utilisateur default', 'ClickHouse Server']
 ---
-
-{frontMatter.description}
-
-{/* truncate */}
 
 <div id="removing-the-default-user">
   ## Suppression de l’utilisateur `default`
@@ -18,9 +14,9 @@ words: ["Supprimer l’utilisateur `default`", "ClickHouse Server"]
   Ce guide ne s’applique pas à ClickHouse Cloud.
 </Note>
 
-Dans ce guide, nous allons apprendre à supprimer l’utilisateur `default` de ClickHouse Server.
+Dans ce guide, nous allons voir comment supprimer l’utilisateur `default` de ClickHouse Server.
 
-Pour ce faire, créez un fichier YAML (appelons-le `remove_default_user.yaml`) avec le contenu suivant
+Pour ce faire, créez un fichier YAML (par exemple `remove_default_user.yaml`) contenant le contenu suivant
 
 ```yaml
 users:
@@ -28,27 +24,27 @@ users:
     "@remove": remove
 ```
 
-L’emplacement de ce fichier dépend de la manière dont ClickHouse est installé.
+L&#39;emplacement de ce fichier dépend de la façon dont ClickHouse a été installé.
 
 <div id="running-the-executable-directly">
-  ## Exécuter directement l’exécutable
+  ## Exécution directe de l’exécutable
 </div>
 
-Si nous exécutons directement ClickHouse (`clickhouse server`), nous devons placer le fichier dans le répertoire `config.d`.
+Si nous lançons ClickHouse directement (`clickhouse server`), nous devons placer le fichier dans le répertoire `config.d`.
 
-Lorsque nous lançons le serveur ClickHouse :
+Lorsque nous exécutons le serveur ClickHouse :
 
 ```
 clickhouse server
 ```
 
-Nous verrons apparaître la ligne suivante dans les logs :
+Vous verrez la ligne suivante dans les logs :
 
 ```
 {} <Debug> ConfigProcessor: Merging configuration file 'config.d/remove_default_user.yaml'.
 ```
 
-Et nous ne pourrons pas nous connecter avec `clickhouse client` :
+Et il nous sera impossible de nous connecter avec `clickhouse client` :
 
 ```
 ClickHouse client version 24.11.1.2557 (official build).
@@ -62,9 +58,9 @@ Code: 516. DB::Exception: Received from localhost:9000. DB::Exception: default: 
   ## Docker ou installation locale
 </div>
 
-Si nous utilisons ClickHouse via Docker ou s&#39;il est installé sur notre machine, nous devons plutôt placer le fichier dans le répertoire `/etc/clickhouse-server/users.d`.
+Si nous utilisons ClickHouse via Docker ou s’il est installé sur notre machine, nous devons plutôt placer le fichier dans le répertoire `/etc/clickhouse-server/users.d`.
 
-Donc, si nous l&#39;utilisons avec Docker, nous pouvons monter le répertoire `config.d` que nous avons créé précédemment sur `/etc/clickhouse-server/users.d` :
+Ainsi, si nous l’utilisons avec Docker, nous pouvons monter le répertoire `config.d` que nous avons créé précédemment sur `/etc/clickhouse-server/users.d` :
 
 ```bash
 docker run \
@@ -79,7 +75,7 @@ Logging trace to /var/log/clickhouse-server/clickhouse-server.log
 Logging errors to /var/log/clickhouse-server/clickhouse-server.err.log
 ```
 
-Nous pouvons ensuite consulter les logs du serveur pour vérifier qu’il est bien détecté :
+Nous pouvons ensuite consulter les logs du serveur pour vérifier qu’il a bien été détecté :
 
 ```bash
 docker ps --format "table {{.ID}}\t{{.Image}}\t{{.Names}}\t{{.Command}}"

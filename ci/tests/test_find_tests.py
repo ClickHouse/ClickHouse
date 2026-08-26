@@ -35,9 +35,9 @@ def test_orphan_data_file_is_skipped():
 def test_test_source_files_keep_base_name():
     assert (
         Targeting._derive_test_name(
-            "tests/queries/0_stateless/02995_new_settings_history.sh"
+            "tests/queries/0_stateless/03999_stateless_settings_history.sh"
         )
-        == "02995_new_settings_history"
+        == "03999_stateless_settings_history"
     )
     assert (
         Targeting._derive_test_name(
@@ -57,9 +57,9 @@ def test_reference_file_maps_to_sibling_test():
     # `.reference` for a sibling `.sh`.
     assert (
         Targeting._derive_test_name(
-            "tests/queries/0_stateless/02995_new_settings_history.reference"
+            "tests/queries/0_stateless/03999_stateless_settings_history.reference"
         )
-        == "02995_new_settings_history"
+        == "03999_stateless_settings_history"
     )
     # `.reference.j2` for a sibling `.sql.j2`.
     assert (
@@ -124,13 +124,14 @@ def test_literal_filename_match_beats_cross_extension_stem():
 
 
 def test_orphan_data_file_maps_to_owning_test_by_prefix():
-    # PR #104097 reproducer: `_derive_test_name` returns None for this `.tsv`,
-    # so it used to be skipped. It carries the `02995` prefix of the test that
-    # consumes it, so the flaky check now reruns that test instead of skipping.
+    # PR #104097 reproducer: `_derive_test_name` returns None for a `.tsv`, so it
+    # used to be skipped. The frozen baseline consumed by the settings history test
+    # carries that test's `03999` prefix and is referenced by its literal filename,
+    # so the flaky check reruns exactly that test.
     owning = Targeting._tests_owning_data_file(
-        "tests/queries/0_stateless/02995_settings_26_4_1.tsv"
+        "tests/queries/0_stateless/03999_settings_history_baseline.tsv"
     )
-    assert "02995_new_settings_history" in owning
+    assert owning == ["03999_stateless_settings_history"]
 
 
 def test_data_file_with_no_matching_test_is_skipped():
@@ -179,3 +180,40 @@ def test_get_changed_tests_skips_unmappable_fixture():
     # would exit 1 on a zero-match run).
     diff = "+++ b/tests/queries/0_stateless/data_parquet/99999_no_such_test.parquet\n"
     assert _targeting_from_diff(diff).get_changed_tests() == []
+
+
+def _targeting_with_job_type(job_type):
+    targeter = Targeting.__new__(Targeting)
+    targeter.job_type = job_type
+    return targeter
+
+
+def test_existing_stateless_test_still_exists():
+    targeter = _targeting_with_job_type(Targeting.STATELESS_JOB_TYPE)
+    assert targeter._test_exists("00001_select_1")
+
+
+def test_rendered_stateless_template_test_still_exists():
+    targeter = _targeting_with_job_type(Targeting.STATELESS_JOB_TYPE)
+    assert targeter._test_exists("00172_hits_joins.gen")
+    assert targeter._test_exists("00172_hits_joins.gen.sql")
+
+
+def test_deleted_stateless_test_no_longer_exists():
+    # PR #110958 reproducer: `04648_geohashes_in_box_cancellation` failed on
+    # the PR, was then deleted from master as flaky, and the targeted job kept
+    # replaying its name from CIDB — clickhouse-test matched zero tests and
+    # exited 1 with "No tests were run.".
+    targeter = _targeting_with_job_type(Targeting.STATELESS_JOB_TYPE)
+    assert not targeter._test_exists("04648_geohashes_in_box_cancellation")
+
+
+def test_existing_integration_test_still_exists():
+    targeter = _targeting_with_job_type(Targeting.INTEGRATION_JOB_TYPE)
+    assert targeter._test_exists("test_storage_s3/test.py::test_case[param]")
+    assert targeter._test_exists("test_storage_s3")
+
+
+def test_deleted_integration_test_no_longer_exists():
+    targeter = _targeting_with_job_type(Targeting.INTEGRATION_JOB_TYPE)
+    assert not targeter._test_exists("test_no_such_directory/test.py::test_case")

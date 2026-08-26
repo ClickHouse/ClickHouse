@@ -1,21 +1,21 @@
 ---
 slug: /cloud/managed-postgres/faq
 sidebarTitle: 'FAQ'
-title: 'Managed Postgres FAQ'
+title: 'ClickHouse Managed Postgres FAQ'
 description: 'Frequently asked questions about ClickHouse Managed Postgres'
 keywords: ['managed postgres faq', 'postgres questions', 'metrics', 'extensions', 'migration', 'terraform', 'pgbouncer', 'prepared statements']
 doc_type: 'reference'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.faq-beta" />
 
 ## Monitoring and metrics {#monitoring-and-metrics}
 
-### How can I access metrics for my Managed Postgres instance? {#metrics-access}
+### How can I access metrics for my ClickHouse Managed Postgres instance? {#metrics-access}
 
-You can monitor CPU, memory, IOPS, and storage usage directly from the ClickHouse Cloud console in the **Monitoring** tab of your Managed Postgres instance.
+You can monitor CPU, memory, IOPS, and storage usage directly from the ClickHouse Cloud console in the **Monitoring** tab of your ClickHouse Managed Postgres instance.
 
 In addition, you can explore [Query Performance Insights](https://clickhouse.com/blog/postgres-query-insights-clickhouse-cloud) for detailed analysis of your queries in the **Query Insights** tab.
 
@@ -23,21 +23,21 @@ In addition, you can explore [Query Performance Insights](https://clickhouse.com
 
 ### What backup options are available? {#backup-options}
 
-Managed Postgres includes automatic daily backups with continuous WAL archiving, enabling point-in-time recovery to any moment within a 7-day retention window. Backups are stored in S3.
+ClickHouse Managed Postgres includes automatic daily backups with continuous WAL archiving, enabling point-in-time recovery to any moment within a 7-day retention window. Backups are stored in S3.
 
 For complete details on backup frequency, retention, and how to perform point-in-time recovery, see the [Backup and restore](/products/managed-postgres/backup-and-restore) documentation.
 
 ## Infrastructure and automation {#infrastructure-and-automation}
 
-### Is Terraform support available for Managed Postgres? {#terraform-support}
+### Is Terraform support available for ClickHouse Managed Postgres? {#terraform-support}
 
-Terraform support for Managed Postgres isn't currently available. We recommend using the ClickHouse Cloud console or [OpenAPI](/products/managed-postgres/openapi) to create and manage your instances.
+Terraform support for ClickHouse Managed Postgres isn't currently available. We recommend using the ClickHouse Cloud console or [OpenAPI](/products/managed-postgres/openapi) to create and manage your instances.
 
 ## Extensions and configuration {#extensions-and-configuration}
 
 ### What extensions are supported? {#extensions-supported}
 
-Managed Postgres includes over 90 PostgreSQL extensions, including popular ones like PostGIS, pgvector, pg_cron, and many more. For the complete list of available extensions and installation instructions, see the [Extensions](/products/managed-postgres/extensions) documentation.
+ClickHouse Managed Postgres includes over 90 PostgreSQL extensions, including popular ones like PostGIS, pgvector, pg_cron, and many more. For the complete list of available extensions and installation instructions, see the [Extensions](/products/managed-postgres/extensions) documentation.
 
 ### Can I customize PostgreSQL configuration parameters? {#config-customization}
 
@@ -51,7 +51,7 @@ If you need a parameter that isn't currently available, contact [support](https:
 
 ### Why am I seeing `prepared statement does not exist` errors through PgBouncer? {#prepared-statement-errors}
 
-Managed Postgres runs PgBouncer in **transaction pooling** mode. In this mode, a backend Postgres connection is only assigned to your client for the duration of a single transaction, then returned to the pool — the next transaction from the same client may land on a different backend.
+ClickHouse Managed Postgres runs PgBouncer in **transaction pooling** mode. In this mode, a backend Postgres connection is only assigned to your client for the duration of a single transaction, then returned to the pool — the next transaction from the same client may land on a different backend.
 
 That breaks **server-side prepared statements**, which are tied to the specific backend that ran the `PREPARE` (or the extended-query `Parse`). When the matching `EXECUTE` lands on a different backend, you get errors like:
 
@@ -85,17 +85,17 @@ They control different things:
 - **Postgres `max_connections`** caps the number of **backend** connections to PostgreSQL itself. This is the expensive number — each backend uses memory and a process slot.
 - **PgBouncer `max_client_conn`** caps the number of **client** connections that can be open in the pooler at once. PgBouncer multiplexes these many client connections onto a much smaller set of backend connections.
 
-A typical Managed Postgres instance is configured so PgBouncer accepts roughly **10× more client connections than there are Postgres backends** (e.g. 5000 client / 500 backend). If you see connection errors at the pooler, you're far more likely to be hitting a per-pool backend limit (`default_pool_size`) than the headline client limit.
+A typical ClickHouse Managed Postgres instance is configured so PgBouncer accepts roughly **10× more client connections than there are Postgres backends** (e.g. 5000 client / 500 backend). If you see connection errors at the pooler, you're far more likely to be hitting a per-pool backend limit (`default_pool_size`) than the headline client limit.
 
 ## Database capabilities {#database-capabilities}
 
 ### Can I create multiple databases and schemas? {#multiple-databases-schemas}
 
-Yes. Managed Postgres provides full native PostgreSQL functionality, including support for multiple databases and schemas within a single instance. You can create and manage databases and schemas using standard PostgreSQL commands.
+Yes. ClickHouse Managed Postgres provides full native PostgreSQL functionality, including support for multiple databases and schemas within a single instance. You can create and manage databases and schemas using standard PostgreSQL commands.
 
 ### Is role-based access control (RBAC) supported? {#rbac-support}
 
-You have full superuser access to your Managed Postgres instance, which allows you to create roles and manage permissions using standard PostgreSQL commands.
+You have full superuser access to your ClickHouse Managed Postgres instance, which allows you to create roles and manage permissions using standard PostgreSQL commands.
 
 <Note>
 Enhanced RBAC features with console integration are planned for this year.
@@ -105,13 +105,13 @@ Enhanced RBAC features with console integration are planned for this year.
 
 ### How are PostgreSQL version upgrades handled? {#version-upgrades}
 
-Both minor and major version upgrades are performed via failover and typically result in only a few seconds of downtime. You can configure a maintenance window to control when upgrades are applied. For complete details, see the [Upgrades](/products/managed-postgres/upgrades) documentation.
+Both minor and major version upgrades are performed via failover and typically result in only a few seconds of downtime. You can configure [scheduled upgrades](/products/managed-postgres/upgrades#scheduled-upgrades) to control the days and the two-hour UTC window in which upgrades are applied. For complete details, see the [Upgrades](/products/managed-postgres/upgrades) documentation.
 
 ## Migration {#migration}
 
-### What tools are available for migrating to Managed Postgres? {#migration-tools}
+### What tools are available for migrating to ClickHouse Managed Postgres? {#migration-tools}
 
-Managed Postgres supports several migration approaches:
+ClickHouse Managed Postgres supports several migration approaches:
 
 - **pg_dump and pg_restore**: For smaller databases or one-time migrations. See the [pg_dump and pg_restore](/products/managed-postgres/migrations/pg_dump-pg_restore) guide.
 - **Logical replication**: For larger databases requiring minimal downtime. See the [Logical replication](/products/managed-postgres/migrations/logical-replication) guide.

@@ -2,20 +2,16 @@
 slug: /cloud/managed-postgres/pricing
 sidebarTitle: 'Pricing'
 title: 'Pricing'
-description: 'Pricing model, tiers, instance types, and Beta pricing details for Postgres managed by ClickHouse'
+description: 'Pricing model, tiers, instance types, and Beta pricing details for ClickHouse Managed Postgres'
 keywords: ['postgres pricing', 'managed postgres cost', 'postgres beta pricing', 'postgres pricing calculator', 'nvme pricing', 'postgres tier pricing']
 doc_type: 'reference'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pricing-beta" />
 
-Postgres managed by ClickHouse is built on local NVMe storage, which allows it to offer production-grade performance and native ClickHouse integration without the pricing overhead of traditional network-attached storage architectures. This page covers the pricing model, available instance types, and tier comparison for the service.
-
-Postgres managed by ClickHouse is now available in Beta. The service remains free until metering begins on June 15, 2026, giving teams time to size instances appropriately before billing starts.
-
-During the beta period, all plans include a 50% discount, reflecting our commitment to our early customers. Pricing starts at approximately **$30/month** for 1 vCPU, 8 GB RAM, 59 GB NVMe storage configuration.
+ClickHouse Managed Postgres is built on local NVMe storage, which allows it to offer production-grade performance and native ClickHouse integration without the pricing overhead of traditional network-attached storage architectures. This page covers the pricing model, available instance types, and tier comparison for the service which is in beta.
 
 <Tip>
 **Pricing calculator**
@@ -55,7 +51,7 @@ The table below summarizes the features, capabilities, and limits included in ea
       <li><a href="/products/managed-postgres/extensions">90+ Postgres extensions</a></li>
       <li><a href="/products/managed-postgres/clickhouse-integration">Native CDC to ClickHouse</a></li>
       <li><a href="/products/managed-postgres/extensions"><code>pg_clickhouse</code> extension</a></li>
-      <li><a href="/es/products/managed-postgres/migrations/clickhouse-cloud">Fully managed data-migration</a></li>
+      <li><a href="/products/managed-postgres/migrations/clickpipes">Fully managed data-migration</a></li>
       <li>Expert support with 1 business day response time</li>
       <li><a href="/products/cloud/guides/security/cloud-access-management/manage-my-account">Single sign-on authentication (SSO)</a> using Google or Microsoft Social login</li>
       <li><a href="/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa">Multi-factor authentication</a></li>
@@ -70,6 +66,7 @@ The table below summarizes the features, capabilities, and limits included in ea
       <li><a href="/products/managed-postgres/scaling">Up to 96 vCPUs and 768 GB RAM</a></li>
       <li><a href="/products/managed-postgres/scaling">Storage autoscale</a></li>
       <li><a href="/products/managed-postgres/read-replicas">Read replicas</a></li>
+      <li><a href="/products/managed-postgres/upgrades#scheduled-upgrades">Scheduled upgrades</a></li>
       <li><a href="/products/managed-postgres/security">Private networking</a></li>
       <li><a href="/products/managed-postgres/backup-and-restore">Backups with retention of 7 days</a></li>
       <li><a href="/products/managed-postgres/monitoring/query-insights">Query Insights</a> with 7 day retention</li>
@@ -85,19 +82,19 @@ The table below summarizes the features, capabilities, and limits included in ea
       <li>Private regions</li>
       <li>Named Lead Support Engineer</li>
       <li><a href="/products/managed-postgres/extensions">Custom extensions</a> (*pending approval)</li>
-      <li><a href="/es/products/managed-postgres/migrations/clickhouse-cloud">Consultative migrations guides</a></li>
-      <li><a href="/products/managed-postgres/upgrades">Scheduled upgrades</a></li>
+      <li><a href="/products/managed-postgres/migrations/clickpipes">Consultative migrations guides</a></li>
+      <li><a href="/products/managed-postgres/upgrades#days-of-the-week">Day-of-week selection for scheduled upgrades</a></li>
     </ul>
   </div>
 </div>
 
 ### Instance types {#instance-types}
 
-Instance configurations are grouped into three categories to simplify infrastructure selection based on workload characteristics.
+Instance configurations are grouped into three categories to simplify infrastructure selection based on workload characteristics. Not all instance types are available in every AWS region.
 
-- **Memory Optimized:** Designed for memory-intensive workloads with higher memory-to-CPU ratios (such as 1:8 or 1:4). Supports AWS Graviton-based `r8gd`, `r6gd`, `m6gd`, and `m8gd` families. Best suited for large working sets, high cache hit ratios, and memory-bound database workloads.
-- **Storage Optimized:** Designed for workloads that require large amounts of local NVMe storage without scaling compute proportionally. Supports AWS Graviton-based `i8g`, `i8ge`, `i7i` and `i7ie` families, with configurations offering up to 60 TB of local NVMe storage. Best suited for large datasets, time-series workloads, log and event storage, and storage-heavy OLTP workloads.
-- **CPU Optimized:** Designed for compute-intensive workloads with lower memory-to-CPU ratios (typically around 1:2). Supports `c6gd` families and is best suited for high-concurrency transactional workloads and CPU-bound queries.
+- **Memory Optimized:** Designed for memory-intensive workloads with a memory-to-CPU ratio of 1:8. Supports x86-based `r8id` and `r6id` families, and ARM64 (AWS Graviton-based) `r8gd` and `r6gd` families. Best suited for large working sets, high cache hit ratios, and memory-bound database workloads.
+- **Storage Optimized:** Designed for workloads that require large amounts of local NVMe storage without scaling compute proportionally. Supports ARM64 (AWS Graviton-based) `i8g` and `i8ge` families, and x86-based `i7i` and `i7ie` families, with configurations offering up to 60 TB of local NVMe storage. Best suited for large datasets, time-series workloads, log and event storage, and storage-heavy OLTP workloads.
+- **CPU Optimized:** Designed for compute-intensive workloads with a memory-to-CPU ratio of 1:4. Supports x86-based `m8id` and `m6id` families, and ARM64 (AWS Graviton-based) `m8gd` and `m6gd` families. Best suited for high-concurrency transactional workloads and CPU-bound queries.
 
 ## Pricing calculator {#pricing-calculator}
 

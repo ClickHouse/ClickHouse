@@ -22,7 +22,6 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   * Maven Central (página do projeto na web): https://mvnrepository.com/artifact/com.clickhouse/client-v2
   * Builds noturnas (link do repositório): https://central.sonatype.com/repository/maven-snapshots/
-  * Artifactory das compilações Nightly antigas (link do repositório): https://s01.oss.sonatype.org/content/repositories/snapshots/
 
   <br />
 
@@ -227,19 +226,19 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
     </Tab>
 
     <Tab title="Avançado">
-      | Método                                                                    | Argumentos                                                                               | Descrição                                                                                                                                                              | Padrão   | Chave                        |
-      | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------- |
-      | `setOption(String key, String value)`                                     | `key` - chave da opção de configuração<br />`value` - valor da opção                     | Define o valor bruto das opções do cliente. Útil ao ler a configuração de arquivos de propriedades.                                                                    | -        | -                            |
-      | `useAsyncRequests(boolean async)`                                         | `async` - sinalizador para habilitar/desabilitar                                         | Define se o cliente deve executar a requisição em uma thread separada. Desabilitado por padrão porque a aplicação sabe melhor como organizar tarefas multithread.      | `false`  | `async`                      |
-      | `setSharedOperationExecutor(ExecutorService executorService)`             | `executorService` - instância de ExecutorService                                         | Define o ExecutorService para tarefas de operação.                                                                                                                     | `none`   | `none`                       |
-      | `setQueryIdGenerator(Supplier<String> supplier)`                          | `supplier` - um `Supplier<String>` que gera IDs de consulta                              | Define um gerador de ID de consulta personalizado usado quando nenhum ID de consulta é especificado nas configurações da operação (`InsertSettings`, `QuerySettings`). | -        | -                            |
-      | `setClientNetworkBufferSize(int size)`                                    | `size` - tamanho em bytes                                                                | Define o tamanho de um buffer no espaço de memória da aplicação usado para copiar dados entre o socket e a aplicação.                                                  | `300000` | `client_network_buffer_size` |
-      | `allowBinaryReaderToReuseBuffers(boolean reuse)`                          | `reuse` - sinalizador para habilitar/desabilitar                                         | Se habilitado, o leitor usará buffers pré-alocados para fazer a transcodificação de números. Reduz a pressão do GC para dados numéricos.                               | -        | -                            |
-      | `columnToMethodMatchingStrategy(ColumnToMethodMatchingStrategy strategy)` | `strategy` - implementação da estratégia de correspondência                              | Define uma estratégia personalizada para corresponder campos da classe DTO e colunas do DB ao registrar o DTO.                                                         | `none`   | `none`                       |
-      | `setClientName(String clientName)`                                        | `clientName` - string com o nome da aplicação                                            | Define informações adicionais sobre a aplicação chamadora. Será passada como cabeçalho `User-Agent`.                                                                   | -        | `client_name`                |
-      | `registerClientMetrics(Object registry, String name)`                     | `registry` - instância do registro do Micrometer<br />`name` - nome do grupo de métricas | Registra sensores em uma instância de registro do Micrometer (https://micrometer.io/).                                                                                 | -        | -                            |
-      | `setServerVersion(String version)`                                        | `version` - string da versão do servidor                                                 | Define a versão do servidor para evitar a detecção automática da versão.                                                                                               | -        | `server_version`             |
-      | `typeHintMapping(Map typeHintMapping)`                                    | `typeHintMapping` - map de type hints                                                    | Define o mapeamento de type hints para os tipos do ClickHouse. Por exemplo, para fazer arrays multidimensionais serem representados como contêineres Java.             | -        | `type_hint_mapping`          |
+      | Método                                                                    | Argumentos                                                                               | Descrição                                                                                                                                                               | Padrão   | Chave                        |
+      | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------- |
+      | `setOption(String key, String value)`                                     | `key` - chave da opção de configuração<br />`value` - valor da opção                     | Define o valor bruto das opções do cliente. Útil ao ler a configuração de arquivos de propriedades.                                                                     | -        | -                            |
+      | `useAsyncRequests(boolean async)`                                         | `async` - sinalizador para habilitar/desabilitar                                         | Define se o cliente deve executar a requisição em uma thread separada. Desabilitado por padrão porque a aplicação sabe melhor como organizar tarefas multithread.       | `false`  | `async`                      |
+      | `setSharedOperationExecutor(ExecutorService executorService)`             | `executorService` - instância de ExecutorService                                         | Define o ExecutorService para tarefas de operação.                                                                                                                      | `none`   | `none`                       |
+      | `setQueryIdGenerator(Supplier<String> supplier)`                          | `supplier` - um `Supplier<String>` que gera IDs de consulta                              | Define um gerador personalizado de IDs de consulta usado quando nenhum ID de consulta é especificado nas configurações da operação (`InsertSettings`, `QuerySettings`). | -        | -                            |
+      | `setClientNetworkBufferSize(int size)`                                    | `size` - tamanho em bytes                                                                | Define o tamanho de um buffer no espaço de memória da aplicação usado para copiar dados entre o socket e a aplicação.                                                   | `300000` | `client_network_buffer_size` |
+      | `allowBinaryReaderToReuseBuffers(boolean reuse)`                          | `reuse` - sinalizador para habilitar/desabilitar                                         | Se habilitado, o leitor usará buffers pré-alocados para fazer a transcodificação de números. Reduz a pressão do GC para dados numéricos.                                | -        | -                            |
+      | `columnToMethodMatchingStrategy(ColumnToMethodMatchingStrategy strategy)` | `strategy` - implementação da estratégia de correspondência                              | Define uma estratégia personalizada para corresponder campos da classe DTO e colunas do DB ao registrar o DTO.                                                          | `none`   | `none`                       |
+      | `setClientName(String clientName)`                                        | `clientName` - string com o nome da aplicação                                            | Define informações adicionais sobre a aplicação chamadora. Será passada como cabeçalho `User-Agent`.                                                                    | -        | `client_name`                |
+      | `registerClientMetrics(Object registry, String name)`                     | `registry` - instância do registro do Micrometer<br />`name` - nome do grupo de métricas | Registra sensores em uma instância de registro do Micrometer (https://micrometer.io/).                                                                                  | -        | -                            |
+      | `setServerVersion(String version)`                                        | `version` - string da versão do servidor                                                 | Define a versão do servidor para evitar a detecção automática da versão.                                                                                                | -        | `server_version`             |
+      | `typeHintMapping(Map typeHintMapping)`                                    | `typeHintMapping` - map de type hints                                                    | Define o mapeamento de type hints para os tipos do ClickHouse. Por exemplo, para fazer arrays multidimensionais serem representados como contêineres Java.              | -        | `type_hint_mapping`          |
     </Tab>
   </Tabs>
 
@@ -247,11 +246,11 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   ### Identificação do Cliente
 
-  Há dois campos em um log de consulta que identificam a aplicação que originou uma requisição: `client_name` e `http_user_agent`. O protocolo native TCP usa
-  `client_name` para identificar a aplicação. O protocolo HTTP usa `http_user_agent` para identificar a aplicação. O construtor de cliente possui o método `setClientName` para definir os valores corretos
+  Há dois campos em um log de consulta que identificam a aplicação que originou uma requisição: `client_name` e `http_user_agent`. O protocolo TCP nativo usa
+  `client_name` para identificar a aplicação. O protocolo HTTP usa `http_user_agent` para identificar a aplicação. O construtor do cliente possui o método `setClientName` para definir os valores corretos
   para ambos os protocolos.
-  O campo `http_user_agent` é definido de acordo com o formato comum do header `User-Agent`: `application-name[/version] [(operating-system; architecture; ...)]`.
-  Esse conjunto de valores é repetido para cada layer: aplicação, biblioteca cliente e biblioteca cliente HTTP. O que é definido pelo método `setClientName` aparece primeiro na lista.
+  O campo `http_user_agent` é definido de acordo com o formato comum do cabeçalho `User-Agent`: `application-name[/version] [(operating-system; architecture; ...)]`.
+  Esse conjunto de valores é repetido para cada camada: aplicação, biblioteca cliente, biblioteca cliente HTTP. O que é definido pelo método `setClientName` aparece primeiro na lista.
 
   Por exemplo:
 
@@ -426,7 +425,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   ### insert(String tableName, InputStream data, ClickHouseFormat format)
 
-  Aceita dados como um `InputStream` de bytes no formato especificado. Espera-se que `data` esteja codificado no `format`.
+  Aceita dados como um `InputStream` de bytes no formato especificado. Espera-se que `data` esteja codificado em `format`.
 
   **Assinaturas**
 
@@ -447,7 +446,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   **Valor de retorno**
 
-  Future do tipo `InsertResponse` - resultado da operação e informações adicionais como métricas do lado do servidor.
+  Futuro do tipo `InsertResponse` - resultado da operação e informações adicionais, como métricas do lado do servidor.
 
   **Exemplos**
 
@@ -551,7 +550,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   **Valor de retorno**
 
-  Futuro do tipo `QueryResponse` — um conjunto de dados de resultado e informações adicionais, como métricas do lado do servidor. O objeto Response deve ser fechado após o consumo do conjunto de dados.
+  Future do tipo `QueryResponse` - um conjunto de dados de resultado e informações adicionais como métricas do lado do servidor. O objeto Response deve ser fechado após o consumo do conjunto de dados.
 
   **Exemplos**
 
@@ -601,7 +600,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   **Valor de retorno**
 
-  Future do tipo `QueryResponse` - um conjunto de dados de resultado e informações adicionais como métricas do lado do servidor. O objeto Response deve ser fechado após o consumo do conjunto de dados.
+  Futuro do tipo `QueryResponse` — um conjunto de dados de resultado e informações adicionais, como métricas do lado do servidor. O objeto Response deve ser fechado após consumir o conjunto de dados.
 
   **Exemplos**
 
@@ -675,20 +674,20 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   | Método                                            | Descrição                                                                                                                                                              |
   | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `setQueryId(String queryId)`                      | Define o ID da consulta que será atribuído à operação.                                                                                                                 |
+  | `setQueryId(String queryId)`                      | Define o ID da consulta a ser atribuído à operação.                                                                                                                    |
   | `setFormat(ClickHouseFormat format)`              | Define o formato da resposta. Consulte `RowBinaryWithNamesAndTypes` para ver a lista completa.                                                                         |
   | `setMaxExecutionTime(Integer maxExecutionTime)`   | Define o tempo de execução da operação no servidor. Não afeta o timeout de leitura.                                                                                    |
   | `waitEndOfQuery(Boolean waitEndOfQuery)`          | Solicita ao servidor que aguarde o término da consulta antes de enviar uma resposta.                                                                                   |
   | `setUseServerTimeZone(Boolean useServerTimeZone)` | O fuso horário do servidor (consulte a configuração do cliente) será usado para fazer o parse dos tipos de data/hora no resultado de uma operação. O padrão é `false`. |
-  | `setUseTimeZone(String timeZone)`                 | Solicita ao servidor que use `timeZone` para a conversão de horário. Consulte [session&#95;timezone](/pt-BR/reference/settings/session-settings#session_timezone).           |
+  | `setUseTimeZone(String timeZone)`                 | Solicita ao servidor que use `timeZone` para a conversão de horário. Consulte [session&#95;timezone](/pt-BR/reference/settings/session-settings/other#session_timezone).     |
   | `serverSetting(String name, String value)`        | Define configurações individuais do servidor para uma operação.                                                                                                        |
   | `serverSetting(String name, Collection values)`   | Define configurações individuais do servidor com vários valores para uma operação. Os itens da coleção devem ser do tipo `String`.                                     |
-  | `setDBRoles(Collection dbRoles)`                  | Define os roles do DB a serem aplicados antes de executar uma operação. Os itens da coleção devem ser valores `String`.                                                |
+  | `setDBRoles(Collection dbRoles)`                  | Define os roles de DB a serem configurados antes da execução de uma operação. Os itens da coleção devem ser valores `String`.                                          |
   | `setOption(String option, Object value)`          | Define uma opção de configuração em formato bruto. Não se trata de uma configuração do servidor.                                                                       |
 
   ### QueryResponse
 
-  Objeto de resposta que contém o resultado da execução da consulta. Ele só estará disponível se o cliente tiver recebido uma resposta do servidor.
+  Objeto de resposta que contém o resultado da execução da consulta. Ele só estará disponível se o cliente receber uma resposta do servidor.
 
   <Note>
     Este objeto deve ser fechado o quanto antes para liberar a conexão, pois ela não pode ser reutilizada até que todos os dados da resposta anterior sejam lidos por completo.
@@ -742,11 +741,11 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   **Parâmetros**
 
-  `sql` - Instrução SQL &quot;SELECT&quot; cujo esquema deve ser retornado.
+  `sql` - instrução SQL &quot;SELECT&quot; cujo esquema deve ser retornado.
 
   **Valor de retorno**
 
-  Retorna um objeto `TableSchema` com colunas correspondentes à expressão `sql`.
+  Retorna um objeto `TableSchema` com colunas que correspondem à expressão `sql`.
 
   ### TableSchema
 
@@ -763,7 +762,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   **Parâmetros**
 
-  `clazz` - Classe que representa o POJO usado para leitura/gravação de dados.
+  `clazz` - Classe que representa o POJO usado para ler/gravar dados.
 
   `schema` - Esquema de dados a ser usado para correspondência com propriedades POJO.
 
@@ -809,7 +808,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
   try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
       ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
       while (reader.next() != null) {
-          
+
           Object[] uint64 = reader.getObjectArray("uint64_arr"); // Array(UInt64) -> BigInteger[]
           Object[] arr2d = reader.getObjectArray("arr2d");       // Array(Array(Int64)) -> Object[]
 
@@ -989,15 +988,15 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
     </Tab>
 
     <Tab title="HTTP & Cabeçalhos">
-      | Configuração V1                                      | Método do Builder              | Comentários                                    |
-      | ---------------------------------------------------- | ------------------------------ | ---------------------------------------------- |
-      | `ClickHouseHttpOption#CUSTOM_HEADERS`                | `Client.Builder#httpHeaders`   |                                                |
-      | `ClickHouseHttpOption#CUSTOM_PARAMS`                 | ✗                              | Consulte `Client.Builder#serverSetting`        |
-      | `ClickHouseClientOption#CLIENT_NAME`                 | `Client.Builder#setClientName` |                                                |
-      | `ClickHouseHttpOption#CONNECTION_PROVIDER`           | ✗                              |                                                |
-      | `ClickHouseHttpOption#DEFAULT_RESPONSE`              | ✗                              |                                                |
-      | `ClickHouseHttpOption#SEND_HTTP_CLIENT_ID`           | ✗                              |                                                |
-      | `ClickHouseHttpOption#AHC_VALIDATE_AFTER_INACTIVITY` | ✗                              | Sempre habilitado ao usar o Apache Http Client |
+      | Configuração V1                                      | Método do Builder              | Comentários                                           |
+      | ---------------------------------------------------- | ------------------------------ | ----------------------------------------------------- |
+      | `ClickHouseHttpOption#CUSTOM_HEADERS`                | `Client.Builder#httpHeaders`   |                                                       |
+      | `ClickHouseHttpOption#CUSTOM_PARAMS`                 | ✗                              | Consulte `Client.Builder#serverSetting`               |
+      | `ClickHouseClientOption#CLIENT_NAME`                 | `Client.Builder#setClientName` |                                                       |
+      | `ClickHouseHttpOption#CONNECTION_PROVIDER`           | ✗                              |                                                       |
+      | `ClickHouseHttpOption#DEFAULT_RESPONSE`              | ✗                              |                                                       |
+      | `ClickHouseHttpOption#SEND_HTTP_CLIENT_ID`           | ✗                              |                                                       |
+      | `ClickHouseHttpOption#AHC_VALIDATE_AFTER_INACTIVITY` | ✗                              | Sempre habilitado quando o Apache Http Client é usado |
     </Tab>
 
     <Tab title="Formato & Consulta">

@@ -4,9 +4,23 @@ title: 'セキュリティと認証'
 description: 'セキュリティと認証のランディングページ'
 doc_type: 'landing-page'
 keywords: ['セキュリティと認証', 'アクセス制御', 'RBAC', 'ユーザー管理', 'SRE ガイド']
+mode: wide
 ---
 
-| ページ                                                               | 説明                                                           |
-| ----------------------------------------------------------------- | ------------------------------------------------------------ |
-| [ユーザーとロール](/ja/concepts/features/security/access-rights)             | ClickHouse が RBAC に基づくアクセス制御管理をどのようにサポートしているか、詳しく説明します。      |
-| [外部認証](/ja/concepts/features/security/external-authenticators/index) | OSS ClickHouse が外部サービスを使ったユーザー認証と管理をどのようにサポートしているか、詳しく説明します。 |
+<CardGroup cols={2}>
+  <Card title="ユーザーとロール" icon="users" href="/ja/concepts/features/security/access-rights">
+    ClickHouse が RBAC に基づくアクセス制御管理をどのようにサポートしているか、詳しく説明します。
+  </Card>
+
+  <Card title="ネットワークポート" icon="ethernet" href="/ja/concepts/features/security/network-ports">
+    ClickHouse で使用されるネットワークポートのリファレンスです。
+  </Card>
+
+  <Card title="TLS" icon="lock" href="/ja/concepts/features/security/tls/index">
+    ClickHouse への安全な接続のために TLS を設定します。
+  </Card>
+
+  <Card title="外部認証" icon="id-badge" href="/ja/concepts/features/security/external-authenticators/index">
+    OSS ClickHouse が外部サービスを使ったユーザー認証と管理をどのようにサポートしているか、詳しく説明します。
+  </Card>
+</CardGroup>

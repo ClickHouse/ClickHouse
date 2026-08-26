@@ -2075,7 +2075,7 @@ keywords: ['ClickHouse 2020', '2020 更新日志', '发布说明', '版本历史
 * 改进了对 clickhouse-test 中挂起查询的检查。[#11321](https://github.com/ClickHouse/ClickHouse/pull/11321) ([alexey-milovidov](https://github.com/alexey-milovidov)) 。
 * 如果 server 构建为调试版本或启用了 sanitizers，则发出警告。[#11304](https://github.com/ClickHouse/ClickHouse/pull/11304) ([alexey-milovidov](https://github.com/alexey-milovidov)) 。
 * 现在，`clickhouse-test` 会在测试开始前检查服务器是否在线。[#11285](https://github.com/ClickHouse/ClickHouse/pull/11285) ([alesapin](https://github.com/alesapin)) 。
-* 修复了可能存在不稳定性的测试 `00731_long_merge_tree_select_opened_files.sh`。该测试并不经常失败，但我们在使用 ThreadFuzzer 进行实验时，发现其中存在潜在的竞态条件：[#9814](https://github.com/ClickHouse/ClickHouse/issues/9814)。示例见[链接](https://clickhouse-test-reports.s3.yandex.net/9814/40e3023e215df22985d275bf85f4d2290897b76b/functional_stateless_tests_\(unbundled\).html#fail1)。[#11270](https://github.com/ClickHouse/ClickHouse/pull/11270) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* 修复了可能存在不稳定性的测试 `00731_long_merge_tree_select_opened_files.sh`。该测试并不经常失败，但我们在使用 ThreadFuzzer 进行实验时，发现其中存在潜在的竞态条件：[#9814](https://github.com/ClickHouse/ClickHouse/issues/9814)。[#11270](https://github.com/ClickHouse/ClickHouse/pull/11270) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * 如果 `curl` 调用超时，则在 CI 中重新运行测试。这可能是由于我们的 CI 基础设施中常见的、持续 10 秒以上的系统卡顿造成的。此更改修复了 [#11267](https://github.com/ClickHouse/ClickHouse/issues/11267)。[#11268](https://github.com/ClickHouse/ClickHouse/pull/11268) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * 由 @donmikel 为 Join 表引擎添加了一项测试。此更改关闭了 [#9158](https://github.com/ClickHouse/ClickHouse/issues/9158)。[#11265](https://github.com/ClickHouse/ClickHouse/pull/11265) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * 修复了单元测试中的几个无关紧要的错误。[#11262](https://github.com/ClickHouse/ClickHouse/pull/11262) ([alesapin](https://github.com/alesapin)) 。
@@ -3343,7 +3343,7 @@ keywords: ['ClickHouse 2020', '2020 更新日志', '发布说明', '版本历史
 * 更新了 `clickhouse-test` 脚本中对卡住查询的检查 [#8858](https://github.com/ClickHouse/ClickHouse/pull/8858) ([Alexander Kazakov](https://github.com/Akazz))
 * 从 repository 中移除了一些无用文件。[#8843](https://github.com/ClickHouse/ClickHouse/pull/8843) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * 将 math 性能测试类型从 `once` 改为 `loop`。[#8783](https://github.com/ClickHouse/ClickHouse/pull/8783) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
-* 新增了一个 Docker image，可用于为我们的代码库生成交互式代码浏览器 HTML 报告。[#8781](https://github.com/ClickHouse/ClickHouse/pull/8781) ([alesapin](https://github.com/alesapin)) 请参见 [Woboq Code Browser](https://clickhouse-test-reports.s3.yandex.net/codebrowser/ClickHouse/dbms/index.html)
+* 新增了一个 Docker image，可用于为我们的代码库生成交互式代码浏览器 HTML 报告。[#8781](https://github.com/ClickHouse/ClickHouse/pull/8781) ([alesapin](https://github.com/alesapin))
 * 在 MSan 环境下抑制一些测试失败。[#8780](https://github.com/ClickHouse/ClickHouse/pull/8780) ([Alexander Kuzmenkov](https://github.com/akuzm))
 * 加快“insert 时异常”测试。该测试在 debug-with-coverage 构建中经常超时。[#8711](https://github.com/ClickHouse/ClickHouse/pull/8711) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * 将 `libcxx` 和 `libcxxabi` 更新到 master，以便为 [#9304](https://github.com/ClickHouse/ClickHouse/issues/9304) [#9308](https://github.com/ClickHouse/ClickHouse/pull/9308) 做准备 ([alexey-milovidov](https://github.com/alexey-milovidov))

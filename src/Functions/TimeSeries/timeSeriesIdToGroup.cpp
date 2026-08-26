@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 
+#include <Columns/ColumnsNumber.h>
 #include <Functions/TimeSeries/TimeSeriesTagsFunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -57,25 +58,12 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
-        const auto & id_type = TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0);
-        if (id_type == typeid(UInt64))
-            return executeForIDType<UInt64>(arguments, result_type, input_rows_count);
-        if (id_type == typeid(UInt128))
-            return executeForIDType<UInt128>(arguments, result_type, input_rows_count);
-        UNREACHABLE();
-    }
-
-    template <typename IDType>
-    ColumnPtr executeForIDType(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const
-    {
-        auto ids = TimeSeriesTagsFunctionHelpers::extractIDFromArgument<IDType>(name, arguments, 0);
-
-        auto groups = tags_collector->getGroupByID(ids);
-        chassert(groups.size() == input_rows_count);
-
-        return TimeSeriesTagsFunctionHelpers::makeColumnForGroup(groups);
+        auto res = ColumnUInt64::create();
+        tags_collector->getGroupByID(arguments[0].column, res->getData());
+        chassert(res->size() == input_rows_count);
+        return res;
     }
 
 private:
@@ -87,11 +75,11 @@ REGISTER_FUNCTION(TimeSeriesIdToGroup)
 {
     FunctionDocumentation::Description description = R"(
 Returns the names and values of the tags associated with a specified identifier of a time series.
-See also function [timeSeriesStoreTags()](/sql-reference/functions/time-series-functions#timeSeriesStoreTags).
+See also function [timeSeriesStoreTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesIdToGroup(id)";
     FunctionDocumentation::Arguments arguments = {
-        {"id", "Identifier of a time series.", {"UInt64", "UInt128", "UUID", "FixedString(16)"}}
+        {"id", "Identifier of a time series. Must be of the same type which was used when calling [timeSeriesStoreTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Returns a group of tags associated with the identifier `id` of a time series.", {"UInt64"}
@@ -107,9 +95,9 @@ SELECT 8374283493092 AS id,
        timeSeriesGroupToTags(group)
         )",
         R"(
-┌────────────id─┬───────same_id─┬─throwIf(notE⋯me_id, id))─┬─group─┬─timeSeriesGroupToTags(group)───────────────────────────────────────┐
-│ 8374283493092 │ 8374283493092 │                        0 │     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
-└───────────────┴───────────────┴──────────────────────────┴───────┴────────────────────────────────────────────────────────────────────┘
+┌────────────id─┬───────same_id─┬─throwIf(notEquals(same_id, id))─┬─group─┬─timeSeriesGroupToTags(group)───────────────────────────────────────┐
+│ 8374283493092 │ 8374283493092 │                               0 │     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
+└───────────────┴───────────────┴─────────────────────────────────┴───────┴────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

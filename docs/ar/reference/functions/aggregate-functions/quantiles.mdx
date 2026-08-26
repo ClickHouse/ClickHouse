@@ -32,11 +32,11 @@ quantiles(level1, level2, ...)(expr)
 
 **الوسيطات**
 
-* `expr` — تعبير على قيم العمود ينتج عنه أنواع بيانات رقمية، أو `Date` أو `DateTime`. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
+* `expr` — تعبير على قيم العمود ينتج عنه أنواع بيانات رقمية، أو `Date` أو `DateTime` أو `DateTime64`. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Int128`](/ar/reference/data-types/int-uint) أو [`UInt128`](/ar/reference/data-types/int-uint) أو [`Int256`](/ar/reference/data-types/int-uint) أو [`UInt256`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 
 **القيمة المُعادة**
 
-مصفوفة من quantiles التقريبية للمستويات المحددة، وبالترتيب نفسه الذي حُدِّدت به هذه المستويات. [`Array(Float64)`](/ar/reference/data-types/array) أو [`Array(Date)`](/ar/reference/data-types/array) أو [`Array(DateTime)`](/ar/reference/data-types/array)
+مصفوفة من quantiles التقريبية للمستويات المحددة، وبالترتيب نفسه الذي حُدِّدت به هذه المستويات. تُنتِج الوسيطات الرقمية `Float64`، بينما تحتفظ وسيطات `Decimal` و`Date` و`DateTime` و`DateTime64` بتنسيق الإدخال الخاص بها. [`Array(Float64)`](/ar/reference/data-types/array) أو [`Array(Decimal*)`](/ar/reference/data-types/array) أو [`Array(Date)`](/ar/reference/data-types/array) أو [`Array(DateTime)`](/ar/reference/data-types/array) أو [`Array(DateTime64)`](/ar/reference/data-types/array)
 
 **أمثلة**
 

@@ -1,4 +1,5 @@
 #include <Client/ConnectionEstablisher.h>
+#include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
@@ -157,6 +158,10 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 
     for (size_t tries = 0; ; ++tries)
     {
+        /// Every distributed connection attempt passes through here, so this is the one place where a
+        /// cancelled or timed out query can be stopped before it blocks on another connect.
+        CurrentThread::checkIfNotCancelled();
+
         try
         {
             try_establish();
@@ -194,6 +199,12 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
                 continue;
             }
 
+            /// The check at the top of the loop cannot cover the last attempt: there is no next
+            /// iteration to reach it. Without this one, a query cancelled while the final connect was
+            /// in flight leaves the establisher reporting an ordinary soft failure, and the caller
+            /// then reports `ALL_CONNECTION_TRIES_FAILED` instead of the cancellation.
+            CurrentThread::checkIfNotCancelled();
+
             /// Report a soft failure, so the caller can retry on another replica instead of failing
             /// the whole distributed query.
             return;
@@ -209,7 +220,7 @@ ConnectionEstablisherAsync::ConnectionEstablisherAsync(
     const Settings & settings_,
     LoggerPtr log_,
     const QualifiedTableName * table_to_check_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this))
+    : AsyncTaskExecutor(std::make_unique<Task>(*this), "ConnectionEstablisherAsync")
     , connection_establisher(std::move(pool_), timeouts_, settings_, log_, table_to_check_)
 {
     epoll.add(timeout_descriptor.getDescriptor());
@@ -283,7 +294,7 @@ bool ConnectionEstablisherAsync::checkTimeout()
         if (haveMoreAddressesToConnect())
         {
             /// There are more addresses to try. Set a flag on the Connection so that
-            /// when the fiber resumes, it will throw a timeout exception and the
+            /// when the coroutine resumes, it will throw a timeout exception and the
             /// Connection::connect() loop can try the next address.
             if (!result.entry.isNull())
                 result.entry->setAddressConnectTimeoutExpired();
@@ -294,7 +305,7 @@ bool ConnectionEstablisherAsync::checkTimeout()
                 epoll.remove(socket_fd);
                 socket_fd = -1;
             }
-            /// Return true to resume the fiber, which will throw the timeout exception.
+            /// Return true to resume the coroutine, which will throw the timeout exception.
             return true;
         }
 

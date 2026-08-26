@@ -14,9 +14,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <BackToQuickstarts />
 
 <div className="mt-2 flex flex-wrap gap-2">
-  <Badge size="lg" color="blue">Analytique en temps réel</Badge>
-  <Badge size="lg" color="blue">Data warehousing</Badge>
-  <Badge size="lg" color="blue">Observability</Badge>
+  <Badge size="lg" color="blue">Analytics en temps réel</Badge>
+  <Badge size="lg" color="blue">Entreposage de données</Badge>
+  <Badge size="lg" color="blue">Observabilité</Badge>
   <Badge size="lg" color="blue">IA/ML</Badge>
   <Badge size="lg" color="orange">Cloud</Badge>
 </div>
@@ -41,9 +41,7 @@ Vous installerez clickhouse-client, préparerez un jeu de données d’exemple, 
 À la fin, vous saurez utiliser clickhouse-client pour charger des fichiers locaux dans ClickHouse Cloud, dans un flux de travail compatible avec les formats CSV, Parquet, JSON et bien d’autres.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Installer clickhouse-client
-
+  <Step title="Installer clickhouse-client" id="install-clickhouse-client">
     `clickhouse-client` est l’interface en ligne de commande officielle pour se connecter à ClickHouse. Il est inclus dans le binaire ClickHouse.
 
     Installez-le à l’aide de l’installateur universel :
@@ -61,9 +59,7 @@ Vous installerez clickhouse-client, préparerez un jeu de données d’exemple, 
     Vous devriez voir un résultat indiquant le numéro de version de ClickHouse, ce qui confirme que `clickhouse-client` est prêt à être utilisé.
   </Step>
 
-  <Step>
-    ### Préparez un fichier CSV d’exemple
-
+  <Step title="Préparez un fichier CSV d’exemple" id="prepare-a-sample-csv-file">
     Créez un petit fichier CSV d’exemple pour que ce guide de prise en main soit autonome. Exécutez ce qui suit dans votre terminal :
 
     ```bash
@@ -83,9 +79,7 @@ Vous installerez clickhouse-client, préparerez un jeu de données d’exemple, 
     ```
   </Step>
 
-  <Step>
-    ### Connectez-vous à votre service Cloud
-
+  <Step title="Connectez-vous à votre service Cloud" id="connect-to-your-cloud-service">
     Les commandes ci-dessous supposent que vous avez exporté `CLICKHOUSE_HOST`, `CLICKHOUSE_USER` et `CLICKHOUSE_PASSWORD` comme variables d’environnement, comme indiqué dans le quickstart [Obtain your Cloud connection details](/fr/get-started/quickstarts/obtain-your-cloud-connection-details). Si ce n’est pas le cas, vous pouvez les remplacer directement par vos propres valeurs.
 
     Testez la connexion en exécutant une requête simple sur votre service Cloud :
@@ -107,9 +101,7 @@ Vous installerez clickhouse-client, préparerez un jeu de données d’exemple, 
     </Note>
   </Step>
 
-  <Step>
-    ### Créer une table cible et insérer des données
-
+  <Step title="Créer une table cible et insérer des données" id="create-a-target-table-and-insert-data">
     Tout d’abord, créez une table sur votre service Cloud pour recevoir les données :
 
     ```bash
@@ -147,9 +139,7 @@ Vous installerez clickhouse-client, préparerez un jeu de données d’exemple, 
     `clickhouse-client` envoie directement le contenu du fichier CSV à votre service Cloud. Le format `CSVWithNames` indique à ClickHouse que la première ligne contient les noms des colonnes.
   </Step>
 
-  <Step>
-    ### Vérifiez que les données ont bien été insérées
-
+  <Step title="Vérifiez que les données ont bien été insérées" id="verify-the-data-was-inserted">
     Interrogez votre service Cloud pour vérifier que les lignes ont bien été insérées :
 
     ```bash
@@ -180,7 +170,9 @@ Vous installerez clickhouse-client, préparerez un jeu de données d’exemple, 
   </Step>
 </Steps>
 
-## Étapes suivantes
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
 
 Dans ce guide de démarrage rapide, vous avez installé `clickhouse-client`, l’avez connecté à un service ClickHouse Cloud, puis l’avez utilisé pour ingérer des données depuis un fichier CSV local vers le Cloud. Cette même approche fonctionne avec Parquet, JSON et des dizaines d’autres formats.
 

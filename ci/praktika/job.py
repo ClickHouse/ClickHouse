@@ -68,6 +68,14 @@ class Job:
 
         run_unless_cancelled: bool = False
 
+        # Run even when an upstream job failed, but still honour the cache and
+        # the job filter. `run_unless_cancelled` above drops the whole run
+        # condition down to `!cancelled()`, which also means "ignore a cache
+        # hit and ignore `should_skip_job`" - wrong for a job that is merely
+        # expected to report on a red head (see the "Build profile diff" job in
+        # ci/defs/job_configs.py).
+        run_on_upstream_failure: bool = False
+
         # If True, the job failure does not block PR merge, but the job
         # is still shown as failed in the CI report.
         allow_failure: bool = False
@@ -80,6 +88,19 @@ class Job:
         enable_commit_status: bool = False
 
         enable_gh_auth: bool = False
+
+        # If False, `actions/checkout` is generated with
+        # `persist-credentials: false`, so the workflow token is not written
+        # into the local git config (`http.<server>/.extraheader`). Set it for
+        # a job that runs untrusted code in the checkout and must not leave a
+        # GitHub credential within its reach; its plain `git fetch` runs
+        # unauthenticated, and anything privileged has to mint its own token
+        # with an explicit `GHAuth.auth(...)` call after the untrusted code
+        # has run. `enable_gh_auth` is refused together with this flag: it
+        # authenticates `gh` in the runner before the job command starts and
+        # would hand the untrusted code the very credential this flag keeps
+        # out of its reach.
+        checkout_persist_credentials: bool = True
 
         # If a job Result contains multiple sub-results, and only a specific sub-result should be sent to CIDB, set its name here.
         result_name_for_cidb: str = ""
@@ -97,6 +118,19 @@ class Job:
 
         # List of commands to call after job completes
         post_hooks: List[str] = field(default_factory=list)
+
+        def __post_init__(self):
+            # `enable_gh_auth` pre-authenticates `gh` before the job command
+            # starts, which recreates exactly the credential exposure that
+            # `checkout_persist_credentials=False` exists to prevent.
+            assert self.checkout_persist_credentials or not self.enable_gh_auth, (
+                f"Job [{self.name}]: checkout_persist_credentials=False keeps "
+                f"GitHub credentials away from the untrusted code the job runs, "
+                f"and enable_gh_auth=True would hand them right back by "
+                f"pre-authenticating gh before the job starts; mint a token "
+                f"with an explicit GHAuth.auth(...) call after the untrusted "
+                f"phase instead"
+            )
 
         def parametrize(self, *param_sets: "Job.ParamSet"):
             res = []

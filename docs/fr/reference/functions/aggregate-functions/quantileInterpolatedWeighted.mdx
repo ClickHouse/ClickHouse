@@ -36,12 +36,12 @@ quantileInterpolatedWeighted(level)(expr, weight)
 
 **Arguments**
 
-* `expr` — Expression appliquée aux valeurs de la colonne, dont le résultat est de type numérique, Date ou DateTime. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime)
+* `expr` — Expression appliquée aux valeurs de la colonne, dont le résultat est de type numérique, `Date`, `DateTime` ou `DateTime64`. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Int128`](/fr/reference/data-types/int-uint) ou [`UInt128`](/fr/reference/data-types/int-uint) ou [`Int256`](/fr/reference/data-types/int-uint) ou [`UInt256`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 * `weight` — Colonne contenant les poids des éléments de la séquence. Le poids correspond au nombre d&#39;occurrences d&#39;une valeur. [`UInt*`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
 
-Quantile du niveau spécifié. [`Float64`](/fr/reference/data-types/float) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime)
+Quantile du niveau spécifié. Pour les types de données numériques, le format de sortie correspond au format d’entrée. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Int128`](/fr/reference/data-types/int-uint) ou [`UInt128`](/fr/reference/data-types/int-uint) ou [`Int256`](/fr/reference/data-types/int-uint) ou [`UInt256`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Exemples**
 

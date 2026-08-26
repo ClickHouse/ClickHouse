@@ -1,0 +1,14 @@
+{
+  "expanded": true,
+  "group": "بايثون",
+  "icon": "/images/integrations/logos/notext-python.svg",
+  "pages": [
+    "ar/integrations/language-clients/python/index",
+    "ar/integrations/language-clients/python/driver-api",
+    "ar/integrations/language-clients/python/additional-options",
+    "ar/integrations/language-clients/python/advanced-querying",
+    "ar/integrations/language-clients/python/advanced-inserting",
+    "ar/integrations/language-clients/python/advanced-usage",
+    "ar/integrations/language-clients/python/sqlalchemy"
+  ]
+}

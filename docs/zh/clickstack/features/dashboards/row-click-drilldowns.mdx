@@ -25,17 +25,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 概览表中每个服务占一行，可以回答“哪个服务不健康？”。点击某一行即可打开该服务的专属仪表盘，用来回答“它内部发生了什么？”，并且范围限定在你点击的那个服务。下面这种模式会将服务清单表与 `Service Detail` 仪表盘配合使用。
 
 <Steps>
-  <Step>
-    ### 构建详情仪表盘
-
+  <Step title="构建详情仪表盘" id="detail-dashboard">
     创建一个名为 `Service Detail` 的仪表盘，并在你的链路追踪数据源上添加一个表达式为 `ServiceName` 的[自定义过滤器](/zh/clickstack/features/dashboards/overview#custom-filters)。这个仪表盘级过滤器会把每个卡片的范围都限定到单个服务，因此卡片本身无需在查询里硬编码服务。添加你需要的按服务视图：RED 关键指标 (请求数、错误数、P95 耗时) 、延迟百分位图表 (P50、P95、P99) 、请求速率随时间变化图，以及按 `SpanName` 分组的各端点明细。
 
     先保存这个仪表盘，这样下一步才能将它选为目标。
   </Step>
 
-  <Step>
-    ### 构建服务清单
-
+  <Step title="构建服务清单" id="service-inventory">
     在概览仪表盘上，基于你的链路追踪数据源添加一个按 `ServiceName` 分组的 **表格** 卡片。为它添加用于衡量各服务的 RED 列，每一列都是一个带别名的序列：
 
     * `Requests`：span 数量 (速率) 。
@@ -47,29 +43,25 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     <Image img="/images/clickstack/dashboards/row-click-catalog.webp" alt="服务清单表，为每个服务显示 RED 列（Requests、Errors、P95 Duration），按请求量排序，上方还有请求随时间变化的趋势图" size="lg" />
 
     <Tip>
-      **将分组列放在最前面**
+      **将 group-by 列放在最前面**
 
-      默认情况下，表格会把分组列 (这里是 `ServiceName`) 显示在右侧，也就是各个序列之后。对于这种清单视图，把每一行的标识放在最前面会更易读。打开卡片的 **Display Settings**，启用 **在左侧显示 Group By 列**，即可将分组列移到最前面。
+      默认情况下，表格会把 group-by 列 (这里是 `ServiceName`) 显示在右侧，也就是各个序列之后。对于这种清单视图，把每一行的标识放在最前面会更易读。打开卡片的 **Display Settings**，启用 **在左侧显示 Group By 列**，即可将 group-by 列移到最前面。
     </Tip>
   </Step>
 
-  <Step>
-    ### 配置行点击动作
-
-    在清单表上，打开 **Row Click Action**，选择 **仪表盘**，然后从仪表盘列表中选择 `Service Detail`。直接选择该仪表盘会按 ID 固定关联。即使之后重命名仪表盘，链接仍然有效；导出再导入仪表盘后，它也仍可继续使用。 (**Template** 选项仅用于为每一行选择不同的仪表盘；参见[设置行点击动作](#set-up)。)
+  <Step title="配置行点击操作" id="wire-dashboard">
+    在清单表上，打开 **Row Click Action**，选择 **Dashboard**，然后从仪表盘列表中选择 `Service Detail`。直接选择该仪表盘会按 ID 固定关联。即使之后重命名仪表盘，链接仍然有效；导出再导入仪表盘后，它也仍可继续使用。(**Template** 选项仅用于为每一行选择不同的仪表盘；参见[设置行点击操作](#set-up)。)
 
     由于 `Service Detail` 声明了一个 `ServiceName` 自定义过滤器，侧边抽屉会为该表达式预填一个空过滤器。填写它的模板：
 
-    * **表达式**：`ServiceName` (已预填)
-    * **模板**：`{{ServiceName}}`
+    * **Expression**：`ServiceName` (已预填)
+    * **Template**：`{{ServiceName}}`
 
-    点击 **应用** 并保存。这样，点击行中的服务值就会传入仪表盘的 `ServiceName` 过滤器。
+    点击 **Apply** 并保存。这样，点击行中的服务值就会传入仪表盘的 `ServiceName` 过滤器。
   </Step>
 
-  <Step>
-    ### 点击一行
-
-    将鼠标悬停在某一行上时，表格右侧边缘会显示一个链接入口，并附带说明该操作的提示 (`Open dashboard \"Service Detail\"`) 。点击该行会打开 `Service Detail` 仪表盘，并将其中的 `Service` 过滤器设置为被点击的值，因此所有卡片 (RED 关键指标、延迟百分位数、各端点明细) 都会在一次点击后重新限定到该服务。
+  <Step title="点击一行" id="click-dashboard">
+    将鼠标悬停在某一行上时，表格右侧边缘会显示一个链接入口，并附带说明该操作的提示 (`Open dashboard "Service Detail"`) 。点击该行会打开 `Service Detail` 仪表盘，并将其中的 `Service` 过滤器设置为被点击的值，因此所有卡片 (RED 关键指标、延迟百分位数、各端点明细) 都会在一次点击后重新限定到该服务。
 
     <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="在点击某一行后显示的 Service Detail 仪表盘，其中 Service 过滤器已设置为被点击的服务，RED 关键指标、延迟百分位数以及各端点明细都已限定到该服务" size="lg" />
   </Step>
@@ -84,9 +76,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 仍然从同一个服务清单表开始，这次将行点击直接指向链路追踪本身，而不是详情仪表盘。
 
 <Steps>
-  <Step>
-    ### 将行点击指向搜索
-
+  <Step title="将行点击指向搜索" id="wire-search">
     在清单表中，打开 **Row Click Action** 并选择 **搜索**。选择你的链路追踪数据源 (这里只会列出日志和 trace 数据源) 。添加一个过滤器：
 
     * **Expression**: `ServiceName`
@@ -95,9 +85,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     点击 **Apply** 并保存。
   </Step>
 
-  <Step>
-    ### 点击一行
-
+  <Step title="点击一行" id="click-search">
     现在，点击某个服务行会在该链路追踪数据源上打开搜索页面，并按 `ServiceName = <service>` 过滤，因此你会直接看到相同时间范围内仅属于该服务的 spans。
 
     <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="点击行后，搜索页面会在链路追踪数据源上打开，并过滤到被点击的服务" size="lg" />
@@ -117,10 +105,10 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 侧边抽屉提供三种操作：
 
 * **Default**：内置行为。点击某一行会打开**搜索**页面，并按该行的 group-by 列值和所选时间范围进行过滤。这就是未设置自定义操作时的默认行为。
-* **Search**：将点击发送到你选择的数据源的**搜索**页面。
+* **搜索**：将点击发送到你选择的数据源的**搜索**页面。
 * **Dashboard**：将点击发送到你团队拥有的另一个仪表盘。
 
-对于 **Search** 和 **Dashboard**，你需要选择点击后的落点，并为传递过去的过滤器配置模板：
+对于 **搜索** 和 **Dashboard**，你需要选择点击后的落点，并为传递过去的过滤器配置模板：
 
 * **Destination**：选择一个特定的数据源或仪表盘，或者选择 **Template** 并输入一个 [Handlebars](https://handlebarsjs.com/) 模板，按名称匹配可用的数据源或仪表盘。选择特定目标会通过 ID 将其固定。对于单一固定目标，建议优先使用这种方式：它在重命名以及仪表盘导出、导入后仍然有效；对于仪表盘，它还会预填目标端已声明的过滤器。如果目标需要根据每一行动态变化，则使用 **Template**，通过引用某个行列来决定目标 (例如 `Errors-{{ServiceName}}`) 。
 * **Filters**：点击 **Add filter**，然后提供一个 **Expression** (目标端上的某个列或表达式，例如 `ServiceName`) 以及该值对应的 **Template** (例如 `{{ServiceName}}`) 。模板通过 `{{columnName}}` 引用被点击行的列 (哪些列可用，请参见下方说明) 。每个过滤器都会在目标端渲染为一个 `expression IN (value)` 条件，具有相同表达式的过滤器会被合并。当目标端是仪表盘时，侧边抽屉会为该仪表盘已声明的每个过滤器预填一个空过滤器，因此你只需填写模板即可。

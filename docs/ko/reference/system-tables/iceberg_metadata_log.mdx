@@ -26,7 +26,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
   ### 로그 상세 수준 제어
 </div>
 
-[`iceberg_metadata_log_level`](/ko/reference/settings/session-settings#iceberg_metadata_log_level) 설정을 사용하면 어떤 메타데이터 이벤트를 기록할지 제어할 수 있습니다.
+[`iceberg_metadata_log_level`](/ko/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_log_level) 설정을 사용하면 어떤 메타데이터 이벤트를 기록할지 제어할 수 있습니다.
 
 현재 쿼리에서 사용된 모든 메타데이터를 기록하려면:
 
@@ -52,7 +52,7 @@ FROM system.iceberg_metadata_log
 WHERE query_id = '{previous_query_id}';
 ```
 
-자세한 내용은 [`iceberg_metadata_log_level`](/ko/reference/settings/session-settings#iceberg_metadata_log_level) 설정 설명을 참조하십시오.
+자세한 내용은 [`iceberg_metadata_log_level`](/ko/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_log_level) 설정 설명을 참조하십시오.
 
 <div id="good-to-know">
   ### 알아두면 좋은 점
