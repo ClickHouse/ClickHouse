@@ -609,12 +609,116 @@ void PrometheusHTTPProtocolAPI::getSeries(
 
 void PrometheusHTTPProtocolAPI::getLabels(
     WriteBuffer & response,
-    const String & /* match_param */,
-    const String & /* start_param */,
-    const String & /* end_param */)
+    const Strings & match_params,
+    const String & start_param,
+    const String & end_param,
+    UInt64 limit,
+    QueryFinishCallback query_finish_callback)
 {
-    UNUSED(response);
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The labels endpoint is not implemented");
+    /// Unlike /api/v1/series, the `match[]` selectors are optional here: without them the endpoint
+    /// returns the label names of all the time series stored in the table.
+    Strings selectors = match_params;
+    if (selectors.empty())
+        selectors.push_back(R"({__name__!=""})");
+
+    auto series_ids_query = makeSeriesIDsQuery(selectors, start_param, end_param);
+
+    /// SELECT arraySort(groupUniqArrayArray(tupleElement(timeSeriesIdToTags(series_id), 1))) AS labels FROM (<series_ids_query>)
+    /// timeSeriesIdToTags returns the tags registered by the inner query (including `__name__`), so the label names
+    /// are the first elements of the returned pairs; groupUniqArrayArray dedups them across all the matched series,
+    /// and arraySort returns them in sorted order like Prometheus does.
+    auto labels_expression = makeASTFunction(
+        "arraySort",
+        makeASTFunction(
+            "groupUniqArrayArray",
+            makeASTFunction(
+                "tupleElement",
+                makeASTFunction("timeSeriesIdToTags", make_intrusive<ASTIdentifier>("series_id")),
+                make_intrusive<ASTLiteral>(1u))));
+    labels_expression->setAlias("labels");
+
+    auto sql_query = makeSelectFromSubquery({std::move(labels_expression)}, std::move(series_ids_query), /* distinct = */ false, {});
+
+    LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
+
+    /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
+    getContext()->setSetting("allow_experimental_analyzer", true);
+
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
+
+    try
+    {
+        PullingAsyncPipelineExecutor executor(io.pipeline);
+
+        /// Pull the first non-empty block before writing the header so an early exception still produces the correct error response.
+        /// The aggregation produces exactly one row holding the array of all the label names.
+        bool has_output = false;
+        Block block;
+        while (executor.pull(block))
+        {
+            if (block.rows() > 0)
+            {
+                has_output = true;
+                break;
+            }
+        }
+
+        writeString(R"({"status":"success","data":[)", response);
+
+        UInt64 written = 0;
+        bool truncated = false;
+
+        auto write_block = [&](const Block & result_block)
+        {
+            const auto & array_column = typeid_cast<const ColumnArray &>(*result_block.getByName("labels").column);
+            const auto & offsets = array_column.getOffsets();
+            const auto & name_column = array_column.getData();
+
+            for (size_t i = 0; i < result_block.rows(); ++i)
+            {
+                size_t start = (i == 0) ? 0 : offsets[i - 1];
+                for (size_t j = start; j < offsets[i]; ++j)
+                {
+                    if (limit && (written == limit))
+                    {
+                        truncated = true;
+                        return;
+                    }
+                    if (written)
+                        writeString(",", response);
+                    writeJSONString(name_column.getDataAt(j), response, format_settings);
+                    ++written;
+                }
+            }
+        };
+
+        if (has_output)
+        {
+            write_block(block);
+            while (!truncated && executor.pull(block))
+            {
+                if (block.rows() > 0)
+                    write_block(block);
+            }
+        }
+
+        if (truncated)
+            writeString(R"(],"warnings":["results truncated due to limit"]})", response);
+        else
+            writeString("]}", response);
+
+        /// Finalize the query result cache write before the executor's destructor cancels the pipeline.
+        /// The SQL query doesn't depend on `limit`, so its result is complete even when the response is truncated.
+        io.pipeline.finalizeWriteInQueryResultCache();
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
+    }
+
+    /// Release the query slot early, flush the response and record QueryFinish.
+    finishExecutedQuery(io, query_finish_callback);
 }
 
 void PrometheusHTTPProtocolAPI::getLabelValues(
@@ -683,14 +787,4 @@ void PrometheusHTTPProtocolAPI::writeScalar(WriteBuffer & response, Float64 valu
     }
 }
 
-
-void PrometheusHTTPProtocolAPI::writeLabelsResponse(WriteBuffer & response, const Block & /* result_block */)
-{
-    writeString(R"({"status":"success","data":["__name__","job","instance"]})", response);
-}
-
-void PrometheusHTTPProtocolAPI::writeLabelValuesResponse(WriteBuffer & response, const Block & /* result_block */)
-{
-    writeString(R"({"status":"success","data":[]})", response);
-}
 }
