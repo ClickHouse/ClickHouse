@@ -184,7 +184,7 @@ Pipe buildPartitionReadingPipeline(
         auto metadata_plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, metadata_columns);
         chassert(metadata_plan);
 
-        metadata_plan->addStep(std::make_unique<CalculatePartitionWatermarksStep>(plan->getCurrentHeader(), stream_settings.watermark, state.getPartitionWatermark(partition_id), context, partition_id));
+        metadata_plan->addStep(std::make_unique<CalculatePartitionWatermarksStep>(metadata_plan->getCurrentHeader(), stream_settings.watermark, state.getPartitionWatermark(partition_id), context, partition_id));
 
         auto align_step = std::make_unique<AlignStreamsStep>(metadata_plan->getCurrentHeader(), plan->getCurrentHeader());
 
@@ -197,7 +197,7 @@ Pipe buildPartitionReadingPipeline(
     }
 
     /// Add cursor calculation step.
-    plan->addStep(std::make_unique<StampPartitionCursorsStep>(plan->getCurrentHeader(), stream_settings.unordered));
+    plan->addStep(std::make_unique<CalculatePartitionCursorsStep>(plan->getCurrentHeader(), stream_settings.unordered));
 
     /// Add projection to required header.
     auto convert = ActionsDAG::makeConvertingActions(
