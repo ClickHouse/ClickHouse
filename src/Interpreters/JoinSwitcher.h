@@ -18,7 +18,8 @@ namespace DB
 ///
 /// The hash phase uses the same `parallel_hash_join_threshold` layout as a bare `HashJoin`.
 /// Concurrent fill takes a shared lock; draining onto `MergeJoin` takes an exclusive lock
-/// because `MergeJoin::addBlockToJoin` is not concurrent.
+/// because `MergeJoin::addBlockToJoin` is not concurrent. After a switch, probe is serialized
+/// for the same reason: `supportParallelJoin` is fixed at plan time.
 class JoinSwitcher : public IJoin
 {
 public:
@@ -41,7 +42,7 @@ public:
 
     void checkTypesOfKeys(const Block & block) const override { join->checkTypesOfKeys(block); }
 
-    JoinResultPtr joinBlock(Block block) override { return join->joinBlock(block); }
+    JoinResultPtr joinBlock(Block block) override;
 
     const Block & getTotals() const override { return join->getTotals(); }
 

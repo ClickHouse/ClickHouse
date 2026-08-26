@@ -122,8 +122,8 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
 namespace QueryPlanOptimizations
 {
 
-/// Walk a right-hand query plan for a row estimate. Used by join-order stats and by the
-/// legacy analyzer so `preferParallelHashLayout` sees the same MergeTree `totalRows` both paths.
+/// Walk a right-hand plan for a row estimate. Join-order stats and the legacy analyzer
+/// share this so `preferParallelHashLayout` sees MergeTree `totalRows` on both paths.
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
 
 /// Propagate per-column statistics through `actions`, rekeying the map in place by output name.

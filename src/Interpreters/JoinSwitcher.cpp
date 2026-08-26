@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <memory>
 #include <mutex>
 #include <shared_mutex>
 
@@ -9,6 +10,29 @@
 
 namespace DB
 {
+
+namespace
+{
+
+/// `MergeJoin::joinBlock` is not concurrent. `supportParallelJoin` is decided at plan time,
+/// so after a drain the pipeline may still probe from several `JoiningTransform`s.
+class ExclusiveJoinResult : public IJoinResult
+{
+public:
+    ExclusiveJoinResult(std::unique_lock<SharedMutex> lock_, JoinResultPtr inner_)
+        : lock(std::move(lock_))
+        , inner(std::move(inner_))
+    {
+    }
+
+    JoinResultBlock next() override { return inner->next(); }
+
+private:
+    std::unique_lock<SharedMutex> lock;
+    JoinResultPtr inner;
+};
+
+}
 
 JoinSwitcher::JoinSwitcher(
     std::shared_ptr<TableJoin> table_join_,
@@ -67,6 +91,15 @@ bool JoinSwitcher::addBlockToJoin(const Block & block, size_t num_rows, size_t w
     if (switched.load(std::memory_order_relaxed))
         return true;
     return switchJoin();
+}
+
+JoinResultPtr JoinSwitcher::joinBlock(Block block)
+{
+    if (!switched.load(std::memory_order_acquire))
+        return join->joinBlock(std::move(block));
+
+    std::unique_lock lock(switch_mutex);
+    return std::make_unique<ExclusiveJoinResult>(std::move(lock), join->joinBlock(std::move(block)));
 }
 
 bool JoinSwitcher::switchJoin()

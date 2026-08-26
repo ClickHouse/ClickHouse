@@ -1,8 +1,9 @@
--- The planner HashJoin path already honors `parallel_hash_join_threshold` (see 05024).
--- Cover the two paths that used to ignore it:
--- 1) legacy ExpressionAnalyzer (`enable_analyzer = 0`) hard-coded a nullopt estimate
--- 2) `join_algorithm = 'auto'` built JoinSwitcher as a serial HashJoin even when the
---    threshold selected the parallel layout
+-- ExpressionAnalyzer used to pass nullopt into `preferParallelHashLayout`, which
+-- treats a missing estimate as parallel. Walk `joined_plan` so a 200-row MergeTree
+-- right side stays serial under threshold 100000 (`enable_analyzer = 0`).
+--
+-- `join_algorithm = 'auto'` used to construct `JoinSwitcher` with `max_threads = 1`.
+-- The hash phase now follows the same threshold as a bare `HashJoin`.
 --
 -- Join-order stats stay on so the planner AUTO path gets MergeTree `totalRows` (200).
 -- The legacy analyzer has no join-order pass; it walks `joined_plan` with `estimateReadRowsCount`.
