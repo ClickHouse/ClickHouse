@@ -285,17 +285,10 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     LOG_TEST(log, "Commit version: {}", version);
 }
 
-void WriteTransaction::createTable(const DB::Names & partition_columns)
+void WriteTransaction::createTable()
 {
     /// Reject non-round-tripping column types before the kernel FFI, so unsupported types raise a normal exception.
     DeltaLake::validateSchemaForDeltaCreate(table_schema);
-
-    if (!partition_columns.empty())
-        /// The kernel FFI has no `with_data_layout(Partitioned)` setter yet, so reject rather than silently write an unpartitioned table.
-        throw DB::Exception(
-            DB::ErrorCodes::NOT_IMPLEMENTED,
-            "PARTITION BY is not yet supported for DeltaLake CREATE TABLE (columns: {})",
-            fmt::join(partition_columns, ", "));
 
     /// The kernel needs the table location's root directory to exist; create it up front. No-op for object stores (S3/Azure).
     kernel_helper->prepareForTableCreation();
@@ -316,7 +309,19 @@ void WriteTransaction::createTable(const DB::Names & partition_columns)
         &engine_schema,
         DeltaLake::KernelUtils::toDeltaString(engine_info),
         engine.get());
-    KernelCreateTableBuilder builder(DeltaLake::KernelUtils::unwrapResult(builder_result, "get_create_table_builder"));
+    /// Unwrap inside a `try` -- it must run either way, since it is what
+    /// consumes `builder_result` -- and prefer the visitor's exception when there is one.
+    KernelCreateTableBuilder builder;
+    try
+    {
+        builder = DeltaLake::KernelUtils::unwrapResult(builder_result, "get_create_table_builder");
+    }
+    catch (...)
+    {
+        if (schema_state.exception)
+            std::rethrow_exception(schema_state.exception);
+        throw;
+    }
     if (schema_state.exception)
         std::rethrow_exception(schema_state.exception);
 

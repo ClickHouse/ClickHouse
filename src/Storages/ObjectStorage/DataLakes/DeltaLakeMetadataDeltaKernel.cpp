@@ -18,8 +18,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/DataLake/ICatalog.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTFunction.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/transformTypesRecursively.h>
@@ -685,39 +683,6 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
 namespace
 {
 
-/// Extract logical column names from a `PARTITION BY` AST (plain column or tuple of columns); throws on other expressions.
-Names extractPartitionColumnNames(ASTPtr partition_by)
-{
-    if (!partition_by)
-        return {};
-
-    Names result;
-    auto append_if_identifier = [&](const ASTPtr & ast)
-    {
-        if (const auto * id = ast->as<ASTIdentifier>())
-        {
-            result.push_back(id->name());
-            return;
-        }
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Delta Lake PARTITION BY must be a plain column reference (or a tuple of them); got `{}`",
-            ast->formatForErrorMessage());
-    };
-
-    if (const auto * tuple = partition_by->as<ASTFunction>(); tuple && tuple->name == "tuple")
-    {
-        if (tuple->arguments)
-            for (const auto & child : tuple->arguments->children)
-                append_if_identifier(child);
-    }
-    else
-    {
-        append_if_identifier(partition_by);
-    }
-    return result;
-}
-
 /// Whether a *valid* Delta table can be read at the location (forces a snapshot load, unlike `deltaLogExists`).
 bool validDeltaTableExists(const DeltaLake::KernelHelperPtr & kernel_helper, const ObjectStoragePtr & object_storage, LoggerPtr log)
 {
@@ -767,9 +732,12 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Creating a new Delta Lake table requires allow_experimental_delta_lake_writes = 1");
 
+    /// PARTITION BY is rejected earlier by `StorageFactory` (the DeltaLake engine does not set
+    /// `supports_sort_order`), so `partition_by` cannot be non-null here.
+    chassert(!partition_by);
+
     /// Qualify with `DB::`: a member `getKernelHelper()` shadows the free function here.
     auto kernel_helper = DB::getKernelHelper(configuration_ptr, object_storage_);
-    Names partition_columns = extractPartitionColumnNames(partition_by);
 
     /// Use `getAllPhysical()` so the Delta schema matches the physical columns the writer emits to Parquet.
     auto schema_list = columns.getAllPhysical();
@@ -782,7 +750,7 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
 
     try
     {
-        write_transaction->createTable(partition_columns);
+        write_transaction->createTable();
     }
     catch (const Exception & e)
     {
@@ -792,10 +760,7 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
         return false;
     }
 
-    LOG_DEBUG(
-        log,
-        "Initialized Delta table at `{}` with {} column(s), partition columns: [{}]",
-        data_path, schema_list.size(), fmt::join(partition_columns, ", "));
+    LOG_DEBUG(log, "Initialized Delta table at `{}` with {} column(s)", data_path, schema_list.size());
 
     return true;
 }

@@ -20,8 +20,8 @@ public:
     /// implementation for how partitioned vs unpartitioned tables derive the write context.
     void create(const DB::Names & partition_columns);
 
-    /// Create a brand-new Delta table by writing the initial commit; `partition_columns` are accepted but not yet persisted through the FFI. Throws if `_delta_log` already has commits.
-    void createTable(const DB::Names & partition_columns);
+    /// Create a brand-new Delta table by writing the initial commit. Throws if `_delta_log` already has commits.
+    void createTable();
 
     struct CommitFile
     {

@@ -9,7 +9,6 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
-#include <Interpreters/castColumn.h>
 
 
 namespace DB
@@ -26,51 +25,6 @@ namespace FailPoints
     extern const char delta_lake_write_commit_pause[];
 }
 
-namespace
-{
-
-/// `sample` with each column's type replaced by the Delta write-schema type (matched by name), so the
-/// data files are written to match the Delta log (e.g. a declared `UInt8` column is stored as `short`).
-SharedHeader makeWriteHeader(const Block & sample, const DB::NamesAndTypesList & write_schema)
-{
-    Block header = sample;
-    for (size_t i = 0; i < header.columns(); ++i)
-    {
-        auto & col = header.getByPosition(i);
-        auto schema_col = write_schema.tryGetByName(col.name);
-        if (schema_col && !schema_col->type->equals(*col.type))
-        {
-            col.type = schema_col->type;
-            col.column = col.type->createColumn();
-        }
-    }
-    return std::make_shared<const Block>(std::move(header));
-}
-
-/// Cast each column of `chunk` (typed by `in_header`) to the corresponding `out_header` type. With
-/// `accurate`, a value that does not fit the target type throws instead of being silently truncated.
-Chunk castChunkToWriteSchema(const Chunk & chunk, const Block & in_header, const Block & out_header, bool accurate)
-{
-    const auto & in_columns = chunk.getColumns();
-    Columns out_columns;
-    out_columns.reserve(in_columns.size());
-    for (size_t i = 0; i < in_columns.size(); ++i)
-    {
-        const auto & from = in_header.getByPosition(i);
-        const auto & to_type = out_header.getByPosition(i).type;
-        if (from.type->equals(*to_type))
-            out_columns.push_back(in_columns[i]);
-        else
-            out_columns.push_back(
-                accurate
-                    ? castColumnAccurate({in_columns[i], from.type, from.name}, to_type)
-                    : castColumn({in_columns[i], from.type, from.name}, to_type));
-    }
-    return Chunk(std::move(out_columns), chunk.getNumRows());
-}
-
-}
-
 DeltaLakeSink::DeltaLakeSink(
     DeltaLake::WriteTransactionPtr delta_transaction_,
     ObjectStoragePtr object_storage_,
@@ -85,7 +39,7 @@ DeltaLakeSink::DeltaLakeSink(
     , object_storage(object_storage_)
     , format_settings(format_settings_)
     , sample_block(sample_block_)
-    , write_header(makeWriteHeader(*sample_block_, delta_transaction_->getWriteSchema()))
+    , write_header(DeltaLake::makeDeltaWriteHeader(*sample_block_, delta_transaction_->getWriteSchema()))
     , data_file_max_rows(context_->getSettingsRef()[Setting::delta_lake_insert_max_rows_in_data_file])
     , data_file_max_bytes(context_->getSettingsRef()[Setting::delta_lake_insert_max_bytes_in_data_file])
     , accurate_write_cast(context_->getSettingsRef()[Setting::delta_lake_accurate_write_cast])
@@ -147,7 +101,7 @@ void DeltaLakeSink::consume(Chunk & chunk)
         return;
 
     /// Cast to the Delta write schema so the data files match the Delta log (e.g. `UInt8` -> `short`).
-    Chunk write_chunk = castChunkToWriteSchema(chunk, *sample_block, *write_header, accurate_write_cast);
+    Chunk write_chunk = DeltaLake::castChunkToDeltaWriteSchema(chunk, *sample_block, *write_header, accurate_write_cast);
 
     if (data_files.empty()
         || data_files.back().written_bytes >= data_file_max_bytes

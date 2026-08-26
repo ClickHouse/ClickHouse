@@ -14,7 +14,6 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -49,46 +48,6 @@ namespace FailPoints
 
 namespace
 {
-    /// `format_header` with each column's type replaced by the Delta write-schema type (matched by name),
-    /// so the data files are written to match the Delta log (e.g. a declared `UInt8` column -> `short`).
-    SharedHeader makeWriteFormatHeader(const Block & format_header, const DB::NamesAndTypesList & write_schema)
-    {
-        Block header = format_header;
-        for (size_t i = 0; i < header.columns(); ++i)
-        {
-            auto & col = header.getByPosition(i);
-            auto schema_col = write_schema.tryGetByName(col.name);
-            if (schema_col && !schema_col->type->equals(*col.type))
-            {
-                col.type = schema_col->type;
-                col.column = col.type->createColumn();
-            }
-        }
-        return std::make_shared<const Block>(std::move(header));
-    }
-
-    /// Cast each column of `chunk` (typed by `in_header`) to the corresponding `out_header` type. With
-    /// `accurate`, a value that does not fit the target type throws instead of being silently truncated.
-    Chunk castChunkToWriteSchema(const Chunk & chunk, const Block & in_header, const Block & out_header, bool accurate)
-    {
-        const auto & in_columns = chunk.getColumns();
-        Columns out_columns;
-        out_columns.reserve(in_columns.size());
-        for (size_t i = 0; i < in_columns.size(); ++i)
-        {
-            const auto & from = in_header.getByPosition(i);
-            const auto & to_type = out_header.getByPosition(i).type;
-            if (from.type->equals(*to_type))
-                out_columns.push_back(in_columns[i]);
-            else
-                out_columns.push_back(
-                    accurate
-                        ? castColumnAccurate({in_columns[i], from.type, from.name}, to_type)
-                        : castColumn({in_columns[i], from.type, from.name}, to_type));
-        }
-        return Chunk(std::move(out_columns), chunk.getNumRows());
-    }
-
     /// Delta placeholder for a missing partition value (also committed as a JSON null).
     constexpr std::string_view HIVE_DEFAULT_PARTITION = "__HIVE_DEFAULT_PARTITION__";
 
@@ -208,7 +167,7 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     , partition_strategy(createPartitionStrategy(partition_columns, getHeader(), context_))
     , delta_transaction(delta_transaction_)
     , format_header(partition_strategy->getFormatHeader())
-    , write_format_header(makeWriteFormatHeader(format_header, delta_transaction_->getWriteSchema()))
+    , write_format_header(DeltaLake::makeDeltaWriteHeader(format_header, delta_transaction_->getWriteSchema()))
     , write_format(write_format_)
     , write_compression_method(write_compression_method_)
 {
@@ -397,7 +356,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
         }
         auto & data_file = data_files.back();
         /// Cast to the Delta write schema so the data files match the Delta log (e.g. `UInt8` -> `short`).
-        Chunk write_chunk = castChunkToWriteSchema(partition_chunk, format_header, *write_format_header, accurate_write_cast);
+        Chunk write_chunk = DeltaLake::castChunkToDeltaWriteSchema(partition_chunk, format_header, *write_format_header, accurate_write_cast);
         data_file.written_bytes += write_chunk.bytes();
         data_file.written_rows += write_chunk.getNumRows();
         data_file.sink->consume(write_chunk);

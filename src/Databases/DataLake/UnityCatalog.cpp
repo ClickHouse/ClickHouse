@@ -5,6 +5,7 @@
 
 #include <sstream>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Poco/URI.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
@@ -377,11 +378,9 @@ void UnityCatalog::createTable(
             type_name = deltaPrimitiveToUnityTypeName(delta_type);
             if (type_name == "DECIMAL")
             {
-                const auto lparen = delta_type.find('(');
-                const auto comma = delta_type.find(',', lparen);
-                const auto rparen = delta_type.find(')', comma);
-                precision = std::stoi(delta_type.substr(lparen + 1, comma - lparen - 1));
-                scale = std::stoi(delta_type.substr(comma + 1, rparen - comma - 1));
+                const auto decimal_type = DB::DeltaLakeMetadata::getSimpleTypeByName(delta_type);
+                precision = static_cast<int>(DB::getDecimalPrecision(*decimal_type));
+                scale = static_cast<int>(DB::getDecimalScale(*decimal_type));
             }
         }
         else
@@ -453,9 +452,22 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
     }
     catch (const DB::HTTPException & e)
     {
-        /// Unity returns 404 for a missing table; treat that as "does not exist" instead of an error.
+        /// Unity answers 404 for a missing table, so report "does not exist" rather than failing the query.
+        /// Caveat: the OSS server maps CATALOG_NOT_FOUND / SCHEMA_NOT_FOUND / TABLE_NOT_FOUND all to 404
+        /// (io.unitycatalog.server.exception.ErrorCode), and the response body's `error_code` is not
+        /// structurally available on HTTPException, so a wrong `warehouse` or namespace is indistinguishable
+        /// from an absent table here. Log it so a misconfigured catalog stays traceable. Every other status
+        /// (401, 403, expired token, 5xx) keeps propagating, matching `RestCatalog::existsTable`
+        /// (see gtest_rest_catalog.cpp:399-444).
         if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+        {
+            LOG_DEBUG(
+                log,
+                "Unity returned 404 for {}.{}.{}; reporting the table as absent "
+                "(note: a missing catalog or schema is also reported as 404)",
+                warehouse, schema_name, table_name);
             return false;
+        }
         throw;
     }
     catch (DB::Exception & e)
