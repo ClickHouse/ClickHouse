@@ -6484,17 +6484,19 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
     /// so the shared step carries only the bucket count and this read's parameter key.
     writeVarUInt(distributed_read_bucket_count, ctx.out);
 
+    const bool ship_input_order_info = query_info.input_order_info != nullptr && distributed_read_bucket_count > 0;
+
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER)
     {
-        writeVarUInt(query_info.input_order_info ? 1 : 0, ctx.out);
-        if (query_info.input_order_info)
+        writeVarUInt(ship_input_order_info ? 1 : 0, ctx.out);
+        if (ship_input_order_info)
         {
             writeVarUInt(query_info.input_order_info->used_prefix_of_sorting_key_size, ctx.out);
             writeIntBinary(static_cast<Int8>(query_info.input_order_info->direction), ctx.out);
             writeVarUInt(query_info.input_order_info->limit, ctx.out);
         }
     }
-    else if (query_info.input_order_info)
+    else if (ship_input_order_info)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan: a ReadInOrder distributed read requires query plan serialization "
             "version >= {}; all nodes must run the same version",
