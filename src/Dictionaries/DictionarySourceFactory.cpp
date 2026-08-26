@@ -20,6 +20,8 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Holds one row per column, an attribute's row being its `null_value` default. A port header
+    /// must have no rows, so a source publishing this block as its header has to strip them first.
     Block createSampleBlock(const DictionaryStructure & dict_struct)
     {
         Block block;
