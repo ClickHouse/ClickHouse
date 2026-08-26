@@ -781,6 +781,79 @@ std::string Server::getDefaultCorePath() const
     return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH), original_working_directory) + "cores";
 }
 
+namespace
+{
+
+/// `Poco::Util::OptionSet` resolves a long option by any unique prefix, so before the server settings
+/// were registered as command-line options, `--config` (used by the systemd unit and by
+/// `clickhouse restart`), `--co`, `--lo`, ... all resolved to the built-in option they abbreviate.
+/// Registering hundreds of additional options makes most of these abbreviations ambiguous, which stops
+/// the server from starting (`AmbiguousOptionException`). Refusing to register the settings that collide
+/// with such an abbreviation is not an option either: even a single letter can be a unique prefix of a
+/// built-in option (`d` of `daemon`, `h` of `help`, `u` of `umask`, `v` of `version`), so this would make
+/// whole families of settings - `distributed_*`, `http_*`, `logger_*`, `user_*`, ... - unavailable on the
+/// command line, which is exactly what this feature is about.
+///
+/// Instead, rewrite every abbreviation that used to resolve to a built-in option into the full name of
+/// that option, before the settings are registered. The previously accepted spellings keep their
+/// previous meaning, and every setting can be registered under its own name. An argument that does not
+/// resolve to exactly one built-in option is left alone: it either names a server setting, or it was
+/// already unknown or ambiguous before.
+std::vector<std::string> expandBuiltinOptionAbbreviations(
+    const std::vector<std::string> & arguments, const Poco::Util::OptionSet & builtin_options)
+{
+    std::vector<std::string> result;
+    result.reserve(arguments.size());
+
+    bool options_ended = false;
+    for (const auto & argument : arguments)
+    {
+        if (options_ended || !argument.starts_with("--") || argument == "--")
+        {
+            options_ended = options_ended || argument == "--";
+            result.push_back(argument);
+            continue;
+        }
+
+        /// `Poco::Util::Option` matches the option name up to the first `:` or `=`, case-insensitively,
+        /// and prefers a full match over a partial one - the resolution below mirrors `OptionSet::getOption`.
+        std::string option = argument.substr(std::string_view("--").size());
+
+        const Poco::Util::Option * resolved = nullptr;
+        bool ambiguous = false;
+        for (const auto & builtin : builtin_options)
+        {
+            if (builtin.matchesFull(option))
+            {
+                resolved = &builtin;
+                ambiguous = false;
+                break;
+            }
+            if (builtin.matchesPartial(option))
+            {
+                if (resolved)
+                    ambiguous = true;
+                else
+                    resolved = &builtin;
+            }
+        }
+
+        if (!resolved || ambiguous)
+        {
+            result.push_back(argument);
+            continue;
+        }
+
+        size_t value_position = option.find_first_of(":=");
+        std::string value = value_position == std::string::npos ? "" : option.substr(value_position);
+        result.push_back("--" + resolved->fullName() + value);
+    }
+
+    return result;
+}
+
+}
+
 void Server::defineOptions(Poco::Util::OptionSet & options)
 {
     options.addOption(
@@ -794,6 +867,18 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
             .repeatable(false)
             .binding("version"));
     BaseDaemon::defineOptions(options);
+
+    /// At this point `options` contains exactly the built-in options, and the command line has not been
+    /// processed yet: `Poco::Util::Application::processPocoOptions` calls `defineOptions` first and only
+    /// then resolves the arguments against the option set. This is therefore the place to normalize the
+    /// abbreviations of the built-in options, before the server settings below make them ambiguous.
+    const int arguments_count = config().getInt("application.argc", 0);
+    std::vector<std::string> arguments;
+    arguments.reserve(arguments_count);
+    for (int i = 0; i < arguments_count; ++i)
+        arguments.push_back(config().getString(fmt::format("application.argv[{}]", i)));
+    if (!arguments.empty())
+        setArgs(expandBuiltinOptionAbbreviations(arguments, options));
 
     ServerSettings::addToProgramOptions(options);
 }

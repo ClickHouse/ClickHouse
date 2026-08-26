@@ -303,3 +303,46 @@ $CLICKHOUSE_CLIENT --query "SELECT value = '$cfg11' FROM system.server_settings 
 kill $PID 2>/dev/null
 wait $PID 2>/dev/null
 trap '' EXIT
+
+# Test 12: Settings whose name starts with an abbreviation of a built-in option are registered as direct
+# options too. Every letter of `c` (`config-file`), `d` (`daemon`), `e` (`errorlog-file`), `h` (`help`),
+# `l` (`log-file`), `u` (`umask`) and `v` (`version`) is a unique prefix of a built-in option, so skipping
+# the colliding settings would leave whole families - `http_*`, `dns_*`, `logger_*`, ... - unavailable.
+srv_dir12="${CLICKHOUSE_TMP}/srv12"
+mkdir -p "$srv_dir12"
+$CLICKHOUSE_BINARY server \
+    --dns_max_consecutive_failures 42 \
+    --http_connections_soft_limit 111 \
+    --uncompressed_cache_size 1048576 \
+    --concurrent_threads_soft_limit_num 7 \
+    --load_marks_threadpool_pool_size 13 \
+    --logger_level information \
+    -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir12/" > "${CLICKHOUSE_TMP}/server12.log" 2>&1 &
+PID=$!
+
+trap 'kill $PID 2>/dev/null; wait $PID 2>/dev/null' EXIT
+
+for i in {1..30}; do
+    sleep 1
+    $CLICKHOUSE_CLIENT --query "SELECT 1" >/dev/null 2>&1 && break
+    if [[ $i == 30 ]]; then
+        cat "${CLICKHOUSE_TMP}/server12.log"
+        exit 1
+    fi
+done
+
+$CLICKHOUSE_CLIENT --query "
+    SELECT name, value FROM system.server_settings
+    WHERE name IN ('dns_max_consecutive_failures', 'http_connections_soft_limit', 'uncompressed_cache_size',
+                   'concurrent_threads_soft_limit_num', 'load_marks_threadpool_pool_size', 'logger.level')
+    ORDER BY name"
+
+kill $PID 2>/dev/null
+wait $PID 2>/dev/null
+trap '' EXIT
+
+# Test 13: An abbreviation of a built-in option keeps its meaning even when server settings starting with
+# the same letter are registered: `--v` is `--version` (not an ambiguity with `validate_*`) and `--h` is
+# `--help` (not an ambiguity with `http_*`).
+$CLICKHOUSE_BINARY server --v 2>&1 | grep -c 'server version'
+$CLICKHOUSE_BINARY server --h 2>&1 | grep -q -- '--max_thread_pool_size' && echo 1 || echo 0

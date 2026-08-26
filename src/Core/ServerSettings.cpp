@@ -2034,34 +2034,22 @@ void ServerSettings::addToProgramOptions(Poco::Util::OptionSet & options)
     for (const auto & option : options)
         builtin_options.push_back(option.fullName());
 
-    /// `Poco::Util::OptionSet` resolves a long option by any unique prefix. Preserve every such prefix
-    /// that was accepted before the server settings were registered: otherwise adding, for example,
-    /// `compiled_expression_cache_*` would turn the existing `--co` abbreviation of `--config-file`
-    /// into an ambiguous option. A colliding server setting remains available in the configuration file
-    /// and after the `--` separator.
-    std::vector<std::string> builtin_prefixes;
-    for (const auto & builtin : builtin_options)
-    {
-        for (size_t length = 1; length < builtin.size(); ++length)
-        {
-            std::string_view prefix(builtin.data(), length);
-            const size_t matches = std::count_if(
-                builtin_options.begin(),
-                builtin_options.end(),
-                [&](const std::string & other) { return other.starts_with(prefix); });
-            if (matches == 1)
-                builtin_prefixes.emplace_back(prefix);
-        }
-    }
-
     const auto & accessor = ServerSettingsTraits::Accessor::instance();
     for (size_t i = 0; i < accessor.size(); ++i)
     {
         const String & name = accessor.getName(i);
 
-        const bool clashes_with_builtin = std::ranges::contains(builtin_options, name)
-            || std::ranges::any_of(builtin_prefixes, [&](const std::string & prefix) { return name.starts_with(prefix); });
-        if (clashes_with_builtin)
+        /// A setting named exactly like a built-in option cannot be registered - `addOption` rejects the
+        /// duplicate - and it would shadow that option anyway. It remains available in the configuration
+        /// file and after the `--` separator.
+        ///
+        /// The abbreviations of the built-in options, which `Poco::Util::OptionSet` accepts because it
+        /// resolves a long option by any unique prefix, do not need such a treatment: the server expands
+        /// them into the full option name before the command line is processed (see
+        /// `expandBuiltinOptionAbbreviations`), so registering a setting that starts with one of them
+        /// (`compiled_expression_cache_size` and the `--co` abbreviation of `--config-file`, every
+        /// `logger_*` setting and `--log`, ...) does not make the abbreviation ambiguous.
+        if (std::ranges::contains(builtin_options, name))
             continue;
 
         std::string_view path = accessor.getPath(i);
