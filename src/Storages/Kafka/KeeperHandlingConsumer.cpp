@@ -5,6 +5,7 @@
 #include <boost/algorithm/string/join.hpp>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/DateLUT.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/randomSeed.h>
 
 namespace DB
@@ -96,7 +97,7 @@ KeeperHandlingConsumer::OffsetGuard::OffsetGuard(OffsetGuard && other) noexcept
 KeeperHandlingConsumer::OffsetGuard::~OffsetGuard()
 {
     if (consumer && needs_rollback)
-        consumer->rollbackToCommittedOffsets();
+        consumer->rollbackToCommittedOffsetsNoThrow();
 }
 
 void KeeperHandlingConsumer::OffsetGuard::commit()
@@ -498,6 +499,24 @@ void KeeperHandlingConsumer::rollbackToCommittedOffsets()
     kafka_consumer->updateOffsets(std::move(offsets_to_rollback));
 }
 
+void KeeperHandlingConsumer::rollbackToCommittedOffsetsNoThrow() noexcept
+{
+    /// The rollback allocates, and it is also called from inside a catch handler, where the memory
+    /// tracker is still allowed to raise `MEMORY_LIMIT_EXCEEDED`.
+    LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    try
+    {
+        rollbackToCommittedOffsets();
+    }
+    catch (...)
+    {
+        /// The consumer may still hold the messages of the aborted batch, and committing a later
+        /// batch would skip them. Drop the assignment so `prepareToPoll` rebuilds it and rewinds.
+        assigned_topic_partitions.clear();
+        tryLogCurrentException(log, "Failed to return the consumer to the committed offsets");
+    }
+}
+
 void KeeperHandlingConsumer::saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, const uint64_t intent)
 {
     // offset is used only for debugging purposes in tests, because it greatly helps understanding failures and it is
@@ -611,24 +630,35 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
     ReadBufferPtr buf;
     uint64_t consumed_messages = 0;
     int64_t last_read_offset = 0;
-    while (true)
+    try
     {
-        buf = kafka_consumer->consume(topic_partition, intent_size);
-        last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
-        if (buf)
+        while (true)
         {
-            ++consumed_messages;
-            last_read_offset = message_info.currentOffset();
-        }
-        /// Let's call message sink even if we couldn't pull any messages, so it can count of how many failed polled attempts did we have
-        if (message_sink(buf, message_info, kafka_consumer->hasMorePolledMessages(), kafka_consumer->isStalled()))
-        {
-            if (consumed_messages == 0)
-                return std::nullopt;
+            buf = kafka_consumer->consume(topic_partition, intent_size);
+            last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
+            if (buf)
+            {
+                ++consumed_messages;
+                last_read_offset = message_info.currentOffset();
+            }
+            /// Let's call message sink even if we couldn't pull any messages, so it can count of how many failed polled attempts did we have
+            if (message_sink(buf, message_info, kafka_consumer->hasMorePolledMessages(), kafka_consumer->isStalled()))
+            {
+                if (consumed_messages == 0)
+                    return std::nullopt;
 
-            saveIntentSize(topic_partition, committed_offset, consumed_messages);
-            return OffsetGuard(*this, last_read_offset + 1);
+                saveIntentSize(topic_partition, committed_offset, consumed_messages);
+                return OffsetGuard(*this, last_read_offset + 1);
+            }
         }
+    }
+    catch (...)
+    {
+        /// Consuming a message advances the consumer past it, and only an `OffsetGuard` returns it to
+        /// the committed offsets. No guard exists yet here, so undo the advance: otherwise the next
+        /// batch would commit past messages that were never delivered.
+        rollbackToCommittedOffsetsNoThrow();
+        throw;
     }
 }
 

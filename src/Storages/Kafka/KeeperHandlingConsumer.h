@@ -192,6 +192,8 @@ private:
     void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, bool has_replica_without_locks) TSA_REQUIRES(topic_partition_locks_mutex);
 
     void rollbackToCommittedOffsets();
+    /// Callable while an exception is propagating, where a throw would terminate the server.
+    void rollbackToCommittedOffsetsNoThrow() noexcept;
 
     void saveCommittedOffset(int64_t new_offset);
     void saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, uint64_t intent);
