@@ -48,7 +48,6 @@ namespace ErrorCodes
 extern const int INCORRECT_DATA;
 extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
 extern const int PROJECTION_NOT_USED;
-extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace QueryPlanOptimizations

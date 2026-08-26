@@ -1,7 +1,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include "Processors/QueryPlan/CommonSubplanReferenceStep.h"
-#include "Processors/QueryPlan/CommonSubplanStep.h"
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 #if CLICKHOUSE_CLOUD
 #include <Processors/QueryPlan/ReadFromMergeTreeAtWorker.h>
 #endif
@@ -168,7 +168,6 @@ std::optional<PreformattedMessage> hasCascadesUnsupportedStepForDistributed(cons
 std::optional<PreformattedMessage>  traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 
 
-
 // checks if there is read unsupported case
 std::optional<PreformattedMessage> isReadFromMergeTreeSupportedForDistributed(const ReadFromMergeTree * read);
 
@@ -191,7 +190,6 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & node)
         return true;
     return false;
 }
-
 
 
 // TODO group with ones below
@@ -230,7 +228,6 @@ std::optional<PreformattedMessage> isReadFromMergeTreeSupportedForDistributed(co
 
     return std::nullopt;
 }
-
 
 
 /// The local fallback executes the plan directly, so the logical joins kept for distributed
@@ -332,7 +329,8 @@ std::optional<PreformattedMessage> hasCascadesUnsupportedStepForDistributed(cons
 }
 
 
-std::optional<PreformattedMessage> traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings) {
+std::optional<PreformattedMessage> traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings)
+{
     if (!optimization_settings.make_distributed_plan)
     {
         return std::nullopt;
@@ -623,9 +621,6 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     /// Replace join node with gather node
     node = std::move(gather_node);
 }
-
-
-
 
 
 /// One way to parallelize aggregation is to split data into buckets by hash of aggregation keys.
