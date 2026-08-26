@@ -1121,6 +1121,16 @@ export const kbIndex = {
       ]
     },
     {
+      "id": "setup-installation/set-up-clickhouse-documentation-mcp-server",
+      "title": "إعداد خادم MCP لوثائق ClickHouse",
+      "description": "اربط أدوات الذكاء الاصطناعي بوثائق ClickHouse عبر Model Context Protocol.",
+      "href": "/ar/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
+      "category": "Setup & installation",
+      "tags": [
+        "Tools and Utilities"
+      ]
+    },
+    {
       "id": "performance-optimization/query-max-execution-time",
       "title": "Setting a limit on query execution time",
       "description": "How to enforce limit on max query execution time",
