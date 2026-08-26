@@ -312,18 +312,17 @@ struct DeltaLakeMetadataImpl
                 NameToNameMap current_physical_names_map;
                 auto current_schema = parseMetadata(fields_object, current_physical_names_map);
                 validatePartitionColumns(metadata_object, fields_object);
-                if (file_schema.empty())
-                {
-                    file_schema = current_schema;
-                    file_physical_names_map = current_physical_names_map;
-                }
-                else if (file_schema != current_schema)
+                if (!file_schema.empty() && file_schema != current_schema)
                 {
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                                     "Reading from files with different schema is not possible "
                                     "({} is different from {})",
                                     file_schema.toString(), current_schema.toString());
                 }
+                /// A rename of a mapped column keeps the physical schema equal but changes
+                /// the logical names, so the map must follow the latest `metaData` action.
+                file_schema = current_schema;
+                file_physical_names_map = current_physical_names_map;
             }
 
             if (object->has("add"))
@@ -623,19 +622,19 @@ struct DeltaLakeMetadataImpl
                                 validatePartitionColumn(partition_name.safeGet<String>(), declared);
                     }
                 }
-                if (file_schema.empty())
-                {
-                    file_schema = current_schema;
-                    file_physical_names_map = current_physical_names_map;
-                    LOG_TEST(log, "Processed schema from checkpoint: {}", file_schema.toString());
-                }
-                else if (file_schema != current_schema)
+                if (!file_schema.empty() && file_schema != current_schema)
                 {
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                                     "Reading from files with different schema is not possible "
                                     "({} is different from {})",
                                     file_schema.toString(), current_schema.toString());
                 }
+                if (file_schema.empty())
+                    LOG_TEST(log, "Processed schema from checkpoint: {}", current_schema.toString());
+                /// A rename of a mapped column keeps the physical schema equal but changes
+                /// the logical names, so the map must follow the latest `metaData` action.
+                file_schema = current_schema;
+                file_physical_names_map = current_physical_names_map;
             }
         }
 
