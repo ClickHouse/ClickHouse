@@ -35,6 +35,8 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/Common.h>
@@ -962,9 +964,56 @@ std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAn
     return std::pair(columns, format);
 }
 
+namespace
+{
+bool hasPartitionStrategyArgument(const ASTs & args)
+{
+    for (const auto & arg : args)
+    {
+        const auto * function = arg->as<ASTFunction>();
+        if (!function || function->name != "equals" || !function->arguments)
+            continue;
+
+        const auto & children = function->arguments->children;
+        if (children.size() == 2 && children[0]->getColumnName() == "partition_strategy")
+            return true;
+    }
+
+    return false;
+}
+}
+
 void StorageObjectStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
+
+    if (configuration->partition_strategy_was_inferred
+        && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+        && !configuration->getRawPath().hasGlobsIgnorePlaceholders()
+        && !hasPartitionStrategyArgument(args))
+    {
+        /// An implicit strategy `none` on a non-globbed path (a `CREATE` under
+        /// `file_like_engine_default_partition_strategy = 'wildcard'`) is not recoverable from
+        /// the path shape on reload: `initPartitionStrategy` resolves such a path to `hive` when
+        /// loading from metadata. It must therefore be persisted as an explicit
+        /// `partition_strategy = 'none'` engine argument, which only the S3 and Azure parsers
+        /// accept. For any other backend, refuse the definition instead of creating a table
+        /// that silently switches to the `hive` strategy after a server restart.
+        const auto storage_type = configuration->getType();
+        if (storage_type != ObjectStorageType::S3 && storage_type != ObjectStorageType::Azure)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`PARTITION BY` without an explicit `partition_strategy` resolves to 'none' under "
+                "`file_like_engine_default_partition_strategy = 'wildcard'`, and this engine can not persist "
+                "`partition_strategy = 'none'` in the table metadata, so the table would change to the 'hive' "
+                "strategy after a server restart. Set `file_like_engine_default_partition_strategy = 'hive'` "
+                "or remove `PARTITION BY`");
+
+        ASTs partition_strategy_args{
+            make_intrusive<ASTIdentifier>("partition_strategy"),
+            make_intrusive<ASTLiteral>("none")};
+        args.push_back(makeASTOperator("equals", std::move(partition_strategy_args)));
+    }
 }
 
 SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name)
