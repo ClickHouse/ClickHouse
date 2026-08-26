@@ -176,6 +176,10 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     NamedVariantDiscriminators,
     QuantizedCodes,
     ProductQuantizationCodebook,
+    MapKeyValue,
+    ObjectDistinctPaths,
+    ObjectSubObject,
+    ObjectCombinedPath,
 };
 
 String ISerialization::Substream::toString() const
@@ -314,7 +318,7 @@ String getNameForSubstreamPath(
     size_t array_level = initial_array_level;
     for (auto it = begin; it != end; ++it)
     {
-        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap || it->type == Substream::NullMapHidden)
+        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap)
             stream_name += ".null";
         else if (it->type == Substream::ArraySizes)
             stream_name += ".size" + toString(array_level);
@@ -476,18 +480,26 @@ String ISerialization::getFileNameForRenamedColumnStream(const NameAndTypePair &
     return getFileNameForRenamedColumnStream(column_from.getNameInStorage(), column_to.getNameInStorage(), file_name);
 }
 
-String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream, size_t initial_array_level)
+String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path)
 {
-    return getSubcolumnNameForStream(path, path.size(), encode_sparse_stream, initial_array_level);
+    return getSubcolumnNameForStream(path, path.size());
 }
 
-String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream, size_t initial_array_level)
+String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, size_t initial_array_level)
 {
-    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false, encode_sparse_stream, false, initial_array_level);
+    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false, false, false, initial_array_level);
     if (!subcolumn_name.empty())
         subcolumn_name = subcolumn_name.substr(1); // It starts with a dot.
 
     return subcolumn_name;
+}
+
+String ISerialization::getSubstreamsCacheKeyForStream(const SubstreamPath & path)
+{
+    /// The file name rendering is used because the subcolumn name is not injective: two streams of one
+    /// column can render to the same name while their files differ (`c.size0` and `c%2Esize0` for
+    /// Array(Tuple(`size0` UInt64))). The column prefix is dropped as the caches are per column in storage.
+    return getNameForSubstreamPath("", path.begin(), path.end(), /*escape_for_file_name=*/true, /*encode_sparse_stream=*/true, /*escape_variant_substreams=*/true);
 }
 
 namespace
@@ -541,7 +553,7 @@ void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache
     if (!cache)
         return;
 
-    cache->insert_or_assign(getSubcolumnNameForStream(path, true), std::move(element));
+    cache->insert_or_assign(getSubstreamsCacheKeyForStream(path), std::move(element));
 }
 
 ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path)
@@ -549,7 +561,7 @@ ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstrea
     if (!cache)
         return nullptr;
 
-    auto it = cache->find(getSubcolumnNameForStream(path, true));
+    auto it = cache->find(getSubstreamsCacheKeyForStream(path));
     return it == cache->end() ? nullptr : it->second.get();
 }
 
@@ -558,7 +570,7 @@ void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserialize
     if (!cache)
         return;
 
-    cache->emplace(getSubcolumnNameForStream(path, true), state);
+    cache->emplace(getSubstreamsCacheKeyForStream(path), state);
 }
 
 ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path)
@@ -566,7 +578,7 @@ ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsD
     if (!cache)
         return nullptr;
 
-    auto it = cache->find(getSubcolumnNameForStream(path, true));
+    auto it = cache->find(getSubstreamsCacheKeyForStream(path));
     return it == cache->end() ? nullptr : it->second;
 }
 
@@ -575,7 +587,6 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
     for (const auto & elem : path)
     {
         if (elem.type == Substream::NullMap
-            || elem.type == Substream::NullMapHidden
             || elem.type == Substream::ArraySizes
             || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
@@ -720,6 +731,15 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
             || path[last_elem].type == Substream::ObjectTypedPath
             || path[last_elem].type == Substream::QuantizedCodes
             || path[last_elem].type == Substream::ProductQuantizationCodebook;
+}
+
+bool ISerialization::isDeclaredSubstream(const SubstreamPath & path, size_t prefix_len)
+{
+    if (prefix_len == 0 || prefix_len > path.size())
+        return false;
+
+    auto type = path[prefix_len - 1].type;
+    return type == Substream::TupleElement || type == Substream::ObjectTypedPath;
 }
 
 bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)

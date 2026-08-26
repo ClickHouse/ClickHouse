@@ -685,15 +685,25 @@ void fillMissingColumns(
             /// getting the base type of array. Elements below the requested subcolumn belong to its own value type
             /// and must be kept, otherwise the Tuple wrapper is lost.
             const auto & requested_subcolumn_name = column_for_type.getSubcolumnName();
-            IDataType::forEachSubcolumn([&](const auto & path, const auto & subcolumn_name, const auto &)
+            /// Substreams rather than subcolumns: an element shadowed in the subcolumn namespace still
+            /// contributes a dimension here. One element is shared by many paths, hence the dedup.
+            NameSet visited_elements;
+            serialization->enumerateStreams([&](const auto & path)
             {
-                if (path.back().type != ISerialization::Substream::TupleElement)
-                    return;
+                for (size_t j = 0; j < path.size(); ++j)
+                {
+                    if (path[j].type != ISerialization::Substream::TupleElement)
+                        continue;
 
-                if (subcolumn_name == requested_subcolumn_name
-                    || requested_subcolumn_name.starts_with(subcolumn_name + "."))
-                    tuple_elements.push_back(path.back().name_of_substream);
-            }, ISerialization::SubstreamData(serialization));
+                    auto subcolumn_name = ISerialization::getSubcolumnNameForStream(path, j + 1);
+                    if (subcolumn_name != requested_subcolumn_name
+                        && !requested_subcolumn_name.starts_with(subcolumn_name + "."))
+                        continue;
+
+                    if (visited_elements.emplace(subcolumn_name).second)
+                        tuple_elements.push_back(path[j].name_of_substream);
+                }
+            });
 
             /// The number of dimensions that belongs to the array itself but not shared in Nested column.
             /// For example for column "n Nested(a UInt64, b Array(UInt64))" this value is 0 for `n.a` and 1 for `n.b`.

@@ -52,8 +52,7 @@ void SerializationNullable::enumerateStreams(
         auto null_map_serialization
             = SerializationNamed::create(SerializationNumber<UInt8>::create(), "null", SubstreamType::NamedNullMap);
 
-        bool hide_null_map_subcolumn = type_nullable ? type_nullable->getNestedType()->hasSubcolumn("null") : false;
-        settings.path.push_back(hide_null_map_subcolumn ? Substream::NullMapHidden : Substream::NullMap);
+        settings.path.push_back(Substream::NullMap);
         auto null_map_data = SubstreamData(null_map_serialization)
                                  .withType(type_nullable ? std::make_shared<DataTypeUInt8>() : nullptr)
                                  .withColumn(column_null_map)
@@ -1005,6 +1004,11 @@ SerializationPtr SerializationNullable::create(const SerializationPtr & nested_,
     if (!nested_->supportsPooling())
         return std::shared_ptr<ISerialization>(new SerializationNullable(nested_, use_default_null_map_));
     return ISerialization::pooled(getHash(nested_, use_default_null_map_), [&] { return new SerializationNullable(nested_, use_default_null_map_); });
+}
+
+bool SerializationNullable::isNullMapSubcolumn(const SubstreamPath & path)
+{
+    return !path.empty() && (path.back().type == Substream::NullMap || path.back().type == Substream::SparseNullMap);
 }
 
 }

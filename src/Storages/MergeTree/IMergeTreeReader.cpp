@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
@@ -329,13 +330,13 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
     }
 }
 
-bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const
+bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage, const NameAndTypePair & required_column) const
 {
     if (!(*storage_settings)[MergeTreeSetting::share_nested_offsets])
         return false;
 
     /// We cannot read separate subcolumn with offsets from compact parts.
-    if (!data_part_info_for_read->isWidePart() || subcolumn_name != "size0")
+    if (!data_part_info_for_read->isWidePart() || !SerializationArray::isTopLevelArraySizesSubcolumn(required_column))
         return false;
 
     auto split = Nested::splitName(name_in_storage);
@@ -362,7 +363,7 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
 
     /// A special case when we read subcolumn of shared offsets of Nested.
     /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
-    if (isSubcolumnOffsetsOfNested(name_in_storage, subcolumn_name))
+    if (isSubcolumnOffsetsOfNested(name_in_storage, required_column))
         name_in_storage = Nested::splitName(name_in_storage).first;
 
     return {name_in_storage, subcolumn_name};

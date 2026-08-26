@@ -180,30 +180,39 @@ void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) co
     value_type->forEachChild(callback);
 }
 
+MutableColumnPtr DataTypeMap::tryParseSubcolumnKey(std::string_view subcolumn_name) const
+{
+    if (!subcolumn_name.starts_with(KEY_SUBCOLUMN_PREFIX))
+        return nullptr;
+
+    auto key_column = key_type->createColumn();
+    ReadBufferFromString buf(subcolumn_name.substr(KEY_SUBCOLUMN_PREFIX.size()));
+    try
+    {
+        key_type->getDefaultSerialization()->deserializeWholeText(*key_column, buf, FormatSettings{});
+    }
+    catch (...) // Ok: the name simply does not denote a key of this map
+    {
+        return nullptr;
+    }
+
+    return key_column;
+}
+
+bool DataTypeMap::canResolveDynamicSubcolumn(std::string_view subcolumn_name) const
+{
+    return tryParseSubcolumnKey(subcolumn_name) != nullptr;
+}
+
 /// Resolves a dynamic subcolumn like `map['key']` by parsing the key from the subcolumn name,
 /// creating a `SerializationMapKeyValue` that knows how to read only the relevant bucket,
 /// and optionally pre-extracting the values from an existing column.
 /// The subcolumn name must start with "key_" followed by the text-serialized key value.
-std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t /*initial_array_level*/, bool throw_if_null) const
+std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t /*initial_array_level*/, bool throw_if_null) const
 {
     /// Only subcolumns of the form "key_<serialized_key>" are supported.
-    if (!subcolumn_name.starts_with(KEY_SUBCOLUMN_PREFIX))
-    {
-        if (throw_if_null)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} doesn't have subcolumn {}", getName(), subcolumn_name);
-        return nullptr;
-    }
-
-    /// Parse the key value from the subcolumn name.
-    std::string_view key_string = subcolumn_name.substr(KEY_SUBCOLUMN_PREFIX.size());
-    auto key_column = key_type->createColumn();
-    auto key_serialization = key_type->getDefaultSerialization();
-    ReadBufferFromString buf(key_string);
-    try
-    {
-        key_serialization->deserializeWholeText(*key_column, buf, FormatSettings{});
-    }
-    catch (...)
+    auto key_column = tryParseSubcolumnKey(subcolumn_name);
+    if (!key_column)
     {
         if (throw_if_null)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} doesn't have subcolumn {}", getName(), subcolumn_name);
@@ -218,8 +227,11 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(s
         map_serialization.getMapSerializationVersion(),
         key_column->getPtr(),
         nested);
-    std::unique_ptr<SubstreamData> res = std::make_unique<SubstreamData>(key_value_serialization);
-    res->type = value_type;
+    auto res = std::make_unique<SubcolumnInfo>();
+    res->data = SubstreamData(key_value_serialization).withType(value_type);
+
+    res->substreams_path.emplace_back(ISerialization::Substream::MapKeyValue);
+    res->substreams_path.back().name_of_substream = subcolumn_name;
 
     /// If a column is available, pre-extract the values for the requested key.
     if (data.column)
@@ -227,7 +239,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(s
         const auto & column_map = assert_cast<const ColumnMap &>(*data.column);
         auto value_column = value_type->createColumn();
         extractKeyValueFromMap(*column_map.getNestedColumnPtr(), *key_column->getPtr(), *value_column, 0, data.column->size());
-        res->column = std::move(value_column);
+        res->data.column = std::move(value_column);
     }
 
     return res;

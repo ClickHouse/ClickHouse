@@ -11,7 +11,7 @@ namespace DB
 /// For example, if we have type JSON and data {"a" : {"b" : {"c" : 42, "d" : "Hello"}}, "c" : [1, 2, 3]}
 /// this class will be responsible for reading combined path 'a' and will return a Dynamic column
 /// that contains the literal value at path 'a' (if present) or the sub-object at path 'a' (if not empty).
-/// This class is never used for typed paths - the typed-path check is done in `getDynamicSubcolumnData`.
+/// This class is never used for typed paths - the typed-path check is done in `getDynamicSubcolumnInfo`.
 class SerializationObjectCombinedPath final : public SimpleTextSerialization
 {
 private:

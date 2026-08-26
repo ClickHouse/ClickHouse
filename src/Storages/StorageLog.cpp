@@ -27,6 +27,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 
 #include <Interpreters/Context.h>
 #include <Processors/ISource.h>
@@ -192,7 +193,7 @@ NameAndTypePair LogSource::getColumnOnDisk(const NameAndTypePair & column) const
     /// A special case when we read subcolumn of shared offsets of Nested.
     /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
     auto name_in_storage = column.getNameInStorage();
-    if (column.getSubcolumnName() == "size0" && Nested::isSubcolumnOfNested(name_in_storage, storage_columns))
+    if (SerializationArray::isTopLevelArraySizesSubcolumn(column) && Nested::isSubcolumnOfNested(name_in_storage, storage_columns))
     {
         auto nested_name_in_storage = Nested::splitName(name_in_storage).first;
         auto new_name = Nested::concatenateName(nested_name_in_storage, column.getSubcolumnName());
@@ -320,7 +321,7 @@ void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+        if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(path)))
             return nullptr;
 
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
@@ -349,7 +350,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 
     settings.getter = [&] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+        if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(path)))
             return nullptr;
 
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
