@@ -9,68 +9,69 @@ doc_type: 'reference'
 
 import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<div id="aws-regions">
-  ## AWS 区域
+<div id="supported-regions">
+  ## 支持的区域
 </div>
 
-* ap-northeast-1 (东京)
-* ap-northeast-2 (韩国，首尔)
-* ap-south-1 (孟买)
-* ap-southeast-1 (新加坡)
-* ap-southeast-2 (悉尼)
-* eu-central-1 (法兰克福)
-* eu-west-1 (爱尔兰)
-* eu-west-2 (伦敦)
-* us-east-1 (北弗吉尼亚)
-* us-east-2 (俄亥俄)
-* us-west-2 (俄勒冈)
-* il-central-1 (以色列，特拉维夫)
-* ca-central-1 (加拿大)
+下表按云提供商列出了支持的区域。徽章表示是否支持私有区域、HIPAA 和 PCI。不带徽章的区域目前不提供上述任何选项。
 
-**私有区域：**
+<Tabs>
+  <Tab title="AWS" id="aws-regions" icon="aws">
+    | 区域               | 可用性                                                                                                 |
+    | ---------------- | --------------------------------------------------------------------------------------------------- |
+    | `af-south-1`     | <Badge color="purple">私网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `ap-east-1`      | <Badge color="purple">私网</Badge>                                                                    |
+    | `ap-east-2`      | <Badge color="purple">私网</Badge>                                                                    |
+    | `ap-northeast-1` | —                                                                                                   |
+    | `ap-northeast-2` | —                                                                                                   |
+    | `ap-south-1`     | —                                                                                                   |
+    | `ap-southeast-1` | —                                                                                                   |
+    | `ap-southeast-2` | —                                                                                                   |
+    | `ap-southeast-3` | <Badge color="purple">私网</Badge>                                                                    |
+    | `ap-southeast-5` | <Badge color="purple">私网</Badge>                                                                    |
+    | `ca-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                  |
+    | `eu-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                  |
+    | `eu-north-1`     | <Badge color="purple">私网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-west-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                  |
+    | `eu-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                  |
+    | `il-central-1`   | —                                                                                                   |
+    | `mx-central-1`   | <Badge color="purple">私网</Badge> <Badge color="blue">PCI</Badge>                                    |
+    | `sa-east-1`      | <Badge color="purple">私网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                  |
+    | `us-east-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                  |
+    | `us-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                  |
+  </Tab>
 
-* af-south-1 (南非)
-* eu-north-1 (斯德哥尔摩)
-* sa-east-1 (南美洲)
-* ap-southeast-3 (雅加达)
-* ap-east-1 (香港)
-* mx-central-1 (墨西哥)
+  <Tab title="Google Cloud" id="google-cloud-regions" icon="/images/icons/cloud-providers/google-cloud-color.svg">
+    | 区域                        | 可用性                                                                |
+    | ------------------------- | ------------------------------------------------------------------ |
+    | `asia-northeast1`         | —                                                                  |
+    | `asia-southeast1`         | —                                                                  |
+    | `australia-southeast1`    | <Badge color="purple">私网</Badge>                                   |
+    | `europe-west2`            | —                                                                  |
+    | `europe-west3`            | <Badge color="purple">私网</Badge>                                   |
+    | `europe-west4`            | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `europe-west6`            | <Badge color="purple">私网</Badge>                                   |
+    | `northamerica-northeast1` | <Badge color="purple">私网</Badge>                                   |
+    | `us-central1`             | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east1`                | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west1`                | <Badge color="purple">私网</Badge>                                   |
+  </Tab>
 
-<div id="google-cloud-regions">
-  ## Google Cloud 区域
-</div>
-
-* asia-southeast1 (新加坡) 
-* asia-northeast1 (东京) 
-* europe-west2 (伦敦) 
-* europe-west4 (荷兰) 
-* us-central1 (爱荷华) 
-* us-east1 (南卡罗来纳) 
-
-**私有区域：**
-
-* australia-southeast1 (悉尼) 
-* europe-west3 (法兰克福) 
-* europe-west6 (苏黎世) 
-* northamerica-northeast1 (蒙特利尔) 
-* us-west1 (俄勒冈)
-
-<div id="azure-regions">
-  ## Azure 区域
-</div>
-
-* 美国西部 3 (亚利桑那州) 
-* 美国东部 2 (弗吉尼亚州) 
-* 德国中西部 (法兰克福) 
-
-**私有区域：**
-
-* 日本东部 (东京、埼玉) 
-* 阿联酋北部 (迪拜) 
-* 澳大利亚东部 (新南威尔士州) 
+  <Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
+    | 区域                     | 可用性                              |
+    | ---------------------- | -------------------------------- |
+    | `Australia East`       | <Badge color="purple">私网</Badge> |
+    | `East US 2`            | —                                |
+    | `Germany West Central` | —                                |
+    | `Japan East`           | <Badge color="purple">私网</Badge> |
+    | `UAE North`            | <Badge color="purple">私网</Badge> |
+    | `West US 3`            | —                                |
+  </Tab>
+</Tabs>
 
 <Note>
-  需要部署到当前未列出的区域？[提交申请](https://clickhouse.com/pricing?modal=open)。
+  需要部署到当前未列出的区域？[提交请求](https://clickhouse.com/pricing?modal=open)。
 </Note>
 
 <div id="private-regions">
@@ -85,9 +86,8 @@ import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePl
 
 * 服务不会自动扩缩容；但支持手动纵向扩缩容和横向扩缩容。
 * 服务不能休眠。
-* 私有区域不提供状态页。
 
-HIPAA 合规可能还有其他要求 (包括签署 BAA) 。请注意，HIPAA 目前仅适用于 Enterprise 层级服务
+HIPAA 合规可能还有其他要求，包括签署商业伙伴协议 (BAA)。HIPAA 目前仅适用于 Enterprise 层级服务。
 
 <div id="hipaa-compliant-regions">
   ## HIPAA 合规区域
@@ -95,21 +95,7 @@ HIPAA 合规可能还有其他要求 (包括签署 BAA) 。请注意，HIPAA 目
 
 <EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
 
-客户必须签署商业伙伴协议 (BAA)，并通过销售或支持团队申请开通流程，才能在 HIPAA 合规区域中创建服务。以下区域支持 HIPAA 合规：
-
-* AWS af-south-1 (南非) **私有区域**
-* AWS ca-central-1 (加拿大)
-* AWS eu-central-1 (法兰克福)
-* AWS eu-north-1 (斯德哥尔摩) **私有区域**
-* AWS eu-west-1 (爱尔兰)
-* AWS eu-west-2 (伦敦)
-* AWS sa-east-1 (南美洲) **私有区域**
-* AWS us-east-1 (北弗吉尼亚)
-* AWS us-east-2 (俄亥俄)
-* AWS us-west-2 (俄勒冈)
-* GCP europe-west4 (荷兰)
-* GCP us-central1 (爱荷华)
-* GCP us-east1 (南卡罗来纳)
+客户必须签署 BAA，并通过销售或支持团队申请开通流程，才能在表中标记为 HIPAA 合规的区域中创建服务。
 
 <div id="pci-compliant-regions">
   ## PCI 合规区域
@@ -117,19 +103,4 @@ HIPAA 合规可能还有其他要求 (包括签署 BAA) 。请注意，HIPAA 目
 
 <EnterprisePlanFeatureBadge feature="PCI" support="true" />
 
-客户必须通过销售团队或支持团队申请完成 onboarding，才能在 PCI 合规区域中创建服务。以下区域支持 PCI 合规：
-
-* AWS af-south-1 (南非) **私有区域**
-* AWS ca-central-1 (加拿大)
-* AWS eu-central-1 (法兰克福)
-* AWS eu-north-1 (斯德哥尔摩) **私有区域**
-* AWS eu-west-1 (爱尔兰)
-* AWS eu-west-2 (伦敦)
-* AWS mx-central-1 (墨西哥) **私有区域**
-* AWS sa-east-1 (南美洲) **私有区域**
-* AWS us-east-1 (北弗吉尼亚)
-* AWS us-east-2 (俄亥俄)
-* AWS us-west-2 (俄勒冈)
-* GCP europe-west4 (荷兰)
-* GCP us-central1 (爱荷华)
-* GCP us-east1 (南卡罗来纳)
+客户必须通过销售团队或支持团队申请完成开通流程，才能在表中标记为 PCI 合规的区域中创建服务。

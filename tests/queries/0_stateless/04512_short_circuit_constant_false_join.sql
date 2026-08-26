@@ -121,10 +121,8 @@ CREATE TABLE sj (key2 UInt64, key1 UInt64, key3 UInt64, attr UInt64) ENGINE = Jo
 SELECT 'StorageJoin ON 0 still validates';
 SELECT * FROM mt ALL INNER JOIN sj ON 0; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN,INVALID_JOIN_ON_EXPRESSION }
 
--- The pass is skipped for distributed plans (ReadNothingStep is not serializable to remote
--- workers), so a constant-false join still executes instead of failing with SUPPORT_IS_DISABLED.
--- Use a populated table: an empty MergeTree already yields a non-serializable ReadNothing at
--- planning time, independently of this optimization.
+-- The pass is currently skipped for distributed plans, so a constant-false join still executes
+-- normally here.
 CREATE TABLE dist (k UInt64) ENGINE = MergeTree ORDER BY k AS SELECT number FROM numbers(10);
 SELECT 'Distributed plan is not broken by the short-circuit';
 -- make_distributed_plan rejects parallel replicas and a non-zero max_rows_to_group_by; pin both

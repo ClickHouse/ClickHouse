@@ -33,6 +33,10 @@ struct IntervalKind
     /// For `Month`, `Quarter` and `Year` the function returns an average number of nanoseconds.
     Int64 toAvgNanoseconds() const;
 
+    /// Returns number of milliseconds in one interval.
+    /// For `Month`, `Quarter` and `Year` the function returns an average number of milliseconds.
+    Int64 toAvgMilliseconds() const;
+
     /// Returns number of seconds in one interval.
     /// For `Month`, `Quarter` and `Year` the function returns an average number of seconds.
     Int32 toAvgSeconds() const;

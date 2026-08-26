@@ -25,12 +25,12 @@ The same as [`path`](#path), but includes the query string and fragment of the U
     {
         "Usage example",
         R"(
-SELECT pathFull('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value#section');
+SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value#section');
         )",
         R"(
-┌─pathFull('https://clickhouse.com⋯unctions/?query=value#section')─┐
-│ /docs/sql-reference/functions/url-functions/?query=value#section │
-└──────────────────────────────────────────────────────────────────┘
+┌─pathFull('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value#section')─┐
+│ /docs/reference/functions/regular-functions/url-functions?query=value#section                                   │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

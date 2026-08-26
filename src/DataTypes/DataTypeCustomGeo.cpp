@@ -25,7 +25,7 @@ ClickHouse supports data types for representing geographical objects — locatio
 
 ## Point {#point}
 
-`Point` is represented by its X and Y coordinates, stored as a [Tuple](tuple.md)([Float64](float.md), [Float64](float.md)).
+`Point` is represented by its X and Y coordinates, stored as a [Tuple](/reference/data-types/tuple)([Float64](/reference/data-types/float), [Float64](/reference/data-types/float)).
 
 **Example**
 
@@ -43,7 +43,7 @@ SELECT p, toTypeName(p) FROM geo_point;
 
 ## MultiPoint {#multipoint}
 
-`MultiPoint` is a set of points stored as an array of points: [Array](array.md)([Point](#point)).
+`MultiPoint` is a set of points stored as an array of points: [Array](/reference/data-types/array)([Point](#point)).
 
 **Example**
 
@@ -61,7 +61,7 @@ SELECT mp, toTypeName(mp) FROM geo_multipoint;
 
 ## Ring {#ring}
 
-`Ring` is a simple polygon without holes stored as an array of points: [Array](array.md)([Point](#point)).
+`Ring` is a simple polygon without holes stored as an array of points: [Array](/reference/data-types/array)([Point](#point)).
 
 **Example**
 
@@ -79,7 +79,7 @@ SELECT r, toTypeName(r) FROM geo_ring;
 
 ## LineString {#linestring}
 
-`LineString` is a line stored as an array of points: [Array](array.md)([Point](#point)).
+`LineString` is a line stored as an array of points: [Array](/reference/data-types/array)([Point](#point)).
 
 **Example**
 
@@ -97,7 +97,7 @@ SELECT l, toTypeName(l) FROM geo_linestring;
 
 ## MultiLineString {#multilinestring}
 
-`MultiLineString` is multiple lines stored as an array of `LineString`: [Array](array.md)([LineString](#linestring)).
+`MultiLineString` is multiple lines stored as an array of `LineString`: [Array](/reference/data-types/array)([LineString](#linestring)).
 
 **Example**
 
@@ -115,7 +115,7 @@ SELECT l, toTypeName(l) FROM geo_multilinestring;
 
 ## Polygon {#polygon}
 
-`Polygon` is a polygon with holes stored as an array of rings: [Array](array.md)([Ring](#ring)). First element of outer array is the outer shape of polygon and all the following elements are holes.
+`Polygon` is a polygon with holes stored as an array of rings: [Array](/reference/data-types/array)([Ring](#ring)). First element of outer array is the outer shape of polygon and all the following elements are holes.
 
 **Example**
 
@@ -135,7 +135,7 @@ SELECT pg, toTypeName(pg) FROM geo_polygon;
 
 ## MultiPolygon {#multipolygon}
 
-`MultiPolygon` consists of multiple polygons and is stored as an array of polygons: [Array](array.md)([Polygon](#polygon)).
+`MultiPolygon` consists of multiple polygons and is stored as an array of polygons: [Array](/reference/data-types/array)([Polygon](#polygon)).
 
 **Example**
 

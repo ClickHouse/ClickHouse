@@ -80,6 +80,8 @@ struct ZooKeeperRequest : virtual Request
 
     /// Writes length, xid, op_num, then the rest.
     void write(WriteBuffer & out, bool use_xid_64, bool supports_tracing = false) const;
+    // Serialized size of the framed request (xid + op_num + body), matching `write`.
+    size_t requestSize(bool use_xid_64) const;
     std::string toString(bool short_format = false) const;
 
     virtual void writeImpl(WriteBuffer &) const = 0;
@@ -749,6 +751,7 @@ struct ZooKeeperMultiRequest final : MultiRequest<ZooKeeperRequestPtr>, ZooKeepe
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
+    void addRootPath(const String & root_path) override;
 
     using RequestValidator = std::function<void(const ZooKeeperRequest &)>;
     void readImpl(ReadBuffer & in, RequestValidator request_validator);
@@ -770,6 +773,9 @@ struct ZooKeeperMultiRequest final : MultiRequest<ZooKeeperRequestPtr>, ZooKeepe
     std::optional<OperationType> operation_type;
 private:
     void checkOperationType(OperationType type);
+    size_t computeSizeImpl() const;
+
+    mutable std::optional<size_t> cached_size_impl;
 };
 
 struct ZooKeeperMultiResponse : MultiResponse, ZooKeeperResponse

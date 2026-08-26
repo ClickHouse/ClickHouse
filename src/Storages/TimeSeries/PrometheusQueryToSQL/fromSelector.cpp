@@ -52,7 +52,7 @@ namespace
 }
 
 
-SQLQueryPiece fromSelector(const PQT::InstantSelector * instant_selector_node, ConverterContext & context)
+SQLQueryPiece fromSelector(const PrometheusQueryTree::InstantSelector * instant_selector_node, ConverterContext & context)
 {
     auto instant_selector_text = instant_selector_node->toString(*context.promql_tree);
     auto range_selector = fromRangeSelector(instant_selector_text, instant_selector_node, context);
@@ -60,7 +60,7 @@ SQLQueryPiece fromSelector(const PQT::InstantSelector * instant_selector_node, C
 }
 
 
-SQLQueryPiece fromSelector(const PQT::RangeSelector * range_selector_node, ConverterContext & context)
+SQLQueryPiece fromSelector(const PrometheusQueryTree::RangeSelector * range_selector_node, ConverterContext & context)
 {
     auto instant_selector_text = range_selector_node->getInstantSelector()->toString(*context.promql_tree);
     return fromRangeSelector(instant_selector_text, range_selector_node, context);

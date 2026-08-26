@@ -35,6 +35,8 @@ static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_set
     options.schema_inference_force_nullable = format_settings.schema_inference_make_columns_nullable == 1;
     options.schema_inference_force_not_nullable = format_settings.schema_inference_make_columns_nullable == 0;
 
+    options.dictionary_filter_limit_bytes = format_settings.parquet.dictionary_filter_push_down;
+
     return options;
 }
 
@@ -190,6 +192,19 @@ void ParquetV3BlockInputFormat::onCancel() noexcept
     std::lock_guard lock(reader_mutex);
     if (reader)
         reader->cancel();
+}
+
+void ParquetV3BlockInputFormat::resetReadBuffer()
+{
+    {
+        /// Background tasks read through a non-owning pointer to the buffers the base class is
+        /// about to release, so they have to be stopped first. `reader` stays alive:
+        /// getMatchedBuckets() reads row group metadata after the source is exhausted.
+        std::lock_guard lock(reader_mutex);
+        if (reader)
+            reader->shutdownTasks();
+    }
+    IInputFormat::resetReadBuffer();
 }
 
 void ParquetV3BlockInputFormat::resetParser()
@@ -459,6 +474,23 @@ When writing Parquet file, data types that don't have a matching Parquet type ar
 
 Arrays can be nested and can have a value of `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 
+### Wide integers {#wide-integers}
+
+By default, ClickHouse writes `Int128`, `UInt128`, `Int256`, and `UInt256` as unannotated `FIXED_LEN_BYTE_ARRAY(16/32)` values in little-endian order. This legacy representation remains the default so files can be read by older ClickHouse versions.
+
+Set `output_format_parquet_wide_integer_as_decimal = 1` to use the standard Parquet `DECIMAL` representation instead:
+
+| ClickHouse type | Parquet logical type | Physical type | Value encoding |
+|-----------------|----------------------|---------------|----------------|
+| `UInt128` | `DECIMAL(39, 0)` | `FIXED_LEN_BYTE_ARRAY(17)` | A zero sign byte followed by the 16-byte unsigned value in big-endian order |
+| `UInt256` | `DECIMAL(78, 0)` | `FIXED_LEN_BYTE_ARRAY(33)` | A zero sign byte followed by the 32-byte unsigned value in big-endian order |
+| `Int128` | `DECIMAL(39, 0)` | `FIXED_LEN_BYTE_ARRAY(17)` | The 16-byte two's-complement value in big-endian order, sign-extended to 17 bytes |
+| `Int256` | `DECIMAL(77, 0)` | `FIXED_LEN_BYTE_ARRAY(33)` | The 32-byte two's-complement value in big-endian order, sign-extended to 33 bytes |
+
+The decimal representation provides numeric ordering for standard Parquet column-chunk statistics and page indexes, which lets ClickHouse use row-group and page min/max pruning. ClickHouse reads both encodings. For decimal precision 39, schema inference returns `Decimal(39, 0)`, backed by `Decimal256`; specify an explicit `Int128` or `UInt128` structure to recover a wide-integer type. Decimal precision 77 or 78 exceeds the range of ClickHouse `Decimal256`, so reading those files requires an explicit compatible `Int256` or `UInt256` structure. With an explicit wide-integer structure, ClickHouse accepts standard decimal values stored as either `BYTE_ARRAY` or `FIXED_LEN_BYTE_ARRAY` of any valid width, and range-checks every value after removing sign extension.
+
+Some Parquet clients support decimal precision only up to 38, while Arrow's high-level decimal types support precision only up to 76. Such clients can reject the precision-77/78 representation even though its schema and 33-byte physical width conform to Parquet. Keep the setting disabled when files must be read by older ClickHouse versions or clients with smaller decimal limits.
+
 Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to that data type which is set for the ClickHouse table column. E.g. a `UINT_32` Parquet column can be read into an [IPv4](/reference/data-types/ipv4) ClickHouse column.
 
 For some Parquet types there's no closely matching ClickHouse type. We read them as follows:
@@ -475,11 +507,11 @@ ClickHouse supports reading and writing geometry columns according to the [GeoPa
 On read, geometry columns are mapped to the corresponding ClickHouse [geo data types](/reference/data-types/geo):
 * A column declared as `Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString` or `MultiPolygon` is read into the matching ClickHouse geo type.
 * A column with multiple or unknown geometry types is read into the [`Geometry`](/reference/data-types/geo#geometry) type, which is a `Variant` over all supported geo types.
-* If the requested column type is `String`, the GeoParquet metadata is ignored and the raw encoded geometry payload is returned as-is — WKB or WKT bytes, matching whichever encoding the GeoParquet column declares. This is also true if the setting [`input_format_parquet_allow_geoparquet_parser`](/reference/settings/formats#input_format_parquet_allow_geoparquet_parser) is set to `0`.
+* If the requested column type is `String`, the GeoParquet metadata is ignored and the raw encoded geometry payload is returned as-is — WKB or WKT bytes, matching whichever encoding the GeoParquet column declares. This is also true if the setting [`input_format_parquet_allow_geoparquet_parser`](/reference/settings/formats/input-format#input_format_parquet_allow_geoparquet_parser) is set to `0`.
 
 ### Write behavior {#write}
 
-On write, top-level columns of type `Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString` or `MultiPolygon` are encoded as `BYTE_ARRAY` (WKB) and the appropriate `geo` JSON metadata is appended to the Parquet file footer. A top-level [`Geometry`](/reference/data-types/geo#geometry) `Variant` is also encoded as a WKB `BYTE_ARRAY` payload (its sub-values are converted to WKB and stored as a `Nullable(String)` column), but no `geo` metadata is emitted for it, so the result is not recognized as a GeoParquet geometry column on read. Other geo-related types, such as [`Ring`](/reference/data-types/geo#ring), are written using their native underlying representation with no GeoParquet metadata. This behavior can be disabled entirely by setting [`output_format_parquet_geometadata`](/reference/settings/formats#output_format_parquet_geometadata) to `0`, in which case even the supported geo types are written using their native underlying representation (`Point` as `Tuple(Float64, Float64)`, `LineString` as `Array(Point)`, `Polygon` as `Array(Array(Point))`, etc.) and no GeoParquet metadata is emitted.
+On write, top-level columns of type `Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString` or `MultiPolygon` are encoded as `BYTE_ARRAY` (WKB) and the appropriate `geo` JSON metadata is appended to the Parquet file footer. A top-level [`Geometry`](/reference/data-types/geo#geometry) `Variant` is also encoded as a WKB `BYTE_ARRAY` payload (its sub-values are converted to WKB and stored as a `Nullable(String)` column), but no `geo` metadata is emitted for it, so the result is not recognized as a GeoParquet geometry column on read. Other geo-related types, such as [`Ring`](/reference/data-types/geo#ring), are written using their native underlying representation with no GeoParquet metadata. This behavior can be disabled entirely by setting [`output_format_parquet_geometadata`](/reference/settings/formats/output-format#output_format_parquet_geometadata) to `0`, in which case even the supported geo types are written using their native underlying representation (`Point` as `Tuple(Float64, Float64)`, `LineString` as `Array(Point)`, `Polygon` as `Array(Array(Point))`, etc.) and no GeoParquet metadata is emitted.
 
 Geometry columns must appear at the root of the schema or nested inside `Tuple` (`struct`); nesting them inside `Array` or `Map` is not supported. `Nullable` is not supported for geo columns either.
 
@@ -542,6 +574,7 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/reference/e
 | `input_format_parquet_preserve_order`                                          | Avoid reordering rows when reading from Parquet files. Usually makes it much slower.                                                                                                                                              | `0`         |
 | `input_format_parquet_filter_push_down`                                        | When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.                                                                                          | `1`         |
 | `input_format_parquet_bloom_filter_push_down`                                  | When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.                                                                                                          | `0`         |
+| `input_format_parquet_dictionary_filter_push_down`                             | When reading Parquet files (with reader v3), skip whole row groups based on the WHERE/PREWHERE expressions and the dictionary page contents, for equality and `IN` conditions, when all data pages of a column chunk are dictionary-encoded. The value is the maximum dictionary page size (in bytes) for which this optimization is applied; set to `0` to disable. Takes precedence over the bloom filter when both are available. | `1048576`   |
 | `input_format_parquet_allow_missing_columns`                                   | Allow missing columns while reading Parquet input formats                                                                                                                                                                          | `1`         |
 | `input_format_parquet_local_file_min_bytes_for_seek`                           | Min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format                                                                                                                          | `8192`      |
 | `input_format_parquet_enable_row_group_prefetch`                               | Enable row group prefetching during parquet parsing. Currently, only single-threaded parsing can prefetch.                                                                                                                          | `1`         |
@@ -554,6 +587,7 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/reference/e
 | `output_format_parquet_row_group_size_bytes`                                   | Target row group size in bytes, before compression.                                                                                                                                                                                  | `536870912` |
 | `output_format_parquet_string_as_string`                                       | Use Parquet String type instead of Binary for String columns.                                                                                                                                                                      | `1`         |
 | `output_format_parquet_fixed_string_as_fixed_byte_array`                       | Use Parquet FIXED_LEN_BYTE_ARRAY type instead of Binary for FixedString columns.                                                                                                                                                  | `1`         |
+| `output_format_parquet_wide_integer_as_decimal`                                | Write `Int128`, `UInt128`, `Int256`, and `UInt256` as standard big-endian Parquet `DECIMAL` values instead of legacy little-endian fixed byte arrays.                                                                            | `0`         |
 | `output_format_parquet_compression_method`                                     | Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)                                                                                                              | `zstd`      |
 | `output_format_parquet_parallel_encoding`                                      | Do Parquet encoding in multiple threads.                                                                                                                                          | `1`         |
 | `output_format_parquet_data_page_size`                                         | Target page size in bytes, before compression.                                                                                                                                                                                      | `1048576`   |
@@ -584,9 +618,16 @@ void registerParquetSchemaReader(FormatFactory & factory)
         [](const FormatSettings & settings)
         {
             return fmt::format(
-                "schema_inference_make_columns_nullable={};enable_json_parsing={}",
+                "schema_inference_make_columns_nullable={};schema_inference_make_json_columns_nullable={};"
+                "enable_json_parsing={};max_parser_depth={};"
+                "local_time_as_utc={};allow_geoparquet_parser={};skip_columns_with_unsupported_types={}",
                 settings.schema_inference_make_columns_nullable,
-                settings.parquet.enable_json_parsing);
+                settings.schema_inference_make_json_columns_nullable,
+                settings.parquet.enable_json_parsing,
+                settings.max_parser_depth,
+                settings.parquet.local_time_as_utc,
+                settings.parquet.allow_geoparquet_parser,
+                settings.parquet.skip_columns_with_unsupported_types_in_schema_inference);
         });
 }
 

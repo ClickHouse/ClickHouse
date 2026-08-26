@@ -27,7 +27,7 @@ std::string makeData(size_t size)
 {
     std::string out;
     out.reserve(size);
-    std::mt19937 rng(12345); /// NOLINT(cert-msc32-c,cert-msc51-cpp) deterministic test data on purpose
+    std::mt19937 rng(12345); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) deterministic test data on purpose
     while (out.size() < size)
     {
         if (rng() % 3 == 0)
