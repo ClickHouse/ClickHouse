@@ -8,6 +8,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <cmath>
+
 
 namespace DB
 {
@@ -32,27 +34,88 @@ struct Entry
     Field val;
 };
 
-/// NaN-aware orderings, consistent with `argMax`/`argMin`/`max`/`min`: a `NaN` `val` always
-/// ranks as the worst candidate, so it is evicted in favor of any real value and is kept only
-/// when there are not enough real values to fill the result. `NaN` compares equal to `NaN`.
-/// `Field`'s default ordering instead treats `NaN` as greater than every real value, which
-/// would otherwise let a `NaN` linger in the heap forever (and sort first in the output).
-inline bool valGreater(const Field & a, const Field & b)
+/// `NaN`-aware three-way comparison of two `val` values.
+///
+/// It agrees with `Field`'s own ordering everywhere except for `NaN`: `Field::operator<` hardcodes
+/// "`NaN` is greater than every real number" (see `nan_direction_hint` in `Field.cpp`), while
+/// `argMaxMany`/`argMinMany` -- consistently with `argMax`/`argMin` and `max`/`min` -- have to treat
+/// a `NaN` as the *worst* candidate, so that it is evicted in favor of any real value and is kept
+/// only when there are not enough real values to fill the result. `nan_direction` selects that:
+/// `-1` orders `NaN` before every real number, `+1` after it. `NaN` compares equal to `NaN`.
+///
+/// The comparison recurses into `Array`, `Tuple` and `Map` values, so that a `NaN` nested inside an
+/// accepted composite `val` type such as `Tuple(Float64, UInt8)` or `Array(Float64)` follows the
+/// same rule as a top-level `Float64` one, instead of falling back to `Field`'s ordering and
+/// outranking every real value.
+int compareVals(const Field & lhs, const Field & rhs, int nan_direction);
+
+int compareValSequences(const FieldVector & lhs, const FieldVector & rhs, int nan_direction)
 {
-    if (isNaNField(a))
-        return false; /// `NaN` is treated as the smallest value, never greater than anything.
-    if (isNaNField(b))
-        return true; /// Any real value is greater than `NaN`.
-    return a > b;
+    const size_t common_size = std::min(lhs.size(), rhs.size());
+    for (size_t i = 0; i < common_size; ++i)
+    {
+        if (int res = compareVals(lhs[i], rhs[i], nan_direction); res != 0)
+            return res;
+    }
+
+    if (lhs.size() == rhs.size())
+        return 0;
+    return lhs.size() < rhs.size() ? -1 : 1;
 }
 
+int compareVals(const Field & lhs, const Field & rhs, int nan_direction)
+{
+    /// Values of different types are ordered by the type tag first, exactly like `Field` does.
+    if (lhs.getType() != rhs.getType())
+        return lhs.getType() < rhs.getType() ? -1 : 1;
+
+    switch (lhs.getType())
+    {
+        case Field::Types::Float64:
+        {
+            const Float64 lhs_value = lhs.safeGet<Float64>();
+            const Float64 rhs_value = rhs.safeGet<Float64>();
+            const bool lhs_is_nan = std::isnan(lhs_value);
+            const bool rhs_is_nan = std::isnan(rhs_value);
+
+            if (lhs_is_nan || rhs_is_nan)
+            {
+                if (lhs_is_nan && rhs_is_nan)
+                    return 0;
+                return lhs_is_nan ? nan_direction : -nan_direction;
+            }
+
+            if (lhs_value < rhs_value)
+                return -1;
+            return lhs_value > rhs_value ? 1 : 0;
+        }
+        case Field::Types::Array:
+            return compareValSequences(lhs.safeGet<Array>(), rhs.safeGet<Array>(), nan_direction);
+        case Field::Types::Tuple:
+            return compareValSequences(lhs.safeGet<Tuple>(), rhs.safeGet<Tuple>(), nan_direction);
+        case Field::Types::Map:
+            return compareValSequences(lhs.safeGet<Map>(), rhs.safeGet<Map>(), nan_direction);
+        default:
+        {
+            if (lhs < rhs)
+                return -1;
+            return rhs < lhs ? 1 : 0;
+        }
+    }
+}
+
+/// `NaN` is the worst candidate for `argMaxMany`, which keeps the greatest `val` values, so it is
+/// ordered before every real number.
+inline bool valGreater(const Field & a, const Field & b)
+{
+    return compareVals(a, b, -1) > 0;
+}
+
+/// `NaN` is the worst candidate for `argMinMany`, which keeps the smallest `val` values, so it is
+/// ordered after every real number.
 inline bool valLess(const Field & a, const Field & b)
 {
-    if (isNaNField(a))
-        return false; /// `NaN` is treated as the largest value, never less than anything.
-    if (isNaNField(b))
-        return true; /// Any real value is less than `NaN`.
-    return a < b;
+    return compareVals(a, b, 1) < 0;
 }
 
 /// Comparator for min-heap on val: used by argMaxMany to keep the N largest val values.
