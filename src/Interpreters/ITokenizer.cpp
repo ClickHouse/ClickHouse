@@ -46,10 +46,10 @@ namespace ErrorCodes
 
 JSONPathValuesTokenizer::JSONPathValuesTokenizer(
     size_t max_token_bytes_,
-    std::vector<String> include_paths,
-    std::vector<String> include_path_regexps,
-    std::vector<String> skip_paths,
-    std::vector<String> skip_path_regexps)
+    VectorWithMemoryTracking<String> include_paths,
+    VectorWithMemoryTracking<String> include_path_regexps,
+    VectorWithMemoryTracking<String> skip_paths,
+    VectorWithMemoryTracking<String> skip_path_regexps)
     : ITokenizerHelper(Type::JSONPathValues)
     , max_token_bytes(max_token_bytes_)
     , path_matcher(std::make_shared<JSONPathValues::PathMatcher>(

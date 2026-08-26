@@ -4,6 +4,8 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -16,8 +18,6 @@
 #include <IO/WriteBuffer.h>
 
 #include <array>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace DB::JSONPathValues
 {
@@ -602,8 +602,8 @@ private:
     bool cached_is_map = false;
     bool cached_is_supported_dynamic_scalar = false;
     const String * cached_binary_type = nullptr;
-    std::unordered_map<String, String> binary_types;
-    std::unordered_set<String> seen_map_keys;
+    UnorderedMapWithMemoryTracking<String, String> binary_types;
+    UnorderedSetWithMemoryTracking<String> seen_map_keys;
     Consumer & consumer;
 };
 

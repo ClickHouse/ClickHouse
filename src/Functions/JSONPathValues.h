@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <base/types.h>
@@ -11,7 +12,6 @@
 #include <limits>
 #include <memory>
 #include <optional>
-#include <vector>
 
 namespace DB::ErrorCodes
 {
@@ -25,10 +25,10 @@ class PathMatcher
 {
 public:
     PathMatcher(
-        std::vector<String> include_paths_,
-        std::vector<String> include_path_regexps_,
-        std::vector<String> skip_paths_,
-        std::vector<String> skip_path_regexps_)
+        VectorWithMemoryTracking<String> include_paths_,
+        VectorWithMemoryTracking<String> include_path_regexps_,
+        VectorWithMemoryTracking<String> skip_paths_,
+        VectorWithMemoryTracking<String> skip_path_regexps_)
         : include_paths(normalizePaths(std::move(include_paths_)))
         , include_path_regexps(normalizeStrings(std::move(include_path_regexps_)))
         , skip_paths(normalizePaths(std::move(skip_paths_)))
@@ -60,22 +60,22 @@ public:
             || !include_regexps.empty();
     }
 
-    const std::vector<String> & getIncludePaths() const { return include_paths; }
-    const std::vector<String> & getIncludePathRegexps() const { return include_path_regexps; }
-    const std::vector<String> & getSkipPaths() const { return skip_paths; }
-    const std::vector<String> & getSkipPathRegexps() const { return skip_path_regexps; }
+    const VectorWithMemoryTracking<String> & getIncludePaths() const { return include_paths; }
+    const VectorWithMemoryTracking<String> & getIncludePathRegexps() const { return include_path_regexps; }
+    const VectorWithMemoryTracking<String> & getSkipPaths() const { return skip_paths; }
+    const VectorWithMemoryTracking<String> & getSkipPathRegexps() const { return skip_path_regexps; }
 
 private:
-    using Regexps = std::vector<std::unique_ptr<re2::RE2>>;
+    using Regexps = VectorWithMemoryTracking<std::unique_ptr<re2::RE2>>;
 
     bool hasIncludeFilter() const { return !include_paths.empty() || !include_regexps.empty(); }
 
-    static std::vector<String> normalizePaths(std::vector<String> paths)
+    static VectorWithMemoryTracking<String> normalizePaths(VectorWithMemoryTracking<String> paths)
     {
         std::sort(paths.begin(), paths.end());
         paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
 
-        std::vector<String> result;
+        VectorWithMemoryTracking<String> result;
         result.reserve(paths.size());
         for (auto & path : paths)
         {
@@ -85,14 +85,14 @@ private:
         return result;
     }
 
-    static std::vector<String> normalizeStrings(std::vector<String> values)
+    static VectorWithMemoryTracking<String> normalizeStrings(VectorWithMemoryTracking<String> values)
     {
         std::sort(values.begin(), values.end());
         values.erase(std::unique(values.begin(), values.end()), values.end());
         return values;
     }
 
-    static bool matchesAnyPathOrSubtree(std::string_view path, const std::vector<String> & paths)
+    static bool matchesAnyPathOrSubtree(std::string_view path, const VectorWithMemoryTracking<String> & paths)
     {
         while (true)
         {
@@ -111,7 +111,7 @@ private:
         }
     }
 
-    static bool matchesAnyAncestor(std::string_view path, const std::vector<String> & paths)
+    static bool matchesAnyAncestor(std::string_view path, const VectorWithMemoryTracking<String> & paths)
     {
         String descendant_prefix(path);
         descendant_prefix += '.';
@@ -132,7 +132,7 @@ private:
             [&](const auto & regexp) { return re2::RE2::PartialMatch(path, *regexp); });
     }
 
-    static void compileRegexps(const std::vector<String> & regexp_strings, Regexps & regexps)
+    static void compileRegexps(const VectorWithMemoryTracking<String> & regexp_strings, Regexps & regexps)
     {
         regexps.reserve(regexp_strings.size());
         for (const auto & regexp_string : regexp_strings)
@@ -155,10 +155,10 @@ private:
         return options;
     }
 
-    std::vector<String> include_paths;
-    std::vector<String> include_path_regexps;
-    std::vector<String> skip_paths;
-    std::vector<String> skip_path_regexps;
+    VectorWithMemoryTracking<String> include_paths;
+    VectorWithMemoryTracking<String> include_path_regexps;
+    VectorWithMemoryTracking<String> skip_paths;
+    VectorWithMemoryTracking<String> skip_path_regexps;
     Regexps include_regexps;
     Regexps skip_regexps;
 };
@@ -275,7 +275,9 @@ inline std::optional<std::string_view> tryGetCompleteScalarValue(std::string_vie
         return false;
     };
 
-    if (!skipComponent() || !skipComponent() || position >= token.size())
+    if (!skipComponent())
+        return std::nullopt;
+    if (!skipComponent() || position >= token.size())
         return std::nullopt;
     if (static_cast<Kind>(token[position++]) != Kind::ScalarComplete)
         return std::nullopt;

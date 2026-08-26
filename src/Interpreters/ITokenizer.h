@@ -422,10 +422,10 @@ struct JSONPathValuesTokenizer final : public ITokenizerHelper<JSONPathValuesTok
 {
     explicit JSONPathValuesTokenizer(
         size_t max_token_bytes_,
-        std::vector<String> include_paths_ = {},
-        std::vector<String> include_path_regexps_ = {},
-        std::vector<String> skip_paths_ = {},
-        std::vector<String> skip_path_regexps_ = {});
+        VectorWithMemoryTracking<String> include_paths_ = {},
+        VectorWithMemoryTracking<String> include_path_regexps_ = {},
+        VectorWithMemoryTracking<String> skip_paths_ = {},
+        VectorWithMemoryTracking<String> skip_path_regexps_ = {});
 
     static const char * getName() { return "jsonPathValues"; }
     static const char * getExternalName() { return getName(); }

@@ -52,10 +52,10 @@ void assertParamsCount(size_t params_count, size_t max_count, std::string_view t
     }
 }
 
-std::vector<String> castStringArray(const Field & field, std::string_view argument_name, bool reject_empty)
+VectorWithMemoryTracking<String> castStringArray(const Field & field, std::string_view argument_name, bool reject_empty)
 {
     const auto values = castAs<Array>(field, argument_name);
-    std::vector<String> result;
+    VectorWithMemoryTracking<String> result;
     result.reserve(values.size());
     for (const auto & value : values)
     {
@@ -72,10 +72,10 @@ std::vector<String> castStringArray(const Field & field, std::string_view argume
 
 std::unique_ptr<ITokenizer> createJSONPathValuesTokenizer(
     UInt64 max_token_bytes,
-    std::vector<String> include_paths = {},
-    std::vector<String> include_path_regexps = {},
-    std::vector<String> skip_paths = {},
-    std::vector<String> skip_path_regexps = {})
+    VectorWithMemoryTracking<String> include_paths = {},
+    VectorWithMemoryTracking<String> include_path_regexps = {},
+    VectorWithMemoryTracking<String> skip_paths = {},
+    VectorWithMemoryTracking<String> skip_path_regexps = {})
 {
     const auto * tokenizer_name = JSONPathValuesTokenizer::getExternalName();
     if (!JSONPathValues::isValidMaxTokenBytes(max_token_bytes))
@@ -136,10 +136,10 @@ std::unique_ptr<ITokenizer> createJSONPathValuesTokenizer(const ASTFunction & fu
     }
 
     UInt64 max_token_bytes = JSONPathValues::DEFAULT_MAX_TOKEN_BYTES;
-    std::vector<String> include_paths;
-    std::vector<String> include_path_regexps;
-    std::vector<String> skip_paths;
-    std::vector<String> skip_path_regexps;
+    VectorWithMemoryTracking<String> include_paths;
+    VectorWithMemoryTracking<String> include_path_regexps;
+    VectorWithMemoryTracking<String> skip_paths;
+    VectorWithMemoryTracking<String> skip_path_regexps;
     if (auto it = options.find("max_token_bytes"); it != options.end())
     {
         max_token_bytes = castAs<UInt64>(it->second, "max_token_bytes");

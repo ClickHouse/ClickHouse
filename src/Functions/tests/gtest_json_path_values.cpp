@@ -157,7 +157,7 @@ GTEST_TEST(JSONPathValues, PathMatcherIncludesExactSubtrees)
 
     EXPECT_EQ(
         matcher.getIncludePaths(),
-        (std::vector<String>{"items[].id", "payload-other", "payload.ids", "request_id"}));
+        (VectorWithMemoryTracking<String>{"items[].id", "payload-other", "payload.ids", "request_id"}));
 }
 
 GTEST_TEST(JSONPathValues, PathMatcherIncludesRegexpsAndSkipsWin)
