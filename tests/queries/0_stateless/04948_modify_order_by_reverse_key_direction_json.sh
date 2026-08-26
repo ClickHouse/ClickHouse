@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: needs jq
 
 # `ALTER TABLE ... MODIFY ORDER BY` must not change the sort direction of a retained sorting
 # key column in EITHER direction. The `ALTER` parser cannot express `ASC`/`DESC`, but the

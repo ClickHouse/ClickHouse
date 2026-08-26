@@ -5298,11 +5298,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             }
         }
 
-        const KeyDescription & old_sorting_key = old_metadata.getSortingKey();
-        const KeyDescription & new_sorting_key = new_metadata.getSortingKey();
-
         if (is_initial_alter && changes_order_by)
         {
+            const KeyDescription & old_sorting_key = old_metadata.getSortingKey();
+            const KeyDescription & new_sorting_key = new_metadata.getSortingKey();
+
             /// Positions beyond the stored flags are ascending, and an empty vector means the whole key is ascending
             /// (the `KeyOrder` convention).
             auto is_reversed = [](const std::vector<bool> & flags, size_t column)
