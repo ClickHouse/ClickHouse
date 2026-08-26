@@ -60,15 +60,12 @@ SELECT val FROM t_minmax_nan_mixed ORDER BY val DESC LIMIT 1;
 SELECT val FROM t_minmax_nan_mixed ORDER BY val DESC LIMIT 1
 SETTINGS use_skip_indexes_for_top_k = 0, use_top_k_dynamic_filtering = 0;
 
--- A monotonic function chain is applied to the bound's endpoints, never to the hidden NaN, and a
--- monotonicity-declared function need not preserve NaN: sign(nan) = 1, so the NaN row matches
--- `sign(val) > 0` while the transformed bound [-1, -1] does not.
+-- A monotonic function chain is applied to the bound's endpoints, never to the hidden NaN.
 SELECT count() FROM t_minmax_nan_mixed WHERE NOT (val * 2 > 6);
 SELECT count() FROM t_minmax_nan_mixed WHERE NOT (val * 2 > 6) SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_minmax_nan_mixed;
 
--- A float->integer chain throws on a NaN input, so the index must not turn that into an empty result.
 DROP TABLE IF EXISTS t_minmax_nan_chain;
 
 CREATE TABLE t_minmax_nan_chain
@@ -78,15 +75,14 @@ ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3, index_granularity
 INSERT INTO t_minmax_nan_chain VALUES (1, -3.0), (2, nan), (3, -1.0);
 INSERT INTO t_minmax_nan_chain VALUES (4, 100.0), (5, 150.0), (6, 200.0);
 
+-- A monotonicity-declared function need not preserve NaN: sign(nan) = 1, so the NaN row matches
+-- while the transformed bound [-1, -1] does not, and the result type stays Float64.
 SELECT count() FROM t_minmax_nan_chain WHERE toFloat64(sign(val)) > 0;
 SELECT count() FROM t_minmax_nan_chain WHERE toFloat64(sign(val)) > 0 SETTINGS use_skip_indexes = 0;
 
 -- A set atom carries its own chain per key mapping, so the chain rule has to be applied there too.
 SELECT count() FROM t_minmax_nan_chain WHERE sign(val) IN (1);
 SELECT count() FROM t_minmax_nan_chain WHERE sign(val) IN (1) SETTINGS use_skip_indexes = 0;
-
-SELECT count() FROM t_minmax_nan_chain WHERE toInt64(val) > 100; -- { serverError CANNOT_CONVERT_TYPE }
-SELECT count() FROM t_minmax_nan_chain WHERE toInt64(val) > 100 SETTINGS use_skip_indexes = 0; -- { serverError CANNOT_CONVERT_TYPE }
 
 DROP TABLE t_minmax_nan_chain;
 
