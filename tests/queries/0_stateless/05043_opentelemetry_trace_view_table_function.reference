@@ -1,0 +1,14 @@
+=== tree structure ===
+one fragment span per shard: OK	tree connectors: OK
+=== timeline geometry ===
+default width 40: OK	bars non-empty: OK	trace starts at offset 0: OK	self_pct in [0, 100]: OK	durations sane: OK
+=== custom width ===
+width 20: OK
+=== lookup by query_id ===
+query_id finds the trace: OK	named width: OK
+=== errors ===
+No spans found for trace_id
+Cannot parse uuid
+timeline_width must be in
+No trace found for query_id
+exactly one of trace_id and query_id
