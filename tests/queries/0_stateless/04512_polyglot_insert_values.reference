@@ -32,6 +32,8 @@ NOT_IMPLEMENTED
 107	6
 --- the request body continues a URL query that only mentions the identifier insert ---
 {"insert":2}
+--- the request body continues a URL query aliasing both insert and into ---
+{"insert":1,"into":2}
 --- implicit_select is honoured by the client-side classifier (expect: 2) ---
 2
 --- polyglot INSERT SELECT FROM input() streams stdin (expect: 112 7) ---

@@ -122,6 +122,12 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 echo "--- the request body continues a URL query that only mentions the identifier insert ---"
 ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&input_format_max_block_wait_ms=1000&query=WITH%20cte%20AS%20(SELECT%201)%20SELECT%20instr('abcd'%2C'b')%20AS%20insert" -d ' FORMAT JSONEachRow'
 
+# The scan must stop at the beginning of the statement that follows the CTE list. Looking for an
+# `INSERT INTO` token pair anywhere in the statement would also match a `SELECT` that happens to use
+# `insert` and `into` as column aliases, and its request body would stop being concatenated.
+echo "--- the request body continues a URL query aliasing both insert and into ---"
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&input_format_max_block_wait_ms=1000&query=WITH%20cte%20AS%20(SELECT%201)%20SELECT%201%20AS%20insert%2C%202%20AS%20into" -d ' FORMAT JSONEachRow'
+
 # The client parses the transpiled SQL only to classify the query, but it must do so with the same
 # parser flags the server uses to execute it (see `executeQuery`). Otherwise a query the server
 # accepts is rejected locally before it is ever sent: with `implicit_select`, a bare expression is

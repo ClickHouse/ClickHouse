@@ -1346,9 +1346,10 @@ void HTTPHandler::processQuery(
     /// before the `INSERT` is part of the same statement and has to use the streaming-safe path too.
     /// Leading whitespace and SQL comments are skipped so that forms like `/*trace*/ INSERT ...`
     /// also take the streaming-safe parse path. The bareword `INSERT` alone is not enough: it is
-    /// also a legal identifier (a function or alias name), so an actual `INSERT INTO` statement is
-    /// required - otherwise a query such as `WITH cte AS (SELECT 1) SELECT 1 AS insert` would stop
-    /// concatenating the request body to the URL query.
+    /// also a legal identifier (a function or alias name), so an actual `INSERT INTO` at the start
+    /// of the statement is required - otherwise a query such as
+    /// `WITH cte AS (SELECT 1) SELECT 1 AS insert, 2 AS into` would stop concatenating the request
+    /// body to the URL query.
     auto url_query_starts_with_insert = [&query]()
     {
         Lexer lexer(query.data(), query.data() + query.size());
@@ -1364,34 +1365,64 @@ void HTTPHandler::processQuery(
             return true;
         };
 
-        size_t parentheses_depth = 0;
-        bool is_first_token = true;
-        bool previous_token_is_top_level_insert = false;
-        for (Token token = lexer.nextToken(); !token.isEnd() && !token.isError(); token = lexer.nextToken())
+        const auto next_significant_token = [&lexer]()
         {
-            if (!token.isSignificant())
-                continue;
+            Token token = lexer.nextToken();
+            while (!token.isEnd() && !token.isError() && !token.isSignificant())
+                token = lexer.nextToken();
+            return token;
+        };
 
-            if (token.type == TokenType::OpeningRoundBracket)
-                ++parentheses_depth;
-            else if (token.type == TokenType::ClosingRoundBracket && parentheses_depth)
-                --parentheses_depth;
+        Token token = next_significant_token();
 
-            if (previous_token_is_top_level_insert && is_keyword(token, "INTO"))
-                return true;
-
-            previous_token_is_top_level_insert = parentheses_depth == 0 && is_keyword(token, "INSERT");
-
-            if (is_first_token)
+        /// Skip a leading CTE list `WITH <item> (, <item>)*`, where an item is either
+        /// `<name> AS (<subquery>)` or `<expression> AS <name>`. Everything after the list is the
+        /// statement itself, and only its first tokens decide which parse path to take.
+        if (is_keyword(token, "WITH"))
+        {
+            while (true)
             {
-                is_first_token = false;
-                /// Only an `INSERT` statement, optionally preceded by a CTE, is of interest here.
-                if (!previous_token_is_top_level_insert && !is_keyword(token, "WITH"))
+                /// Find the `AS` separating the name of the CTE from its body. It is at the top
+                /// level of the list: an `AS` inside a subquery or a function call does not count.
+                size_t parentheses_depth = 0;
+                while (true)
+                {
+                    token = next_significant_token();
+                    if (token.isEnd() || token.isError())
+                        return false;
+                    if (parentheses_depth == 0 && is_keyword(token, "AS"))
+                        break;
+                    if (token.type == TokenType::OpeningRoundBracket)
+                        ++parentheses_depth;
+                    else if (token.type == TokenType::ClosingRoundBracket && parentheses_depth)
+                        --parentheses_depth;
+                }
+
+                /// Skip the body of the CTE: either a parenthesized subquery or a single name.
+                token = next_significant_token();
+                if (token.isEnd() || token.isError())
                     return false;
+                if (token.type == TokenType::OpeningRoundBracket)
+                {
+                    for (size_t depth = 1; depth != 0;)
+                    {
+                        token = next_significant_token();
+                        if (token.isEnd() || token.isError())
+                            return false;
+                        if (token.type == TokenType::OpeningRoundBracket)
+                            ++depth;
+                        else if (token.type == TokenType::ClosingRoundBracket)
+                            --depth;
+                    }
+                }
+
+                token = next_significant_token();
+                if (token.type != TokenType::Comma)
+                    break;
             }
         }
 
-        return false;
+        return is_keyword(token, "INSERT") && is_keyword(next_significant_token(), "INTO");
     };
     query_flags.parse_query_from_initial_buffer
         = settings[Setting::input_format_max_block_wait_ms] != 0 && url_query_starts_with_insert();
