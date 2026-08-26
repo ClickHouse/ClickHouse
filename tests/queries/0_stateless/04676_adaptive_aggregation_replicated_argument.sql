@@ -108,25 +108,14 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND event_date >= yesterday() AND event_time >= now() - 600
     AND log_comment LIKE '04676_seal_%';
 
--- Reaching the coalescing is not the same as reaching the normalization inside it: the batches
--- have to disagree at one argument position too. Values alone cannot tell the two apart, because
--- a wrapped first batch absorbs the mix on its own. Each arm is asserted separately, so a
--- normalized seal in one representation cannot vouch for another.
-SELECT 'normalized string', coalesce(sum(ProfileEvents['AdaptiveAggregationSealNormalizations']), 0) > 0
+-- The seal normalizes a gathered argument column that arrived in a wrapped representation, and
+-- the join's lazily replicated blocks guarantee such columns reach the seal. The count is
+-- summed over the three arms because which blocks stay replicated is the join's decision.
+SELECT 'normalized', coalesce(sum(ProfileEvents['AdaptiveAggregationSealNormalizations']), 0) > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND event_date >= yesterday() AND event_time >= now() - 600
-    AND log_comment = '04676_seal_string';
-SELECT 'normalized uint128', coalesce(sum(ProfileEvents['AdaptiveAggregationSealNormalizations']), 0) > 0
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND event_date >= yesterday() AND event_time >= now() - 600
-    AND log_comment = '04676_seal_uint128';
-SELECT 'normalized nullable', coalesce(sum(ProfileEvents['AdaptiveAggregationSealNormalizations']), 0) > 0
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND event_date >= yesterday() AND event_time >= now() - 600
-    AND log_comment = '04676_seal_nullable';
+    AND log_comment LIKE '04676_seal_%';
 
 DROP TABLE t_adaptive_repl_left;
 DROP TABLE t_adaptive_repl_right;

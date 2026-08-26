@@ -229,6 +229,20 @@ def test_custom_id_algorithm():
     ) == TSV([["FixedString(16)", ""]])
 
 
+# Checks that an identifier type which the tags collector has no typed map for works too:
+# such identifiers are kept in the generic map in their serialized form.
+# Only `FixedString(16)` has a typed map, so a shorter fixed string takes the generic path.
+def test_generic_id():
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "TAGS INNER COLUMNS (id FixedString(10) DEFAULT toFixedString(substring(murmurHash3_128(tags), 1, 10), 10))"
+    )
+    check()
+
+    assert re.search(r"\bid\s+FixedString\(10\)", node.query("DESCRIBE timeSeriesTags(prometheus)"))
+    assert re.search(r"\bid\s+FixedString\(10\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
+
+
 # Checks that a multi-component identifier `Tuple(F, S)` can be used.
 def test_multi_component_id():
     # Case 1: the identifier expression is specified as a DEFAULT expression of the `id` column.
