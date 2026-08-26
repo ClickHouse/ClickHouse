@@ -170,6 +170,29 @@ SELECT 'computed target key correctness',
         INNER JOIN (SELECT orderkey + 1000000 AS orderkey FROM lift_lineitem) AS l ON o.orderkey = l.orderkey
         SETTINGS query_plan_lift_predicate_across_join = 0);
 
+-- The target side already carries a pushed-down filter above its rename step: the key must still
+-- resolve through it to the primary key
+SELECT 'filtered target lifts',
+       countIf(explain LIKE '%ilter column:%orderkey = 4242%') >= 2
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM lift_orders WHERE orderkey = 4242) AS o
+    INNER JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
+    WHERE l.custkey != 999999
+);
+
+-- Same shape, but the target subquery computes the key under the primary key's name: no lift
+SELECT 'filtered computed target key',
+       countIf(explain LIKE '%ilter column:%orderkey = 4242%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM lift_orders WHERE orderkey = 4242) AS o
+    INNER JOIN (SELECT orderkey + 1000000 AS orderkey, payload FROM lift_lineitem WHERE payload != '') AS l
+        ON o.orderkey = l.orderkey
+);
+
 -- Both keys are in the target primary key, but `KeyCondition` cannot use `key = key`, so a
 -- key-vs-key predicate must stay on the source side
 SELECT 'key vs key',
