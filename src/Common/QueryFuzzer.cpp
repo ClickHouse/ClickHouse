@@ -4248,19 +4248,23 @@ ASTPtr QueryFuzzer::generatePredicate()
                 }
                 else if (nprob == 2)
                 {
-                    /// col IN (expr1, expr2, ...) using any IN-family operator, with a literal tuple
-                    auto tuple_func = make_intrusive<ASTFunction>();
-                    tuple_func->name = "tuple";
-                    tuple_func->arguments = make_intrusive<ASTExpressionList>();
-                    tuple_func->children.push_back(tuple_func->arguments);
-                    const size_t n_items = (fuzz_rand() % 4) + 1;
+                    /// col IN (expr1, expr2, ...) or col IN [expr1, expr2, ...] using any IN-family
+                    /// operator. The empty sets `col IN ()` and `col IN []` are valid too, and both
+                    /// always evaluate to 0. `array` only formats as `[...]` when it is an operator.
+                    const bool use_array = fuzz_rand() % 4 == 0;
+                    auto set_func = make_intrusive<ASTFunction>();
+                    set_func->name = use_array ? "array" : "tuple";
+                    set_func->setIsOperator(use_array);
+                    set_func->arguments = make_intrusive<ASTExpressionList>();
+                    set_func->children.push_back(set_func->arguments);
+                    const size_t n_items = fuzz_rand() % 20 == 0 ? 0 : (fuzz_rand() % 4) + 1;
                     for (size_t j = 0; j < n_items; j++)
                     {
                         auto rand_col = column_like.begin();
                         std::advance(rand_col, fuzz_rand() % column_like.size());
-                        tuple_func->arguments->children.push_back(rand_col->second->clone());
+                        set_func->arguments->children.push_back(rand_col->second->clone());
                     }
-                    next_condition = makeASTFunction(in_variants[fuzz_rand() % in_variants.size()], expression_1, tuple_func);
+                    next_condition = makeASTFunction(in_variants[fuzz_rand() % in_variants.size()], expression_1, set_func);
                 }
                 else if (nprob == 3 && !column_like.empty())
                 {
