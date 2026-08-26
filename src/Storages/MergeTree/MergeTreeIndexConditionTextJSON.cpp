@@ -112,7 +112,7 @@ static bool isSupportedJSONPathValuesMap(const DataTypePtr & type)
         return false;
 
     const auto nested_type = removeNullableOrLowCardinalityNullable(type);
-    const auto map_type = typeid_cast<const DataTypeMap *>(nested_type.get());
+    const auto *const map_type = typeid_cast<const DataTypeMap *>(nested_type.get());
     if (!map_type
         || !WhichDataType(removeLowCardinality(map_type->getKeyType())).isString()
         || !WhichDataType(removeLowCardinality(map_type->getValueType())).isString())
@@ -886,7 +886,7 @@ MergeTreeIndexConditionText::tryMatchJSONPathValuesNode(const RPNBuilderTreeNode
             if (isSupportedJSONPathValuesMap(map_type))
                 return JSONPathValuesNodeInfo{
                     .subcolumn = std::move(*map_json_info),
-                    .source_type = std::move(map_type),
+                    .source_type = map_type,
                     .map_key = std::nullopt,
                 };
         }
