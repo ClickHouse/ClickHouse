@@ -1,7 +1,8 @@
 -- Tags: no-replicated-database, no-shared-merge-tree
 
--- A granularity close to the maximum of `UInt64` must still return the rows that were written, both for
--- the data marks of a part with non-adaptive granularity and for the granules of a secondary index.
+-- A granularity close to the maximum of `UInt64` must still return the rows that were written, for the
+-- data marks of a part with non-adaptive granularity, for the granules of a secondary index, and when
+-- the mark ranges of a reverse read are split.
 
 DROP TABLE IF EXISTS t_granularity_near_max;
 
@@ -35,10 +36,27 @@ INSERT INTO t_skip_granularity_near_max SELECT number, number FROM numbers(4096)
 SELECT 'skip index, no filter', count(), sum(y) FROM t_skip_granularity_near_max;
 SELECT 'skip index, filtered', count(), sum(y) FROM t_skip_granularity_near_max WHERE y = 500 SETTINGS force_data_skipping_indices = 'i';
 
+-- A top-K read consults the index while it reads rows, through a different code path than the filter
+-- above. The settings keep that path armed while the suite randomizes them.
+SELECT 'skip index, top-K read', y FROM t_skip_granularity_near_max ORDER BY y LIMIT 1
+SETTINGS max_block_size = 64, max_threads = 1, use_skip_indexes_on_data_read = 1,
+         use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1;
+
 -- One index granule spans the whole part here, and it holds the matching value, so no granule may be
--- dropped. Only the prefix is matched: the number of marks depends on randomized settings.
+-- dropped. Only the prefix is matched: the number of marks depends on randomized settings. Part
+-- pruning by column statistics is off, so the index is the only thing that can drop a granule.
 SELECT 'skip index keeps every granule', countIf(explain LIKE '%Granules: 0/%')
-FROM (EXPLAIN indexes = 1 SELECT sum(y) FROM t_skip_granularity_near_max WHERE y = 500);
+FROM (EXPLAIN indexes = 1 SELECT sum(y) FROM t_skip_granularity_near_max WHERE y = 500
+      SETTINGS use_statistics_for_part_pruning = 0);
+
+-- No granule can hold this value, so the index has to drop them all. This reads 0 when the index is
+-- never consulted, which is the case the line above cannot tell apart on its own.
+SELECT 'skip index drops every granule', countIf(explain LIKE '%Granules: 0/%')
+FROM (EXPLAIN indexes = 1 SELECT sum(y) FROM t_skip_granularity_near_max WHERE y = 999999
+      SETTINGS use_statistics_for_part_pruning = 0);
+
+SELECT 'skip index, no match', count(), sum(y) FROM t_skip_granularity_near_max WHERE y = 999999
+SETTINGS force_data_skipping_indices = 'i', use_statistics_for_part_pruning = 0;
 
 DROP TABLE t_skip_granularity_near_max;
 
@@ -58,3 +76,19 @@ SELECT 'skip index drops all but one granule', countIf(explain LIKE '%Granules: 
 FROM (EXPLAIN indexes = 1 SELECT sum(y) FROM t_skip_granularity_one WHERE y = 500);
 
 DROP TABLE t_skip_granularity_one;
+
+DROP TABLE IF EXISTS t_reverse_granularity_near_max;
+
+-- Adaptive granularity keeps more than one mark in the part, which is what a reverse read splits.
+CREATE TABLE t_reverse_granularity_near_max (x UInt64)
+ENGINE = MergeTree() ORDER BY x
+SETTINGS index_granularity = 18446744073709551615, index_granularity_bytes = 1024;
+
+INSERT INTO t_reverse_granularity_near_max SELECT number FROM numbers(4096);
+
+-- Splitting the mark ranges of a reverse read must terminate. The memory limit bounds a
+-- non-terminating split, so it fails instead of running until the server is out of memory.
+SELECT 'reverse', x FROM t_reverse_granularity_near_max ORDER BY x DESC LIMIT 3
+SETTINGS optimize_read_in_order = 1, max_threads = 1, max_memory_usage = 200000000;
+
+DROP TABLE t_reverse_granularity_near_max;
