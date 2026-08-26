@@ -287,11 +287,9 @@ public:
     bool isMovePartitionToDiskOrVolumeAlter() const;
 
     bool isCommentAlter() const;
-
-    /// Every command modifies settings or comments: any mix of MODIFY SETTING /
-    /// RESET SETTING / COMMENT COLUMN / MODIFY COMMENT / comment-only MODIFY COLUMN.
-    /// The single-type isSettingsAlter / isCommentAlter miss such mixed batches.
     bool isSettingsOrCommentAlter() const;
+
+    bool isReplacePartitionAlter() const;
 
     String getID(char) const override;
 
