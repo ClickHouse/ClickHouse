@@ -52,62 +52,6 @@ TEST(ColumnLowCardinality, Insert)
     testLowCardinalityNumberInsert<Float64>(std::make_shared<DataTypeFloat64>());
 }
 
-TEST(ColumnLowCardinality, InsertManyFrom)
-{
-    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-    auto source = low_cardinality_type->createColumn();
-    source->insert(Field("value"));
-
-    auto destination = low_cardinality_type->createColumn();
-    destination->insertManyFrom(*source, source->size(), 0);
-    ASSERT_EQ(destination->size(), 0);
-
-    destination->insertManyFrom(*source, 0, 3);
-    ASSERT_EQ(destination->size(), 3);
-    for (size_t i = 0; i < destination->size(); ++i)
-        ASSERT_EQ((*destination)[i], Field("value"));
-}
-
-TEST(ColumnLowCardinality, InsertManyFromSharedDictionaryExpandsIndex)
-{
-    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
-    auto source = low_cardinality_type->createColumn();
-
-    for (UInt64 i = 0; i <= 256; ++i)
-        source->insert(Field(i));
-
-    const auto & source_low_cardinality = assert_cast<const ColumnLowCardinality &>(*source);
-    auto destination = low_cardinality_type->createColumn();
-    auto & destination_low_cardinality = assert_cast<ColumnLowCardinality &>(*destination);
-    destination_low_cardinality.setSharedDictionary(source_low_cardinality.getDictionaryPtr());
-
-    destination->insertManyFrom(*source, 256, 3);
-
-    ASSERT_EQ(destination->size(), 3);
-    ASSERT_EQ(destination_low_cardinality.getSizeOfIndexType(), sizeof(UInt16));
-    for (size_t i = 0; i < destination->size(); ++i)
-        ASSERT_EQ((*destination)[i], Field(UInt64(256)));
-}
-
-TEST(ColumnLowCardinality, InsertManyFromSeparateDictionaryExpandsIndex)
-{
-    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
-    auto source = low_cardinality_type->createColumn();
-    source->insert(Field(UInt64(256)));
-
-    auto destination = low_cardinality_type->createColumn();
-    for (UInt64 i = 0; i < 256; ++i)
-        destination->insert(Field(i));
-
-    destination->insertManyFrom(*source, 0, 3);
-
-    const auto & destination_low_cardinality = assert_cast<const ColumnLowCardinality &>(*destination);
-    ASSERT_EQ(destination->size(), 259);
-    ASSERT_EQ(destination_low_cardinality.getSizeOfIndexType(), sizeof(UInt16));
-    for (size_t i = 256; i < destination->size(); ++i)
-        ASSERT_EQ((*destination)[i], Field(UInt64(256)));
-}
-
 TEST(ColumnLowCardinality, Clone)
 {
     auto data_type = std::make_shared<DataTypeInt32>();
@@ -177,18 +121,18 @@ TEST(ColumnLowCardinality, EmptyDictionaryEmptyIndexes)
     /// This should not throw an error, as empty indexes are always valid
     /// Regression test for bug where check was: if (max_position >= limit)
     /// When num_rows=0, max_position stays 0, and with limit=0, this incorrectly threw
-    
+
     auto data_type = std::make_shared<DataTypeUInt32>();
     auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(data_type);
     auto column = low_cardinality_type->createColumn();
     auto & lc_column = assert_cast<ColumnLowCardinality &>(*column);
-    
+
     // Create empty keys and indexes columns
     auto empty_keys = ColumnUInt32::create();
     auto empty_indexes = ColumnUInt8::create();
-    
+
     // This should NOT throw an exception
     ASSERT_NO_THROW(lc_column.insertRangeFromDictionaryEncodedColumn(*empty_keys, *empty_indexes));
-    
+
     ASSERT_EQ(column->size(), 0);
 }

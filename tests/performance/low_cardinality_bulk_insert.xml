@@ -8,7 +8,7 @@
     </settings>
 
     <create_query>
-        CREATE TABLE lc_bulk_insert_right
+        CREATE TABLE tab
         (
             s0 LowCardinality(String),
             s1 LowCardinality(String),
@@ -22,11 +22,11 @@
     </create_query>
 
     <fill_query>
-        INSERT INTO lc_bulk_insert_right VALUES
+        INSERT INTO tab VALUES
             ('repeated', 'repeated', 'repeated', 'repeated', 42, 42, 42, 42)
     </fill_query>
 
-    <query><![CDATA[
+    <query>
         SELECT
             l.number,
             r.s0,
@@ -38,9 +38,9 @@
             r.u2,
             r.u3
         FROM numbers(50000000) AS l
-        ANY LEFT JOIN lc_bulk_insert_right AS r ON 1
+        ANY LEFT JOIN tab AS r ON 1
         FORMAT Null
-    ]]></query>
+    </query>
 
-    <drop_query>DROP TABLE IF EXISTS lc_bulk_insert_right</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tab</drop_query>
 </test>
