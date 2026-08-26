@@ -52,7 +52,8 @@ namespace
 {
     /// Iceberg stores lower_bounds and upper_bounds serialized with some custom deserialization as bytes array
     /// https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
-    std::optional<DB::Field> deserializeFieldFromBinaryRepr(std::string str, DB::DataTypePtr expected_type, bool lower_bound)
+    std::optional<DB::Field> deserializeFieldFromBinaryRepr(
+        std::string str, DB::DataTypePtr expected_type, bool lower_bound, bool compensate_rounding = true)
     {
         auto non_nullable_type = DB::removeNullable(expected_type);
         auto column = non_nullable_type->createColumn();
@@ -91,7 +92,7 @@ namespace
             /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
             /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
             /// but at least it doesn't lead to incorrect results.
-            if (int32_t scale = DB::getDecimalScale(*non_nullable_type))
+            if (int32_t scale = DB::getDecimalScale(*non_nullable_type); compensate_rounding && scale)
             {
                 int64_t scaler = lower_bound ? -10 : 10;
                 while (--scale)
@@ -512,10 +513,24 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 if (!left || !right)
                     continue;
 
+                /// Decimal bounds come back moved one integral unit outwards to undo Iceberg's
+                /// rounding, which can order an inverted pair, so the ordering is tested as declared.
+                std::optional<DB::Field> declared_left = left;
+                std::optional<DB::Field> declared_right = right;
+                if (DB::WhichDataType(DB::removeNullable(name_and_type.type)).isDecimal())
+                {
+                    declared_left = deserializeFieldFromBinaryRepr(
+                        left_str, name_and_type.type, true, /*compensate_rounding=*/false);
+                    declared_right = deserializeFieldFromBinaryRepr(
+                        right_str, name_and_type.type, false, /*compensate_rounding=*/false);
+                    if (!declared_left || !declared_right)
+                        continue;
+                }
+
                 /// Nothing orders the bounds read from the manifest, while `mayBeTrueInRange` requires a
                 /// lower bound that does not exceed the upper one. An inverted pair describes an empty
                 /// range, which would prune a file that holds matching rows.
-                if (accurateLess(*right, *left))
+                if (accurateLess(*declared_right, *declared_left))
                 {
                     LOG_WARNING(
                         getLogger("ManifestFileIterator"),
