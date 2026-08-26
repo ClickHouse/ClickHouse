@@ -129,7 +129,8 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool join_runtime_filter_from_fixed_hash_table;
 }
 
-JoinSettings::JoinSettings(const Settings & query_settings)
+JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_)
+    : join_analyze_mode(join_analyze_mode_)
 {
     join_algorithms = query_settings[Setting::join_algorithm];
 
@@ -308,7 +309,7 @@ UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_exter
     {
         double ratio = max_bytes_ratio_before_external_join;
         if (ratio < 0 || ratio >= 1.)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_join should be >= 0 and < 1 ({})", ratio);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_join should be >= 0 and < 1 ({:.3f})", ratio);
 
         auto available_system_memory = getMostStrictAvailableSystemMemory();
         if (available_system_memory.has_value())
@@ -319,7 +320,7 @@ UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_exter
             else
                 threshold = ratio_in_bytes;
 
-            LOG_TRACE(getLogger("JoinSettings"), "Adjusting memory limit before external join with {} (ratio: {}, available system memory: {})",
+            LOG_TRACE(getLogger("JoinSettings"), "Adjusting memory limit before external join with {} (ratio: {:.3f}, available system memory: {})",
                 formatReadableSizeWithBinarySuffix(ratio_in_bytes),
                 ratio,
                 formatReadableSizeWithBinarySuffix(*available_system_memory));

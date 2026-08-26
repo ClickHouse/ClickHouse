@@ -1,0 +1,273 @@
+---
+description: 'ClickHouse における Prometheus HTTP API のサポート: リモート書き込み、リモート読み取り、PromQL クエリ、サーバーメトリクス。'
+sidebarTitle: 'Prometheus と PromQL'
+slug: /interfaces/prometheus
+title: 'Prometheus プロトコルと PromQL'
+doc_type: 'reference'
+---
+
+import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="expose">
+  ## ClickHouse サーバーメトリクスを公開する
+</div>
+
+<Note>
+  ClickHouse Cloud を使用している場合は、[Prometheus インテグレーション](/ja/products/cloud/features/monitoring/prometheus)を使用して、メトリクスを Prometheus に公開できます。
+</Note>
+
+Prometheus サーバーが ClickHouse 独自のメトリクスをスクレイピングする必要がある場合は、専用ポートを設定します：
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <endpoint>/metrics</endpoint>
+    <metrics>true</metrics>
+    <asynchronous_metrics>true</asynchronous_metrics>
+    <events>true</events>
+    <errors>true</errors>
+    <histograms>true</histograms>
+    <dimensional_metrics>true</dimensional_metrics>
+</prometheus>
+```
+
+`<prometheus.handlers>` セクションを使用すると、同じポート上でより拡張されたハンドラーを作成できます。
+This section is similar to [`<http_handlers>`](/ja/concepts/features/interfaces/http) but works for prometheus プロトコル:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+                <labels>
+                    <environment>production</environment>
+                    <shard from_env="SHARD_NAME"></shard>
+                </labels>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+設定:
+
+| Name                         | Default    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                       | none       | ClickHouse メトリクスを提供するポートです。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `endpoint`                   | `/metrics` | メトリクスをスクレイピングするための HTTP エンドポイントです。`/` で始まります。`<handlers>` セクションと併用しないでください。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `url` / `headers` / `method` | none       | リクエストに一致するハンドラーを見つけるためのフィルターです。[`<http_handlers>`](/ja/concepts/features/interfaces/http) セクションの同名のフィールドと同様です。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `info`                       | true       | サーバー ID ラベル (`name`、`version`、`version_describe`、`version_major`、`version_minor`、`version_patch`) を含む `ClickHouse_Info` Gauge を公開します。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `metrics`                    | true       | [`system.metrics`](/ja/reference/system-tables/metrics) のメトリクスを公開します。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `asynchronous_metrics`       | true       | [`system.asynchronous_metrics`](/ja/reference/system-tables/asynchronous_metrics) のメトリクスを公開します。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `events`                     | true       | [`system.events`](/ja/reference/system-tables/events) のメトリクスを公開します。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `errors`                     | true       | [`system.errors`](/ja/reference/system-tables/errors) のエラー数を公開します。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `histograms`                 | true       | [`system.histogram_metrics`](/ja/reference/system-tables/histogram_metrics) のメトリクスを公開します。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `dimensional_metrics`        | true       | [`system.dimensional_metrics`](/ja/reference/system-tables/dimensional_metrics) のメトリクスを公開します。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `labels`                     | none       | 公開されるすべてのメトリクスに追加される定数ラベルです。各子要素は 1 つのラベルを定義します。要素名はラベル名 (`[a-zA-Z_][a-zA-Z0-9_]*` に一致する必要があります) であり、要素値はラベル値です。ラベル値では、`from_env` 属性などの標準的な設定の置換をサポートします。ラベル名が `__` (Prometheus により予約済み) で始まる場合、またはこのエンドポイントが有効なセクションのいずれかですでに書き込むラベルと競合する場合、そのラベル名は拒否されます。したがって、予約済みの集合はエンドポイントの有効な公開対象に従います。`histograms` が有効な場合は `le`、`info` が有効な場合は `ClickHouse_Info` のラベル (`name`、`version`、`version_describe`、`version_major`、`version_minor`、`version_patch`) 、`histograms` または `dimensional_metrics` が有効な場合は公開されるヒストグラムまたは次元メトリクスファミリーで使用されるラベル (例: `group`、`direction`、`operation_type`) です。エンドポイントが実際に公開する内容に依存するため、あるエンドポイントでは有効な名前でも、別のエンドポイントでは拒否される場合があります。 |
+
+エンドポイントを確認します：
+
+```bash
+curl http://127.0.0.1:9363/metrics
+```
+
+<CloudNotSupportedBadge />
+
+<div id="prometheus-http-api-and-promql">
+  ## Prometheus HTTP API と PromQL
+</div>
+
+ClickHouse は [`TimeSeries`](/ja/reference/engines/table-engines/integrations/time-series) テーブルを介して Prometheus HTTP API を実装しています。単一のハンドラーが、リモート書き込み、リモート読み取り、インスタント PromQL クエリ、範囲 PromQL クエリを処理します。
+
+<div id="prerequisites">
+  ### 前提条件
+</div>
+
+テーブルを作成しアクセスするユーザーに対して、[`allow_experimental_time_series_table`](/ja/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) 設定を有効にします。
+
+```sql
+SET allow_experimental_time_series_table = 1;
+```
+
+データベースと `TimeSeries` テーブルを作成します。
+
+```sql
+CREATE DATABASE prometheus;
+CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
+```
+
+HTTP APIリクエストの場合は、APIユーザーのprofileで`allow_experimental_time_series_table`を有効にします。
+
+<div id="configure-prometheus-api">
+  ### Prometheus API を設定する
+</div>
+
+ClickHouse のメイン HTTP ポートで、プレフィックスルーティングされたハンドラーを 1 つ設定します。
+
+```xml
+<http_handlers>
+    <defaults/>
+    <rule>
+        <url_prefix>/prometheus/api/v1</url_prefix>
+        <handler>
+            <type>prometheus_api_v1</type>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
+`<defaults/>` は、`/ping` などのエンドポイントや SQL リクエスト用の組み込みハンドラーを維持します。上記のプレフィックスにより、これらのエンドポイントを 1 つのハンドラー経由で公開します。
+
+| エンドポイント                          | 用途                  |
+| -------------------------------- | ------------------- |
+| `/prometheus/api/v1/write`       | Prometheus リモート書き込み |
+| `/prometheus/api/v1/read`        | Prometheus リモート読み取り |
+| `/prometheus/api/v1/query`       | インスタント PromQL クエリ   |
+| `/prometheus/api/v1/query_range` | 範囲 PromQL クエリ       |
+
+この例では、ハンドラーに `database` と `table` を指定していません。各リクエストで `table` クエリパラメータを指定する必要があります。また、`database` を指定する、`prometheus.metrics` のような完全修飾テーブル名を使用する、またはデータベースを省略して `default` を使用することもできます。これにより、1 つのハンドラーで複数の `TimeSeries` テーブルを処理できます。
+
+すべてのリクエストで 1 つの固定テーブルを使用するには、ハンドラーで設定します。
+
+```xml
+<handler>
+    <type>prometheus_api_v1</type>
+    <database>prometheus</database>
+    <table>metrics</table>
+</handler>
+```
+
+ハンドラーで設定されたテーブルは、リクエストパラメータで上書きできません。
+
+ルーティングとハンドラーの設定:
+
+| 名前           | デフォルト | 説明                                                                                                                  |
+| ------------ | ----- | ------------------------------------------------------------------------------------------------------------------- |
+| `url_prefix` | none  | 設定されたプレフィックスで始まるすべてのリクエストパスに一致するルールフィルター。                                                                           |
+| `table`      | none  | `TimeSeries` テーブル名。省略した場合、リクエストで `table` クエリパラメータを指定する必要があります。設定する名前にはデータベースを含めることができます。                            |
+| `database`   | none  | テーブルを含むデータベース。リクエストでクエリパラメータとして指定できます。省略した場合、ClickHouse は完全修飾された `table` 値に含まれるデータベースを使用し、指定がなければ `default` を使用します。 |
+
+<div id="remote-write">
+  ### リモート書き込み を使用してメトリクスを取り込む
+</div>
+
+ClickHouse は [Prometheus remote-write プロトコル](https://prometheus.io/docs/specs/remote_write_spec/)をサポートしています。Prometheus がハンドラーに書き込むように設定します。
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics
+    basic_auth:
+      username: default
+      password: <password>
+```
+
+Prometheus はサンプルを `prometheus.metrics` テーブルに送信します。
+
+<div id="promql-query-support">
+  ### PromQL でクエリを実行する
+</div>
+
+instant-query エンドポイントを使用して、特定の時点における PromQL 式を評価します。
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+range-query エンドポイントを使用して、指定した時間範囲で式を評価します。
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+HTTP API、`promql` 方言、およびテーブル関数で使用される関数と集約演算子の一覧については、[サポートされている PromQL 機能](/ja/reference/functions/table-functions/prometheusQueryRange#supported-promql-features)を参照してください。
+
+<div id="grafana">
+  #### Grafana
+</div>
+
+ベース URL が `/api/v1` の直前までとなるように、Prometheus データソースを設定します。
+
+```yaml
+apiVersion: 1
+datasources:
+  - name: ClickHouse Prometheus
+    type: prometheus
+    access: proxy
+    url: https://clickhouse.example.com:8443/prometheus
+    basicAuth: true
+    basicAuthUser: default
+    jsonData:
+      httpMethod: GET
+      customQueryParameters: database=prometheus&table=metrics
+    secureJsonData:
+      basicAuthPassword: <password>
+```
+
+Grafana は、このベース URL に `/api/v1/query` または `/api/v1/query_range` を付加し、各リクエストに `customQueryParameters` を追加します。
+
+<Note>
+  実装されているのは、クエリエンドポイント `/api/v1/query` と `/api/v1/query_range` のみです。Grafana の Prometheus データソースがラベルの参照、Template 変数、クエリビルダーでの自動補完に使用するメタデータエンドポイント (`/api/v1/series`、`/api/v1/labels`、`/api/v1/label/<name>/values`) は実装されておらず、エラーを返します。クエリビルダーではなく、コードモードで PromQL 式を記述してください。
+</Note>
+
+<div id="sql-entry-points">
+  #### SQL エントリポイント
+</div>
+
+ClickHouse では、HTTP API、`promql` 方言、および [`prometheusQuery`](/ja/reference/functions/table-functions/prometheusQuery) と [`prometheusQueryRange`](/ja/reference/functions/table-functions/prometheusQueryRange) のテーブル関数で、同じ PromQL コンバーターを使用します。
+
+`clickhouse-client` で PromQL を直接実行します。
+
+```bash
+clickhouse-client \
+  --dialect promql \
+  --promql_database prometheus \
+  --promql_table metrics \
+  --query 'rate(http_requests_total[5m])'
+```
+
+テーブル関数を使用して、SQLクエリ内にPromQLを埋め込みます。
+
+```sql
+SELECT *
+FROM prometheusQuery(
+    prometheus.metrics,
+    'rate(http_requests_total[5m])',
+    now()
+);
+```
+
+<div id="remote-read">
+  ### リモート読み取り でメトリクスを読み取る
+</div>
+
+ClickHouse は、`/prometheus/api/v1/read` で [Prometheus リモート読み取り プロトコル](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/)をサポートしています。
+
+同じ `TimeSeries` テーブルから読み取るように Prometheus サーバーを設定します。
+
+```yaml
+remote_read:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/read?database=prometheus&table=metrics
+    basic_auth:
+      username: default
+      password: <password>
+```

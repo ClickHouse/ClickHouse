@@ -86,26 +86,46 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
 
     int res = 0;
 
+    /// Account against one anchor in microseconds: the per-iteration millisecond stopwatch this
+    /// replaces truncated a sub-millisecond interruption to 0, so a signal arriving faster than once
+    /// per millisecond - the query profiler under load - left the budget untouched and the poll never
+    /// expired. Same accounting as `ReadBufferFromFileDescriptor::poll` and `Epoll::getManyReady`.
+    /// Clamp before scaling: `timeout_milliseconds` comes from the unrestricted `command_read_timeout` /
+    /// `command_write_timeout` settings, so a huge value would wrap in the multiplication and could then
+    /// round a non-zero remainder down to zero.
+    const UInt64 timeout_microseconds
+        = std::min<UInt64>(timeout_milliseconds, std::numeric_limits<UInt64>::max() / 1000) * 1000;
+    UInt64 remaining_microseconds = timeout_microseconds;
+    Stopwatch watch;
+
     while (true)
     {
-        Stopwatch watch;
-
         LOG_TEST(logger, "Polling descriptors: {}", fmt::join(std::span(pfds, pfds + num) | std::views::transform(describe_fd), ", "));
 
-        res = poll(pfds, static_cast<nfds_t>(num), static_cast<int>(timeout_milliseconds));
+        res = poll(
+            pfds,
+            static_cast<nfds_t>(num),
+            static_cast<int>(std::min<UInt64>(
+                (remaining_microseconds + 999) / 1000, static_cast<UInt64>(std::numeric_limits<int>::max()))));
 
         if (res < 0)
         {
             if (errno != EINTR)
                 throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll");
 
-            const auto elapsed = watch.elapsedMilliseconds();
-            if (timeout_milliseconds <= elapsed)
+            /// A zero timeout is a non-blocking readiness probe, so there is no deadline to exhaust:
+            /// retry it rather than letting a signal report the descriptor as not ready.
+            if (timeout_microseconds == 0)
+                continue;
+
+            const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
+            if (elapsed_microseconds >= timeout_microseconds)
             {
-                LOG_TEST(logger, "Timeout exceeded: elapsed={}, timeout={}", elapsed, timeout_milliseconds);
+                LOG_TEST(logger, "Timeout exceeded: elapsed={}us, timeout={}us", elapsed_microseconds, timeout_microseconds);
+                res = 0;
                 break;
             }
-            timeout_milliseconds -= elapsed;
+            remaining_microseconds = timeout_microseconds - elapsed_microseconds;
         }
         else
         {
@@ -316,8 +336,9 @@ public:
 
     ~TimeoutReadBufferFromFileDescriptor() override
     {
-        tryMakeFdBlocking(stdout_fd);
-        tryMakeFdBlocking(stderr_fd);
+        /// Do not touch stdout_fd/stderr_fd here: they are owned by the ShellCommand, which may
+        /// already have closed them (`ShellCommand::wait` closes the streams), and the numbers may
+        /// be recycled by another thread. An fcntl on them would corrupt an unrelated descriptor.
 
         // Handle LOG_FIRST and LOG_LAST cases with circular buffer
         if (!stderr_result_buf.empty())
@@ -414,14 +435,13 @@ public:
         }
     }
 
+    /// Restore blocking mode before the command is returned to the process pool.
+    /// Safe only while the fd is provably open (the send-data task calls this right
+    /// before closing/returning); the destructor must not do it, see
+    /// ~TimeoutReadBufferFromFileDescriptor.
     void reset() const
     {
         makeFdBlocking(fd);
-    }
-
-    ~TimeoutWriteBufferFromFileDescriptor() override
-    {
-        tryMakeFdBlocking(fd);
     }
 
 private:
@@ -599,21 +619,17 @@ namespace
                     /// was provably alive; by cleanup the child has closed stdout and is
                     /// exiting, so its `/proc` mm fields are gone — no useful sample here.
                     ///
-                    /// Attempt a non-blocking reap to capture wait4 rusage for CPU.
-                    /// When `prepare` already reaped the child via its blocking `wait`
-                    /// (`check_exit_code=true`, normal completion), `isWaitCalled()` is
-                    /// true and `tryReapWithoutStatusCheck` is skipped.
-                    ///
-                    /// Non-blocking: a child that closed stdout but keeps running is left
-                    /// to `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM,
-                    /// so profiling cannot turn cleanup into a query hang.
-                    /// No status check: a non-zero exit must not raise
-                    /// CHILD_WAS_NOT_EXITED_NORMALLY when `check_exit_code=false`.
+                    /// Capture wait4 rusage for CPU. When `prepare` already waited the child
+                    /// via its blocking `wait` (`check_exit_code=true`), `isWaitCalled()` is
+                    /// true and this is skipped. A child lingering past the poll budget is left
+                    /// to `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM, so
+                    /// profiling cannot turn cleanup into a query hang. No status check: a
+                    /// non-zero exit must not raise CHILD_WAS_NOT_EXITED_NORMALLY here.
                     if (!command->isWaitCalled())
                     {
                         try
                         {
-                            command->tryReapWithoutStatusCheck();
+                            command->tryWaitWithoutStatusCheck();
                         }
                         catch (...)
                         {
@@ -621,9 +637,9 @@ namespace
                         }
                     }
 
-                    /// Peak memory is independent of the reap: it comes from /proc VmHWM
+                    /// Peak memory is independent of the wait: it comes from /proc VmHWM
                     /// sampled during IO and stamped by recordExecutableElapsed. CPU requires
-                    /// the wait4 rusage and is recorded only when the reap succeeded.
+                    /// the wait4 rusage and is recorded only when the wait succeeded.
                     configuration.sampler->recordExecutableElapsed();
 
                     if (command->wasChildResourceUsageCaptured())

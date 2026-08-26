@@ -252,6 +252,12 @@ size_t DistinctSetFilter::getTotalRowCount() const
     return data->getTotalRowCount();
 }
 
+size_t DistinctSetFilter::getTotalByteCount() const
+{
+    chassert(data);
+    return data->getTotalByteCount();
+}
+
 bool DistinctSetFilter::supportsKeyExtraction() const
 {
     chassert(data);
@@ -424,9 +430,12 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
     if (num_selected == 0)
         return {};
 
-    /// With the 'break' overflow mode the new rows are dropped (but their keys stay in the set).
+    /// With the 'throw' overflow mode `check` throws; with 'break' it returns false: the limit is
+    /// recorded (see isLimitReached), but the new rows of the current chunk are still returned - their
+    /// keys are already in the set, and 'break' means return a partial result as if the source data
+    /// ran out, not discard it.
     if (!set_size_limits.check(new_set_size, data->getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
-        return {};
+        limit_reached = true;
 
     /// When every row is a new distinct value, the columns are kept unchanged, without copying.
     if (num_selected != num_rows)

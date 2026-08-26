@@ -1,0 +1,72 @@
+---
+slug: '/examples/aggregate-function-combinators/minMap'
+title: 'minMap'
+description: "Exemple d'utilisation du combinateur minMap"
+keywords: ['min', 'map', 'combinateur', 'exemples', 'minMap']
+sidebarTitle: 'minMap'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Le combinateur [`Map`](/fr/reference/functions/aggregate-functions/combinators#-map) peut être appliqué à la fonction [`min`](/fr/reference/functions/aggregate-functions/min)
+pour calculer, pour chaque clé, la valeur minimale dans une Map, à l’aide de la fonction de combinateur d’agrégation `minMap`.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Dans cet exemple, nous allons créer une table qui stocke des codes d’état et leur nombre pour différents créneaux horaires,
+où chaque ligne contient une Map associant des codes d’état à leur nombre correspondant. Nous utiliserons
+`minMap` pour trouver le nombre minimal de chaque code d’état dans chaque créneau horaire.
+
+```sql title="Query"
+CREATE TABLE metrics(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO metrics VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [15, 25, 35])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [45, 55, 65])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [75, 85, 95])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [105, 115, 125]));
+
+SELECT
+    timeslot,
+    minMap(status),
+FROM metrics
+GROUP BY timeslot;
+```
+
+La fonction `minMap` déterminera le nombre minimal pour chaque code d’état dans chaque créneau temporel. Par exemple :
+
+* Dans le créneau temporel &#39;2000-01-01 00:00:00&#39; :
+  * Code d’état &#39;a&#39; : 15
+  * Code d’état &#39;b&#39; : 25
+  * Code d’état &#39;c&#39; : min(35, 45) = 35
+  * Code d’état &#39;d&#39; : 55
+  * Code d’état &#39;e&#39; : 65
+* Dans le créneau temporel &#39;2000-01-01 00:01:00&#39; :
+  * Code d’état &#39;d&#39; : 75
+  * Code d’état &#39;e&#39; : 85
+  * Code d’état &#39;f&#39; : min(95, 105) = 95
+  * Code d’état &#39;g&#39; : min(115, 125) = 115
+
+```response title="Response"
+   ┌────────────timeslot─┬─minMap(status)───────────────────────┐
+1. │ 2000-01-01 00:01:00 │ {'d':75,'e':85,'f':95,'g':115}       │
+2. │ 2000-01-01 00:00:00 │ {'a':15,'b':25,'c':35,'d':55,'e':65} │
+   └─────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [`min`](/fr/reference/functions/aggregate-functions/min)
+* [`Map combinateur`](/fr/reference/functions/aggregate-functions/combinators#-map)

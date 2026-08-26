@@ -247,7 +247,7 @@ TEST(DistinctSetFilterSemantics, ThrowModeAllowsReachingTheLimitExactly)
     EXPECT_ANY_THROW(filter.filter(Chunk({makeColumn({3})}, 1)));
 }
 
-TEST(DistinctSetFilterSemantics, BreakModeDropsTheCrossingChunkButKeepsItsKeys)
+TEST(DistinctSetFilterSemantics, BreakModeKeepsTheCrossingChunkAndReportsTheLimit)
 {
     const Block header = {ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")};
 
@@ -255,14 +255,14 @@ TEST(DistinctSetFilterSemantics, BreakModeDropsTheCrossingChunkButKeepsItsKeys)
     DistinctSetFilter filter(header, {}, limits);
 
     EXPECT_EQ(filter.filter(Chunk({makeColumn({1})}, 1)).getNumRows(), 1u);
+    EXPECT_FALSE(filter.isLimitReached());
 
-    /// The 'break' mode drops the new rows of the chunk that reaches the limit (>=, unlike 'throw'),
-    /// but their keys stay in the set - the long-standing DISTINCT behavior this class pins.
-    EXPECT_EQ(filter.filter(Chunk({makeColumn({2, 3})}, 2)).getNumRows(), 0u);
+    /// The 'break' mode returns the new rows of the chunk that crosses the limit (their keys are in
+    /// the set) and reports the limit, so that the caller stops reading with a partial result instead
+    /// of discarding the crossing chunk.
+    EXPECT_EQ(filter.filter(Chunk({makeColumn({2, 3})}, 2)).getNumRows(), 2u);
     EXPECT_EQ(filter.getTotalRowCount(), 3u);
-
-    EXPECT_EQ(filter.filter(Chunk({makeColumn({4})}, 1)).getNumRows(), 0u);
-    EXPECT_EQ(filter.getTotalRowCount(), 4u);
+    EXPECT_TRUE(filter.isLimitReached());
 }
 
 TEST(DistinctSetFilterSemantics, LowCardinalityPathMatchesGenericPath)

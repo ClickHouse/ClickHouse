@@ -66,7 +66,7 @@ TEST(StringSerialization, IncorrectStateAfterMemoryLimitExceeded)
     size_t non_empty_result = 0;
     while (memory_limit_exceeded_errors < 10 || non_empty_result < 10)
     {
-        ColumnPtr result_column = type_string->createColumn();
+        auto result_column = type_string->createColumn();
         ReadBufferFromOwnString in(out.str());
 
         auto serialization = type_string->getDefaultSerialization();
@@ -75,9 +75,9 @@ TEST(StringSerialization, IncorrectStateAfterMemoryLimitExceeded)
         settings.position_independent_encoding = false;
         settings.getter = [&in](const auto &) { return &in; };
 
-        run_with_memory_failures([&]() { serialization->deserializeBinaryBulkWithMultipleStreams(result_column, 0, src_column->size(), settings, state, nullptr); });
+        run_with_memory_failures([&]() { serialization->deserializeBinaryBulkWithMultipleStreams(*result_column, src_column->size(), settings, state, nullptr); });
 
-        auto & result = assert_cast<ColumnString &>(*result_column->assumeMutable());
+        auto & result = assert_cast<ColumnString &>(*result_column);
         if (!result.empty())
         {
             ++non_empty_result;
@@ -116,9 +116,9 @@ auto makeSizeStreamGetter(SizesBuf & sizes_buffer, DataBuf & data_buffer)
 
 }
 
-/// A faithful WITH_SIZE_STREAM round-trip (including a seeked read with rows_offset > 0) must keep the
-/// reconstructed column internally consistent: offsets.back() == chars.size(). This establishes that the
-/// inconsistency in the test below is caused by the streams disagreeing, not by normal operation.
+/// A faithful WITH_SIZE_STREAM round-trip must keep the reconstructed column internally consistent:
+/// offsets.back() == chars.size(). This establishes that the inconsistency in the test below is caused
+/// by the streams disagreeing, not by normal operation.
 TEST(StringSerialization, WithSizeStreamFaithfulRoundTripIsConsistent)
 {
     MainThreadStatus::getInstance();
@@ -137,26 +137,22 @@ TEST(StringSerialization, WithSizeStreamFaithfulRoundTripIsConsistent)
         serialization->serializeBinaryBulkWithMultipleStreams(*src, 0, src->size(), settings, state);
     }
 
-    /// Read the whole column back, then a seeked subrange, and verify both are consistent.
-    for (size_t rows_offset : {size_t{0}, size_t{123}})
-    {
-        ReadBufferFromString sizes_in(sizes_out.str());
-        ReadBufferFromString data_in(data_out.str());
+    ReadBufferFromString sizes_in(sizes_out.str());
+    ReadBufferFromString data_in(data_out.str());
 
-        ISerialization::DeserializeBinaryBulkSettings settings;
-        ISerialization::DeserializeBinaryBulkStatePtr state;
-        settings.position_independent_encoding = false;
-        settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
-        serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    settings.position_independent_encoding = false;
+    settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
+    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
-        ColumnPtr result = ColumnString::create();
-        serialization->deserializeBinaryBulkWithMultipleStreams(result, rows_offset, rows - rows_offset, settings, state, nullptr);
+    auto result = ColumnString::create();
+    serialization->deserializeBinaryBulkWithMultipleStreams(*result, rows, settings, state, nullptr);
 
-        const auto & result_string = assert_cast<const ColumnString &>(*result);
-        ASSERT_EQ(result_string.getOffsets().back(), result_string.getChars().size());
-        ASSERT_EQ(result_string.size(), rows - rows_offset);
-        ASSERT_EQ(result_string.getDataAt(0), src->getDataAt(rows_offset));
-    }
+    const auto & result_string = assert_cast<const ColumnString &>(*result);
+    ASSERT_EQ(result_string.getOffsets().back(), result_string.getChars().size());
+    ASSERT_EQ(result_string.size(), rows);
+    ASSERT_EQ(result_string.getDataAt(0), src->getDataAt(0));
 }
 
 /// The producer of the corrupted column. When the data stream delivers fewer bytes than the sizes stream
@@ -198,13 +194,13 @@ TEST(StringSerialization, WithSizeStreamShortDataStreamThrows)
     settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
     serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
-    ColumnPtr result = ColumnString::create();
+    auto result = ColumnString::create();
     try
     {
-        serialization->deserializeBinaryBulkWithMultipleStreams(result, 0, rows, settings, state, nullptr);
+        serialization->deserializeBinaryBulkWithMultipleStreams(*result, rows, settings, state, nullptr);
         FAIL() << "deserialize accepted a short data stream and produced offsets.back()="
-               << assert_cast<const ColumnString &>(*result).getOffsets().back()
-               << " vs chars.size()=" << assert_cast<const ColumnString &>(*result).getChars().size();
+               << result->getOffsets().back()
+               << " vs chars.size()=" << result->getChars().size();
     }
     catch (const DB::Exception & e)
     {

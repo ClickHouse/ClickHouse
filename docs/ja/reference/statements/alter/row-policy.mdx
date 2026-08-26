@@ -1,0 +1,74 @@
+---
+description: 'ALTER ROW POLICY のリファレンス'
+sidebarTitle: 'ROW POLICY'
+slug: /sql-reference/statements/alter/row-policy
+title: 'ALTER ROW POLICY'
+doc_type: 'reference'
+---
+
+ROW POLICY を変更します。
+
+構文:
+
+```sql
+-- Rename: exactly one fully qualified policy (one name on one target).
+-- RENAME TO may be combined with the same optional alteration clauses as below.
+ALTER [ROW] POLICY [IF EXISTS] name
+    ON { [database.]table | database.* }
+    RENAME TO new_name
+    [ON CLUSTER cluster_name]
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+
+-- Multiple names on one table target (no RENAME)
+ALTER [ROW] POLICY [IF EXISTS] name [, ...]
+    [ON CLUSTER cluster_name]
+    ON { [database.]table | database.* }
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+
+-- One name on multiple table targets (no RENAME)
+ALTER [ROW] POLICY [IF EXISTS] name
+    [ON CLUSTER cluster_name]
+    ON { [database.]table | database.* } [, ...]
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+
+-- Mixed packing: each name paired with its own table target (no RENAME)
+ALTER [ROW] POLICY [IF EXISTS]
+    name ON { [database.]table | database.* } [, name ON { [database.]table | database.* } ...]
+    [ON CLUSTER cluster_name]
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+`RENAME TO` は、1 つのテーブル対象に対するポリシーを**厳密に 1 つ**だけ指定するステートメントでのみ使用できます。複数名または複数テーブルをまとめたリストに `RENAME TO` を含めることはできません。これらのポリシーは別々のステートメントでリネームしてください。この単一ポリシー形式では、同じステートメント内で `RENAME TO` を `AS`、`USING`、`TO` などの他の変更と組み合わせることができます。
+
+`RENAME TO` を使用しない場合、まとめ方は `ParserRowPolicyNames` に従います。すなわち、**1 つ**の対象に対する複数名、**複数**の対象に対する 1 つの名前、または `name ON target` の組み合わせです。複数名 × 複数テーブル (`p1, p2 ON t1, t2`) は受け付けられ**ません**。任意指定の `ON CLUSTER` はステートメント全体に 1 回だけ適用されます。異なるクラスターが必要な場合は、別々の `ALTER ROW POLICY` ステートメントを実行してください。
+
+例：
+
+```sql
+-- Single-policy rename
+ALTER ROW POLICY p1 ON db.table RENAME TO p1_new;
+
+-- Rename plus other alterations on the same single policy
+ALTER POLICY old_name ON db.table RENAME TO new_name USING id > 10;
+
+-- Multiple names, one table
+ALTER POLICY p1, p2 ON db.table TO ALL;
+
+-- One name, multiple tables
+ALTER POLICY p1 ON db.table, db.table2 USING NONE;
+
+-- Mixed targets without rename
+ALTER POLICY p1 ON db.table, p2 ON db2.table2 TO ALL;
+```

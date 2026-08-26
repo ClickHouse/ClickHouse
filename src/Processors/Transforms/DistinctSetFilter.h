@@ -101,6 +101,9 @@ public:
     /// The number of distinct keys seen so far.
     size_t getTotalRowCount() const;
 
+    /// The memory occupied by the set.
+    size_t getTotalByteCount() const;
+
     /// Whether the keys can be materialized back into columns from the set itself. True for every set
     /// method except `hashed`, which keeps only a 128-bit hash per key (chosen for multi-column keys
     /// with variable-width or LowCardinality types). Meaningful once at least one chunk was filtered
@@ -116,12 +119,16 @@ public:
     /// Filters the chunk leaving only the rows whose key was not seen before (and inserts their keys
     /// into the set). This is also the enforcement point of the DISTINCT size limits
     /// (max_rows_in_distinct, max_bytes_in_distinct): with the 'throw' overflow mode an exception is
-    /// thrown here, with 'break' the new rows of the chunk that crosses a limit are dropped, while
-    /// their keys stay in the set - the long-standing DISTINCT behavior. The limits are enforced here
-    /// deliberately, so that all the users of this class share one semantics.
-    /// The result may have no rows (nothing new in the chunk, or the rows were dropped by a limit).
-    /// Chunk infos are preserved.
+    /// thrown here; with 'break' the new rows of the chunk that crosses a limit are still returned
+    /// (their keys are in the set) and isLimitReached starts returning true - the caller should stop
+    /// reading, returning the partial result. The limits are enforced here deliberately, so that all
+    /// the users of this class share one semantics.
+    /// The result may have no rows (nothing new in the chunk). Chunk infos are preserved.
     Chunk filter(Chunk chunk);
+
+    /// Whether a size limit with the 'break' overflow mode was reached: no new key can be added to the
+    /// set, so the caller should stop reading and return the partial result.
+    bool isLimitReached() const { return limit_reached; }
 
     /// Frees the set and the LowCardinality state. The filter must not be used afterwards.
     void clear();
@@ -138,6 +145,7 @@ private:
 
     /// Restrictions on the maximum size of the set.
     const SizeLimits set_size_limits;
+    bool limit_reached = false;
 };
 
 }

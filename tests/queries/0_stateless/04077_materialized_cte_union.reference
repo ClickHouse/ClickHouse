@@ -1,0 +1,36 @@
+1
+1
+1
+Output: repo_name, count()
+
+MaterializingCTEs (Materialize CTEs before main query execution)
+├──Union
+│  ├──MaterializingCTEs (Materialize CTEs before main query execution)
+│  │  └──Limit (preliminary LIMIT)
+│  │     │  Limit 1
+│  │     │  Offset 0
+│  │     └──Sorting (Sorting for ORDER BY)
+│  │        │  Sort description: count() DESC
+│  │        │  Limit 1
+│  │        └──ReadFromMemoryStorage
+│  │              Output: repo_name, count()
+│  ├──MaterializingCTEs (Materialize CTEs before main query execution)
+│  │  └──Filter ((WHERE + Change column names to column identifiers))
+│  │     │  Filter column: count() = 0
+│  │     └──ReadFromMemoryStorage
+│  │           Output: repo_name, count()
+│  └──MaterializingCTEs (Materialize CTEs before main query execution)
+│     └──Filter ((WHERE + Change column names to column identifiers))
+│        │  Filter column: repo_name NOT ILIKE \'%ClickHouse%\' AND count() = 0
+│        └──ReadFromMemoryStorage
+│              Output: repo_name, count()
+└──MaterializingCTE (Materializing CTE: alexey_events)
+   └──Sorting (Sorting for ORDER BY)
+      │  Sort description: count() DESC
+      └──Aggregating
+         │  Keys: repo_name
+         │  Aggregates: count()
+         │  Skip merging: 0
+         └──Filter ((WHERE + Change column names to column identifiers))
+            │  Filter column: event_type IN (\'IssuesEvent\', \'IssueCommentEvent\', \'PullRequestEvent\') AND actor_login = \'alexey-milovidov\'
+            └──ReadNothing (Read from NullSource)

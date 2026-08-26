@@ -118,8 +118,7 @@ public:
         size_t & total_size_of_variants) const;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -201,15 +200,21 @@ private:
         DeserializeBinaryBulkSettings & settings,
         SubstreamsDeserializeStatesCache * cache);
 
-    std::pair<std::vector<size_t>, std::vector<size_t>> deserializeCompactDiscriminators(
-        ColumnPtr & discriminators_column,
-        size_t rows_offset,
+    std::vector<size_t> deserializeCompactDiscriminators(
+        IColumn & discriminators_column,
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,
-        DeserializeBinaryBulkStateVariantDiscriminators & state) const;
+        DeserializeBinaryBulkStateVariantDiscriminators & state,
+        const DeserializeBinaryBulkSettings & settings) const;
 
-    static void readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, ReadBuffer * stream);
+    /// Reads the compact-discriminators granule header and validates the compact discriminator
+    /// against num_variants when num_variants > 0.
+    static void readDiscriminatorsGranuleStart(
+        DeserializeBinaryBulkStateVariantDiscriminators & state,
+        ReadBuffer * stream,
+        size_t num_variants,
+        const DeserializeBinaryBulkSettings & settings);
 
     /// Shared implementation for Escaped and Raw text deserialization.
     /// Checks for NULL representation in the raw buffer before escape processing

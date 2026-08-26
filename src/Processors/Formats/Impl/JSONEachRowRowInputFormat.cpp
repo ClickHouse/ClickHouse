@@ -499,7 +499,7 @@ The output will be in JSON format:
 {"date":"2022-05-07","season":2021,"home_team":"Walsall","away_team":"Swindon Town","home_team_goals":0,"away_team_goals":3}
 ```
 
-Importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
+Importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
 
 ## Format settings {#format-settings}
 )DOCS_MD"});
@@ -584,7 +584,7 @@ The output will be in JSON format:
 {"date":"2022-05-07","season":2021,"home_team":"Walsall","away_team":"Swindon Town","home_team_goals":0,"away_team_goals":3}
 ```
 
-Importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
+Importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
 
 ## Format settings {#format-settings}
 )DOCS_MD"});
@@ -597,7 +597,7 @@ Importing data columns with unknown names will be skipped if setting [input_form
 
 ## Description {#description}
 
-Differs from the [`JSONEachRow`](./JSONEachRow.md) only in that data fields are output in strings, not in typed JSON values.
+Differs from the [`JSONEachRow`](/reference/formats/JSON/JSONEachRow) only in that data fields are output in strings, not in typed JSON values.
 
 ## Example usage {#example-usage}
 
@@ -674,11 +674,18 @@ The output will be in JSON format:
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONEachRow", &JSONUtils::fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("JSONStringsEachRow", &JSONUtils::fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("JSONLines", &JSONUtils::fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("NDJSON", &JSONUtils::fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("JSONL", &JSONUtils::fileSegmentationEngineJSONEachRow);
+    auto creator = [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
+    {
+        return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        {
+            return JSONUtils::fileSegmentationEngineJSONEachRow(in, memory, min_bytes, max_rows, max_row_size);
+        };
+    };
+    factory.registerFileSegmentationEngineCreator("JSONEachRow", creator);
+    factory.registerFileSegmentationEngineCreator("JSONStringsEachRow", creator);
+    factory.registerFileSegmentationEngineCreator("JSONLines", creator);
+    factory.registerFileSegmentationEngineCreator("NDJSON", creator);
+    factory.registerFileSegmentationEngineCreator("JSONL", creator);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory);

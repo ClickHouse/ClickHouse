@@ -20,8 +20,9 @@ SELECT count() FROM (SELECT DISTINCT number % 10000 AS k FROM numbers(20000)) SE
 -- would exceed such a small limit upfront), while the distinct data is way over the limit.
 SELECT count() FROM (SELECT DISTINCT bitXor(intDiv(number, 2), 5) AS k FROM numbers(20000)) SETTINGS max_bytes_in_distinct = '16K', distinct_overflow_mode = 'throw', max_bytes_before_external_distinct = 1, max_block_size = 50;
 
--- The 'break' overflow mode truncates the result without an error. In-memory the check uses >=, so the
--- chunk that makes the set reach the limit is dropped: with 50-row chunks the result is exactly 50 rows.
+-- The 'break' overflow mode returns the partial result without an error: the new rows of the chunk
+-- that reaches the limit (the check uses >=) are still returned, then reading stops. With 50-row
+-- chunks the limit of 100 is reached by the second chunk, so the in-memory result is exactly 100 rows.
 -- After the spill the limit is checked against the emitted rows with chunk granularity.
 SELECT count() FROM (SELECT DISTINCT number % 10000 AS k FROM numbers(20000)) SETTINGS max_rows_in_distinct = 100, distinct_overflow_mode = 'break', max_bytes_before_external_distinct = 0, max_block_size = 50;
 SELECT count() BETWEEN 50 AND 200 FROM (SELECT DISTINCT number % 10000 AS k FROM numbers(20000)) SETTINGS max_rows_in_distinct = 100, distinct_overflow_mode = 'break', max_bytes_before_external_distinct = 1, max_block_size = 50;

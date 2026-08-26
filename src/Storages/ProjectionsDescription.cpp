@@ -131,7 +131,8 @@ ProjectionsDescription ProjectionsDescription::clone() const
 
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
 {
-    return name == other.name && definition_ast->formatWithSecretsOneLine() == other.definition_ast->formatWithSecretsOneLine();
+    return name == other.name
+        && definition_ast->formatIgnoringRedundantParentheses() == other.definition_ast->formatIgnoringRedundantParentheses();
 }
 
 namespace
@@ -255,6 +256,11 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     if (projection_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Projection must have name in definition.");
 
+    /// The name is used unescaped as a directory name (`getDirectoryName`) inside a part directory,
+    /// so a '/' in it would address files outside of the part and outside of the data directory.
+    if (projection_definition->name.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Projection name ({}) cannot contain '/'", projection_definition->name);
+
     ProjectionDescription result;
     result.definition_ast = projection_definition->clone();
     result.name = projection_definition->name;
@@ -271,7 +277,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// from result.settings_changes to drive implicit-minmax skip-index creation.
     auto merge_tree_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
     if (projection_definition->with_settings)
-        merge_tree_settings->applyChanges(projection_definition->with_settings->changes);
+        merge_tree_settings->applyChanges(projection_definition->with_settings->changes, query_context, isLoadingFromExistingMetadata(mode));
     result.settings_changes = merge_tree_settings->changes();
 
     /// Track whether the effective settings include index_granularity or index_granularity_bytes overrides
@@ -329,11 +335,13 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
 
         const auto & ac = query_context->getAccessControl();
         bool allow_experimental = ac.getAllowExperimentalTierSettings();
+        bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
         bool allow_beta = ac.getAllowBetaTierSettings();
         query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
         merge_tree_settings->sanityCheck(
             query_context->getMergeMutateExecutor()->getMaxTasksCount(),
             allow_experimental,
+            allow_private_preview,
             allow_beta,
             query_context->wasBackgroundPoolAutoLowered());
     }
@@ -380,6 +388,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// works correctly even in DatabaseReplicated mode (where query_kind == SECONDARY_QUERY).
     auto mut_context = Context::createCopy(query_context);
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
+    /// Projection required-columns must always expand ALIAS columns, regardless of session settings.
+    mut_context->setSetting("optimize_respect_aliases", true);
     mut_context->setQueryKindInitial();
 
     bool is_aggregate = false;
@@ -393,7 +403,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
         auto query_tree = buildQueryTree(result.query_ast, mut_context);
         auto & query_node = query_tree->as<QueryNode &>();
-        query_node.getJoinTree() = std::make_shared<TableNode>(analyzer_storage, mut_context);
+        query_node.getJoinTreeNode() = std::make_shared<TableNode>(analyzer_storage, mut_context);
 
         QueryTreePassManager query_tree_pass_manager(mut_context);
         addQueryTreePasses(query_tree_pass_manager, /*only_analyze=*/true);
@@ -504,7 +514,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     result.with_block_number = result.sample_block.has(BlockNumberColumn::name);
     result.with_block_offset = result.sample_block.has(BlockOffsetColumn::name);
 
-    NamesAndTypesList metadata_columns;
+    ColumnsDescription metadata_columns;
     for (const auto & column_with_type_name : result.sample_block)
     {
         if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
@@ -521,11 +531,16 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         }
         else
         {
-            metadata_columns.emplace_back(column_with_type_name.name, column_with_type_name.type);
+            ColumnDescription column_description(column_with_type_name.name, column_with_type_name.type);
+            /// Carry over the parent column's DEFAULT so a column missing from a projection part written
+            /// before the column was added reads the table default, not the column type's default.
+            if (columns.has(column_with_type_name.name) && columns.get(column_with_type_name.name).default_desc.expression)
+                column_description.default_desc = columns.get(column_with_type_name.name).default_desc;
+            metadata_columns.add(std::move(column_description));
         }
     }
 
-    metadata.setColumns(ColumnsDescription(metadata_columns));
+    metadata.setColumns(std::move(metadata_columns));
     metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
 
     /// Initialize implicit-minmax skip indices from the effective projection-level MergeTree settings
@@ -800,7 +815,7 @@ String ProjectionsDescription::toString() const
     for (const auto & projection : projections)
         list.children.push_back(projection.definition_ast);
 
-    return list.formatWithSecretsOneLine();
+    return list.formatIgnoringRedundantParentheses();
 }
 
 ProjectionsDescription ProjectionsDescription::parse(
@@ -891,6 +906,19 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
 
     projections.erase(it->second);
     map.erase(it);
+}
+
+void ProjectionsDescription::replace(ProjectionDescription && projection)
+{
+    auto it = map.find(projection.name);
+    if (it == map.end())
+        throw Exception(
+            ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
+            "There is no projection {} in table{}",
+            projection.name,
+            getHintsMessage(projection.name));
+
+    *it->second = std::move(projection);
 }
 
 VectorWithMemoryTracking<String> ProjectionsDescription::getAllRegisteredNames() const

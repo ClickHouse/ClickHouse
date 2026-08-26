@@ -1,6 +1,7 @@
 import argparse
 import os
 import re
+import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -21,6 +22,11 @@ from ci.praktika.utils import Shell, Utils
 
 repo_dir = Utils.cwd()
 temp_path = f"{repo_dir}/ci/tmp"
+
+# Must equal helpers/cluster.py's RABBITMQ_RECREATE_TOKEN, which emits it. Copied
+# rather than imported so this script does not depend on the test helpers' imports;
+# test_cluster_waiters/test_rabbitmq_start_retry.py asserts the two stay equal.
+RABBITMQ_RECREATE_TOKEN = "RABBITMQ_RECREATE"
 
 
 MAX_FAILS_BEFORE_DROP = 5
@@ -46,9 +52,16 @@ MAX_MEM_PER_WORKER = 11
 # cgroup and tripping the kernel OOM killer (see OOM_IN_DMESG_TEST_NAME).
 MAX_MEM_PER_WORKER_DIST_EACH = 20
 
-INFRASTRUCTURE_ERROR_PATTERNS = [
+# A timeout says nothing about its own origin: a container orchestration command and
+# the process under test both raise `subprocess.TimeoutExpired`, rendering the same two
+# substrings. These two are therefore matched by the argv that timed out rather than by
+# a plain substring search.
+TIMEOUT_ERROR_PATTERNS = [
     "timed out after",
     "TimeoutExpired",
+]
+
+INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "Cannot connect to the Docker daemon",
     "Error response from daemon",
     "Name or service not known",
@@ -63,13 +76,133 @@ INFRASTRUCTURE_ERROR_PATTERNS = [
     "Got exception pulling images:",  # docker pull failure during cluster.start()
 ]
 
+# compose options that consume the token after them, so the subcommand is not the
+# first non-option token but the first one no option has claimed.
+COMPOSE_VALUED_OPTIONS = {
+    "--ansi",
+    "--env-file",
+    "--file",
+    "--parallel",
+    "--profile",
+    "--progress",
+    "--project-directory",
+    "--project-name",
+    "-f",
+    "-p",
+}
+
+# Subcommands whose timeout does not mean the server failed to respond, so exceeding the
+# python-side budget says nothing about the server under test.
+ORCHESTRATION_LIFECYCLE_VERBS = {
+    "config",
+    "create",
+    "down",
+    "images",
+    "login",
+    "logs",
+    "ps",
+    "pull",
+    "rm",
+    "start",
+    "unpause",
+    "up",
+}
+
+# Subcommands that wait on the server exiting: an unguarded `stop` with no `--timeout`
+# (cluster.py:2641) is bounded only by the generated template's `stop_grace_period: 10m`,
+# which outlives the python-side budget, so its timeout means the server did not respond.
+ORCHESTRATION_PRODUCT_VERBS = {"kill", "pause", "restart", "stop"}
+
+# Top-level `docker` subcommands the harness runs on its own behalf, outside compose, and
+# whose timeout is known to arrive here (`run_and_check` re-raises `TimeoutExpired` even
+# under `nothrow`). `exec` and `update` are absent: a test body runs those.
+DOCKER_TOPLEVEL_LIFECYCLE_VERBS = {"login", "ps", "rm"}
+
+
+def _raising_exception_lines(info: str) -> list:
+    """The `E   <ExcType>: <msg>` lines, i.e. the exceptions actually raised.
+
+    Scoped to these lines because an embedded server stack trace can carry a timeout
+    substring tens of kilobytes away from anything that timed out.
+    """
+    return [line for line in info.splitlines() if line.startswith("E ")]
+
+
+def _argv_lists(line: str) -> list:
+    """Every bracketed argv on `line`, in either rendering."""
+    argvs = []
+    for match in re.finditer(r"\[((?:'[^']*'(?:,\s*)?)+)\]", line):
+        argvs.append(re.findall(r"'([^']*)'", match.group(1)))
+    for match in re.finditer(r"\[([^\[\]']+)\]", line):
+        argvs.append(match.group(1).split())
+    return argvs
+
+
+def _orchestration_verb(argv: list):
+    """The docker subcommand `argv` invokes, or None if it is not orchestration."""
+    if len(argv) < 2 or argv[0] != "docker":
+        return None
+    if argv[1] in DOCKER_TOPLEVEL_LIFECYCLE_VERBS:
+        return argv[1]
+    if argv[1] != "compose":
+        return None
+    i = 2
+    while i < len(argv):
+        if argv[i] in COMPOSE_VALUED_OPTIONS:
+            i += 2
+        elif argv[i].startswith("-"):
+            i += 1
+        else:
+            return argv[i]
+    return None
+
+
+def _is_orchestration_lifecycle_timeout(info: str) -> bool:
+    """Whether the timeout is docker's or the registry's rather than the server's.
+
+    Every command a raised exception reports as timing out must be one docker runs on the
+    harness's behalf. A row can name several: `raise ... from ex` makes pytest render both
+    exceptions with their own `E ` prefix, a teardown reports its own commands beside the
+    body's, and captured output is embedded verbatim in the message. So anything else on a
+    timeout-bearing line -- a product-sensitive subcommand, a command that is not
+    orchestration at all, or no argv whatsoever -- means the wait that expired is not
+    known to be docker's.
+
+    An unrecognised subcommand is not a lifecycle one: a new compose verb must be
+    classified deliberately rather than default to suppressing the result.
+    """
+    saw_lifecycle = False
+    for line in _raising_exception_lines(info):
+        if not any(p in line for p in TIMEOUT_ERROR_PATTERNS):
+            continue
+        argvs = _argv_lists(line)
+        if not argvs:
+            return False
+        for argv in argvs:
+            verb = _orchestration_verb(argv)
+            if verb is None or verb in ORCHESTRATION_PRODUCT_VERBS:
+                return False
+            if verb not in ORCHESTRATION_LIFECYCLE_VERBS:
+                return False
+            saw_lifecycle = True
+    return saw_lifecycle
+
+
+def _non_timeout_patterns_match(info: str) -> bool:
+    return any(
+        p in info for p in INFRASTRUCTURE_ERROR_PATTERNS
+        if p not in TIMEOUT_ERROR_PATTERNS
+    )
+
 
 def _is_infrastructure_error(result: Result) -> bool:
     """Returns True if the result is a failure caused by infrastructure issues."""
     if not result.info:
         return False
     if result.status == Result.Status.ERROR:
-        return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
+        return _non_timeout_patterns_match(
+            result.info
+        ) or _is_orchestration_lifecycle_timeout(result.info)
     # Docker compose/pull infrastructure failures may appear with FAIL status
     # when pytest reports fixture (setup phase) errors as test failures.
     # Require both docker context and an infrastructure pattern to avoid
@@ -78,8 +211,9 @@ def _is_infrastructure_error(result: Result) -> bool:
         has_docker_context = (
             "'docker'" in result.info or "images_pull_cmd" in result.info
         )
-        return has_docker_context and any(
-            p in result.info for p in INFRASTRUCTURE_ERROR_PATTERNS
+        return has_docker_context and (
+            _non_timeout_patterns_match(result.info)
+            or _is_orchestration_lifecycle_timeout(result.info)
         )
     return False
 
@@ -98,6 +232,92 @@ def _mark_infrastructure_errors(results: list) -> int:
     if count:
         print(f"Marked {count} test result(s) as infrastructure errors")
     return count
+
+
+def clear_rabbitmq_recreation_scan_inputs() -> None:
+    """Delete everything `report_rabbitmq_recreations` scans, before the first batch.
+
+    The reporter scans every line and the log handlers append, so anything left in
+    `temp_path` by an earlier job counts as an event of this one. Best effort: a job
+    must never fail because a stale file could not be removed.
+    """
+    try:
+        stale_files = sorted(Path(temp_path).glob("pytest_*.log")) + sorted(
+            Path(temp_path).glob("rabbit-*.log")
+        )
+    except OSError as ex:
+        print(f"WARNING: cannot list {temp_path} before RabbitMQ retry scan: {ex}")
+        return
+    for stale in stale_files:
+        try:
+            os.remove(stale)
+        except OSError as ex:
+            print(f"WARNING: cannot remove {stale} before RabbitMQ retry scan: {ex}")
+
+
+def report_rabbitmq_recreations(result: Result) -> int:
+    """Publish RabbitMQ container recreations, and the broker logs the waiter preserved.
+
+    Must be called once per job, after every batch: the per-worker log handlers append
+    and a sequential batch reuses one log file across repeats, so scanning per batch
+    would report a multiple of the real count.
+    """
+    snapshots = []
+    count = 0
+    for log_file in sorted(Path(temp_path).glob("pytest_*.log")):
+        # Streamed: these are the full per-worker integration logs, tens of MB each.
+        # A file contributes only once read to the end, so a partial read is no count.
+        file_count = 0
+        file_snapshots = []
+        try:
+            with log_file.open(encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    if RABBITMQ_RECREATE_TOKEN not in line:
+                        continue
+                    file_count += 1
+                    # The field is a bare file name in `temp_path`: the whitespace-
+                    # delimited parse below cannot carry a directory, which may contain
+                    # spaces.
+                    match = re.search(r"snapshot=(\S+)", line)
+                    if not match or os.path.basename(match.group(1)) != match.group(1):
+                        continue
+                    snapshot = os.path.join(temp_path, match.group(1))
+                    if os.path.isfile(snapshot):
+                        file_snapshots.append(snapshot)
+        except OSError as ex:
+            print(f"WARNING: cannot read {log_file} for RabbitMQ retry scan: {ex}")
+            continue
+        count += file_count
+        snapshots.extend(file_snapshots)
+    if not count:
+        return 0
+    # Only `info` and `files` are touched; status and labels stay as the results left them.
+    # `complete_job` appends `Failures: N/M` only while `info` is empty and runs after
+    # this, so emit it here on exactly the runs that would otherwise have received it.
+    if not result.info:
+        fail_cnt = sum(1 for r in result.results if not r.is_ok())
+        result.set_info(f"Failures: {fail_cnt}/{len(result.results)}")
+    result.set_info(
+        f"RabbitMQ container recreation was attempted {count} time(s)"
+        " after failing to start"
+    )
+    for snapshot in snapshots:
+        if snapshot not in result.files:
+            result.files.append(snapshot)
+    print(f"NOTE: RabbitMQ container recreations observed: {count}")
+    return count
+
+
+def quote_tests(tests: List[str]) -> str:
+    """Join test node IDs into a shell-safe, space-separated string.
+
+    A parametrized integration test node ID can contain spaces, parentheses and
+    quotes when the test is parametrized with SQL (e.g.
+    `test.py::test_simple_append[SELECT now() FROM numbers(2)]`). The pytest
+    command is executed through a shell, so each node ID must be quoted to
+    survive as a single argument instead of being split or mis-parsed.
+    """
+    return " ".join(shlex.quote(t) for t in tests)
 
 
 def start_docker_in_docker():
@@ -136,6 +356,7 @@ _WITH_FLAG_TO_COMPOSE: dict[str, List[str]] = {
         "docker_compose_iceberg_hms_catalog.yml",
         "docker_compose_iceberg_lakekeeper_catalog.yml",
         "docker_compose_iceberg_nessie_catalog.yml",
+        "docker_compose_iceberg_seaweedfs_catalog.yml",
     ],
     "hms_catalog": ["docker_compose_iceberg_hms_catalog.yml"],
     "glue_catalog": ["docker_compose_glue_catalog.yml"],
@@ -725,7 +946,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     break
             else:
                 raise FileNotFoundError(
-                    "Clickhouse binary not found in any of the paths: "
+                    "ClickHouse binary not found in any of the paths: "
                     + ", ".join(paths_to_check)
                     + ". You can also specify path to binary via --path argument"
                 )
@@ -733,7 +954,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             clickhouse_server_config_dir = args.path_1
     assert Path(
         clickhouse_server_config_dir
-    ), f"Clickhouse config dir does not exist [{clickhouse_server_config_dir}]"
+    ), f"ClickHouse config dir does not exist [{clickhouse_server_config_dir}]"
     print(f"Using ClickHouse binary at [{clickhouse_path}]")
 
     changed_test_modules = []
@@ -750,17 +971,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 # TODO: reduce scope to modified test cases instead of entire modules
                 changed_files = info.get_changed_files()
                 for file in changed_files:
-                    if (
-                        file.startswith("tests/integration/test")
-                        # e2e tests require external credentials/backends and are
-                        # excluded from the default pytest run via the `e2e`
-                        # marker. Skip them so a mixed PR (both e2e and regular
-                        # integration tests changed) does not try to run them.
-                        and not file.startswith("tests/integration/test_e2e_")
-                        and Path(file).name.startswith("test")
-                        and file.endswith(".py")
-                        and Path(file).is_file()
-                    ):
+                    if Targeting.is_integration_test_file(file):
                         changed_test_modules.append(
                             file.removeprefix("tests/integration/")
                         )
@@ -884,6 +1095,49 @@ tar -czf ./ci/tmp/logs.tar.gz \
         sequential_test_modules = []
         assert not is_sequential
 
+    # If this PR only touches test files (no production/config code changed),
+    # this batch only needs to run whichever of parallel_test_modules /
+    # sequential_test_modules actually contains a changed module - the other
+    # side would produce results identical to master and can be dropped
+    # outright (saving the time to run it), and if neither side contains a
+    # changed module the whole batch can be skipped. Placed after the
+    # is_sequential/is_parallel handling above so it sees the modules this
+    # job invocation will actually run, not the pre-flavor-filter set.
+    if (
+        total_batches > 1
+        and not is_flaky_check
+        and not is_targeted_check
+        and not is_bugfix_validation
+        and not is_llvm_coverage
+        and not args.test
+    ):
+        changed_files = info.get_changed_files()
+        if changed_files and all(
+            Targeting.is_functional_test_file(f)
+            or Targeting.is_integration_test_file(f)
+            or Targeting.is_ci_job_script(f)
+            for f in changed_files
+        ):
+            changed_integration_modules = {
+                f.removeprefix("tests/integration/")
+                for f in changed_files
+                if Targeting.is_integration_test_file(f)
+            }
+            if not changed_integration_modules:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only non-integration test files changed in this PR - nothing for this job to run",
+                ).complete_job()
+            if not (changed_integration_modules & set(parallel_test_modules)):
+                parallel_test_modules = []
+            if not (changed_integration_modules & set(sequential_test_modules)):
+                sequential_test_modules = []
+            if not parallel_test_modules and not sequential_test_modules:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only test files changed in this PR and none of the changed test modules fall into this batch",
+                ).complete_job()
+
     if (is_targeted_check or is_flaky_check) and not parallel_test_modules and not sequential_test_modules:
         # Targeted check: all selected tests were stale (removed or renamed since the CIDB record).
         # Flaky check: all changed tests were filtered out (e.g. by SKIP_LIST in the private fork).
@@ -945,7 +1199,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
-        # PromQL compliance: deterministic JSON for post-hook (see promql_compliance_hook.py).
+        # PromQL compliance: deterministic JSON for upload hook (see promql_compliance_upload_hook.py).
         "COMPLIANCE_RESULT_FILE": os.environ.get(
             "COMPLIANCE_RESULT_FILE", os.path.join(temp_path, "promql_compliance_result.json")
         ),
@@ -956,7 +1210,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
         # Auto-detect available LLVM profdata tool
-        for ver in ["21", "20", "18", "19", "17", "16", ""]:
+        for ver in ["22", "21", "20", "18", "19", "17", "16", ""]:
             cmd = f"llvm-profdata{'-' + ver if ver else ''}"
             if Shell.check(f"command -v {cmd}", verbose=False):
                 llvm_profdata_cmd = cmd
@@ -1023,6 +1277,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
         except Exception as ex:
             print(f"Failed to clear dmesg before integration tests: {ex}")
 
+    clear_rabbitmq_recreation_scan_inputs()
+
     if is_flaky_check or is_targeted_check:
         # Each xdist worker runs all modules independently with its own isolated Docker cluster.
         # ClickHouseCluster appends PYTEST_XDIST_WORKER to the project name, so clusters
@@ -1040,7 +1296,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if parallel_test_modules:
         log_file = f"{temp_path}/pytest_parallel.log"
         test_result_parallel, parallel_timed_out = run_pytest_and_collect_results(
-            command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
+            command=f"{quote_tests(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
             env=test_env,
             report_name="parallel",
             timeout=session_timeout_parallel + 600,
@@ -1082,7 +1338,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     session_timeout_sequential, flaky_check_remaining_s
                 )
             test_result_sequential, sequential_timed_out = run_pytest_and_collect_results(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
+                command=f"{quote_tests(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
                 timeout=iter_session_timeout_sequential + 600,
@@ -1133,7 +1389,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
                 if parallel_test_modules:
                     bt_result_parallel, _ = run_pytest_and_collect_results(
-                        command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
+                        command=f"{quote_tests(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                         env=test_env,
                         report_name=f"parallel_{bugfix_bt}",
                         timeout=session_timeout_parallel + 600,
@@ -1149,7 +1405,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 bt_fail_num = len([r for r in bt_test_results if not r.is_ok()])
                 if sequential_test_modules and bt_fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
                     bt_result_sequential, _ = run_pytest_and_collect_results(
-                        command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
+                        command=f"{quote_tests(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                         env=test_env,
                         report_name=f"sequential_{bugfix_bt}",
                         timeout=session_timeout_sequential + 600,
@@ -1206,7 +1462,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
         test_result_retries, _ = run_pytest_and_collect_results(
-            command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
+            command=f"{quote_tests(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
             report_name="retries",
             timeout=1200 + 600,
@@ -1429,6 +1685,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 R.set_success()
 
     force_ok_exit = False
+    if R:
+        failures_cnt = len([r for r in R.results if not r.is_ok()])
+        if failures_cnt > 0 and failures_cnt < 2:
+            print(
+                f"NOTE: Failed {failures_cnt} tests - do not block pipeline, exit with 0"
+            )
+            force_ok_exit = True
+        elif failures_cnt > 0 and "ci-non-blocking" in info.pr_labels:
+            print(
+                f"NOTE: Failed {failures_cnt} tests, label 'ci-non-blocking' is set - do not block pipeline - exit with 0"
+            )
+            force_ok_exit = True
     if is_bugfix_validation:
         # Per-arch bugfix-validation jobs are advisory: their pass/fail status
         # records "did the bug reproduce on this arch?", not whether the PR
@@ -1459,6 +1727,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
         force_ok_exit = True
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
+
+    report_rabbitmq_recreations(R)
 
     R.sort().complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 

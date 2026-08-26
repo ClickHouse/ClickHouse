@@ -13,7 +13,7 @@ Calculates the difference between consecutive row values in a data block, but un
 :::warning Deprecated
 Only returns differences inside the currently processed data block.
 Because of this error-prone behavior, the function is deprecated.
-It is advised to use [window functions](/sql-reference/window-functions) instead.
+It is advised to use [window functions](/reference/functions/window-functions) instead.
 
 You can use setting `allow_deprecated_error_prone_window_functions` to allow usage of this function.
 :::
@@ -23,6 +23,7 @@ You can use setting `allow_deprecated_error_prone_window_functions` to allow usa
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the difference between consecutive values, with the first row's value for the first row.", {"Any"}};
     FunctionDocumentation::Examples examples = {{"Usage example",
         R"(
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT
     number,
     runningDifferenceStartingWithFirstValue(number) AS diff

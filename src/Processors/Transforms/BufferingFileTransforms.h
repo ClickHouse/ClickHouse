@@ -39,6 +39,9 @@ public:
 
     String getName() const override { return "BufferingFromFileSource"; }
 
+    /// These rows were already counted when they were read from the original source.
+    std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
+
     Status prepare() override;
     Chunk generate() override;
 

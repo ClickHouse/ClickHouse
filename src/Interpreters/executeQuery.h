@@ -33,6 +33,10 @@ struct QueryResultDetails
     std::optional<std::chrono::time_point<std::chrono::system_clock>> query_cache_entry_created_at = {};
     std::optional<std::chrono::time_point<std::chrono::system_clock>> query_cache_entry_expires_at = {};
     std::unordered_map<String, String> additional_headers = {};
+    /// Whether the response is a stream of packets produced by a framing format (see
+    /// `framing_output_format`). The HTTP handler uses it to fail closed: once such a response
+    /// has started closing, nothing may be appended to it (see `HTTPHandler::trySendExceptionToClient`).
+    bool framed = false;
 };
 
 using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
@@ -50,8 +54,15 @@ void executeQuery(
     QueryFlags flags = {},
     const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {}, /// If a non-empty callback is passed, it will be called on exception with created output format.
-    QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log
-                                                   /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing)
+    QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log.
+                                                   /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing).
+                                                   /// NOTE: For a framed response (`framing_output_format`) it is instead called after the QueryFinish
+                                                   /// entry: the stream must include the trailing `log` / `profile_events` packets emitted by the
+                                                   /// query-finish logging and end with the final `progress` packet, and closing the response stream
+                                                   /// must come after that. Consequently the network-send counters of the response tail (and, when the
+                                                   /// response is buffered, of the delayed-results push) are not part of the QueryFinish snapshot -
+                                                   /// the same semantics as the native protocol, which sends its trailing logs and profile events
+                                                   /// after the query log entry too.
     HTTPContinueCallback http_continue_callback = {} /// If a non-empty callback is passed, it will be called after quota checks to send HTTP 100 Continue.
 );
 
@@ -63,8 +74,15 @@ void executeQuery(
     QueryFlags flags = {},
     const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {}, /// If a non-empty callback is passed, it will be called on exception with created output format.
-    QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log
-                                                    /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing)
+    QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log.
+                                                    /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing).
+                                                    /// NOTE: For a framed response (`framing_output_format`) it is instead called after the QueryFinish
+                                                    /// entry: the stream must include the trailing `log` / `profile_events` packets emitted by the
+                                                    /// query-finish logging and end with the final `progress` packet, and closing the response stream
+                                                    /// must come after that. Consequently the network-send counters of the response tail (and, when the
+                                                    /// response is buffered, of the delayed-results push) are not part of the QueryFinish snapshot -
+                                                    /// the same semantics as the native protocol, which sends its trailing logs and profile events
+                                                    /// after the query log entry too.
     HTTPContinueCallback http_continue_callback = {} /// If a non-empty callback is passed, it will be called after quota checks to send HTTP 100 Continue.
 );
 
@@ -90,6 +108,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
 );
 
+void executeQueryInBackground(std::string_view query, const ASTPtr & ast, ContextMutablePtr context);
+
 /// Executes BlockIO returned from executeQuery(...)
 /// if built pipeline does not require any input and does not produce any output.
 void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactive_cancel = false);
@@ -99,6 +119,12 @@ void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_inte
 /// which records QueryFinish and releases the memory reservation.
 /// If the callback throws, its exception is rethrown after io.onFinish().
 void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback);
+
+/// Throws if a SETTINGS clause anywhere in the query changes the `allow_experimental_analyzer`
+/// (`enable_analyzer`) setting to a value different from `context_value`: the analyzer cannot be
+/// switched in the middle of query processing. Applied to every query at the start of processing;
+/// also used for generated queries that bypass `executeQuery`, such as in the `eval` table function.
+void validateAnalyzerSettings(ASTPtr ast, bool context_value);
 
 /// Prepares a QueryLogElement and, if enabled, logs it to system.query_log
 QueryLogElement logQueryStart(
@@ -110,6 +136,7 @@ QueryLogElement logQueryStart(
     const QueryPipeline & pipeline,
     const IInterpreter * interpreter,
     bool internal,
+    bool log_as_internal,
     const String & query_database,
     const String & query_table,
     bool async_insert);
@@ -122,7 +149,8 @@ void logQueryFinish(
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     QueryResultCacheUsage query_result_cache_usage,
-    bool internal);
+    bool internal,
+    bool log_as_internal);
 
 void logQueryException(
     QueryLogElement & elem,
@@ -131,6 +159,7 @@ void logQueryException(
     const ASTPtr & query_ast,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     bool internal,
+    bool log_as_internal,
     bool log_error);
 
 void logExceptionBeforeStart(
@@ -140,7 +169,8 @@ void logExceptionBeforeStart(
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_milliseconds,
-    bool internal);
+    bool internal,
+    bool log_as_internal);
 
 /// Returns the global AST fuzzer instance with a lock held.
 std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer();

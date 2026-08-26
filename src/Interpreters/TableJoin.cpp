@@ -206,7 +206,8 @@ std::string TableJoin::formatClausesPretty(const TableJoin::Clauses & clauses, c
     return fmt::format("{}", fmt::join(res, " OR "));
 }
 
-TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
+TableJoin::TableJoin(
+    const Settings & settings, JoinAnalyzeMode analyze_mode_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
     : size_limits(SizeLimits{settings[Setting::max_rows_in_join], settings[Setting::max_bytes_in_join], settings[Setting::join_overflow_mode]})
     , default_max_bytes(settings[Setting::default_max_bytes_in_join])
     , join_use_nulls(settings[Setting::join_use_nulls])
@@ -235,6 +236,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
     , enable_analyzer(settings[Setting::allow_experimental_analyzer])
+    , analyze_mode(analyze_mode_)
 {
 }
 
@@ -268,6 +270,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
     , enable_analyzer(true)
+    , analyze_mode(settings.join_analyze_mode)
 {
 }
 
@@ -517,7 +520,24 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
     {
         if (required_keys.contains(right_key_name) && !required_right_keys.has(right_key_name))
         {
-            const auto & right_key = right_table_keys.getByName(right_key_name);
+            auto right_key = right_table_keys.getByName(right_key_name);
+
+            /// A promoted key must be Nullable so an unmatched-left row fills NULL rather than the
+            /// storage default, which `firstNonDefault` would then prefer over the left NULL.
+            /// A matched row cannot have a NULL left key here, so matched values are unchanged.
+            if ((using_promoted_right_keys.contains(right_key_name)
+                 || using_promoted_right_keys.contains(renamedRightColumnName(right_key_name)))
+                && isLeftOrFull(kind())
+                && !isNullableOrLowCardinalityNullable(right_key.type) && JoinCommon::canBecomeNullable(right_key.type))
+            {
+                auto left_key = columns_from_left_table.tryGetByName(left_key_name);
+                if (left_key && isNullableOrLowCardinalityNullable(left_key->type))
+                {
+                    right_key.type = JoinCommon::convertTypeToNullable(right_key.type);
+                    right_key.column = nullptr;
+                }
+            }
+
             required_right_keys.insert(right_key);
             keys_sources.push_back(left_key_name);
         }
@@ -575,7 +595,7 @@ void TableJoin::setUsedColumns(const Names & column_names)
         }
         else
             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                "Column {} not found in JOIN, left columns: [{}], right columns: [{}]", column_name,
+                "Column '{}' not found in JOIN, left columns: [{}], right columns: [{}]", column_name,
                 fmt::join(columns_from_left_table | std::views::transform([](const auto & col) { return col.name; }), ", "),
                 fmt::join(columns_from_joined_table | std::views::transform([](const auto & col) { return col.name; }), ", "));
     }
@@ -642,7 +662,8 @@ void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, boo
              * For `JOIN ON expr1 == expr2` we will infer common type later in makeTableJoin,
              *   when part of plan built and types of expression will be known.
              */
-            bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
+            bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE)
+        || isEnabledAlgorithm(JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
             inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), require_strict_keys_match);
 
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
@@ -832,7 +853,8 @@ TableJoin::createConvertingActions(
     NameToNameMap right_column_rename;
 
     /// FullSortingMerge join algorithm doesn't support joining keys with different types (e.g. String and Nullable(String))
-    bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
+    bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE)
+        || isEnabledAlgorithm(JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
     inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), require_strict_keys_match);
     if (!left_type_map.empty() || !right_type_map.empty())
     {

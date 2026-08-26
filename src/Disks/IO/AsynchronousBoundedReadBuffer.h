@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
+#include <mutex>
 #include <utility>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
@@ -55,9 +57,14 @@ public:
     /// Used only for unit test.
     const ImplPtr & getImpl() { return impl; }
 
-    /// NOTE: readBigAt() here doesn't use async logic of AsynchronousBoundedReadBuffer and just calls impl's (when supported),
-    /// this is possible because readBigAt is asynchronous on its own
+    /// NOTE: readBigAt does not use the async logic of AsynchronousBoundedReadBuffer; it calls impl's
+    /// (when supported). An in-flight prefetch is consumed first (readBigAt must not run against impl
+    /// concurrently with it) and its data is retained: readBigAt calls serve from it when covered.
     bool supportsReadAt() override { return impl->supportsReadAt(); }
+
+    /// Reads into `memory` (or prefetch_buffer), not into the pointer set via `ReadBuffer::set`.
+    /// Same reasoning as `AsynchronousReadBufferFromFileDescriptor::supportsExternalBufferMode`.
+    bool supportsExternalBufferMode() const override { return false; }
 
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
@@ -80,7 +87,16 @@ private:
     size_t bytes_to_ignore = 0;
 
     Memory<> prefetch_buffer;
-    std::future<IAsynchronousReader::Result> prefetch_future;
+    /// mutable: a pending prefetch may be consumed from the const readBigAt().
+    mutable std::future<IAsynchronousReader::Result> prefetch_future;
+    /// Guards consumption of prefetch_future from readBigAt, which may be called concurrently.
+    /// The sequential interface must not be called in parallel with readBigAt, so it takes no locks.
+    mutable std::mutex prefetch_future_mutex;
+    /// Lock-free check for readBigAt whether a prefetch is in flight.
+    mutable std::atomic<bool> prefetch_pending{false};
+    /// A prefetch consumed by readBigAt, retained so that any readBigAt call can serve data from it.
+    /// Immutable once published (by the store to prefetch_pending); reset by the sequential prefetch.
+    mutable std::optional<IAsynchronousReader::Result> prefetch_result;
 
     /// When using userspace page cache, we directly use memory owned by the cache instead of
     /// allocating our own buffers.
@@ -100,7 +116,7 @@ private:
         std::chrono::system_clock::time_point submit_time;
         Priority priority;
     };
-    LastPrefetchInfo last_prefetch_info;
+    mutable LastPrefetchInfo last_prefetch_info;
 
     bool nextImpl() override;
 

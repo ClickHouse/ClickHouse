@@ -335,6 +335,7 @@ void ExternalDistinctTransform::startSpillRun(Chunks run_chunks, size_t run_byte
             /*filter_column_name_=*/ std::nullopt,
             /*use_average_block_sizes=*/ false,
             /*apply_virtual_row_conversions=*/ false,
+            /*virtual_row_prefetch_window=*/ 0,
             /*have_all_inputs_=*/ false);
 
         processors.emplace_back(external_merging_sorted);
@@ -564,6 +565,14 @@ void ExternalDistinctTransform::consume(Chunk chunk)
                 read_stopped = true;
                 return;
             }
+        }
+
+        /// A size limit with the 'break' overflow mode was reached: the partial chunk above is still
+        /// emitted, and no further input can produce output.
+        if (distinct_set.isLimitReached())
+        {
+            read_stopped = true;
+            return;
         }
 
         if (distinct_set.getTotalRowCount() > 0 && getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_external_distinct))

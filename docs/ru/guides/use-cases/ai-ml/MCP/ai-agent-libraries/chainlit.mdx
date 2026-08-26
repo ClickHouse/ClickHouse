@@ -1,0 +1,79 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/chainlit
+sidebarTitle: 'Интеграция с Chainlit'
+title: 'Как создать ИИ-агента с Chainlit и MCP-сервером ClickHouse'
+description: 'Узнайте, как использовать Chainlit для создания чат-приложений на базе LLM вместе с MCP-сервером ClickHouse'
+keywords: ['ClickHouse', 'MCP', 'Chainlit']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+В этом руководстве рассматривается, как объединить мощный фреймворк Chainlit для создания чат-интерфейсов
+с MCP-сервером ClickHouse (Model Context Protocol), чтобы создавать интерактивные приложения
+для работы с данными. Chainlit позволяет создавать диалоговые интерфейсы для ИИ-приложений
+с минимальным количеством кода, а MCP-сервер ClickHouse обеспечивает удобную
+интеграцию с высокопроизводительной колоночной базой данных ClickHouse.
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* Вам потребуется API-ключ Anthropic
+* У вас должен быть установлен [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+
+<div id="basic-chainlit-app">
+  ## Базовое приложение на Chainlit
+</div>
+
+Ниже показан пример простого чат-приложения, которое можно запустить следующим образом:
+
+```sh
+uv run --with anthropic --with chainlit chainlit run chat_basic.py -w -h
+```
+
+Затем откройте `http://localhost:8000`
+
+<div id="adding-clickhouse-mcp-server">
+  ## Добавление MCP-сервера ClickHouse
+</div>
+
+Если добавить MCP-сервер ClickHouse, станет ещё интереснее.
+Вам потребуется обновить файл `.chainlit/config.toml`, чтобы разрешить
+использование команды `uv`:
+
+```toml
+[features.mcp.stdio]
+    enabled = true
+    # Для MCP stdio сервера можно использовать только исполняемые файлы из списка разрешённых.
+    # Укажите только базовое имя исполняемого файла, например "npx", а не "/usr/bin/npx".
+    # Пожалуйста, не комментируйте эту строку — она нужна для разбора имени исполняемого файла.
+    allowed_executables = [ "npx", "uvx", "uv" ]
+```
+
+<Info>
+  **config.toml**
+
+  Полный файл `config.toml` можно найти в [репозитории с примерами](https://github.com/ClickHouse/examples/blob/main/ai/mcp/chainlit/.chainlit/config.toml)
+</Info>
+
+Здесь есть вспомогательный код, который обеспечивает работу MCP-серверов с Chainlit, поэтому для запуска Chainlit вместо этого нужно
+выполнить следующую команду:
+
+```sh
+uv run --with anthropic --with chainlit chainlit run chat_mcp.py -w -h
+```
+
+Чтобы добавить MCP-сервер, нажмите на значок с вилкой в интерфейсе чата, а затем
+добавьте следующую команду, чтобы подключиться и использовать Песочницу ClickHouse:
+
+```sh
+CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com CLICKHOUSE_USER=demo CLICKHOUSE_PASSWORD= CLICKHOUSE_SECURE=true uv run --with mcp-clickhouse --python 3.13 mcp-clickhouse
+```
+
+Если вы хотите использовать собственный экземпляр ClickHouse, вы можете изменить значения
+переменных окружения.
+
+Затем вы можете задавать ему такие вопросы:
+
+* Расскажи мне о таблицах, к которым у тебя есть доступ для выполнения запросов
+* Что-нибудь интересное о нью-йоркских такси?

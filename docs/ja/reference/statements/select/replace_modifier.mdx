@@ -1,0 +1,34 @@
+---
+description: 'クエリの外側のテーブル式から返される各行に対して関数を呼び出せるようにする APPLY 修飾子について説明するドキュメントです。'
+sidebarTitle: 'REPLACE'
+slug: /sql-reference/statements/select/replace-modifier
+title: 'Replace 修飾子'
+keywords: ['REPLACE', 'modifier']
+doc_type: 'reference'
+---
+
+> 1 つ以上の[式の別名](/ja/reference/syntax#expression-aliases)を指定できます。
+
+各別名は、`SELECT *` ステートメント内のカラム名と一致している必要があります。出力カラムの一覧では、その別名に一致する
+カラムが、その `REPLACE` 内の式で置き換えられます。
+
+この修飾子では、カラムの名前や順序は変更されません。ただし、値とその型は変わる場合があります。
+
+**構文:**
+
+```sql
+SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
+```
+
+**例:**
+
+```sql
+SELECT * REPLACE(i + 1 AS i) from columns_transformers;
+```
+
+```response
+┌───i─┬──j─┬───k─┐
+│ 101 │ 10 │ 324 │
+│ 121 │  8 │  23 │
+└─────┴────┴─────┘
+```

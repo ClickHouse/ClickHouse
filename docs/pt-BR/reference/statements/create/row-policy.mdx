@@ -1,0 +1,189 @@
+---
+description: 'Documentação de ROW POLICY'
+sidebarTitle: 'ROW POLICY'
+slug: /sql-reference/statements/create/row-policy
+title: 'CREATE ROW POLICY'
+doc_type: 'reference'
+---
+
+Cria uma [política de linha](/pt-BR/concepts/features/security/access-rights#row-policy-management), ou seja, um filtro usado para determinar quais linhas um usuário pode ler em uma tabela.
+
+<Tip>
+  Políticas de linha só fazem sentido para usuários com acesso de somente leitura. Se um usuário puder modificar uma tabela ou copiar partições entre tabelas, isso contorna as restrições das políticas de linha.
+</Tip>
+
+Sintaxe:
+
+```sql
+-- Multiple names on one table target
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
+    [ON CLUSTER cluster_name]
+    ON { [db.]table | db.* }
+    [IN access_storage_type]
+    [FOR SELECT] USING condition
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+
+-- One name on multiple table targets
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
+    [ON CLUSTER cluster_name]
+    ON { [db.]table | db.* } [, ...]
+    [IN access_storage_type]
+    [FOR SELECT] USING condition
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+
+-- Mixed packing: each name paired with its own table target
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
+    policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
+    [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [FOR SELECT] USING condition
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+```
+
+`ParserRowPolicyNames` aceita **três** formas de agrupamento (não um produto cartesiano completo):
+
+1. **Vários nomes, um destino** — `pol1, pol2 ON table1` cria cada nome listado nessa única tabela (ou `db.*`).
+2. **Um nome, vários destinos** — `pol1 ON table1, table2` cria o mesmo nome curto em cada destino listado.
+3. **Pares mistos** — `p1 ON t1, p2 ON t2` cria cada nome apenas no destino ao qual está associado.
+
+Uma lista com vários nomes **não** pode ser combinada com uma lista `ON` de várias tabelas em um grupo: `p1, p2 ON t1, t2` é rejeitada. Após um grupo com vários nomes, você também não pode acrescentar outro grupo `name ON target` separado por vírgulas na mesma instrução.
+
+O `ON CLUSTER` opcional se aplica a toda a instrução (um nome de cluster). O ClickHouse **não** aceita um `ON CLUSTER` diferente para cada nome de política agrupado em uma única criação — execute instruções `CREATE ROW POLICY` separadas quando as políticas precisarem ser criadas em clusters diferentes.
+
+<div id="multiple-names-and-tables">
+  ## Vários nomes e tabelas
+</div>
+
+Válido:
+
+```sql
+-- Several policy names, one table
+CREATE ROW POLICY pol1, pol2, pol3 ON table1
+    FOR SELECT USING id = 1
+    TO accountant;
+
+-- One policy name, several tables
+CREATE ROW POLICY IF NOT EXISTS pol1 ON table1, table2, table3
+    FOR SELECT USING id = 1
+    TO accountant;
+
+-- Mixed packing: different name per table
+CREATE ROW POLICY p4 ON db.table, p5 ON db2.table2
+    USING a = b;
+
+-- Same policy on several tables, on a cluster
+CREATE ROW POLICY IF NOT EXISTS pol1 ON CLUSTER replicated_cluster ON table1, table2
+    FOR SELECT USING id = 1
+    TO accountant;
+```
+
+Inválido:
+
+```sql
+-- Multi-name × multi-table in one ON-group (not a Cartesian product)
+CREATE ROW POLICY p1, p2 ON t1, t2
+    FOR SELECT USING id = 1
+    TO accountant;
+
+-- Different clusters per name in one statement
+CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
+```
+
+<div id="using-clause">
+  ## Cláusula USING
+</div>
+
+Permite especificar uma condição para filtrar linhas. Um usuário verá uma linha se a condição resultar em um valor diferente de zero para essa linha.
+
+<div id="to-clause">
+  ## Cláusula TO
+</div>
+
+Na seção `TO`, você pode informar uma lista de usuários e roles para os quais esta política deve se aplicar. Por exemplo, `CREATE ROW POLICY ... TO accountant, john@localhost`.
+
+A palavra-chave `ALL` significa todos os usuários do ClickHouse, incluindo o usuário atual. A palavra-chave `ALL EXCEPT` permite excluir alguns usuários da lista de todos os usuários, por exemplo, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
+
+<div id="as-clause">
+  ## Cláusula AS
+</div>
+
+É possível ter mais de uma política habilitada na mesma tabela para o mesmo usuário ao mesmo tempo. Portanto, precisamos de uma forma de combinar as condições de várias políticas.
+
+Por padrão, as políticas são combinadas usando o operador booleano `OR`. Por exemplo, as seguintes políticas:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
+```
+
+permitem ao usuário `peter` ver linhas com `b=1` ou `c=2`.
+
+A cláusula `AS` especifica como as políticas devem ser combinadas com outras políticas. As políticas podem ser permissivas ou restritivas. Por padrão, as políticas são permissivas, o que significa que são combinadas usando o operador booleano `OR`.
+
+Como alternativa, uma política pode ser definida como restritiva. As políticas restritivas são combinadas usando o operador booleano `AND`.
+
+Aqui está a fórmula geral:
+
+```text
+row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
+                 (all of the restrictive policies's conditions are non-zero)
+```
+
+Por exemplo, as políticas a seguir:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
+```
+
+permite que o usuário `peter` veja linhas apenas se `b=1` E `c=2`.
+
+As políticas de banco de dados são combinadas com as políticas da tabela.
+
+Por exemplo, as seguintes políticas:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.* USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
+```
+
+permitir ao usuário `peter` ver as linhas da table1 somente se `b=1` AND `c=2`, embora
+qualquer outra tabela em mydb tenha apenas a política `b=1` aplicada ao usuário.
+
+<div id="distributed-and-remote-backed-tables">
+  ## Tabelas Distributed e com dados remotos
+</div>
+
+Uma política de linha filtra as linhas no local em que os dados da tabela são efetivamente lidos. Uma tabela que delega a leitura a servidores remotos, como uma tabela [Distributed](/pt-BR/reference/engines/table-engines/special/distributed) ou um wrapper dela (por exemplo, uma visão materializada com destino `Distributed`), apenas envia o texto da consulta aos servidores remotos e não consegue aplicar o filtro da política à leitura remota. Para evitar que o filtro seja silenciosamente descartado, as consultas a essa tabela feitas por usuários aos quais a política se aplica são rejeitadas com o erro `ILLEGAL_PREWHERE`.
+
+Em vez disso, defina a política nas tabelas locais subjacentes de cada servidor remoto; ela será aplicada quando a consulta enviada as ler:
+
+```sql
+-- Filters reads of local_table on this server, including reads shipped by a Distributed table over it.
+CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
+```
+
+<Warning>
+  Isso funciona quando a consulta é enviada como texto, que é o padrão. Com [`serialize_query_plan = 1`](/pt-BR/reference/settings/session-settings/serialize#serialize_query_plan), o iniciador envia um plano de leitura já criado, e um servidor remoto que executa esse plano não aplica suas próprias políticas de linha. Portanto, a leitura de uma tabela `Distributed` sobre `local_table` retorna linhas não filtradas. Mantenha `serialize_query_plan = 0` para usuários cujas políticas de linha devam ser aplicadas. Consulte a [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
+</Warning>
+
+<div id="on-cluster-clause">
+  ## Cláusula ON CLUSTER
+</div>
+
+Permite criar políticas de linha em um cluster. Consulte [DDL distribuído](/pt-BR/reference/statements/distributed-ddl). Essa também é uma maneira prática de criar a política nas tabelas locais de cada servidor do cluster.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+`CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
+
+`CREATE ROW POLICY filter2 ON mydb.mytable USING a<1000 AND b=5 TO ALL EXCEPT mira`
+
+`CREATE ROW POLICY filter3 ON mydb.mytable USING 1 TO admin`
+
+`CREATE ROW POLICY filter4 ON mydb.* USING 1 TO admin`

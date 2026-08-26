@@ -1,0 +1,34 @@
+---
+title: Diferenças entre os builds oficiais do ClickHouse e os builds de terceiros
+description: Entenda as principais diferenças entre os builds oficiais do ClickHouse e os builds de terceiros, incluindo atualizações, compatibilidade e aspectos de segurança.
+date: 2023-06-26
+tags: ['Conceitos']
+keywords: ['builds oficiais', 'builds de terceiros']
+---
+
+<div id="question">
+  ## Pergunta
+</div>
+
+Vejo outros fornecedores oferecendo suas próprias builds do ClickHouse. Qual é a diferença entre as builds oficiais do ClickHouse e essas builds de terceiros?
+
+<div id="answer">
+  ## Resposta
+</div>
+
+Aqui estão algumas das diferenças que observamos em outras builds:
+
+* As strings **&quot;official&quot;** são substituídas pelo nome do fornecedor
+* Elas aparecem com vários meses de atraso e ***não incluem correções de bugs recentes***, o que significa que essas builds podem conter vulnerabilidades que já foram corrigidas nas versões oficiais
+* As builds não são idênticas bit a bit, e os endereços no código são diferentes. Como resultado, stack traces dessas builds não podem ser analisados, e a equipe do ClickHouse não pode responder a perguntas sobre elas
+* As builds não são auditáveis nem reproduzíveis - não há um sistema de CI publicamente acessível com os mesmos logs de build
+* A suíte de testes do ClickHouse não é executada nessas builds, portanto elas não têm seu funcionamento verificado pela suíte de testes
+* Elas podem não estar disponíveis para todas as arquiteturas (como ARM etc.)
+* Às vezes, incluem patches direcionados a um cliente específico que podem quebrar a compatibilidade e introduzir riscos adicionais
+
+Recomendamos executar a versão mais recente do ClickHouse usando as builds oficiais e seguindo as [instruções de instalação](/pt-BR/get-started/setup/install) na documentação:
+
+* Lançamos uma **versão estável** todos os meses, e as três versões estáveis mais recentes recebem suporte em termos de diagnóstico e backport de correções de bugs.
+* Também lançamos uma **versão com suporte de longo prazo (LTS)** duas vezes por ano, com suporte por um ano após o lançamento inicial, o que de fato se destina apenas a empresas que não permitem upgrades frequentes nem o uso de software não LTS. (Somos grandes fãs das builds estáveis mensais!)
+
+Temos [mais detalhes sobre versões estáveis vs. LTS](/pt-BR/resources/support-center/knowledge-base/setup-installation/production#how-to-choose-between-clickhouse-releases) na documentação.

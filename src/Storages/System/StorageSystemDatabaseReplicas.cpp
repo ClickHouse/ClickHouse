@@ -114,10 +114,8 @@ Chunk SystemDatabaseReplicasSource::generate()
         {
             if (e.code() == ErrorCodes::ABORTED)
             {
-                tryLogCurrentException(
-                    getLogger("table logger"),
-                    "Received the ABORTED error while trying to get the status of a database, this is likely because it has been shut "
-                    "down");
+                /// The database has been shut down or dropped, so its row is skipped instead of being reported as an error.
+                LOG_DEBUG(getLogger("StorageSystemDatabaseReplicas"), "Cannot get the status of a database: {}", e.displayText());
                 continue;
             }
             throw;
@@ -302,7 +300,7 @@ void StorageSystemDatabaseReplicas::readImpl(
     const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
     std::map<String, DatabasePtr> replicated_databases;
-    for (const auto & [db_name, db_data] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (const auto & [db_name, db_data] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         if (!dynamic_cast<const DatabaseReplicated *>(db_data.get()))
             continue;

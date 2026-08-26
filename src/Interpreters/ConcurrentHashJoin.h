@@ -56,6 +56,7 @@ public:
 
     std::string getName() const override { return "ConcurrentHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
+    bool anyTakeLastRow() const override { return any_take_last_row; }
     bool addBlockToJoin(const Block & right_block_, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
@@ -63,6 +64,9 @@ public:
     const Block & getTotals() const override;
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
+
+    StepAnalysisReport getAnalysisReport() const override;
+
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
 
@@ -110,6 +114,11 @@ public:
         std::mutex mutex;
         std::unique_ptr<HashJoin> data;
         bool space_was_preallocated = false;
+
+        /// Snapshot of the total rows and bytes held locally by the hash join. This is updated during
+        /// `addBlockToJoin` and is used to track the join state.
+        size_t local_total_rows = 0;
+        size_t local_total_bytes = 0;
     };
 
     friend class NotJoinedHash;
@@ -125,10 +134,27 @@ private:
     StatsCollectingParams stats_collecting_params;
     const size_t external_join_threshold;
 
+    /// Sum of per-slot build peaks captured right before the build finishes
+    size_t peak_build_bytes = 0;
+
     std::mutex totals_mutex;
     Block totals;
 
+    /// Snapshot of the total rows and bytes held globally by the concurrent hash join. This is updated during
+    /// `addBlockToJoin` and is used to track the join state.
+    std::atomic<size_t> global_total_rows{0};
+    std::atomic<size_t> global_total_bytes{0};
+
+    size_t getRightTableRowCount() const;
+    size_t getUniqueKeys() const;
+
+    size_t getPeakBuildBytes() const { return peak_build_bytes; }
+
+    JoinAnalysisCounters collectMatchedRowsCounters() const;
+
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
+    std::pair<size_t, size_t> updateTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
+    void resetTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
 };
 
 }

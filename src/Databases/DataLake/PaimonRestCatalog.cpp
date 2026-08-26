@@ -15,6 +15,7 @@
 #include <vector>
 #include <Core/Names.h>
 #include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/DataLake/PaimonRestCatalog.h>
 #include <Databases/DataLake/StorageCredentials.h>
@@ -128,7 +129,7 @@ void PaimonRestCatalog::loadConfig()
     }
 }
 
-void PaimonRestCatalog::createAuthHeaders(
+String PaimonRestCatalog::createAuthHeaders(
     DB::HTTPHeaderEntries & current_headers,
     const String & resource_path,
     const std::unordered_map<String, String> & query_params,
@@ -137,12 +138,13 @@ void PaimonRestCatalog::createAuthHeaders(
 {
     if (!token.has_value())
     {
-        return;
+        return "";
     }
     if (token->token_provider == "bearer")
     {
-        current_headers.emplace_back("Authorization", fmt::format("Bearer {}", token->bearer_token));
-        return;
+        /// The bearer token is applied by `create` (it fills the `Authorization` header), so it is
+        /// returned rather than spliced into `current_headers` here.
+        return token->bearer_token;
     }
     else if (token->token_provider == "dlf")
     {
@@ -248,16 +250,19 @@ void PaimonRestCatalog::createAuthHeaders(
         String date_time = get_or_default(headers_map, DLF_DATE_HEADER_KEY, fmt::format(AUTH_DATE_TIME_FORMATTER, *utc_tm));
         String date = date_time.substr(0, 8);
         generate_sign_headers(data, date_time, std::nullopt);
-        String authorization
-            = token->dlf_generated_authorization.empty() ? get_authorization(date, date_time) : token->dlf_generated_authorization;
-        token->dlf_generated_authorization = authorization;
+        /// The DLF v4 signature covers the canonical request (method, resource path, query
+        /// parameters and signed headers), so it must be computed for every request anew:
+        /// a signature from an earlier request is invalid for any other one.
+        String authorization = get_authorization(date, date_time);
         headers_map.emplace(DLF_AUTHORIZATION_HEADER_KEY, authorization);
         current_headers.clear();
         for (const auto & entry : headers_map)
         {
             current_headers.emplace_back(entry.first, entry.second);
         }
-        return;
+        /// The `dlf` provider signs the request with its own `Authorization` header (added above), so
+        /// there is no bearer token for `create`.
+        return "";
     }
     throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown token provider: {}", token->token_provider);
 }
@@ -278,8 +283,8 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
             query_parameters_map.emplace(entry.first, entry.second);
         }
         DB::HTTPHeaderEntries request_headers(headers);
-        createAuthHeaders(request_headers, endpoint, query_parameters_map, method);
-
+        const String bearer_token = createAuthHeaders(request_headers, endpoint, query_parameters_map, method);
+        validateBearerToken(context, bearer_token);
 
         DB::WriteBufferFromOwnString headers_string;
         headers_string << "{";
@@ -298,25 +303,11 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
             .withHeaders(request_headers)
             .withDelayInit(false)
             .withSkipNotFound(false)
-            .create(credentials);
+            .createWithBearerToken(bearer_token);
     };
 
-    bool refresh_token = true;
     LOG_TRACE(log, "Requesting endpoint: {}", endpoint);
-    try
-    {
-        return create_buffer();
-    }
-    catch (DB::HTTPException & e)
-    {
-        if (e.code() == Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED && refresh_token && token->token_provider == "dlf")
-        {
-            refresh_token = false;
-            token->dlf_generated_authorization = "";
-            return create_buffer();
-        }
-        throw;
-    }
+    return create_buffer();
 }
 
 void PaimonRestCatalog::forEachDatabase(DB::Strings & databases, StopCondition stop_condition, ExecuteFunc execute_func) const
@@ -440,13 +431,40 @@ bool PaimonRestCatalog::empty() const
     return tables.empty();
 }
 
-DB::Names PaimonRestCatalog::getTables() const
+CatalogTables PaimonRestCatalog::getTables() const
 {
     DB::Strings databases;
     DB::Names tables;
     auto list_tables = [this, &tables](const String & database_name) { forEachTables(database_name, tables, {}); };
     forEachDatabase(databases, {}, list_tables);
-    return tables;
+
+    /// A Paimon REST catalog lists only Paimon tables, so every listed table is readable.
+    CatalogTables result;
+    result.reserve(tables.size());
+    for (auto & name : tables)
+        result.push_back(CatalogTable{.name = std::move(name)});
+    return result;
+}
+
+DataLake::ICatalog::Namespaces PaimonRestCatalog::getNamespaces() const
+{
+    /// Paimon REST databases are flat — they cannot contain nested namespaces.
+    DB::Strings databases;
+    forEachDatabase(databases, {}, {});
+    return databases;
+}
+
+CatalogTables PaimonRestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+{
+    DB::Names tables;
+    forEachTables(namespace_name, tables, {});
+
+    /// A Paimon REST catalog lists only Paimon tables, so every listed table is readable.
+    CatalogTables result;
+    result.reserve(tables.size());
+    for (auto & name : tables)
+        result.push_back(CatalogTable{.name = std::move(name)});
+    return result;
 }
 
 bool PaimonRestCatalog::existsTable(const String & database_name, const String & table_name) const
@@ -458,7 +476,7 @@ bool PaimonRestCatalog::existsTable(const String & database_name, const String &
     }
     catch (const DB::HTTPException & e)
     {
-        if (e.code() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
         {
             return false;
         }
@@ -573,7 +591,7 @@ bool PaimonRestCatalog::tryGetTableMetadata(const String & database_name, const 
     }
     catch (const DB::HTTPException & e)
     {
-        if (e.code() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
         {
             return false;
         }

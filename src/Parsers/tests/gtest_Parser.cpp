@@ -1,6 +1,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateMaskingPolicyQuery.h>
@@ -21,6 +22,7 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Common/re2.h>
 #include <string_view>
+#include <unordered_set>
 #include <gtest/gtest.h>
 #include <Parsers/tests/gtest_common.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -142,6 +144,239 @@ TEST(ParserExecuteAsQuery, OutputOptionChildOrderIsCanonical)
         ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
         EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "roundtrip of: " << query;
     }
+}
+
+/// `IAST`'s copy constructor copies `children` as-is, so a `clone()` built on `make_intrusive<T>(*this)`
+/// has to clear them before re-adding: otherwise the clone keeps pointing at the original's nodes and
+/// mutating one is visible through the other. The AST fuzzer reports that as
+/// `IAST::clone() is broken for some AST node`. See `ASTDropQuery::clone`.
+TEST(ParserQueryWithOutput, CloneOwnsItsChildren)
+{
+    const std::vector<String> queries = {
+        "DROP TABLE db.t",
+        "DROP TABLE t1, t2, t3",
+        "DROP TABLE IF EXISTS db.t SYNC FORMAT JSONEachRow",
+        "TRUNCATE TABLE db.t",
+        "DETACH TABLE db.t PERMANENTLY",
+        "UNDROP TABLE db.t",
+        "UNDROP TABLE db.t FORMAT JSONEachRow",
+        "DESCRIBE FILESYSTEM CACHE 'cache'",
+        "DESCRIBE FILESYSTEM CACHE 'cache' FORMAT JSONEachRow",
+    };
+
+    const auto collect = [](const IAST & ast, auto & self) -> std::unordered_set<const IAST *>
+    {
+        std::unordered_set<const IAST *> nodes{&ast};
+        for (const auto & child : ast.children)
+            nodes.merge(self(*child, self));
+        return nodes;
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        ASTPtr cloned = ast->clone();
+        const auto original_nodes = collect(*ast, collect);
+        for (const auto * node : collect(*cloned, collect))
+            EXPECT_FALSE(original_nodes.contains(node)) << "clone shares a node with the original: " << query;
+
+        /// The clone must also reproduce the child order a fresh parse produces, so that a query
+        /// and its clone hash the same.
+        EXPECT_EQ(ast->getTreeHash(false), cloned->getTreeHash(false)) << "clone of: " << query;
+    }
+}
+
+/// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
+/// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
+/// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry
+/// that flag over, otherwise `clone()->format()` diverges from `format()`. Assert on the formatted
+/// string rather than `getTreeHash`, because the tree hash does not include the flag.
+TEST(ParserCreateIndexQuery, ClonePreservesCreateIndexFormatting)
+{
+    const std::vector<String> queries = {
+        "CREATE INDEX i ON t ((a())) TYPE a GRANULARITY 1",
+        "CREATE INDEX i ON t ((a, b).1) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((a, b) -> a) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((a + b) * a) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((SELECT 1)) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((1, 2)) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t (a, b) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ON CLUSTER c ((a, b).1) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ON CLUSTER c ((SELECT 1)) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ON CLUSTER c ((1, 2)) TYPE minmax GRANULARITY 1",
+        "CREATE HYPOTHETICAL INDEX i ON t ((a, b).1) TYPE minmax GRANULARITY 1",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        /// A clone must format identically to the original (this is what the distributed-DDL clone
+        /// path relies on). The tree hash omits the flag, so compare the rendered text.
+        ASTPtr cloned = ast->clone();
+        EXPECT_EQ(ast->formatWithSecretsOneLine(), cloned->formatWithSecretsOneLine()) << "clone of: " << query;
+
+        /// And the original must survive a format+reparse+format round trip, and the reparsed AST
+        /// must be identical to the original. The AST-equality check is what catches the tuple
+        /// literal `(1, 2)`: without the extra wrapper the string round-trips but the reparse
+        /// rebuilds it as a `tuple(...)` function, so `executeQueryImpl`'s tree-hash comparison
+        /// (which runs before the string comparison) still trips `Inconsistent AST formatting`.
+        String formatted = ast->formatWithSecretsOneLine();
+        ParserQuery reparse_parser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparse_parser, formatted, "", 0, 0, 0);
+        ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
+        EXPECT_EQ(formatted, reparsed->formatWithSecretsOneLine()) << "roundtrip of: " << query;
+        EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "AST roundtrip of: " << query;
+    }
+}
+
+TEST(ParserCreateDatabaseQuery, MaskDataLakeCatalogStorageCredentials)
+{
+    /// Both the `aws_*` and the backward-compatible `storage_aws_*` static credentials must be hidden
+    /// in `SHOW CREATE DATABASE` for the `DataLakeCatalog` engine, otherwise secrets leak.
+    const String query =
+        "CREATE DATABASE test_unity ENGINE = DataLakeCatalog('http://localhost:8181') "
+        "SETTINGS aws_access_key_id = 'AKIA_PLAIN', aws_secret_access_key = 'plain_secret', "
+        "storage_aws_access_key_id = 'AKIA_STORAGE', storage_aws_secret_access_key = 'storage_secret'";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    /// formatForLogging always hides secrets.
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_secret"), String::npos);
+    EXPECT_EQ(masked.find("storage_secret"), String::npos);
+    EXPECT_EQ(masked.find("AKIA_PLAIN"), String::npos);
+    EXPECT_EQ(masked.find("AKIA_STORAGE"), String::npos);
+    EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEngineCredentials)
+{
+    /// The `NATS` engine takes its arguments as overrides of a named collection, so the credentials can
+    /// appear as engine arguments and not only in the `SETTINGS` clause. Every credential source must be
+    /// hidden in `SHOW CREATE TABLE` and in the query log, otherwise secrets leak.
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, nats_password = 'plain_password', "
+        "nats_token = 'plain_token', nats_credential_file = '/plain/credential/file', "
+        "nats_credentials = 'plain_user_jwt_and_seed')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    /// formatForLogging always hides secrets.
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("plain_token"), String::npos);
+    EXPECT_EQ(masked.find("/plain/credential/file"), String::npos);
+    EXPECT_EQ(masked.find("plain_user_jwt_and_seed"), String::npos);
+    /// The keys of the named overrides are not secrets and stay visible, as does the collection name.
+    EXPECT_NE(masked.find("nats1"), String::npos);
+    EXPECT_NE(masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
+
+    /// `NATS` accepts the same credential source in the `SETTINGS` clause. This is formatted
+    /// through `ASTSetQuery`, rather than `FunctionSecretArgumentsFinder`, and must be hidden too.
+    const String settings_query =
+        "CREATE TABLE test_nats_settings (key UInt64) ENGINE = NATS "
+        "SETTINGS nats_credentials = 'plain_settings_user_jwt_and_seed'";
+
+    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
+    const String settings_masked = settings_ast->formatForLogging();
+
+    EXPECT_EQ(settings_masked.find("plain_settings_user_jwt_and_seed"), String::npos);
+    EXPECT_NE(settings_masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEngineURLPassword)
+{
+    /// A `nats_url` override can carry the credentials in its userinfo. Only the password is hidden,
+    /// keeping the rest of the url visible, the same way the `SETTINGS` clause form is masked.
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) "
+        "ENGINE = NATS(nats1, nats_url = 'nats://plain_user:plain_password@example.com:4222')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_NE(masked.find("nats://plain_user:[HIDDEN]@example.com:4222"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEngineServerListPassword)
+{
+    /// A `nats_server_list` override can carry URI credentials in every list entry. Hide the list
+    /// whole, rather than risk leaking a password from an entry while preserving the host names.
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, "
+        "nats_server_list = 'nats://plain_user:plain_password@example.com:4222,nats://plain_user2:plain_password2@example.org:4222')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_NE(masked.find("nats_server_list = '[HIDDEN]'"), String::npos);
+
+    /// The `SETTINGS` clause follows the same fail-closed masking rule.
+    const String settings_query =
+        "CREATE TABLE test_nats_settings (key UInt64) ENGINE = NATS SETTINGS "
+        "nats_server_list = 'nats://plain_user:plain_settings_password@example.com:4222'";
+
+    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
+    const String settings_masked = settings_ast->formatForLogging();
+
+    EXPECT_EQ(settings_masked.find("plain_settings_password"), String::npos);
+    EXPECT_NE(settings_masked.find("nats_server_list = '[HIDDEN]'"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEngineNonLiteralArguments)
+{
+    /// A key or a `nats_url` value we cannot read as a plain literal is hidden whole (fail closed):
+    /// the key can name a secret setting, and the url pieces can embed the credentials.
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, "
+        "concat('nats_', 'credentials') = 'plain_user_jwt_and_seed', "
+        "nats_url = concat('nats://plain_user:plain_password@', 'example.com:4222'))";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("plain_user_jwt_and_seed"), String::npos);
+    EXPECT_NE(masked.find("nats1"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEnginePositionalArguments)
+{
+    /// The engine accepts no positional arguments except the collection name in the first position,
+    /// but it rejects them only after the query has been formatted for logging. A malformed
+    /// positional argument can carry a secret, so it is hidden whole (fail closed).
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, '/plain/credential/file', "
+        "'nats://plain_user:plain_password@example.com:4222')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("/plain/credential/file"), String::npos);
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    /// The collection name is the one legitimate positional argument and stays visible.
+    EXPECT_NE(masked.find("nats1"), String::npos);
+    EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
 }
 
 TEST_P(ParserTest, parseQuery)
@@ -375,6 +610,44 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateDatabaseQuery, ParserTest,
         }
 })));
 
+INSTANTIATE_TEST_SUITE_P(ParserCreateTableQuery_SQL_SECURITY, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserCreateQuery>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            "CREATE TABLE t (x UInt8) ENGINE = Memory SQL SECURITY INVOKER",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nSQL SECURITY INVOKER"
+        },
+        {
+            "CREATE TABLE t (x UInt8) ENGINE = Memory SQL SECURITY NONE",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nSQL SECURITY NONE"
+        },
+        {
+            "CREATE TABLE t (x UInt8) ENGINE = Memory DEFINER = alice SQL SECURITY DEFINER",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nDEFINER = alice SQL SECURITY DEFINER"
+        },
+        {
+            "CREATE TABLE t (x UInt8) ENGINE = Memory DEFINER = CURRENT_USER",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nDEFINER = CURRENT_USER SQL SECURITY DEFINER"
+        },
+        {
+            "CREATE TABLE t (x UInt8) ENGINE = Memory SQL SECURITY DEFINER",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nDEFINER = CURRENT_USER SQL SECURITY DEFINER"
+        },
+        {
+            "CREATE TABLE db.t ON CLUSTER c (x UInt8) ENGINE = MergeTree ORDER BY x SQL SECURITY INVOKER",
+            "CREATE TABLE db.t ON CLUSTER c\n(\n    `x` UInt8\n)\nENGINE = MergeTree\nORDER BY x\nSQL SECURITY INVOKER"
+        },
+        {
+            "ATTACH TABLE t UUID '123e4567-e89b-12d3-a456-426614174000' (x UInt8) ENGINE = Memory SQL SECURITY INVOKER",
+            "ATTACH TABLE t UUID '123e4567-e89b-12d3-a456-426614174000'\n(\n    `x` UInt8\n)\nENGINE = Memory\nSQL SECURITY INVOKER"
+        },
+        {
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nDEFINER = alice SQL SECURITY DEFINER",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nDEFINER = alice SQL SECURITY DEFINER"
+        }
+})));
+
 INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
     ::testing::Combine(
         ::testing::Values(std::make_shared<ParserCreateUserQuery>()),
@@ -426,6 +699,120 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         {
             "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' IDENTIFIED WITH plaintext_password BY 'def123'",
             "throws Only one identified with is permitted"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID UNTIL '2077-01-01' GRANTS (SELECT(id) ON db.tbl, INSERT ON *.*)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID UNTIL '2077\-01\-01' GRANTS \(SELECT\(id\) ON db\.tbl, INSERT ON \*\.\*\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS (SELECT ON db.*), plaintext_password BY 'def123'",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS \(SELECT ON db\.\*\), plaintext_password BY 'def123')"
+        },
+        {
+            "ALTER USER user1 ADD IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS (SELECT ON db.tbl)",
+            R"(ALTER USER user1 ADD IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 NOT IDENTIFIED GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH no_password GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS ()",
+            "throws Syntax error"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS SELECT ON db.table",
+            "throws Syntax error"
+        },
+        {
+            /// An explicit no-privileges clause is preserved (it makes a deny-all token) and does not
+            /// collapse to an unparseable `GRANTS ()`.
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS (USAGE ON *.*)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS \(USAGE ON \*\.\*\))"
+        },
+        {
+            "CREATE USER user1 VALID UNTIL '2025-01-01'",
+            "CREATE USER user1 VALID UNTIL '2025-01-01'"
+        },
+        {
+            /// The `GRANTS` clause of an authentication method is parsed after its deadline clause, and the
+            /// `VALID FOR` interval is parsed as a general expression - which must not swallow the `GRANTS`
+            /// keyword and its parenthesized list as a function call.
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID FOR INTERVAL 1 DAY GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID FOR toIntervalDay\(1\) GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            /// The expected output is matched as a regular expression, so the parentheses and the
+            /// plus sign of the interval functions are escaped below.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\)"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR INTERVAL 3 MONTH",
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR toIntervalMonth\\(3\\)"
+        },
+        {
+            "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR",
+            "ALTER USER user1 VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
+        },
+        {
+            /// The global (user-level) clause must be formatted before the IDENTIFIED list: the parser
+            /// treats VALID UNTIL/VALID FOR as global only while no authentication method has been parsed
+            /// yet, so a clause printed after the list would re-parse as belonging to the last method.
+            /// The round-trip matters for the query text sent to the replicas of an ON CLUSTER DDL query.
+            "CREATE USER user1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'",
+            "CREATE USER user1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'"
+        },
+        {
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'"
+        },
+        {
+            "ALTER USER user1 VALID UNTIL '2025-01-01' ADD IDENTIFIED WITH plaintext_password BY 'abc123'",
+            "ALTER USER user1 VALID UNTIL '2025-01-01' ADD IDENTIFIED WITH plaintext_password BY 'abc123'"
+        },
+        {
+            /// `IN` is a normal operator in expression parsing, so a trailing access-storage clause
+            /// after `VALID FOR` would be greedily consumed as part of the interval expression;
+            /// the parser must instead hand it back to the access-storage clause of the query.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN some_storage",
+            "CREATE USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\)"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR INTERVAL 3 MONTH IN some_storage",
+            "CREATE USER user1 IN some_storage IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR toIntervalMonth\\(3\\)"
+        },
+        {
+            "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR IN some_storage",
+            "ALTER USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
+        },
+        {
+            /// An access storage name can also be written as a string literal.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN 'some_storage'",
+            "CREATE USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\)"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR INTERVAL 3 MONTH IN 'some_storage'",
+            "CREATE USER user1 IN some_storage IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR toIntervalMonth\\(3\\)"
+        },
+        {
+            "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR IN 'some_storage'",
+            "ALTER USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
+        },
+        {
+            /// A compound identifier cannot be an access storage name, so it stays part of the
+            /// interval expression (and is rejected by the interval type check at execution time).
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN db.tbl",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IN \\(db.tbl\\)"
+        },
+        {
+            /// The same holds for a literal that is not a string: it cannot name an access storage.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN 123",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IN \\(123\\)"
         }
 })));
 
@@ -440,6 +827,16 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
         {
             "ATTACH USER user1 IDENTIFIED WITH sha256_hash BY '2CC4880302693485717D34E06046594CFDFE425E3F04AA5A094C4AABAB3CB0BF'",  //for users created in older releases that sha256_password has no salt
             "^$"
+        },
+        {
+            /// `VALID FOR` is a shorthand resolved at query execution time; it must never appear in the
+            /// on-disk (attach) form, so `deserializeAccessEntity` should reject a hand-written definition.
+            "ATTACH USER user1 VALID FOR INTERVAL 1 DAY",
+            "throws VALID FOR is not allowed in ATTACH USER queries"
+        },
+        {
+            "ATTACH USER user1 IDENTIFIED WITH plaintext_password BY 'x' VALID FOR INTERVAL 1 DAY",
+            "throws VALID FOR is not allowed in ATTACH USER queries"
         }
 })));
 
@@ -477,8 +874,52 @@ INSTANTIATE_TEST_SUITE_P(ParserRenameQuery, ParserTest,
         {
             "RENAME TABLE eligible_test TO eligible_test2",
             "RENAME TABLE eligible_test TO eligible_test2"
+        },
+        {
+            "RENAME DATABASE db1 TO db2",
+            "RENAME DATABASE db1 TO db2"
+        },
+        {
+            "RENAME DATABASE IF EXISTS db1 TO db2",
+            "RENAME DATABASE IF EXISTS db1 TO db2"
         }
 })));
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+/// Regression test for the UBSan "member call on null pointer of type DB::IAST" at
+/// ASTRenameQuery::formatQueryImpl (RENAME DATABASE branch). A RENAME DATABASE node always
+/// carries both database identifiers when produced by the parser, but a directly-constructed
+/// or fuzzer-mutated AST can leave from.database / to.database null. Formatting such a node
+/// must trip the chassert guarding the invariant, not dereference null.
+///
+/// The round-trip cases above cannot catch this: they only exercise the parse -> format path
+/// and pass even if the chassert is removed. Each death test matches the specific chassert
+/// message, so removing the guard (which would leave a raw null dereference with a different
+/// death signature) makes the test fail -- giving the fix real regression coverage.
+static ASTPtr makeRenameDatabaseAST(bool from_null, bool to_null)
+{
+    ASTRenameQuery::Element element;
+    element.from.database = from_null ? nullptr : make_intrusive<ASTIdentifier>("db1");
+    element.to.database = to_null ? nullptr : make_intrusive<ASTIdentifier>("db2");
+    auto query = make_intrusive<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(element)});
+    query->database = true;
+    return query;
+}
+
+TEST(ParserRenameQueryDeathTest, FormatNullFromDatabaseAborts)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    ASTPtr ast = makeRenameDatabaseAST(/*from_null=*/true, /*to_null=*/false);
+    EXPECT_DEATH(ast->formatWithSecretsOneLine(), "elements.at\\(0\\).from.database");
+}
+
+TEST(ParserRenameQueryDeathTest, FormatNullToDatabaseAborts)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    ASTPtr ast = makeRenameDatabaseAST(/*from_null=*/false, /*to_null=*/true);
+    EXPECT_DEATH(ast->formatWithSecretsOneLine(), "elements.at\\(0\\).to.database");
+}
+#endif
 
 static constexpr size_t kDummyMaxQuerySize = 256 * 1024;
 static constexpr size_t kDummyMaxParserDepth = 256;
@@ -492,11 +933,11 @@ INSTANTIATE_TEST_SUITE_P(
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
             {
                 "from albums\ngroup {author_id} (\n  aggregate {first_published = min published}\n)\njoin a=author side:left (==author_id)\njoin p=purchases side:right (==author_id)\ngroup {a.id, p.purchase_id} (\n  aggregate {avg_sell = min first_published}\n)",
-                "WITH table_0 AS\n    (\n        SELECT\n            MIN(published) AS _expr_0,\n            author_id\n        FROM albums\n        GROUP BY author_id\n    )\nSELECT\n    a.id,\n    p.purchase_id,\n    MIN(table_0._expr_0) AS avg_sell\nFROM table_0\nLEFT JOIN author AS a ON table_0.author_id = a.author_id\nRIGHT JOIN purchases AS p ON table_0.author_id = p.author_id\nGROUP BY\n    a.id,\n    p.purchase_id",
+                "WITH\n    table_0 AS\n    (\n        SELECT\n            MIN(published) AS _expr_0,\n            author_id\n        FROM albums\n        GROUP BY author_id\n    )\nSELECT\n    a.id,\n    p.purchase_id,\n    MIN(table_0._expr_0) AS avg_sell\nFROM table_0\nLEFT JOIN author AS a ON table_0.author_id = a.author_id\nRIGHT JOIN purchases AS p ON table_0.author_id = p.author_id\nGROUP BY\n    a.id,\n    p.purchase_id",
             },
             {
                 "from matches\nfilter start_date > @2023-05-30                 # Some comment here\nderive {\n  some_derived_value_1 = a + (b ?? 0),          # And there\n  some_derived_value_2 = c + some_derived_value\n}\nfilter some_derived_value_2 > 0\ngroup {country, city} (\n  aggregate {\n    average some_derived_value_2,\n    aggr = max some_derived_value_2\n  }\n)\nderive place = f\"{city} in {country}\"\nderive country_code = s\"LEFT(country, 2)\"\nsort {aggr, -country}\ntake 1..20",
-                "WITH table_0 AS\n    (\n        SELECT\n            country,\n            city,\n            AVG(c + some_derived_value) AS _expr_0,\n            MAX(c + some_derived_value) AS aggr\n        FROM matches\n        WHERE (start_date > toDate('2023-05-30')) AND ((c + some_derived_value) > 0)\n        GROUP BY\n            country,\n            city\n    )\nSELECT\n    country,\n    city,\n    _expr_0,\n    aggr,\n    CONCAT(city, ' in ', country) AS place,\n    LEFT(country, 2) AS country_code\nFROM table_0\nORDER BY\n    aggr ASC,\n    country DESC\nLIMIT 20",
+                "WITH\n    table_0 AS\n    (\n        SELECT\n            country,\n            city,\n            AVG(c + some_derived_value) AS _expr_0,\n            MAX(c + some_derived_value) AS aggr\n        FROM matches\n        WHERE (start_date > toDate('2023-05-30')) AND ((c + some_derived_value) > 0)\n        GROUP BY\n            country,\n            city\n    )\nSELECT\n    country,\n    city,\n    _expr_0,\n    aggr,\n    CONCAT(city, ' in ', country) AS place,\n    LEFT(country, 2) AS country_code\nFROM table_0\nORDER BY\n    aggr ASC,\n    country DESC\nLIMIT 20",
             },
         })));
 

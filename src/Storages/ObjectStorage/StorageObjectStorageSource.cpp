@@ -2,6 +2,7 @@
 #include <optional>
 #include <unordered_set>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
@@ -32,6 +33,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -100,6 +102,8 @@ namespace ErrorCodes
     extern const int CANNOT_UNPACK_ARCHIVE;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
+    extern const int TOO_MANY_ROWS;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -115,6 +119,28 @@ namespace
             result.emplace_back(std::move(element));
         }
         return result;
+    }
+
+    /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
+    /// object cannot be safely cached and caching must be skipped (fail-close).
+    ///
+    /// The object identifier already uses the full path, so files that share a base name in
+    /// different directories do not collide. For general (non-data-lake) remote objects the path
+    /// alone is not a stable identity - an object can be overwritten in place under the same path -
+    /// so the ETag is folded in as a content-version token; a query after an overwrite then misses
+    /// rather than reusing stale row-group information. If the ETag is unavailable we skip the cache
+    /// instead of risking a stale hit. Data-lake data files are immutable, so the path is a stable
+    /// identity on its own and no ETag is required (this also avoids disabling the cache for data
+    /// lakes whose object metadata does not carry an ETag).
+    std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
+    {
+        String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
+        if (is_data_lake)
+            return identifier;
+        const auto & metadata = object_info.getObjectMetadata();
+        if (!metadata || metadata->etag.empty())
+            return std::nullopt;
+        return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
     }
 
     std::optional<Map> tryGetHeadersFromReadBuffer(const ReadBuffer * read_buffer)
@@ -176,6 +202,7 @@ namespace Setting
     extern const SettingsBool table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
+    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -195,6 +222,26 @@ static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerP
 #endif
 }
 
+/// Whether reading this object goes through row-level delete transformers (Iceberg
+/// position/equality deletes, Delta Lake deletion vectors). The count-from-files cache
+/// is keyed only by the file path and its modification time, but delete files change the
+/// number of rows the file contributes WITHOUT touching the file itself, so both
+/// directions are unsafe: a count cached before a delete resurfaces deleted rows, and a
+/// count cached after it goes stale once the deletes are compacted away. Such files must
+/// neither use nor populate the cache.
+static bool hasAttachedDeletes(const ObjectInfo & object_info)
+{
+#if USE_AVRO
+    if (const auto * iceberg_object = dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
+    {
+        if (!iceberg_object->info.position_deletes_objects.empty() || !iceberg_object->info.equality_deletes_objects.empty())
+            return true;
+    }
+#endif
+    return object_info.data_lake_metadata && object_info.data_lake_metadata->excluded_rows
+        && object_info.data_lake_metadata->excluded_rows->size() > 0;
+}
+
 StorageObjectStorageSource::StorageObjectStorageSource(
     const StorageID & storage_id_,
     String name_,
@@ -208,7 +255,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     std::shared_ptr<IObjectIterator> file_iterator_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
-    bool need_only_count_)
+    bool need_only_count_,
+    LazyObjectStorageFileRegistryPtr lazy_row_index_registry_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , storage_id(storage_id_)
     , name(std::move(name_))
@@ -231,6 +279,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, ThreadName::READER_POOL))
+    , lazy_row_index_registry(std::move(lazy_row_index_registry_))
 {
 }
 
@@ -381,6 +430,25 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
     else if (configuration->supportsFileIterator())
     {
+        /// For datalake configurations, ensure datalake_table_state is present in the metadata
+        /// before calling iterate(). The state is normally set by
+        /// updateExternalDynamicMetadataIfExists() during query analysis, but it can be missing
+        /// due to race conditions between concurrent queries (TOCTOU between setInMemoryMetadata
+        /// and getInMemoryMetadataPtr), or when called from code paths that bypass the
+        /// analyzer/interpreter (e.g. schema inference, cluster functions with nullptr metadata).
+        if (configuration->isDataLakeConfiguration()
+            && (!storage_metadata || !storage_metadata->datalake_table_state.has_value()))
+        {
+            if (auto state = configuration->getTableStateSnapshot(local_context))
+            {
+                auto fixed_metadata = storage_metadata
+                    ? std::make_shared<StorageInMemoryMetadata>(*storage_metadata)
+                    : std::make_shared<StorageInMemoryMetadata>();
+                fixed_metadata->setDataLakeTableState(*state);
+                storage_metadata = std::move(fixed_metadata);
+            }
+        }
+
         auto iter = configuration->iterate(
             filter_actions_dag,
             filter_actions_dag ? std::function<void(FileProgress)>{} : file_progress_callback,
@@ -538,7 +606,7 @@ Chunk StorageObjectStorageSource::generate()
                 read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
-                    .storage_id = storage_snapshot->storage.getStorageID(),
+                    .storage_id = storage_id,
                     .size = object_size,
                     .filename = &filename,
                     /// Report an unknown modification time (e.g. a web object whose HTTP response has no
@@ -565,6 +633,51 @@ Chunk StorageObjectStorageSource::generate()
                 chunk.addColumn(type->createColumnConst(
                     chunk.getNumRows(),
                     headers)->convertToFullColumnIfConst());
+            }
+
+            if (lazy_row_index_registry)
+            {
+                /// Lazy materialization: append the `__global_row_index` column, which combines the
+                /// index of the file within the query with the physical row number within the file.
+                if (!current_file_index)
+                    current_file_index = lazy_row_index_registry->registerFile(object_info);
+
+                auto row_numbers_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
+                if (!row_numbers_info)
+                    /// Only the Parquet reader provides physical row numbers. This is reachable for a
+                    /// mixed-format Iceberg snapshot (the table-level format is Parquet, but an individual
+                    /// data file has a different format), which is discovered only at read time because the
+                    /// file list is built dynamically. Report an actionable error instead of failing later.
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "Lazy materialization requires physical row numbers from the format reader, "
+                        "but file {} (format {}) does not provide them. "
+                        "Disable the query_plan_optimize_lazy_materialization_for_object_storage setting to read such data.",
+                        object_info->getPath(), object_info->getFileFormat().value_or(configuration->format));
+
+                const auto & applied_filter = row_numbers_info->applied_filter;
+                size_t num_indices = applied_filter.has_value() ? applied_filter->size() : num_rows;
+                if (row_numbers_info->row_num_offset + num_indices > LazyObjectStorageFileRegistry::MAX_ROWS_PER_FILE)
+                    throw Exception(ErrorCodes::TOO_MANY_ROWS,
+                        "File {} has too many rows for lazy materialization. "
+                        "Disable the query_plan_optimize_lazy_materialization_for_object_storage setting",
+                        object_info->getPath());
+
+                const UInt64 file_part = *current_file_index << LazyObjectStorageFileRegistry::ROW_INDEX_BITS;
+                auto row_index_column = ColumnUInt64::create();
+                auto & row_index_data = row_index_column->getData();
+                row_index_data.reserve(num_rows);
+                for (size_t i = 0; i < num_indices; ++i)
+                {
+                    if (!applied_filter.has_value() || (*applied_filter)[i])
+                        row_index_data.push_back(file_part | (row_numbers_info->row_num_offset + i));
+                }
+
+                if (row_index_column->size() != num_rows)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Row numbers of a chunk are inconsistent with the number of rows: {} != {} (file {})",
+                        row_index_column->size(), num_rows, object_info->getPath());
+
+                chunk.addColumn(std::move(row_index_column));
             }
 
 #if USE_PARQUET
@@ -646,7 +759,7 @@ Chunk StorageObjectStorageSource::generate()
         else if (format_filter_info->condition_hash)
         {
             const auto & object_info = reader.getObjectInfo();
-            const auto query_condition_cache_key = object_info->getIdentifier(/*include_file_bucket_info=*/ false);
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
             try
             {
                 const auto * input_format = reader.getInputFormat();
@@ -680,12 +793,12 @@ Chunk StorageObjectStorageSource::generate()
                             format_filter_info->filter_actions_dag->dumpNames(),
                             object_info->getFileName());
 
-                        if (!unmatched_ranges.empty())
+                        if (!unmatched_ranges.empty() && query_condition_cache_key)
                         {
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             query_condition_cache->write(
                                 storage_id.uuid,
-                                query_condition_cache_key,
+                                *query_condition_cache_key,
                                 *format_filter_info->condition_hash,
                                 format_filter_info->filter_actions_dag->dumpNames(),
                                 unmatched_ranges,
@@ -703,13 +816,16 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !format_filter_info->filter_actions_dag)
+            && !format_filter_info->filter_actions_dag
+            && !hasAttachedDeletes(*reader.getObjectInfo())
+            && !reader.getObjectInfo()->rows_to_read)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
 
         chassert(reader_future.valid());
         reader = reader_future.get();
+        current_file_index.reset();
 
         if (!reader)
             break;
@@ -810,9 +926,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (query_condition_cache && !object_info->file_bucket_info)
         {
-            const auto query_condition_cache_key = object_info->getIdentifier(/*include_file_bucket_info=*/ false);
-            auto matching_marks = query_condition_cache->read(
-                storage_id.uuid, query_condition_cache_key, *format_filter_info->condition_hash);
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
+            std::optional<QueryConditionCache::MatchingMarks> matching_marks;
+            if (query_condition_cache_key)
+                matching_marks = query_condition_cache->read(
+                    storage_id.uuid, *query_condition_cache_key, *format_filter_info->condition_hash);
             if (matching_marks.has_value())
             {
                 const auto & marks = *matching_marks;
@@ -874,6 +992,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         };
         return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
     };
+
+    /// Row-level delete transformers need real row values: an equality-delete FilterTransform
+    /// evaluates its predicate against column values, but the count-only fast path
+    /// (`input_format->needOnlyCount()`) makes the format emit synthetic chunks filled with
+    /// default values, so the predicate would filter the wrong rows and count() would come
+    /// back wrong. Position deletes and deletion vectors filter by row index, which synthetic
+    /// chunks do preserve, but they would still build the huge synthetic chunks only to drop
+    /// rows from them, so the fast path is disabled for any attached deletes. This also
+    /// covers the count-from-cache shortcut below: a cached per-file row count is keyed only
+    /// by path + mtime, both untouched by delete files, so it must not be used either.
+    need_only_count = need_only_count && !hasAttachedDeletes(*object_info);
 
     /// The count-from-cache shortcut builds a `ConstChunkGenerator` without opening the read buffer, so a
     /// requested `_headers` virtual column (the HTTP response headers of the data `GET`) would have to fall
@@ -971,14 +1100,39 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 if (auto mapper = configuration->getColumnMapperForObject(object_info))
                 {
-                    if (format_supports_prewhere)
-                        return std::make_shared<FormatFilterInfo>(
-                            format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
-                            mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
-                    else
-                        return std::make_shared<FormatFilterInfo>(
-                            format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
-                            mapper, nullptr, nullptr);
+                    /// `schema_changed` is true for real schema evolution (a schema-id
+                    /// mismatch: renamed / type-changed columns) AND for current-schema
+                    /// files that merely carry equality deletes. Strip the reader-side
+                    /// filters ONLY for the former: there the old-schema mapper resolves
+                    /// field-ids to the file's OLD names while PREWHERE / row-level filter
+                    /// reference the CURRENT names, so in-reader evaluation matches nothing
+                    /// (re-applied as fallback FilterTransforms after the schema transform
+                    /// renames the columns below). For equality-delete-only files
+                    /// (getSchemaTransformer() == null, no rename) the mapper already yields
+                    /// the current names, so keep the filters in the reader to preserve
+                    /// Parquet row-group / page pruning.
+                    const bool has_schema_transform
+                        = configuration->getSchemaTransformer(context_, object_info) != nullptr;
+                    if (format_supports_prewhere && has_schema_transform)
+                    {
+                        if (format_filter_info->row_level_filter)
+                            stripped_row_level_filter = format_filter_info->row_level_filter;
+                        if (format_filter_info->prewhere_info)
+                            stripped_prewhere_info = format_filter_info->prewhere_info;
+                    }
+                    const bool keep_in_reader = format_supports_prewhere && !has_schema_transform;
+                    auto result = std::make_shared<FormatFilterInfo>(
+                        format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
+                        mapper,
+                        keep_in_reader ? format_filter_info->row_level_filter : nullptr,
+                        keep_in_reader ? format_filter_info->prewhere_info : nullptr);
+                    /// `mapper` is scoped to the schema this specific file was written under, so it
+                    /// maps field_id -> the column name *that file* used. Keep the current/query-side
+                    /// mapper around too (see `current_schema_column_mapper` doc comment) for readers
+                    /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
+                    /// pruning) back to a field_id.
+                    result->current_schema_column_mapper = format_filter_info->column_mapper;
+                    return result;
                 }
             }
 
@@ -991,6 +1145,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
             return format_filter_info;
         }();
+
+        if (object_info->rows_to_read)
+        {
+            /// Lazy materialization: read only the specified rows of this file. The set of rows
+            /// differs per file, so make a per-file copy of the (possibly shared) filter info.
+            auto filter_info_with_rows = std::make_shared<FormatFilterInfo>(
+                filter_info ? filter_info->filter_actions_dag : nullptr,
+                context_,
+                filter_info ? filter_info->column_mapper : nullptr,
+                filter_info ? filter_info->row_level_filter : nullptr,
+                filter_info ? filter_info->prewhere_info : nullptr);
+            filter_info_with_rows->rows_to_read = object_info->rows_to_read;
+            filter_info = filter_info_with_rows;
+        }
 
         /// When PREWHERE / row-level filter is stripped from `format_filter_info` (i.e. the
         /// actual file format doesn't support PREWHERE), the format reader will not produce
@@ -1038,7 +1206,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
             && (Poco::toLower(format_name) == "parquet")
-            && !object_info->getObjectMetadata()->etag.empty())
+            && object_info->getObjectMetadata()->isEtagUsableAsCacheKey())
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
@@ -1173,6 +1341,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// The query planner puts row policies into `row_level_filter` when
         /// `storage->supportsPrewhere()` (`PlannerJoinTree.cpp:1012`), but individual
         /// files in mixed-format tables may not support it at format level.
+        /// `update_row_numbers_info = true`: safe here because every transform between the format
+        /// reader (which attaches `ChunkInfoRowNumbers`) and these filters preserves or maintains it.
         if (stripped_row_level_filter)
         {
             auto row_level_actions = std::make_shared<ExpressionActions>(stripped_row_level_filter->actions.clone());
@@ -1181,7 +1351,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 return std::make_shared<FilterTransform>(
                     header, row_level_actions,
                     stripped_row_level_filter->column_name,
-                    stripped_row_level_filter->do_remove_column);
+                    stripped_row_level_filter->do_remove_column,
+                    /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
+                    /*update_row_numbers_info=*/true);
             });
         }
 
@@ -1193,7 +1365,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 return std::make_shared<FilterTransform>(
                     header, prewhere_actions,
                     stripped_prewhere_info->prewhere_column_name,
-                    stripped_prewhere_info->remove_prewhere_column);
+                    stripped_prewhere_info->remove_prewhere_column,
+                    /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
+                    /*update_row_numbers_info=*/true);
             });
         }
 
@@ -1271,12 +1445,23 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// 1. object size suggests whether we need to use prefetch
     /// 2. object etag suggests a cache key in case we use filesystem cache
     /// 3. object etag as a cache key for parquet metadata caching
+    /// 4. object etag to detect a concurrent in-place overwrite during the read
     if (!object_info.metadata)
-        object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
-
-    if (use_page_cache && object_info.metadata->etag.empty())
     {
-        LOG_WARNING(log, "Cannot use page cache, no etag specified");
+        object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
+    }
+    else if (!object_info.metadata->is_fetched && settings[Setting::s3_validate_etag_on_read]
+             && object_storage->getType() == ObjectStorageType::S3)
+    {
+        /// Refresh the s3Cluster skip_object_metadata placeholder to obtain its size + ETag for read-time
+        /// validation (it carries no tags, so the with_tags=false HEAD drops nothing). A real fetch that
+        /// merely lacks an ETag (e.g. GCS) has is_fetched=true and is left as-is - no extra HEAD.
+        object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
+    }
+
+    if (use_page_cache && !object_info.metadata->isEtagUsableAsCacheKey())
+    {
+        LOG_WARNING(log, "Cannot use page cache, etag is missing or not a strong content identifier");
         use_page_cache = false;
     }
 
@@ -1338,15 +1523,21 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// shows a useful name rather than an empty string.
     const auto stored_object_size = is_size_known ? object_size : StoredObject::UnknownSize;
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_object_size, object_info.read_source_index);
+
+    /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
+    /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ
+    /// instead of torn cross-generation data.
+    if (settings[Setting::s3_validate_etag_on_read] && object_info.metadata.has_value())
+        stored_object.etag = object_info.metadata->etag;
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
     /// Filesystem cache
     if (use_filesystem_cache)
     {
         chassert(object_info.metadata.has_value());
-        if (object_info.metadata->etag.empty())
+        if (!object_info.metadata->isEtagUsableAsCacheKey())
         {
-            LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
+            LOG_WARNING(log, "Cannot use filesystem cache, etag is missing or not a strong content identifier");
         }
         else
         {
@@ -1406,9 +1597,27 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         object_info.getPath(), object_size, use_prefetch ? "with" : "without",
         pipeline.describe());
 
+    /// Let the experimental ReaderExecutor reuse held source connections across sequential windows
+    /// for direct object-storage reads (s3()/azureBlobStorage() and the object-storage engines),
+    /// mirroring the wiring in DiskObjectStorage::prepareRead for the disk-based path.
+    if (modified_read_settings.reader_executor.enabled && modified_read_settings.reader_executor.use_long_connections)
+        pipeline.needLongConnectionLimit(context_->getLongConnectionLimit());
+
     auto impl = pipeline.build();
 
-    if (use_prefetch && impl && !impl->supportsReadAt())
+    /// For small objects prefetch the file ahead of consumption: when reading lots of tiny files
+    /// this almost doubles throughput; bigger objects use parallel reading instead (`use_prefetch`
+    /// already implies the object is small, see `object_too_small` above). This covers random-access
+    /// formats (Parquet/ORC/Arrow) too: AsynchronousBoundedReadBuffer::readBigAt serves the requested
+    /// range from the prefetched buffer when it is covered (the common case for a fully prefetched
+    /// small file) and otherwise drops the prefetch and falls back to a positioned read.
+    ///
+    /// The prefetch is issued also when the read goes through the filesystem cache: the cache does
+    /// no read-ahead of its own, and files read via object storage engines (e.g. fresh `S3Queue`
+    /// files) are typically cache misses, so without the prefetch the first read of each small file
+    /// is a synchronous, latency-bound round trip to object storage. The prefetch runs the cache
+    /// miss (and the cache fill) in the background instead.
+    if (use_prefetch && impl)
     {
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
@@ -1673,6 +1882,10 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
             }
             else
                 object_metadata = object_storage->getObjectMetadata(key, with_tags);
+        }
+        else
+        {
+            object_metadata.is_fetched = false;
         }
 
         if (file_progress_callback)
