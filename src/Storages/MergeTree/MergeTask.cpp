@@ -1077,8 +1077,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     if (can_short_circuit_fully_expired_merge)
     {
-        LOG_DEBUG(ctx->log, "Skipping data pipeline: all {} source parts are fully expired",
-            global_ctx->future_part->parts.size());
+        LOG_DEBUG(ctx->log, "Skipping data pipeline: all {} source parts are fully expired (merge type {})",
+            global_ctx->future_part->parts.size(), toString(global_ctx->future_part->merge_type));
 
         global_ctx->ttl_drop_short_circuit = true;
 
