@@ -758,6 +758,8 @@ By default the value is empty and ClickHouse lets the AWS SDK compute `Content-M
 
 `S3Express` buckets require a flexible checksum and do not accept `Content-MD5`: an explicit `CRC32` or `SHA256` is honored, an empty value uses `CRC32`, and an explicit `MD5` is rejected.
 
+`GCS` endpoints (`storage.googleapis.com`) ignore this setting entirely and keep the SDK's `Content-MD5` behavior, because `GCS` rejects `SigV4`-signed requests carrying the AWS `x-amz-checksum-*` headers.
+
 This setting does not apply to server-side copy requests such as `CopyObject`.
 )", 0) \
     DECLARE(UInt64, s3_request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, R"(

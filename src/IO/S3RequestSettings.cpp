@@ -6,7 +6,6 @@
 #include <IO/S3/ChecksumAlgorithm.h>
 #include <IO/S3RequestSettings.h>
 #include <Interpreters/Context.h>
-#include <Common/Crypto/OpenSSLInitializer.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/Throttler.h>
@@ -248,20 +247,14 @@ void S3RequestSettings::validateUploadSettings()
 
     const auto & upload_checksum_algorithm = (*this)[S3RequestSetting::upload_checksum_algorithm].value;
     /// An empty value means "use the environment default"; any other value must name an `Algorithm`.
-    const auto algorithm = upload_checksum_algorithm.empty()
-        ? std::nullopt
-        : S3::RequestChecksum::tryParse(upload_checksum_algorithm);
-    if (!upload_checksum_algorithm.empty() && !algorithm)
+    if (!upload_checksum_algorithm.empty() && !S3::RequestChecksum::tryParse(upload_checksum_algorithm))
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
             "Setting upload_checksum_algorithm has invalid value {} which only supports {}",
             upload_checksum_algorithm, S3::RequestChecksum::supportedAlgorithms());
 
-    /// No `MD5` under FIPS — it would silently send no checksum.
-    if (algorithm && *algorithm == S3::RequestChecksum::Algorithm::MD5 && OpenSSLInitializer::instance().isFIPSEnabled())
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting upload_checksum_algorithm cannot be MD5 when FIPS mode is enabled; use CRC32 or SHA256");
+    /// Only the name is validated: usability depends on the client (`s3_disable_checksum` and `GCS` send no
+    /// checksum at all), so the FIPS `MD5` rejection lives in `RequestChecksum::getUploadChecksumAlgorithm`.
 
     /// TODO: it's possible to set too small limits.
     /// We can check that max possible object size is not too small.

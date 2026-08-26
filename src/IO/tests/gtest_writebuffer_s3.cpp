@@ -1050,28 +1050,10 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmValidationAndNormalization)
 
     ASSERT_EQ("CRC32", request_settings[S3RequestSetting::upload_checksum_algorithm].value);
 
-    /// `MD5` normalizes to upper case, but is rejected under FIPS where it would send no checksum.
+    /// `MD5` normalizes to upper case. The FIPS rejection is a runtime check, not a validation one.
     getSettings()[Setting::s3_upload_checksum_algorithm] = "md5";
-    if (DB::OpenSSLInitializer::instance().isFIPSEnabled())
-    {
-        EXPECT_THROW({
-            try
-            {
-                request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
-            }
-            catch (const DB::Exception & e)
-            {
-                ASSERT_EQ(ErrorCodes::INVALID_SETTING_VALUE, e.code());
-                EXPECT_THAT(e.what(), testing::HasSubstr("cannot be MD5 when FIPS mode is enabled"));
-                throw;
-            }
-        }, DB::Exception);
-    }
-    else
-    {
-        request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
-        ASSERT_EQ("MD5", request_settings[S3RequestSetting::upload_checksum_algorithm].value);
-    }
+    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
+    ASSERT_EQ("MD5", request_settings[S3RequestSetting::upload_checksum_algorithm].value);
 
     getSettings()[Setting::s3_upload_checksum_algorithm] = "MD4";
 
@@ -1129,6 +1111,31 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmDefaults)
             }
         }, DB::Exception);
     }
+}
+
+TEST_F(WBS3Test, DisabledChecksumAcceptsMD5UnderFIPS)
+{
+    /// `s3_disable_checksum` sends no checksum at all, so `MD5` must not be rejected here even under FIPS.
+    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
+
+    getSettings()[Setting::s3_upload_checksum_algorithm] = "MD5";
+
+    S3::S3RequestSettings request_settings;
+    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
+    ASSERT_EQ("MD5", request_settings[S3RequestSetting::upload_checksum_algorithm].value);
+
+    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
+    setInjectionModel(injection);
+
+    auto buffer = getWriteBuffer("checksum_disabled_md5_fips");
+    writeAsOneBlock(*buffer, 10);
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
+    ASSERT_FALSE(injection->put_object_request_checksum_required);
+    ASSERT_FALSE(injection->put_object_should_compute_content_md5);
 }
 
 TEST_F(WBS3Test, UploadChecksumAlgorithmRuntimeValidation)
