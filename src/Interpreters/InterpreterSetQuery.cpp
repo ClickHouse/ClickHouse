@@ -75,70 +75,54 @@ bool hasProfileChange(const SettingsChanges & changes)
     return std::any_of(changes.begin(), changes.end(), [](const SettingChange & change) { return change.name == "profile"; });
 }
 
-/// Applies `changes` and then the `name = DEFAULT` resets in `default_settings` to `context`, with
-/// every part checked against the settings constraints that are in force where it is applied.
-/// `changes` as a whole has already been checked by the caller against the constraints in force
-/// before the statement; what this adds is the `SET profile = 'p', …` case, where the `profile`
-/// change replaces the constraint set halfway through the statement. Anything assigned or reset
-/// after it has to be checked against the new constraints too, or a single statement overrides the
-/// very `CONST`, `MIN`/`MAX` or `readonly` constraint that the profile it names installs, while the
-/// same settings applied as two separate statements are rejected.
+/// Checks the part of a `SET profile = 'p', …` statement that follows the `profile` change against
+/// the constraints that profile installs. The caller has already checked the whole statement against
+/// the constraints in force before it, but a `profile` change replaces the constraint set halfway
+/// through the statement. Without this, one statement overrides the very `CONST`, `MIN`/`MAX` or
+/// `readonly` constraint that the profile it names installs, while the same settings applied as two
+/// separate statements are rejected.
 ///
-/// Checking the tail of the statement requires the profile to have been applied first, so the
-/// checking runs on a scratch copy of the context. Only once all of it passes is anything applied
-/// to `context`, so a rejected statement does not leave the profile applied and its tail dropped.
-/// The real application is a single call with the original list, so the order in which the changes
-/// take effect - and therefore which assignment wins - is exactly as before.
-void applySettingsChangesAndResets(
-    ContextMutablePtr context, const SettingsChanges & changes, const std::vector<String> & default_settings)
+/// Checking the tail requires the profile to have been applied first, so this runs on a scratch copy
+/// of the context and applies nothing to the real one - the caller applies the statement only once
+/// every check has passed, so a rejected statement leaves the session untouched.
+void checkSettingsConstraintsAfterProfileChange(
+    const ContextPtr & context, const SettingsChanges & changes, const std::vector<String> & default_settings)
 {
-    if (hasProfileChange(changes))
+    if (!hasProfileChange(changes))
+        return;
+
+    auto scratch_context = Context::createCopy(context);
+    SettingsChanges pending;
+    bool constraints_replaced = false;
+
+    auto flush_pending = [&]
     {
-        auto scratch_context = Context::createCopy(context);
-        SettingsChanges pending;
-        bool constraints_replaced = false;
+        /// Not checked before the first `profile` change: the caller's check already covers it
+        /// against the same constraints.
+        if (constraints_replaced)
+            scratch_context->checkSettingsConstraints(std::as_const(pending), SettingSource::QUERY);
+        scratch_context->applySettingsChanges(pending);
+        pending.clear();
+    };
 
-        auto flush_pending = [&]
+    for (const auto & change : changes)
+    {
+        if (change.name != "profile")
         {
-            /// Not checked before the first `profile` change: the caller's check already covers it
-            /// against the same constraints.
-            if (constraints_replaced)
-                scratch_context->checkSettingsConstraints(std::as_const(pending), SettingSource::QUERY);
-            scratch_context->applySettingsChanges(pending);
-            pending.clear();
-        };
-
-        for (const auto & change : changes)
-        {
-            if (change.name != "profile")
-            {
-                pending.push_back(change);
-                continue;
-            }
-            flush_pending();
-            /// `Context::setCurrentProfile` checks the profile's own settings against the
-            /// constraints in force before it is applied.
-            scratch_context->applySettingsChanges(SettingsChanges{change});
-            constraints_replaced = true;
+            pending.push_back(change);
+            continue;
         }
         flush_pending();
-
-        scratch_context->checkSettingsConstraintsForDefaults(default_settings, SettingSource::QUERY);
-
-        context->applySettingsChanges(changes);
-        context->resetSettingsToDefaultValue(default_settings);
-        return;
+        /// `Context::setCurrentProfile` checks the profile's own settings against the constraints in
+        /// force before it is applied.
+        scratch_context->applySettingsChanges(SettingsChanges{change});
+        constraints_replaced = true;
     }
+    flush_pending();
 
-    context->applySettingsChanges(changes);
-    /// `SET name = DEFAULT` lands in `default_settings`, not in `changes`, and
-    /// `resetSettingsToDefaultValue` applies the compiled-in default without validating it. Without
-    /// this check the reset is a way to clear a `CONST`, `readonly`, `MIN`/`MAX` or feature-tier
-    /// constraint. Checked on the context the reset mutates, so "already at its default" is decided
-    /// against the values the reset would overwrite.
-    context->checkSettingsConstraintsForDefaults(default_settings, SettingSource::QUERY);
-    context->resetSettingsToDefaultValue(default_settings);
+    scratch_context->checkSettingsConstraintsForSettingsReset(default_settings, SettingSource::QUERY);
 }
+
 }
 
 BlockIO InterpreterSetQuery::execute()
@@ -159,9 +143,13 @@ BlockIO InterpreterSetQuery::execute()
     /// changes (dropping no-op changes), which would lose the "changed" flag for a setting
     /// explicitly set to its current value. The original code applies const `ast.changes`.
     getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
+    /// Checked before anything is applied, so that a violation leaves the whole statement without effect.
+    getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
+    checkSettingsConstraintsAfterProfileChange(getContext(), changes, ast.default_settings);
     auto session_context = getContext()->getSessionContext();
-    applySettingsChangesAndResets(session_context, changes, ast.default_settings);
+    session_context->applySettingsChanges(changes);
     session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
+    session_context->resetSettingsToDefaultValue(ast.default_settings);
     return {};
 }
 
@@ -173,17 +161,16 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     /// Work on a copy so the original AST keeps the placeholders (see the note in execute()).
     SettingsChanges changes = ast.changes;
     replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
-    if (ignore_setting_constraints)
-    {
-        getContext()->applySettingsChanges(changes);
-        getContext()->resetSettingsToDefaultValue(ast.default_settings);
-        return;
-    }
-
     /// const on purpose - see the note in execute().
-    getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
-    rejectHTTPOnlyConstructionSettings(ast);
-    applySettingsChangesAndResets(getContext(), changes, ast.default_settings);
+    if (!ignore_setting_constraints)
+    {
+        getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
+        getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
+        checkSettingsConstraintsAfterProfileChange(getContext(), changes, ast.default_settings);
+        rejectHTTPOnlyConstructionSettings(ast);
+    }
+    getContext()->applySettingsChanges(changes);
+    getContext()->resetSettingsToDefaultValue(ast.default_settings);
 }
 
 static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, ContextMutablePtr context)

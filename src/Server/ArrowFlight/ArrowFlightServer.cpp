@@ -1391,9 +1391,7 @@ arrow::Status ArrowFlightServer::DoAction(
                     if (std::holds_alternative<std::monostate>(value))
                     {
                         /// std::monostate means "reset to default" (SET setting = DEFAULT).
-                        /// Checked for the same reason as the value branch below: a reset applies the
-                        /// compiled-in default, which would otherwise clear an administrator's constraint.
-                        query_context->checkSettingsConstraintsForDefaults({setting}, SettingSource::QUERY);
+                        query_context->checkSettingsConstraintsForSettingsReset({setting}, SettingSource::QUERY);
                         session_context->resetSettingsToDefaultValue({setting});
                     }
                     else

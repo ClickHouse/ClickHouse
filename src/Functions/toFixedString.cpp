@@ -24,12 +24,13 @@ If the string has more bytes than N, an exception is thrown.
     {
         "Usage example",
         R"(
-SELECT toFixedString('foo', 8) AS s;
+-- The padding is made of null bytes, so the result is shown with `hex`.
+SELECT hex(toFixedString('foo', 8)) AS s;
         )",
         R"(
-┌─s─────────────┐
-│ foo\0\0\0\0\0 │
-└───────────────┘
+┌─s────────────────┐
+│ 666F6F0000000000 │
+└──────────────────┘
         )"
     }
     };

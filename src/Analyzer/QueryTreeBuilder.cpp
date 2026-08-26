@@ -318,9 +318,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
         /// `SETTINGS name = DEFAULT` lands in `default_settings` rather than in `changes`, and this path
         /// ignored it entirely, so the nested form was silently a no-op. Reset it here, and check it
-        /// first: the reset installs the compiled-in default, which would otherwise clear a constraint
-        /// just as `SET name = DEFAULT` did. A reset must leave the setting `changed = false`, so it
-        /// cannot be expressed as an explicit change.
+        /// first with the same `checkResetToDefault` that guards the `SET name = DEFAULT` form: the
+        /// reset installs the compiled-in default, which would otherwise clear a constraint. A reset
+        /// must leave the setting `changed = false`, so it cannot be expressed as an explicit change.
         ///
         /// Known limitation: unlike `changes` above, the reset is applied only to this node's context
         /// and is not recorded on the `QueryNode`, which carries `settings_changes` alone. So the reset
@@ -333,7 +333,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         /// carrier on `QueryNode` plus hashing and serialization support, which is out of scope here.
         if (!set_query.default_settings.empty())
         {
-            updated_context->checkSettingsConstraintsForDefaults(set_query.default_settings, SettingSource::QUERY);
+            updated_context->checkSettingsConstraintsForSettingsReset(set_query.default_settings, SettingSource::QUERY);
             updated_context->resetSettingsToDefaultValue(set_query.default_settings);
         }
     }
