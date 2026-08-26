@@ -348,6 +348,9 @@ SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_, bool extr
 bool SplitByRegexpTokenizer::nextInStringImpl(
     const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const
 {
+    if (extract)
+        return nextExtractedMatch(data, length, pos, token_start, token_length, matches);
+
     while (pos <= length)
     {
         const size_t token_begin = pos;
@@ -356,24 +359,6 @@ bool SplitByRegexpTokenizer::nextInStringImpl(
 
         if (nextRegexpMatch(*regexp, data, length, pos, match_start, match_length, matches))
         {
-            if (extract)
-            {
-                chassert(token_group < matches.size());
-
-                /// The token is `token_group` of this match: capture group 1, or the whole match when the
-                /// pattern has no capture groups. `pos` has already advanced past the whole match, so a
-                /// group that did not participate or captured an empty string is simply skipped - scanning
-                /// never overlaps or re-visits a match.
-                const auto & group = matches[token_group];
-                if (group.offset != std::string::npos && group.length > 0)
-                {
-                    token_start = group.offset;
-                    token_length = group.length;
-                    return true;
-                }
-                continue;
-            }
-
             /// The token is the text preceding the separator; `pos` has already advanced past the separator.
             if (match_start > token_begin)
             {
@@ -385,18 +370,56 @@ bool SplitByRegexpTokenizer::nextInStringImpl(
         }
         else
         {
+            /// No further separator: the remaining tail is the last token. An empty tail is not emitted.
             pos = length + 1; /// Mark exhausted so subsequent calls return false.
-
-            /// In `extract` mode a token only ever comes from a match, so there is no trailing tail.
-            /// Otherwise, no further separator means the remaining tail is the last token; an empty tail
-            /// is not emitted.
-            if (!extract && token_begin < length)
+            if (token_begin < length)
             {
                 token_start = token_begin;
                 token_length = length - token_begin;
                 return true;
             }
             return false;
+        }
+    }
+
+    return false;
+}
+
+bool SplitByRegexpTokenizer::nextExtractedMatch(
+    const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const
+{
+    while (pos <= length)
+    {
+        if (regexp->match(data, length, pos, matches) == 0)
+        {
+            pos = length + 1; /// Mark exhausted so subsequent calls return false.
+            return false;
+        }
+
+        chassert(token_group < matches.size());
+        const auto & whole_match = matches[0];
+
+        if (whole_match.length == 0)
+        {
+            /// Retry at the next byte instead of stopping (as `re.finditer` does for patterns that can
+            /// match empty): a real match further on would otherwise be silently lost, e.g. `[0-9]*` on
+            /// `123x45` would emit only `123`. Can't skip a real match this way: RE2's leftmost search
+            /// would have returned an earlier non-empty match instead, had one existed.
+            ++pos;
+            continue;
+        }
+
+        /// Advance past the whole match, not just the captured span, so matches never overlap.
+        pos = whole_match.offset + whole_match.length;
+
+        /// Capture group 1, or the whole match when the pattern has none. A non-participating or
+        /// empty group contributes no token.
+        const auto & group = matches[token_group];
+        if (group.offset != std::string::npos && group.length > 0)
+        {
+            token_start = group.offset;
+            token_length = group.length;
+            return true;
         }
     }
 
@@ -431,7 +454,7 @@ void SplitByRegexpTokenizer::substringToTokens(const char *, size_t, VectorWithM
 String SplitByRegexpTokenizer::getDescription() const
 {
     if (extract)
-        return fmt::format("{}({}, 1)", getName(), quoteString(regexp_str));
+        return fmt::format("{}({}, true)", getName(), quoteString(regexp_str));
     return fmt::format("{}({})", getName(), quoteString(regexp_str));
 }
 

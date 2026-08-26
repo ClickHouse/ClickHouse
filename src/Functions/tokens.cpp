@@ -66,9 +66,7 @@ std::unique_ptr<ITokenizer> createTokenizer(const ColumnsWithTypeAndName & argum
         WhichDataType which_type(arguments[i].type);
         if (which_type.isUInt())
         {
-            /// Covers both plain UInt* literals and `Bool` (physically `UInt8` under a custom display
-            /// name, see DataTypeDomainBool.cpp), so `true`/`false` and `1`/`0` both reach
-            /// `TokenizerFactory` as a `UInt64` field - `castAs<bool>` accepts either representation.
+            /// Also matches `Bool` (physically `UInt8`), so `true`/`false` work too.
             params.push_back(col->getUInt(0));
         }
         else if (which_type.isString())

@@ -40,6 +40,22 @@ Type castAs(const Field & field, std::string_view argument_name)
     return field.safeGet<Type>();
 }
 
+/// Accepts a `Bool` literal or `UInt64` (`0`/`1`), like `checkAndGetLiteralArgument<bool>`.
+template <>
+bool castAs<bool>(const Field & field, std::string_view argument_name)
+{
+    if (field.getType() == Field::Types::Bool)
+        return field.safeGet<bool>();
+
+    if (field.getType() == Field::Types::UInt64)
+        return field.safeGet<UInt64>() != 0;
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Tokenizer argument '{}' expected to be of type Bool, but got type: {}",
+        argument_name, field.getTypeName());
+}
+
 void assertParamsCount(size_t params_count, size_t max_count, std::string_view tokenizer)
 {
     if (params_count > max_count)
@@ -236,15 +252,7 @@ static void registerTokenizers(TokenizerFactory & factory)
 
         bool extract = false;
         if (args.size() > 1)
-        {
-            auto extract_arg = castAs<UInt64>(args[1], "extract");
-            if (extract_arg > 1)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Incorrect parameter of tokenizer '{}': the 'extract' argument must be 0 or 1, but got {}",
-                    tokenizer_name, extract_arg);
-            extract = extract_arg == 1;
-        }
+            extract = castAs<bool>(args[1], "extract");
 
         return std::make_unique<SplitByRegexpTokenizer>(regexp, extract);
     };
