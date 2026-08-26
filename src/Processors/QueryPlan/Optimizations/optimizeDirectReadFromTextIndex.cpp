@@ -19,6 +19,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -967,7 +968,7 @@ static bool processAndOptimizeTextIndexFunctionsInPrewhere(
 /// with virtual columns for direct index reads (both WHERE and PREWHERE clauses).
 ///
 /// See TextIndexDAGReplacer class for more details.
-void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & /*nodes*/, bool direct_read_from_text_index)
+void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index)
 {
     const auto & frame = stack.back();
     ReadFromMergeTree * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
@@ -1004,10 +1005,31 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         return;
 
     QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
+
+    /// A first-pass optimization can leave an `ExpressionStep` on top of the read step and hide the
+    /// filter, e.g. the header-converting step of `tryOptimizeTopK`. Merge it into the filter above.
+    /// Only plans that read a text index get here, so no other plan is reshaped.
+    /// The merged-away node keeps the stack frame that points to it, but that frame has already
+    /// descended into its only child, so the traversal just pops it.
+    if (stack.size() >= 3 && typeid_cast<ExpressionStep *>(filter_node->step.get()))
+    {
+        QueryPlan::Node * node_above = (stack.rbegin() + 2)->node;
+        if (typeid_cast<FilterStep *>(node_above->step.get()) && tryMergeExpressions(node_above, nodes, {}))
+            filter_node = node_above;
+    }
+
     auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
 
+    /// The rewrite needs the filter directly on top of the read step: nothing would carry the virtual
+    /// column across an intermediate step. Log it, the fallback silently reads the whole text column.
     if (!filter_step)
+    {
+        LOG_TRACE(
+            getLogger("optimizeDirectReadFromTextIndex"),
+            "Cannot use direct reading from text index. Reason: the parent of ReadFromMergeTree is a '{}' step, not a filter",
+            filter_node->step->getName());
         return;
+    }
 
     ActionsDAG & filter_dag = filter_step->getExpression();
     const auto * result_filter_node = processAndOptimizeTextIndexDAG(
