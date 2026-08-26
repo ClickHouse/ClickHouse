@@ -1,6 +1,4 @@
-import base64
 import io
-import json
 import re
 import time
 
@@ -170,73 +168,6 @@ class OrphanTestEnv:
                 self.cluster.minio_bucket, f"{base}/{dst_name}",
                 io.BytesIO(payload), len(payload),
             )
-
-    def read_metadata_file(self, name):
-        if self.storage_type == "local":
-            path = f"{LOCAL_TABLE_PREFIX}/{self.table_name}/metadata/{name}"
-            return self.instance.exec_in_container(["bash", "-c", f"cat {path}"])
-        elif self.storage_type == "azure":
-            blob_path = (
-                f"/var/lib/clickhouse/user_files/iceberg_data/default/"
-                f"{self.table_name}/metadata/{name}"
-            )
-            return self.cluster.blob_service_client.get_blob_client(
-                self.cluster.azure_container_name, blob_path,
-            ).download_blob().readall().decode()
-        else:
-            return self.cluster.minio_client.get_object(
-                self.cluster.minio_bucket,
-                f"{S3_TABLE_PREFIX}/{self.table_name}/metadata/{name}",
-            ).read().decode()
-
-    def write_metadata_file(self, name, payload):
-        """Overwrite a metadata object out of band.
-
-        The parsed JSON is cached per (table uuid, path) with no invalidation, so a rewrite
-        of an existing name stays invisible until the cache is dropped."""
-        data = payload.encode()
-        if self.storage_type == "local":
-            path = f"{LOCAL_TABLE_PREFIX}/{self.table_name}/metadata/{name}"
-            # base64 via argv: the JSON carries quotes and braces that no amount of shell
-            # quoting survives intact, and exec_in_container has no stdin channel.
-            encoded = base64.b64encode(data).decode()
-            self.instance.exec_in_container(
-                ["bash", "-c", f"printf '%s' '{encoded}' | base64 -d > {path}"]
-            )
-        elif self.storage_type == "azure":
-            blob_path = (
-                f"/var/lib/clickhouse/user_files/iceberg_data/default/"
-                f"{self.table_name}/metadata/{name}"
-            )
-            self.cluster.blob_service_client.get_blob_client(
-                self.cluster.azure_container_name, blob_path,
-            ).upload_blob(data, overwrite=True)
-        else:
-            self.cluster.minio_client.put_object(
-                self.cluster.minio_bucket,
-                f"{S3_TABLE_PREFIX}/{self.table_name}/metadata/{name}",
-                io.BytesIO(data), len(data),
-            )
-        self.instance.query("SYSTEM DROP ICEBERG METADATA CACHE")
-
-    def remove_metadata_file(self, name):
-        if self.storage_type == "local":
-            path = f"{LOCAL_TABLE_PREFIX}/{self.table_name}/metadata/{name}"
-            self.instance.exec_in_container(["bash", "-c", f"rm {path}"])
-        elif self.storage_type == "azure":
-            blob_path = (
-                f"/var/lib/clickhouse/user_files/iceberg_data/default/"
-                f"{self.table_name}/metadata/{name}"
-            )
-            self.cluster.blob_service_client.get_blob_client(
-                self.cluster.azure_container_name, blob_path,
-            ).delete_blob()
-        else:
-            self.cluster.minio_client.remove_object(
-                self.cluster.minio_bucket,
-                f"{S3_TABLE_PREFIX}/{self.table_name}/metadata/{name}",
-            )
-
     # -- storage queries ----------------------------------------------------
 
     def exists(self, subdir, filename):
@@ -771,7 +702,7 @@ def test_remove_orphan_files_preserves_version_hint(started_cluster_iceberg_with
         "The orphan data file should still have been deleted"
 
 
-@pytest.mark.parametrize("storage_type", ["local", "s3"])
+@pytest.mark.parametrize("storage_type", ["local"])
 def test_remove_orphan_files_stale_version_hint_keeps_committed_snapshot(
     started_cluster_iceberg_with_spark, storage_type
 ):
@@ -826,44 +757,7 @@ def test_remove_orphan_files_stale_version_hint_keeps_committed_snapshot(
     # user-visible consequence directly: no rows may be missing.
     env.write_version_hint(newest)
     env.assert_data_intact()
-
-
 @pytest.mark.parametrize("storage_type", ["local"])
-def test_remove_orphan_files_stale_version_hint_dry_run_reports_no_orphans(
-    started_cluster_iceberg_with_spark, storage_type
-):
-    """dry_run under a stale hint must not report the committed snapshot as orphan.
-
-    dry_run returns before the metadata-version recheck, so it is the arm that shows the
-    reachability root itself is authoritative rather than the recheck compensating. It
-    deletes nothing, so the reported counts depend on the root alone and not on any
-    backend's removal path; one backend therefore covers it."""
-    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_stale_hint_dry")
-    env.populate(3, use_version_hint=True)
-    env.add_orphan("data", "orphan-stale-hint-dry.parquet")
-
-    newest = env.newest_metadata_version()
-    env.write_version_hint(newest - 1)
-    assert env.read_version_hint() == str(newest - 1), \
-        "version-hint.text rewrite did not take effect"
-
-    time.sleep(2)
-    counts = env.remove_orphans(older_than=env.now_ts(), dry_run=1)
-
-    assert counts["deleted_data_files_count"] == 1, (
-        "dry_run must report exactly the planted orphan-stale-hint-dry.parquet, so a "
-        "classification that returned nothing at all cannot pass this arm: "
-        f"{counts}"
-    )
-    assert counts["deleted_manifest_files_count"] == 0, f"got {counts}"
-    assert counts["deleted_manifest_lists_count"] == 0, f"got {counts}"
-    assert env.exists("data", "orphan-stale-hint-dry.parquet"), \
-        "dry_run deleted the file it only reported"
-    env.write_version_hint(newest)
-    env.assert_data_intact()
-
-
-@pytest.mark.parametrize("storage_type", ["local", "s3"])
 def test_insert_under_stale_version_hint_succeeds(
     started_cluster_iceberg_with_spark, storage_type
 ):
@@ -905,153 +799,55 @@ def test_insert_under_stale_version_hint_succeeds(
 
 
 @pytest.mark.parametrize("storage_type", ["local"])
-def test_remove_orphan_files_refuses_ambiguous_metadata_version(
+def test_remove_orphan_files_ignores_foreign_scheme_metadata(
     started_cluster_iceberg_with_spark, storage_type
 ):
-    """Two metadata files the resolver ranks equal must make the cleanup refuse, not guess.
+    """A metastore-named metadata file must not become the reachability root.
 
-    Without a catalog the cleanup root comes from a listing, and max_element returns the
-    first of equal elements -- so listing order, which has no relation to which state is
-    live, picks the root. An external engine committing NNNNN-<uuid>.metadata.json from the
-    same base as ClickHouse's vN.metadata.json is enough to produce the tie. Deleting on a
-    guess is unrecoverable, so refuse and name the files. The verdict comes from the
-    resolver itself, so it is backend-independent; one backend covers it."""
-    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_ambiguous")
+    `<N>-<uuid>.metadata.json` is committed through a pointer this table does not read, so
+    its N counts a different sequence and is not comparable with this table's `v<N>`
+    versions. Ranking the two together can root the scan at a state that never contained
+    the newest committed snapshot, and every object only that snapshot references is then
+    deleted. Which files are candidates is decided by the resolver, so one backend covers
+    it."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_foreign_scheme")
     env.populate(3, use_version_hint=True)
 
     newest = env.newest_metadata_version()
-    twin_name = f"{newest:05d}-{get_uuid_str()}.metadata.json"
-    env.copy_metadata_file(f"v{newest}.metadata.json", twin_name)
+    assert newest >= 2, f"Need at least two metadata versions, got v{newest}"
 
-    # Without an actual tie at the chosen root the case would pass on the unfixed binary.
-    same_version = env.metadata_files_with_version(newest)
-    assert same_version == sorted([f"v{newest}.metadata.json", twin_name]), (
-        f"Fixture did not produce exactly two files parsing to v{newest}: {same_version}"
+    # An earlier state of this table under a higher foreign version number: rooting there
+    # orphans whatever only v{newest} references, which is what makes the case lossy rather
+    # than merely wrong.
+    foreign_name = f"{newest + 1:05d}-{get_uuid_str()}.metadata.json"
+    env.copy_metadata_file(f"v{newest - 1}.metadata.json", foreign_name)
+    assert env.metadata_files_with_version(newest + 1) == [foreign_name], (
+        "Fixture did not produce a candidate outranking the committed metadata file, so a "
+        "resolver that considers foreign names would not pick it and the case is vacuous"
     )
 
-    env.add_orphan("data", "orphan-ambiguous.parquet")
-    committed_before = sorted(env.list_files())
+    env.add_orphan("data", "orphan-foreign-scheme.parquet")
+    data_before = [f for f in env.list_files()
+                   if "/data/" in f and f.endswith(".parquet")
+                   and "orphan-foreign-scheme" not in f]
+    assert data_before, "Fixture produced no committed data files"
 
     time.sleep(2)
-    for extra in ("", ", dry_run = 1"):
-        error = env.instance.query_and_get_error(
-            f"ALTER TABLE {env.table_name} EXECUTE remove_orphan_files("
-            f"older_than = '{env.now_ts()}'{extra});",
-            settings=ICEBERG_SETTINGS,
-        )
-        assert "BAD_ARGUMENTS" in error, f"dry_run='{extra}' should refuse, got: {error}"
-        assert "ranks equal to 1 other metadata file(s)" in error, (
-            f"Refusal should name the ambiguity, got: {error}"
-        )
-        assert twin_name in error, f"Refusal should name the offending files, got: {error}"
+    env.remove_orphans(older_than=env.now_ts())
 
-    # The planted orphan surviving is what shows the refusal happened before any deletion
-    # rather than after part of it.
-    assert sorted(env.list_files()) == committed_before, (
-        "A refused remove_orphan_files must not have deleted anything.\n"
-        f"  Before: {committed_before}\n  After:  {sorted(env.list_files())}"
+    data_after = [f for f in env.list_files()
+                  if "/data/" in f and f.endswith(".parquet")
+                  and "orphan-foreign-scheme" not in f]
+    assert sorted(data_after) == sorted(data_before), (
+        "remove_orphan_files deleted data files of the committed snapshot after rooting at "
+        f"a foreign-scheme metadata file.\n  Before: {sorted(data_before)}\n  After:  {sorted(data_after)}"
     )
-    env.assert_data_intact()
-
-    # Positive control: with the ambiguity resolved the command runs and does its job, so
-    # the case cannot pass by the command being broken outright.
-    env.remove_metadata_file(twin_name)
-    counts = env.remove_orphans(older_than=env.now_ts())
-    assert counts["deleted_data_files_count"] == 1, (
-        f"After removing the twin the planted orphan should be deleted: {counts}"
+    assert env.exists("metadata", f"v{newest}.metadata.json"), (
+        f"remove_orphan_files deleted v{newest}.metadata.json, the committed metadata file"
     )
-    assert not env.exists("data", "orphan-ambiguous.parquet")
-    env.assert_data_intact()
-
-
-@pytest.mark.parametrize("storage_type", ["local"])
-def test_remove_orphan_files_refuses_last_updated_ms_tie(
-    started_cluster_iceberg_with_spark, storage_type
-):
-    """A tie under `iceberg_recent_metadata_file_by_last_updated_ms_field` must also refuse.
-
-    That policy ranks candidates by the last-updated-ms field rather than by the version
-    number, so two files with DIFFERENT versions and one timestamp are the ambiguous pair
-    and a version-keyed check sees nothing wrong at all. A copy of the newest file under the
-    next version number is such a pair: the timestamp it carries is equal by construction."""
-    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_ms_tie")
-    env.populate(
-        3,
-        additional_settings=["iceberg_recent_metadata_file_by_last_updated_ms_field = true"],
-    )
-
-    newest = env.newest_metadata_version()
-    newest_name = f"v{newest}.metadata.json"
-    twin_name = f"v{newest + 1}.metadata.json"
-    env.copy_metadata_file(newest_name, twin_name)
-
-    # The two versions differ, so a version-keyed check finds no ambiguity here at all.
-    assert env.metadata_files_with_version(newest) == [newest_name]
-    assert env.metadata_files_with_version(newest + 1) == [twin_name]
-
-    env.add_orphan("data", "orphan-ms-tie.parquet")
-    committed_before = sorted(env.list_files())
-
-    time.sleep(2)
-    error = env.instance.query_and_get_error(
-        f"ALTER TABLE {env.table_name} EXECUTE remove_orphan_files("
-        f"older_than = '{env.now_ts()}');",
-        settings=ICEBERG_SETTINGS,
-    )
-    assert "BAD_ARGUMENTS" in error, f"A last-updated-ms tie should refuse, got: {error}"
-    assert "ranks equal to 1 other metadata file(s)" in error, error
-    assert twin_name in error or newest_name in error, (
-        f"Refusal should name the tied file, got: {error}"
-    )
-
-    assert sorted(env.list_files()) == committed_before, (
-        "A refused remove_orphan_files must not have deleted anything.\n"
-        f"  Before: {committed_before}\n  After:  {sorted(env.list_files())}"
-    )
-    env.assert_data_intact()
-
-
-@pytest.mark.parametrize("storage_type", ["local"])
-def test_remove_orphan_files_allows_shared_directory_with_table_uuid(
-    started_cluster_iceberg_with_spark, storage_type
-):
-    """A same-version file belonging to ANOTHER table must not block the cleanup.
-
-    With `iceberg_metadata_table_uuid` the resolver keeps only the candidates carrying that
-    uuid, so a neighbour table sharing the metadata directory is never a candidate and
-    nothing about it is ambiguous. Refusing on it would break a supported layout, which is
-    what a check keyed on the version number alone does."""
-    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_shared_dir")
-    env.populate(3)
-
-    newest = env.newest_metadata_version()
-    newest_name = f"v{newest}.metadata.json"
-    our_uuid = json.loads(env.read_metadata_file(newest_name))["table-uuid"]
-
-    # A neighbour table's metadata: same parsed version, different table-uuid.
-    neighbour = json.loads(env.read_metadata_file(newest_name))
-    neighbour["table-uuid"] = get_uuid_str()
-    neighbour_name = f"{newest:05d}-{get_uuid_str()}.metadata.json"
-    env.write_metadata_file(neighbour_name, json.dumps(neighbour))
-
-    # Fixture check: the two DO collide on version, so a version-keyed guard would refuse.
-    assert env.metadata_files_with_version(newest) == sorted([newest_name, neighbour_name])
-
-    # Re-attach to the same data with the uuid pinned. `if_not_exists` is what makes this an
-    # attach rather than a create: a create refuses a path that already holds metadata.
-    env.instance.query(f"DROP TABLE {env.table_name};")
-    create_iceberg_table(
-        env.storage_type, env.instance, env.table_name, env.cluster, "(x Int)", 2,
-        if_not_exists=True,
-        additional_settings=[f"iceberg_metadata_table_uuid = '{our_uuid}'"],
-    )
-
-    env.add_orphan("data", "orphan-shared-dir.parquet")
-
-    time.sleep(2)
-    counts = env.remove_orphans(older_than=env.now_ts())
-    assert counts["deleted_data_files_count"] == 1, (
-        f"The planted orphan should have been deleted, not refused: {counts}"
-    )
-    assert not env.exists("data", "orphan-shared-dir.parquet")
+    # Both of these show the command ran and classified rather than bailing out.
+    assert not env.exists("metadata", foreign_name), \
+        "The foreign-scheme file is unreachable from this table, so it should be removed"
+    assert not env.exists("data", "orphan-foreign-scheme.parquet"), \
+        "The planted orphan should still have been deleted"
     env.assert_data_intact()

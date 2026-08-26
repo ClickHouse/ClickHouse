@@ -24,8 +24,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
-#include <fmt/ranges.h>
-
 namespace DB
 {
 
@@ -264,18 +262,8 @@ RemoveOrphanFilesResult removeOrphanFiles(
 {
     auto log = getLogger("IcebergRemoveOrphanFiles");
 
-    auto [reachable, metadata_version, metadata_path, tied_metadata_paths] = collectReachableFiles(
+    auto [reachable, metadata_version, metadata_path] = collectReachableFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
-
-    /// A root the resolver picked out of equally-ranked candidates is a guess made on listing
-    /// order, and everything the losing candidate reaches would be scanned as orphaned.
-    if (!tied_metadata_paths.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Cannot determine the current metadata file: '{}' ranks equal to {} other metadata file(s) ({}) "
-            "under this table's metadata selection policy, so which one is current depends on listing order. "
-            "remove_orphan_files refuses rather than risk deleting a committed snapshot. Remove or rename "
-            "the abandoned file, or manage this table through a catalog",
-            metadata_path, tied_metadata_paths.size(), fmt::join(tied_metadata_paths, ", "));
 
     String scan_path = resolveScanPath(persistent_table_components.table_path, params);
     if (!object_storage->existsOrHasAnyChild(scan_path))
@@ -291,20 +279,13 @@ RemoveOrphanFilesResult removeOrphanFiles(
     if (params.dry_run || scan.orphan_paths.empty())
         return tallyByCategory(scan.orphan_paths, scan.skipped_missing_metadata);
 
-    auto [_recheck_files, recheck_version, recheck_path, recheck_tied] = collectReachableFiles(
+    auto [_recheck_files, recheck_version, recheck_path] = collectReachableFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
     if (recheck_path != metadata_path)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Current metadata file changed during orphan scan ('{}' v{} -> '{}' v{}); "
             "aborting to avoid deleting files referenced by a concurrent commit",
             metadata_path, metadata_version, recheck_path, recheck_version);
-    /// An equal-ranked file that appeared during the scan leaves the root path unchanged, so
-    /// the comparison above passes while what it reaches was never added to the scanned set.
-    if (!recheck_tied.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Metadata file '{}' became ambiguous during the orphan scan ({} now ranks equal); "
-            "aborting to avoid deleting files referenced by a concurrent commit",
-            metadata_path, fmt::join(recheck_tied, ", "));
 
     auto delete_result = deleteOrphanFiles(scan.orphan_paths, object_storage, log);
     LOG_INFO(log, "Deleted {}/{} orphan files ({} failed)",
@@ -336,7 +317,7 @@ Pipe executeRemoveOrphanFiles(
     /// between queries. Resolve the same metadata file the scan below roots at, so the
     /// gate and the scan judge one table state.
     auto log = getLogger("IcebergRemoveOrphanFiles");
-    auto [_metadata_version, latest_metadata_path, compression_method, _tied_paths] = getLatestMetadataFileAndVersionWithCatalog(
+    auto [_metadata_version, latest_metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
         table_name,

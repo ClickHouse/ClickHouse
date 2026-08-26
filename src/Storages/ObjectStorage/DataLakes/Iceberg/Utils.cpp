@@ -169,6 +169,30 @@ static bool isTemporaryMetadataFile(const String & file_name)
     return Poco::UUID{}.tryParse(substring);
 }
 
+/// True for `v<N>.metadata.json`, the only scheme whose file name is itself the compare-and-set:
+/// aiming at an N that exists collides, so existence means N is committed and a higher N carries a
+/// superset of the state. A uuid in the name removes both properties.
+static bool isVersionHintCommitScheme(const String & file_name)
+{
+    if (!file_name.starts_with('v'))
+        return false;
+    auto end_pos = file_name.find_first_of(".-");
+    if (end_pos == String::npos || end_pos <= 1 || file_name[end_pos] != '.')
+        return false;
+    return std::all_of(file_name.begin() + 1, file_name.begin() + end_pos, isdigit);
+}
+
+/// The file name a hint's content addresses, resolved the way the reader resolves it: a bare
+/// version number can only address `v<N>`, and any other content names a file directly.
+static std::optional<String> versionHintTargetName(const String & hint_content)
+{
+    if (hint_content.empty())
+        return {};
+    if (std::all_of(hint_content.begin(), hint_content.end(), isdigit))
+        return "v" + hint_content + ".metadata.json";
+    return hint_content.ends_with(".metadata.json") ? hint_content : hint_content + ".metadata.json";
+}
+
 /// Parse an all-digit version string into Int32, mapping overflow/garbage to BAD_ARGUMENTS.
 /// std::stoi throws std::out_of_range for values above INT_MAX, which would surface as an
 /// opaque STD_EXCEPTION (see issue #109612) instead of a clean BAD_ARGUMENTS.
@@ -231,8 +255,7 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
     return MetadataFileWithInfo{
         .version = parseMetadataVersion(version_str, file_name),
         .path = path,
-        .compression_method = getCompressionMethodFromMetadataFile(path),
-        .tied_paths = {}};
+        .compression_method = getCompressionMethodFromMetadataFile(path)};
 }
 
 /// Resolve metadata filename from version hint content.
@@ -1169,6 +1192,40 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         {
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
         }
+
+        /// A candidate outside the scheme the table itself commits through counts a version sequence
+        /// that is not this table's, so it must not be ranked against this table's files. The hint
+        /// declares the scheme; uuid selection identifies files by content and needs no name rule.
+        std::optional<bool> own_scheme_is_version_numbered;
+        if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
+            && !(table_uuid.has_value() && use_table_uuid_for_metadata_file_selection))
+        {
+            String hint_content;
+            try
+            {
+                StoredObject version_hint(std::filesystem::path(table_path) / "metadata" / "version-hint.text");
+                auto buf = object_storage->readObject(version_hint, ReadSettings{});
+                readString(hint_content, *buf);
+            }
+            catch (...)
+            {
+                /// A hint that cannot be read declares nothing, and the reader fails on it anyway.
+                LOG_DEBUG(log, "Could not read the version hint of table {}: {}", table_path, getCurrentExceptionMessage(false));
+            }
+            if (auto target = versionHintTargetName(hint_content))
+            {
+                const bool version_numbered = isVersionHintCommitScheme(*target);
+                auto has = [&](auto && predicate) { return std::any_of(metadata_files.begin(), metadata_files.end(),
+                    [&](const String & p) { return predicate(String(std::filesystem::path(p).filename())); }); };
+                /// A bare version number may address a compressed spelling of the name, so the
+                /// scheme is what has to be present, not the exact name. A hint naming a file
+                /// directly declares nothing unless that file is really there.
+                if (has([&](const String & name) { return isVersionHintCommitScheme(name) == version_numbered; })
+                    && (version_numbered || has([&](const String & name) { return name == *target; })))
+                    own_scheme_is_version_numbered = version_numbered;
+            }
+        }
+
         std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
         metadata_files_with_versions.reserve(metadata_files.size());
         for (const auto & path : metadata_files)
@@ -1176,7 +1233,9 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             String filename = std::filesystem::path(path).filename();
             if (isTemporaryMetadataFile(filename))
                 continue;
-            auto [version, metadata_file_path, compression_method, tied_metadata_paths] = getMetadataFileAndVersion(path);
+            if (own_scheme_is_version_numbered && isVersionHintCommitScheme(filename) != *own_scheme_is_version_numbered)
+                continue;
+            auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
 
             if (need_all_metadata_files_parsing)
             {
@@ -1240,19 +1299,25 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         const ShortMetadataFileInfo & latest_metadata_file_info
             = *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end(), ranks_below);
 
-        /// max_element returns the first of equal elements, so any other candidate ranking
-        /// equal to the winner was separated from it by listing order.
-        Strings tied_paths;
-        for (const auto & candidate : metadata_files_with_versions)
-            if (candidate.path != latest_metadata_file_info.path && !ranks_below(candidate, latest_metadata_file_info)
-                && !ranks_below(latest_metadata_file_info, candidate))
-                tied_paths.push_back(candidate.path);
+        /// One version can be claimed by a plain and a compressed spelling of the same name
+        /// (`v7.metadata.json`, `v7.gz.metadata.json`). Both are committed under the name-collision
+        /// rule, so which one is current is not decidable here, and listing order would decide it.
+        if (own_scheme_is_version_numbered)
+            for (const auto & candidate : metadata_files_with_versions)
+                if (candidate.path != latest_metadata_file_info.path && candidate.version == latest_metadata_file_info.version)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Iceberg table with path {} has two metadata files claiming version {}: '{}' and '{}'. "
+                        "Remove or rename the one that is not current",
+                        table_path,
+                        latest_metadata_file_info.version,
+                        latest_metadata_file_info.path,
+                        candidate.path);
 
         return MetadataFileWithInfo{
             latest_metadata_file_info.version,
             latest_metadata_file_info.path,
-            getCompressionMethodFromMetadataFile(latest_metadata_file_info.path),
-            std::move(tied_paths)};
+            getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
     };
 
     /// We'll query latest metadata from either cache or the actual remote catalog with a certain configured tolerance of staleness

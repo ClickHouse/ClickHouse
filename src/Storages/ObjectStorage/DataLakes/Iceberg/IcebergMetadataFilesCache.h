@@ -38,10 +38,6 @@ struct MetadataFileWithInfo
     Int32 version{};
     String path;
     CompressionMethod compression_method{};
-    /// Candidates that ranked equal to `path` under the selection policy that was applied,
-    /// so listing order alone separated them from it. Empty when the choice was unambiguous
-    /// and when a configured pointer named the file instead of ranking candidates.
-    Strings tied_paths;
 };
 }
 
@@ -107,10 +103,7 @@ private:
     static size_t getMemorySizeOfMetadataVersion(const LatestMetadataVersionPtr & metadata_version)
     {
         chassert(metadata_version);
-        size_t size = sizeof(LatestMetadataVersion) + metadata_version->latest_metadata.path.size();
-        for (const auto & tied_path : metadata_version->latest_metadata.tied_paths)
-            size += sizeof(String) + tied_path.size();
-        return size;
+        return sizeof(LatestMetadataVersion) + metadata_version->latest_metadata.path.size();
     }
 
     static size_t getMemorySizeOfManifestCacheKeys(const ManifestFileCacheKeys & manifest_file_cache_keys)

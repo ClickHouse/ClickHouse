@@ -131,7 +131,7 @@ ReachableFilesResult collectReachableFiles(
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const String & table_identifier)
 {
-    auto [version, metadata_path, compression_method, tied_metadata_paths] = getLatestMetadataFileAndVersionWithCatalog(
+    auto [version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
         table_identifier,
@@ -164,14 +164,14 @@ ReachableFilesResult collectReachableFiles(
     if (!metadata->has(f_snapshots))
     {
         LOG_INFO(log, "No snapshots in metadata, reachable set contains only metadata-root files");
-        return {std::move(reachable), version, metadata_path, std::move(tied_metadata_paths)};
+        return {std::move(reachable), version, metadata_path};
     }
 
     auto snapshots = metadata->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
     if (!snapshots || snapshots->size() == 0)
     {
         LOG_INFO(log, "Empty snapshots array, reachable set contains only metadata-root files");
-        return {std::move(reachable), version, metadata_path, std::move(tied_metadata_paths)};
+        return {std::move(reachable), version, metadata_path};
     }
 
     Int32 current_schema_id = metadata->getValue<Int32>(f_current_schema_id);
@@ -187,7 +187,7 @@ ReachableFilesResult collectReachableFiles(
         reachable.insert(resolver.resolve(path));
 
     LOG_INFO(log, "Collected {} reachable files from metadata graph", reachable.size());
-    return {std::move(reachable), version, metadata_path, std::move(tied_metadata_paths)};
+    return {std::move(reachable), version, metadata_path};
 }
 
 }

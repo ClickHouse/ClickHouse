@@ -45,9 +45,6 @@ struct ReachableFilesResult
     /// Resolved storage path of the metadata file the traversal was rooted at. Two distinct
     /// files can share a version number, so identity of the root is this path, not the number.
     String metadata_path;
-    /// Candidates the resolver ranked equal to the root, i.e. separated from it by listing
-    /// order alone. Non-empty means the root is a guess among these and `metadata_path`.
-    Strings tied_metadata_paths;
 };
 
 /// Collect all files reachable through the metadata graph.
