@@ -45,3 +45,13 @@ SELECT formatDateTime(
     '%H:%i:%S',
     if(number % 2 = 0, 'America/Los_Angeles', 'Europe/Amsterdam'))
 FROM numbers(2);
+
+SELECT 'A constant LowCardinality(String) time zone is accepted by the time-zone arguments';
+-- `now` validates its argument in `buildImpl`, which - unlike `getReturnTypeImpl` - is called
+-- before the default `LowCardinality` implementation strips the type.
+SELECT toTypeName(now(toLowCardinality('UTC')));
+SELECT toTypeName(nowInBlock(toLowCardinality('UTC')));
+SELECT date_trunc('day', toDateTime('2023-08-25 15:30:00', 'UTC'), toLowCardinality('UTC'));
+SELECT toDateTime('2023-08-25 15:30:00', toLowCardinality('UTC'));
+SELECT toUnixTimestamp('2023-08-25 15:30:00', toLowCardinality('UTC'));
+SELECT toDate('2023-08-25', toLowCardinality('UTC'));

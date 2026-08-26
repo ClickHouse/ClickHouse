@@ -17,3 +17,10 @@ The same results with the optimization disabled (plain String time zone)
 String
 08:30:00
 17:30:00
+A constant LowCardinality(String) time zone is accepted by the time-zone arguments
+DateTime(\'UTC\')
+LowCardinality(DateTime(\'UTC\'))
+2023-08-25 00:00:00
+2023-08-25 15:30:00
+1692977400
+2023-08-25
