@@ -123,6 +123,17 @@ add_library(global-libs INTERFACE)
 include (cmake/sanitize.cmake)
 include (cmake/profile_optimization.cmake)
 
+option (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER "With Silk fibers, we may access the same TLS variable from the same fiber, and if executed on different OS threads, the same variable access will hit different memory locations, leading to very hard to catch bugs. This sanitizer helps catch that. Debug only." OFF)
+if (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER)
+    set (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN "${CMAKE_BINARY_DIR}/SilkThreadLocalStorageSanitizerPass.so")
+    execute_process (COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}" bash "${CMAKE_SOURCE_DIR}/utils/silk-thread-local-storage-sanitizer/build.sh" "${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}" COMMAND_ERROR_IS_FATAL ANY)
+endif ()
+if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
+    add_compile_definitions (SILK_THREAD_LOCAL_STORAGE_SANITIZER=1)
+endif ()
+
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
 set (CMAKE_COLOR_MAKEFILE ${ENABLE_COLORED_BUILD}) # works only for the makefile generator
@@ -499,11 +510,19 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         # cfi-vcall and cfi-derived-cast are C++-only checks; do not apply to C compilation.
         #
         # Use `-fvisibility=default` rather than the CFI-documented `hidden`: with hidden
-        # visibility the build succeeds (with `-Wunique-object-duplication` suppressed) but the
-        # resulting binary crashes with SIGSEGV before main runs, because inline-static singletons
-        # like `Context::global_context_instance` and `BaseSettings::unknown_settings` get
-        # duplicated per translation unit and singleton identity is broken. Validated empirically
-        # by WeeklyCFI run 25790910376 — `clickhouse-server --version` exited with signal 11.
+        # visibility the resulting binary crashes with SIGSEGV before main runs. Validated
+        # empirically by WeeklyCFI run 25790910376 — `clickhouse-server --version` exited with
+        # signal 11.
+        #
+        # That crash was originally attributed to inline-static singletons like
+        # `Context::global_context_instance` being duplicated per shared object. That is not the
+        # cause. Every `-Wunique-object-duplication` site has since been fixed (the warning now
+        # reports nothing under `-fvisibility=hidden`) and the crash is unchanged: it is
+        # `numa_init()`, a pre-main libc constructor, calling `free()` — which this binary
+        # interposes in `Common/malloc.cpp` — and reaching jemalloc before jemalloc has
+        # initialised. Whether it fires at all depends on static-initialisation order, so it can
+        # appear to come and go with unrelated changes. Fixing that is what would let CFI use
+        # `hidden`; the duplication fixes on their own do not.
         # CFI vtable visibility is still satisfied for in-binary types because
         # `-fwhole-program-vtables` and `-Wl,--lto-whole-program-visibility` (set above) cause
         # the linker to treat all vtables as internal to the binary.
@@ -560,6 +579,8 @@ elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
 elseif (OS_SUNOS)
     include(cmake/sunos/default_libs.cmake)
+elseif (OS_WASM)
+    include(cmake/wasm/default_libs.cmake)
 endif ()
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
@@ -652,6 +673,11 @@ function (add_native_target TARGET)
 endfunction (add_native_target)
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
+
+# We can only check that SILK_THREAD_LOCAL_STORAGE_SANITIZER implies USE_SILK once we know whether silk is built
+if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN AND NOT TARGET ch_contrib::silk_fibers)
+    message (FATAL_ERROR "SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN is set, but silk is not built in this configuration (disable with -DENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER=OFF)")
+endif ()
 
 # We can only include XRay flags and defines once we know that we're building LLVM
 if (ENABLE_XRAY)

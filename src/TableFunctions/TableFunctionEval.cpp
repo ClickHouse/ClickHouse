@@ -6,6 +6,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeQuery.h>
@@ -154,6 +155,19 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
     /// `eval` is analyzer-only, and the same validation rejects such a change for a usual query.
     validateAnalyzerSettings(query, settings[Setting::allow_experimental_analyzer]);
 
+    /// The generated query does not go through `executeQuery`, so materialize the construction
+    /// settings a NON-last `UNION` arm carries in its own `SETTINGS` clause here, same as
+    /// `executeQueryImpl` does for a usual query (and in the same order: before the `UNION`
+    /// normalization visitors and before `wrapNestedConstructionSettings`). Without this the first
+    /// arm's settings in e.g. `eval('(SELECT … SETTINGS limit = 1) UNION ALL SELECT …')` would be
+    /// consumed by `takeNestedConstructionSettings` and re-scoped to the whole union, and the
+    /// ambiguous mix of non-last-arm and last-arm construction `SETTINGS` would not be rejected.
+    wrapPerArmConstructionSettings(
+        query,
+        settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]);
+
     /// Resolve the generated query's own `SETTINGS` clause into a private context, before the
     /// normalization visitors below rewrite the query tree (which can move or drop the `SETTINGS`).
     /// The AST size limits are then read from this context, so an inner `... SETTINGS max_ast_elements = N`
@@ -183,6 +197,20 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
         NormalizeSelectWithUnionQueryVisitor::Data data{inner_settings[Setting::union_default_mode]};
         NormalizeSelectWithUnionQueryVisitor{data}.visit(query);
     }
+
+    /// The generated query does not go through `executeQuery`, so materialize the query-construction
+    /// settings (`limit` / `offset` / `page` / `select` / `filter` / `order` / `sort`) it carries in
+    /// its own `SETTINGS` clause here, same as `executeQueryImpl` does for a usual query. Without this
+    /// they would be silently dropped: `QueryTreeBuilder` removes `limit` / `offset` from a query's
+    /// `SETTINGS` clause (expecting them already materialized into an outer `LIMIT` / `OFFSET`), so
+    /// e.g. `eval('SELECT number FROM numbers(3) SETTINGS limit = 1')` would ignore the limit. Only the
+    /// generated query's own `SETTINGS` clause is applied (its scope) — the session/user construction
+    /// settings shape the outer query that reads from `eval`, not the generated query.
+    wrapNestedConstructionSettings(
+        query,
+        settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]);
 
     /// Apply the AST size limits to the generated query, same as `executeQueryImpl` does for a usual
     /// query. Without this, `max_ast_depth` / `max_ast_elements` are ineffective for the inner query:

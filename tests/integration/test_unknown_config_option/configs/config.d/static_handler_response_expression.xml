@@ -1,0 +1,23 @@
+<clickhouse>
+    <!--
+        Negative case: `StaticRequestHandler` reads its `config://` payload exclusively from
+        `response_content`, never from `response_expression` (which is not a real handler field).
+        A `config://` reference placed in the unused `response_expression` element is ignored by
+        the server, so the unknown-key validator must NOT exempt the top-level
+        `<static_response_expression_payload>`. The node must fail to start with
+        `UNKNOWN_ELEMENT_IN_CONFIG`.
+    -->
+    <static_response_expression_payload>This is never read; the consumed field is response_content.</static_response_expression_payload>
+
+    <http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <url>/static_wrong_field</url>
+            <handler>
+                <type>static</type>
+                <response_expression>config://static_response_expression_payload</response_expression>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

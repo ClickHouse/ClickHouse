@@ -119,6 +119,7 @@ struct QueryState
     /// If true, the data packets will be skipped instead of reading. Used to recover after errors.
     bool skipping_data = false;
     bool query_duration_already_logged = false;
+    bool run_query_in_background = false;
 
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
@@ -173,6 +174,7 @@ public:
         bool parse_proxy_protocol_,
         String server_display_name_,
         String host_name_,
+        std::optional<String> default_session_user_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
     TCPHandler(
@@ -182,6 +184,7 @@ public:
         TCPProtocolStackData & stack_data,
         String server_display_name_,
         String host_name_,
+        std::optional<String> default_session_user_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
     ~TCPHandler() override;
@@ -196,6 +199,7 @@ private:
     TCPServer & tcp_server;
     bool parse_proxy_protocol = false;
     LoggerPtr log;
+    bool is_from_introspection_port = false;
 
     String forwarded_for;
     String certificate;
@@ -264,6 +268,10 @@ private:
     String server_display_name;
     String host_name;
 
+    /// If set, overrides the `default_session_user` server setting for this listener
+    /// (composable protocols allow a per-endpoint default user).
+    std::optional<String> default_session_user;
+
     void runImpl();
 
     void extractConnectionSettingsFromContext(const ContextPtr & context);
@@ -279,7 +287,8 @@ private:
     bool receivePacketsExpectQuery(std::shared_ptr<QueryState> & state);
     bool receivePacketsExpectData(QueryState & state) TSA_REQUIRES(callback_mutex);
     bool receivePacketsExpectDataConcurrentWithExecutor(QueryState & state);
-    void receivePacketsExpectCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
+    /// `force` skips the interactive-delay rate limit, for callers that must know right now.
+    void receivePacketsExpectCancel(QueryState & state, bool force = false) TSA_REQUIRES(callback_mutex);
 
     ClusterFunctionReadTaskResponsePtr receiveClusterFunctionReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 

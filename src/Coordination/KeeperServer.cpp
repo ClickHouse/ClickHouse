@@ -6,6 +6,7 @@
 #include "config.h"
 
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -25,11 +26,13 @@
 #include <libnuraft/peer.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <libnuraft/snapshot_sync_ctx.hxx>
+#include <libnuraft/timer_task.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
+#include <Common/saturatedWaitDuration.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -94,6 +97,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_uncommitted_log_entries;
     extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
+    extern const CoordinationSettingsMilliseconds nuraft_snapshot_sync_ctx_timeout_ms;
     extern const CoordinationSettingsBool use_new_dispatcher;
 }
 
@@ -171,6 +175,8 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
             disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_1;
         else if (token == "tlsv1_2")
             disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_2;
+        else if (token == "tlsv1_3")
+            disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_3;
     }
 
     auto prefer_server_cypher = config.getBool(config_prefix + "preferServerCiphers", false);
@@ -259,22 +265,13 @@ std::string checkAndGetSuperdigest(const String & user_and_digest)
     return user_and_digest;
 }
 
-int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, LoggerPtr log)
+UInt64 getNowMonotonicMs()
 {
-    if (value > std::numeric_limits<int32_t>::max())
-    {
-        LOG_WARNING(
-            log,
-            "Got {} value for setting '{}' which is bigger than int32_t max value, lowering value to {}.",
-            value,
-            name,
-            std::numeric_limits<int32_t>::max());
-        return std::numeric_limits<int32_t>::max();
-    }
-
-    return static_cast<int32_t>(value);
+    return static_cast<UInt64>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
+constexpr int32_t min_leader_metrics_poll_interval_ms = 100;
 }
 
 KeeperServer::KeeperServer(
@@ -554,17 +551,15 @@ void KeeperServer::forceRecovery()
 {
     // notify threads containing the lock that we want to enter recovery mode
     is_recovering = true;
-    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    ProfiledExclusiveLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
     auto params = raft_instance->get_current_params();
     enterRecoveryMode(params);
     raft_instance->setConfig(state_manager->load_config());
     raft_instance->update_params(params);
 }
 
-void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
+nuraft::raft_params buildRaftParams(const CoordinationSettings & coordination_settings, LoggerPtr log)
 {
-    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
-
     nuraft::raft_params params;
     params.parallel_log_appending_ = true;
     params.heart_beat_interval_
@@ -626,8 +621,23 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         coordination_settings[CoordinationSetting::nuraft_append_entries_backward_probe_throttle_threshold],
         "nuraft_append_entries_backward_probe_throttle_threshold",
         log);
+    /// 0 leaves NuRaft deriving the budget from `raft_limits_response_limit` * `heart_beat_interval_ms`, which is a
+    /// per-round-trip responsiveness budget rather than an allowance for the time a follower needs to apply a snapshot.
+    params.snapshot_sync_ctx_timeout_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings[CoordinationSetting::nuraft_snapshot_sync_ctx_timeout_ms].totalMilliseconds(),
+        "nuraft_snapshot_sync_ctx_timeout_ms",
+        log);
 
     params.return_method_ = nuraft::raft_params::async_handler;
+
+    return params;
+}
+
+void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
+{
+    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
+
+    nuraft::raft_params params = buildRaftParams(coordination_settings, log);
 
     nuraft::asio_service::options asio_opts{};
 
@@ -726,6 +736,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     KeeperRaftServer::set_raft_limits(raft_limits);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
+    startLeaderMetricsPolling(params.heart_beat_interval_);
 
     nuraft::ptr<nuraft::raft_server> cast_raft_server = raft_instance;
 
@@ -768,6 +779,8 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 void KeeperServer::shutdownRaftServer()
 {
     size_t timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::shutdown_timeout].totalSeconds();
+
+    stopLeaderMetricsPolling();
 
     if (!raft_instance)
     {
@@ -876,8 +889,136 @@ KeeperServer::RespondingCounts KeeperServer::getRespondingCounts() const
     return raft_instance->getRespondingCounts();
 }
 
+void KeeperServer::startLeaderUptimeMetrics()
+{
+    leader_since_ms = getNowMonotonicMs();
+}
+
+void KeeperServer::stopLeaderUptimeMetrics()
+{
+    leader_since_ms = 0;
+}
+
+std::optional<uint64_t> KeeperServer::getLeaderUptimeMetrics() const
+{
+    const UInt64 leader_since = leader_since_ms.load();
+    if (leader_since == 0)
+        return {};
+
+    return getNowMonotonicMs() - leader_since;
+}
+
+void KeeperServer::startLeaderMetricsPolling(int32_t poll_interval_ms)
+{
+    nuraft::timer_task<void>::executor task_function = [this]
+    {
+        collectLeaderMetrics();
+    };
+
+    {
+        std::lock_guard lock(leader_unavailable_metrics_mutex);
+        leader_unavailable_poll_interval_ms = std::max(poll_interval_ms, min_leader_metrics_poll_interval_ms);
+        leader_unavailable_polling_task.emplace(nuraft::cs_new<nuraft::timer_task<void>>(task_function));
+    }
+
+    collectLeaderMetrics();
+}
+
+void KeeperServer::stopLeaderMetricsPolling()
+{
+    std::lock_guard lock(leader_unavailable_metrics_mutex);
+    leader_unavailable_polling_task.reset();
+}
+
+void KeeperServer::collectLeaderMetrics()
+{
+    nuraft::ptr<nuraft::delayed_task> polling_task;
+    int32_t poll_interval_ms = 0;
+    {
+        std::lock_guard lock(leader_unavailable_metrics_mutex);
+        if (!leader_unavailable_polling_task)
+            return;
+
+        const UInt64 now_ms = getNowMonotonicMs();
+        if (!raft_instance->is_leader_alive())
+        {
+            if (leader_unavailable_since_ms == 0)
+                leader_unavailable_since_ms = now_ms;
+            if (election_since_ms == 0)
+                election_since_ms = now_ms;
+        }
+        else
+        {
+            const bool is_leader = raft_instance->is_leader();
+            if (leader_unavailable_since_ms != 0 && is_leader)
+            {
+                last_leader_unavailable_time_ms = now_ms - leader_unavailable_since_ms;
+                sum_leader_unavailable_time_ms += *last_leader_unavailable_time_ms;
+                ++cnt_leader_unavailable_time;
+            }
+            leader_unavailable_since_ms = 0;
+
+            /// NuRaft changes the local leader state before invoking the
+            /// BecomeLeader callback. Preserve a locally observed election
+            /// window for finishLeaderElectionMetrics to consume from that
+            /// callback; a live leader on another node ends the window here.
+            if (!is_leader)
+                election_since_ms = 0;
+        }
+
+        polling_task = *leader_unavailable_polling_task;
+        poll_interval_ms = leader_unavailable_poll_interval_ms;
+    }
+
+    /// The optional is the authoritative stopped state. If shutdown resets it
+    /// between releasing the lock and scheduling this task, its callback returns
+    /// without scheduling another poll.
+    asio_service->schedule(polling_task, poll_interval_ms);
+}
+
+void KeeperServer::finishLeaderElectionMetrics()
+{
+    std::lock_guard lock(leader_unavailable_metrics_mutex);
+    if (election_since_ms == 0)
+        return;
+
+    const UInt64 now_ms = getNowMonotonicMs();
+    last_leader_election_time_ms = now_ms - election_since_ms;
+    sum_election_time_ms += *last_leader_election_time_ms;
+    ++cnt_election_time;
+    election_since_ms = 0;
+}
+
+void KeeperServer::resetLeaderMetrics()
+{
+    std::lock_guard lock(leader_unavailable_metrics_mutex);
+    leader_unavailable_since_ms = 0;
+    election_since_ms = 0;
+    sum_leader_unavailable_time_ms = 0;
+    cnt_leader_unavailable_time = 0;
+    last_leader_unavailable_time_ms.reset();
+    sum_election_time_ms = 0;
+    cnt_election_time = 0;
+    last_leader_election_time_ms.reset();
+}
+
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
 {
+    /// We / nuraft currently don't have a good way to recover from exceptions here, the whole
+    /// server crashes if this throws. So we suppress MEMORY_LIMIT_EXCEEDED and take the risk of OOM.
+    /// The soft limit check in KeeperRequestDispatcher should mostly keep memory in check.
+    /// (Although that check is not always applied on the correct node - a request we're applying
+    ///  here could come from the dispatcher on another node.)
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+
+    if (type == nuraft::cb_func::BecomeLeader)
+    {
+        startLeaderUptimeMetrics();
+        finishLeaderElectionMetrics();
+    }
+    else if (type == nuraft::cb_func::BecomeFollower)
+        stopLeaderUptimeMetrics();
+
     if (is_recovering)
     {
         const auto finish_recovering = [&]
@@ -1266,7 +1407,7 @@ void KeeperServer::waitInit()
     std::unique_lock lock(initialized_mutex);
 
     int64_t timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::startup_timeout].totalMilliseconds();
-    if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag.load(); }))
+    if (!initialized_cv.wait_for(lock, saturatedWaitMilliseconds(timeout), [&] { return initialized_flag.load(); }))
         LOG_WARNING(log, "Failed to wait for RAFT initialization in {}ms, will continue in background", timeout);
 }
 
@@ -1279,7 +1420,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
     const ClusterUpdateAction & action, bool last_command_was_leader_change)
 {
     using enum ConfigUpdateState;
-    ProfiledMutexLock _(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    ProfiledExclusiveLock _(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
 
     if (const auto * add = std::get_if<AddRaftServer>(&action))
     {
@@ -1349,7 +1490,7 @@ ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::Ab
 
     if (!diff.empty())
     {
-        ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+        ProfiledExclusiveLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
         last_local_config = state_manager->parseServersConfiguration(config, true, coordination_settings[CoordinationSetting::async_replication]).cluster_config;
     }
 
@@ -1358,7 +1499,7 @@ ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::Ab
 
 void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action)
 {
-    ProfiledMutexLock server_write_lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    ProfiledExclusiveLock server_write_lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
     if (is_recovering) return;
     constexpr auto sleep_time = 500ms;
 
@@ -1476,6 +1617,17 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
     result.synced_non_voting_follower_count = 0;
     if (result.is_leader)
     {
+        result.leader_uptime_ms = getLeaderUptimeMetrics();
+        {
+            std::lock_guard lock(leader_unavailable_metrics_mutex);
+            result.sum_leader_unavailable_time_ms = sum_leader_unavailable_time_ms;
+            result.cnt_leader_unavailable_time = cnt_leader_unavailable_time;
+            result.last_leader_unavailable_time_ms = last_leader_unavailable_time_ms;
+            result.sum_election_time_ms = sum_election_time_ms;
+            result.cnt_election_time = cnt_election_time;
+            result.last_leader_election_time_ms = last_leader_election_time_ms;
+        }
+
         auto counts = getRespondingCounts();
         result.learner_count = counts.learners;
         result.follower_count = counts.followers;
@@ -1489,8 +1641,8 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 
 uint64_t KeeperServer::createSnapshot()
 {
-    /// serialize_commit_ makes nuraft lock commit_lock_. This guarantees that we call
-    /// beginWritingSnapshot() on storage in the state that corresponds to `log_idx`, rather than a
+    /// serialize_commit_ makes nuraft lock commit_lock_. This guarantees that we issue the read
+    /// view on storage in the state that corresponds to `log_idx`, rather than a
     /// more recent state.
     nuraft::raft_server::create_snapshot_options options;
     options.serialize_commit_ = true;
