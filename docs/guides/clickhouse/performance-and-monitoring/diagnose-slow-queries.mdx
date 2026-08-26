@@ -58,6 +58,7 @@ SELECT
 FROM clusterAllReplicas('default', merge('system', '^query_log'))
 WHERE type = 'QueryFinish'
   AND is_initial_query = 1
+  AND query_kind = 'Select'
   AND event_time >= now() - INTERVAL 1 HOUR
   AND has(databases, 'nyc_taxi')
 GROUP BY normalized_query_hash
@@ -82,6 +83,7 @@ SELECT
 FROM merge('system', '^query_log')
 WHERE type = 'QueryFinish'
   AND is_initial_query = 1
+  AND query_kind = 'Select'
   AND event_time >= now() - INTERVAL 1 HOUR
   AND has(databases, 'nyc_taxi')
 GROUP BY normalized_query_hash
@@ -95,7 +97,7 @@ LIMIT 10
 
 Use `executions` to distinguish recurring workload from isolated queries. A pattern with a high median duration, frequent executions, or high resource usage is a stronger candidate for investigation than a single slow run.
 
-As a quick inventory, the following query lists the five longest-running completed queries on the NYC Taxi dataset without grouping them into patterns. In the next step, you will narrow the query history to runs with the `normalized_query_hash` you selected above.
+As a quick inventory, the following query lists the slowest completed run for up to five distinct query patterns on the NYC Taxi dataset. It excludes dataset-loading statements and repeated runs of the same pattern. In the next step, you will narrow the query history to runs with the `normalized_query_hash` you selected above.
 
 <Tabs>
 <Tab title="Cluster">
@@ -103,6 +105,7 @@ As a quick inventory, the following query lists the five longest-running complet
 ```sql
 -- Find top 5 long running queries from nyc_taxi database in the last 1 hour
 SELECT
+    normalized_query_hash,
     type,
     event_time,
     query_duration_ms,
@@ -114,7 +117,9 @@ WHERE has(databases, 'nyc_taxi')
   AND event_time >= now() - INTERVAL 1 HOUR
   AND type = 'QueryFinish'
   AND is_initial_query = 1
+  AND query_kind = 'Select'
 ORDER BY query_duration_ms DESC
+LIMIT 1 BY normalized_query_hash
 LIMIT 5
 SETTINGS skip_unavailable_shards = 1
 FORMAT VERTICAL
@@ -126,6 +131,7 @@ FORMAT VERTICAL
 ```sql
 -- Find top 5 long running queries from nyc_taxi database in the last 1 hour
 SELECT
+    normalized_query_hash,
     type,
     event_time,
     query_duration_ms,
@@ -137,7 +143,9 @@ WHERE has(databases, 'nyc_taxi')
   AND event_time >= now() - INTERVAL 1 HOUR
   AND type = 'QueryFinish'
   AND is_initial_query = 1
+  AND query_kind = 'Select'
 ORDER BY query_duration_ms DESC
+LIMIT 1 BY normalized_query_hash
 LIMIT 5
 FORMAT VERTICAL
 ```
@@ -150,6 +158,7 @@ Query id: e3d48c9f-32bb-49a4-8303-080f59ed1835
 
 Row 1:
 ──────
+normalized_query_hash: 11000678248135956062
 type:              QueryFinish
 event_time:        2024-11-27 11:12:36
 query_duration_ms: 2967
@@ -168,6 +177,7 @@ tables:            ['nyc_taxi.trips_small_inferred']
 
 Row 2:
 ──────
+normalized_query_hash: 4194765292165295011
 type:              QueryFinish
 event_time:        2024-11-27 11:11:33
 query_duration_ms: 2026
@@ -191,6 +201,7 @@ tables:            ['nyc_taxi.trips_small_inferred']
 
 Row 3:
 ──────
+normalized_query_hash: 1891814463795712754
 type:              QueryFinish
 event_time:        2024-11-27 11:12:17
 query_duration_ms: 1860
@@ -198,33 +209,6 @@ query:             SELECT
   avg(dateDiff('s', pickup_datetime, dropoff_datetime))
 FROM nyc_taxi.trips_small_inferred
 WHERE passenger_count = 1 or passenger_count = 2
-FORMAT JSON
-read_rows:         329044175
-tables:            ['nyc_taxi.trips_small_inferred']
-
-Row 4:
-──────
-type:              QueryFinish
-event_time:        2024-11-27 11:12:31
-query_duration_ms: 690
-query:             SELECT avg(total_amount) FROM nyc_taxi.trips_small_inferred WHERE trip_distance > 5
-FORMAT JSON
-read_rows:         329044175
-tables:            ['nyc_taxi.trips_small_inferred']
-
-Row 5:
-──────
-type:              QueryFinish
-event_time:        2024-11-27 11:12:44
-query_duration_ms: 634
-query:             SELECT
-vendor_id,
-avg(total_amount),
-avg(trip_distance)
-FROM
-nyc_taxi.trips_small_inferred
-GROUP BY vendor_id
-ORDER BY 1 DESC
 FORMAT JSON
 read_rows:         329044175
 tables:            ['nyc_taxi.trips_small_inferred']
