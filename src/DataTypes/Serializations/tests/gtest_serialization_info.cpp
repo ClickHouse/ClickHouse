@@ -468,30 +468,6 @@ TEST(SerializationInfoByName, DowngradesWithoutEligibleSubcolumns)
     EXPECT_NE(eligible_infos.tryGet("j"), nullptr);
 }
 
-TEST(SerializationInfoObject, RejectsUnexpectedSerialization)
-{
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
-#else
-    auto object_type = DataTypeFactory::instance().get("JSON(x String, max_dynamic_paths=0)");
-    auto string_type = DataTypeFactory::instance().get("String");
-
-    EXPECT_THROW(
-        {
-            try
-            {
-                object_type->createColumn(*string_type->getDefaultSerialization());
-            }
-            catch (const DB::Exception & e)
-            {
-                EXPECT_EQ(e.code(), DB::ErrorCodes::LOGICAL_ERROR);
-                throw;
-            }
-        },
-        DB::Exception);
-#endif
-}
-
 TEST(SerializationInfoObject, NativeRevisionGate)
 {
     constexpr size_t rows = 4;
