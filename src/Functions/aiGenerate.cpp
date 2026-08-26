@@ -87,9 +87,9 @@ not set, the default is: `)" + String(default_system_prompt) + R"(`
            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.7`), `max_tokens` (maximum output tokens per call; default `1024`), `system_prompt` (constant system-level instruction guiding the model's behavior; default a generic assistant prompt). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}}},
         .returned_value = {"The generated text response, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples
-        = {{"Simple question", "SELECT aiGenerate('What is 2 + 2? Reply with just the number.')", "4"},
-           {"With explicit credentials and system prompt", "SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))", ""},
-           {"Summarize column values", "SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5", ""}},
+        = {{"Simple question", "SET allow_experimental_ai_functions = 1;\nSELECT aiGenerate('What is 2 + 2? Reply with just the number.')", "4"},
+           {"With explicit credentials and system prompt", "SET allow_experimental_ai_functions = 1;\nSELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))", ""},
+           {"Summarize column values", "SET allow_experimental_ai_functions = 1;\nCREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;\nINSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');\nSELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5", ""}},
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});
 
