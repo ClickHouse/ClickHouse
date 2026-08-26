@@ -6518,11 +6518,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
     else if (query_node_typed.isGroupByAll())
     {
-        /// Expand GROUP BY ALL keys before resolveGroupByNode registers the nullable keys,
-        /// so the projection below is typed Nullable. Expand from a clone so the real
-        /// projection keeps its aliases and is not constant-folded against the pre-nullable
-        /// types; the clone's keys still match structurally (nullable_group_by_keys ignores
-        /// aliases and types).
+        /// Expand GROUP BY ALL keys before resolveGroupByNode registers the nullable keys, so the
+        /// projection below is typed Nullable. Expand from a clone, so the real projection keeps its
+        /// aliases and is not constant-folded against the pre-nullable types; the clone's keys still
+        /// match, because the lookup ignores aliases and every type shape of a key is registered.
         auto projection_clone = query_node_typed.getProjectionNode()->clone();
         resolveExpressionNodeList(projection_clone, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         if (projection_clone->as<ListNode &>().getNodes().empty())
