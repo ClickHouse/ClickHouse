@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
+#include <Storages/MergeTree/Streaming/ReadRound/StampPartitionWatermarks.h>
 
 #include <Processors/Streaming/Markers.h>
 #include <Processors/IInflatingTransform.h>

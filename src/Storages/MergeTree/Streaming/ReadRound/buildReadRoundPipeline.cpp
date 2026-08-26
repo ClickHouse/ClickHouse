@@ -1,7 +1,7 @@
-#include <Storages/MergeTree/Streaming/ReadingPlan/buildReadRoundPipeline.h>
-#include <Storages/MergeTree/Streaming/ReadingPlan/AlignStreams.h>
-#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
-#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
+#include <Storages/MergeTree/Streaming/ReadRound/buildReadRoundPipeline.h>
+#include <Storages/MergeTree/Streaming/ReadRound/AlignStreams.h>
+#include <Storages/MergeTree/Streaming/ReadRound/StampPartitionWatermarks.h>
+#include <Storages/MergeTree/Streaming/ReadRound/StampPartitionCursors.h>
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
 #include <Storages/MergeTree/Streaming/Cursors/CursorUtils.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -138,8 +138,21 @@ QueryPlanPtr buildPartitionCommitOrderReadPlan(
     return plan;
 }
 
-QueryPlanPtr alignStreams(QueryPlanPtr data_plan, QueryPlanPtr metadata_plan)
+QueryPlanPtr addWatermarkCalculation(
+    QueryPlanPtr data_plan,
+    const ReadRoundContext & reading_context,
+    const ReadState & state,
+    const String & partition_id,
+    const Int64 & safe_block_number,
+    const StorageSnapshotPtr & storage_snapshot)
 {
+    const auto & stream_settings = reading_context.stream_settings;
+    const auto & context = reading_context.context;
+
+    const auto metadata_columns = metadataStreamColumns(stream_settings, storage_snapshot->metadata, context);
+    auto metadata_plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, metadata_columns);
+    metadata_plan->addStep(std::make_unique<CalculateWatermarksStep>(metadata_plan->getCurrentHeader(), stream_settings.watermark, state.getPartitionWatermark(partition_id), context));
+
     auto align_step = std::make_unique<AlignStreamsStep>(metadata_plan->getCurrentHeader(), data_plan->getCurrentHeader());
 
     std::vector<QueryPlanPtr> plans;
@@ -194,11 +207,7 @@ Pipe buildPartitionReadingPipeline(
     /// The watermarks are computed on the unfiltered metadata stream and aligned with data stream.
     if (stream_settings.watermark)
     {
-        const auto metadata_columns = metadataStreamColumns(stream_settings, storage_snapshot->metadata, context);
-        auto metadata_plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, metadata_columns);
-        metadata_plan->addStep(std::make_unique<CalculateWatermarksStep>(metadata_plan->getCurrentHeader(), stream_settings.watermark, state.getPartitionWatermark(partition_id), context));
-
-        plan = alignStreams(std::move(plan), std::move(metadata_plan));
+        plan = addWatermarkCalculation(std::move(plan), reading_context, state, partition_id, safe_block_number, storage_snapshot);
         plan->addStep(std::make_unique<StampPartitionWatermarksStep>(plan->getCurrentHeader(), partition_id));
     }
 
