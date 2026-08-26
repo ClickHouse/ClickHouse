@@ -6,7 +6,7 @@ A limit below the group count aborts the merge
 TOO_MANY_ROWS
 A bucket Top-K plan still hits the limit
 TOO_MANY_ROWS
-A spilling run still hits the limit at the detached table
-TOO_MANY_ROWS
+A spilling run hits the limit within a few buckets past it
+aborted near the limit
 A dropping mode stays on the baseline
 0
