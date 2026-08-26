@@ -86,7 +86,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     {
         .version = index_format.version,
         .condition = condition_text.get(),
-        .part_info = *data_part_info_for_read,
+        .part = *data_part,
         .index = *index.index,
         .readable_ranges = nullptr,
         .skip_postings_deserialization = false,
@@ -409,7 +409,8 @@ size_t MergeTreeReaderTextIndex::readRows(
     size_t from_mark,
     bool continue_reading,
     size_t max_rows_to_read,
-    MutableColumns & res_columns)
+    size_t rows_offset,
+    Columns & res_columns)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
@@ -418,17 +419,17 @@ size_t MergeTreeReaderTextIndex::readRows(
     if (continue_reading)
     {
         from_mark = current_mark;
-        from_row = current_row;
+        from_row = current_row + rows_offset;
     }
     else
     {
         /// Backward jump invalidates the per-token cursor cache: cached cursors are
         /// forward-only (their `linearOr` / `linearAnd` / `advance` walk segments from
-        /// `current_segment_idx` onward), so they cannot serve an earlier row.
+        /// `current_segment_idx` onward), so they cannot serve an earlier `row_offset`.
         if (from_mark < current_mark)
             resetCursors();
 
-        from_row = index_granularity.getMarkStartingRow(from_mark);
+        from_row = index_granularity.getMarkStartingRow(from_mark) + rows_offset;
     }
 
     size_t total_rows = data_part_info_for_read->getRowCount();
@@ -469,11 +470,11 @@ size_t MergeTreeReaderTextIndex::readRows(
     Block fallback_block;
     if (any_use_fallback && fallback_reader && max_rows_to_read > 0)
     {
-        MutableColumns fallback_cols(fallback_columns_list.size());
-        fallback_reader->readRows(from_mark, continue_reading, max_rows_to_read, fallback_cols);
+        Columns fallback_cols(fallback_columns_list.size(), nullptr);
+        fallback_reader->readRows(from_mark, continue_reading, max_rows_to_read, rows_offset, fallback_cols);
         size_t col_idx = 0;
         for (const auto & col_name_type : fallback_columns_list)
-            fallback_block.insert({std::move(fallback_cols[col_idx++]), col_name_type.type, col_name_type.name});
+            fallback_block.insert({fallback_cols[col_idx++], col_name_type.type, col_name_type.name});
     }
 
     size_t fallback_offset = 0;
@@ -494,7 +495,8 @@ size_t MergeTreeReaderTextIndex::readRows(
 
         for (size_t i = 0; i < res_columns.size(); ++i)
         {
-            auto & column_mutable = *res_columns[i];
+            auto mutable_column = IColumn::mutate(std::move(res_columns[i]));
+            auto & column_mutable = *mutable_column;
 
             if (is_always_true[i])
             {
@@ -524,6 +526,8 @@ size_t MergeTreeReaderTextIndex::readRows(
             {
                 fillColumn(column_mutable, mark_postings[i], from_row, rows_to_read);
             }
+
+            res_columns[i] = std::move(mutable_column);
         }
 
         ++from_mark;
@@ -541,7 +545,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     return read_rows;
 }
 
-void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns, size_t max_rows_to_read) const
+void MergeTreeReaderTextIndex::createEmptyColumns(Columns & columns, size_t max_rows_to_read) const
 {
     for (size_t i = 0; i < columns.size(); ++i)
     {
@@ -586,7 +590,7 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
         return result;
 
     /// Clip to `slice_range`, not the full mark, so postings stay in bounds on partial-mark
-    /// reads (`max_rows_to_read` stops inside the mark).
+    /// reads (`rows_offset > 0` or `max_rows_to_read` stops inside the mark).
     auto effective_range = mark_range->intersectWith(slice_range);
     if (!effective_range.has_value())
         return result;

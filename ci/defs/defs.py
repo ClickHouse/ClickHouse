@@ -389,7 +389,6 @@ class JobNames:
     COMPATIBILITY = "Compatibility check"
     SIGN_MACOS = "Sign macOS binary"
     DOCS_MINTLIFY = "Docs check (Mintlify)"
-    DOCS_EXAMPLES = "Docs examples"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"

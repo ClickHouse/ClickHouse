@@ -756,6 +756,15 @@ struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinar
 
         return new_state;
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        for (const auto & state : states)
+        {
+            if (state)
+                callback(state);
+        }
+    }
 };
 
 void SerializationTuple::enumerateStreams(
@@ -857,7 +866,8 @@ void SerializationTuple::serializeBinaryBulkWithMultipleStreams(
 }
 
 void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
-    IColumn & column,
+    ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -871,10 +881,13 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
         }
         else if (ReadBuffer * stream = settings.getter(settings.path))
         {
-            size_t prev_size = column.size();
-            auto ignored_size = stream->tryIgnore(limit);
-            typeid_cast<ColumnTuple &>(column).addSize(ignored_size);
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
+            size_t prev_size = column->size();
+            auto mutable_column = column->assumeMutable();
+            auto ignored_size = stream->tryIgnore(rows_offset + limit);
+            auto delta = ignored_size < rows_offset ? 0 : ignored_size - rows_offset;
+            typeid_cast<ColumnTuple &>(*mutable_column).addSize(delta);
+            column = std::move(mutable_column);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
         }
 
         return;
@@ -882,12 +895,13 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
 
     auto * tuple_state = checkAndGetState<DeserializeBinaryBulkStateTuple>(state);
 
-    auto & column_tuple = assert_cast<ColumnTuple &>(column);
+    auto mutable_column = column->assumeMutable();
+    auto & column_tuple = assert_cast<ColumnTuple &>(*mutable_column);
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
         elems[i]->deserializeBinaryBulkWithMultipleStreams(
-            column_tuple.getColumn(i), limit, settings, tuple_state->states[i], cache);
+            column_tuple.getColumnPtr(i), rows_offset, limit, settings, tuple_state->states[i], cache);
     }
 
     /// Verify that all Tuple elements have the same size.
@@ -898,7 +912,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
             throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of tuple element {}: {}. Expected size: {}", i, column_tuple.getColumn(i).size(), expected_size);
     }
 
-    column_tuple.addSize(column_tuple.getColumn(0).size());
+    typeid_cast<ColumnTuple &>(*mutable_column).addSize(column_tuple.getColumn(0).size());
 }
 
 size_t SerializationTuple::getPositionByName(const String & name) const
@@ -923,22 +937,6 @@ bool SerializationTuple::supportsPooling() const
         if (!elem->supportsPooling())
             return false;
     return true;
-}
-
-MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnPtr column) const
-{
-    /// Rebuild the tuple with each element wrapped by its own serialization (element serializations are
-    /// SerializationNamed wrappers that forward to the real element serialization, so kinds compose).
-    const auto & tuple = assert_cast<const ColumnTuple &>(*column);
-    if (elems.empty())
-        return column;
-
-    MutableColumns wrapped;
-    wrapped.reserve(elems.size());
-    for (size_t i = 0; i != elems.size(); ++i)
-        wrapped.push_back(elems[i]->wrapColumnForDeserialization(tuple.getColumn(i).cloneEmpty()));
-
-    return ColumnTuple::create(std::move(wrapped));
 }
 
 }

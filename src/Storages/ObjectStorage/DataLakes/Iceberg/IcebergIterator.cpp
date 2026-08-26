@@ -473,8 +473,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             = std::make_shared<IcebergDataObjectInfo>(
                 manifest_file_entry,
                 persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
-                table_state_snapshot->schema_id,
-                Iceberg::getIdentityPartitionColumnValues(*manifest_file_entry, *persistent_components.schema_processor));
+                table_state_snapshot->schema_id);
         for (const auto & position_delete :
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {

@@ -19,7 +19,6 @@
 #include <Common/SettingsChanges.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/WakeupFd.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/ProtocolDefines.h>
 
@@ -112,15 +111,6 @@ private:
 
 using DistributedQueryCancellationPtr = std::shared_ptr<DistributedQueryCancellation>;
 
-/// Notified whenever a task reaches a terminal state, so a caller that waits for stages without
-/// holding an execution thread wakes as soon as `execute` can make progress, instead of at the end
-/// of a poll interval.
-using StageWakeupPtr = std::shared_ptr<WakeupFd>;
-
-/// Never throws: a lost wake-up only costs the waiter its poll interval, while the callers are task
-/// threads and a `noexcept` cancellation path, where an escaping exception would end the process.
-void notifyStageWakeup(const StageWakeupPtr & stage_wakeup) noexcept;
-
 /// Implements distributed query plan execution logic by executing stages according to dependencies between them.
 class DistributedQueryPlanExecutor
 {
@@ -128,10 +118,7 @@ public:
     virtual ~DistributedQueryPlanExecutor() = default;
 
     void start();
-    /// Returns true if the execution is finished, false if it is still in progress and should be called again later.
-    /// `poll_timeout_ms` is how long to wait for the current stage before giving up and returning; pass 0 to only
-    /// look at the current state, so the caller can wait somewhere it does not hold an execution thread.
-    bool execute(UInt64 poll_timeout_ms);
+    bool execute(); /// Returns true if the execution is finished, false if it is still in progress and should be called again later.
 
     virtual void cleanup() = 0;
 
@@ -139,7 +126,7 @@ private:
     void startStageWithDependencies(const String & stage_name, UnorderedSetWithMemoryTracking<String> & executed_stages);
 
 protected:
-    DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, DistributedQueryCancellationPtr cancellation_, StageWakeupPtr stage_wakeup_);
+    DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, DistributedQueryCancellationPtr cancellation_);
 
     virtual void startStage(const String & stage_name, const DistributedQueryStage & stage) = 0;
     virtual bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) = 0;
@@ -151,7 +138,6 @@ protected:
     ContextPtr context;
     QueryStatusPtr query_status;
     DistributedQueryCancellationPtr cancellation;
-    StageWakeupPtr stage_wakeup;
     DequeWithMemoryTracking<String> running_stages;
     LoggerPtr logger;
 };
@@ -161,8 +147,7 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
     const DistributedQueryPlan & distributed_query_plan,
     TaskToHostMapPtr task_to_host_map,
     ContextPtr context,
-    DistributedQueryCancellationPtr cancellation,
-    StageWakeupPtr stage_wakeup);
+    DistributedQueryCancellationPtr cancellation);
 
 /// Wake every in-memory exchange waiter of the query; the waiters rethrow `failure` (or a
 /// generic cancellation error when it is null) instead of treating the stream as complete.
