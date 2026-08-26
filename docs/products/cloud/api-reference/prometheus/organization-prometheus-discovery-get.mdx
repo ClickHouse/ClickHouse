@@ -1,7 +1,7 @@
 ---
-title: "Discover Prometheus scrape targets for an organization"
+title: "List Prometheus scrape targets"
 openapi: "/_specs/cloud-openapi.json GET /v1/organizations/{organizationId}/prometheus/discovery"
-description: "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns one Prometheus scrape target per service in the organization that the caller is authorized to view, in HTTP service discovery (http_sd) format. Services the caller lacks view access to, and services in a terminated, terminating, or (soft-)deleted state, are omitted \u2014 the response can have fewer groups than the organization has services. Point a Prometheus http_sd_configs job at this endpoint to discover and scrape all services automatically; targets are refreshed on every discovery poll, so created and deleted services are picked up without reconfiguration. Targets scrape with filtered_metrics=true by default; pass ?filtered_metrics=false to this endpoint to discover unfiltered targets.\n\nSample Prometheus scrape config:\n\n```yaml\nscrape_configs:\n  - job_name: clickhouse-cloud\n    http_sd_configs:\n      - url: https://api.clickhouse.cloud/v1/organizations/<organizationId>/prometheus/discovery\n        refresh_interval: 60s\n        basic_auth:\n          username: <key-id>\n          password: <key-secret>\n    basic_auth:\n      username: <key-id>\n      password: <key-secret>\n```\n\nThe `basic_auth` block must be set both under `http_sd_configs` (used to authenticate discovery polls against this endpoint) and on the scrape job itself (used to authenticate the actual per-service scrapes) \u2014 omitting either one is the most common misconfiguration."
+description: "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics."
 tag: "Beta"
 ---
 
@@ -9,24 +9,10 @@ tag: "Beta"
 
 <span data-endpoint-badge="Beta"><Badge color="blue">Beta</Badge></span>
 
-**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns one Prometheus scrape target per service in the organization that the caller is authorized to view, in HTTP service discovery (http_sd) format. Services the caller lacks view access to, and services in a terminated, terminating, or (soft-)deleted state, are omitted — the response can have fewer groups than the organization has services. Point a Prometheus http_sd_configs job at this endpoint to discover and scrape all services automatically; targets are refreshed on every discovery poll, so created and deleted services are picked up without reconfiguration. Targets scrape with filtered_metrics=true by default; pass ?filtered_metrics=false to this endpoint to discover unfiltered targets.
+**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.
 
-Sample Prometheus scrape config:
+Point an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.
 
-```yaml
-scrape_configs:
-  - job_name: clickhouse-cloud
-    http_sd_configs:
-      - url: https://api.clickhouse.cloud/v1/organizations/<organizationId>/prometheus/discovery
-        refresh_interval: 60s
-        basic_auth:
-          username: <key-id>
-          password: <key-secret>
-    basic_auth:
-      username: <key-id>
-      password: <key-secret>
-```
-
-The `basic_auth` block must be set both under `http_sd_configs` (used to authenticate discovery polls against this endpoint) and on the scrape job itself (used to authenticate the actual per-service scrapes) — omitting either one is the most common misconfiguration.
+Discovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics.
 
 {/* AUTOGENERATED_END */}
