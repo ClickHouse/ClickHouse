@@ -155,7 +155,7 @@ def _server_query(port, sql, timeout, extra_args=None):
     return _run_client(["--port", str(port)] + (extra_args or []), sql, timeout)
 
 
-def _remote_query(sql, timeout=90):
+def _remote_query(sql, timeout=90, extra_args=None):
     """Run a query on the CI Logs cluster. The password is passed through the
     environment, see Client.cpp handling of CLICKHOUSE_PASSWORD."""
     args = [
@@ -185,7 +185,7 @@ def _remote_query(sql, timeout=90):
         args.append("--secure")
     env = os.environ.copy()
     env["CLICKHOUSE_PASSWORD"] = os.environ.get("CLICKHOUSE_CI_LOGS_PASSWORD", "")
-    return _run_client(args, sql, timeout, env=env)
+    return _run_client(args + (extra_args or []), sql, timeout, env=env)
 
 
 def _adapt_create_statement(table, hash_value, statement):
@@ -234,18 +234,42 @@ def _extra_columns_expression(repo, pr_number, commit_sha, check_start_time, che
     )
 
 
+# The remote CI Logs cluster occasionally fails a probe for reasons that are
+# transient and unrelated to our credentials: it resets the connection, or it is
+# momentarily over its memory limit and rejects the query with
+# `MEMORY_LIMIT_EXCEEDED` (its RSS crosses the cap for a few seconds under load
+# from other CI jobs). Only these cases are worth retrying; anything else
+# (authentication, configuration, DNS, a real outage) will not recover, and the
+# probe must not slow the job down. Keep in sync with
+# `check_logs_credentials` in
+# ci/jobs/scripts/functional_tests/setup_log_cluster.sh.
+TRANSIENT_PROBE_ERRORS = ("Connection reset by peer", "MEMORY_LIMIT_EXCEEDED")
+PROBE_ATTEMPTS = 3
+
+
 def _remote_available():
     """Probe the CI Logs cluster once per process, so that an unreachable
     cluster costs one connection timeout instead of one per table."""
     global _remote_available_cache
-    if _remote_available_cache is None:
+    if _remote_available_cache is not None:
+        return _remote_available_cache
+    for attempt in range(1, PROBE_ATTEMPTS + 1):
         try:
-            _remote_query("SELECT 1 FORMAT Null", timeout=60)
+            # A short connect timeout (instead of the 10s default) is applied to
+            # the probe only, so that a real outage fails fast. The export
+            # queries keep the default timeouts.
+            _remote_query("SELECT 1 FORMAT Null", timeout=60, extra_args=["--connect_timeout", "3"])
             _remote_available_cache = True
+            return True
         except Exception as e:
-            print(f"WARNING: Cannot connect to the CI Logs cluster, the logs will not be exported: {e}")
-            _remote_available_cache = False
-    return _remote_available_cache
+            error = str(e)
+            if attempt == PROBE_ATTEMPTS or not any(x in error for x in TRANSIENT_PROBE_ERRORS):
+                print(f"WARNING: Cannot connect to the CI Logs cluster, the logs will not be exported: {error}")
+                _remote_available_cache = False
+                return False
+            print(f"Attempt {attempt}/{PROBE_ATTEMPTS} to connect to the CI Logs cluster failed (transient error), retrying: {error}")
+            time.sleep(attempt + 1)
+    return False
 
 
 _remote_available_cache = None
