@@ -25,6 +25,7 @@
 #include <Common/TerminalSize.h>
 
 #include <Common/logger_useful.h>
+#include <Core/ServerUUID.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include "config.h"
@@ -34,6 +35,7 @@
 #include <IO/SharedThreadPools.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasBlobUploadPool.h>
 
 #include <Poco/FileChannel.h>
 
@@ -44,6 +46,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int STD_EXCEPTION;
 };
 
 LineReader::Patterns DisksApp::query_extenders = {"\\"};
@@ -212,6 +215,8 @@ bool DisksApp::processQueryText(const String & text)
         return false;
     CommandPtr command;
 
+    last_command_exit_code = 0;
+
     auto subqueries = splitOnUnquotedSemicolons(text);
     for (const auto & subquery : subqueries)
     {
@@ -230,6 +235,7 @@ bool DisksApp::processQueryText(const String & text)
         {
             int code = err.code();
             error_string = getExceptionMessageForLogging(err, true, false);
+            last_command_exit_code = code;
             if (code == ErrorCodes::BAD_ARGUMENTS)
             {
                 if (command.get())
@@ -246,10 +252,12 @@ bool DisksApp::processQueryText(const String & text)
         catch (std::exception & err)
         {
             error_string = err.what();
+            last_command_exit_code = ErrorCodes::STD_EXCEPTION;
         }
         catch (...) // Ok: report unknown exception
         {
             error_string = "Unknown exception";
+            last_command_exit_code = ErrorCodes::STD_EXCEPTION;
         }
         if (error_string.has_value())
         {
@@ -334,6 +342,11 @@ void DisksApp::registerCommands()
     command_descriptions.emplace("switch-disk", makeCommandSwitchDisk());
     command_descriptions.emplace("current_disk_with_path", makeCommandGetCurrentDiskAndPath());
     command_descriptions.emplace("touch", makeCommandTouch());
+    command_descriptions.emplace("cas-fsck", makeCommandFsck());
+    command_descriptions.emplace("cas-gc-dryrun", makeCommandCaGcDryRun());
+    command_descriptions.emplace("cas-gc-rebuild", makeCommandCaGcRebuild());
+    command_descriptions.emplace("cas-inspect", makeCommandCaInspect());
+    command_descriptions.emplace("cas-drop-member", makeCommandCaDropMember());
     command_descriptions.emplace("read-checksums", makeCommandReadChecksums());
     command_descriptions.emplace("help", makeCommandHelp(*this));
 #if CLICKHOUSE_CLOUD
@@ -539,6 +552,13 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         /*max_io_thread_pool_free_size*/ 0,
         /*io_thread_pool_queue_size*/ 10000);
 
+    /// `clickhouse-disks` loads no `ServerSettings`, so this can't read
+    /// `cas_blob_upload_pool_size`; 16 mirrors that setting's default
+    /// (`src/Core/ServerSettings.cpp`). A `write` command that commits through a
+    /// `cas` disk reaches `uploadPendingBlobs`, which calls this pool
+    /// unconditionally (see the analogous init in `Server.cpp`/`LocalServer.cpp`).
+    DB::Cas::initializeBlobUploadPool(16);
+
     registerCommands();
 
     registerDisks(/* global_skip_access_check= */ true);
@@ -571,6 +591,16 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 
     global_context->setPath(path);
 
+    /// Load the server UUID so that live CA namespaces resolve correctly.
+    /// Only load when the uuid file already exists — clickhouse-disks inspects existing
+    /// pools and must NOT create or mutate the uuid file (the disk may be read-only).
+    /// If the file is absent, ServerUUID stays Nil and shadow/non-live navigation works.
+    {
+        fs::path uuid_file = fs::path(path) / "uuid";
+        if (fs::exists(uuid_file))
+            ServerUUID::load(uuid_file, &logger());
+    }
+
     client = std::make_unique<DisksClient>(config(), global_context);
 
     suggest.setCompletionsCallback([&](const String & prefix, size_t /* prefix_length */) { return getCompletions(prefix); });
@@ -587,6 +617,10 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     if (log_file)
         log_file->close();
 
+    /// Non-interactive runs surface a failing command as a nonzero process exit (CI/cron gating,
+    /// e.g. `cas-fsck` reporting dangling objects). Interactive sessions are unaffected.
+    if (query.has_value() && last_command_exit_code != 0)
+        return last_command_exit_code;
     return Application::EXIT_OK;
 }
 
@@ -636,6 +670,7 @@ int mainEntryClickHouseDisks(int argc, char ** argv)
     /// That way, accesses happen-before destruction.
     SCOPE_EXIT_SAFE({
         DB::StaticThreadPool::shutdownAll();
+        DB::Cas::shutdownBlobUploadPool();
         GlobalThreadPool::shutdown();
     });
 

@@ -369,9 +369,17 @@ public:
         DataPartsVector commit();
         DataPartsVector commit(DataPartsLock & lock);
 
-        /// Rename should be done explicitly, before calling commit(), to
-        /// guarantee that no lock held during rename (since rename is IO
-        /// bound, while data parts lock is the bottleneck)
+        /// Renames should be done explicitly, before calling commit, to
+        /// guarantee that no lock is held during the rename and the disk
+        /// commit (both are IO bound, while the data parts lock is the
+        /// bottleneck). Contract: after renameParts every part of this
+        /// transaction is durable on its disk at its final name; commit only
+        /// flips in-memory visibility, and rollback compensates via new disk
+        /// operations (part removal). Every caller runs this BEFORE its
+        /// external Keeper commit decision: a part must be durable before its
+        /// block_id/part-znode is registered in Keeper, otherwise a fault between the two commits
+        /// leaves a phantom part whose surviving block_id silently dedups a byte-identical client
+        /// retry (acked data loss).
         void renameParts();
 
         void addPart(MutableDataPartPtr & part, bool need_rename);

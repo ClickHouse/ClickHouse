@@ -1945,6 +1945,9 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         ctx->context);
 
     tmp_part->finalize();
+    /// A borrowed (CA) temp projection sub-part shares the new (parent) part's whole-part transaction
+    /// (see `IMergeTreeDataPart::getProjectionPartBuilder`) and is committed by the parent's single
+    /// commit; the storage makes commitTransaction a no-op there, so this is called unconditionally (B58).
     tmp_part->part->getDataPartStorage().commitTransaction();
     projection_parts[projection.name].emplace_back(std::move(tmp_part->part));
 }

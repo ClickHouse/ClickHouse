@@ -9,6 +9,7 @@ import time
 import threading
 import traceback
 import uuid
+import zipfile
 from collections import defaultdict
 from pathlib import Path
 from typing import List
@@ -43,6 +44,7 @@ class ClickHouseProc:
     MINIO_LOG = f"{temp_dir}/minio.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
     KAFKA_LOG = f"{temp_dir}/kafka.log"
+    RUSTFS_LOG = f"{temp_dir}/rustfs.log"
     LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_rows_to_read=0 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
     DMESG_LOG = f"{temp_dir}/dmesg.log"
     # TODO: run servers in  dedicated wds to keep trash localised
@@ -162,6 +164,77 @@ class ClickHouseProc:
             return True
         print("Failed to start minio")
         return False
+
+    RUSTFS_VERSION = "1.0.0-rc.3"
+
+    def download_rustfs(self, rustfs_bin):
+        machine = platform.machine()
+        if machine not in ("x86_64", "aarch64", "arm64"):
+            print(f"unsupported architecture for rustfs [{machine}]")
+            return False
+        arch = "aarch64" if machine in ("aarch64", "arm64") else "x86_64"
+        url = (
+            f"https://github.com/rustfs/rustfs/releases/download/{self.RUSTFS_VERSION}"
+            f"/rustfs-linux-{arch}-musl-v{self.RUSTFS_VERSION}.zip"
+        )
+        zip_path = f"{temp_dir}/rustfs.zip"
+        if not Shell.check(
+            f"curl -sSfL --retry 3 --retry-delay 5 -o {zip_path} {url}", verbose=True
+        ):
+            print(f"failed to download rustfs from {url}")
+            return False
+        # The release zip contains the single `rustfs` binary at its root.
+        with zipfile.ZipFile(zip_path) as archive:
+            archive.extract("rustfs", temp_dir)
+        os.remove(zip_path)
+        os.chmod(rustfs_bin, 0o755)
+        return True
+
+    def start_rustfs(self):
+        # RustFS backs the CAS-over-S3 pool because the incarnation pool needs enforced
+        # conditional operations (a wrong-token DELETE must fail with 412) that MinIO OSS lacks;
+        # MinIO keeps serving the non-CAS s3 disks on its own port. Binary and data dir live
+        # under ci/tmp, which CI wipes per run, so no pool state bleeds between runs.
+        rustfs_bin = f"{temp_dir}/rustfs"
+        if not Path(rustfs_bin).is_file() and not self.download_rustfs(rustfs_bin):
+            print(f"rustfs binary not found at {rustfs_bin} and download failed")
+            return False
+        data_dir = f"{temp_dir}/rustfs_data"
+        Shell.check(f"rm -rf {data_dir} && mkdir -p {data_dir}", verbose=True)
+        # The background data-scanner and auto-heal manager do no useful work on a single-disk
+        # ephemeral pool, but their namespace locks produced multi-minute bursts of 503
+        # ServiceUnavailable that stalled client I/O. Client GET/PUT/LIST/DELETE do not depend on
+        # either. The RUSTFS_ENABLE_* spellings are deprecated since 1.0.0-beta.8.
+        # Raise the open-files limit for the same reason start_azurite does: under parallel load
+        # the server holds thousands of S3 connections, and at the default soft limit (1024)
+        # rustfs runs out of fds and refuses new TCP connections in bursts.
+        command = (
+            "(ulimit -n 1048576 2>/dev/null || ulimit -n $(ulimit -Hn)) && "
+            f"RUSTFS_SCANNER_ENABLED=false RUSTFS_HEAL_ENABLED=false "
+            f"{rustfs_bin} server --address 0.0.0.0:11121 "
+            f"--access-key clickhouse --secret-key clickhouse {data_dir}"
+        )
+        with open(self.RUSTFS_LOG, "w") as log_file:
+            self.rustfs_proc = subprocess.Popen(
+                command, stdout=log_file, stderr=subprocess.STDOUT, shell=True
+            )
+        print(f"Started rustfs asynchronously with PID {self.rustfs_proc.pid}")
+
+        if not Shell.check(
+            "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:11121/ | grep -qE '403|200'",
+            verbose=False,
+            retries=6,
+        ):
+            print("Failed to start rustfs")
+            return False
+        # The `test` bucket the storage policy expects.
+        res = Shell.check(
+            "/mc alias set carustfs http://localhost:11121 clickhouse clickhouse && /mc mb --ignore-existing carustfs/test",
+            verbose=True,
+        )
+        if not res:
+            print("Failed to create rustfs test bucket")
+        return res
 
     def start_azurite(self):
         # Raise the open files limit before launching azurite-rs.
@@ -938,6 +1011,8 @@ fi
                     res.append(self.AZURITE_LOG)
                 if Path(self.KAFKA_LOG).exists():
                     res.append(self.KAFKA_LOG)
+                if Path(self.RUSTFS_LOG).exists():
+                    res.append(self.RUSTFS_LOG)
                 if Path(self.DMESG_LOG).exists():
                     res.append(self.DMESG_LOG)
                 if Path(self.CH_LOCAL_ERR_LOG).exists():
@@ -1211,6 +1286,29 @@ fi
         Shell.check(
             f"sed -i 's|<errorlog>.*</errorlog>|<errorlog>{self.CH_LOCAL_ERR_LOG}</errorlog>|' /etc/clickhouse-server/config.xml"
         )
+        # Open any CAS disk read-only: a writable open claims server-root ownership and fails
+        # closed against the real server's persisted owner uuid, while a read-only open skips the
+        # claim and is all a dump needs. Keyed on the `<metadata_type>cas</metadata_type>` marker
+        # rather than on disk names, so it covers every CAS disk however this job names it.
+        # `grep -R` and `sed --follow-symlinks` are required: `tests/config/install.sh` symlinks
+        # these configs into `config.d`, and `-r`/plain `sed` would silently match nothing.
+        Shell.check(
+            "grep -Rl '<metadata_type>cas</metadata_type>' /etc/clickhouse-server/ 2>/dev/null "
+            "| xargs -r sed -i --follow-symlinks 's|<metadata_type>cas</metadata_type>|<metadata_type>cas</metadata_type><readonly>true</readonly>|g'"
+        )
+        # Report loudly if the substitution stops matching: a declared but not read-only CAS disk
+        # means this scrape is about to die on ownership. Reports; does not abort the dump.
+        if Shell.check(
+            "grep -Rlq '<metadata_type>cas</metadata_type>' /etc/clickhouse-server/",
+            verbose=False,
+        ) and not Shell.check(
+            "grep -Rlq '<metadata_type>cas</metadata_type><readonly>true</readonly>' /etc/clickhouse-server/",
+            verbose=False,
+        ):
+            print(
+                "WARNING: a CAS disk is declared but the read-only marker was not inserted "
+                "-- `clickhouse local` will claim server-root ownership and this scrape will fail"
+            )
         # FIXME: Hack for s3_with_keeper (note, that we don't need the disk,
         # the problem is that whenever we need disks all disks will be
         # initialized [1])
@@ -1226,8 +1324,12 @@ fi
 
         self.restore_system_metadata_files_from_remote_database_disk()
 
+        # `**`, not `*`: dynamic cache disks created by tests nest their path, e.g.
+        # `filesystem_caches/disks/cache_03517/status` — a one-level glob missed exactly that file,
+        # and the scrape died on its flock (`StatusFile.cpp` "Another server instance ... is already
+        # running") when the server had not released it.
         cache_status_files = glob.glob(
-            f"{self.ch_var_lib_dir}/filesystem_caches/*/status"
+            f"{self.ch_var_lib_dir}/filesystem_caches/**/status", recursive=True
         )
         if cache_status_files:
             print(

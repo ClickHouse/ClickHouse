@@ -1,0 +1,6 @@
+source	5	9	['a','b','c','d','e']
+restored	5	9	['a','b','c','d','e']
+projection	1	2
+projection	2	2
+projection	3	1
+done

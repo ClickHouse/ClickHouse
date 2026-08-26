@@ -1,0 +1,7 @@
+oracle_full_match	1
+counts	1000	249500
+cas_active_parts	2
+cas_distinct_uuids	2
+cas_no_zero_uuid	0
+ref_distinct_uuids	2
+dropped_ok

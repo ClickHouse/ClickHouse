@@ -1,0 +1,5 @@
+after-two-identical	1
+after-new-block	2
+after-reload-same-block	2
+after-reload-new-block	3
+dropped_ok

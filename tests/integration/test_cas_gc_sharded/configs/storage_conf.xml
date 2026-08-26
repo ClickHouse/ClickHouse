@@ -1,0 +1,38 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_cas_gc_sharded>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <!-- A single shared bucket path; BOTH replicas mount the SAME content-addressed pool
+                     (one source of truth — shared-pool mode, spec §6). This is what makes a two-replica
+                     disjoint-shard GC scenario possible: both nodes see the same gc/state key and
+                     compete for the coordinator lease. -->
+                <!-- RustFS (not MinIO): the CA mount capability probe requires enforced conditional-DELETE
+                     semantics (CasProbe step 6); MinIO OSS silently honors a mismatched-token DELETE and the
+                     fail-closed probe aborts server startup (PR#2073 CI triage). -->
+                <endpoint>http://rustfs1:11121/test/cas_gc_sharded/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <!-- Phase 4: two blob-hash-prefix GC shards (gc_shards=2). Creation-time only; the
+                     pool is authoritative on reopen. With gc_shards=2 the coordinator splits the
+                     BlobDelta stream into two disjoint buckets (even/odd high-64 hash mod 2) and
+                     writes two blob_target shard keys per generation. -->
+                <cas_gc_shards>2</cas_gc_shards>
+                <!-- Fast GC for the integration soak: grace 3s, interval 1s. -->
+                <cas_gc_enabled>1</cas_gc_enabled>
+                <cas_gc_interval_sec>1</cas_gc_interval_sec>
+            </disk_cas_gc_sharded>
+        </disks>
+        <policies>
+            <cas_gc_sharded>
+                <volumes>
+                    <main>
+                        <disk>disk_cas_gc_sharded</disk>
+                    </main>
+                </volumes>
+            </cas_gc_sharded>
+        </policies>
+    </storage_configuration>
+</clickhouse>

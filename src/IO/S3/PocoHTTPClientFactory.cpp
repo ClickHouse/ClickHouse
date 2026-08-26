@@ -14,6 +14,13 @@
 
 namespace DB::S3
 {
+
+bool isNativeConditionalRequest(const Aws::Http::HttpRequest & request) noexcept
+{
+    const auto * extended_request = dynamic_cast<const ExtendedHttpRequest *>(&request);
+    return extended_request != nullptr && extended_request->isNativeConditional();
+}
+
 std::shared_ptr<Aws::Http::HttpClient>
 PocoHTTPClientFactory::CreateHttpClient(const Aws::Client::ClientConfiguration & client_configuration) const
 {
@@ -22,6 +29,9 @@ PocoHTTPClientFactory::CreateHttpClient(const Aws::Client::ClientConfiguration &
         const auto & poco_client_configuration = static_cast<const PocoHTTPClientConfiguration &>(client_configuration);
         if (Poco::toLower(poco_client_configuration.http_client) == "gcp_oauth")
             return std::make_shared<PocoHTTPClientGCPOAuth>(poco_client_configuration);
+
+        if (Poco::toLower(poco_client_configuration.http_client) == "gcs_hmac")
+            return std::make_shared<PocoHTTPClientGCSHMAC>(poco_client_configuration);
 
         return std::make_shared<PocoHTTPClient>(poco_client_configuration);
     }
@@ -39,7 +49,7 @@ std::shared_ptr<Aws::Http::HttpRequest> PocoHTTPClientFactory::CreateHttpRequest
 std::shared_ptr<Aws::Http::HttpRequest> PocoHTTPClientFactory::CreateHttpRequest(
     const Aws::Http::URI & uri, Aws::Http::HttpMethod method, const Aws::IOStreamFactory &) const
 {
-    auto request = Aws::MakeShared<Aws::Http::Standard::StandardHttpRequest>("PocoHTTPClientFactory", uri, method);
+    auto request = Aws::MakeShared<ExtendedHttpRequest>("PocoHTTPClientFactory", uri, method);
 
     /// Don't create default response stream. Actual response stream will be set later in PocoHTTPClient.
     request->SetResponseStreamFactory(null_factory);

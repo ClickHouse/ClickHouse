@@ -18,6 +18,9 @@
 #include <aws/s3/model/UploadPartRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
+#include <aws/s3/model/CopyObjectRequest.h>
+#include <aws/s3/model/DeleteObjectRequest.h>
+#include <aws/s3/model/GetBucketVersioningRequest.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/S3Errors.h>
 
@@ -28,13 +31,20 @@
 #include <IO/AsyncReadCounters.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/S3/Client.h>
+#include <IO/S3/copyS3File.h>
+#include <IO/SeekableReadBuffer.h>
 
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
 #include <Common/filesystemHelpers.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Core/Settings.h>
+
+#include <Poco/TemporaryFile.h>
 
 
 namespace DB
@@ -51,10 +61,16 @@ namespace Setting
     extern const SettingsUInt64 s3_upload_part_size_multiply_parts_count_threshold;
 }
 
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsBool allow_native_copy;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 }
@@ -184,6 +200,9 @@ struct EventCounts
     size_t multiUploadAbort = 0;
     size_t uploadParts = 0;
     size_t writtenSize = 0;
+    size_t copyObject = 0;
+    size_t deleteObject = 0;
+    size_t getBucketVersioning = 0;
 
     size_t totalRequestsCount() const
     {
@@ -208,6 +227,9 @@ struct InjectionModel
     DeclareInjectCall(CompleteMultipartUpload)
     DeclareInjectCall(AbortMultipartUpload)
     DeclareInjectCall(UploadPart)
+    DeclareInjectCall(CopyObject)
+    DeclareInjectCall(DeleteObject)
+    DeclareInjectCall(GetBucketVersioning)
 #undef DeclareInjectCall
 };
 
@@ -261,6 +283,9 @@ struct Client : DB::S3::Client
     {
         ++counters.putObject;
 
+        if (const auto * wrapper = dynamic_cast<const DB::S3::RequestWithNativeConditionalMode *>(&request))
+            last_put_object_native_conditional = wrapper->isNativeConditional();
+
         if (injections)
         {
             if (auto opt_val = injections->call(request))
@@ -277,6 +302,7 @@ struct Client : DB::S3::Client
 
         Aws::S3::Model::PutObjectOutcome outcome;
         Aws::S3::Model::PutObjectResult result(outcome.GetResultWithOwnership());
+        result.SetETag("etag-singlepart-" + request.GetKey());
         return result;
     }
 
@@ -311,6 +337,13 @@ struct Client : DB::S3::Client
     {
         ++counters.headObject;
 
+        /// The request's DYNAMIC type is still the production `DB::S3::HeadObjectRequest` wrapper --
+        /// this override only sees it through the SDK base-class reference. Mirrors the dynamic_cast
+        /// `Client::BuildHttpRequest` itself does, so a test can observe the mark this mock never
+        /// forwards through an HTTP layer.
+        if (const auto * wrapper = dynamic_cast<const DB::S3::RequestWithNativeConditionalMode *>(&request))
+            last_head_object_native_conditional = wrapper->isNativeConditional();
+
         if (injections)
         {
             if (auto opt_val = injections->call(request))
@@ -331,6 +364,9 @@ struct Client : DB::S3::Client
     {
         ++counters.multiUploadCreate;
 
+        if (const auto * wrapper = dynamic_cast<const DB::S3::RequestWithNativeConditionalMode *>(&request))
+            last_create_multipart_native_conditional = wrapper->isNativeConditional();
+
         if (injections)
         {
             if (auto opt_val = injections->call(request))
@@ -350,6 +386,9 @@ struct Client : DB::S3::Client
     Aws::S3::Model::UploadPartOutcome UploadPart(const Aws::S3::Model::UploadPartRequest & request) const override
     {
         ++counters.uploadParts;
+
+        if (const auto * wrapper = dynamic_cast<const DB::S3::RequestWithNativeConditionalMode *>(&request))
+            last_upload_part_native_conditional = wrapper->isNativeConditional();
 
         if (injections)
         {
@@ -375,6 +414,9 @@ struct Client : DB::S3::Client
     {
         ++counters.multiUploadComplete;
 
+        if (const auto * wrapper = dynamic_cast<const DB::S3::RequestWithNativeConditionalMode *>(&request))
+            last_complete_multipart_native_conditional = wrapper->isNativeConditional();
+
         if (injections)
         {
             if (auto opt_val = injections->call(request))
@@ -392,6 +434,7 @@ struct Client : DB::S3::Client
         bStore.CompleteMPU(request.GetKey(), request.GetUploadId(), etags);
 
         Aws::S3::Model::CompleteMultipartUploadResult result;
+        result.SetETag("etag-multipart-" + request.GetKey());
         return Aws::S3::Model::CompleteMultipartUploadOutcome(result);
     }
 
@@ -414,9 +457,90 @@ struct Client : DB::S3::Client
         return Aws::S3::Model::AbortMultipartUploadOutcome(result);
     }
 
+    Aws::S3::Model::CopyObjectOutcome CopyObject(const Aws::S3::Model::CopyObjectRequest & request) const override
+    {
+        ++counters.copyObject;
+
+        if (const auto * wrapper = dynamic_cast<const DB::S3::RequestWithNativeConditionalMode *>(&request))
+            last_copy_object_native_conditional = wrapper->isNativeConditional();
+
+        last_copy_object_if_match = request.IfMatchHasBeenSet();
+        last_copy_object_if_none_match = request.IfNoneMatchHasBeenSet();
+
+        if (injections)
+        {
+            if (auto opt_val = injections->call(request))
+                return std::move(*opt_val);
+        }
+
+        /// CopySource is "<bucket>/<key>"; parse it back apart to look the source object up
+        /// (both source and destination live in the same S3MemStrore in these tests).
+        const std::string & copy_source = request.GetCopySource();
+        const size_t sep = copy_source.find('/');
+        chassert(sep != std::string::npos);
+        const std::string src_bucket_name = copy_source.substr(0, sep);
+        const std::string src_key = copy_source.substr(sep + 1);
+
+        auto & src_store = store->GetBucketStore(src_bucket_name);
+        const std::string data = src_store.objects.at(src_key);
+
+        auto & dst_store = store->GetBucketStore(request.GetBucket());
+        dst_store.PutObject(request.GetKey(), data);
+
+        Aws::S3::Model::CopyObjectResult result;
+        Aws::S3::Model::CopyObjectResultDetails details;
+        details.SetETag("etag-copy-" + request.GetKey());
+        result.SetCopyObjectResultDetails(details);
+        return Aws::S3::Model::CopyObjectOutcome(result);
+    }
+
+    Aws::S3::Model::DeleteObjectOutcome DeleteObject(const Aws::S3::Model::DeleteObjectRequest & request) const override
+    {
+        ++counters.deleteObject;
+
+        if (const auto * wrapper = dynamic_cast<const DB::S3::RequestWithNativeConditionalMode *>(&request))
+            last_delete_object_native_conditional = wrapper->isNativeConditional();
+
+        if (injections)
+        {
+            if (auto opt_val = injections->call(request))
+                return std::move(*opt_val);
+        }
+
+        auto & bStore = store->GetBucketStore(request.GetBucket());
+        bStore.objects.erase(request.GetKey());
+
+        Aws::S3::Model::DeleteObjectResult result;
+        return Aws::S3::Model::DeleteObjectOutcome(result);
+    }
+
+    Aws::S3::Model::GetBucketVersioningOutcome GetBucketVersioning(const Aws::S3::Model::GetBucketVersioningRequest & request) const override
+    {
+        ++counters.getBucketVersioning;
+
+        if (injections)
+        {
+            if (auto opt_val = injections->call(request))
+                return std::move(*opt_val);
+        }
+
+        Aws::S3::Model::GetBucketVersioningResult result;
+        result.SetStatus(Aws::S3::Model::BucketVersioningStatus::Enabled);
+        return Aws::S3::Model::GetBucketVersioningOutcome(result);
+    }
+
     std::shared_ptr<S3MemStrore> store;
     mutable EventCounts counters;
     mutable std::shared_ptr<InjectionModel> injections;
+    mutable bool last_head_object_native_conditional = false;
+    mutable bool last_delete_object_native_conditional = false;
+    mutable bool last_put_object_native_conditional = false;
+    mutable bool last_create_multipart_native_conditional = false;
+    mutable bool last_upload_part_native_conditional = false;
+    mutable bool last_complete_multipart_native_conditional = false;
+    mutable bool last_copy_object_native_conditional = false;
+    mutable bool last_copy_object_if_match = false;
+    mutable bool last_copy_object_if_none_match = false;
     void resetCounters() const { counters = {}; }
 };
 
@@ -458,6 +582,37 @@ struct UploadPartFailIngection: InjectionModel
     {
         return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::VALIDATION, "FailInjection", "UploadPartFailIngection", false);
     }
+};
+
+/// Injects an arbitrary AWSError<S3Errors> on DeleteObject -- used to drive the conditional-remove
+/// (`removeObjectIfTokenMatches`) outcome mapping: a 412-shaped error (exception name "PreconditionFailed",
+/// matched by `S3::isPreconditionFailedError`) must map to `ConditionalRemoveOutcome::TokenMismatch`, and a
+/// 404-shaped error (a `NO_SUCH_KEY`/`RESOURCE_NOT_FOUND`/`NO_SUCH_BUCKET` error type, matched by
+/// `S3::isNotFoundError`) must map to `ConditionalRemoveOutcome::NotFound`.
+struct DeleteObjectErrorInjection: InjectionModel
+{
+    explicit DeleteObjectErrorInjection(Aws::Client::AWSError<Aws::S3::S3Errors> error_) : error(std::move(error_)) {}
+
+    std::optional<Aws::S3::Model::DeleteObjectOutcome> call(const Aws::S3::Model::DeleteObjectRequest & /*request*/) override
+    {
+        return error;
+    }
+
+    Aws::Client::AWSError<Aws::S3::S3Errors> error;
+};
+
+/// Injects an arbitrary `CopyObject` error to exercise ordinary-copy fallback and native-only
+/// fail-close behavior.
+struct CopyObjectErrorInjection: InjectionModel
+{
+    explicit CopyObjectErrorInjection(Aws::Client::AWSError<Aws::S3::S3Errors> error_) : error(std::move(error_)) {}
+
+    std::optional<Aws::S3::Model::CopyObjectOutcome> call(const Aws::S3::Model::CopyObjectRequest & /*request*/) override
+    {
+        return error;
+    }
+
+    Aws::Client::AWSError<Aws::S3::S3Errors> error;
 };
 
 struct BaseSyncPolicy
@@ -555,7 +710,7 @@ public:
         return *async_policy;
     }
 
-    std::unique_ptr<WriteBufferFromS3> getWriteBuffer(String file_name = "file")
+    std::unique_ptr<WriteBufferFromS3> getWriteBuffer(String file_name = "file", const WriteSettings & write_settings = {})
     {
         S3::S3RequestSettings request_settings;
         request_settings.updateFromSettings(settings, /* if_changed */true, /* validate_settings */false);
@@ -572,7 +727,8 @@ public:
                     request_settings,
                     nullptr,
                     std::nullopt,
-                    getAsyncPolicy().getScheduler());
+                    getAsyncPolicy().getScheduler(),
+                    write_settings);
     }
 
     void setInjectionModel(std::shared_ptr<MockS3::InjectionModel> injections_)
@@ -952,6 +1108,33 @@ TEST_F(WBS3Test, PrefinalizeCalledMultipleTimes) {
 #endif
 }
 
+// The object ETag from the PutObject / CompleteMultipartUpload response is surfaced via
+// getResultObjectETag() after a successful finalize() — lets content-addressed callers record the
+// just-written incarnation's token WITHOUT a follow-up HEAD (CA head-after-put elimination).
+TEST_F(WBS3Test, ResultObjectETagIsCaptured) {
+    // Singlepart upload: the PutObject response ETag.
+    {
+        auto buffer = getWriteBuffer("singlepart-file");
+        writeAsOneBlock(*buffer, 10);
+        getAsyncPolicy().setAutoExecute(true);
+        buffer->finalize();
+        ASSERT_TRUE(buffer->getResultObjectETag().has_value());
+        ASSERT_EQ(*buffer->getResultObjectETag(), "etag-singlepart-singlepart-file");
+    }
+
+    // Multipart upload: the final object ETag comes from CompleteMultipartUpload, NOT a per-part tag.
+    {
+        getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part — force multipart
+        getSettings()[Setting::s3_min_upload_part_size] = 1;
+        auto buffer = getWriteBuffer("multipart-file");
+        writeAsOneBlock(*buffer, 10);
+        getAsyncPolicy().setAutoExecute(true);
+        buffer->finalize();
+        ASSERT_TRUE(buffer->getResultObjectETag().has_value());
+        ASSERT_EQ(*buffer->getResultObjectETag(), "etag-multipart-multipart-file");
+    }
+}
+
 TEST_P(SyncAsync, EmptyFile) {
     getSettings()[Setting::s3_check_objects_after_upload] = true;
 
@@ -1184,6 +1367,402 @@ TEST_P(SyncAsync, StrictUploadPartSize) {
             ASSERT_THAT(actual_parts_sizes, testing::ElementsAre(11, 11, 11, 11, 11, 11, 1));
         }
     }
+}
+
+/// Task 3: the actual PutObject request a single-part upload issues must carry the typed
+/// NativeConditional mode exactly when the caller's WriteSettings asked for it -- the old blanket GCS
+/// dialect stays authoritative over the wire until a later task; this only proves the mark reaches
+/// the production request object (mirrors the HEAD/DELETE marking tests in
+/// S3ObjectStorageConditionalOpsTest below).
+TEST_F(WBS3Test, PutObjectNativeConditionalModePropagates)
+{
+    WriteSettings ws;
+    ws.object_storage_request_mode = ObjectStorageRequestMode::NativeConditional;
+
+    auto buffer = getWriteBuffer("native_conditional_put", ws);
+    buffer->write('A');
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    EXPECT_EQ(client->counters.putObject, 1);
+    EXPECT_TRUE(client->last_put_object_native_conditional);
+}
+
+/// The control: an ordinary (Default-mode) single-part upload must NOT pick up the mark.
+TEST_F(WBS3Test, PutObjectOrdinaryWriteRemainsDefault)
+{
+    auto buffer = getWriteBuffer("ordinary_put");
+    buffer->write('A');
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    EXPECT_EQ(client->counters.putObject, 1);
+    EXPECT_FALSE(client->last_put_object_native_conditional);
+}
+
+/// A multipart upload's CompleteMultipartUpload request must carry the mode too (Task 4's native
+/// adapter consumes it as a defense-in-depth guard against a conditional multipart completion), while
+/// CreateMultipartUpload and UploadPart -- which no consumer needs marked -- must NOT.
+TEST_F(WBS3Test, CompleteMultipartUploadNativeConditionalModePropagatesButCreateAndUploadPartDoNot)
+{
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force multipart
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    WriteSettings ws;
+    ws.object_storage_request_mode = ObjectStorageRequestMode::NativeConditional;
+
+    auto buffer = getWriteBuffer("native_conditional_multipart", ws);
+    buffer->write('A');
+    buffer->next();
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    EXPECT_EQ(client->counters.multiUploadComplete, 1);
+    EXPECT_TRUE(client->last_complete_multipart_native_conditional);
+    EXPECT_FALSE(client->last_create_multipart_native_conditional);
+    EXPECT_FALSE(client->last_upload_part_native_conditional);
+}
+
+/// Mock-S3 coverage for token-exact removal plus ordinary and native-only copy modes.
+class S3ObjectStorageConditionalOpsTest : public ::testing::Test
+{
+public:
+    const String bucket = "cond-ops-bucket";
+    const String disk_name = "cond-ops-disk";
+
+    std::shared_ptr<S3ObjectStorage> object_storage;
+    MockS3::Client * mock_client = nullptr;
+    std::shared_ptr<MockS3::S3MemStrore> store;
+
+protected:
+    std::shared_ptr<S3ObjectStorage> createObjectStorage(
+        const String & storage_bucket,
+        const String & storage_disk_name,
+        bool allow_native_copy,
+        MockS3::Client *& client_out)
+    {
+        auto owned_client = std::make_unique<MockS3::Client>(store);
+        client_out = owned_client.get();
+
+        auto settings = std::make_unique<S3Settings>();
+        settings->request_settings[S3RequestSetting::allow_native_copy] = allow_native_copy;
+
+        S3::URI uri;
+        uri.bucket = storage_bucket;
+        S3Capabilities capabilities;
+        ObjectStorageKeyGeneratorPtr key_generator;
+
+        return std::make_shared<S3ObjectStorage>(
+            std::move(owned_client),
+            std::move(settings),
+            std::move(uri),
+            capabilities,
+            key_generator,
+            storage_disk_name);
+    }
+
+    void resetObjectStorage(bool allow_native_copy = true)
+    {
+        object_storage = createObjectStorage(bucket, disk_name, allow_native_copy, mock_client);
+    }
+
+    void SetUp() override
+    {
+        /// `removeObjectIfTokenMatches` and `copyObject` call `BlobStorageLogWriter::create`, which
+        /// falls back to `Context::getGlobalContextInstance`
+        /// when there is no query context. Force that global context to exist (harmless -- blob
+        /// storage logging stays off by default) regardless of which other gtest TU ran first.
+        (void)getContext();
+
+        store = std::make_shared<MockS3::S3MemStrore>();
+        store->CreateBucket(bucket);
+        resetObjectStorage();
+    }
+
+    void TearDown() override
+    {
+        object_storage.reset();
+        mock_client = nullptr;
+        store.reset();
+    }
+};
+
+TEST_F(S3ObjectStorageConditionalOpsTest, DefaultCopyObjectMayFallback)
+{
+    store->GetBucketStore(bucket).PutObject("src-key", "hello-world");
+    mock_client->setInjectionModel(std::make_shared<MockS3::CopyObjectErrorInjection>(
+        Aws::Client::AWSError<Aws::S3::S3Errors>(Aws::S3::S3Errors::ACCESS_DENIED, "AccessDenied", "access denied", false)));
+
+    object_storage->copyObject(
+        StoredObject("src-key"), StoredObject("dst-key"), ReadSettings{}, WriteSettings{}, std::nullopt);
+
+    EXPECT_TRUE(object_storage->supportsCopyMode(ObjectStorageCopyMode::Default));
+    EXPECT_TRUE(store->GetBucketStore(bucket).objects.contains("dst-key"));
+    EXPECT_EQ(mock_client->counters.copyObject, 1);
+    EXPECT_EQ(mock_client->counters.putObject, 1);
+    EXPECT_FALSE(mock_client->last_copy_object_native_conditional);
+    EXPECT_FALSE(mock_client->last_copy_object_if_match);
+    EXPECT_FALSE(mock_client->last_copy_object_if_none_match);
+}
+
+TEST_F(S3ObjectStorageConditionalOpsTest, NativeOnlyCopyObjectUsesNativeTransport)
+{
+    store->GetBucketStore(bucket).PutObject("src-key", "hello-world");
+
+    WriteSettings write_settings;
+    write_settings.object_storage_copy_mode = ObjectStorageCopyMode::NativeOnly;
+    object_storage->copyObject(
+        StoredObject("src-key"), StoredObject("dst-key"), ReadSettings{}, write_settings, std::nullopt);
+
+    EXPECT_TRUE(object_storage->supportsCopyMode(ObjectStorageCopyMode::NativeOnly));
+    EXPECT_EQ(store->GetBucketStore(bucket).objects.at("dst-key"), "hello-world");
+    EXPECT_EQ(mock_client->counters.copyObject, 1);
+    EXPECT_EQ(mock_client->counters.putObject, 0);
+    EXPECT_FALSE(mock_client->last_copy_object_native_conditional);
+    EXPECT_FALSE(mock_client->last_copy_object_if_match);
+    EXPECT_FALSE(mock_client->last_copy_object_if_none_match);
+}
+
+TEST_F(S3ObjectStorageConditionalOpsTest, NativeOnlyCopyObjectNeverFallsBack)
+{
+    store->GetBucketStore(bucket).PutObject("src-key", "hello-world");
+    mock_client->setInjectionModel(std::make_shared<MockS3::CopyObjectErrorInjection>(
+        Aws::Client::AWSError<Aws::S3::S3Errors>(Aws::S3::S3Errors::ACCESS_DENIED, "AccessDenied", "access denied", false)));
+
+    WriteSettings write_settings;
+    write_settings.object_storage_copy_mode = ObjectStorageCopyMode::NativeOnly;
+    EXPECT_THROW(
+        object_storage->copyObject(
+            StoredObject("src-key"), StoredObject("dst-key"), ReadSettings{}, write_settings, std::nullopt),
+        DB::S3Exception);
+
+    EXPECT_EQ(mock_client->counters.copyObject, 1);
+    EXPECT_EQ(mock_client->counters.putObject, 0);
+    EXPECT_FALSE(store->GetBucketStore(bucket).objects.contains("dst-key"));
+
+    resetObjectStorage(/*allow_native_copy=*/false);
+    EXPECT_TRUE(object_storage->supportsCopyMode(ObjectStorageCopyMode::Default));
+    EXPECT_FALSE(object_storage->supportsCopyMode(ObjectStorageCopyMode::NativeOnly));
+    EXPECT_THROW({
+        try
+        {
+            object_storage->copyObject(
+                StoredObject("src-key"), StoredObject("disabled-dst-key"), ReadSettings{}, write_settings, std::nullopt);
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED);
+            throw;
+        }
+    }, DB::Exception);
+    EXPECT_EQ(mock_client->counters.copyObject, 0);
+    EXPECT_EQ(mock_client->counters.putObject, 0);
+    EXPECT_FALSE(store->GetBucketStore(bucket).objects.contains("disabled-dst-key"));
+}
+
+TEST_F(S3ObjectStorageConditionalOpsTest, NativeOnlyCrossStorageCopyUsesNativeTransport)
+{
+    const String destination_bucket = "cond-ops-destination-bucket";
+    store->CreateBucket(destination_bucket);
+    store->GetBucketStore(bucket).PutObject("src-key", "hello-world");
+
+    MockS3::Client * destination_client = nullptr;
+    auto destination_storage = createObjectStorage(
+        destination_bucket, "cond-ops-destination-disk", /*allow_native_copy=*/true, destination_client);
+
+    WriteSettings write_settings;
+    write_settings.object_storage_copy_mode = ObjectStorageCopyMode::NativeOnly;
+    object_storage->copyObjectToAnotherObjectStorage(
+        StoredObject("src-key"),
+        StoredObject("dst-key"),
+        ReadSettings{},
+        write_settings,
+        *destination_storage,
+        std::nullopt);
+
+    EXPECT_EQ(store->GetBucketStore(destination_bucket).objects.at("dst-key"), "hello-world");
+    EXPECT_EQ(destination_client->counters.copyObject, 1);
+    EXPECT_EQ(destination_client->counters.putObject, 0);
+    EXPECT_EQ(mock_client->counters.getObject, 0);
+}
+
+TEST_F(S3ObjectStorageConditionalOpsTest, NativeOnlyCrossStorageCopyNeverFallsBackAfterAccessDenied)
+{
+    const String destination_bucket = "cond-ops-destination-bucket";
+    store->CreateBucket(destination_bucket);
+    store->GetBucketStore(bucket).PutObject("src-key", "hello-world");
+
+    MockS3::Client * destination_client = nullptr;
+    auto destination_storage = createObjectStorage(
+        destination_bucket, "cond-ops-destination-disk", /*allow_native_copy=*/true, destination_client);
+    destination_client->setInjectionModel(std::make_shared<MockS3::CopyObjectErrorInjection>(
+        Aws::Client::AWSError<Aws::S3::S3Errors>(Aws::S3::S3Errors::ACCESS_DENIED, "AccessDenied", "access denied", false)));
+
+    WriteSettings write_settings;
+    write_settings.object_storage_copy_mode = ObjectStorageCopyMode::NativeOnly;
+    EXPECT_THROW(
+        object_storage->copyObjectToAnotherObjectStorage(
+            StoredObject("src-key"),
+            StoredObject("dst-key"),
+            ReadSettings{},
+            write_settings,
+            *destination_storage,
+            std::nullopt),
+        DB::S3Exception);
+
+    EXPECT_EQ(destination_client->counters.copyObject, 1);
+    EXPECT_EQ(destination_client->counters.putObject, 0);
+    EXPECT_EQ(mock_client->counters.getObject, 0);
+    EXPECT_FALSE(store->GetBucketStore(destination_bucket).objects.contains("dst-key"));
+}
+
+TEST_F(S3ObjectStorageConditionalOpsTest, NativeOnlyCrossStorageCopyNeverFallsBackWhenNativeCopyIsDisabled)
+{
+    const String destination_bucket = "cond-ops-destination-bucket";
+    store->CreateBucket(destination_bucket);
+    store->GetBucketStore(bucket).PutObject("src-key", "hello-world");
+
+    resetObjectStorage(/*allow_native_copy=*/false);
+    MockS3::Client * destination_client = nullptr;
+    auto destination_storage = createObjectStorage(
+        destination_bucket, "cond-ops-destination-disk", /*allow_native_copy=*/true, destination_client);
+
+    WriteSettings write_settings;
+    write_settings.object_storage_copy_mode = ObjectStorageCopyMode::NativeOnly;
+    EXPECT_THROW({
+        try
+        {
+            object_storage->copyObjectToAnotherObjectStorage(
+                StoredObject("src-key"),
+                StoredObject("dst-key"),
+                ReadSettings{},
+                write_settings,
+                *destination_storage,
+                std::nullopt);
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED);
+            throw;
+        }
+    }, DB::Exception);
+
+    EXPECT_EQ(destination_client->counters.copyObject, 0);
+    EXPECT_EQ(destination_client->counters.putObject, 0);
+    EXPECT_EQ(mock_client->counters.getObject, 0);
+    EXPECT_FALSE(store->GetBucketStore(destination_bucket).objects.contains("dst-key"));
+}
+
+TEST_F(S3ObjectStorageConditionalOpsTest, NativeOnlyCopyToNonS3StorageFailsClosed)
+{
+    store->GetBucketStore(bucket).PutObject("src-key", "hello-world");
+
+    Poco::TemporaryFile destination_directory;
+    destination_directory.createDirectories();
+    LocalObjectStorage destination_storage(LocalObjectStorageSettings(
+        "cond-ops-local-destination", destination_directory.path(), /*read_only_=*/false));
+
+    WriteSettings write_settings;
+    write_settings.object_storage_copy_mode = ObjectStorageCopyMode::NativeOnly;
+    EXPECT_THROW({
+        try
+        {
+            object_storage->copyObjectToAnotherObjectStorage(
+                StoredObject("src-key"),
+                StoredObject("dst-key"),
+                ReadSettings{},
+                write_settings,
+                destination_storage,
+                std::nullopt);
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED);
+            throw;
+        }
+    }, DB::Exception);
+
+    EXPECT_EQ(mock_client->counters.getObject, 0);
+    EXPECT_FALSE(destination_storage.exists(StoredObject("dst-key")));
+}
+
+TEST_F(S3ObjectStorageConditionalOpsTest, RemoveObjectIfTokenMatchesSuccess)
+{
+    store->GetBucketStore(bucket).PutObject("key1", "data");
+
+    auto result = object_storage->removeObjectIfTokenMatches(StoredObject("key1"), "etag-1");
+
+    ASSERT_EQ(result.outcome, ConditionalRemoveOutcome::Removed);
+    ASSERT_EQ(mock_client->counters.deleteObject, 1);
+}
+
+TEST_F(S3ObjectStorageConditionalOpsTest, RemoveObjectIfTokenMatchesPreconditionFailedIsTokenMismatch)
+{
+    mock_client->setInjectionModel(std::make_shared<MockS3::DeleteObjectErrorInjection>(
+        Aws::Client::AWSError<Aws::S3::S3Errors>(Aws::S3::S3Errors::UNKNOWN, "PreconditionFailed", "precondition failed", false)));
+
+    auto result = object_storage->removeObjectIfTokenMatches(StoredObject("key1"), "stale-etag");
+
+    ASSERT_EQ(result.outcome, ConditionalRemoveOutcome::TokenMismatch);
+}
+
+TEST_F(S3ObjectStorageConditionalOpsTest, RemoveObjectIfTokenMatchesNotFoundIsNotFound)
+{
+    mock_client->setInjectionModel(std::make_shared<MockS3::DeleteObjectErrorInjection>(
+        Aws::Client::AWSError<Aws::S3::S3Errors>(Aws::S3::S3Errors::NO_SUCH_KEY, "NoSuchKey", "not found", false)));
+
+    auto result = object_storage->removeObjectIfTokenMatches(StoredObject("missing-key"), "any-etag");
+
+    ASSERT_EQ(result.outcome, ConditionalRemoveOutcome::NotFound);
+}
+
+/// `tryGetObjectMetadataWithNativeToken` must mark its HEAD wrapper eligible for the typed
+/// NativeConditional mode — the mark is what makes a GCS-mode client apply generation semantics to
+/// this HEAD — and it must keep tryGetObjectMetadata's existing missing-object contract of returning
+/// nullopt.
+TEST_F(S3ObjectStorageConditionalOpsTest, NativeTokenHeadIsMarkedAndMissingIsNullopt)
+{
+    store->GetBucketStore(bucket).PutObject("existing-key", "some-body");
+
+    auto found = object_storage->tryGetObjectMetadataWithNativeToken("existing-key", /*with_tags=*/false);
+    ASSERT_TRUE(found.has_value());
+    EXPECT_EQ(found->size_bytes, 9u);
+    EXPECT_TRUE(mock_client->last_head_object_native_conditional);
+
+    auto missing = object_storage->tryGetObjectMetadataWithNativeToken("missing-key", /*with_tags=*/false);
+    EXPECT_FALSE(missing.has_value());
+    EXPECT_TRUE(mock_client->last_head_object_native_conditional);
+}
+
+/// The token-exact DELETE removeObjectIfTokenMatches issues (CAS's `If-Match` reclaim) must be marked
+/// eligible for the typed NativeConditional mode -- it is the exact-delete path a GCS generation token
+/// belongs on.
+TEST_F(S3ObjectStorageConditionalOpsTest, GenerationDeleteUsesNativeConditionalMode)
+{
+    store->GetBucketStore(bucket).PutObject("key1", "data");
+
+    auto result = object_storage->removeObjectIfTokenMatches(StoredObject("key1"), "etag-1");
+
+    ASSERT_EQ(result.outcome, ConditionalRemoveOutcome::Removed);
+    EXPECT_TRUE(mock_client->last_delete_object_native_conditional);
+}
+
+/// An ordinary (non-conditional) delete must NOT pick up the native mark -- only the exact-token
+/// delete path is content-addressed-storage-owned.
+TEST_F(S3ObjectStorageConditionalOpsTest, OrdinaryDeleteRemainsDefault)
+{
+    store->GetBucketStore(bucket).PutObject("key1", "data");
+
+    object_storage->removeObjectIfExists(StoredObject("key1"));
+
+    /// Pin that the ordinary delete actually reached the singular DeleteObject hook this test reads --
+    /// otherwise a future refactor onto the batch DeleteObjects path would silently stop exercising
+    /// this assertion (the field would sit unwritten at its `false` initializer) and this test would
+    /// keep passing while proving nothing.
+    ASSERT_EQ(mock_client->counters.deleteObject, 1);
+    EXPECT_FALSE(mock_client->last_delete_object_native_conditional);
 }
 
 [[maybe_unused]] static String fillStringWithPattern(String pattern, int n)

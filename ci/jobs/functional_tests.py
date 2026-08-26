@@ -142,6 +142,8 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
     "WasmEdge": "--wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
+    "cas storage": "--cas-storage",
+    "cas s3 storage": "--cas-s3-storage",
     "DatabaseReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
     "wide parts enabled": "--wide-parts",
@@ -155,6 +157,8 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
 
 OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
+    "cas storage": "--cas-storage",
+    "cas s3 storage": "--cas-s3-storage",
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
     "AsyncInsert": " --no-async-insert",
     "DatabaseReplicated": " --no-stateful --replicated-database",
@@ -244,6 +248,7 @@ def main():
     is_targeted_check = False
     is_bugfix_validation = False
     is_s3_storage = False
+    is_cas_s3 = False
     is_azure_storage = False
     is_database_replicated = False
     is_shared_catalog = False
@@ -297,8 +302,13 @@ def main():
             is_excluded_from_llvm = True
         if "per_test_coverage" in to:
             is_per_test_coverage = True
-        if "s3 storage" in to:
+        if "s3 storage" in to and "cas" not in to:
+            # The CAS-over-s3 variant ("cas s3 storage") installs
+            # only its own default policy and must not pull in the s3 stateful-data / encrypted
+            # storage machinery, so it is deliberately excluded from is_s3_storage.
             is_s3_storage = True
+        if "cas s3 storage" in to:
+            is_cas_s3 = True
         if "azure" in to:
             is_azure_storage = True
         if "DatabaseReplicated" in to:
@@ -642,6 +652,14 @@ def main():
 
         def start():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
+            if res and is_cas_s3:
+                # The CA-over-S3 pool lives on RustFS (M-W D-W8): the incarnation pool
+                # needs ENFORCED conditional deletes, which MinIO OSS lacks (the
+                # fail-closed capability probe rejects it). start_rustfs wipes its data
+                # dir per run, so no pool state bleeds between runs (the local-CA
+                # analogue is the per-run server-store wipe). MinIO keeps the non-CA
+                # s3 disks.
+                res = CH.start_rustfs()
             res = res and CH.start()
             res = res and CH.wait_ready()
             if res:

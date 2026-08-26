@@ -30,6 +30,11 @@ namespace Aws::Http::Standard
 class StandardHttpResponse;
 }
 
+namespace Aws::Auth
+{
+class AWSCredentialsProvider;
+}
+
 namespace DB
 {
 class Context;
@@ -73,6 +78,9 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 
     HTTPHeaderEntries extra_headers;
     String http_client;
+    /// Credentials for the GOOG4-HMAC signer (http_client = gcs_hmac only): the same provider
+    /// chain the AWS path builds (inline keys, use_environment_credentials, ...).
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> gcs_hmac_credentials_provider;
     String service_account;
     String metadata_service;
     String request_token_path;
@@ -82,6 +90,10 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
+    /// Conditional PUT (If-None-Match / If-Match) bodies >= this negotiate Expect: 100-continue (B118).
+    /// `0` (the default) disables it, so non-CAS S3 clients keep upstream behaviour; only a CAS
+    /// conditional-write client raises it (see the single-attempt client in `ObjectStorageBackend`).
+    size_t expect_continue_min_bytes = DEFAULT_EXPECT_CONTINUE_MIN_BYTES;
     size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
     size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
 
@@ -224,6 +236,7 @@ protected:
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects = DEFAULT_MAX_REDIRECTS;
     bool s3_use_adaptive_timeouts = true;
+    size_t expect_continue_min_bytes = DEFAULT_EXPECT_CONTINUE_MIN_BYTES;
     const UInt64 http_max_fields = 1000000;
     const UInt64 http_max_field_name_size = 128 * 1024;
     const UInt64 http_max_field_value_size = 128 * 1024;
@@ -266,6 +279,26 @@ private:
 
     BearerToken requestBearerToken() const TSA_REQUIRES(mutex);
     BearerToken requestBearerTokenFromADC() const;
+};
+
+/// GCS with HMAC credentials over the XML API, signed with Google's native GOOG4-HMAC-SHA256 —
+/// the ONLY way HMAC credentials get enforced conditional semantics on GCS (the S3-compatible
+/// sigv4 surface silently ignores If-None-Match / If-Match; measured 2026-07-03). Adapts a
+/// `NativeConditional` request, prepares every request for GOOG4 authentication, then signs.
+/// Selected by `http_client = gcs_hmac`.
+class PocoHTTPClientGCSHMAC : public PocoHTTPClient
+{
+public:
+    explicit PocoHTTPClientGCSHMAC(const PocoHTTPClientConfiguration & client_configuration);
+
+private:
+    void makeRequestInternal(
+        Aws::Http::HttpRequest & request,
+        std::shared_ptr<PocoHTTPResponse> & response,
+        Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
+        Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const override;
+
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
 };
 
 }

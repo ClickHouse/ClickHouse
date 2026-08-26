@@ -178,7 +178,7 @@ def init_data_s3_rm_rec(source):
     write(source, "test3", "a/b/d")
     write(source, "test3", "a/b/e")
 
-    write(source, "test3", "d/a")
+    write(source, "test3", "a/d/a")
 
 
 def test_disks_app_func_ld(started_cluster):
@@ -330,22 +330,22 @@ def test_disks_app_func_rm_shared_recursive(started_cluster):
     out = ls(source, "test3", ". --recursive")
     assert (
         out
-        == ".:\na\n\n./a:\na\nb\nc\nd\n\n./a/a:\na\nb\nc\n\n./a/b:\na\nb\nc\nd\ne\n\n./a/c:\n\n./a/d:\n\n"
+        == ".:\na\n\n./a:\na\nb\nc\nd\n\n./a/a:\na\nb\nc\n\n./a/b:\na\nb\nc\nd\ne\n\n./a/c:\n\n./a/d:\na\n\n"
     )
 
     remove(source, "test3", "a/a --recursive")
     out = ls(source, "test3", ". --recursive")
     assert (
-        out == ".:\na\n\n./a:\nb\nc\nd\n\n./a/b:\na\nb\nc\nd\ne\n\n./a/c:\n\n./a/d:\n\n"
+        out == ".:\na\n\n./a:\nb\nc\nd\n\n./a/b:\na\nb\nc\nd\ne\n\n./a/c:\n\n./a/d:\na\n\n"
     )
 
     remove(source, "test3", "a/b --recursive")
     out = ls(source, "test3", ". --recursive")
-    assert out == ".:\na\n\n./a:\nc\nd\n\n./a/c:\n\n./a/d:\n\n"
+    assert out == ".:\na\n\n./a:\nc\nd\n\n./a/c:\n\n./a/d:\na\n\n"
 
     remove(source, "test3", "a/c --recursive")
     out = ls(source, "test3", ". --recursive")
-    assert out == ".:\na\n\n./a:\nd\n\n./a/d:\n\n"
+    assert out == ".:\na\n\n./a:\nd\n\n./a/d:\na\n\n"
 
     remove(source, "test3", "a --recursive")
     out = ls(source, "test3", ". --recursive")

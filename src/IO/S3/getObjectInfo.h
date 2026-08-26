@@ -6,6 +6,7 @@
 #include <IO/S3Settings.h>
 #include <base/types.h>
 #include <IO/S3/Client.h>
+#include <IO/WriteSettings.h>
 
 namespace DB::S3
 {
@@ -22,13 +23,16 @@ struct ObjectInfo
 };
 
 /// Ignore if object does not exist
+/// `request_mode` marks the HEAD wrapper as eligible for the typed NativeConditional request mode
+/// (see ObjectStorageRequestMode); the client's HTTP layer decides whether it actually takes effect.
 ObjectInfo getObjectInfoIfExists(
     const S3::Client & client,
     const String & bucket,
     const String & key,
     const String & version_id = {},
     bool with_metadata = false,
-    bool with_tags = false);
+    bool with_tags = false,
+    ObjectStorageRequestMode request_mode = ObjectStorageRequestMode::Default);
 
 ObjectInfo getObjectInfo(
     const S3::Client & client,

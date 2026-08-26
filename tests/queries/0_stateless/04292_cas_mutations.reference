@@ -1,0 +1,7 @@
+after_update_v: match
+after_delete: match
+after_update_s: match
+after_update_v_doubled: match
+after_multi_update: match
+final_rows_match	1
+final_data_match	1

@@ -5,6 +5,11 @@ from ci.defs.defs import BINARIES_WITH_LONG_RETENTION, DOCKERS, SECRETS, Artifac
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 
+FUNCTIONAL_TESTS_JOBS = [
+    *JobConfigs.functional_tests_jobs,
+    *AltinityJobConfigs.cas_functional_tests_jobs,
+]
+
 # Add long retention tags to subset of artifacts
 clickhouse_binaries_with_tags = []
 for artifact in ArtifactConfigs.clickhouse_binaries + ArtifactConfigs.clickhouse_stripped_binaries:
@@ -45,7 +50,7 @@ workflow = Workflow.Config(
         AltinityJobConfigs.source_upload_job,
         *[
             job
-            for job in JobConfigs.functional_tests_jobs
+            for job in FUNCTIONAL_TESTS_JOBS
             if any(t in job.name for t in ("release", "binary"))
         ],
     ],

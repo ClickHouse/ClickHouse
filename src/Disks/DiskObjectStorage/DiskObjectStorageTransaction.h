@@ -104,6 +104,15 @@ public:
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
 
+    /// B59 in-flight read-your-writes: forward to the metadata transaction (e.g. a CA part-build
+    /// transaction resolving its own staged-but-uncommitted files).
+    std::optional<StoredObjects> tryGetInFlightStorageObjects(const std::string & path) const override;
+    std::unique_ptr<ReadBufferFromFileBase> tryReadFileInFlight(
+        const std::string & path, const ReadSettings & settings, std::optional<size_t> read_hint) const override;
+    std::optional<uint64_t> tryGetInFlightFileSize(const std::string & path) const override;
+    bool hasInFlightDirectory(const std::string & path) const override;
+    std::vector<std::string> listInFlightDirectory(const std::string & path) const override;
+
 protected:
     /// Shared between `DiskObjectStorageTransaction::copyFile` and
     /// `MultipleDisksObjectStorageTransaction::copyFile`. Reads source blobs from the
@@ -117,6 +126,17 @@ protected:
         const std::string & to_file_path,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings);
+
+    /// [TXN-ONE-PIPELINE] Route one metadata effect either into the FIFO replay queue (ordinary object
+    /// storage) or straight to the metadata transaction at call time (eager staging overlay, e.g. CA).
+    template <typename Operation>
+    void dispatch(Operation && operation)
+    {
+        if (metadata_storage->transactionIsStagingOverlay())
+            operation(metadata_transaction);
+        else
+            operations_to_execute.emplace_back(std::forward<Operation>(operation));
+    }
 
 private:
     std::unique_ptr<WriteBufferFromFileBase> writeFileImpl( /// NOLINT

@@ -9,6 +9,7 @@
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
+#include <Parsers/ParserSystemQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOutput.h>
@@ -475,6 +476,49 @@ INSTANTIATE_TEST_SUITE_P(ParserRenameQuery, ParserTest,
             "RENAME TABLE eligible_test TO eligible_test2",
             "RENAME TABLE eligible_test TO eligible_test2"
         }
+})));
+
+// SYSTEM CAS DROP POOL MEMBER: srid and disk are both required quoted string literals
+// (an srid is an opaque server-root path, not identifier-shaped); ON CLUSTER round-trips as a bare
+// identifier (ASTQueryWithOnCluster::formatOnCluster uses backQuoteIfNeed, no quoting needed for a
+// plain name), even though the parser also accepts a quoted string literal for it on input.
+INSTANTIATE_TEST_SUITE_P(ParserSystemQuery, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserSystemQuery>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            "SYSTEM CAS DROP POOL MEMBER 'srv1' FROM DISK 'disk1'",
+            "SYSTEM CAS DROP POOL MEMBER 'srv1' FROM DISK 'disk1'"
+        },
+        {
+            "SYSTEM CAS DROP POOL MEMBER 'srv1' FROM DISK 'disk1' ON CLUSTER my_cluster",
+            "SYSTEM CAS DROP POOL MEMBER 'srv1' FROM DISK 'disk1' ON CLUSTER my_cluster"
+        },
+        {
+            "SYSTEM CAS DROP POOL MEMBER 'srv1'",   // missing FROM DISK
+            nullptr
+        },
+        {
+            "SYSTEM CAS DROP POOL MEMBER FROM DISK 'disk1'",   // missing srid
+            nullptr
+        },
+        {
+            "SYSTEM CAS GC RUN",
+            "SYSTEM CAS GC RUN"
+        },
+        {
+            "SYSTEM CAS GC RUN disk1",
+            "SYSTEM CAS GC RUN disk1"
+        },
+        {
+            /// CAS_GC_RUN goes through the shared parseQueryWithOnClusterAndTarget
+            /// helper (like RESTART_DISK / WAIT_BLOBS_CLEANUP / CLEAR_DISK_METADATA_CACHE), whose
+            /// round-trip format always normalizes to "ON CLUSTER cluster target" -- unlike
+            /// CAS_DROP_POOL_MEMBER, which has its own dedicated grammar and prints
+            /// ON CLUSTER last.
+            "SYSTEM CAS GC RUN disk1 ON CLUSTER my_cluster",
+            "SYSTEM CAS GC RUN ON CLUSTER my_cluster disk1"
+        },
 })));
 
 static constexpr size_t kDummyMaxQuerySize = 256 * 1024;

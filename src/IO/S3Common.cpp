@@ -43,6 +43,51 @@ bool S3Exception::isAccessTokenExpiredError() const
     return code == Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID || code == Aws::S3::S3Errors::ACCESS_DENIED || code == Aws::S3::S3Errors::INVALID_SIGNATURE || code == Aws::S3::S3Errors::UNKNOWN;
 }
 
+bool S3Exception::isPreconditionFailed() const
+{
+    /// See `S3::isPreconditionFailedError`. The thrown exception no longer carries the HTTP status, so
+    /// only the name and raw message are available here — fail-safe: matching too broadly maps a hard
+    /// error to a retryable re-validate, never a false success.
+    return exception_name == "PreconditionFailed"
+        || message().find("PreconditionFailed") != std::string::npos;
+}
+
+namespace S3
+{
+
+/// A synchronous rejection PROVING the request was never applied — matched by the canonical S3 error
+/// code STRING (many of these are UNKNOWN in the SDK's modeled enum, mirroring
+/// ObjectStorageBackend::finalizeConditionalWrite's own name-first matching) plus the modeled enum
+/// value where one exists, belt-and-suspenders.
+bool isMalformedRequestError(const S3Exception & e)
+{
+    const String & name = e.getExceptionName();
+    return name == "MalformedXML" || name == "MalformedPOSTRequest" || name == "InvalidArgument"
+        || name == "InvalidRequest" || name == "InvalidBucketName" || name == "KeyTooLongError"
+        || e.getS3ErrorCode() == Aws::S3::S3Errors::INVALID_PARAMETER_VALUE
+        || e.getS3ErrorCode() == Aws::S3::S3Errors::INVALID_REQUEST
+        || e.getS3ErrorCode() == Aws::S3::S3Errors::VALIDATION;
+}
+
+bool isEntityTooLargeError(const S3Exception & e)
+{
+    /// No modeled enum value for this error — name-only match, same as PreconditionFailed elsewhere.
+    return e.getExceptionName() == "EntityTooLarge";
+}
+
+bool isAccessDeniedError(const S3Exception & e)
+{
+    const String & name = e.getExceptionName();
+    return name == "AccessDenied" || name == "InvalidAccessKeyId" || name == "SignatureDoesNotMatch"
+        || name == "InvalidToken" || name == "ExpiredToken" || name == "AccountProblem"
+        || e.getS3ErrorCode() == Aws::S3::S3Errors::ACCESS_DENIED
+        || e.getS3ErrorCode() == Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID
+        || e.getS3ErrorCode() == Aws::S3::S3Errors::SIGNATURE_DOES_NOT_MATCH
+        || e.getS3ErrorCode() == Aws::S3::S3Errors::INVALID_CLIENT_TOKEN_ID;
+}
+
+}
+
 }
 
 #endif

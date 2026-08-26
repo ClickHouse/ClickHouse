@@ -54,6 +54,14 @@ public:
     StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
     bool isView() const override { return false; }
 
+    /// NOTE: this proxy deliberately does NOT forward `checkTableCanBeRenamed` to the nested engine.
+    /// Doing so would materialize the lazy table (`getNested`) while `DatabaseAtomic` holds its
+    /// non-recursive database mutex, and a schema-inferred lazy `Buffer` resolves its destination via
+    /// `DatabaseCatalog::getTable` in its constructor -- re-entering the same database and self-
+    /// deadlocking. Bypassing the nested engine's rename restriction for a lazy (never-accessed) table
+    /// is a pre-existing gap tracked in docs/superpowers/cas/BACKLOG.md; the correct fix is to
+    /// materialize before the database mutex is taken, at the interpreter level.
+    ///
     /// Startup is deferred until first access via `getNested`.
     void startup() override { }
 

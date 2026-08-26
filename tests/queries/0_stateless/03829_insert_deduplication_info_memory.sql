@@ -8,9 +8,13 @@ DROP TABLE IF EXISTS t_dedup_memory;
 CREATE TABLE t_dedup_memory (x UInt32, fat FixedString(10000)) ENGINE = MergeTree ORDER BY x;
 
 -- 10 000 rows * 10 000 bytes FixedString ≈ 100 MB of column data.
--- With the bug, original_block doubles this to ~200 MB, exceeding the limit.
--- Without the bug, only the data columns are held, fitting within the limit.
-SET max_memory_usage = '150M';
+-- With the bug, original_block doubles this to ~200 MB, which must exceed the limit.
+-- Without the bug, only the data columns are held (peak ≈ 143 MB), which must fit under it.
+-- The limit sits between those two peaks with enough headroom to absorb small, fixed write-path
+-- buffering overhead (e.g. a content-addressed disk's insert path adds ~0.5 MB on top of the ~143 MB
+-- baseline) so the test still runs unchanged on such a storage backend, while remaining well below the
+-- ~200 MB doubling-bug peak it is meant to catch.
+SET max_memory_usage = '170M';
 
 INSERT INTO t_dedup_memory SELECT number, toString(number) FROM numbers(10000)
     SETTINGS max_insert_threads = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;

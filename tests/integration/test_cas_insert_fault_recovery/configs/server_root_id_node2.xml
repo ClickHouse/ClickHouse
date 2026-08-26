@@ -1,0 +1,10 @@
+<clickhouse>
+    <!-- Each server owns a DISTINCT layout subtree inside the shared pool (mount safety). -->
+    <storage_configuration>
+        <disks>
+            <disk_cas_shared>
+                <cas_server_root_id>node2</cas_server_root_id>
+            </disk_cas_shared>
+        </disks>
+    </storage_configuration>
+</clickhouse>

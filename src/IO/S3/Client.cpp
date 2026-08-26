@@ -25,8 +25,10 @@
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Exception.h>
+#include <Poco/String.h>
 
 #include <IO/Expect404ResponseScope.h>
+#include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/AWSLogger.h>
@@ -65,6 +67,8 @@ namespace ProfileEvents
 
     extern const Event S3Clients;
     extern const Event TinyS3Clients;
+
+    extern const Event S3SingleAttemptRetryConsultations;
 }
 
 namespace CurrentMetrics
@@ -100,6 +104,13 @@ Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStr
 bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const
 {
     if (error.GetResponseCode() == Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
+        return false;
+
+    /// A 412 Precondition Failed is the DETERMINISTIC result of a conditional request (the
+    /// content-addressed backend's CAS/dedup writes). Retrying never changes it, and on a store that
+    /// returns a non-AWS body (RustFS) the SDK marks the 412 retryable and storms the write path — and
+    /// downstream SYSTEM SYNC REPLICA (B166). One 412 policy across the retry and CA conditional ops.
+    if (S3::isPreconditionFailedError(error))
         return false;
 
     if (attemptedRetries >= config.max_retries)
@@ -179,6 +190,13 @@ void Client::RetryStrategy::RequestBookkeeping(
             static_cast<size_t>(lastError.GetResponseCode()),
             lastError.GetMessage());
     RequestBookkeeping(httpResponseOutcome);
+}
+
+/// NOLINTNEXTLINE(google-runtime-int)
+bool SingleAttemptRetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> &, long) const
+{
+    ProfileEvents::increment(ProfileEvents::S3SingleAttemptRetryConsultations);
+    return false;
 }
 
 namespace
@@ -289,7 +307,14 @@ Client::Client(
         /// find credential keys we can simply behave as the underlying storage is S3
         /// otherwise, we need to be aware we are making requests to GCS
         /// and replace all headers with a valid prefix when needed
-        if (credentials_provider)
+        if (Poco::toLower(client_configuration.http_client) == "gcs_hmac")
+        {
+            /// GOOG4-HMAC mode: all requests are re-signed with x-goog headers at the HTTP layer,
+            /// so the SDK-side GCS accommodations (x-amz header renames, x-amz-api-version
+            /// deletion) must be active even though credentials are present.
+            api_mode = ApiMode::GCS;
+        }
+        else if (credentials_provider)
         {
             auto credentials = credentials_provider->GetAWSCredentials();
             if (credentials.IsEmpty())
@@ -504,6 +529,12 @@ Model::GetObjectTaggingOutcome Client::GetObjectTagging(GetObjectTaggingRequest 
 {
     return processRequestResult(
         doRequest(request, [this](const Model::GetObjectTaggingRequest & req) { return GetObjectTagging(req); }));
+}
+
+Model::GetBucketVersioningOutcome Client::GetBucketVersioning(GetBucketVersioningRequest & request) const
+{
+    return processRequestResult(
+        doRequest(request, [this](const Model::GetBucketVersioningRequest & req) { return GetBucketVersioning(req); }));
 }
 
 Model::ListObjectsV2Outcome Client::ListObjectsV2(ListObjectsV2Request & request) const
@@ -953,6 +984,17 @@ bool Client::supportsMultiPartCopy() const
     return provider_type != ProviderType::GCS;
 }
 
+bool httpClientImpliesGcsGenerationDialect(const String & http_client)
+{
+    const auto lowered = Poco::toLower(http_client);
+    return lowered == "gcp_oauth" || lowered == "gcs_hmac";
+}
+
+bool Client::supportsGcsNativeConditionalRequests() const
+{
+    return httpClientImpliesGcsGenerationDialect(client_configuration.http_client);
+}
+
 void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
                       const std::shared_ptr<Aws::Http::HttpRequest>& httpRequest) const
 {
@@ -964,6 +1006,15 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
         /// all "x-amz-*" headers have to be either converted or deleted
         /// note that "amz-sdk-invocation-id" and "amz-sdk-request" are preserved
         httpRequest->DeleteHeader("x-amz-api-version");
+    }
+
+    /// Re-derived on every attempt: a retry or redirect discards the old HTTP request and builds a
+    /// fresh one (see AWSClient::AttemptExhaustively), so the bit cannot be left to survive on it.
+    if (auto * extended_http_request = dynamic_cast<ExtendedHttpRequest *>(httpRequest.get()))
+    {
+        const auto * wrapper = dynamic_cast<const RequestWithNativeConditionalMode *>(&request);
+        extended_http_request->setNativeConditional(
+            wrapper && wrapper->isNativeConditional() && supportsGcsNativeConditionalRequests());
     }
 }
 
@@ -1275,6 +1326,9 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
 
     auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
+
+    if (Poco::toLower(client_configuration.http_client) == "gcs_hmac")
+        client_configuration.gcs_hmac_credentials_provider = credentials_provider;
 
     /// Disable per-thread retry loops if global retry coordination is in use.
     if (client_configuration.s3_slow_all_threads_after_retryable_error)

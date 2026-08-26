@@ -1,0 +1,6 @@
+after_delete_mod5: match
+after_delete_like: match
+after_delete_range: match
+after_optimize: match
+final_rows_match	1
+final_data_match	1

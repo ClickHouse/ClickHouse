@@ -19,6 +19,8 @@ MetadataStorageType metadataTypeFromString(const std::string & type)
         return MetadataStorageType::Plain;
     if (check_type == "plain_rewritable")
         return MetadataStorageType::PlainRewritable;
+    if (check_type == "cas")
+        return MetadataStorageType::CAS;
     if (check_type == "web")
         return MetadataStorageType::StaticWeb;
     if (check_type == "keeper")

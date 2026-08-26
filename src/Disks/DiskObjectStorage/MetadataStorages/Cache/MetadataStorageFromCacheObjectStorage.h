@@ -63,6 +63,7 @@ public:
     std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const override;
 
     bool isReadOnly() const override;
+    bool isContentAddressed() const override;
     bool isTransactional() const override;
     bool isPlain() const override;
     bool isWriteOnce() const override;

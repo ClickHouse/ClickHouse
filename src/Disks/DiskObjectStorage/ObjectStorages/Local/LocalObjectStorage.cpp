@@ -465,6 +465,14 @@ std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std
 {
     auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
     LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
+
+    /// A directory is not an object: fs::file_size would throw "Is a directory". Treat it as a
+    /// missing object (nullopt) so callers probing whether a path is a readable object do not get
+    /// a raw filesystem error (B38: system.remote_data_paths traversal on a CAS pool).
+    std::error_code error;
+    if (fs::is_directory(resolved_path, error))
+        return {};
+
     return tryStatResolvedPath(resolved_path);
 }
 

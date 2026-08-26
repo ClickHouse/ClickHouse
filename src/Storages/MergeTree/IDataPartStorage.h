@@ -189,6 +189,15 @@ public:
     virtual std::string getDiskName() const = 0;
     virtual std::string getDiskType() const = 0;
     virtual bool isStoredOnRemoteDisk() const { return false; }
+    /// True when the underlying disk stores a part as one atomic content-addressed unit (one manifest
+    /// + one ref). On such disks a projection sub-part must be written through the PARENT part's
+    /// whole-part transaction rather than its own sub-transaction (otherwise the projection is lost
+    /// from the committed manifest — B58).
+    virtual bool isContentAddressed() const { return false; }
+    /// True when the underlying disk publishes a file write atomically in one shot (no partial
+    /// content ever becomes visible under the file's final name). Such disks do not need the
+    /// tmp-file + `replaceFile` crash-safety dance that plain local writes require.
+    virtual bool supportsAtomicFileWrites() const { return false; }
     virtual std::optional<String> getCacheName() const { return std::nullopt; }
     virtual bool supportZeroCopyReplication() const { return false; }
     virtual bool supportParallelWrite() const = 0;

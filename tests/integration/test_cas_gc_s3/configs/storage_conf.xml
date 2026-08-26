@@ -1,0 +1,33 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_cas_gc_s3>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <!-- Phase 0 (mount safety): required, validated layout-subtree identity. Single server. -->
+                <cas_server_root_id>itest-content-addressed-gc-s3</cas_server_root_id>
+                <!-- RustFS (not MinIO) enforces the conditional-PUT/DELETE semantics the CA mount
+                     capability probe requires (CasProbe.cpp step 6): MinIO OSS silently honors a
+                     mismatched-token DELETE instead of rejecting it, so the fail-closed probe
+                     aborted server startup on MinIO (see PR#2073 CI triage). -->
+                <endpoint>http://rustfs1:11121/test/cas_gc_data/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <!-- Background GC is opt-in (default OFF); enable it and run aggressively so the
+                     background sweep actually reclaims orphaned blobs during the test. -->
+                <cas_gc_enabled>1</cas_gc_enabled>
+                <cas_gc_interval_sec>1</cas_gc_interval_sec>
+            </disk_cas_gc_s3>
+        </disks>
+        <policies>
+            <cas_gc_s3>
+                <volumes>
+                    <main>
+                        <disk>disk_cas_gc_s3</disk>
+                    </main>
+                </volumes>
+            </cas_gc_s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>

@@ -1,0 +1,9 @@
+foreign_unfreeze
+command_type	partition_id	backup_name
+unfreeze_b
+command_type	partition_id	backup_name
+UNFREEZE ALL	1	own_b_05024
+unfreeze_a
+command_type	partition_id	backup_name
+UNFREEZE ALL	1	shared_05024
+dropped_ok

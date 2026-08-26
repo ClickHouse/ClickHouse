@@ -147,6 +147,15 @@ public:
 
     void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
 
+    /// Must forward alongside `mutate`: `IStorage`'s default throws NOT_IMPLEMENTED ("doesn't
+    /// support mutations"), so a non-forwarding proxy rejects every mutation on a wrapped table
+    /// even though the nested engine supports them (found via `ALTER TABLE ... MATERIALIZE TTL`
+    /// on a `lazy_load_tables = 1` table wrapped in `StorageTableProxy`).
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override
+    {
+        getNested()->checkMutationIsPossible(commands, settings);
+    }
+
     CancellationCode killMutation(const String & mutation_id) override { return getNested()->killMutation(mutation_id); }
 
     void startup() override { getNested()->startup(); }

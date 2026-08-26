@@ -1,0 +1,12 @@
+<clickhouse>
+    <!-- Phase 0 (mount safety): each server owning a DISTINCT layout subtree inside the shared pool.
+         Two servers must never write the same server_root_id tree (spec §mount-safety), so this is a
+         per-instance override merged onto the shared storage_conf.xml disk definition. -->
+    <storage_configuration>
+        <disks>
+            <disk_cas_gc_sharded>
+                <cas_server_root_id>node1</cas_server_root_id>
+            </disk_cas_gc_sharded>
+        </disks>
+    </storage_configuration>
+</clickhouse>

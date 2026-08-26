@@ -21,6 +21,7 @@ inline static constexpr bool DEFAULT_USE_ADAPTIVE_TIMEOUTS = true;
 inline static constexpr uint64_t DEFAULT_MIN_UPLOAD_PART_SIZE = 16 * 1024 * 1024;
 inline static constexpr uint64_t DEFAULT_MAX_UPLOAD_PART_SIZE = 5ull * 1024 * 1024 * 1024;
 inline static constexpr uint64_t DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE = 32 * 1024 * 1024;
+inline static constexpr uint64_t DEFAULT_GCS_MAX_CONDITIONAL_PUT_BYTES = 1ULL << 30;
 inline static constexpr uint64_t DEFAULT_STRICT_UPLOAD_PART_SIZE = 0;
 inline static constexpr uint64_t DEFAULT_UPLOAD_PART_SIZE_MULTIPLY_FACTOR = 2;
 inline static constexpr uint64_t DEFAULT_UPLOAD_PART_SIZE_MULTIPLY_PARTS_COUNT_THRESHOLD = 500;
@@ -33,6 +34,13 @@ inline static constexpr uint64_t DEFAULT_LIST_OBJECT_KEYS_SIZE = 1000;
 inline static constexpr uint64_t DEFAULT_MAX_SINGLE_READ_TRIES = 4;
 inline static constexpr uint64_t DEFAULT_MAX_UNEXPECTED_WRITE_ERROR_RETRIES = 4;
 inline static constexpr uint64_t DEFAULT_MAX_REDIRECTS = 10;
+/// Gate for the `Expect: 100-continue` negotiation on a conditional write (If-None-Match / If-Match):
+/// `0` = disabled (never negotiate Expect); a positive `N` negotiates Expect for a conditional `PUT`
+/// whose body is at least `N` bytes, so the server can reject (e.g. 412) BEFORE the body is streamed
+/// (B118). The default is DISABLED: only a CAS conditional-write client raises this (see the
+/// single-attempt client built in `ObjectStorageBackend`), so non-CAS S3 traffic keeps upstream
+/// behaviour instead of negotiating Expect on large conditional PUTs it never negotiated before.
+inline static constexpr uint64_t DEFAULT_EXPECT_CONTINUE_MIN_BYTES = 0;
 inline static constexpr uint64_t DEFAULT_RETRY_ATTEMPTS = 500;
 inline static constexpr uint64_t DEFAULT_RETRY_INITIAL_DELAY_MS = 25;
 inline static constexpr uint64_t DEFAULT_RETRY_MAX_DELAY_MS = 5000;

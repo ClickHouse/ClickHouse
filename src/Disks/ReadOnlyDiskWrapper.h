@@ -89,6 +89,11 @@ public:
     NameSet getCacheLayersNames() const override { return delegate->getCacheLayersNames(); }
 
     MetadataStoragePtr getMetadataStorage() override { return delegate->getMetadataStorage(); }
+    /// Forwarded alongside getMetadataStorage: callers that gate on this predicate before reaching
+    /// for the metadata storage (ContentAddressedMetadataStorage::tryFromDisk and friends) must see
+    /// the delegate's answer through the wrapper, or a wrapped content-addressed disk silently
+    /// drops out of the CAS introspection paths.
+    bool isContentAddressed() const override { return delegate->isContentAddressed(); }
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override { return delegate->getSerializedMetadata(file_paths); }
 

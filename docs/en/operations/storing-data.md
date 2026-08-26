@@ -46,7 +46,7 @@ It requires specifying:
 
 <br/>
 
-Optionally, `metadata_type` can be specified (it is equal to `local` by default), but it can also be set to `plain`, `web` and, starting from `24.4`, `plain_rewritable`.
+Optionally, `metadata_type` can be specified (it is equal to `local` by default), but it can also be set to `plain`, `web`, `plain_rewritable` (starting from `24.4`) and `cas`.
 Usage of `plain` metadata type is described in [plain storage section](/operations/storing-data#plain-storage), `web` metadata type can be used only with `web` object storage type, `local` metadata type stores metadata files locally (each metadata files contains mapping to files in object storage and some additional meta information about them).
 
 For example:
@@ -451,6 +451,109 @@ is equal to
 
 Starting from `24.5` it is possible to configure any object storage disk 
 (`s3`, `azure`, `local`) using the `plain_rewritable` metadata type.
+
+### Using Content-Addressed Storage {#content-addressed-storage}
+
+Setting `metadata_type` to `cas` turns a disk into a content-addressed (CAS) disk: every
+object is addressed by the hash of its content rather than by a randomly generated blob name, so
+identical content written by different parts (or different tables) is stored once and shared. A
+background garbage collector reclaims objects once no part references them anymore; see
+[`SYSTEM CAS GC RUN`](/sql-reference/statements/system#system-cas-gc-run),
+[`SYSTEM CAS GC REBUILD`](/sql-reference/statements/system#system-cas-gc-rebuild),
+[`SYSTEM CAS DROP POOL MEMBER`](/sql-reference/statements/system#system-cas-drop-pool-member),
+and the [`system.cas_gc_log`](/operations/system-tables/cas_gc_log),
+[`system.cas_mounts`](/operations/system-tables/cas_mounts), and
+[`system.cas_log`](/operations/system-tables/cas_log) system tables. See the
+[content-addressed storage documentation](/antalya/cas) for the architecture, operations
+runbooks, and a live-validated quick start.
+
+Configuration:
+
+```xml
+<s3_cas>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>cas</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+
+    <cas_server_root_id>server-{replica}</cas_server_root_id>
+    <cas_scratch_path>disks/s3_cas/cas_scratch/</cas_scratch_path>
+    <cas_staging_backend>local</cas_staging_backend>
+    <cas_blob_hash>cityhash128</cas_blob_hash>
+    <cas_gc_enabled>true</cas_gc_enabled>
+    <cas_gc_interval_sec>60</cas_gc_interval_sec>
+    <cas_gc_shards>1</cas_gc_shards>
+    <cas_part_folder_cache_bytes>67108864</cas_part_folder_cache_bytes>
+    <cas_part_folder_validate>always</cas_part_folder_validate>
+</s3_cas>
+```
+
+The `CAS` settings are written directly inside the disk element, alongside
+`<type>object_storage</type>` / `<object_storage_type>` and the connection settings. Several
+components read this shared disk element, so `CAS` settings use the `cas_` prefix; every other key
+belongs to the object-storage or generic disk layer.
+
+#### Required parameters {#required-parameters-content-addressed}
+
+- `cas_server_root_id` — the subtree of the shared pool that this server owns. When several replicas
+  mount the same pool (same `endpoint`), each one must own a distinct subtree, so this is normally
+  written with a macro, e.g. `<cas_server_root_id>server-{replica}</cas_server_root_id>`. Missing this key is
+  a startup error.
+
+#### Optional parameters {#optional-parameters-content-addressed}
+
+These are the commonly used settings; see [Configuration](/antalya/cas/configuration) for the full
+disk-level and server-level settings surface.
+
+- `cas_scratch_path` — a real, server-local filesystem directory used to spill the write buffer before it
+  is committed to the pool (never the object-storage key prefix). Defaults to
+  `<clickhouse-path>/disks/<disk_name>/cas_scratch/`. A relative override is anchored to the server
+  data path, not the process's current working directory.
+- `cas_staging_backend` — `local` (default) or `s3`. Selects where in-flight part data is staged before
+  being committed into the pool; `local` is byte-for-byte the original write path, `s3` enables
+  S3-native staging. A writable disk configured with `s3` must support native same-store copy and
+  fails closed instead of falling back to client-side copy.
+- `cas_blob_hash` — `cityhash128` (default), `xxh3-128`, or `sha256`. Selects the pool's blob
+  content-hash function. The choice is fixed at pool creation; a reopen whose `cas_blob_hash` disagrees
+  with the pool's recorded algorithm fails closed. See
+  [choosing `cas_blob_hash`](/antalya/cas/configuration#choosing-blob-hash) for the trade-offs between
+  the three.
+- `cas_blob_hash_allow_new` — `false` by default. Admits a new hash algorithm into an existing pool's set
+  of recorded algorithms; without it, a `cas_blob_hash` that disagrees with what the pool already recorded
+  fails closed instead of silently turning the pool mixed-algorithm.
+- `cas_gc_enabled` — `true` by default. Enables the background garbage collector for this disk.
+- `cas_gc_interval_sec` — `60` by default; must be `>= 1`. Interval between background GC rounds.
+- `cas_gc_shards` — `1` by default; must be `>= 1`. Number of blob-hash-prefix shards the GC reducer
+  splits work across. This is a creation-time-only setting: on reopen the pool's persisted GC state is
+  authoritative.
+- Every physical blob materialization starts with `HEAD`. A present non-condemned blob is adopted;
+  an absent or condemned blob is published unconditionally and its freshness metadata is reconciled
+  to `Clean`. A genuine fresh miss issues no metadata GET before publication.
+- `cas_gc_snapshot_generations_to_keep` — `3` by default. Number of past GC snapshot generations retained.
+- `gcs_max_conditional_put_bytes` — `1` GiB by default. Bounds every conditional non-blob `PUT` on
+  generation-token backends, where the precondition must survive one request. This includes
+  create-if-absent metadata/control artifacts and conditional replacements. Blob bodies do not
+  consume a write-response token: their unconditional publication can use ordinary multipart and
+  is not subject to this cap. Irrelevant on `ETag`-based backends such as AWS S3.
+- `cas_part_folder_cache_bytes` — `64` MiB by default. Size of the part-folder view cache. `0` disables
+  retention; this is a supported permanent operational configuration, not only a debug aid.
+- `cas_part_folder_cache_max_entries` — `10000` by default. Maximum number of entries in the part-folder
+  view cache.
+- `cas_part_folder_cache_max_entry_bytes` — `16` MiB by default. Maximum size of a single cached
+  part-folder view entry.
+- `cas_part_folder_validate` — `always` (default), `never`, or `age <seconds>`. Controls how often a
+  `ForceFresh` read re-proves a cached manifest body via a `HEAD` request: `always` re-proves every
+  time (the original, pre-optimization behavior), `never` trusts the cache without re-proving, and
+  `age <seconds>` re-proves only once the cached entry is older than the given number of seconds.
+- `cas_manifest_decode_cache_bytes` — `128` MiB by default. Byte bound for the decoded-manifest cache.
+  `0` disables decode caching entirely (a diagnostic mode).
+- `cas_gc_meta_pool_size` — `16` by default. Bounded thread-pool size for the GC's per-hash freshness-meta
+  writes (condemn/spare/delete), so a mass `DROP` condemning millions of blobs does not run fully
+  sequentially.
+- `skip_access_check` — `false` by default. Skips the disk's `CAS` capability probe ("start now,
+  fix later"). The server-level `skip_access_check` flag skips the generic disk access check;
+  this disk key governs the `CAS` capability probe.
 
 ### Using Azure Blob Storage {#azure-blob-storage}
 

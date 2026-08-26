@@ -13,6 +13,7 @@
 #include <Common/CurrentMetrics.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <IO/ReadPipeline.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedExchange.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
@@ -743,6 +744,7 @@ bool DiskObjectStorage::isSharedCompatible() const
     {
         case MetadataStorageType::Plain:
         case MetadataStorageType::PlainRewritable:
+        case MetadataStorageType::CAS:
         case MetadataStorageType::StaticWeb:
             return true;
         default:
@@ -752,7 +754,30 @@ bool DiskObjectStorage::isSharedCompatible() const
 
 bool DiskObjectStorage::supportsHardLinks() const
 {
+    /// MergeTree consults `supportsHardLinks` at exactly two pure capability gates
+    /// (`MergeTreeData::checkAlterIsPossible` and `checkMutationIsPossible`) to decide whether
+    /// mutations / lightweight `DELETE` / data-`ALTER`s are possible. On a content-addressed pool
+    /// these are supported: `MutateTask` builds the new part through ONE whole-part transaction in
+    /// which `createHardLink` carries unchanged columns forward BY REFERENCE (the new manifest entry
+    /// points at the same blob hash — no re-upload) and changed columns are written as fresh blobs,
+    /// committed atomically. No code branches on this flag to choose a per-file-autocommit path, so
+    /// advertising true does NOT open the per-file clone hazard: partition clones use one whole-part
+    /// transaction, replication uses whole-part transactions or the relink path, and the BACKUP
+    /// hard-link path remains independently rejected on CA.
+    if (metadata_storage->isContentAddressed())
+        return true;
+
     return !metadata_storage->isWriteOnce() && !metadata_storage->isPlain();
+}
+
+bool DiskObjectStorage::isContentAddressed() const
+{
+    return metadata_storage->isContentAddressed();
+}
+
+bool DiskObjectStorage::supportsAtomicFileWrites() const
+{
+    return metadata_storage->supportsAtomicFileWrites();
 }
 
 
@@ -790,7 +815,26 @@ void DiskObjectStorage::prepareRead(
     std::optional<size_t> read_hint,
     ReadPipeline & pipeline) const
 {
-    const auto storage_objects = metadata_storage->getStorageObjects(path);
+    /// Content-addressed reads: in-manifest bytes come from memory (no object exists); a
+    /// blob-backed part file translates to its physical blob object + a payload window, which
+    /// rides the STANDARD pipeline below (gather/caches/async prefetch — same chain as plain
+    /// object-storage disks, so right-mark bounds reach the object reader and its range requests
+    /// stay drainable, B116) and is bounded by the FileView stage at the end.
+    std::optional<IContentAddressedExchange::BlobViewPlan> ca_blob_view;
+    if (metadata_storage->isContentAddressed())
+    {
+        const auto * ca = dynamic_cast<const IContentAddressedExchange *>(metadata_storage.get());
+        if (ca)
+        {
+            if (ca->prepareInManifestRead(path, settings, pipeline))
+                return;
+            ca_blob_view = ca->getBlobViewPlan(path);
+        }
+    }
+
+    const auto storage_objects = ca_blob_view
+        ? StoredObjects{ca_blob_view->object}
+        : metadata_storage->getStorageObjects(path);
 
     auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto global_context = Context::getGlobalContextInstance();
@@ -870,6 +914,11 @@ void DiskObjectStorage::prepareRead(
             global_context->getAsyncReadCounters(),
             global_context->getFilesystemReadPrefetchesLog());
     }
+
+    /// A content-addressed blob-backed file is a payload window inside its blob: bound the
+    /// chain to it (and skip the CHCA envelope header in front).
+    if (ca_blob_view)
+        pipeline.needFileView(path, ca_blob_view->payload_offset, ca_blob_view->payload_end);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileIfExists(

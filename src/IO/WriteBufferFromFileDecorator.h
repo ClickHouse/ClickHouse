@@ -19,6 +19,15 @@ public:
 
     void preFinalize() override;
 
+    /// Forward the wrapped buffer's write-time ETag (if it is a file buffer that produced one), so a
+    /// decorated S3 buffer still lets content-addressed callers skip the post-write HEAD.
+    std::optional<std::string> getResultObjectETag() const override
+    {
+        if (const auto * file_buf = dynamic_cast<const WriteBufferFromFileBase *>(impl.get()))
+            return file_buf->getResultObjectETag();
+        return {};
+    }
+
     const WriteBuffer & getImpl() const { return *impl; }
 
 protected:

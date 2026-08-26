@@ -1,0 +1,46 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- Both nodes load this SAME base config, so they mount the SAME pool (the bucket is the
+                 single source of truth; no Keeper): exactly the shared-pool model test's topology.
+                 RustFS (not MinIO) enforces the conditional-PUT (If-None-Match) semantics the
+                 snapshot+log writer linearization relies on. -->
+            <disk_cas_dpm>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <endpoint>http://rustfs1:11121/test/cas_dpm_data/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <!-- Two servers mounting one pool: this acknowledgement is mandatory; without it the
+                     second mounter refuses to attach (see PoolMeta ownership check). -->
+                <!-- Background reachability GC enabled, short cadence so the decommissioned member's
+                     unreferenced content drains within the test. -->
+                <cas_gc_enabled>1</cas_gc_enabled>
+                <cas_gc_interval_sec>1</cas_gc_interval_sec>
+            </disk_cas_dpm>
+            <!-- Read-only window over the SAME pool for the read-only consumer (fsck). fsck refuses a
+                 writable pool; a read-only disk takes no mount lease, so it can inspect the pool the
+                 server writes without contention. -->
+            <disk_ca_ro>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <endpoint>http://rustfs1:11121/test/cas_dpm_data/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <readonly>true</readonly>
+                <cas_gc_enabled>0</cas_gc_enabled>
+            </disk_ca_ro>
+        </disks>
+        <policies>
+            <cas_dpm>
+                <volumes>
+                    <main>
+                        <disk>disk_cas_dpm</disk>
+                    </main>
+                </volumes>
+            </cas_dpm>
+        </policies>
+    </storage_configuration>
+</clickhouse>

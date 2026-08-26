@@ -13,6 +13,7 @@
 #include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
 #include <Disks/supportWritingWithAppend.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
@@ -179,11 +180,15 @@ static bool supportTransaction(const Disks & disks, LoggerPtr log)
 {
     for (const auto & disk : disks)
     {
-        if (!supportWritingWithAppend(disk))
-        {
-            LOG_DEBUG(log, "Disk {} does not support writing with append", disk->getName());
-            return false;
-        }
+        if (supportWritingWithAppend(disk))
+            continue;
+        /// A content-addressed disk does not support append, but persists the per-part mutable
+        /// transaction file (txn_version.txt) via its per-ref sidecar, which is all MVCC needs.
+        if (auto * obj = dynamic_cast<DiskObjectStorage *>(disk.get());
+            obj && obj->getMetadataStorage()->supportsTransactionalMutableFiles())
+            continue;
+        LOG_DEBUG(log, "Disk {} does not support transactions", disk->getName());
+        return false;
     }
     return true;
 }

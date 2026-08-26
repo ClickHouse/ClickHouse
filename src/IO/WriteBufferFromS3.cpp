@@ -64,6 +64,7 @@ namespace ErrorCodes
     extern const int S3_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 struct WriteBufferFromS3::PartData
@@ -405,6 +406,15 @@ void WriteBufferFromS3::writeMultipartUpload()
 
 void WriteBufferFromS3::createMultipartUpload()
 {
+    if (write_settings.s3_force_single_part_upload)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "A conditional write would start a MULTIPART upload, but the target store enforces "
+            "no preconditions on CompleteMultipartUpload (GCS, measured 2026-07-03) — refusing "
+            "(silent-data-loss risk). The single-PUT budget is governed by the disk's "
+            "`gcs_max_conditional_put_bytes` S3 setting; the production-grade path for bigger conditional writes "
+            "(unconditional multipart to a temp key + conditional Compose) is not implemented yet. {}",
+            getShortLogDetails());
+
     LOG_TEST(limited_log, "Create multipart upload. {}", getShortLogDetails());
 
     S3::CreateMultipartUploadRequest req;
@@ -646,6 +656,12 @@ bool WriteBufferFromS3::completeMultipartUpload()
     if (!write_settings.object_storage_write_if_match.empty())
         req.SetIfMatch(write_settings.object_storage_write_if_match);
 
+    /// Defense in depth only: a conditional write on a generation-token store never reaches this
+    /// request in the first place (WriteSettings forces a single PUT below the cap, so
+    /// createMultipartUpload throws first). Marking it anyway lets Task 4's native adapter reject a
+    /// conditional CompleteMultipartUpload outright if that invariant is ever violated.
+    req.setNativeConditional(write_settings.object_storage_request_mode == ObjectStorageRequestMode::NativeConditional);
+
     Aws::S3::Model::CompletedMultipartUpload multipart_upload;
     for (size_t i = 0; i < multipart_tags.size(); ++i)
     {
@@ -678,6 +694,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
 
         if (outcome.IsSuccess())
         {
+            object_etag = outcome.GetResult().GetETag();
             LOG_TRACE(limited_log, "Multipart upload has completed. {}, Parts: {}", getShortLogDetails(), multipart_tags.size());
             return true;
         }
@@ -692,10 +709,13 @@ bool WriteBufferFromS3::completeMultipartUpload()
         }
         else
         {
+            /// Pass the canonical S3 error name: a conditional-write 412 is UNMODELED for the SDK
+            /// (the error type is UNKNOWN), so the name is the caller's only typed signal.
             throw S3Exception(
+                PreformattedMessage::create("Message: {}, Key: {}, Bucket: {}, Tags: {}",
+                    outcome.GetError().GetMessage(), key, bucket, fmt::join(multipart_tags.begin(), multipart_tags.end(), " ")),
                 outcome.GetError().GetErrorType(),
-                "Message: {}, Key: {}, Bucket: {}, Tags: {}",
-                outcome.GetError().GetMessage(), key, bucket, fmt::join(multipart_tags.begin(), multipart_tags.end(), " "));
+                outcome.GetError().GetExceptionName());
         }
     }
 
@@ -730,6 +750,10 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetContentType("binary/octet-stream");
 
     client_ptr->setKMSHeaders(req);
+
+    /// The actual PUT that produces a CAS incarnation token: eligible for the typed NativeConditional
+    /// HTTP mode when the caller marked this write as such (see WriteSettings::object_storage_request_mode).
+    req.setNativeConditional(write_settings.object_storage_request_mode == ObjectStorageRequestMode::NativeConditional);
 
     return req;
 }
@@ -770,6 +794,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
 
             if (outcome.IsSuccess())
             {
+                object_etag = outcome.GetResult().GetETag();
                 LOG_TRACE(limited_log, "Single part upload has completed. {}, size {}", getShortLogDetails(), content_length);
                 return;
             }
@@ -785,17 +810,20 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             else
             {
                 /// PreconditionFailed is an expected response for conditional writes (e.g. If-None-Match: *),
-                /// not a genuine error — the caller handles it.
-                if (outcome.GetError().GetExceptionName() == "PreconditionFailed")
+                /// not a genuine error — the caller handles it (see `S3::isPreconditionFailedError`).
+                if (S3::isPreconditionFailedError(outcome.GetError()))
                     LOG_INFO(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
                               outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
                 else
                     LOG_ERROR(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
                               outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
+                /// Pass the canonical S3 error name: a conditional-write 412 is UNMODELED for the SDK
+                /// (the error type is UNKNOWN), so the name is the caller's only typed signal.
                 throw S3Exception(
+                    PreformattedMessage::create("Message: {}, bucket {}, key {}, object size {}",
+                        outcome.GetError().GetMessage(), bucket, key, content_length),
                     outcome.GetError().GetErrorType(),
-                    "Message: {}, bucket {}, key {}, object size {}",
-                    outcome.GetError().GetMessage(), bucket, key, content_length);
+                    outcome.GetError().GetExceptionName());
             }
         }
 

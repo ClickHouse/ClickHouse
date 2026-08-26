@@ -76,7 +76,10 @@ ReadBufferFromMemoryFileBase::ReadBufferFromMemoryFileBase(bool owns_memory,
 {
     chassert(data.size() == internal_buffer.size());
 
-    if (owns_memory)
+    /// memcpy's pointers are __attribute__((nonnull)) even when the length is 0. An empty file yields
+    /// data.data() == nullptr, so guard on non-empty to avoid the nonnull-attribute UB the asan_ubsan
+    /// lane aborts on (STID 5930-5afa). Nothing to copy when empty.
+    if (owns_memory && !data.empty())
         std::memcpy(internal_buffer.begin(), data.data(), data.size());
 
     working_buffer = internal_buffer;

@@ -74,6 +74,14 @@ private:
     void scheduleMerge(ASTSystemQuery & query);
     void syncMerges();
 
+    BlockIO runContentAddressedGcRun(const String & disk_name);
+    BlockIO runContentAddressedGcRebuild(const String & disk_name, bool force);
+
+    BlockIO runContentAddressedFsck(const String & disk_name);
+    void contentAddressedForget(const String & disk_name);
+    void contentAddressedGcStop(const String & disk_name);
+    void contentAddressedGcStart(const String & disk_name);
+
     void loadPrimaryKeys();
     void unloadPrimaryKeys();
     void loadOrUnloadPrimaryKeysImpl(bool load);

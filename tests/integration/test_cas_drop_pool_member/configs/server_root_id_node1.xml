@@ -1,0 +1,16 @@
+<clickhouse>
+    <!-- Phase 0 (mount safety): each server owning a DISTINCT layout subtree inside the shared pool.
+         Two servers must never write the same server_root_id tree (spec §mount-safety), so this is a
+         per-instance override merged onto the shared storage_conf.xml disk definitions. The read-only
+         fsck window shares node1's own srid: it never claims a mount, so no conflict. -->
+    <storage_configuration>
+        <disks>
+            <disk_cas_dpm>
+                <cas_server_root_id>node1</cas_server_root_id>
+            </disk_cas_dpm>
+            <disk_ca_ro>
+                <cas_server_root_id>node1</cas_server_root_id>
+            </disk_ca_ro>
+        </disks>
+    </storage_configuration>
+</clickhouse>

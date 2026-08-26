@@ -467,6 +467,151 @@ Wait until all asynchronously loading data parts of a table (outdated data parts
 SYSTEM WAIT LOADING PARTS [ON CLUSTER cluster_name] [db.]merge_tree_family_table_name
 ```
 
+### SYSTEM CAS GC RUN {#system-cas-gc-run}
+
+Runs one garbage-collection round of the content-addressed (CAS) MergeTree garbage collector synchronously and node-local: it reclaims content-addressed objects that are no longer referenced by any part. This is the on-demand counterpart of the background GC scheduler; it is useful for tests and diagnostics.
+
+```sql
+SYSTEM CAS GC RUN [ON CLUSTER cluster_name] [disk_name]
+```
+
+When `disk_name` is given, the round runs on that content-addressed disk only; targeting a non-content-addressed disk raises an exception. When `disk_name` is omitted, one round runs on every content-addressed disk configured on the node; if none are configured, the command raises an exception.
+
+Each round is recorded in [`system.cas_gc_log`](/operations/system-tables/cas_gc_log) as a `Start` and a `Finish` row (with `trigger = 'Manual'`).
+
+The command returns one row per disk it ran on (multiple rows when `disk_name` is omitted), with columns `disk`, `acquired_lease`, `deferred`, `round`, `candidates_marked`, `objects_deleted`, `objects_absent`, `objects_replaced`, `objects_spared`, `manifests_deleted`, `entries_condemned`, `entries_graduated`, `entries_redeleted`, `fence_outs`, `anomalies`, `pending_candidates`, `pending_condemned`, and `pending_retired`, describing the outcome of that round. The `pending_*` columns are the retire pipeline's remaining backlog sizes read from the `gc/state` this round's own commit just published (not this round's own delta, unlike the columns before them) — `0` on a non-authoritative row (`acquired_lease = 0` or `deferred = 1`), same as every other counter.
+
+A manual run always executes, regardless of [`SYSTEM CAS GC STOP`](#system-cas-gc-stop-start): `STOP` pauses only the background scheduler on that disk.
+
+### SYSTEM CAS GC REBUILD {#system-cas-gc-rebuild}
+
+Disaster-recovery command for the content-addressed (CAS) MergeTree garbage collector. It rebuilds a
+CAS disk's `gc/state` baseline from scratch, by re-discovering the whole ref universe and re-folding
+manifest edges into a fresh generation. It writes only the GC plane (`gc/state` and the `gc/gen/*`
+artifacts) and never touches ref shards, manifests, or blobs, and it never deletes anything itself —
+but the rebuilt baseline drives every subsequent GC round's retire decisions, so this is a
+**destructive disaster-recovery tool**, not something to run routinely: a rebuild performed against
+a state that was not actually corrupted discards live bookkeeping, and an incorrect rebuild can make
+a later round delete objects that are still referenced.
+
+```sql
+SYSTEM CAS GC REBUILD [FORCE] [ON CLUSTER cluster_name] disk_name
+```
+
+Unlike `SYSTEM CAS GC RUN`, `disk_name` is **required**: the destructive
+baseline rebuild must never fan out across every content-addressed disk on the node from a bare
+command; targeting a non-content-addressed disk raises an exception.
+
+By default the command refuses to run when the disk's existing `gc/state` and every artifact it
+references decode successfully and are present — a rebuild would needlessly discard healthy live
+bookkeeping. Add `FORCE` to rebuild deliberately even though the existing state looks healthy. The
+command also refuses (regardless of `FORCE`) when another GC leader currently holds the disk's
+lease. In both refusal cases it raises an exception instead of returning a row.
+
+On success it returns one row with columns `disk`, `performed`, `round`, `generation`, `namespaces`,
+`shards`, `committed_refs`, `live_precommits`, `unowned_alive_manifests`, `edges`,
+`clamped_shards`, `virgin_by_enumeration`, and `adopted_seal_generation`, describing the freshly
+rebuilt baseline. `virgin_by_enumeration = 1` means the rebuild found no fold seal at all and
+carried no durable hold forward, concluding from enumeration alone that the pool never sealed a
+baseline — on a pool that has ever completed a GC round this means the object listing lied.
+`adopted_seal_generation` names which generation's fold seal the rebuild carried holds from; `0`
+when it carried none.
+
+### SYSTEM CAS GC STOP / SYSTEM CAS GC START {#system-cas-gc-stop-start}
+
+Pause or resume the background GC scheduler on one content-addressed disk, without affecting reads
+or writes on that disk. This is granular operator control of GC alone — for example to pause
+reclamation during an incident — not a lifecycle transition; the disk stays fully usable throughout.
+
+```sql
+SYSTEM CAS GC STOP [ON CLUSTER cluster_name] disk_name
+SYSTEM CAS GC START [ON CLUSTER cluster_name] disk_name
+```
+
+`disk_name` is **required** for both — unlike `SYSTEM CAS GC RUN`, there is no fan-out form, since
+each command targets exactly one disk's scheduler.
+
+`GC STOP` stops in place: the scheduler object is retained, so a later `GC START` resumes the *same*
+instance, preserving its `gc_id` and lease-observation history. It is idempotent, and works even on
+a disk that is not currently live (stopping GC on a sick disk is a legitimate operation). It does
+not stop a manual [`SYSTEM CAS GC RUN`](#system-cas-gc-run) on the same disk.
+
+`GC START` re-enters that same scheduler instance rather than creating a new one; leadership is
+**not** automatically restored — the scheduler re-acquires the durable `gc/state` lease through the
+next round's normal acquisition, the same as any other contender. It is idempotent (a no-op on an
+already-running scheduler), and refuses with a typed error on a decommissioned or uncertain pool,
+since restarting GC there would only spin failing rounds.
+
+Neither command returns a result set.
+
+### SYSTEM CAS FSCK {#system-cas-fsck}
+
+Independently verifies content-addressed pool reachability against a **running, mounted** disk — the
+scan re-validates every finding against a fresh authoritative read, so unlike the offline
+`clickhouse-disks cas-fsck` tool it needs no quiesce and no read-only mount.
+
+```sql
+SYSTEM CAS FSCK [ON CLUSTER cluster_name] disk_name
+```
+
+`disk_name` is **required**. The command returns one row with columns `disk`, `reachable`,
+`dangling`, `unreachable`, `pending_gc`, `awaiting_gc`, `unaccounted`, `stale_edge`,
+`corrupted_runs`, `chain_broken`, `unchecked`, `lifeless_keys`, `namespace_janitor_pending`,
+`namespace_janitor_pending_bytes`, `namespace_janitor_pending_lives`, `ref_records_walked`,
+`physical_bytes`, `referenced_logical_bytes`, `distinct_blobs`, and `total_blob_refs`. `dangling` is
+the one column that means data loss; `unreachable`, `pending_gc`, and `awaiting_gc` are objects
+still moving through the normal condemn/graduate/delete pipeline, not a problem on their own. This
+is a summary-only scan; per-object detail requires the offline `clickhouse-disks cas-fsck --detail`.
+
+### SYSTEM CAS FORGET {#system-cas-forget}
+
+Node-local operator assertion that a content-addressed disk is permanently gone — the "fire marshal"
+verb for a stuck disk (a transient or identity-lost pool, or an operator-asserted decommission).
+Unlike the other `SYSTEM CAS` commands, it deliberately works on a disk that is **not** live, since
+that is its whole purpose.
+
+```sql
+SYSTEM CAS FORGET [ON CLUSTER cluster_name] disk_name
+```
+
+`disk_name` is **required**. It is an assertion, not a proof of erasure: the disk stays registered
+and answers further store-class access with a typed error, and a server restart re-registers the
+name. Returns no result set. This is different from
+[`SYSTEM CAS DROP POOL MEMBER`](#system-cas-drop-pool-member), which permanently retires one pool
+*member's* identity across the whole shared pool — `FORGET` only affects this node's own local view
+of one disk.
+
+### SYSTEM CAS DROP POOL MEMBER {#system-cas-drop-pool-member}
+
+Permanently decommissions a dead member (`server_root_id`) of a content-addressed disk
+pool. It claims the member's mount slot as an administrative writer — fencing that `server_root_id` from ever
+writing again — then drops every table namespace the member owned, drains eligible manifest debris,
+staging objects, and mountpoint objects belonging to it, and retires the mount slot once all drains
+are confirmed. This is a **destructive, irreversible** operation: only run it once the `server_root_id` is
+confirmed permanently dead, since it fences the member out even if it later comes back online, and
+it deletes namespace and drain state that cannot be recovered.
+
+It is a writer operation, not GC: it emits ordinary ref-edge deltas rather than inventing GC
+transitions, and it does not synchronously reclaim shared blob content — removing the ref edges only
+makes the now-unreferenced blobs eligible for an ordinary GC round to reclaim later.
+
+```sql
+SYSTEM CAS DROP POOL MEMBER 'server_root_id' FROM DISK 'disk_name' [ON CLUSTER cluster_name]
+```
+
+Both `server_root_id` and `disk_name` are required string literals (a `server_root_id` is an opaque server-root path
+that may contain `/`, not a plain identifier, so it cannot be written unquoted).
+
+The operation is resumable: a rerun skips namespaces already marked `Removed` and reports them
+separately from namespaces newly removed by this invocation. Per-object drain failures are recorded
+as warnings and leave the slot in a terminated-but-not-fully-drained state that a later invocation
+can resume from, rather than raising an exception.
+
+The command returns one row with columns `server_root_id`, `namespaces_removed`, `namespaces_already_removed`,
+`committed_refs_removed`, `precommits_removed`, `manifest_debris_removed`, `staging_objects_removed`,
+`mountpoint_objects_removed`, `slot_removed`, and `warnings`. A non-empty `warnings` means some
+drain was not confirmed and the mount slot was left in place as a resume anchor.
+
 ## Managing ReplicatedMergeTree Tables {#managing-replicatedmergetree-tables}
 
 ClickHouse can manage background replication related processes in [ReplicatedMergeTree](/engines/table-engines/mergetree-family/replication) tables.

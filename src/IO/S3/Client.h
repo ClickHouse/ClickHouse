@@ -115,6 +115,13 @@ struct ClientSettings
     bool is_s3express_bucket = false;
 };
 
+/// True for the two `http_client` values (case-insensitive) that select a GCS-native HTTP layer:
+/// `gcp_oauth` and `gcs_hmac`. The single source of truth for what "GCS generation dialect" means
+/// from configuration alone -- `Client::supportsGcsNativeConditionalRequests` below is this applied to
+/// a constructed client's own configuration; a caller that needs the answer before a client exists
+/// (e.g. deciding whether a config change would flip the dialect) calls this directly instead.
+bool httpClientImpliesGcsGenerationDialect(const String & http_client);
+
 /// Client that improves the client from the AWS SDK
 /// - inject region and URI into requests so they are rerouted to the correct destination if needed
 /// - automatically detect endpoint and regions for each bucket and cache them
@@ -144,7 +151,7 @@ public:
 
     std::unique_ptr<Client> clone() const;
 
-    std::unique_ptr<Client> cloneWithConfigurationOverride(const PocoHTTPClientConfiguration & client_configuration_override) const;
+    virtual std::unique_ptr<Client> cloneWithConfigurationOverride(const PocoHTTPClientConfiguration & client_configuration_override) const;
 
     Client & operator=(const Client &) = delete;
 
@@ -208,6 +215,7 @@ public:
 
     Model::HeadObjectOutcome HeadObject(HeadObjectRequest & request) const;
     Model::GetObjectTaggingOutcome GetObjectTagging(GetObjectTaggingRequest & request) const;
+    Model::GetBucketVersioningOutcome GetBucketVersioning(GetBucketVersioningRequest & request) const;
     Model::ListObjectsV2Outcome ListObjectsV2(ListObjectsV2Request & request) const;
     Model::ListObjectsOutcome ListObjects(ListObjectsRequest & request) const;
     Model::GetObjectOutcome GetObject(GetObjectRequest & request) const;
@@ -252,6 +260,10 @@ public:
 
     const PocoHTTPClientConfiguration & getClientConfiguration() const { return client_configuration; }
 
+    /// True when this client's HTTP layer can honor the typed `NativeConditional` request mode
+    /// (http_client = gcs_hmac or gcp_oauth), independent of whether any given request opts in.
+    bool supportsGcsNativeConditionalRequests() const;
+
     /// For testing purposes only
     ClientCache * getRawCache() const { return cache.get(); }
 
@@ -273,6 +285,7 @@ private:
     /// otherwise region and endpoint redirection won't work
     using Aws::S3::S3Client::HeadObject;
     using Aws::S3::S3Client::GetObjectTagging;
+    using Aws::S3::S3Client::GetBucketVersioning;
     using Aws::S3::S3Client::ListObjectsV2;
     using Aws::S3::S3Client::ListObjects;
     using Aws::S3::S3Client::GetObject;
@@ -344,6 +357,17 @@ private:
     const ServerSideEncryptionKMSConfig sse_kms_config;
 
     LoggerPtr log;
+};
+
+/// Refuses every SDK-transparent retry and counts each consultation. Used by the
+/// ObjectStorageRetryProfile::SingleAttempt per-write profile (conditional writes whose retry
+/// decisions live ABOVE the SDK: the caller must resolve an uncertain PUT before reissuing).
+class SingleAttemptRetryStrategy final : public Aws::Client::RetryStrategy
+{
+public:
+    bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> &, long) const override; // NOLINT(google-runtime-int)
+    long CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> &, long) const override { return 0; } // NOLINT(google-runtime-int)
+    long GetMaxAttempts() const override { return 1; } // NOLINT(google-runtime-int)
 };
 
 class ClientFactory

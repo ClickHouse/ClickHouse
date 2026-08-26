@@ -1,0 +1,31 @@
+<clickhouse>
+    <!-- A SECOND, independent content-addressed pool, loaded by node2 only. It exists for exactly one
+         assertion: a relink offer is gated on the receiver and the sender naming the SAME pool, so a
+         fetch into this pool from a part living in `shared_pool` must degrade to a byte transfer.
+         Only one server mounts it, so it needs no per-instance `server_root_id` override.
+         GC is off: nothing here is ever meant to be reclaimed,
+         and a second GC scheduler would only add background noise to the other tests' timing. -->
+    <storage_configuration>
+        <disks>
+            <disk_cas_other>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <endpoint>http://rustfs1:11121/test/other_pool/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <cas_server_root_id>node2_other</cas_server_root_id>
+                <cas_gc_enabled>0</cas_gc_enabled>
+            </disk_cas_other>
+        </disks>
+        <policies>
+            <cas_other>
+                <volumes>
+                    <main>
+                        <disk>disk_cas_other</disk>
+                    </main>
+                </volumes>
+            </cas_other>
+        </policies>
+    </storage_configuration>
+</clickhouse>

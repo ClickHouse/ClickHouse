@@ -40,6 +40,8 @@ public:
     std::string getDiskName() const override;
     std::string getDiskType() const override;
     bool isStoredOnRemoteDisk() const override;
+    bool isContentAddressed() const override;
+    bool supportsAtomicFileWrites() const override;
     std::optional<String> getCacheName() const override;
     bool supportZeroCopyReplication() const override;
     bool supportParallelWrite() const override;

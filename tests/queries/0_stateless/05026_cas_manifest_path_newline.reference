@@ -1,0 +1,11 @@
+insert_ok
+1
+rows
+30
+projection_result
+v0	10
+v1	10
+v2	10
+unreachable 0
+dangling 0
+dropped_ok

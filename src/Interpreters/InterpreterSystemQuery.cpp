@@ -21,6 +21,14 @@
 #include <Databases/enableAllExperimentalSettings.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Tools/CasDecommission.h>
+/// Direct, though `ContentAddressedMetadataStorage.h` above would also pull it in: this TU renders
+/// `FsckReport`'s hard findings into the SQL row, and `CasFsck.h`'s `kFsckHardFindings` tripwire is what
+/// breaks THIS build when a finding is added. Depending on another header's include list for that would
+/// make the coverage silently removable.
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Tools/CasFsck.h>
+#include <Disks/IDisk.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -72,6 +80,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
 #include <Common/CoverageCollection.h>
@@ -95,6 +104,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
 #include <base/sleep.h>
+#include <fmt/ranges.h>
 
 #include "config.h"
 
@@ -264,6 +274,18 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
 }
 
 constexpr std::string_view table_is_not_replicated = "Table {} is not replicated";
+
+/// A table in a database created with `lazy_load_tables = 1` stays wrapped in a `StorageTableProxy`
+/// until its first access, so a `dynamic_cast` to the real engine (e.g. `StorageReplicatedMergeTree`)
+/// fails and a `SYSTEM` verb that targets one specific named table misreports it as not replicated.
+/// Materialize the proxy before such a cast; generic query paths already materialize on read by
+/// design and must not go through this helper.
+StoragePtr unwrapTableProxy(const StoragePtr & storage)
+{
+    if (const auto * proxy = dynamic_cast<const StorageTableProxy *>(storage.get()))
+        return proxy->getNested();
+    return storage;
+}
 
 }
 
@@ -1020,6 +1042,100 @@ BlockIO InterpreterSystemQuery::execute()
 
             break;
         }
+        case Type::CAS_GC_RUN:
+        {
+            /// A manual GC RUN executes REGARDLESS of SYSTEM CAS GC STOP: STOP pauses only the
+            /// background PACER, not the GC engine, so an explicit operator round still runs (explicit intent
+            /// wins). A round that acquires the lease sets the disk's in-process is_leader=true, which its
+            /// introspection can surface transiently even while the background scheduler stays stopped —
+            /// until a peer mounter steals the lease or GC START resumes pacing. This is truthful (the round
+            /// DID lead) and harmless (no background thread acts on it while stopped).
+            getContext()->checkAccess(AccessType::SYSTEM_CAS_GC_RUN);
+            result = runContentAddressedGcRun(query.disk);
+            break;
+        }
+        case Type::CAS_GC_REBUILD:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_CAS_GC_REBUILD);
+            result = runContentAddressedGcRebuild(query.disk, query.cas_gc_rebuild_force);
+            break;
+        }
+        case Type::CAS_FSCK:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_CAS_FSCK);
+            result = runContentAddressedFsck(query.disk);
+            break;
+        }
+        case Type::CAS_FORGET:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_CAS_FORGET);
+            contentAddressedForget(query.disk);
+            break;
+        }
+        case Type::CAS_GC_STOP:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_CAS_GC_STOP);
+            contentAddressedGcStop(query.disk);
+            break;
+        }
+        case Type::CAS_GC_START:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_CAS_GC_START);
+            contentAddressedGcStart(query.disk);
+            break;
+        }
+        case Type::CAS_DROP_POOL_MEMBER:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_CAS_DROP_POOL_MEMBER);
+
+            auto disk = getContext()->getDisk(query.disk);
+            auto * ca = ContentAddressedMetadataStorage::tryFromDisk(disk);
+            if (!ca)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "SYSTEM CAS DROP POOL MEMBER: disk '{}' is not a content-addressed disk", query.disk);
+            ca->checkNotReadOnly("SYSTEM CAS DROP POOL MEMBER");
+
+            const auto & host_store = ca->store();
+            const auto report = Cas::decommissionPoolMember(
+                host_store->poolBackendPtr(), host_store->poolConfig(), query.replica, {},
+                [ca] { ca->requestGcRoundSoon(); });
+
+            /// One-row summary result set (precedent: SYNC_FILESYSTEM_CACHE's MutableColumns/
+            /// SourceFromSingleChunk construction above).
+            ColumnsDescription columns{NamesAndTypesList{
+                {"server_root_id", std::make_shared<DataTypeString>()},
+                {"namespaces_removed", std::make_shared<DataTypeUInt64>()},
+                {"namespaces_already_removed", std::make_shared<DataTypeUInt64>()},
+                {"committed_refs_removed", std::make_shared<DataTypeUInt64>()},
+                {"precommits_removed", std::make_shared<DataTypeUInt64>()},
+                {"manifest_debris_removed", std::make_shared<DataTypeUInt64>()},
+                {"staging_objects_removed", std::make_shared<DataTypeUInt64>()},
+                {"mountpoint_objects_removed", std::make_shared<DataTypeUInt64>()},
+                {"slot_removed", std::make_shared<DataTypeUInt8>()},
+                {"warnings", std::make_shared<DataTypeString>()},
+            }};
+            Block sample_block;
+            for (const auto & column : columns)
+                sample_block.insert({column.type->createColumn(), column.type, column.name});
+
+            MutableColumns res_columns = sample_block.cloneEmptyColumns();
+            size_t i = 0;
+            res_columns[i++]->insert(report.srid);
+            res_columns[i++]->insert(report.namespaces_removed);
+            res_columns[i++]->insert(report.namespaces_already_removed);
+            res_columns[i++]->insert(report.committed_refs_removed);
+            res_columns[i++]->insert(report.precommits_removed);
+            res_columns[i++]->insert(report.manifest_debris_removed);
+            res_columns[i++]->insert(report.staging_objects_removed);
+            res_columns[i++]->insert(report.mountpoint_objects_removed);
+            res_columns[i++]->insert(static_cast<UInt8>(report.slot_removed));
+            res_columns[i++]->insert(fmt::format("{}", fmt::join(report.warnings, "; ")));
+
+            size_t num_rows = res_columns[0]->size();
+            auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
+            result.pipeline = QueryPipeline(std::move(source));
+            break;
+        }
         case Type::RESTART_DISK:
         {
             restartDisk(query.disk);
@@ -1283,7 +1399,7 @@ void InterpreterSystemQuery::restoreReplica()
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
-    const StoragePtr table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    const StoragePtr table_ptr = unwrapTableProxy(DatabaseCatalog::instance().getTable(table_id, getContext()));
 
     auto * const table_replicated_ptr = dynamic_cast<StorageReplicatedMergeTree *>(table_ptr.get());
 
@@ -1358,7 +1474,9 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         return nullptr;
     }
 
-    if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+    /// Only the type check needs the materialized (unwrapped) storage; the possibly-still-proxied
+    /// `table` is what actually stays registered in `database` and is what gets locked/detached below.
+    if (!dynamic_cast<const StorageReplicatedMergeTree *>(unwrapTableProxy(table).get()))
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
@@ -1567,7 +1685,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     if (!table_id.empty())
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, table_id);
-        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+        StoragePtr table = unwrapTableProxy(DatabaseCatalog::instance().getTable(table_id, getContext()));
 
         if (!dropStorageReplica(query.replica, table))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
@@ -2045,7 +2163,7 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
             break;
     }
 
-    if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+    if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(unwrapTableProxy(table).get()))
     {
         auto log = getLogger("InterpreterSystemQuery");
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
@@ -2091,7 +2209,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 void InterpreterSystemQuery::waitLoadingParts()
 {
     getContext()->checkAccess(AccessType::SYSTEM_WAIT_LOADING_PARTS, table_id);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    StoragePtr table = unwrapTableProxy(DatabaseCatalog::instance().getTable(table_id, getContext()));
 
     if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
     {
@@ -2163,11 +2281,12 @@ namespace
 
 MergeTreeData & getMergeTreeWithManualSelector(const StoragePtr & table, const StorageID & table_id, const char * action)
 {
-    auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get());
+    const StoragePtr unwrapped = unwrapTableProxy(table);
+    auto * merge_tree = dynamic_cast<MergeTreeData *>(unwrapped.get());
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Command {} is supported only for MergeTree-family tables, but got: {}",
-            action, table->getName());
+            action, unwrapped->getName());
 
     const auto algorithm = (*merge_tree->getSettings())[MergeTreeSetting::merge_selector_algorithm].value;
     if (algorithm != MergeSelectorAlgorithm::MANUAL)
@@ -2231,6 +2350,363 @@ void InterpreterSystemQuery::syncMerges()
     throw DB::Exception(DB::ErrorCodes::TIMEOUT_EXCEEDED, "SYNC MERGES {}: command timed out. See the 'max_execution_time' setting", table_id.getNameForLogs());
 }
 
+namespace
+{
+
+/// One-row-per-disk result-set builders for the CAS GC verbs, mirroring the SYSTEM CAS
+/// DROP POOL MEMBER precedent (ColumnsDescription + MutableColumns + SourceFromSingleChunk; see also
+/// SYNC_FILESYSTEM_CACHE above).
+ColumnsDescription contentAddressedGcRoundColumns()
+{
+    return ColumnsDescription{NamesAndTypesList{
+        {"disk", std::make_shared<DataTypeString>()},
+        {"acquired_lease", std::make_shared<DataTypeUInt8>()},
+        {"deferred", std::make_shared<DataTypeUInt8>()},
+        {"round", std::make_shared<DataTypeUInt64>()},
+        {"candidates_marked", std::make_shared<DataTypeUInt64>()},
+        {"objects_deleted", std::make_shared<DataTypeUInt64>()},
+        {"objects_absent", std::make_shared<DataTypeUInt64>()},
+        {"objects_replaced", std::make_shared<DataTypeUInt64>()},
+        {"objects_spared", std::make_shared<DataTypeUInt64>()},
+        {"manifests_deleted", std::make_shared<DataTypeUInt64>()},
+        {"entries_condemned", std::make_shared<DataTypeUInt64>()},
+        {"entries_graduated", std::make_shared<DataTypeUInt64>()},
+        {"entries_redeleted", std::make_shared<DataTypeUInt64>()},
+        {"fence_outs", std::make_shared<DataTypeUInt64>()},
+        {"anomalies", std::make_shared<DataTypeUInt64>()},
+        /// Task 7: the retire pipeline's REMAINING (not this-round-delta) sizes, read from the gc/state
+        /// this round's single CAS just published -- see `Cas::RoundReport`'s field comments. Zero on a
+        /// non-authoritative row (!acquired_lease or deferred), same as every other counter above.
+        {"pending_candidates", std::make_shared<DataTypeUInt64>()},
+        {"pending_condemned", std::make_shared<DataTypeUInt64>()},
+        {"pending_retired", std::make_shared<DataTypeUInt64>()},
+    }};
+}
+
+void appendContentAddressedGcRoundRow(MutableColumns & res_columns, const String & disk_name, const Cas::RoundReport & rep)
+{
+    size_t i = 0;
+    res_columns[i++]->insert(disk_name);
+    res_columns[i++]->insert(static_cast<UInt8>(rep.acquired_lease));
+    res_columns[i++]->insert(static_cast<UInt8>(rep.deferred));
+    res_columns[i++]->insert(rep.round);
+    res_columns[i++]->insert(rep.candidates);
+    res_columns[i++]->insert(rep.deleted);
+    res_columns[i++]->insert(rep.absent);
+    res_columns[i++]->insert(rep.replaced);
+    res_columns[i++]->insert(rep.spared);
+    res_columns[i++]->insert(rep.manifests_deleted);
+    res_columns[i++]->insert(rep.condemned);
+    res_columns[i++]->insert(rep.graduated);
+    res_columns[i++]->insert(rep.redeleted);
+    res_columns[i++]->insert(rep.fence_outs);
+    res_columns[i++]->insert(rep.anomalies.size());
+    res_columns[i++]->insert(rep.pending_candidates);
+    res_columns[i++]->insert(rep.pending_condemned);
+    res_columns[i++]->insert(rep.pending_retired);
+}
+
+ColumnsDescription contentAddressedGcRebuildColumns()
+{
+    return ColumnsDescription{NamesAndTypesList{
+        {"disk", std::make_shared<DataTypeString>()},
+        {"performed", std::make_shared<DataTypeUInt8>()},
+        {"round", std::make_shared<DataTypeUInt64>()},
+        {"generation", std::make_shared<DataTypeUInt64>()},
+        {"namespaces", std::make_shared<DataTypeUInt64>()},
+        {"shards", std::make_shared<DataTypeUInt64>()},
+        {"committed_refs", std::make_shared<DataTypeUInt64>()},
+        {"live_precommits", std::make_shared<DataTypeUInt64>()},
+        {"unowned_alive_manifests", std::make_shared<DataTypeUInt64>()},
+        {"edges", std::make_shared<DataTypeUInt64>()},
+        {"clamped_shards", std::make_shared<DataTypeUInt64>()},
+        /// 1 => the rebuild found no fold seal at all and carried NO durable hold forward, having
+        /// concluded from enumeration alone that the pool never sealed a baseline. On a pool that has
+        /// ever completed a GC round this means the object listing lied.
+        {"virgin_by_enumeration", std::make_shared<DataTypeUInt8>()},
+        /// Which generation's fold seal the rebuild carried holds from; 0 when it carried none.
+        {"adopted_seal_generation", std::make_shared<DataTypeUInt64>()},
+    }};
+}
+
+void appendContentAddressedGcRebuildRow(MutableColumns & res_columns, const String & disk_name, const Cas::RebuildReport & rep)
+{
+    size_t i = 0;
+    res_columns[i++]->insert(disk_name);
+    res_columns[i++]->insert(static_cast<UInt8>(rep.performed));
+    res_columns[i++]->insert(rep.round);
+    res_columns[i++]->insert(rep.generation);
+    res_columns[i++]->insert(rep.namespaces);
+    res_columns[i++]->insert(rep.shards);
+    res_columns[i++]->insert(rep.committed_refs);
+    res_columns[i++]->insert(rep.live_precommits);
+    res_columns[i++]->insert(rep.unowned_alive_manifests);
+    res_columns[i++]->insert(rep.edges);
+    res_columns[i++]->insert(rep.clamped_shards);
+    res_columns[i++]->insert(static_cast<UInt8>(rep.virgin_by_enumeration));
+    res_columns[i++]->insert(rep.adopted_seal_generation);
+}
+
+/// SYSTEM CAS FSCK's one-row-per-disk summary. Named UInt64 columns only, no DETAIL
+/// keyword (YAGNI -- the offline `clickhouse-disks cas-fsck --detail` applet already covers per-object
+/// listing). Field order/names mirror `Cas::FsckReport`; the row was a deliberate SUBSET of it until
+/// 2026-07-29, and is no longer one where findings are concerned -- see the rule stated at
+/// `stale_edge` below. `CommandFsck.cpp`'s `formatFsckSummary` line carries the same fields.
+ColumnsDescription contentAddressedFsckColumns()
+{
+    return ColumnsDescription{NamesAndTypesList{
+        {"disk", std::make_shared<DataTypeString>()},
+        {"reachable", std::make_shared<DataTypeUInt64>()},
+        {"dangling", std::make_shared<DataTypeUInt64>()},
+        {"unreachable", std::make_shared<DataTypeUInt64>()},
+        {"pending_gc", std::make_shared<DataTypeUInt64>()},
+        {"awaiting_gc", std::make_shared<DataTypeUInt64>()},
+        {"unaccounted", std::make_shared<DataTypeUInt64>()},
+        /// EVERY TERM OF `FsckReport::clean` APPEARS HERE. This row is the only view of a report a SQL
+        /// consumer ever gets, so a hard finding the row omits is a finding no query can see — the same
+        /// shape that hid `corrupted_runs` from the text summary for months. The row was a deliberate
+        /// subset until 2026-07-29 and `stale_edge`/`corrupted_runs` were invisible from SQL while
+        /// `clickhouse-disks cas-fsck` surfaced them; then
+        /// `lifeless_keys` was added to `clean` in 2026-07-30 and missed here too. Every time, the rule
+        /// was written in prose, and every time the prose did not hold.
+        ///
+        /// So it no longer lives only in prose: `kFsckHardFindings` (`CasFsck.h`) is the list `clean` is
+        /// computed from, and the `static_assert` beside it breaks the build in THIS translation unit when
+        /// a term is added. Read that assert's message before bumping its count -- it names this site as
+        /// one of the three that owes an update, and says that two of the three have no test that can fail
+        /// on their behalf. WHICH two is in the comment above the assert, not in the message; this site is
+        /// one of them.
+        ///
+        /// `stale_edge` is nonzero only in `detail` mode and this row is built from a summary scan, so it
+        /// reads 0 here always — present because "absent" and "zero" are different facts to a consumer,
+        /// and a column that appears the day the scan gains detail is a schema change nobody asked for.
+        {"stale_edge", std::make_shared<DataTypeUInt64>()},
+        {"corrupted_runs", std::make_shared<DataTypeUInt64>()},
+        /// The ref-stream verdicts (spec §7). `chain_broken` is a HARD finding — it belongs on the row
+        /// for the same reason `dangling` does. `unchecked` is its honest companion: namespaces the audit
+        /// could not prove either way, so a zero here is what makes the other zeros mean something.
+        {"chain_broken", std::make_shared<DataTypeUInt64>()},
+        {"unchecked", std::make_shared<DataTypeUInt64>()},
+        /// A malformed/non-canonical namespace-tree key, or an ambiguous/unreadable catalog
+        /// incarnation — a term of `clean`.
+        {"lifeless_keys", std::make_shared<DataTypeUInt64>()},
+        /// A COMPLETE, canonical namespace-life key whose life is absent from a catalog cut taken after
+        /// the listing: janitor-pending debris, NOT a term of `clean` (see `FsckClass::JanitorPending`).
+        {"namespace_janitor_pending", std::make_shared<DataTypeUInt64>()},
+        {"namespace_janitor_pending_bytes", std::make_shared<DataTypeUInt64>()},
+        {"namespace_janitor_pending_lives", std::make_shared<DataTypeUInt64>()},
+        {"ref_records_walked", std::make_shared<DataTypeUInt64>()},
+        {"physical_bytes", std::make_shared<DataTypeUInt64>()},
+        {"referenced_logical_bytes", std::make_shared<DataTypeUInt64>()},
+        {"distinct_blobs", std::make_shared<DataTypeUInt64>()},
+        {"total_blob_refs", std::make_shared<DataTypeUInt64>()},
+    }};
+}
+
+void appendContentAddressedFsckRow(MutableColumns & res_columns, const String & disk_name, const Cas::FsckReport & rep)
+{
+    size_t i = 0;
+    res_columns[i++]->insert(disk_name);
+    res_columns[i++]->insert(rep.reachable);
+    res_columns[i++]->insert(rep.dangling);
+    res_columns[i++]->insert(rep.unreachable);
+    res_columns[i++]->insert(rep.pending_gc);
+    res_columns[i++]->insert(rep.awaiting_gc);
+    res_columns[i++]->insert(rep.unaccounted);
+    res_columns[i++]->insert(rep.stale_edge);
+    res_columns[i++]->insert(rep.corrupted_runs);
+    res_columns[i++]->insert(rep.chain_broken);
+    res_columns[i++]->insert(rep.unchecked);
+    res_columns[i++]->insert(rep.lifeless_keys);
+    res_columns[i++]->insert(rep.namespace_janitor_pending);
+    res_columns[i++]->insert(rep.namespace_janitor_pending_bytes);
+    res_columns[i++]->insert(rep.namespace_janitor_pending_lives);
+    res_columns[i++]->insert(rep.ref_records_walked);
+    res_columns[i++]->insert(rep.physical_bytes);
+    res_columns[i++]->insert(rep.referenced_logical_bytes);
+    res_columns[i++]->insert(rep.distinct_blobs);
+    res_columns[i++]->insert(rep.total_blob_refs);
+}
+
+}
+
+BlockIO InterpreterSystemQuery::runContentAddressedGcRun(const String & disk_name)
+{
+    ColumnsDescription columns = contentAddressedGcRoundColumns();
+    Block sample_block;
+    for (const auto & column : columns)
+        sample_block.insert({column.type->createColumn(), column.type, column.name});
+    MutableColumns res_columns = sample_block.cloneEmptyColumns();
+
+    if (!disk_name.empty())
+    {
+        auto disk = getContext()->getDisk(disk_name);
+        auto * ca = ContentAddressedMetadataStorage::tryFromDisk(disk);
+        if (!ca)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not a content-addressed disk", disk_name);
+        appendContentAddressedGcRoundRow(res_columns, disk_name, ca->runGarbageCollectionRoundNow());   /// synchronous, one round
+    }
+    else
+    {
+        size_t ran = 0;
+        for (const auto & [name, disk] : getContext()->getDisksMap())
+        {
+            if (auto * ca = ContentAddressedMetadataStorage::tryFromDisk(disk))
+            {
+                appendContentAddressedGcRoundRow(res_columns, name, ca->runGarbageCollectionRoundNow());   /// synchronous, one round
+                ++ran;
+            }
+        }
+        if (ran == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No content-addressed disks are configured on this node");
+    }
+
+    size_t num_rows = res_columns[0]->size();
+    auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
+    BlockIO result;
+    result.pipeline = QueryPipeline(std::move(source));
+    return result;
+}
+
+BlockIO InterpreterSystemQuery::runContentAddressedGcRebuild(const String & disk_name, bool force)
+{
+    /// REBUILD requires an EXPLICIT disk (E1): the destructive baseline rebuild must never fan out
+    /// across every content-addressed disk on the node. The parser enforces this syntactically; this is
+    /// the fail-closed backstop for a directly-constructed AST.
+    if (disk_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "SYSTEM CAS GC REBUILD requires an explicit disk name");
+
+    auto disk = getContext()->getDisk(disk_name);
+    auto * ca = ContentAddressedMetadataStorage::tryFromDisk(disk);
+    if (!ca)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not a content-addressed disk", disk_name);
+
+    Cas::RebuildReport rep = ca->runGcRebuildNow(force);   /// synchronous, one rebuild
+    if (!rep.performed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "CAS GC rebuild refused: {}", rep.refusal);
+    LOG_INFO(log,
+        "CAS GC rebuild on disk '{}' completed: round={} generation={} namespaces={} shards={} "
+        "committed_refs={} live_precommits={} unowned_alive_manifests={} edges={} clamped_shards={} "
+        "virgin_by_enumeration={} adopted_seal_generation={}",
+        disk_name, rep.round, rep.generation, rep.namespaces, rep.shards, rep.committed_refs,
+        rep.live_precommits, rep.unowned_alive_manifests, rep.edges, rep.clamped_shards,
+        rep.virgin_by_enumeration, rep.adopted_seal_generation);
+
+    ColumnsDescription columns = contentAddressedGcRebuildColumns();
+    Block sample_block;
+    for (const auto & column : columns)
+        sample_block.insert({column.type->createColumn(), column.type, column.name});
+    MutableColumns res_columns = sample_block.cloneEmptyColumns();
+    appendContentAddressedGcRebuildRow(res_columns, disk_name, rep);
+
+    size_t num_rows = res_columns[0]->size();
+    auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
+    BlockIO result;
+    result.pipeline = QueryPipeline(std::move(source));
+    return result;
+}
+
+BlockIO InterpreterSystemQuery::runContentAddressedFsck(const String & disk_name)
+{
+    /// FSCK runs on a RUNNING disk (rev.8): the scan is read-only and revalidates every ref-walk finding
+    /// against a fresh authoritative read, so it needs no quiesce. The disk is REQUIRED, enforced by the
+    /// parser -- no fan-out form.
+    if (disk_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM CAS FSCK requires an explicit disk name");
+
+    auto disk = getContext()->getDisk(disk_name);
+    auto * ca = ContentAddressedMetadataStorage::tryFromDisk(disk);
+    if (!ca)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not a content-addressed disk", disk_name);
+
+    const Cas::FsckReport rep = ca->runFsckNow(/* detail= */ false);   /// summary only (no DETAIL keyword yet)
+
+    ColumnsDescription columns = contentAddressedFsckColumns();
+    Block sample_block;
+    for (const auto & column : columns)
+        sample_block.insert({column.type->createColumn(), column.type, column.name});
+    MutableColumns res_columns = sample_block.cloneEmptyColumns();
+    appendContentAddressedFsckRow(res_columns, disk_name, rep);
+
+    size_t num_rows = res_columns[0]->size();
+    auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
+    BlockIO result;
+    result.pipeline = QueryPipeline(std::move(source));
+    return result;
+}
+
+void InterpreterSystemQuery::contentAddressedForget(const String & disk_name)
+{
+    /// The operator "fire-marshal" verb (spec §5): a force-Vanish that decommissions a content-addressed
+    /// disk NODE-LOCALLY. Unlike the store()-class verbs, FORGET must work on a disk that is NOT live --
+    /// that is its whole purpose (a stuck transient/IdentityLost pool, an operator-asserted decommission) --
+    /// so it does NOT go through `checkOpAdmitted`/`store()` (which refuse a not-live disk). It is a
+    /// lifecycle verb like the Factory class: it reaches the pool directly and drives it to
+    /// `Vanished(forgotten)`. FORGET is an operator ASSERTION, not an erasure proof; the resulting [D5]
+    /// error message says so.
+    if (disk_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM CAS FORGET requires an explicit disk name");
+
+    auto disk = getContext()->getDisk(disk_name);                       /// UNKNOWN_DISK on a bad name
+    auto * ca = ContentAddressedMetadataStorage::tryFromDisk(disk);
+    if (!ca)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not a content-addressed disk", disk_name);
+
+    ca->forgetDisk();
+    LOG_WARNING(log,
+        "SYSTEM CAS FORGET decommissioned content-addressed disk '{}' (node-local; erasure "
+        "NOT verified). The disk stays registered and answers store-class access with a typed error; a "
+        "server restart re-registers the name.",
+        disk_name);
+}
+
+void InterpreterSystemQuery::contentAddressedGcStop(const String & disk_name)
+{
+    /// SYSTEM CAS GC STOP (spec §6): stop ONLY the background GC scheduler on this disk. The
+    /// disk stays fully usable -- reads and writes are unaffected; this is granular operator control of GC
+    /// alone (e.g. to pause reclamation during an incident), not a lifecycle transition. STOP-IN-PLACE: the
+    /// scheduler object is retained so a later GC START restarts the SAME instance (its gc_id and lease
+    /// observation history preserved). Idempotent; works even on a not-live/Vanished disk (stopping GC on a
+    /// sick disk is legitimate). The disk is REQUIRED -- there is no fan-out form.
+    if (disk_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM CAS GC STOP requires an explicit disk name");
+
+    auto disk = getContext()->getDisk(disk_name);                       /// UNKNOWN_DISK on a bad name
+    auto * ca = ContentAddressedMetadataStorage::tryFromDisk(disk);
+    if (!ca)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not a content-addressed disk", disk_name);
+
+    ca->gcStop();
+    LOG_INFO(log,
+        "SYSTEM CAS GC STOP: stopped the background garbage-collection scheduler on "
+        "content-addressed disk '{}' (the disk stays fully usable; SYSTEM CAS GC START "
+        "resumes it).",
+        disk_name);
+}
+
+void InterpreterSystemQuery::contentAddressedGcStart(const String & disk_name)
+{
+    /// SYSTEM CAS GC START (spec §6): restart the background GC scheduler stopped by GC STOP.
+    /// It re-enters the SAME scheduler instance; leadership is NOT auto-restored -- the scheduler re-acquires
+    /// the durable `gc/state` lease through the next round's normal acquisition. Idempotent (a no-op on a
+    /// running scheduler). Refuses on a decommissioned/uncertain pool (typed error) -- restarting GC there
+    /// would only spin failing rounds. The disk is REQUIRED -- there is no fan-out form.
+    if (disk_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM CAS GC START requires an explicit disk name");
+
+    auto disk = getContext()->getDisk(disk_name);                       /// UNKNOWN_DISK on a bad name
+    auto * ca = ContentAddressedMetadataStorage::tryFromDisk(disk);
+    if (!ca)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not a content-addressed disk", disk_name);
+
+    ca->gcStart();
+    LOG_INFO(log,
+        "SYSTEM CAS GC START: resumed the background garbage-collection scheduler on "
+        "content-addressed disk '{}'.",
+        disk_name);
+}
+
 void InterpreterSystemQuery::loadPrimaryKeys()
 {
     loadOrUnloadPrimaryKeysImpl(true);
@@ -2246,7 +2722,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
     if (!table_id.empty())
     {
         getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
-        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+        StoragePtr table = unwrapTableProxy(DatabaseCatalog::instance().getTable(table_id, getContext()));
 
         if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
         {
@@ -2392,7 +2868,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
     if (query.query_settings)
         settings_changes = query.query_settings->as<ASTSetQuery>()->changes;
 
-    if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, getContext()).get()))
+    if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(unwrapTableProxy(DatabaseCatalog::instance().getTable(table_id, getContext())).get()))
         storage_distributed->flushClusterNodesAllData(getContext(), settings_changes);
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
@@ -2406,7 +2882,7 @@ void InterpreterSystemQuery::flushObjectStorageQueue(ASTSystemQuery & query)
     if (query.queue_path.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PATH must be specified for SYSTEM FLUSH OBJECT STORAGE QUEUE");
 
-    auto table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto table = unwrapTableProxy(DatabaseCatalog::instance().getTable(table_id, context));
     auto * queue = dynamic_cast<StorageObjectStorageQueue *>(table.get());
     if (!queue)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2433,7 +2909,7 @@ void InterpreterSystemQuery::prewarmMarkCache()
 
     getContext()->checkAccess(AccessType::SYSTEM_PREWARM_MARK_CACHE, table_id);
 
-    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto table_ptr = unwrapTableProxy(DatabaseCatalog::instance().getTable(table_id, getContext()));
     auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
@@ -2457,7 +2933,7 @@ void InterpreterSystemQuery::prewarmPrimaryIndexCache()
 
     getContext()->checkAccess(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, table_id);
 
-    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto table_ptr = unwrapTableProxy(DatabaseCatalog::instance().getTable(table_id, getContext()));
     auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM PRIMARY INDEX CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
@@ -2795,6 +3271,41 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_BLOBS_CLEANUP:
         {
             required_access.emplace_back(AccessType::SYSTEM_WAIT_BLOBS_CLEANUP);
+            break;
+        }
+        case Type::CAS_GC_RUN:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_CAS_GC_RUN);
+            break;
+        }
+        case Type::CAS_GC_REBUILD:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_CAS_GC_REBUILD);
+            break;
+        }
+        case Type::CAS_DROP_POOL_MEMBER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_CAS_DROP_POOL_MEMBER);
+            break;
+        }
+        case Type::CAS_FSCK:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_CAS_FSCK);
+            break;
+        }
+        case Type::CAS_FORGET:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_CAS_FORGET);
+            break;
+        }
+        case Type::CAS_GC_STOP:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_CAS_GC_STOP);
+            break;
+        }
+        case Type::CAS_GC_START:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_CAS_GC_START);
             break;
         }
         case Type::UNFREEZE:

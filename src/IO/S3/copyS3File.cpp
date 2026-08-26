@@ -51,6 +51,7 @@ namespace ErrorCodes
     extern const int S3_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace S3RequestSetting
@@ -229,9 +230,10 @@ namespace
                 }
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
                 throw S3Exception(
+                    PreformattedMessage::create("Message: {}, Key: {}, Bucket: {}, Tags: {}",
+                        outcome.GetError().GetMessage(), dest_key, dest_bucket, fmt::join(multipart_tags.begin(), multipart_tags.end(), " ")),
                     outcome.GetError().GetErrorType(),
-                    "Message: {}, Key: {}, Bucket: {}, Tags: {}",
-                    outcome.GetError().GetMessage(), dest_key, dest_bucket, fmt::join(multipart_tags.begin(), multipart_tags.end(), " "));
+                    outcome.GetError().GetExceptionName());
             }
         }
 
@@ -613,7 +615,8 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            std::function<void()> fallback_method_)
+            std::function<void()> fallback_method_,
+            bool allow_fallback_ = true)
             : UploadHelper(
                 client_ptr_,
                 dest_bucket_,
@@ -630,6 +633,7 @@ namespace
             , supports_multipart_copy(client_ptr_->supportsMultiPartCopy())
             , read_settings(read_settings_)
             , fallback_method(std::move(fallback_method_))
+            , allow_fallback(allow_fallback_)
         {
         }
 
@@ -656,6 +660,7 @@ namespace
         bool supports_multipart_copy;
         const ReadSettings read_settings;
         std::function<void()> fallback_method;
+        const bool allow_fallback;
 
         void performSingleOperationCopy()
         {
@@ -684,6 +689,7 @@ namespace
             request.SetContentType("binary/octet-stream");
 
             client_ptr->setKMSHeaders(request);
+
         }
 
         void processCopyRequest(S3::CopyObjectRequest & request)
@@ -715,6 +721,12 @@ namespace
                 {
                     if (!supports_multipart_copy || outcome.GetError().GetExceptionName() == "AccessDenied")
                     {
+                        if (!allow_fallback)
+                            throw S3Exception(
+                                outcome.GetError().GetMessage(),
+                                outcome.GetError().GetErrorType(),
+                                outcome.GetError().GetExceptionName());
+
                         LOG_INFO(
                             log,
                             "Multipart upload using copy is not supported, will try regular upload for Bucket: {}, Key: {}, Object size: "
@@ -754,12 +766,13 @@ namespace
                 }
 
                 throw S3Exception(
+                    PreformattedMessage::create("Message: {}, Key: {}, Bucket: {}, Object size: {}",
+                        outcome.GetError().GetMessage(),
+                        dest_key,
+                        dest_bucket,
+                        size),
                     outcome.GetError().GetErrorType(),
-                    "Message: {}, Key: {}, Bucket: {}, Object size: {}",
-                    outcome.GetError().GetMessage(),
-                    dest_key,
-                    dest_bucket,
-                    size);
+                    outcome.GetError().GetExceptionName());
             }
         }
 
@@ -772,6 +785,9 @@ namespace
             catch (const S3Exception & e)
             {
                 if (e.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
+                    throw;
+
+                if (!allow_fallback)
                     throw;
 
                 tryLogCurrentException(log, "Multi part copy failed, trying with regular upload");
@@ -855,7 +871,8 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer& fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata)
+    const std::optional<ObjectAttributes> & object_metadata,
+    ObjectStorageCopyMode copy_mode)
 {
     if (!dest_s3_client)
         dest_s3_client = src_s3_client;
@@ -877,6 +894,11 @@ void copyS3File(
 
     if (!settings[S3RequestSetting::allow_native_copy])
     {
+        if (copy_mode == ObjectStorageCopyMode::NativeOnly)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Native-only S3 object copy is unavailable because allow_native_copy is disabled");
+
         LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
         fallback_method();
         return;
@@ -895,7 +917,8 @@ void copyS3File(
         object_metadata,
         schedule,
         blob_storage_log,
-        std::move(fallback_method)};
+        std::move(fallback_method),
+        /*allow_fallback=*/copy_mode == ObjectStorageCopyMode::Default};
     helper.performCopy();
 }
 

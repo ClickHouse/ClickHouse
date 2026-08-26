@@ -6,11 +6,18 @@
 #include <Disks/ReadOnlyDiskWrapper.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/IDisk.h>
+#include <Common/Exception.h>
+#include <base/EnumReflection.h>
 
 #include <fmt/ranges.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 void registerObjectStorages();
 void registerMetadataStorages();
@@ -77,7 +84,21 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         LOG_DEBUG(getLogger("registerDiskObjectStorage"), "Metadata type hint: {}", compatibility_metadata_type_hint);
         auto metadata_storage = MetadataStorageFactory::instance().create(name, config, config_prefix, cluster, object_storages, compatibility_metadata_type_hint);
 
-        bool use_fake_transaction = config.getBool(config_prefix + ".use_fake_transaction", metadata_storage->getType() != MetadataStorageType::Keeper);
+        /// Content-addressed metadata (like Keeper) requires real, deferred disk transactions: a part's
+        /// file->blob mappings are accumulated across the whole part write and the manifest + ref are
+        /// published atomically when the transaction commits. A fake (per-file autocommit) transaction
+        /// would write each file independently with no commit point for the manifest/ref publish.
+        const auto metadata_type = metadata_storage->getType();
+        const bool needs_real_transaction = metadata_type == MetadataStorageType::Keeper
+            || metadata_type == MetadataStorageType::CAS;
+        /// An explicit `use_fake_transaction=true` on a metadata type that requires deferred
+        /// transactions would silently break the atomic manifest/ref publish (per-file autocommit,
+        /// no commit point). Reject it instead of honoring it.
+        if (needs_real_transaction && config.getBool(config_prefix + ".use_fake_transaction", false))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Disk '{}': `use_fake_transaction` cannot be enabled for metadata type '{}'",
+                name, magic_enum::enum_name(metadata_type));
+        bool use_fake_transaction = config.getBool(config_prefix + ".use_fake_transaction", !needs_real_transaction);
         DiskPtr disk = std::make_shared<DiskObjectStorage>(
             name,
             std::move(cluster),

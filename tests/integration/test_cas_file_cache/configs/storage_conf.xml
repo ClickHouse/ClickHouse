@@ -1,0 +1,34 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- Content-addressed disk over RustFS (RustFS, not MinIO, enforces the conditional-PUT
+                 semantics CAS relies on). -->
+            <disk_ca_s3>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <cas_server_root_id>itest-cas-file-cache</cas_server_root_id>
+                <endpoint>http://rustfs1:11121/test/cas_cache_data/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+            </disk_ca_s3>
+            <!-- File cache wrapping the CA disk. Before the fix this fails at startup with
+                 NOT_IMPLEMENTED (checkAccess → generic write path). -->
+            <disk_ca_s3_cache>
+                <type>cache</type>
+                <disk>disk_ca_s3</disk>
+                <path>/tmp/cas_file_cache/</path>
+                <max_size>1000000000</max_size>
+            </disk_ca_s3_cache>
+        </disks>
+        <policies>
+            <cas_cache>
+                <volumes>
+                    <main>
+                        <disk>disk_ca_s3_cache</disk>
+                    </main>
+                </volumes>
+            </cas_cache>
+        </policies>
+    </storage_configuration>
+</clickhouse>

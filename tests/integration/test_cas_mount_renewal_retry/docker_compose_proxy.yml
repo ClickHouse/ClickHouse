@@ -1,0 +1,30 @@
+services:
+  s3proxy:
+    image: python:3.12-slim
+    command: ["python3", "/proxy/s3_fault_proxy.py"]
+    environment:
+      RUSTFS_UPSTREAM: "rustfs1:11121"
+      S3_PROXY_PORT: "11121"
+      S3_PROXY_CTL_PORT: "8474"
+    depends_on:
+      rustfs1:
+        condition: service_started
+    volumes:
+      # Compose resolves relative binds against the generated first compose file in
+      # `<test dir>/_instances-*/node`, not against this appended file, so `../..` is the
+      # directory holding this file.
+      - ../../s3_fault_proxy.py:/proxy/s3_fault_proxy.py:ro
+    expose:
+      - "11121"
+    ports:
+      - "127.0.0.1::8474"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8474/healthz', timeout=2)"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  node:
+    depends_on:
+      s3proxy:
+        condition: service_healthy

@@ -1,0 +1,8 @@
+src_parts	1
+detached_parts	1
+detached_after_attach	0
+attached_rows	3
+data_readback	0	a
+data_readback	2	b
+data_readback	4	c
+dropped_ok

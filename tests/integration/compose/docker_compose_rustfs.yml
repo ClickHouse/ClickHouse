@@ -1,0 +1,17 @@
+services:
+  rustfs1:
+    # RustFS is an S3-compatible store that (unlike MinIO) correctly enforces the conditional-PUT
+    # (If-None-Match / exact-token) semantics the content-addressed (CAS) disk relies on. Content-
+    # addressed integration tests must run against RustFS, not MinIO.
+    image: rustfs/rustfs:1.0.0-rc.3
+    expose:
+      - "11121"
+    environment:
+      RUSTFS_ACCESS_KEY: clickhouse
+      RUSTFS_SECRET_KEY: clickhouse
+      # Single-disk ephemeral test pool: scanner + heal off (matches the ca-soak harness).
+      RUSTFS_SCANNER_ENABLED: "false"
+      RUSTFS_HEAL_ENABLED: "false"
+    command: server --address 0.0.0.0:11121
+    stop_grace_period: 5s
+    cpus: 3

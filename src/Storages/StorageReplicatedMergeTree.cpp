@@ -525,6 +525,18 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     {
         if (disk->getDataSourceDescription().metadata_type == MetadataStorageType::Keeper)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReplicatedMergeTree doesn't work with 's3_with_keeper' disk type");
+
+        /// B33 (lifted, CAS replication 2b + Phase 3.2): ReplicatedMergeTree on a content-addressed disk
+        /// is allowed. INSERT/SELECT/merge/mutation and fetch-by-relink (the CA analogue of zero-copy
+        /// replication) route through the working whole-part CA transaction / the relink path. The
+        /// replication-queue CLONE paths (queue-driven REPLACE/MOVE/ATTACH PARTITION FROM, the
+        /// cloneAndLoadDataPart-on-the-queue path) were audited in Phase 3.2: they reach the SAME
+        /// whole-part ContentAddressedTransaction the non-replicated stack uses (see
+        /// `MergeTreeData::checkAlterPartitionIsPossible`, reached here by dynamic dispatch — the
+        /// Phase 3.2 fail-closed override in this class was a pure delegation and was deleted by the
+        /// tail de-patch), NOT the per-file-autocommit B21 mode, so they are now permitted. The
+        /// zero-copy lockSharedData/unlockSharedData calls these reach are safe no-ops on CA (they
+        /// early-return on !supportZeroCopyReplication, which CA is).
     }
 
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);

@@ -1,0 +1,36 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_cas_s3>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <!-- Phase 0 (mount safety): required, validated layout-subtree identity. Single server. -->
+                <cas_server_root_id>itest-content-addressed-s3</cas_server_root_id>
+                <!-- RustFS (not MinIO): the CA mount capability probe requires enforced conditional-DELETE
+                     semantics (CasProbe step 6); MinIO OSS silently honors a mismatched-token DELETE and the
+                     fail-closed probe aborts server startup (PR#2073 CI triage). -->
+                <endpoint>http://rustfs1:11121/test/cas_data/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <!-- Settings of the underlying object storage, in the same element as the CAS
+                     settings. Each of these used to fail server startup on a CAS disk. -->
+                <http_keep_alive_timeout>60</http_keep_alive_timeout>
+                <http_keep_alive_max_requests>100</http_keep_alive_max_requests>
+                <connect_timeout_ms>5000</connect_timeout_ms>
+                <s3_retry_attempts>7</s3_retry_attempts>
+                <s3_max_single_read_retries>3</s3_max_single_read_retries>
+                <header>X-Cas-Test: 1</header>
+            </disk_cas_s3>
+        </disks>
+        <policies>
+            <cas_s3>
+                <volumes>
+                    <main>
+                        <disk>disk_cas_s3</disk>
+                    </main>
+                </volumes>
+            </cas_s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>

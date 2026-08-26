@@ -18,10 +18,22 @@ DiskObjectStoragePtr DiskObjectStorage::wrapWithCache(FileCachePtr cache, const 
     auto local_location = cluster->getLocalLocation();
     registry[local_location] = std::make_shared<CachedObjectStorage>(registry[local_location], cache, cache_settings, layer_name);
 
+    /// A content-addressed disk cannot be fronted by the generic MetadataStorageFromCacheObjectStorage
+    /// passthrough: that wrapper hides isContentAddressed and the concrete CA metadata/transaction
+    /// types the CA read/write paths dynamic_cast to, so a cache-wrapped CA disk would take the generic
+    /// write path and throw NOT_IMPLEMENTED at startup. Reuse the CA metadata storage directly; only the
+    /// object storage is cached. Safe because ContentAddressedMetadataStorage::startup()/shutdown() are
+    /// idempotent, so the base disk and this cache disk share one mount/lease with no conflict.
+    /// Immutable content-hash blobs then cache through the CachedObjectStorage above; the control plane
+    /// keeps using the CA metadata storage's own raw object-storage pointer and bypasses the cache.
+    MetadataStoragePtr cache_metadata_storage = metadata_storage->isContentAddressed()
+        ? metadata_storage
+        : std::make_shared<MetadataStorageFromCacheObjectStorage>(metadata_storage);
+
     auto cache_disk = std::make_shared<DiskObjectStorage>(
         layer_name,
         std::make_shared<ClusterConfiguration>(layer_name, cluster->getConfiguration()),
-        std::make_shared<MetadataStorageFromCacheObjectStorage>(metadata_storage),
+        cache_metadata_storage,
         std::make_shared<ObjectStorageRouter>(std::move(registry)),
         std::dynamic_pointer_cast<const DiskObjectStorage>(shared_from_this()),
         Context::getGlobalContextInstance()->getConfigRef(),

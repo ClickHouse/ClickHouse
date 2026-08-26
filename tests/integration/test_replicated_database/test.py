@@ -1379,6 +1379,14 @@ def test_replicated_table_structure_alter(started_cluster):
     )
 
     competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
+
+    # `system.tables` only lists an attached database, so the metadata path of `mem` must be read
+    # before the DETACH below; afterwards the SELECT returns nothing.
+    metadata_path = competing_node.query(
+        "SELECT metadata_path FROM system.tables WHERE database='table_structure' AND name='mem'"
+    ).strip()
+    assert metadata_path, "metadata_path of table_structure.mem is empty"
+
     competing_node.query("DETACH DATABASE table_structure")
 
     main_node.query(
@@ -1389,9 +1397,6 @@ def test_replicated_table_structure_alter(started_cluster):
     )
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3)")
 
-    metadata_path = competing_node.query(
-        "SELECT metadata_path FROM system.tables WHERE database='table_structure' AND name='mem'"
-    ).strip()
     db_disk_name = get_database_disk_name(competing_node)
     competing_node.exec_in_container(
         [

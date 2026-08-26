@@ -1,8 +1,10 @@
--- Tags: no-distributed-cache, no-encrypted-storage
+-- Tags: no-distributed-cache, no-encrypted-storage, no-cas-storage
 -- Like 04316, the executor falls back on the distributed cache and decryption
 -- (which can't be disabled from the test), so its metrics would not be emitted on
 -- those storage configs. Skip them; the test still runs on local disk and plain
--- object storage where the executor engages.
+-- object storage where the executor engages. Content-addressed storage always
+-- adds a `file_view` stage (byte window inside a shared blob), which the
+-- executor falls back on the same way -- see `ReadPipeline::tryBuildReaderExecutor`.
 --
 -- Checks that the experimental ReaderExecutor emits its observability metrics.
 -- Reads a MergeTree table with `use_reader_executor = 1` and verifies, via the

@@ -48,7 +48,14 @@ public:
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
-    bool supportZeroCopyReplication() const override { return metadata_storage->getType() != MetadataStorageType::Keeper; }
+    /// A content-addressed pool deduplicates blobs across parts and has no per-replica unique blob
+    /// ids; the zero-copy subsystem (B1) is explicitly out of scope for M1, so advertise it as
+    /// unsupported (honest capability — B31). Other object-storage metadata types keep the old rule.
+    bool supportZeroCopyReplication() const override
+    {
+        return metadata_storage->getType() != MetadataStorageType::Keeper
+            && metadata_storage->getType() != MetadataStorageType::CAS;
+    }
 
     bool supportParallelWrite() const override { return object_storages->takePointingTo(cluster->getLocalLocation())->supportParallelWrite(); }
 
@@ -209,6 +216,10 @@ public:
     bool isSharedCompatible() const;
 
     bool supportsHardLinks() const override;
+
+    bool isContentAddressed() const override;
+
+    bool supportsAtomicFileWrites() const override;
 
     /// Get structure of object storage this disk works with. Examples:
     /// DiskObjectStorage(S3ObjectStorage)

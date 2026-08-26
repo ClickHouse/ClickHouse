@@ -1,0 +1,54 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- Every endpoint below points at the fake GCS XML service, whose hostname deliberately
+                 contains no `storage.googleapis.com`: generation capability must come from the
+                 explicit `http_client` value, never from endpoint text.
+
+                 No `metadata_service` override appears here because the fake metadata server claims
+                 the default hostname `metadata.google.internal` on the test's docker network, so the
+                 default already points at it. A CAS disk would accept the key — see the note in
+                 test.py. -->
+            <cas_gcs_oauth>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <cas_server_root_id>itest-cas-gcs-oauth</cas_server_root_id>
+                <endpoint>http://fakegcs:8080/oauthbucket/cas/</endpoint>
+                <http_client>gcp_oauth</http_client>
+            </cas_gcs_oauth>
+
+            <cas_gcs_hmac>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <cas_server_root_id>itest-cas-gcs-hmac</cas_server_root_id>
+                <endpoint>http://fakegcs:8080/hmacbucket/cas/</endpoint>
+                <http_client>gcs_hmac</http_client>
+                <access_key_id>GOOG1EFAKEACCESSKEYID</access_key_id>
+                <secret_access_key>fake-goog4-hmac-secret</secret_access_key>
+            </cas_gcs_hmac>
+
+            <!-- An ordinary, non-CAS `gcp_oauth` disk against the same fake service. Its bucket must
+                 never see a generation precondition or a `x-goog-meta-*` header: that is the upgrade
+                 regression this whole change removes. -->
+            <plain_gcs_oauth>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <endpoint>http://fakegcs:8080/plainbucket/plain/</endpoint>
+                <http_client>gcp_oauth</http_client>
+            </plain_gcs_oauth>
+        </disks>
+        <policies>
+            <cas_gcs_oauth>
+                <volumes><main><disk>cas_gcs_oauth</disk></main></volumes>
+            </cas_gcs_oauth>
+            <cas_gcs_hmac>
+                <volumes><main><disk>cas_gcs_hmac</disk></main></volumes>
+            </cas_gcs_hmac>
+            <plain_gcs_oauth>
+                <volumes><main><disk>plain_gcs_oauth</disk></main></volumes>
+            </plain_gcs_oauth>
+        </policies>
+    </storage_configuration>
+</clickhouse>

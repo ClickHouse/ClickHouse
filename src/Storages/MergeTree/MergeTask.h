@@ -219,6 +219,10 @@ private:
         ProjectionDescriptionRawPtr projection{nullptr};
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
         IMergeTreeDataPart * parent_part{nullptr};
+        /// True only when this MergeTask builds a projection sub-part (`parent_part != nullptr`) whose
+        /// parent lives on a content-addressed disk: the sub-part then shares the parent's whole-part
+        /// transaction and must NOT begin/commit its own (B58). False for non-CA disks and top-level parts.
+        bool projection_uses_parent_transaction{false};
         MergedPartOffsetsPtr merged_part_offsets;
         ContextPtr context{nullptr};
         time_t time_of_merge{0};

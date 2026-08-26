@@ -12,5 +12,16 @@
             <service_account>non-existing-account</service_account>
             <metadata_service>resolver</metadata_service>
         </gcs_conn_bad>
+        <!-- Same ordinary gcp_oauth connection as `gcs_conn`, but with the part-size thresholds
+             lowered so a small INSERT still forces a genuine CreateMultipartUpload / UploadPart /
+             CompleteMultipartUpload sequence, without needing a large test payload. -->
+        <gcs_conn_multipart>
+            <url>http://resolver:22234/test/</url>
+            <http_client>gcp_oauth</http_client>
+            <service_account>my-account</service_account>
+            <metadata_service>resolver</metadata_service>
+            <min_upload_part_size>1048576</min_upload_part_size>
+            <max_single_part_upload_size>1</max_single_part_upload_size>
+        </gcs_conn_multipart>
     </named_collections>
 </clickhouse>

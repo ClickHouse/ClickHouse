@@ -153,6 +153,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         Type::CLEAR_DISTRIBUTED_CACHE,
         Type::SYNC_FILESYSTEM_CACHE,
         Type::CLEAR_QUERY_CACHE,
+        /// The grammar parses `<srid> FROM DISK <disk>` before `ON CLUSTER` (ParserSystemQuery.cpp),
+        /// so the round-trip format must print it last too.
+        Type::CAS_DROP_POOL_MEMBER,
     };
 
     if (!queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
@@ -259,13 +262,50 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
             break;
         }
+        case Type::CAS_GC_REBUILD:
+        {
+            /// FORCE precedes the required disk name: SYSTEM CAS GC REBUILD
+            /// [FORCE] <disk>.
+            if (cas_gc_rebuild_force)
+                print_keyword(" FORCE");
+            if (!disk.empty())
+            {
+                ostr << ' ';
+                print_identifier(disk);
+            }
+            break;
+        }
+        case Type::CAS_DROP_POOL_MEMBER:
+        {
+            /// SYSTEM CAS DROP POOL MEMBER <srid> FROM DISK <disk> -- both required, both
+            /// quoted string literals (unlike the sibling CAS_* commands' bare identifier
+            /// disk target: an srid is an opaque server-root path, not necessarily identifier-shaped).
+            ostr << ' ' << quoteString(replica);
+            print_keyword(" FROM DISK ") << quoteString(disk);
+            break;
+        }
+        case Type::CAS_FSCK:
+        case Type::CAS_FORGET:
+        case Type::CAS_GC_STOP:
+        case Type::CAS_GC_START:
+        {
+            /// SYSTEM CAS FSCK/FORGET/GC STOP/GC START <disk> -- the disk is REQUIRED
+            /// (unlike GC RUN's optional disk): each scan/decommission/scheduler-control verb targets
+            /// exactly one disk, never a fan-out.
+            ostr << ' ';
+            print_identifier(disk);
+            break;
+        }
         case Type::RELOAD_DICTIONARY:
         case Type::RELOAD_MODEL:
         case Type::RELOAD_FUNCTION:
+        case Type::CAS_GC_RUN:
         case Type::RESTART_DISK:
         case Type::WAIT_BLOBS_CLEANUP:
         case Type::CLEAR_DISK_METADATA_CACHE:
         {
+            /// RELOAD DICTIONARY prints its database/table target, RELOAD MODEL/FUNCTION their
+            /// identifier target; CAS GC RUN's disk is optional.
             if (table)
             {
                 ostr << ' ';

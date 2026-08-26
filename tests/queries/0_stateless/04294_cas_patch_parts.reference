@@ -1,0 +1,6 @@
+after_patch_delete_1: match
+after_patch_delete_2: match
+ca_has_patch_part: 1
+after_optimize: match
+final_rows_match	1
+final_data_match	1

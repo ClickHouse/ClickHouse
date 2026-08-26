@@ -1,0 +1,43 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- Content-addressed disk over RustFS. RustFS (not MinIO) enforces the conditional-PUT
+                 (If-None-Match) semantics the snapshot+log writer linearization relies on. Background
+                 GC on a tight cadence so a DROP is folded, cleaned, and reclaimed within the test. -->
+            <disk_ca>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <cas_server_root_id>itest-ref-snaplog</cas_server_root_id>
+                <endpoint>http://rustfs1:11121/test/cas_snaplog_data/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <cas_gc_enabled>1</cas_gc_enabled>
+                <cas_gc_interval_sec>1</cas_gc_interval_sec>
+            </disk_ca>
+            <!-- Read-only window over the SAME pool for the read-only consumers (fsck, cas-gc-dryrun).
+                 Those commands refuse a writable pool; a read-only disk takes no mount lease, so it can
+                 inspect the pool the server writes without contention. -->
+            <disk_ca_ro>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <cas_server_root_id>itest-ref-snaplog</cas_server_root_id>
+                <endpoint>http://rustfs1:11121/test/cas_snaplog_data/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <readonly>true</readonly>
+                <cas_gc_enabled>0</cas_gc_enabled>
+            </disk_ca_ro>
+        </disks>
+        <policies>
+            <ref_snaplog>
+                <volumes>
+                    <main>
+                        <disk>disk_ca</disk>
+                    </main>
+                </volumes>
+            </ref_snaplog>
+        </policies>
+    </storage_configuration>
+</clickhouse>

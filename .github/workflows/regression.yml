@@ -534,10 +534,10 @@ jobs:
     secrets: inherit
 
   # CAS (content-addressed storage) is only available in Antalya builds >= 26.6.
-  # These jobs run the suites that support the `--cas` flag with a content-addressed
-  # disk as the default MergeTree storage. Gated on the Antalya version so they are
-  # never scheduled on upstream release builds where the `cas` metadata type does
-  # not exist.
+  # These jobs run the suites that support the `--cas` or `--cas-s3-cache` flag with
+  # a content-addressed disk as the default MergeTree storage. Gated on the Antalya
+  # version so they are never scheduled on upstream release builds where the `cas`
+  # metadata type does not exist.
   CAS:
     if: |
       contains(fromJson(inputs.workflow_config).workflow_config.custom_data.version.string, 'antalya') &&
@@ -548,7 +548,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        SUITE: [aggregate_functions, alter, atomic_insert, engines, lightweight_delete, selects]
+        SUITE: [atomic_insert, engines, selects]
     uses: ./.github/workflows/regression-reusable-suite.yml
     with:
       ref: ${{ inputs.commit }}
@@ -564,6 +564,232 @@ jobs:
       set_commit_status: true
       job_name: cas_${{ matrix.SUITE }}
       regression_args: --cas
+    secrets: inherit
+
+  CASS3Cache:
+    if: |
+      contains(fromJson(inputs.workflow_config).workflow_config.custom_data.version.string, 'antalya') &&
+      (
+        fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs[0] == null ||
+        contains(fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs, 'cas')
+      )
+    strategy:
+      fail-fast: false
+      matrix:
+        SUITE: [atomic_insert, engines, selects]
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: ${{ matrix.SUITE }}
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: cas_s3_cache_${{ matrix.SUITE }}
+      regression_args: --cas-s3-cache
+    secrets: inherit
+
+  CASAggregateFunctions:
+    if: |
+      contains(fromJson(inputs.workflow_config).workflow_config.custom_data.version.string, 'antalya') &&
+      (
+        fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs[0] == null ||
+        contains(fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs, 'cas')
+      )
+    strategy:
+      fail-fast: false
+      matrix:
+        PART: [1, 2, 3]
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: aggregate_functions
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: 300
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      part: ${{ matrix.PART }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: cas_aggregate_functions
+      regression_args: --cas
+      extra_args: --only "part ${{ matrix.PART }}/*"
+    secrets: inherit
+
+  CASS3CacheAggregateFunctions:
+    if: |
+      contains(fromJson(inputs.workflow_config).workflow_config.custom_data.version.string, 'antalya') &&
+      (
+        fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs[0] == null ||
+        contains(fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs, 'cas')
+      )
+    strategy:
+      fail-fast: false
+      matrix:
+        PART: [1, 2, 3]
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: aggregate_functions
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: 300
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      part: ${{ matrix.PART }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: cas_s3_cache_aggregate_functions
+      regression_args: --cas-s3-cache
+      extra_args: --only "part ${{ matrix.PART }}/*"
+    secrets: inherit
+
+  CASLightweightDelete:
+    if: |
+      contains(fromJson(inputs.workflow_config).workflow_config.custom_data.version.string, 'antalya') &&
+      (
+        fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs[0] == null ||
+        contains(fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs, 'cas')
+      )
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - PART: 1
+            FILTER: --only "/lightweight delete/disk space/*"
+          - PART: 2
+            FILTER: --skip "/lightweight delete/disk space/*"
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: lightweight_delete
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: 300
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      part: ${{ matrix.PART }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: cas_lightweight_delete
+      regression_args: --cas
+      extra_args: ${{ matrix.FILTER }}
+    secrets: inherit
+
+  CASS3CacheLightweightDelete:
+    if: |
+      contains(fromJson(inputs.workflow_config).workflow_config.custom_data.version.string, 'antalya') &&
+      (
+        fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs[0] == null ||
+        contains(fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs, 'cas')
+      )
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - PART: 1
+            FILTER: --only "/lightweight delete/disk space/*"
+          - PART: 2
+            FILTER: --skip "/lightweight delete/disk space/*"
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: lightweight_delete
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: 300
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      part: ${{ matrix.PART }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: cas_s3_cache_lightweight_delete
+      regression_args: --cas-s3-cache
+      extra_args: ${{ matrix.FILTER }}
+    secrets: inherit
+
+  CASAlter:
+    if: |
+      contains(fromJson(inputs.workflow_config).workflow_config.custom_data.version.string, 'antalya') &&
+      (
+        fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs[0] == null ||
+        contains(fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs, 'cas')
+      )
+    strategy:
+      fail-fast: false
+      matrix:
+        ONLY: [replace, move]
+        include:
+          - ONLY: attach
+            PART: 1
+          - ONLY: attach
+            PART: 2
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: alter
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: 300
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      part: ${{ matrix.PART }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: cas_alter_${{ matrix.ONLY }}
+      regression_args: --cas
+      extra_args: --only "/alter/${{ matrix.ONLY }} partition/${{ matrix.PART && format('part {0}/', matrix.PART) || '' }}*"
+    secrets: inherit
+
+  CASS3CacheAlter:
+    if: |
+      contains(fromJson(inputs.workflow_config).workflow_config.custom_data.version.string, 'antalya') &&
+      (
+        fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs[0] == null ||
+        contains(fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs, 'cas')
+      )
+    strategy:
+      fail-fast: false
+      matrix:
+        ONLY: [replace, move]
+        include:
+          - ONLY: attach
+            PART: 1
+          - ONLY: attach
+            PART: 2
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: alter
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: 300
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      part: ${{ matrix.PART }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: cas_s3_cache_alter_${{ matrix.ONLY }}
+      regression_args: --cas-s3-cache
+      extra_args: --only "/alter/${{ matrix.ONLY }} partition/${{ matrix.PART && format('part {0}/', matrix.PART) || '' }}*"
     secrets: inherit
 
   TieredStorageCAS:

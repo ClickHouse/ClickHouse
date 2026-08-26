@@ -90,6 +90,10 @@ private:
 
     std::optional<String> query;
 
+    /// Set when a command threw during processQueryText; used to make non-interactive (--query)
+    /// runs exit nonzero (e.g. `fsck` reporting dangling objects). Reset per processQueryText call.
+    int last_command_exit_code = 0;
+
     const std::unordered_map<String, String> aliases = {
         {"cp", "copy"},
         {"mv", "move"},

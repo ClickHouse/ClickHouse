@@ -1,0 +1,7 @@
+base	1
+in_txn	2
+after_commit	2
+in_txn2	3
+after_rollback	2
+rolled_back_absent	0
+done

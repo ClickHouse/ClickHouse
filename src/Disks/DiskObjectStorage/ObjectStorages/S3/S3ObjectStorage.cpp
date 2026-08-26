@@ -17,6 +17,8 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/S3/getObjectInfo.h>
+#include <IO/S3/Client.h>
+#include <IO/S3/Requests.h>
 #include <IO/S3/copyS3File.h>
 #include <IO/S3/deleteFileFromS3.h>
 #include <Interpreters/Context.h>
@@ -33,6 +35,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
+#include <Common/StackTrace.h>
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -70,8 +73,21 @@ namespace Setting
 
 namespace S3RequestSetting
 {
+    extern const S3RequestSettingsBool allow_native_copy;
+    extern const S3RequestSettingsBool check_objects_after_upload;
     extern const S3RequestSettingsUInt64 list_object_keys_size;
     extern const S3RequestSettingsUInt64 objects_chunk_size_to_delete;
+    extern const S3RequestSettingsUInt64 max_single_part_upload_size;
+    extern const S3RequestSettingsUInt64 min_upload_part_size;
+    extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
+    extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
+}
+
+
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsString http_client;
+    extern const S3AuthSettingsUInt64 gcs_max_conditional_put_bytes;
 }
 
 
@@ -79,6 +95,8 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+    extern const int S3_ERROR;
 }
 
 namespace
@@ -234,7 +252,8 @@ private:
 bool S3ObjectStorage::exists(const StoredObject & object) const
 {
     auto settings_ptr = s3_settings.get();
-    return S3::objectExists(*client.get(), uri.bucket, object.remote_path, {});
+    const bool e = S3::objectExists(*client.get(), uri.bucket, object.remote_path, {});
+    return e;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
@@ -319,6 +338,28 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         request_settings.updateFromSettings(settings, /* if_changed */ true, settings[Setting::s3_validate_request_settings]);
     }
 
+    if (write_settings.s3_check_objects_after_upload_override)
+        request_settings[S3RequestSetting::check_objects_after_upload] = *write_settings.s3_check_objects_after_upload_override;
+
+    if (write_settings.s3_force_single_part_upload)
+    {
+        /// A conditional write on a generation-token store must stay in ONE buffered part, so the
+        /// single-PUT path remains available up to the configured ceiling.
+        const UInt64 cap = s3_settings.get()->auth_settings[S3AuthSetting::gcs_max_conditional_put_bytes];
+        request_settings[S3RequestSetting::max_single_part_upload_size] = cap;
+        request_settings[S3RequestSetting::min_upload_part_size] = cap;
+    }
+
+    if (write_settings.s3_max_unexpected_write_error_retries_override)
+    {
+        /// WriteBufferFromS3's OWN retry loop (makeSinglepartUpload/completeMultipartUpload) reissues
+        /// the identical request — WITH its If-None-Match/If-Match condition — on a NO_SUCH_KEY
+        /// response; this sits ABOVE the S3 client, so a client-level profile override does not bound
+        /// it. See WriteSettings.
+        request_settings[S3RequestSetting::max_unexpected_write_error_retries]
+            = write_settings.s3_max_unexpected_write_error_retries_override;
+    }
+
     ThreadPoolCallbackRunnerUnsafe<void> scheduler;
     if (write_settings.s3_allow_parallel_part_upload)
         scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
@@ -327,8 +368,18 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     if (blob_storage_log)
         blob_storage_log->local_path = object.local_path;
 
+    /// The SingleAttempt profile (e.g. CAS conditional writes, RFC cas-s3-timeout-retry-control) rides
+    /// on WriteSettings instead of changing this disk's shared client — every other write keeps using
+    /// client.get() and its normal retry policy unchanged. getSingleAttemptClient() is only invoked
+    /// when actually selected, so a plain write never pays for building/locking the clone.
+    std::shared_ptr<const S3::Client> used_client;
+    if (write_settings.object_storage_retry_profile == ObjectStorageRetryProfile::SingleAttempt)
+        used_client = getSingleAttemptClient();
+    else
+        used_client = client.get();
+
     return std::make_unique<WriteBufferFromS3>(
-        client.get(),
+        used_client,
         uri.bucket,
         object.remote_path,
         write_settings.use_adaptive_write_buffer ? write_settings.adaptive_write_buffer_initial_size : buf_size,
@@ -454,6 +505,80 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     removeObjectsImpl(objects, true);
 }
 
+ConditionalRemoveResult S3ObjectStorage::removeObjectIfTokenMatches(const StoredObject & object, const std::string & etag)
+{
+    S3::DeleteObjectRequest request;
+    request.SetBucket(uri.bucket);
+    request.SetKey(object.remote_path);
+    request.SetIfMatch(etag);
+    /// This is a content-addressed exact-token DELETE: mark it eligible for the typed NativeConditional
+    /// mode, so a GCS-native client can send the generation token this etag actually encodes.
+    request.setNativeConditional();
+
+    ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
+
+    auto outcome = client.get()->DeleteObject(request);
+
+    /// Mirror removeObjectImpl (deleteFileFromS3): every conditional delete lands in
+    /// system.blob_storage_log too — GC reclaim was invisible there otherwise. TokenMismatch
+    /// and NotFound are routine protocol outcomes, recorded with the S3 error for filtering.
+    if (auto blob_storage_log = BlobStorageLogWriter::create(disk_name))
+        blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
+                                   uri.bucket, object.remote_path,
+                                   object.local_path, object.bytes_size,
+                                   /* elapsed_microseconds */ 0,
+                                   outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                                   outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
+
+    if (outcome.IsSuccess())
+        return {ConditionalRemoveOutcome::Removed, outcome.GetResult().GetDeleteMarker()};
+
+    const auto & err = outcome.GetError();
+
+    /// The token did not match the current incarnation: the conditional delete is rejected with a 412
+    /// (see `S3::isPreconditionFailedError` for the one policy). Callers treat 'mismatch' and 'gone'
+    /// alike (re-validate); a genuine absence is disambiguated downstream by a HEAD re-check.
+    if (S3::isPreconditionFailedError(err))
+        return {ConditionalRemoveOutcome::TokenMismatch, false};
+
+    /// The object no longer exists (404). Protocol callers treat 'mismatch' and 'gone' alike (re-validate).
+    if (S3::isNotFoundError(err.GetErrorType()))
+        return {ConditionalRemoveOutcome::NotFound, false};
+
+    throw S3Exception(err.GetErrorType(),
+        "{} (Code: {}, S3 exception: '{}') while conditionally removing object with path {} from S3",
+        err.GetMessage(), static_cast<size_t>(err.GetErrorType()), err.GetExceptionName(), object.remote_path);
+}
+
+bool S3ObjectStorage::conditionalOpsUseGenerationTokens() const
+{
+    return client.get()->supportsGcsNativeConditionalRequests();
+}
+
+bool S3ObjectStorage::supportsCopyMode(ObjectStorageCopyMode mode) const
+{
+    return mode == ObjectStorageCopyMode::Default
+        || (mode == ObjectStorageCopyMode::NativeOnly
+            && s3_settings.get()->request_settings[S3RequestSetting::allow_native_copy]);
+}
+
+void S3ObjectStorage::pinConditionalOpsGenerationDialect(bool expect_generation_tokens)
+{
+    pinned_generation_dialect.store(expect_generation_tokens ? 1 : 0);
+}
+
+std::optional<bool> S3ObjectStorage::isBucketVersioningEnabled() const
+{
+    S3::GetBucketVersioningRequest request;
+    request.SetBucket(uri.bucket);
+
+    auto outcome = client.get()->GetBucketVersioning(request);
+    if (!outcome.IsSuccess())
+        return std::nullopt;
+
+    return outcome.GetResult().GetStatus() == Aws::S3::Model::BucketVersioningStatus::Enabled;
+}
+
 static void putObjectsTagOnS3(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & bucket,
@@ -527,8 +652,19 @@ void S3ObjectStorage::tagObjects(const StoredObjects & objects, const std::strin
 
 std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
 {
+    return tryGetObjectMetadataImpl(path, with_tags, ObjectStorageRequestMode::Default);
+}
+
+std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadataWithNativeToken(const std::string & path, bool with_tags) const
+{
+    return tryGetObjectMetadataImpl(path, with_tags, ObjectStorageRequestMode::NativeConditional);
+}
+
+std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadataImpl(const std::string & path, bool with_tags, ObjectStorageRequestMode request_mode) const
+{
     auto settings_ptr = s3_settings.get();
-    auto object_info = S3::getObjectInfoIfExists(*client.get(), uri.bucket, path, {}, /* with_metadata= */ true, with_tags);
+    auto object_info = S3::getObjectInfoIfExists(
+        *client.get(), uri.bucket, path, {}, /* with_metadata= */ true, with_tags, request_mode);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};
@@ -616,13 +752,16 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 BlobStorageLogWriter::create(disk_name),
                 scheduler,
                 [&, this]{ return readObject(object_from, read_settings_to_use);},
-                object_to_attributes);
+                object_to_attributes,
+                write_settings.object_storage_copy_mode);
             return;
         }
         catch (S3Exception & exc)
         {
-            /// If authentication/permissions error occurs then fallthrough to copy with buffer.
-            if (exc.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
+            /// Default mode may fall through to a buffered copy after an authentication/permissions error;
+            /// NativeOnly must preserve the native-copy failure.
+            if (write_settings.object_storage_copy_mode == ObjectStorageCopyMode::NativeOnly
+                || exc.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
                 throw;
             else
             {
@@ -645,6 +784,11 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         }
     }
 
+    if (write_settings.object_storage_copy_mode == ObjectStorageCopyMode::NativeOnly)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Native-only object copy requires both object storages to use the native S3 copy path");
+
     IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
 }
 
@@ -652,9 +796,16 @@ void S3ObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
-    const WriteSettings &,
+    const WriteSettings & write_settings,
     std::optional<ObjectAttributes> object_to_attributes)
 {
+    if (!supportsCopyMode(write_settings.object_storage_copy_mode))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Native-only object copy requires the native S3 copy path, which is disabled "
+            "(allow_native_copy=false) for object storage {}",
+            getName());
+
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
     auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
@@ -675,7 +826,8 @@ void S3ObjectStorage::copyObject( // NOLINT
         BlobStorageLogWriter::create(disk_name),
         scheduler,
         [&, this]{ return readObject(object_from, read_settings_to_use);},
-        object_to_attributes);
+        object_to_attributes,
+        write_settings.object_storage_copy_mode);
 }
 
 void S3ObjectStorage::shutdown()
@@ -739,6 +891,31 @@ void S3ObjectStorage::applyNewSettings(
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 
+    /// A caller that derived persistent state from the conditional-ops dialect pinned it (see
+    /// `IObjectStorage::pinConditionalOpsGenerationDialect`). Refuse before the client is replaced, so a
+    /// rejected reload leaves the working client and its dialect in place.
+    ///
+    /// This is the only point where the question can be answered: `modified_settings` above is the merge
+    /// of the current settings, any endpoint-level block and the disk's own section, and `http_client`
+    /// may be set by any of them. Checking a single config section instead would miss an endpoint-level
+    /// flip entirely, and would refuse a reload that changes nothing whenever the effective value comes
+    /// from somewhere other than that section.
+    if (const int8_t pinned = pinned_generation_dialect.load(); pinned >= 0)
+    {
+        const bool would_be_generation
+            = S3::httpClientImpliesGcsGenerationDialect(modified_settings->auth_settings[S3AuthSetting::http_client]);
+        if (would_be_generation != (pinned == 1))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Object storage {} cannot change its conditional-operation dialect on reload: it is in "
+                "use by a mount that has already recorded {} incarnation tokens, and the new settings "
+                "resolve `http_client` to '{}', which would mint {} ones. Persisted tokens would no "
+                "longer be comparable. Keep the previous `http_client`, or recreate the mount.",
+                getName(),
+                pinned == 1 ? "generation" : "ETag",
+                modified_settings->auth_settings[S3AuthSetting::http_client].value,
+                would_be_generation ? "generation" : "ETag");
+    }
+
     auto current_settings = s3_settings.get();
     if (options.allow_client_change
         && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
@@ -765,6 +942,29 @@ std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()
 std::shared_ptr<const S3::Client> S3ObjectStorage::tryGetS3StorageClient()
 {
     return client.get();
+}
+
+std::shared_ptr<const S3::Client> S3ObjectStorage::getSingleAttemptClient() const
+{
+    auto base = client.get();
+    std::lock_guard lock(single_attempt_client_mutex);
+    if (single_attempt_client && single_attempt_client_base == base)
+        return single_attempt_client;
+
+    auto cfg = base->getClientConfiguration();
+    cfg.retry_strategy.max_retries = 0;
+    cfg.retryStrategy = std::make_shared<S3::SingleAttemptRetryStrategy>();
+
+    /// A server can reject an If-Match/If-None-Match request before accepting its body; waiting for
+    /// the 100-continue response avoids uploading a large body that cannot commit. Respect the
+    /// disk's configured expect_continue_min_bytes; if unset, use the established 1 MiB floor.
+    static constexpr uint64_t fallback_expect_continue_min_bytes = 1024 * 1024;
+    if (cfg.expect_continue_min_bytes == 0)
+        cfg.expect_continue_min_bytes = fallback_expect_continue_min_bytes;
+
+    single_attempt_client = base->cloneWithConfigurationOverride(cfg);
+    single_attempt_client_base = base;
+    return single_attempt_client;
 }
 
 bool S3ObjectStorage::tryRefreshCredentialsViaCallback()
