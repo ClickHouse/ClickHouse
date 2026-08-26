@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/Common/AuthenticationType.h>
 #include <optional>
 
@@ -52,6 +53,10 @@ public:
     /// SSH keys, HTTP scheme). They always precede `valid_until`, which, when present, is also
     /// stored in `children` and must be excluded from positional payload access.
     size_t numPayloadChildren() const { return children.size() - (valid_until ? 1 : 0); }
+
+    /// If not empty, the access rights of a user authenticated with this method
+    /// are limited to the intersection with these elements (the GRANTS clause).
+    AccessRightsElements grants;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
