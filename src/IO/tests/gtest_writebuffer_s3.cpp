@@ -1262,6 +1262,74 @@ TEST_F(WBS3Test, DisabledChecksumTakesPrecedenceOverUploadChecksumAlgorithm)
     ASSERT_FALSE(injection->put_object_should_compute_content_md5);
 }
 
+TEST_P(SyncAsync, DisabledChecksumTakesPrecedenceOverUploadChecksumAlgorithmMultipart)
+{
+    /// The multipart requests are built separately from `PutObject`, so the precedence has to be asserted here too.
+    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
+
+    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
+    setInjectionModel(injection);
+
+    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    auto buffer = getWriteBuffer("checksum_disabled_precedence_multipart");
+    writeAsOneBlock(*buffer, 10);
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->create_multipart_upload_algorithm);
+    ASSERT_THAT(injection->upload_part_algorithms, testing::Not(testing::IsEmpty()));
+    ASSERT_THAT(injection->upload_part_algorithms, testing::Each(Aws::S3::Model::ChecksumAlgorithm::NOT_SET));
+    ASSERT_THAT(injection->upload_part_sha256_checksums, testing::Each(testing::IsEmpty()));
+    ASSERT_THAT(injection->complete_part_sha256_checksums, testing::Each(testing::IsEmpty()));
+    ASSERT_THAT(injection->complete_part_crc32_checksums, testing::Each(testing::IsEmpty()));
+}
+
+TEST_F(WBS3Test, CopyDataDisabledChecksumTakesPrecedenceOverUploadChecksumAlgorithmMultipart)
+{
+    /// `copyDataToS3File` has its own request builder, so it needs the same assertion as `WriteBufferFromS3`.
+    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
+
+    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
+    setInjectionModel(injection);
+
+    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    const String data(10, 'a');
+    CreateReadBuffer create_read_buffer = [data]() -> std::unique_ptr<SeekableReadBuffer>
+    {
+        return std::make_unique<ReadBufferFromString>(data);
+    };
+
+    S3::S3RequestSettings request_settings;
+    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ false);
+
+    copyDataToS3File(
+        create_read_buffer,
+        0,
+        data.size(),
+        client,
+        bucket,
+        "copy_checksum_disabled_precedence_multipart",
+        request_settings,
+        nullptr,
+        getAsyncPolicy().getScheduler(),
+        std::nullopt);
+
+    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->create_multipart_upload_algorithm);
+    ASSERT_THAT(injection->upload_part_algorithms, testing::Not(testing::IsEmpty()));
+    ASSERT_THAT(injection->upload_part_algorithms, testing::Each(Aws::S3::Model::ChecksumAlgorithm::NOT_SET));
+    ASSERT_THAT(injection->upload_part_sha256_checksums, testing::Each(testing::IsEmpty()));
+    ASSERT_THAT(injection->complete_part_sha256_checksums, testing::Each(testing::IsEmpty()));
+    ASSERT_THAT(injection->complete_part_crc32_checksums, testing::Each(testing::IsEmpty()));
+    ASSERT_EQ(data, client->store->GetBucketStore(bucket).objects["copy_checksum_disabled_precedence_multipart"]);
+}
+
 TEST_F(WBS3Test, S3ExpressHonorsExplicitUploadChecksumAlgorithm)
 {
     /// S3Express forces CRC32 only as a default; an explicit SHA256 must survive `setIsS3ExpressBucket`,
