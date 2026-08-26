@@ -196,7 +196,7 @@ You can also fetch global and per-query heap profiles directly from the UI.
 http://localhost:8123/jemalloc
 ```
 
-The server UI includes all tabs: Summary, Allocations, Arenas, Operations, Global Profiler, Query Profiler, and Raw Output.
+The server UI includes all tabs: Summary, Allocations, Arenas, Operations, Global Profiler, Query Profiler, Fragmentation, and Raw Output. The Fragmentation tab (26.9+) renders the [fragmentation report](#analyzing-fragmentation-from-sql) — waste per (arena, size class), the likely pinner stacks, and an attributed-waste flame graph.
 
 </Tab>
 <Tab title="Keeper">
@@ -217,7 +217,7 @@ The Keeper UI is available on the HTTP control port. This port is **disabled by 
 </clickhouse>
 ```
 
-Once enabled, the UI provides the same visualizations as the server — Summary, Allocations, Arenas, Operations, Global Profiler, and Raw Output — except for the Query Profiler tab which requires SQL and `system.trace_log`.
+Once enabled, the UI provides the same visualizations as the server — Summary, Allocations, Arenas, Operations, Global Profiler, and Raw Output — except for the Query Profiler and Fragmentation tabs, which require SQL access to the system tables.
 
 <Warning>
 **Security**
@@ -305,16 +305,16 @@ This section is applicable for versions 26.9+.
 
 Two system tables together make memory fragmentation analysis a plain SQL query:
 
-- [`system.jemalloc_bins`](/reference/system-tables/jemalloc_bins) gives the ground truth about wasted memory: for every small size class, the `waste` alias (`curslabs * slab_size - curregs * size`) is the number of bytes held in slabs but not occupied by live regions. `system.jemalloc_arena_bins` exposes the same counters with one row per (arena, bin); since every slab belongs to a single arena, it locates the waste in a specific arena and is the correct join target for attribution. Its `purpose` column labels the dedicated arenas for long-lived state (`mergetree` metadata, `jit`, `cache`) — those hold old allocations by design, so fragmentation reports usually exclude them with `purpose = ''`.
-- `system.jemalloc_sampled_allocations` exposes one row per live sampled allocation from the current heap profile (reading the table flushes a fresh profile): the allocating backtrace (`trace`), the age of the allocation (`age_ns`, with the approximate `alloc_time` alias), the requested and usable sizes (`size`, `usize`), the size class (`size_class`, joins to `system.jemalloc_bins.index` for small classes), the arena (`arena`) and the allocating thread (`thr_uid`).
+- `system.jemalloc_arena_bins` gives the ground truth: per (arena, small size class), the `waste` alias is the bytes held in slabs but not occupied by live allocations. The `purpose` column labels dedicated arenas for long-lived state (`mergetree`, `jit`, `cache`) — those hold old allocations by design, so reports usually exclude them with `purpose = ''`. ([`system.jemalloc_bins`](/reference/system-tables/jemalloc_bins) is the same aggregated over arenas.)
+- `system.jemalloc_sampled_allocations` has one row per live sampled allocation (reading it flushes a fresh heap profile): backtrace (`trace`), age (`age_ns`), sizes (`size`, `usize`), `size_class`, `arena`, `thr_uid`.
 
-Keep the estimator semantics in mind when interpreting the results:
+Estimator semantics:
 
-- Only sampled allocations appear, and only threads with the profiler armed (query setting `jemalloc_enable_profiler` or the `jemalloc_enable_global_profiler` config) contribute rows.
-- Sampling is byte-weighted: a row stands for roughly `weight` similar allocations, where the `weight` alias is `1 / (1 - exp(-usize / sample_interval))`. Small size classes need a small sampling interval (`jemalloc_profiler_sampling_rate`) to be represented at all.
-- Sampled allocations are placed outside slabs (each occupies at least one page), so the rows are a statistical model of the allocation pattern — call site, size class, lifetime — never the slab residents themselves. Ground truth about waste comes from `system.jemalloc_bins`.
+- Only threads with the profiler armed contribute rows (`jemalloc_enable_profiler` setting or `jemalloc_enable_global_profiler` config).
+- Sampling is byte-weighted: a row stands for roughly `weight` similar allocations. Small size classes need a small sampling interval (`jemalloc_profiler_sampling_rate`) to be represented at all.
+- Sampled allocations live outside slabs — the rows model the allocation pattern, never the slab residents; and each live sample costs one page plus a `cache_oblivious` padding page (128 KiB on 64 KiB-page builds) for as long as the sampled allocation is alive (disarming the profiler stops new samples but does not release the existing ones).
 
-A slab cannot be released while at least one region in it is live, so long-lived allocations pin slabs and turn churn in the same size class into waste. To find the backtraces that likely pin the most wasteful size classes:
+A slab cannot be released while at least one allocation in it is live, so long-lived allocations turn churn in the same size class into waste. To find the backtraces likely holding the most wasteful size classes:
 
 ```sql
 -- Top pinner backtraces for the most wasteful (arena, size class) pairs.
