@@ -1,9 +1,7 @@
 #pragma once
 
 #include <cstddef>
-#include <map>
 #include <mutex>
-#include <ranges>
 #include <string_view>
 #include <vector>
 #include <base/defines.h>
@@ -67,18 +65,21 @@ private:
     std::mutex mutex;
 };
 
-using ErrorArrayIndex = std::map<ErrorCode, size_t>;
+/** Accessor to the counters of error codes. The registry is sparse: a counter exists only for a declared
+  * error code, and is created lazily for a custom error code without a name. An error code that has no
+  * counter and cannot get one (a negative code, or a code above all the declared ones) is accounted under
+  * the largest declared error code.
+  */
 struct ErrorValues
 {
-    ErrorPairHolder & operator[](ErrorCode idx);
+    ErrorPairHolder & operator[](ErrorCode error_code);
 };
 
 /// ErrorCode identifier -> current value of error_code.
 extern ErrorValues values;
-size_t count();
 
-// TODO: doc
-std::ranges::subrange<ErrorArrayIndex::const_iterator> getIndex();
+/// All error codes that have a counter, in ascending order.
+std::vector<ErrorCode> getCodes();
 
 /// Increments the counter of errors for a specified error code, and remembers some information about the last error.
 /// The function returns the index of the passed error among other errors with the same code and the same `remote` flag

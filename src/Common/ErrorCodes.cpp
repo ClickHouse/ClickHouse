@@ -2,16 +2,15 @@
 #include <array>
 #include <chrono>
 #include <iterator>
+#include <map>
+#include <optional>
 #include <ranges>
-#include <span>
-#include <stdexcept>
+#include <utility>
 #if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
 #include <Common/CurrentThread.h>
 #endif
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
-
-#include <fmt/format.h>
 
 /** Previously, these constants were located in one enum.
   * But in this case there is a problem: when you add a new constant, you need to recompile
@@ -22,6 +21,13 @@
   * Later it was converted to the lookup table, to provide:
   * - errorCodeToName()
   * - system.errors table
+  *
+  * The list below is flat: every error code is written out explicitly, and the codes are not required to be
+  * contiguous - the registry keeps a counter only for the codes that are actually declared. The gaps are an
+  * artifact of the history of the list, they are NOT a feature to build upon: do not introduce "blocks" of
+  * error codes reserved per component (`FOO_BASE + 1`, `FOO_BASE + 2`, ...). Such a design makes errors that
+  * belong to several components duplicated under different names, and makes one block overflow into another.
+  * A new error code should simply take the next free value.
   */
 
 #define APPLY_FOR_BUILTIN_ERROR_CODES(M) \
@@ -697,7 +703,7 @@
     M(1013, AMBIGUOUS_HANDLER) \
     M(1014, TRANSACTION_ROLLBACK_PARTIAL_FAILURE) \
     M(1015, FILE_CHANGED_DURING_READ) \
-    /* See END */
+    /* Error codes do not have to be contiguous, they only have to be unique - this is checked by a `static_assert` below. */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
 #define APPLY_FOR_ERROR_CODES(M) APPLY_FOR_BUILTIN_ERROR_CODES(M) APPLY_FOR_EXTERNAL_ERROR_CODES(M)
@@ -718,129 +724,172 @@ ErrorValues values;
 
 namespace
 {
-constexpr size_t COUNT = []()
+
+constexpr size_t COUNT = []
 {
-    size_t i = 0;
-#define X(VALUE, NAME) i++;
-    APPLY_FOR_ERROR_CODES(X)
-#undef X
-    return i;
+    size_t result = 0;
+#define M(VALUE, NAME) ++result;
+    APPLY_FOR_ERROR_CODES(M)
+#undef M
+    return result;
 }();
 
-/** One `std::string_view` per defined error code. Unlike `ErrorPairHolder`, names are needed by the standalone parser. */
-#define X(VALUE, NAME) std::string_view{#NAME},
-std::array<std::string_view, COUNT> g_names{APPLY_FOR_ERROR_CODES(X)};
-#undef X
+/// Error codes in the order of their declaration.
+constexpr std::array<ErrorCode, COUNT> codes{
+#define M(VALUE, NAME) VALUE,
+    APPLY_FOR_ERROR_CODES(M)
+#undef M
+};
 
+/** The name of every declared error code, `names[i]` being the name of `codes[i]`.
+  * Unlike the error counters, the names are also needed by a standalone build of the parser.
+  */
+constexpr std::array<std::string_view, COUNT> names{
+#define M(VALUE, NAME) std::string_view{#NAME},
+    APPLY_FOR_ERROR_CODES(M)
+#undef M
+};
+
+/// Pairs of (error code, its position in `codes` and `names`), sorted by the error code, to look codes up.
+constexpr auto sorted_codes = []
+{
+    std::array<std::pair<ErrorCode, size_t>, COUNT> result{};
+    for (size_t i = 0; i < COUNT; ++i)
+        result[i] = {codes[i], i};
+    std::ranges::sort(result);
+    return result;
+}();
+
+static_assert(
+    std::ranges::adjacent_find(sorted_codes, {}, &std::pair<ErrorCode, size_t>::first) == sorted_codes.end(), "Error codes must be unique");
+static_assert(sorted_codes.front().first >= 0, "Error codes must be non-negative");
+
+/// The largest declared error code. Everything outside of [0, LAST] is accounted under it.
+constexpr ErrorCode LAST = sorted_codes.back().first;
+
+/// The position of `error_code` in `codes` and `names`, if it is declared.
+std::optional<size_t> findIndex(ErrorCode error_code)
+{
+    const auto it = std::ranges::lower_bound(sorted_codes, error_code, {}, &std::pair<ErrorCode, size_t>::first);
+    if (it == sorted_codes.end() || it->first != error_code)
+        return {};
+    return it->second;
+}
+
+/** The counters of all error codes.
+  *
+  * The declared error codes are not dense - there are large gaps between them - so a counter is kept only for a code
+  * that actually exists, instead of an `ErrorPairHolder` per every value in the range. Custom error codes (see the
+  * setting `allow_custom_error_code_in_throwif`) have no name and are not declared; they used to occupy a slot in the
+  * dense array and are still counted separately, but their counters are allocated lazily, on the first occurrence.
+  */
 class ErrorRegistry
 {
 public:
-    ErrorRegistry()
-    {
-        size_t i = 0;
-#define X(VALUE, NAME) \
-    do \
-    { \
-        const bool inserted = index.emplace(VALUE, i++).second; \
-        chassert(inserted); \
-    } while (false);
-        APPLY_FOR_ERROR_CODES(X)
-#undef X
-    }
-
     static ErrorRegistry & get()
     {
-        static ErrorRegistry me;
-        return me;
+        /// Intentionally leaked: an error can be reported at any point of the shutdown, after the destructors
+        /// of the objects with static storage duration have run.
+        static ErrorRegistry & registry = *new ErrorRegistry;
+        return registry;
     }
 
-    ErrorPairHolder & operator[](ErrorCode code)
+    ErrorPairHolder & operator[]([[maybe_unused]] ErrorCode error_code)
     {
 #if defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
-        static_cast<void>(code);
-        static ErrorPairHolder value;
-        return value;
+        /** A standalone build of the parser needs the names of error codes only, and never counts errors,
+          * so it does not pay for the counters of the whole table.
+          */
+        static ErrorPairHolder stub;
+        return stub;
 #else
-        if (const auto found = index.find(code); found != index.end())
-        {
-            return dense[found->second];
-        }
-        throw std::runtime_error{fmt::format("out of range {}", code)};
+        if (const auto index = findIndex(error_code))
+            return holders[*index];
+
+        if (error_code >= 0 && error_code < LAST)
+            return custom(error_code);
+
+        /// For everything outside of the range of declared error codes, use the last one.
+        return holders[sorted_codes.back().second];
 #endif
     }
 
-    ErrorCode clamp(ErrorCode code) const { return index.contains(code) ? code : std::prev(index.end())->first; }
-
-    std::string_view getName(std::span<const std::string_view> names, ErrorCode error_code) const { return names[index.at(error_code)]; }
-
-    ErrorCode getErrorCodeByName(std::span<const std::string_view> names, std::string_view error_name) const
+    /// All error codes that have a counter: the declared ones plus the custom ones seen so far, in ascending order.
+    std::vector<ErrorCode> getCodes() const
     {
-        auto found = std::ranges::find_if(
-            index.begin(), index.end(), [names, error_name](std::pair<ErrorCode, size_t> val) { return names[val.second] == error_name; });
-        if (found != index.end())
+        std::vector<ErrorCode> result;
+        result.reserve(COUNT);
+        for (const auto & [error_code, _] : sorted_codes)
+            result.push_back(error_code);
+
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
         {
-            return found->first;
+            std::lock_guard lock(custom_mutex);
+            for (const auto & [error_code, _] : custom_holders)
+                result.push_back(error_code);
         }
+        std::ranges::sort(result);
+#endif
 
-        throw Exception(NO_SUCH_ERROR_CODE, "No error code with name: '{}'", error_name);
+        return result;
     }
-
-    std::ranges::subrange<ErrorArrayIndex::const_iterator> getIndex() const { return {index.cbegin(), index.cend()}; }
 
 private:
 #if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
-    /** One `ErrorPairHolder` per defined error code, each holding local and remote errors, their messages,
-      * format strings, query ids, stack traces, and a mutex. The server needs these for `system.errors`;
-      * the standalone parser needs names only and uses a single stub holder instead.
+    /// The counter of a custom error code, created on the first occurrence of that code.
+    ErrorPairHolder & custom(ErrorCode error_code)
+    {
+        std::lock_guard lock(custom_mutex);
+        /// Entries are never removed and `std::map` keeps them in place, so the reference stays valid.
+        return custom_holders.try_emplace(error_code).first->second;
+    }
+
+    /** One `ErrorPairHolder` per declared error code, each holding two `Error` structs - the last message,
+      * format string, query id and captured stack trace, local and remote - plus a mutex.
       */
-    std::array<ErrorPairHolder, COUNT> dense{};
+    std::array<ErrorPairHolder, COUNT> holders{};
+
+    std::map<ErrorCode, ErrorPairHolder> custom_holders TSA_GUARDED_BY(custom_mutex);
+    mutable std::mutex custom_mutex;
 #endif
-    /// Index always points to correct entries and is sorted by ErrorCode
-    ErrorArrayIndex index;
 };
+
 }
 
-ErrorPairHolder & ErrorValues::operator[](ErrorCode idx)
+ErrorPairHolder & ErrorValues::operator[](ErrorCode error_code)
 {
-    return ErrorRegistry::get()[idx];
-}
-
-size_t count()
-{
-    return COUNT;
+    return ErrorRegistry::get()[error_code];
 }
 
 std::string_view getName(ErrorCode error_code)
 {
-    auto new_code = ErrorRegistry::get().clamp(error_code);
-    if (new_code != error_code)
-    {
-        return {};
-    }
-    return ErrorRegistry::get().getName(g_names, error_code);
+    if (const auto index = findIndex(error_code))
+        return names[*index];
+    return {};
 }
 
 ErrorCode getErrorCodeByName(std::string_view error_name)
 {
-    return ErrorRegistry::get().getErrorCodeByName(g_names, error_name);
+    const auto it = std::ranges::find(names, error_name);
+    if (it == names.end())
+        throw Exception(NO_SUCH_ERROR_CODE, "No error code with name: '{}'", error_name);
+    return codes[static_cast<size_t>(std::distance(names.begin(), it))];
 }
 
-std::ranges::subrange<ErrorArrayIndex::const_iterator> getIndex()
+std::vector<ErrorCode> getCodes()
 {
-    return ErrorRegistry::get().getIndex();
+    return ErrorRegistry::get().getCodes();
 }
 
 size_t
 increment(ErrorCode error_code, bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
 {
-    error_code = ErrorRegistry::get().clamp(error_code);
-    return ErrorRegistry::get()[error_code].increment(remote, message, format_string, trace);
+    return values[error_code].increment(remote, message, format_string, trace);
 }
 
 void extendedMessage(ErrorCode error_code, bool remote, size_t error_index, const std::string & message)
 {
-    error_code = ErrorRegistry::get().clamp(error_code);
-    ErrorRegistry::get()[error_code].extendedMessage(remote, error_index, message);
+    values[error_code].extendedMessage(remote, error_index, message);
 }
 
 size_t ErrorPairHolder::increment(bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)

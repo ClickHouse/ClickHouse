@@ -5,6 +5,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Common/ErrorCodes.h>
 
+#include <unordered_map>
+
 
 namespace DB
 {
@@ -43,7 +45,7 @@ private:
         UInt64 remote = 0;
     };
     /// stepFunction and flushBufferToLog may be executed concurrently, hence the mutex
-    std::vector<ValuePair> previous_values TSA_GUARDED_BY(previous_values_mutex) = std::vector<ValuePair>(ErrorCodes::count());
+    std::unordered_map<ErrorCodes::ErrorCode, ValuePair> previous_values TSA_GUARDED_BY(previous_values_mutex);
     mutable std::mutex previous_values_mutex;
 };
 
