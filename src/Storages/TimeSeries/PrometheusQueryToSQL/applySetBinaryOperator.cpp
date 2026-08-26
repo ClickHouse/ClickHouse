@@ -6,6 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/dropStaleMarkers.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
 #include <Common/Exception.h>
@@ -47,36 +48,6 @@ const ImplInfo * getImplInfo(std::string_view operator_name)
         return nullptr;
 
     return &it->second;
-}
-
-/// Replace Prometheus stale markers with NULL in a `values` array.
-///
-/// Instant-selector grids intentionally keep stale markers (`fromSelector` passes
-/// `filter_stale_markers = false`); they are only filtered away at finalization. For set matching
-/// a stale marker means the series is absent at that step, so it must not be seen as present by
-/// the presence mask below, nor by the non-empty row predicates. Normalize it to NULL up front.
-///
-/// `0x7ff0000000000002` is Prometheus's staleness NaN bit pattern (see `fromSelector` and
-/// `finalizeSQL`). For grids without stale markers this is a no-op.
-ASTPtr dropStaleMarkers(ASTPtr values)
-{
-    return makeASTFunction(
-        "arrayMap",
-        makeASTFunction(
-            "lambda",
-            makeASTFunction("tuple", make_intrusive<ASTIdentifier>("value")),
-            makeASTFunction(
-                "if",
-                makeASTFunction(
-                    "and",
-                    makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("value")),
-                    makeASTFunction(
-                        "equals",
-                        makeASTFunction("reinterpretAsUInt64", makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("value"))),
-                        make_intrusive<ASTLiteral>(0x7ff0000000000002ULL))),
-                make_intrusive<ASTLiteral>(Field{}),
-                make_intrusive<ASTIdentifier>("value"))),
-        std::move(values));
 }
 
 /// Build a compact per-step presence mask for a vector grid: 1 where at least one series of the group has
@@ -194,6 +165,8 @@ String prepareSide(
     builder.select_list.push_back(std::move(join_group));
     builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
 
+    /// For set matching a stale marker means the series is absent at that step, so it must not be seen
+    /// as present by the presence mask, nor by the non-empty row predicates. Normalize it to NULL up front.
     builder.select_list.push_back(dropStaleMarkers(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
