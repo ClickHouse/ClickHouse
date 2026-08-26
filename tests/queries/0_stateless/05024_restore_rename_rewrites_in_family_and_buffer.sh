@@ -15,6 +15,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #  * `ENGINE = Buffer(destination_database, destination_table, ...)` was not rewritten at all, so a
 #    write to a restored buffer flushed into the source database.
 #
+# Only an identifier on the right-hand side of the family is a table. A string there is ordinary data,
+# so rewriting one would corrupt a valid comparison; `v_literal` below is the control for that.
+#
 # The oracles below are the user-visible consequences rather than the definition text alone: what the
 # restored views return, and which table a write to the restored buffer lands in.
 
@@ -59,6 +62,7 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE VIEW \`$SRC\`.v_nullin   AS SELECT a FROM \`$SRC\`.t WHERE nullIn(a, \`$SRC\`.u);
     CREATE VIEW \`$SRC\`.v_out      AS SELECT a FROM \`$SRC\`.t WHERE a NOT IN \`$OUT\`.u;
     CREATE VIEW \`$SRC\`.v_ignoreset AS SELECT a FROM \`$SRC\`.t WHERE inIgnoreSet(a, \`$SRC\`.u);
+    CREATE VIEW \`$SRC\`.v_literal   AS SELECT '$SRC.u' NOT IN ('$SRC.u') AS r;
     CREATE TABLE \`$SRC\`.buf     (a UInt64) ENGINE = Buffer('$SRC', 't',    1, 3600, 3600, 1000000, 1000000, 100000000, 100000000);
     CREATE TABLE \`$SRC\`.buf_out (a UInt64) ENGINE = Buffer('$OUT', 'dest', 1, 3600, 3600, 1000000, 1000000, 100000000, 100000000);
 "
@@ -105,6 +109,15 @@ ${CLICKHOUSE_CLIENT} -q "SELECT arraySort(groupArray(a)) FROM \`$OUT\`.dest"
 # The destination is spelled as a (database, table) pair that names one table, so it has to be looked
 # up as one qualified name. A per-table rename moves the destination without touching its database,
 # which is the case that resolving the two halves independently would get wrong.
+# A string that merely looks like a table name is data, not a reference. Both sides are the same
+# literal, so the comparison is false; rewriting only the right-hand side would flip it to true.
+echo "4b. control, a database.table-shaped string on the right-hand side is left alone:"
+printf 'v_literal\t'
+${CLICKHOUSE_CLIENT} -q "SELECT r FROM \`$DST\`.v_literal"
+printf 'definition\t'
+${CLICKHOUSE_CLIENT} -q "SELECT extract(create_table_query, 'SELECT.*') FROM system.tables WHERE database = '$DST' AND name = 'v_literal' FORMAT TSV" \
+| sed -e "s/$SRC/SRC/g" -e "s/$DST/DST/g"
+
 echo "5. a table-level rename moves the buffer destination with it:"
 ${CLICKHOUSE_CLIENT} -q "BACKUP TABLE \`$SRC\`.t, TABLE \`$SRC\`.buf TO Disk('backups', '$BACKUP_TBL')" | grep -o "BACKUP_CREATED"
 ${CLICKHOUSE_CLIENT} -q "RESTORE TABLE \`$SRC\`.t AS \`$SRC\`.t2, TABLE \`$SRC\`.buf AS \`$SRC\`.buf2 FROM Disk('backups', '$BACKUP_TBL')" | grep -o "RESTORED"
@@ -121,7 +134,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT arraySort(groupArray(a)) FROM \`$SRC\`.t2"
 # stale reference in an `IgnoreSet` variant, whose rows never differ.
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE \`$SRC\` SYNC"
 echo "6. the restored views still resolve once the source database is gone:"
-for view in v_in v_notin v_globalin v_nullin v_ignoreset v_out; do
+for view in v_in v_notin v_globalin v_nullin v_ignoreset v_literal v_out; do
     printf '%s\t' "$view"
     if ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM \`$DST\`.$view" > /dev/null 2>&1; then
         echo "resolves"

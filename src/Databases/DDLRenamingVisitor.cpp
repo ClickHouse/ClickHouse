@@ -235,6 +235,34 @@ namespace
         }
     }
 
+    /// Replaces a qualified table name in a specified function's argument, when the argument is an
+    /// identifier with a dot in the middle. A string argument is left alone, which matters where the
+    /// same position can hold either a table name or ordinary data - see the `IN` family below.
+    void replaceTableIdentifierInArgument(const ASTFunction & function, const DDLRenamingVisitor::Data & data, size_t arg_idx)
+    {
+        /// Just ignore incorrect arguments, proper exception will be thrown later
+        if (!function.arguments || function.arguments->children.size() <= arg_idx)
+            return;
+
+        auto & arg = function.arguments->as<ASTExpressionList>()->children[arg_idx];
+        const auto * identifier = dynamic_cast<const ASTIdentifier *>(arg.get());
+        if (!identifier)
+            return;
+
+        /// ASTIdentifier or ASTTableIdentifier
+        auto table_identifier = identifier->createTable();
+        /// Just return if table identified is invalid
+        if (!table_identifier)
+            return;
+
+        QualifiedTableName qualified_name{table_identifier->getDatabaseName(), table_identifier->shortName()};
+        if (qualified_name.database.empty() || qualified_name.table.empty())
+            return;
+
+        auto new_qualified_name = data.renaming_map.getNewTableName(qualified_name);
+        arg = make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
+    }
+
     /// Replaces a qualified table name in a specified function's argument.
     /// It can be either a string or an identifier with a dot in the middle.
     void replaceTableNameInArgument(const ASTFunction & function, const DDLRenamingVisitor::Data & data, size_t arg_idx)
@@ -259,22 +287,7 @@ namespace
             return;
         }
 
-        if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(arg.get()))
-        {
-            /// ASTIdentifier or ASTTableIdentifier
-            auto table_identifier = identifier->createTable();
-            /// Just return if table identified is invalid
-            if (!table_identifier)
-                return;
-
-            QualifiedTableName qualified_name{table_identifier->getDatabaseName(), table_identifier->shortName()};
-            if (qualified_name.database.empty() || qualified_name.table.empty())
-                return;
-
-            auto new_qualified_name = data.renaming_map.getNewTableName(qualified_name);
-            arg = make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
-            return;
-        }
+        replaceTableIdentifierInArgument(function, data, arg_idx);
     }
 
     /// Replaces a qualified database name in a specified function's argument.
@@ -315,8 +328,10 @@ namespace
         if (database_literal->value.getType() != Field::Types::String || table_literal->value.getType() != Field::Types::String)
             return;
 
-        /// An empty database name resolves against the database of the table being created, so it follows
-        /// the rename by itself; an empty table name names nothing.
+        /// Neither half can be empty in a definition that was stored normally: `StorageBuffer` runs the
+        /// database argument through `evaluateConstantExpressionForDatabaseName`, which substitutes the
+        /// current database for an empty one, and an empty table name means the buffer has no
+        /// destination at all. Guard anyway rather than build a half-qualified name.
         QualifiedTableName qualified_name{database_literal->value.safeGet<String>(), table_literal->value.safeGet<String>()};
         if (qualified_name.database.empty() || qualified_name.table.empty())
             return;
@@ -367,7 +382,11 @@ namespace
             /// `nullIn`, the `IgnoreSet` counterparts and so on all resolve their right-hand side as a
             /// table name the same way, so all of them have to follow the rename. This is the same set
             /// of names the analyzer treats as an IN function, see `isNameOfInFunction`.
-            replaceTableNameInArgument(function, data, 1);
+            ///
+            /// Only an identifier is a table here. A string on the right-hand side is always data -
+            /// `1 IN 'db.tbl'` is a type error, while `'db.tbl' NOT IN ('db.tbl')` is an ordinary
+            /// comparison - so renaming one would silently change the result of a valid expression.
+            replaceTableIdentifierInArgument(function, data, 1);
         }
         else if (function.name == "merge")
         {

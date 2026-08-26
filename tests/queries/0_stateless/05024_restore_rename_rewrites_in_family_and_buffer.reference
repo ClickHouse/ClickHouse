@@ -4,6 +4,7 @@ RESTORED
 v_globalin	WHERE a GLOBAL IN (DST.u)
 v_ignoreset	WHERE inIgnoreSet(a, DST.u)
 v_in	WHERE a IN (DST.u)
+v_literal	
 v_notin	WHERE a NOT IN (DST.u)
 v_nullin	WHERE nullIn(a, DST.u)
 v_out	WHERE a NOT IN (OUT.u)
@@ -18,6 +19,9 @@ SRC.t	[1,2,3]
 DST.t	[1,2,3,999]
 4. control, a buffer whose destination is outside the restored set keeps it:
 OUT.dest	[777]
+4b. control, a database.table-shaped string on the right-hand side is left alone:
+v_literal	0
+definition	SELECT \'SRC.u\' NOT IN (\'SRC.u\') AS r
 5. a table-level rename moves the buffer destination with it:
 BACKUP_CREATED
 RESTORED
@@ -29,4 +33,5 @@ v_notin	resolves
 v_globalin	resolves
 v_nullin	resolves
 v_ignoreset	resolves
+v_literal	resolves
 v_out	resolves
