@@ -9,6 +9,13 @@ SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET param__internal_cascades_cluster_node_count = 4;
 
+-- Every rejected query below carries `distributed_plan_fallback_to_local_execution = 0` in its own
+-- `SETTINGS` clause: it pins the rejection itself, so it keeps the exception instead of taking the
+-- local-execution fallback. The setting is deliberately per query rather than session-wide, because
+-- the cases that are expected to *succeed* must keep the fallback - case 9's localhost-shard read
+-- reaches local execution through a `ReadFromDummy` step that cannot be sent to a worker, and
+-- session-wide strict mode would reject it too.
+
 DROP TABLE IF EXISTS t_gating;
 
 CREATE TABLE t_gating (k UInt64, x UInt64) ENGINE = MergeTree() ORDER BY k;
@@ -24,7 +31,8 @@ SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 0;
 
 SELECT '-- 3. With both settings on, WITH TOTALS is rejected (fail-close)';
 SELECT k, sum(x) FROM t_gating GROUP BY k WITH TOTALS ORDER BY k
-SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
+    distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 -- A LOCAL JOIN must use only co-located data; a distributed Cascades plan cannot
 -- guarantee that, so it is rejected.
@@ -33,7 +41,8 @@ DROP TABLE IF EXISTS t_gating_dim;
 CREATE TABLE t_gating_dim (k UInt64) ENGINE = MergeTree() ORDER BY k;
 INSERT INTO t_gating_dim SELECT number % 5 FROM numbers(10);
 SELECT count() FROM t_gating AS a LOCAL INNER JOIN t_gating_dim AS b ON a.k = b.k
-SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
+    distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 SELECT count() FROM t_gating AS a LOCAL INNER JOIN t_gating_dim AS b ON a.k = b.k
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 0;
 DROP TABLE t_gating_dim;
@@ -44,7 +53,8 @@ DROP TABLE t_gating_dim;
 SELECT '-- 5. force_aggregation_in_order is rejected (in-order aggregation is not serializable)';
 SELECT k, sum(x) FROM t_gating GROUP BY k ORDER BY k
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
-    force_aggregation_in_order = 1, distributed_plan_execute_locally = 1; -- { serverError SUPPORT_IS_DISABLED }
+    force_aggregation_in_order = 1, distributed_plan_execute_locally = 1,
+    distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 -- The trivial-count rewrite is disabled under Cascades (its `ReadFromPreparedSource` leaf
 -- cannot be cloned); the count runs as a distributed read instead.
@@ -55,7 +65,8 @@ SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_p
 -- Reads without clone support (e.g. the `viewExplain` table function) are rejected up front.
 SELECT '-- 7. A read without clone support is rejected (fail-close)';
 SELECT count() FROM (EXPLAIN PLAN SELECT 1)
-SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
+    distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 -- A distributed read is bucketed and cannot be served from a projection, so projections are
 -- turned off under `make_distributed_plan`; a forced projection is ignored and the query still works.
@@ -77,7 +88,8 @@ DROP TABLE IF EXISTS t_gating_dist;
 CREATE TABLE t_gating_dist AS t_gating ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_gating);
 SELECT count() FROM t_gating_dist
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
-    prefer_localhost_replica = 0; -- { serverError SUPPORT_IS_DISABLED }
+    prefer_localhost_replica = 0,
+    distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 SELECT count() FROM t_gating_dist
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
     prefer_localhost_replica = 1, distributed_plan_execute_locally = 1;
@@ -86,7 +98,8 @@ DROP TABLE t_gating_dist;
 -- `WITH FILL` is not supported yet; without `make_distributed_plan` the same query runs single-node.
 SELECT '-- 10. WITH FILL is rejected (fail-close)';
 SELECT k FROM t_gating WHERE k IN (0, 2, 4) GROUP BY k ORDER BY k WITH FILL
-SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
+    distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 SELECT k FROM t_gating WHERE k IN (0, 2, 4) GROUP BY k ORDER BY k WITH FILL
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 0;
 
@@ -94,7 +107,8 @@ SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 0;
 -- top-N split cannot honor; such plans are rejected by the `WITH TOTALS` gate before any rule runs.
 SELECT '-- 11. Subquery WITH TOTALS under an outer top-N is rejected (fail-close)';
 SELECT k, s FROM (SELECT k, sum(x) AS s FROM t_gating GROUP BY k WITH TOTALS) ORDER BY s DESC LIMIT 3
-SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
+    distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 -- The `STREAM` read rejection lives in `04670_cascades_streaming_queries_gating`: a test that
 -- uses `enable_streaming_queries` must carry `_streaming_queries_` in its name (style check).
@@ -109,7 +123,8 @@ SETTINGS optimize_aggregation_in_order = 1, make_distributed_plan = 1, enable_ca
     distributed_plan_execute_locally = 1, max_rows_to_group_by = 0;
 SELECT k, sum(x) FROM t_gating GROUP BY k ORDER BY k
 SETTINGS force_aggregation_in_order = 1, make_distributed_plan = 1, enable_cascades_optimizer = 0,
-    distributed_plan_execute_locally = 1, max_rows_to_group_by = 0; -- { serverError SUPPORT_IS_DISABLED }
+    distributed_plan_execute_locally = 1, max_rows_to_group_by = 0,
+    distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 -- A plan that receives no exchanges (the read stays below the broadcast threshold) but carries
 -- a step without serialization support must run via the local fallback, not fail on the
