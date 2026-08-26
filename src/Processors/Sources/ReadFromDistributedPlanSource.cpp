@@ -43,7 +43,7 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
         {
             started = true;
             distributed_query_executor = createDistributedQueryExecutor(
-                unique_query_id, distributed_query_plan, task_to_host_map, CurrentThread::tryGetQueryContext(), cancellation);
+                unique_query_id, distributed_query_plan, task_to_host_map, CurrentThread::tryGetQueryContext(), cancellation, stage_wakeup);
             distributed_query_executor->start();
         }
 
@@ -92,13 +92,15 @@ IProcessor::Status ReadFromDistributedPlanSource::prepare()
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 std::tuple<int, uint32_t, Int64> ReadFromDistributedPlanSource::scheduleForEvent()
 {
-    stage_poll_timer.setRelative(stage_poll_interval_us);
-    return {stage_poll_timer.getDescriptor(), EPOLLIN | EPOLLERR, -1};
+    /// Wake on the executor's notification, and fall back to the interval so a state change that
+    /// does not notify still gets noticed.
+    return {stage_wakeup->fd(), EPOLLIN | EPOLLERR, stage_poll_interval_ms};
 }
 
 void ReadFromDistributedPlanSource::onAsyncJobReady()
 {
-    stage_poll_timer.drain();
+    /// Drains nothing when the interval fired instead of a notification; the fd is non-blocking.
+    stage_wakeup->drain();
     waiting_for_stages = false;
 }
 #endif
@@ -109,6 +111,8 @@ void ReadFromDistributedPlanSource::onCancel() noexcept
     /// under the lock. Without active cleanup, cancellation is only seen on the next tryGenerate,
     /// which may never come once the pipeline is cancelled.
     cancellation->cancel();
+    /// Wake a parked source so it observes the cancellation now instead of at the next interval.
+    notifyStageWakeup(stage_wakeup);
     try
     {
         /// Wake exchange waiters before taking the lock: the lock holder itself may be blocked

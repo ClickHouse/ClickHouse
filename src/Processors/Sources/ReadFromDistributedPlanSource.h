@@ -7,10 +7,6 @@
 #include <Core/Types_fwd.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-#include <Common/TimerDescriptor.h>
-#endif
-
 namespace DB
 {
 
@@ -66,6 +62,10 @@ private:
     /// from a failure and report the latter.
     DistributedQueryCancellationPtr cancellation = std::make_shared<DistributedQueryCancellation>();
 
+    /// The executor notifies this every time a task reaches a terminal state, and `onCancel` notifies
+    /// it too, so a parked source wakes as soon as `execute` can make progress.
+    StageWakeupPtr stage_wakeup = std::make_shared<WakeupFd>();
+
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     /// This source only dispatches the plan's stages and waits for them; the query result arrives
     /// through a second source of the same pipeline. On a streaming exchange nothing runs until
@@ -73,10 +73,12 @@ private:
     /// not ask its input for data, so the whole plan is blocked on it. Waiting inside `work` would
     /// hold an execution thread, and a pipeline that has only one of them would never reach the
     /// result source. So park in the executor's async queue instead and let it re-dispatch us.
-    static constexpr UInt64 stage_poll_interval_us = 100'000;
-    TimerDescriptor stage_poll_timer;
+    ///
+    /// The park ends on `stage_wakeup`, and this interval is only a backstop for a state change that
+    /// does not notify it.
+    static constexpr Int64 stage_poll_interval_ms = 100;
     /// True while the last `tryGenerate` left the stages running, i.e. there is nothing to do until
-    /// the timer fires. Reset in `onAsyncJobReady`, right before the async re-dispatch calls `work`.
+    /// the wake-up arrives. Reset in `onAsyncJobReady`, right before the re-dispatch calls `work`.
     bool waiting_for_stages = false;
 #endif
 };
