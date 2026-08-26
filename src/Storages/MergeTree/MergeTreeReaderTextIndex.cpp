@@ -478,8 +478,8 @@ size_t MergeTreeReaderTextIndex::readRows(
     const bool any_use_fallback = std::ranges::any_of(use_fallback, [](bool value) { return value; });
 
     /// If any column needs the fallback evaluation, read the physical columns upfront.
-    /// We pass the same mark/continue_reading/offset arguments so the fallback reader stays
-    /// in sync with the text-index reader across multiple readRows calls.
+    /// Use the same mark and continuation state so the fallback reader stays in sync
+    /// with the text-index reader across multiple `readRows` calls.
     Block fallback_block;
     if (any_use_fallback && fallback_reader && max_rows_to_read > 0)
     {
@@ -527,15 +527,29 @@ size_t MergeTreeReaderTextIndex::readRows(
         size_t current_fallback_offset = fallback_offset;
         if (!any_use_fallback && mark_requires_dynamic_fallback_reader)
         {
-            Columns fallback_cols(fallback_columns_list.size(), nullptr);
+            MutableColumns fallback_cols(fallback_columns_list.size());
             const size_t mark_start_row = index_granularity.getMarkStartingRow(from_mark);
             const size_t mark_offset = from_row - mark_start_row;
             const bool continue_fallback_reading = fallback_reader_next_row == from_row;
+
+            if (!continue_fallback_reading && mark_offset > 0)
+            {
+                MutableColumns skipped_cols(fallback_columns_list.size());
+                const size_t skipped_rows = fallback_reader->readRows(from_mark, false, mark_offset, skipped_cols);
+                if (skipped_rows != mark_offset)
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Fallback reader skipped {} rows, expected {}",
+                        skipped_rows,
+                        mark_offset);
+                }
+            }
+
             const size_t fallback_rows = fallback_reader->readRows(
                 from_mark,
-                continue_fallback_reading,
+                continue_fallback_reading || mark_offset > 0,
                 rows_to_read,
-                continue_fallback_reading ? 0 : mark_offset,
                 fallback_cols);
             if (fallback_rows != rows_to_read)
             {
@@ -549,7 +563,7 @@ size_t MergeTreeReaderTextIndex::readRows(
 
             size_t col_idx = 0;
             for (const auto & col_name_type : fallback_columns_list)
-                mark_fallback_block.insert({fallback_cols[col_idx++], col_name_type.type, col_name_type.name});
+                mark_fallback_block.insert({std::move(fallback_cols[col_idx++]), col_name_type.type, col_name_type.name});
 
             current_fallback_block = &mark_fallback_block;
             current_fallback_offset = 0;
