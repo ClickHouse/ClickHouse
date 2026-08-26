@@ -163,8 +163,10 @@ Strings CompressionCodecFactory::getGateSettingNames() const
 {
     Strings result;
     for (const auto & family : family_name_with_codec)
+    {
         if (String gate_setting_name = getGateSettingName(family.first); getGateTier(gate_setting_name))
             result.push_back(std::move(gate_setting_name));
+    }
     return result;
 }
 
