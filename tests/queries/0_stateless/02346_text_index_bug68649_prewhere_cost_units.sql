@@ -8,6 +8,7 @@ SET explain_query_plan_default = 'legacy'; -- the default plan printer reverses 
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1; -- CI may inject False, leaving no PREWHERE to inspect
 SET allow_reorder_prewhere_conditions = 1;
 SET use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
@@ -56,6 +57,21 @@ SELECT multiIf(
         position(explain, '__text_index') < position(explain, 'equals('), 'index condition first',
         'physical condition first')
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(text, 'alpha') AND v = 42)
+WHERE explain LIKE '%Prewhere filter column%';
+
+-- `_partition_id` is synthesized from part metadata, so it reads nothing and must come first even
+-- against the cheapest physical column. Its type carries no fixed size, so a type-based estimate
+-- would charge it more than `v` and schedule the free condition last.
+
+SELECT '-- rows of partition `all` with v = 42';
+SELECT count() FROM tab WHERE _partition_id = 'all' AND v = 42;
+
+SELECT '-- a virtual column that reads nothing goes first';
+SELECT multiIf(
+        position(explain, '_partition_id') = 0 OR position(explain, '42_UInt8') = 0, 'unexpected plan: ' || explain,
+        position(explain, '_partition_id') < position(explain, '42_UInt8'), 'partition condition first',
+        'physical condition first')
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE _partition_id = 'all' AND v = 42)
 WHERE explain LIKE '%Prewhere filter column%';
 
 DROP TABLE tab;

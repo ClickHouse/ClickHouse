@@ -82,11 +82,10 @@ private:
         /// the lower the better
         UInt64 estimated_row_count = 0;
 
-        /// Combined I/O cost and selectivity score (lower is better): bytes read per rejected row,
-        /// bytes_per_row * total_rows / (total_rows - estimated_row_count). +inf when the condition
-        /// rejects no rows, so it is scheduled last. Two scores are comparable only in the same unit,
-        /// hence a column of unknown size is charged an estimated per-row size, never a row count.
-        /// When no column of the query has a measured size, all conditions are scored by selectivity.
+        /// Bytes read per rejected row (lower is better):
+        /// bytes_per_row * total_rows / (total_rows - estimated_row_count), +inf when it rejects no
+        /// rows. Comparable across conditions only in the same unit, hence a column of unknown size
+        /// is charged an estimated per-row size, never a row count.
         double cost_with_selectivity = 0;
 
         /// Does the condition contain primary key column?

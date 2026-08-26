@@ -51,7 +51,8 @@ NameToIndexMap fillNamesPositions(const Names & names)
     return names_positions;
 }
 
-/// Approximates the bytes per value for a given type.
+/// Uncompressed, unlike the stored column sizes, so it over-charges. Constants match
+/// `estimateColumnWidthFromType`.
 double approximateBytesPerValueForType(const IDataType & type)
 {
     static constexpr double default_string_size = 64;
@@ -542,9 +543,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 /// Rejects no rows, so it is useless in PREWHERE regardless of its cost: schedule it last.
                 cond.cost_with_selectivity = std::numeric_limits<double>::infinity();
             else if (total_size_of_queried_columns == 0)
-                /// No column has a measured size (compact parts): there is no byte-based score for a
-                /// type estimate to be compared against, and the estimate is too coarse to reorder on
-                /// its own, so order by selectivity. Consistent because it applies to every condition.
+                /// Nothing measured (compact parts): the type estimate is too coarse to outrank
+                /// selectivity, e.g. `Nullable(Int64)` would beat `Int64` on the null byte.
                 cond.cost_with_selectivity = static_cast<double>(cond.estimated_row_count);
             else
                 cond.cost_with_selectivity = approximateBytesPerRow(cond.table_columns) * static_cast<double>(total_rows) / rejected_rows;
@@ -751,7 +751,6 @@ double MergeTreeWhereOptimizer::approximateBytesPerRowAndColumn(const String & c
     if (auto it = column_sizes.find(column); it != column_sizes.end() && it->second != 0)
         return static_cast<double>(it->second) / static_cast<double>(total_rows);
 
-    /// No stored size (compact part, or not a physical column).
     if (auto column_in_storage = storage_metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, column))
         return approximateBytesPerValueForType(*column_in_storage->type);
 
@@ -759,9 +758,8 @@ double MergeTreeWhereOptimizer::approximateBytesPerRowAndColumn(const String & c
     if (!virtual_column)
         return 0;
 
-    /// An ephemeral virtual column with no default expression is synthesized from part metadata
-    /// (`_part`, `_partition_id`, `_part_offset`), so reading it costs nothing. One with a default
-    /// expression (`__text_index_*`) may have to be computed, and a persistent one is stored data.
+    /// Synthesized from part metadata (`_part`, `_partition_id`), so it reads nothing. One with a
+    /// default expression (`__text_index_*`) may have to be computed instead.
     if (virtual_column->isEphemeral() && !virtual_column->default_desc.expression)
         return 0;
 
