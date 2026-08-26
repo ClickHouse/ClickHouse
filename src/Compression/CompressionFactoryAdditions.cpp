@@ -22,7 +22,6 @@
 #include <Common/Exception.h>
 #include <Common/SetWithMemoryTracking.h>
 #include <Core/Settings.h>
-#include <Core/SettingsTierType.h>
 
 
 namespace DB

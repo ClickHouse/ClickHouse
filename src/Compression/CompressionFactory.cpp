@@ -3,7 +3,6 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/registerCompressionCodecs.h>
 #include <Core/Settings.h>
-#include <Core/SettingsTierType.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
