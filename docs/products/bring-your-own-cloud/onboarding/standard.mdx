@@ -77,31 +77,6 @@ On AWS, the IAM role created during setup trusts ClickHouse Cloud with an [exter
 BYOC infrastructures onboarded before external IDs were introduced use the placeholder value `emptyid` for backward compatibility. The console shows this value when you add infrastructure on an AWS account with an existing legacy deployment, so that all infrastructures on the account keep a consistent trust configuration. If you would like to switch to a unique external ID, contact ClickHouse Support.
 </Note>
 </Step>
-<Step title="Validate your cloud setup" id="validate-cloud-setup">
-Before provisioning begins, run **pre-flight validation** from the console to confirm your account is configured correctly. ClickHouse Cloud runs a set of **read-only** checks against your AWS account, GCP project, or Azure subscription — it makes no changes — and reports any problems up front, so you can fix them before provisioning rather than discovering them after a failed deployment.
-
-Select **Validate cloud setup** once the initial stack (CloudFormation/Terraform) has been created. Validation confirms that:
-
-- **Permissions** — the management identity (IAM role / service account / service principal) created by the onboarding stack holds the permissions ClickHouse Cloud needs to provision and operate your deployment.
-- **Enabled services** *(GCP)* — the required Google Cloud APIs (Compute Engine, Kubernetes Engine, Cloud Storage, Network Connectivity, IAM) are enabled on your project.
-- **Network** *(AWS bring-your-own-VPC)* — your VPC and subnets meet the [network requirements](/products/bring-your-own-cloud/onboarding/network): subnet sizes, required tags, availability-zone spread, outbound connectivity, and available IP addresses.
-- **Quotas and guardrails** *(AWS)* — your account has sufficient service quotas (VPCs, NAT gateways, Elastic IPs, EKS clusters, vCPUs) and no organization policy (SCP) blocks a required action.
-
-If a check fails, the report names the specific problem. Use the table below to resolve it, then re-run validation.
-
-<Note>
-Pre-flight validation is read-only and safe to re-run as often as you like. Passing validation confirms your setup is ready — it does not itself provision any resources.
-</Note>
-
-| Validation result | Likely cause | How to resolve |
-| --- | --- | --- |
-| **Cannot assume the management role / impersonation failed** | The onboarding stack wasn't completed, or the role/service account or external ID doesn't match | Re-run the latest onboarding stack and confirm the [external ID](#aws-external-id) shown in the console matches the one in your trust policy |
-| **Missing permission** (e.g. create VPC, create IAM role, create Kubernetes cluster) | The management identity lacks a required permission — often from a customized or outdated stack | Re-run the latest onboarding stack, which grants the full permission set; if you intentionally restrict permissions, add the reported one |
-| **Required API not enabled** *(GCP)* | A required Google Cloud service API is disabled on the project | Enable it, for example `gcloud services enable compute.googleapis.com --project <your-project>` |
-| **Subnet or VPC configuration issue** *(AWS bring-your-own-VPC)* — CIDR too small, missing tag, too few availability zones, no outbound egress, or too few free IP addresses | The provided VPC does not meet the BYOC network requirements | Adjust the VPC to satisfy the [network requirements](/products/bring-your-own-cloud/onboarding/network) |
-| **Insufficient service quota** *(AWS)* | Your account's quota for a required resource is too low | Request a quota increase from your cloud provider; see [AWS service limits](/products/bring-your-own-cloud/reference/aws-service-limits) |
-| **Blocked by organization policy / SCP** *(AWS)* | An organization guardrail denies a required action for the account | Work with your cloud administrator to allow the action for the BYOC account |
-</Step>
 <Step title="Set up BYOC infrastructure" id="setup-byoc-infrastructure">
 You will be prompted to set up the infrastructure, including object storage buckets, VPC/VNet, and the Kubernetes cluster, from the ClickHouse Cloud console. Certain configurations must be determined at this stage, as they can't be changed later. Specifically:
 
@@ -118,6 +93,32 @@ You will be prompted to set up the infrastructure, including object storage buck
 - **Availability Zones**: If you plan to use VPC peering, aligning availability zones between the source and BYOC accounts can help reduce cross-AZ traffic costs. For example, in AWS, availability zone suffixes (`a`, `b`, `c`) may represent different physical zone IDs across accounts. See the [AWS guide](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) for details.
 
 <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC set up infrastructure" background='black'/>
+
+#### Pre-flight validation {#preflight-validation}
+
+When you click **Set up Infrastructure**, ClickHouse Cloud automatically runs a set of **read-only** pre-flight checks against your account before creating any resources — you don't trigger them yourself. If everything passes, provisioning continues and nothing extra is shown. If a check fails, setup is halted and the console shows the specific problems so you can fix them and start setup again.
+
+The checks confirm that:
+
+- **Permissions** — the management identity (IAM role / service account / service principal) holds the permissions ClickHouse Cloud needs to provision and operate your deployment.
+- **Enabled services** *(GCP)* — the required Google Cloud APIs (Compute Engine, Kubernetes Engine, Cloud Storage, Network Connectivity, IAM) are enabled on your project.
+- **Network** *(AWS bring-your-own-VPC)* — your VPC and subnets meet the [network requirements](/products/bring-your-own-cloud/onboarding/network): subnet sizes, required tags, availability-zone spread, outbound connectivity, and available IP addresses.
+- **Quotas and guardrails** *(AWS)* — your account has sufficient service quotas (VPCs, NAT gateways, Elastic IPs, EKS clusters, vCPUs) and no organization policy (SCP) blocks a required action.
+
+If setup is halted, use the table below to resolve the reported error, then start setup again.
+
+<Note>
+The pre-flight checks are read-only and never modify your account. They run automatically as part of infrastructure setup — there is no separate validation button.
+</Note>
+
+| Validation error | Likely cause | How to resolve |
+| --- | --- | --- |
+| **Cannot assume the management role / impersonation failed** | The onboarding stack wasn't completed, or the role/service account or external ID doesn't match | Re-run the latest onboarding stack and confirm the [external ID](#aws-external-id) shown in the console matches the one in your trust policy |
+| **Missing permission** (e.g. create VPC, create IAM role, create Kubernetes cluster) | The management identity lacks a required permission — often from a customized or outdated stack | Re-run the latest onboarding stack, which grants the full permission set; if you intentionally restrict permissions, add the reported one |
+| **Required API not enabled** *(GCP)* | A required Google Cloud service API is disabled on the project | Enable it, for example `gcloud services enable compute.googleapis.com --project <your-project>` |
+| **Subnet or VPC configuration issue** *(AWS bring-your-own-VPC)* — CIDR too small, missing tag, too few availability zones, no outbound egress, or too few free IP addresses | The provided VPC does not meet the BYOC network requirements | Adjust the VPC to satisfy the [network requirements](/products/bring-your-own-cloud/onboarding/network) |
+| **Insufficient service quota** *(AWS)* | Your account's quota for a required resource is too low | Request a quota increase from your cloud provider; see [AWS service limits](/products/bring-your-own-cloud/reference/aws-service-limits) |
+| **Blocked by organization policy / SCP** *(AWS)* | An organization guardrail denies a required action for the account | Work with your cloud administrator to allow the action for the BYOC account |
 </Step>
 </Steps>
 
