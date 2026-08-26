@@ -117,6 +117,15 @@ void TableNode::adoptMaterializedCTE(MaterializedCTEPtr materialized_cte_, const
 {
     chassert(isMaterializedCTE());
     chassert(materialized_cte_ && materialized_cte_->isStorageInitialized());
+
+    /// `requiresMaterialization` is analysis-time policy set on whichever clone the analyzer
+    /// visited, which is not necessarily the one picked as canonical. Merging two clones must
+    /// therefore OR the flag, never drop it: the policy is monotonic (`false` -> `true`).
+    /// Today an adoption implies at least two reference sites, so the canonical is kept
+    /// materialized by its use count anyway; the OR makes the policy independent of that.
+    if (materialized_cte->requiresMaterialization())
+        materialized_cte_->requireMaterialization();
+
     materialized_cte = std::move(materialized_cte_);
     setTemporaryTableName(materialized_cte->temporary_table_name);
     updateStorage(materialized_cte->storage, context_);

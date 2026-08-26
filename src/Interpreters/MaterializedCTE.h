@@ -62,6 +62,24 @@ struct MaterializedCTE
         return plan != nullptr || isBuilt();
     }
 
+    /// Set during analysis when inlining this CTE would change how many times it is
+    /// evaluated at runtime. A single syntactic reference inside the recursive member of a
+    /// recursive CTE is executed once per recursion step, so the CTE must keep a single
+    /// shared materialization even though its static reference count is one.
+    ///
+    /// Analysis-time policy state: written by `QueryAnalyzer` before planning starts and
+    /// only ever flipped from `false` to `true`, so no synchronization is needed. It is not
+    /// part of the query tree's semantic hash or equality.
+    void requireMaterialization() noexcept
+    {
+        requires_materialization = true;
+    }
+
+    bool requiresMaterialization() const noexcept
+    {
+        return requires_materialization;
+    }
+
     TemporaryTableHolder extractTableHolder()
     {
         chassert(table_holder.has_value());
@@ -103,6 +121,10 @@ struct MaterializedCTE
     /// If it ever observes `false`, the planner failed to wire the gate -
     /// fail loudly rather than block or read half-populated storage.
     std::atomic_bool is_built{false};
+
+private:
+    /// See `requireMaterialization`.
+    bool requires_materialization = false;
 };
 
 using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;

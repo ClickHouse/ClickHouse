@@ -345,14 +345,19 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             for (auto & with_node : current_query_tree->getWith().getNodes())
             {
                 auto * with_union_node = with_node->as<UnionNode>();
-                auto * with_query_node = with_node->as<QueryNode>();
 
-                const bool materialized_cte = (with_query_node && with_query_node->isMaterialized()) || (with_union_node && with_union_node->isMaterialized());
-                if (materialized_cte)
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MATERIALIZED CTE is not supported in recursive WITH");
-
+                /// A plain SELECT-shaped CTE can never be the recursive one - a recursive CTE needs a
+                /// `UNION ALL` of a seed and a recursive term - so it is a non-recursive helper and may be
+                /// `MATERIALIZED`. A set-operation CTE is indistinguishable from a recursive candidate at this
+                /// point (self-reference is only proven during resolution), so `MATERIALIZED` stays rejected
+                /// for it.
                 if (!with_union_node)
                     continue;
+
+                if (with_union_node->isMaterialized())
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "MATERIALIZED CTE is not supported in recursive WITH, "
+                        "except for a non-recursive helper CTE with a plain SELECT body");
 
                 with_union_node->setIsRecursiveCTE(true);
             }

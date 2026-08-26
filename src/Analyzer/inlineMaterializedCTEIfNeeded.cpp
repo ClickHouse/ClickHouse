@@ -176,8 +176,14 @@ void inlineMaterializedCTEIfNeeded(QueryTreeNodePtr & node, ContextPtr context)
 
     ReusedMaterializedCTEs reused_materialized_cte;
     for (const auto & [materialized_cte, count] : use_count)
-        if (count >= 2)
+    {
+        /// A CTE is kept materialized either because the query reads it from more than one place, or
+        /// because analysis proved that a single reference site is executed more than once at runtime
+        /// (see `MaterializedCTE::requireMaterialization`) - for example a reference from the recursive
+        /// member of a recursive CTE, which `RecursiveCTESource` re-executes on every recursion step.
+        if (count >= 2 || materialized_cte->requiresMaterialization())
             reused_materialized_cte.insert(materialized_cte);
+    }
 
     if (context->hasQueryContext())
     {
