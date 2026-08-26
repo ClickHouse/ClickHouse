@@ -428,42 +428,6 @@ graph TD
 * `precedence_allocation` - enforces eviction according to static precedence (lower value means higher precedence); pending allocation of higher precedence evicts lower precedence allocations; children nodes should specify `precedence` (default is 0).
 * `queue` - leaf of the hierarchy capable of holding running and pending allocations.
 
-## Deprecated XML configuration {#deprecated-configuration}
-
-An alternative way to express which disks are used by a resource is server's `storage_configuration`:
-
-To enable IO scheduling for a specific disk, you have to specify `read_resource` and/or `write_resource` in storage configuration. It says ClickHouse what resource should be used for every read and write requests with given disk. Read and write resource can refer to the same resource name, which is useful for local SSDs or HDDs. Multiple different disks also can refer to the same resource, which is useful for remote disks: if you want to be able to allow fair division of network bandwidth between e.g. "production" and "development" workloads.
-
-Example:
-```xml
-<clickhouse>
-    <storage_configuration>
-        ...
-        <disks>
-            <s3>
-                <type>s3</type>
-                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
-            </s3>
-        </disks>
-        <policies>
-            <s3_main>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_main>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-Note that server configuration options have priority over SQL way to define resources.
-
 ## See also {#see-also}
 - [system.scheduler](/reference/system-tables/scheduler)
 - [system.workloads](/reference/system-tables/workloads)
