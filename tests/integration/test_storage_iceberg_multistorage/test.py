@@ -1185,3 +1185,38 @@ def test_local_table_with_data_files_outside_table_directory(started_cluster):
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == "1\talpha\n2\tbeta\n3\tgamma\n"
 
     instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
+
+
+# A bucket name identifies a bucket only within one provider, so a `gs://` path must not be served by
+# an S3 base storage that happens to use the same bucket name: that would read a different object with
+# the base credentials. The data files stay where the base storage would find them, so a read that
+# collapses the providers succeeds -- and must not.
+# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3789962904
+def test_gs_path_is_not_served_by_same_named_s3_bucket(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+
+    TABLE_NAME = f"test_gs_same_bucket_{get_uuid_str()}"
+
+    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
+
+    default_upload_directory(started_cluster, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster, TABLE_NAME)
+    _rewrite_manifests_and_reupload(
+        started_cluster, host_path, base_path,
+        lambda p: f"gs://{started_cluster.minio_bucket}/{base_path}/data/{os.path.basename(p)}")
+    shutil.rmtree(temp_dir)
+
+    _create_iceberg_s3_table(started_cluster, TABLE_NAME, base_path)
+
+    # Google Cloud Storage is not reachable from the test cluster, so the read fails; what matters is
+    # that it is not answered from the identically named MinIO bucket.
+    # Google Cloud Storage is unreachable from the test cluster, so keep the retries short.
+    error = instance.query_and_get_error(
+        f"SELECT * FROM {TABLE_NAME} ORDER BY id "
+        f"SETTINGS s3_request_timeout_ms = 3000, s3_connect_timeout_ms = 3000")
+    assert "alpha" not in error
+
+    instance.query(f"DETACH TABLE {TABLE_NAME}")

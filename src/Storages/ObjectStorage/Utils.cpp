@@ -134,12 +134,29 @@ std::string s3ProviderFamily(const std::string & scheme)
     return "";
 }
 
-/// Two provider-named schemes may address the same storage only when they name the same provider;
-/// when either side is an explicit `http(s)` endpoint, the endpoint comparison decides instead.
-bool s3ProviderFamiliesCompatible(const std::string & base_scheme, const std::string & target_scheme)
+/// The provider the base storage belongs to. The table location names it when it is spelled as a
+/// provider URI; otherwise (a plain key, or an explicit `http(s)` endpoint) the endpoint the base
+/// storage was configured with tells: everything that is not Google Cloud Storage or Alibaba OSS is
+/// reached through the S3 API itself.
+std::string s3BaseProviderFamily(const std::string & base_scheme, const std::string & base_endpoint)
 {
-    const auto base_family = s3ProviderFamily(base_scheme);
-    const auto target_family = s3ProviderFamily(target_scheme);
+    if (auto family = s3ProviderFamily(base_scheme); !family.empty())
+        return family;
+    if (base_endpoint.empty())
+        return "";
+    const auto endpoint_lowercase = Poco::toLower(base_endpoint);
+    if (endpoint_lowercase.contains("storage.googleapis.com"))
+        return "gcs";
+    if (endpoint_lowercase.contains(".aliyuncs.com"))
+        return "oss";
+    return "s3";
+}
+
+/// Two provider families may address the same storage only when they are the same one; an unknown
+/// family (the base storage is not S3-compatible at all) leaves the decision to the endpoint
+/// comparison, as before.
+bool s3ProviderFamiliesCompatible(const std::string & base_family, const std::string & target_family)
+{
     if (base_family.empty() || target_family.empty())
         return true;
     return base_family == target_family;
@@ -741,8 +758,13 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
 
         /// A bucket name is only meaningful within one provider, so a `gs://` or `oss://` path never
         /// resolves to an `s3://` base storage (and vice versa) just because the bucket names agree.
-        const bool provider_families_compatible
-            = s3ProviderFamiliesCompatible(table_location_decomposed.scheme, target_decomposed.scheme);
+        std::string base_storage_endpoint;
+        if (base_storage->getType() == ObjectStorageType::S3)
+            base_storage_endpoint = base_storage->getDescription();
+
+        const bool provider_families_compatible = s3ProviderFamiliesCompatible(
+            s3BaseProviderFamily(table_location_decomposed.scheme, base_storage_endpoint),
+            s3ProviderFamily(target_decomposed.scheme));
 
         bool use_base_storage = false;
         if (base_storage->getType() == ObjectStorageType::S3)
@@ -805,8 +827,11 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
             return s3_uri.endpoint + "/" + s3_uri.bucket;
         };
 
-        if (endpoint_explicit)
+        if (endpoint_explicit || !provider_families_compatible)
         {
+            /// Either the URI names its endpoint itself, or it names another provider than the base
+            /// storage: inheriting the base endpoint there would send the request to the wrong service
+            /// (a `gs://bucket/...` path would be looked up in the base's identically named bucket).
             endpoint_to_use = make_endpoint_with_bucket();
         }
         else
@@ -861,8 +886,9 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
         /// Decide whether the base storage's S3 credentials apply to this target
         bool reuse_base_credentials = false;
         if (base_storage->getType() == ObjectStorageType::S3)
-            reuse_base_credentials = propagate_creds || !endpoint_explicit
-                || sameEndpoint(base_storage->getDescription(), s3_uri.endpoint);
+            reuse_base_credentials = propagate_creds
+                || (provider_families_compatible
+                    && (!endpoint_explicit || sameEndpoint(base_storage->getDescription(), s3_uri.endpoint)));
 
         String access_key_id;
         String secret_access_key;
