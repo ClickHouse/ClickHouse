@@ -16,8 +16,6 @@
 #include <Core/Settings.h>
 #include <Core/Field.h>
 
-#include <fmt/core.h>
-
 #include <string_view>
 
 namespace DB
