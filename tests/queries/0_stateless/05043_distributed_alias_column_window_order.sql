@@ -283,7 +283,8 @@ SELECT 'joined sources';
 -- `__tableN` aliases at 1). A leaf of an ALIAS body then cannot be attributed to one source, not even by
 -- an exact name match, because the shard column of that exact name may belong to the other source. Such
 -- a header is reconciled positionally instead, which passes each shard column through unchanged, so the
--- value-preserving ALIAS body keeps the result comparable to the single-node oracle.
+-- value-preserving ALIAS body keeps the result comparable to the single-node oracle. A body that
+-- transforms its column returns it untransformed here, which is why these bodies preserve their value.
 DROP TABLE IF EXISTS loc_jl;
 DROP TABLE IF EXISTS loc_jr;
 CREATE TABLE loc_jl (a UInt64, x String, al String ALIAS concat(x, '')) ENGINE = MergeTree ORDER BY a;
