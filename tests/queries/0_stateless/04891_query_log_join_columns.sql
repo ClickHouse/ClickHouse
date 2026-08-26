@@ -92,7 +92,8 @@ WHERE current_database = currentDatabase()
 ORDER BY log_comment;
 
 SELECT 'three tables, two joins';
--- The arrays hold distinct values, so they report a single element each while the count is 2.
+-- Both joins have the same kind and strictness, and both are reported, so the arrays hold one element
+-- per join and their size matches the count.
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t2.a = t3.a FORMAT Null SETTINGS log_comment = '04891_join_count_two', join_algorithm = 'hash';
 
 SYSTEM FLUSH LOGS query_log;

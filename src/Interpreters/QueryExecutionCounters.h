@@ -39,7 +39,9 @@ struct QueryExecutionCounters
     /// Records that `operator_name` wrote temporary data to disk, e.g. `join` or `aggregation`.
     static void markSpilledToDisk(std::string_view operator_name);
 
-    /// A consistent copy of all the counters. `join_kinds` and `join_strictness` are positionally aligned.
+    /// A consistent copy of all the counters. `join_kinds` and `join_strictness` are positionally aligned
+    /// and have `number_of_joins` elements each, one per physical join, so that repeated combinations are
+    /// reported as many times as they occur.
     struct Snapshot
     {
         UInt64 number_of_joins = 0;
@@ -64,11 +66,11 @@ private:
     /// Algorithms that were used in the query
     std::set<String> used_join_algorithms TSA_GUARDED_BY(mutex);
 
-    /// Number of physical joins executed by the query.
-    UInt64 number_of_joins TSA_GUARDED_BY(mutex) = 0;
-
-    /// Keeps both elements together, to avoid mis-aligned items
-    std::set<std::pair<String, String>> used_joins TSA_GUARDED_BY(mutex);
+    /// One element per physical join executed by the query, which is also how `number_of_joins` is counted.
+    /// Keeps both elements together, to avoid mis-aligned items. A `multiset` and not a `set`, because
+    /// every physical join must be reported, even when another join of the query has the same kind and
+    /// strictness, so that the arrays have one element per join counted in `number_of_joins`.
+    std::multiset<std::pair<String, String>> used_joins TSA_GUARDED_BY(mutex);
 
     /// Operators that wrote temporary data to disk
     std::set<String> spilled_to_disk TSA_GUARDED_BY(mutex);

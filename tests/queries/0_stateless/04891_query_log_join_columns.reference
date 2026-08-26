@@ -7,7 +7,7 @@ join executed with its sides swapped
 1	['HASH']	['RIGHT']	['ALL']	[]
 1	['HASH']	['RIGHT']	['ALL']	[]
 three tables, two joins
-2	['HASH']	['INNER']	['ALL']	[]
+2	['HASH']	['INNER','INNER']	['ALL','ALL']	[]
 cross join
 1	['CONSTANT']	['CROSS']	['ALL']	[]
 join engine table

@@ -92,7 +92,8 @@ struct QueryLogElement
     UInt64 used_number_of_joins{};
     /// Sorted containers, so that the logged arrays do not depend on the order of execution.
     std::set<String> used_join_algorithms;
-    /// Both `used_join_kinds` and `used_join_strictness` are positionally aligned.
+    /// Both `used_join_kinds` and `used_join_strictness` are positionally aligned and have
+    /// `used_number_of_joins` elements each, one per physical join.
     std::vector<String> used_join_kinds;
     std::vector<String> used_join_strictness;
     std::set<String> spilled_to_disk;

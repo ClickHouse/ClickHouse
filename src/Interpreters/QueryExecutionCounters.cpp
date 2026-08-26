@@ -27,8 +27,6 @@ void QueryExecutionCounters::addExecutedJoin(JoinKind kind, JoinStrictness stric
 
     std::lock_guard lock(counters->mutex);
 
-    ++counters->number_of_joins;
-
     counters->used_joins.emplace(
         toString(kind),
         toString(strictness));
@@ -41,7 +39,7 @@ QueryExecutionCounters::Snapshot QueryExecutionCounters::getSnapshot() const
     std::lock_guard lock(mutex);
 
     Snapshot snapshot;
-    snapshot.number_of_joins = number_of_joins;
+    snapshot.number_of_joins = used_joins.size();
     snapshot.join_algorithms = used_join_algorithms;
     snapshot.spilled_to_disk = spilled_to_disk;
 

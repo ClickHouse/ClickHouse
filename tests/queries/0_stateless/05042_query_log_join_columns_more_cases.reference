@@ -3,25 +3,25 @@ join in a subquery in FROM
 join in a subquery in IN
 1	['HASH']	['INNER']	['ALL']	[]
 join in the right side of a join
-2	['HASH']	['INNER']	['ALL']	[]
+2	['HASH']	['INNER','INNER']	['ALL','ALL']	[]
 join in a common table expression
-3	['HASH']	['INNER']	['ALL']	[]
+3	['HASH']	['INNER','INNER','INNER']	['ALL','ALL','ALL']	[]
 join in a scalar subquery
 1	['HASH']	['INNER']	['ALL']	[]
 join inside a view
 1	['HASH']	['INNER']	['ALL']	[]
-2	['HASH']	['INNER']	['ALL']	[]
+2	['HASH']	['INNER','INNER']	['ALL','ALL']	[]
 join inside a view of a view
-2	['HASH']	['INNER']	['ALL']	[]
+2	['HASH']	['INNER','INNER']	['ALL','ALL']	[]
 join inside a materialized view
 1	['HASH']	['INNER']	['ALL']	[]
 join inside a chain of materialized views
-2	['HASH']	['INNER']	['ALL']	[]
+2	['HASH']	['INNER','INNER']	['ALL','ALL']	[]
 join inside a materialized view with its own inner table
 1	['HASH']	['INNER']	['ALL']	[]
 join inside a materialized view that reads a view
-05042_join_views_mv_over_view_a_plain	2	['HASH']	['INNER']	['ALL']	[]
-05042_join_views_mv_over_view_b_insert_with_join	3	['HASH']	['INNER']	['ALL']	[]
+05042_join_views_mv_over_view_a_plain	2	['HASH']	['INNER','INNER']	['ALL','ALL']	[]
+05042_join_views_mv_over_view_b_insert_with_join	3	['HASH']	['INNER','INNER','INNER']	['ALL','ALL','ALL']	[]
 join in the SELECT of CREATE MATERIALIZED VIEW POPULATE
 Create	1	['HASH']	['INNER']	['ALL']	[]
 join in the SELECT of an INSERT with no view attached
