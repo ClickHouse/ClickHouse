@@ -9,23 +9,27 @@ doc_type: 'reference'
 Les fonctions d’IA sont des fonctions intégrées de ClickHouse que vous pouvez utiliser pour faire appel à l’IA ou générer des embeddings afin de travailler avec vos données, d’en extraire des informations, de classer des données, etc.
 
 <Note>
-  Les fonctions d’IA sont expérimentales. Définissez [`allow_experimental_ai_functions`](/fr/reference/settings/session-settings#allow_experimental_ai_functions) pour les activer.
-</Note>
+  Les fonctions d’IA sont expérimentales. Définissez [`allow_experimental_ai_functions`](/fr/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) pour les activer.
 
-<Note>
   Les fonctions d’IA peuvent produire des résultats imprévisibles. Le résultat dépendra fortement de la qualité du prompt et du modèle utilisés.
 </Note>
 
+<Warning>
+  **Injection de prompt**
+
+  Le texte d’entrée est envoyé au modèle et peut orienter sa sortie (injection de prompt). Le texte provenant de sources externes, non vérifiées ou non nettoyées peut contenir des instructions qui amènent le modèle à renvoyer du contenu contrôlé par un attaquant, à ignorer le format demandé ou à émettre des payloads malveillants. Considérez la sortie des fonctions d’IA comme non fiable : validez-la ou nettoyez-la avant de l’utiliser dans des étapes ultérieures, telles que la construction de SQL, de commandes shell, de requêtes supplémentaires ou de décisions de contrôle d’accès.
+</Warning>
+
 Toutes les fonctions partagent une infrastructure commune qui fournit :
 
-* **Application des quotas** : limites par requête sur les tokens ([`ai_function_max_input_tokens_per_query`](/fr/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/fr/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) et sur les appels d’API ([`ai_function_max_api_calls_per_query`](/fr/reference/settings/session-settings#ai_function_max_api_calls_per_query)).
-* **Nouvelle tentative avec backoff** : les échecs temporaires sont réessayés ([`ai_function_max_retries`](/fr/reference/settings/session-settings#ai_function_max_retries)) avec un backoff exponentiel ([`ai_function_retry_initial_delay_ms`](/fr/reference/settings/session-settings#ai_function_retry_initial_delay_ms)).
+* **Application des quotas** : limites par requête sur les tokens ([`ai_function_max_input_tokens_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) et sur les appels d’API ([`ai_function_max_api_calls_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
+* **Nouvelle tentative avec backoff** : les échecs temporaires sont réessayés ([`ai_function_max_retries`](/fr/reference/settings/session-settings/ai-function#ai_function_max_retries)) avec un backoff exponentiel ([`ai_function_retry_initial_delay_ms`](/fr/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 
 <div id="configuration">
   ## Configuration
 </div>
 
-Les fonctions d’IA s’appuient sur une **collection nommée** qui stocke les identifiants du fournisseur et la configuration. Différentes collections nommées peuvent être créées et utilisées pour différentes fonctions ou différents appels de fonction. Par exemple, vous pouvez définir une collection nommée distincte pour les fonctions de texte (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`), et une autre pour la fonction `aiEmbed`, qui nécessite des points de terminaison différents et utilise généralement des modèles différents.
+Les fonctions d’IA s’appuient sur une **collection nommée** qui stocke les identifiants du fournisseur et la configuration. Différentes collections nommées peuvent être créées et utilisées pour différentes fonctions ou différents appels de fonction. Par exemple, vous pouvez définir une collection nommée distincte pour les fonctions de texte (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`), et une autre pour les fonctions d’embedding (`aiEmbed`, `aiSimilarity`), qui nécessitent des points de terminaison différents et utilisent généralement des modèles différents.
 
 Exemple d’instruction pour créer une collection nommée avec les identifiants du fournisseur, l’une avec un point de terminaison de chat et l’autre avec un point de terminaison d’embedding :
 
@@ -36,8 +40,9 @@ CREATE NAMED COLLECTION ai_text_credentials AS
     model = 'gpt-4o-mini',
     api_key = 'sk-...';
 
--- `aiEmbed` does not read `model` from the named collection; pass it as a positional argument instead.
--- Defining `model` in an `aiEmbed` collection is an error, not silently ignored.
+-- The embedding functions (`aiEmbed`, `aiSimilarity`) do not read `model` from the named collection,
+-- pass it as a positional argument instead. Defining `model` in an embedding collection is an error,
+-- not silently ignored.
 CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
@@ -48,14 +53,14 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
   ### Paramètres de la collection nommée
 </div>
 
-| Paramètre     | Type   | Par défaut | Description                                                                                                                                                                                                              |
-| ------------- | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `provider`    | String | —          | Fournisseur du modèle. Valeurs prises en charge : `'openai'`, `'anthropic'`. Voir la note ci-dessous.                                                                                                                    |
-| `endpoint`    | String | —          | URL du point de terminaison de l’API.                                                                                                                                                                                    |
-| `model`       | String | —          | Nom du modèle (par ex. `'gpt-4o-mini'`). Utilisé par les fonctions de texte ; `aiEmbed` nécessite `model` comme argument positionnel et génère une erreur si `model` est spécifié dans la collection nommée.             |
-| `api_key`     | String | —          | Clé d’authentification du fournisseur. Facultatif : si elle est omise, l’en-tête d’authentification n’est pas envoyé, ce qui permet de cibler des serveurs compatibles OpenAI qui ne nécessitent pas d’authentification. |
-| `max_tokens`  | UInt64 | `1024`     | Nombre maximal de tokens de sortie par appel d’API.                                                                                                                                                                      |
-| `api_version` | String | —          | Chaîne de version de l’API. Utilisée par Anthropic (`'2023-06-01'`).                                                                                                                                                     |
+| Paramètre     | Type   | Par défaut | Description                                                                                                                                                                                                                                                  |
+| ------------- | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `provider`    | String | —          | Fournisseur du modèle. Valeurs prises en charge : `'openai'`, `'anthropic'`. Voir la note ci-dessous.                                                                                                                                                        |
+| `endpoint`    | String | —          | URL du point de terminaison de l’API.                                                                                                                                                                                                                        |
+| `model`       | String | —          | Nom du modèle (par ex. `'gpt-4o-mini'`). Utilisé par les fonctions de texte ; les fonctions d’embedding (`aiEmbed`, `aiSimilarity`) nécessitent `model` comme argument positionnel et génèrent une erreur si `model` est spécifié dans la collection nommée. |
+| `api_key`     | String | —          | Clé d’authentification du fournisseur. Facultatif : si elle est omise, l’en-tête d’authentification n’est pas envoyé, ce qui permet de cibler des serveurs compatibles OpenAI qui ne nécessitent pas d’authentification.                                     |
+| `max_tokens`  | UInt64 | `1024`     | Nombre maximal de tokens de sortie par appel d’API.                                                                                                                                                                                                          |
+| `api_version` | String | —          | Chaîne de version de l’API. Utilisée par Anthropic (`'2023-06-01'`).                                                                                                                                                                                         |
 
 <Note>
   Toute API compatible OpenAI (par ex. vLLM, Ollama, LiteLLM) peut être utilisée en définissant `provider = 'openai'` et en pointant `endpoint` vers votre service.
@@ -68,9 +73,9 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 Une fonction détermine la collection nommée à utiliser dans l’ordre suivant :
 
 1. la clé `credentials` de sa map de paramètres, lorsqu’elle est présente ;
-2. sinon, le paramètre par défaut applicable pour les identifiants :
-   * [`ai_function_text_default_credentials`](/fr/reference/settings/session-settings#ai_function_text_default_credentials) pour les fonctions de texte (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) ;
-   * [`ai_function_embedding_default_credentials`](/fr/reference/settings/session-settings#ai_function_embedding_default_credentials) pour `aiEmbed`.
+2. sinon, le paramètre d’identifiant par défaut applicable :
+   * [`ai_function_text_default_credentials`](/fr/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) pour les fonctions de texte (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) ;
+   * [`ai_function_embedding_default_credentials`](/fr/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) pour les fonctions d’embedding (`aiEmbed`, `aiSimilarity`).
 
 Si aucun des deux n’est défini, l’appel échoue. Les fonctions de texte et d’embedding utilisent des paramètres par défaut distincts, car un point de terminaison de chat-completions diffère de celui des embeddings.
 
@@ -84,18 +89,25 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.');
 SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
 ```
 
+Filtrez les lignes à l’aide d’une condition en langage naturel avec `aiFilter`, qui renvoie un `UInt8` et peut être utilisée directement dans `WHERE` :
+
+```sql
+SELECT * FROM reviews
+WHERE aiFilter(body, 'the customer is angry about shipping');
+```
+
 <div id="parameter-map">
   ### Map de paramètres
 </div>
 
-Chaque fonction accepte, en dernier argument optionnel, une `Map(String, String)` de paramètres. Toutes les valeurs sont des chaînes de caractères (mettez les nombres entre apostrophes, par ex. `'0.2'`). Les clés inconnues sont rejetées. Une clé présente remplace la valeur correspondante de la collection nommée ; une clé absente se rabat sur la collection nommée (pour `model`/`max_tokens`) ou sur la valeur par défaut intégrée. L’exception est `aiEmbed`, qui prend `model` comme argument positionnel obligatoire (`aiEmbed(text, model[, params])`) et renvoie une erreur si celui-ci est défini à la place dans la map de paramètres ou la collection nommée.
+Chaque fonction accepte, en dernier argument optionnel, une `Map(String, String)` de paramètres. Toutes les valeurs sont des chaînes de caractères (mettez les nombres entre apostrophes, par ex. `'0.2'`). Les clés inconnues sont rejetées. Une clé présente remplace la valeur correspondante de la collection nommée ; une clé absente se rabat sur la collection nommée (pour `model`/`max_tokens`) ou sur la valeur par défaut intégrée. Les exceptions sont les fonctions d’embedding (`aiEmbed`, `aiSimilarity`), qui prennent `model` comme argument positionnel obligatoire (par ex. `aiEmbed(text, model[, params])`, `aiSimilarity(text1, text2, model[, params])`) et renvoient une erreur si celui-ci est défini à la place dans la map de paramètres ou la collection nommée. Cela permet de garantir des embeddings reproductibles.
 
 Les paramètres suivants sont communs à toutes les fonctions d’IA :
 
-| Clé           | Description                                                                                                                                                  |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `credentials` | Collection nommée à utiliser (voir ci-dessus).                                                                                                               |
-| `model`       | Remplace le `model` de la collection (fonctions de texte uniquement ; `aiEmbed` prend `model` comme argument positionnel obligatoire, pas comme clé de map). |
+| Clé           | Description                                                                                                                                                                                                 |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `credentials` | Collection nommée à utiliser (voir ci-dessus).                                                                                                                                                              |
+| `model`       | Remplace le `model` de la collection (fonctions de texte uniquement ; les fonctions d’embedding (`aiEmbed`, `aiSimilarity`) prennent `model` comme argument positionnel obligatoire, pas comme clé de map). |
 
 Certaines fonctions acceptent des paramètres supplémentaires qui leur sont propres (tels que `max_tokens`, `temperature`, `system_prompt`, `instructions` et `dimensions`). Consultez la référence de chaque fonction ci-dessous pour connaître les paramètres qu’elle accepte ainsi que leurs valeurs par défaut.
 
@@ -113,7 +125,7 @@ Tous les paramètres liés à l’IA sont répertoriés dans [Paramètres](/fr/r
   ### Restreindre les hôtes de point de terminaison
 </div>
 
-L’URL `endpoint` d’une collection nommée d’IA est une destination sortante à laquelle le serveur se connecte avec sa propre identité, en transmettant potentiellement (si elle est spécifiée) l’`api_key` de la collection nommée dans les en-têtes de requête. Par défaut, ClickHouse autorise n’importe quel hôte. Pour limiter les fonctions à un ensemble spécifique de fournisseurs, configurez [`remote_url_allow_hosts`](/fr/reference/settings/server-settings/settings#remote_url_allow_hosts) dans la configuration du serveur, par exemple :
+L’URL `endpoint` d’une collection nommée d’IA est une destination sortante à laquelle le serveur se connecte avec sa propre identité, en transmettant potentiellement (si elle est spécifiée) l’`api_key` de la collection nommée dans les en-têtes de requête. Par défaut, ClickHouse autorise n’importe quel hôte. Pour limiter les fonctions à un ensemble spécifique de fournisseurs, configurez [`remote_url_allow_hosts`](/fr/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) dans la configuration du serveur, par exemple :
 
 ```xml
 <remote_url_allow_hosts>
@@ -133,7 +145,7 @@ Le transport est déterminé uniquement par le schéma de l’URL `endpoint`. Il
 * `https://` — la connexion utilise TLS. Le corps de la requête (texte d’entrée, prompts) et l’`api_key` dans les en-têtes de la requête sont chiffrés en transit, et le certificat du fournisseur est validé. Utilisez cette option pour tout fournisseur distant.
 * `http://` — la connexion n’est **pas chiffrée**. Le corps de la requête et l’`api_key` sont envoyés en clair. Utilisez cette option uniquement pour un fournisseur de confiance sur un réseau privé (par exemple, une instance locale `vLLM` ou `Ollama`).
 
-Les fonctions d’IA n’imposent pas HTTPS : un point de terminaison `http://` est accepté et envoie les données sans chiffrement. Il n’existe actuellement aucun paramètre côté serveur qui rejette les points de terminaison d’IA en clair : [`remote_url_allow_hosts`](/fr/reference/settings/server-settings/settings#remote_url_allow_hosts) restreint uniquement l’hôte de destination et n’inspecte pas le schéma de l’URL, si bien qu’un point de terminaison `http://` vers un hôte autorisé est quand même accepté. Pour garantir un transport chiffré, configurez des named collections avec des points de terminaison `https://`.
+Par défaut, les fonctions d’IA rejettent un `endpoint` qui enverrait des données en clair à un hôte distant : tout point de terminaison non HTTPS dont l’hôte n’est pas une adresse de bouclage lève une exception. Les hôtes de bouclage (`localhost`, `127.0.0.0/8`, `::1`) sont exemptés, de sorte qu’un serveur de modèle local `http://localhost` fonctionne immédiatement. Pour autoriser un point de terminaison `http://` en clair sur un hôte distant, définissez [`ai_function_allow_insecure_endpoint`](/fr/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) sur `1`. Cette vérification est indépendante de [`remote_url_allow_hosts`](/fr/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) : ce paramètre est une liste d’hôtes autorisés et n’inspecte pas le schéma de l’URL, si bien qu’un point de terminaison `http://` pointant vers un hôte autorisé est quand même accepté.
 
 Notez que, dans les deux cas, le fournisseur reçoit les données d’entrée en clair après la terminaison TLS ; TLS protège les données uniquement sur le trajet réseau entre le serveur et le fournisseur.
 
@@ -189,13 +201,9 @@ Introduit dans : v26.4.0
 
 Classe le texte donné dans l’une des catégories fournies via un fournisseur de LLM.
 
-La fonction envoie le texte avec une invite de classification fixe et un format de réponse basé sur un schéma JSON,
-qui contraint le modèle à renvoyer exactement l’un des libellés fournis. Lorsque la réponse est renvoyée sous la forme d’un objet JSON
-de la forme `{"category": "..."}`, le libellé est extrait et sa chaîne de caractères est renvoyée.
-
 Les identifiants (une collection nommée spécifiant le fournisseur, le modèle, le point de terminaison et, éventuellement, une clé API)
-sont récupérés depuis la clé `credentials` de la map de paramètres optionnelle, ou depuis le paramètre `ai_function_text_default_credentials`
-lorsque la map l’omet.
+sont récupérés depuis la clé `credentials` de la map de paramètres optionnelle, ou depuis le paramètre
+`ai_function_text_default_credentials` lorsque la map l’omet.
 
 **Syntaxe**
 
@@ -243,10 +251,10 @@ Génère un vecteur d’embedding pour le texte donné à l’aide du fournisseu
 
 La fonction envoie le texte au point de terminaison d’embedding configuré et renvoie le vecteur obtenu sous la forme `Array(Float32)`.
 Dans un même block de rows, les entrées sont regroupées en batches de
-[`ai_function_embedding_max_batch_size`](/fr/reference/settings/session-settings#ai_function_embedding_max_batch_size)
-entrées maximum par HTTP request afin de réduire le surcoût de chaque appel.
+[`ai_function_embedding_max_batch_size`](/fr/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
+entrées maximum par requête HTTP afin de réduire le surcoût de chaque appel.
 
-Les identifiants (une collection nommée indiquant le provider, le point de terminaison et, éventuellement, une clé API)
+Les identifiants (une collection nommée indiquant le fournisseur, le point de terminaison et, éventuellement, une clé API)
 sont récupérées à partir de la clé `credentials` de la map de paramètres, ou du
 paramètre `ai_function_embedding_default_credentials` lorsque la map ne la contient pas. Notez que `aiEmbed` utilise un
 paramètre d’identifiant par défaut distinct de celui des fonctions de texte, car un point de terminaison d’embeddings diffère
@@ -254,7 +262,7 @@ d’un point de terminaison de chat.
 
 Le `model` est un argument positionnel obligatoire (un `String` constant). Contrairement aux fonctions de texte,
 `aiEmbed` ne lit pas `model` à partir de la collection nommée ni de la map de paramètres. Une collection nommée
-qui définit `model` est rejetée au lieu d’être ignorée silencieusement.
+qui définit `model` est rejetée.
 
 Le paramètre facultatif `dimensions`, lorsqu’il est pris en charge par le modèle (par exemple les `text-embedding-3-*` d’OpenAI),
 demande un vecteur de la taille indiquée ; sinon, la taille native du modèle est renvoyée.
@@ -264,6 +272,8 @@ demande un vecteur de la taille indiquée ; sinon, la taille native du modèle 
 ```sql
 aiEmbed(text, model[, params])
 ```
+
+**Alias** : `AIEmbed`
 
 **Arguments**
 
@@ -349,6 +359,58 @@ late and damaged package
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
+<div id="aiFilter">
+  ## aiFilter
+</div>
+
+Introduit dans : v26.8.0
+
+Évalue une condition en langage naturel sur le texte fourni à l’aide d’un fournisseur de LLM et renvoie une valeur booléenne (`UInt8`) utilisable dans `WHERE`, `PREWHERE` et `JOIN ... ON`.
+
+La fonction demande au modèle de répondre uniquement par `true` ou `false` en minuscules. Les requêtes échouées (lorsque
+`ai_function_throw_on_error` est désactivé) et les réponses non reconnues sont mappées sur `0`, de sorte que la ligne est filtrée.
+
+**Avertissement :** Ne vous fiez pas aux résultats d’`aiFilter` sans les examiner attentivement. Les prédicats basés sur des LLM peuvent être incorrects
+ou incohérents ; utilisez-les uniquement lorsque les faux positifs et les faux négatifs sont acceptables.
+
+Les identifiants (une collection nommée spécifiant le fournisseur, le modèle, le point de terminaison et, éventuellement, une clé API)
+sont extraits de la clé `credentials` de la map de paramètres facultative ou du paramètre
+`ai_function_text_default_credentials` lorsque la map ne la contient pas.
+
+Remarque : l’utilisation d’`aiFilter` dans `JOIN ... ON` évalue le LLM une fois par paire candidate et peut être coûteuse.
+
+**Syntaxe**
+
+```sql
+aiFilter(text, condition[, params])
+```
+
+**Alias** : `AIFilter`
+
+**Arguments**
+
+* `text` — Texte à évaluer. [`String`](/fr/reference/data-types/string)
+* `condition` — Condition constante, exprimée en langage naturel, à laquelle le texte doit répondre. [`String`](/fr/reference/data-types/string)
+* `params` — `Map(String, String)` constant facultatif de paramètres. Clés propres à la fonction : `temperature` (température d’échantillonnage contrôlant l’aléa ; valeur par défaut : `0.0`), `max_tokens` (nombre maximal de tokens de sortie par appel ; valeur par défaut : `1024`). Les paramètres communs `credentials` et `model` s’appliquent également (voir [Fonctions d’IA](/fr/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/fr/reference/data-types/map)
+
+**Valeur renvoyée**
+
+`1` si le texte répond à la condition, `0` sinon. Renvoie la valeur par défaut (`0`) si la requête échoue et que `ai_function_throw_on_error` est désactivé. [`UInt8`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Filtrer les avis négatifs**
+
+```sql title=Query
+SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
+```
+
+**Filtrer une colonne avec des identifiants explicites**
+
+```sql title=Query
+SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
+```
+
 <div id="aiGenerate">
   ## aiGenerate
 </div>
@@ -406,6 +468,134 @@ SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials'
 
 ```sql title=Query
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+```
+
+<div id="aiRedact">
+  ## aiRedact
+</div>
+
+Introduite dans : v26.8.0
+
+Détecte et masque les informations personnelles identifiables (PII) dans le texte fourni à l’aide d’un fournisseur de LLM.
+
+<Warning>
+  `aiRedact` détecte et masque les PII au mieux à l’aide d’un LLM, mais sa sortie n’est pas
+  fiable. La détection et la suppression des PII dépendent du modèle choisi, du prompt et de l’entrée : le
+  modèle peut ne pas détecter certains identifiants, ne les masquer que partiellement ou modifier le texte environnant. Il fonctionne mieux avec
+  du texte anglais bien rédigé ; les résultats peuvent être moins bons dans d’autres langues ou pour du texte comportant de nombreuses erreurs d’orthographe,
+  de ponctuation ou de grammaire. `aiRedact` ne garantit pas que sa sortie est exempte de PII et ne doit pas
+  être considéré, à lui seul, comme un mécanisme d’anonymisation sûr ou suffisant. Vérifiez toujours la sortie afin de vous assurer qu’elle
+  respecte les politiques de confidentialité et de conformité des données de votre organisation avant d’exposer des données à des tiers non fiables.
+</Warning>
+
+Chaque occurrence de PII détectée est remplacée par un jeton de masquage (`[REDACTED]` par défaut, configurable via le
+paramètre `replacement`). Le tableau `categories` limite les types de PII à masquer ; un tableau vide
+utilise un ensemble par défaut de catégories courantes (nom, e-mail, numéro de téléphone, adresse, carte de crédit, adresse IP).
+
+`aiRedact` demande au modèle de modifier uniquement les occurrences de PII détectées, mais la préservation du texte environnant reste
+approximative : le modèle peut tout de même le modifier (voir l’avertissement ci-dessus). Les caractères de contrôle autres que la tabulation,
+le saut de ligne et le retour chariot sont également remplacés par des espaces avant la requête ; la sortie n’est donc pas
+identique octet pour octet aux entrées qui en contiennent.
+
+Étant donné que `aiRedact` renvoie l’intégralité du texte d’entrée avec les PII remplacées, la sortie est environ aussi longue que l’entrée.
+Définissez `max_tokens` (valeur par défaut : `1024`) sur une valeur supérieure à la longueur de l’entrée en tokens ; une réponse tronquée en raison d’une limite trop basse
+sera incomplète.
+
+**Syntaxe**
+
+```sql
+aiRedact(text, categories[, params])
+```
+
+**Alias** : `AIRedact`
+
+**Arguments**
+
+* `text` — Texte à masquer. [`String`](/fr/reference/data-types/string)
+* `categories` — Liste constante de catégories d’informations personnelles identifiables à masquer (par ex. `['name', 'ssn', 'credit_card']`). Un tableau vide utilise un ensemble par défaut de catégories courantes (nom, e-mail, numéro de téléphone, adresse, carte de crédit, adresse IP). [`Array(String)`](/fr/reference/data-types/array)
+* `params` — `Map(String, String)` constant facultatif de paramètres. Clés spécifiques à la fonction : `temperature` (température d’échantillonnage contrôlant le caractère aléatoire ; valeur par défaut : `0.0`), `max_tokens` (nombre maximal de tokens de sortie par appel ; valeur par défaut : `1024` — comme `aiRedact` renvoie l’intégralité du texte, définissez cette valeur au-dessus de la longueur de l’entrée en tokens, faute de quoi la réponse risque d’être tronquée et incomplète), `replacement` (jeton qui remplace chaque span d’informations personnelles identifiables détecté ; valeur par défaut : `[REDACTED]`). Les paramètres communs `credentials` et `model` s’appliquent également (voir [Fonctions d’IA](/fr/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/fr/reference/data-types/map)
+
+**Valeur renvoyée**
+
+Le texte dans lequel les informations personnelles identifiables détectées sont remplacées par le jeton de masquage, ou la valeur par défaut du type de la colonne (chaîne vide) si la requête a échoué et que `ai_function_throw_on_error` est désactivé. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Masquer des catégories spécifiques**
+
+```sql title=Query
+SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
+```
+
+```response title=Response
+Purchase was done by customer [REDACTED] with email [REDACTED]
+```
+
+**Masquez les catégories d’IPI par défaut à l’aide d’un token personnalisé**
+
+```sql title=Query
+SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
+```
+
+<div id="aiSimilarity">
+  ## aiSimilarity
+</div>
+
+Introduite dans : v26.8.0
+
+Calcule la similarité sémantique entre deux textes à l’aide du fournisseur d’embeddings configuré.
+
+Calcule les embeddings vectoriels des deux textes et renvoie leur
+[similarité cosinus](https://en.wikipedia.org/wiki/Cosine_similarity). Un score de `-1` est attribué à des
+vecteurs d’embedding opposés ; sur le plan sémantique, cela signifie que les textes dont les scores approchent `-1` ont un sens opposé.
+Un score de `0` signifie que les vecteurs sont orthogonaux : ils ne sont pas liés sémantiquement. Enfin, un score de `1`
+signifie que les vecteurs d’embedding pointent dans la même direction ; les textes dont les scores approchent `1` ont un sens
+similaire. Il s’agit du complément de `cosineDistance` pour les mêmes embeddings
+(`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
+
+Le batching, les identifiants et le paramètre `dimensions` sont identiques à ceux d’`aiEmbed`, y compris le
+paramètre d’identifiant par défaut `ai_function_embedding_default_credentials`.
+
+Comme pour `aiEmbed`, `model` est un argument positionnel obligatoire (un `String` constant) et n’est pas lu depuis la
+collection nommée ni la map de paramètres.
+
+**Syntaxe**
+
+```sql
+aiSimilarity(text1, text2, model[, params])
+```
+
+**Alias** : `AISimilarity`
+
+**Arguments**
+
+* `text1` — Premier texte. [`String`](/fr/reference/data-types/string)
+* `text2` — Deuxième texte. [`String`](/fr/reference/data-types/string)
+* `model` — Nom du modèle d’embedding. [`const String`](/fr/reference/data-types/string)
+* `params` — `Map(String, String)` constant facultatif de paramètres. Clé propre à la fonction : `dimensions` (dimension cible des embeddings ; `0` ou l’absence de valeur utilise la taille native du modèle). Le paramètre commun `credentials` s’applique également (voir [Fonctions d’IA](/fr/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/fr/reference/data-types/map)
+
+**Valeur renvoyée**
+
+La similarité cosinus dans `[-1, 1]`, ou NULL si l’un des textes est NULL ou vide, si une requête d’embedding a échoué alors que `ai_function_throw_on_error` est désactivé, ou si un quota a été dépassé alors que `ai_function_throw_on_quota_exceeded` est désactivé. [`Nullable(Float32)`](/fr/reference/data-types/nullable)
+
+**Exemples**
+
+**Comparer deux chaînes (`credentials` peut être omis si le paramètre `ai_function_embedding_default_credentials` est défini)**
+
+```sql title=Query
+SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
+```
+
+**Classer les avis selon leur similarité avec une requête**
+
+```sql title=Query
+SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
+```
+
+**Déduplication sémantique via une auto-jointure**
+
+```sql title=Query
+SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
 <div id="aiTranslate">

@@ -1,0 +1,21 @@
+Skewed sum (compaction fires)
+1
+Skewed key that is also an argument
+1
+Skewed String argument
+1
+Skewed Nullable argument
+1
+Skewed constant argument
+1
+Skewed -If and -Array combinators and argMin (unique order column: ties are settled in processing order, which differs between the paths)
+1
+Skewed with threshold 0 and 1
+1
+1
+Uniform high-cardinality sum (every row staged)
+1
+Sparse argument is materialized at publish; dense and zero-argument aggregates share the gather
+1
+Analytic guard: skewed sum over numbers_mt
+20001	200000	19999900000

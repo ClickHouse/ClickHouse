@@ -370,6 +370,20 @@ bool SpillingHashJoin::alwaysReturnsEmptySet() const
     return chosen_join->alwaysReturnsEmptySet();
 }
 
+StepAnalysisReport SpillingHashJoin::getAnalysisReport() const
+{
+    /// This method always runs after the built phase, so in principal we could have
+    /// written it without this if statement. However, we keep it
+    /// for canonicity with the other accessors and safety in case the call order ever changes.
+    if (state.load(std::memory_order_acquire) == State::COLLECTING)
+    {
+        if (concurrent_join)
+            return concurrent_join->getAnalysisReport();
+        return hash_join->getAnalysisReport();
+    }
+    return chosen_join->getAnalysisReport();
+}
+
 bool SpillingHashJoin::supportParallelNonJoinedBlocksProcessing() const
 {
     return supports_parallel_non_joined_blocks_processing;

@@ -9,7 +9,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
 
 <SelfManaged />
 
-يُفعِّل [خيار SSL &#39;strict&#39;](/ar/reference/settings/server-settings/settings#openssl) التحقق الإلزامي من الشهادات للاتصالات الواردة. في هذه الحالة، لا يمكن إنشاء إلا الاتصالات التي تستخدم شهادات موثوقة. وستُرفَض الاتصالات التي تستخدم شهادات غير موثوقة. وبذلك، يتيح التحقق من الشهادات المصادقة الفريدة على الاتصال الوارد. ويُستخدَم الحقل `Common Name` أو `subjectAltName extension` في الشهادة لتحديد هوية المستخدم المتصل. كما يدعم `subjectAltName extension` استخدام محرف بديل واحد &#39;*&#39; في تكوين الخادم. وهذا يتيح ربط عدة شهادات بالمستخدم نفسه. بالإضافة إلى ذلك، فإن إعادة إصدار الشهادات وإبطالها لا يؤثران في تكوين ClickHouse.
+يُفعِّل [خيار SSL &#39;strict&#39;](/ar/reference/settings/server-settings/settings/other#openssl) التحقق الإلزامي من الشهادات للاتصالات الواردة. في هذه الحالة، لا يمكن إنشاء إلا الاتصالات التي تستخدم شهادات موثوقة. وستُرفَض الاتصالات التي تستخدم شهادات غير موثوقة. وبذلك، يتيح التحقق من الشهادات المصادقة الفريدة على الاتصال الوارد. ويُستخدَم الحقل `Common Name` أو `subjectAltName extension` في الشهادة لتحديد هوية المستخدم المتصل. كما يدعم `subjectAltName extension` استخدام محرف بديل واحد &#39;*&#39; في تكوين الخادم. وهذا يتيح ربط عدة شهادات بالمستخدم نفسه. بالإضافة إلى ذلك، فإن إعادة إصدار الشهادات وإبطالها لا يؤثران في تكوين ClickHouse.
 
 لتمكين المصادقة باستخدام شهادة SSL، يجب تحديد قائمة من قيم `Common Name` أو `Subject Alt Name` لكل مستخدم في ClickHouse في ملف الإعدادات `users.xml `:
 
@@ -44,4 +44,4 @@ import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
 </clickhouse>
 ```
 
-لكي تعمل [`سلسلة الثقة`](https://en.wikipedia.org/wiki/Chain_of_trust) في SSL كما ينبغي، من المهم أيضًا التأكد من ضبط المعلمة [`caConfig`](/ar/reference/settings/server-settings/settings#openssl) على النحو الصحيح.
+لكي تعمل [`سلسلة الثقة`](https://en.wikipedia.org/wiki/Chain_of_trust) في SSL كما ينبغي، من المهم أيضًا التأكد من ضبط المعلمة [`caConfig`](/ar/reference/settings/server-settings/settings/other#openssl) على النحو الصحيح.

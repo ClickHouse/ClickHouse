@@ -141,6 +141,14 @@ def test_url_reconnect(started_cluster):
             "insert into table function hdfs('hdfs://hdfs1:9000/storage_big', 'TSV', 'id Int32') select number from numbers(500000)"
         )
 
+        # The earlier tests in this module leave keep-alive connections to the
+        # datanode web port in the HTTP connection pool. A silent DROP kills
+        # such an already established connection only by the receive timeout
+        # (`http_receive_timeout`, 30 seconds by default) instead of by the
+        # one-second connect timeout, which is what this test waits for below.
+        # Drop the cache so that the query has to open a fresh connection.
+        node1.query("system drop connections cache")
+
         # `PartitionManager` executes iptables inside the container now, so block the
         # outgoing connections to the datanode web port with a silent DROP: the client
         # then observes connect timeouts (asserted below) and retries.
@@ -172,7 +180,10 @@ def test_url_reconnect(started_cluster):
         # attempt), then let a retry succeed. A fixed sleep is racy on a
         # loaded runner: the query may reach its first connect attempt only
         # after the rule is already deleted, timing out nothing.
-        for _ in range(60):
+        # The first attempt times out after a second, but a loaded runner can
+        # be slow to even start the query, so keep the budget generous - the
+        # loop exits as soon as the line shows up.
+        for _ in range(120):
             if int(node1.count_in_log("connect timed out")) > timeouts_before:
                 break
             time.sleep(0.5)
