@@ -149,6 +149,7 @@
       "group": "الأدلة",
       "pages": [
         {
+          "expanded": true,
           "group": "إدخال البيانات",
           "pages": [
             "ar/clickstack/ingesting-data/index",
