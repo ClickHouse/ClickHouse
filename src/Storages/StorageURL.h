@@ -44,6 +44,8 @@ using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResourc
 class IStorageURLBase : public IStorage
 {
 public:
+    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override;
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,

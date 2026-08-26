@@ -135,6 +135,7 @@ namespace
         res.type = PrometheusRequestHandlerConfig::Type::Write;
         parseTableNameFromConfig(config, config_prefix, res);
         parseCommonConfig(config, res);
+        parseUserFromConfig(config, config_prefix, res);
         return res;
     }
 
@@ -297,7 +298,8 @@ namespace
         const Poco::Util::AbstractConfiguration & config,
         const AsynchronousMetrics & asynchronous_metrics,
         const String & name,
-        bool for_keeper)
+        bool for_keeper,
+        const std::optional<String> & default_session_user = {})
     {
         auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
 
@@ -309,6 +311,7 @@ namespace
             {
                 String prefix = "prometheus.handlers." + key;
                 auto parsed_config = parseHandlerConfig(config, prefix + ".handler");
+                parsed_config.connection_config.default_session_user = default_session_user;
                 if (auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, for_keeper))
                 {
                     handler->addFiltersFromConfig(config, prefix);
@@ -319,6 +322,7 @@ namespace
         else
         {
             auto parsed_config = parseMetricsConfig(config, "prometheus");
+            parsed_config.connection_config.default_session_user = default_session_user;
             if (auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, for_keeper))
             {
                 String endpoint = config.getString("prometheus.endpoint", "/metrics");
@@ -338,9 +342,10 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const AsynchronousMetrics & asynchronous_metrics,
-    const String & name)
+    const String & name,
+    const std::optional<String> & default_session_user)
 {
-    return createPrometheusHandlerFactoryImpl(server, config, asynchronous_metrics, name, /* for_keeper= */ false);
+    return createPrometheusHandlerFactoryImpl(server, config, asynchronous_metrics, name, /* for_keeper= */ false, default_session_user);
 }
 
 
@@ -349,13 +354,15 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     const AsynchronousMetrics & asynchronous_metrics,
-    std::unordered_map<String, String> & common_headers)
+    std::unordered_map<String, String> & common_headers,
+    const std::optional<String> & default_session_user)
 {
     auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, common_headers);
 
     const String handler_config_prefix = config_prefix + ".handler";
 
     PrometheusRequestHandlerConfig parsed_config = parseHandlerConfig(config, handler_config_prefix);
+    parsed_config.connection_config.default_session_user = default_session_user;
 
     auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false, headers);
     chassert(handler);  /// `handler` can't be nullptr here because `for_keeper` is false.
@@ -367,7 +374,8 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRuleDefaults(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const AsynchronousMetrics & asynchronous_metrics)
+    const AsynchronousMetrics & asynchronous_metrics,
+    const std::optional<String> & default_session_user)
 {
     /// The "defaults" HTTP handler should serve the prometheus exposing metrics protocol on the http port
     /// only if it isn't already served on its own port <prometheus.port> and if there is no <prometheus.handlers> section.
@@ -375,6 +383,7 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRuleDefaults(
         return nullptr;
 
     auto parsed_config = parseMetricsConfig(config, "prometheus");
+    parsed_config.connection_config.default_session_user = default_session_user;
     String endpoint = config.getString("prometheus.endpoint", "/metrics");
     auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false);
     chassert(handler);  /// `handler` can't be nullptr here because `for_keeper` is false.
@@ -388,9 +397,10 @@ HTTPRequestHandlerFactoryPtr createKeeperPrometheusHandlerFactory(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const AsynchronousMetrics & asynchronous_metrics,
-    const String & name)
+    const String & name,
+    const std::optional<String> & default_session_user)
 {
-    return createPrometheusHandlerFactoryImpl(server, config, asynchronous_metrics, name, /* for_keeper= */ true);
+    return createPrometheusHandlerFactoryImpl(server, config, asynchronous_metrics, name, /* for_keeper= */ true, default_session_user);
 }
 
 }

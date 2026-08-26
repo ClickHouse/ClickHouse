@@ -103,8 +103,8 @@
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/Common.h>
-#include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
-#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
+#include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
+#include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -145,6 +145,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
+#include <Common/formatReadable.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -13027,14 +13028,9 @@ bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
         local_parts[part->info.getPartitionId()].push_back(part->info);
 
     auto promoters = buildPromoters();
-
     bool any_enriched = false;
     for (auto & subscription : subscriptions)
-    {
-        auto & bounds_subscription = *subscription->as<MergeTreeBoundsSubscription>();
-        any_enriched |= enrichSubscription(bounds_subscription, local_parts, promoters);
-        bounds_subscription.onEnrichmentRound();
-    }
+        any_enriched |= enrichSubscription(*subscription->as<MergeTreeBoundsSubscription>(), local_parts, promoters);
 
     if (any_enriched)
         assignee.trigger();
