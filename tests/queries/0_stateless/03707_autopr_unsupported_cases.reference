@@ -1,1 +1,5 @@
-0
+supported_aggregation	1	1
+unsupported_aggregation_over_aggregation	0	0
+unsupported_join	0	0
+unsupported_min_answered_from_index	0	0
+unsupported_union_all	0	0
