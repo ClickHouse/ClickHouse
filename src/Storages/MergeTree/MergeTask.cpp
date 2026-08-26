@@ -1053,6 +1053,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         for (const auto & part : global_ctx->future_part->parts)
         {
+            /// A finished table TTL was computed on a completely expired part, so the flag
+            /// proves expiry on its own: updatePartMinMaxTTL skips finished infos, leaving
+            /// table_ttl.min and part_max_ttl at 0, and checkAllTTLCalculated below would
+            /// reject such a part for min == 0 before it could be accepted.
+            if (part->ttl_infos.table_ttl.finished())
+                continue;
             /// A part written before the TTL was declared carries no usable TTL metadata.
             if (!part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
                 return false;
