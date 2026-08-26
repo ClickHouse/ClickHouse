@@ -7,6 +7,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <Common/PortUtils.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/getMultipleKeysFromConfig.h>
@@ -730,12 +731,21 @@ ExchangeLookupPtr createExchangeLookup(
             "set it, force `distributed_plan_force_exchange_kind = 'Persisted'`, or enable "
             "`distributed_plan_execute_locally` for in-process testing");
 
-    /// A task from an older initiator (version 1) ships no per-stream ports; fall back to this
-    /// node's configured exchange port to preserve the previous single-port behavior.
+    /// A task from an older initiator (version 1) ships no per-stream ports; fall back to the
+    /// configured exchange port to preserve the previous single-port behavior. The endpoint
+    /// belongs to another worker, so this fallback is only correct for a uniformly configured
+    /// cluster - and under that assumption the peer bound `streaming_exchange_port + port_offset`,
+    /// exactly like this node does, so the local offset is applied here as well. A cluster where
+    /// nodes use different offsets must advertise each worker's `streaming_exchange_port`
+    /// explicitly in the cluster configuration; it cannot be derived from the local config.
+    const auto peer_exchange_port = applyPortOffset(
+        static_cast<UInt16>(streaming_exchange_port),
+        static_cast<Int32>(context->getConfigRef().getInt64("port_offset", 0)));
+
     ExchangeStreamSources sources_with_ports = exchange_stream_sources;
     for (auto & [stream, address] : sources_with_ports.stream_hosts)
         if (address.port == 0)
-            address.port = static_cast<UInt16>(streaming_exchange_port);
+            address.port = peer_exchange_port;
 
     auto streaming_exchanges = createStreamingExchangeLookup(
         query_id, ExchangeConnections::instance(), sources_with_ports);
@@ -1110,9 +1120,20 @@ static WorkerAddress resolveWorkerAddress(
     if (server_level_exchange_port > 65535)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
             "`distributed_query.streaming_exchange_port` must be in range 0..65535, got {}", server_level_exchange_port);
+    /// The server-level fallback describes this node's own configuration, so it only matches the
+    /// worker in a uniformly configured cluster. Under that assumption the worker bound
+    /// `streaming_exchange_port + port_offset` (see `Server.cpp`), so the local offset is applied
+    /// to the fallback as well - keying the behavior off the initiator's offset alone would
+    /// misroute both a shifted initiator talking to shifted workers and an unshifted initiator
+    /// talking to shifted ones. A cluster whose nodes use different offsets cannot be resolved
+    /// from the local configuration at all: there, every worker must advertise its actual
+    /// `streaming_exchange_port` in the cluster entry.
+    const Int32 port_offset = static_cast<Int32>(
+        context->getConfigRef().getInt64("port_offset", 0));
+
     address.streaming_exchange_port = cluster_streaming_exchange_port != 0
         ? cluster_streaming_exchange_port
-        : static_cast<UInt16>(server_level_exchange_port);
+        : applyPortOffset(static_cast<UInt16>(server_level_exchange_port), port_offset);
 
     /// Fall back to the global client port, then the interserver port (read lazily, since
     /// getInterserverIOAddress throws when unconfigured, so an explicit per-node port avoids it).

@@ -1820,6 +1820,35 @@ The server will not exit if IPv6 or IPv4 networks are unavailable while trying t
 <listen_try>0</listen_try>
 ```
 )", 0) \
+    DECLARE(Int32, port_offset, 0, R"(
+Offset applied to all configured server ports. This allows shifting port numbers without
+modifying individual port configurations. Can be positive or negative. The resulting port
+must be in range 1-65535, otherwise the server will refuse to start.
+A port configured as `0` (an OS-assigned, ephemeral port) is never offset. An explicit
+client-side `port` setting (for example `--port` of `clickhouse-client`) is not affected.
+
+The offset applies to the ports this server *listens* on, and to the addresses it advertises
+to its peers (cluster discovery, distributed DDL host IDs, replica endpoints, `tcpPort`).
+It is not applied to the default port used to *connect* to other ClickHouse servers when a
+query or configuration omits one - `remote`, `ENGINE = Remote` and ClickHouse dictionary
+sources keep defaulting to the configured `tcp_port` / `tcp_port_secure`, since the
+destination is a different server whose offset is unknown.
+
+Ports of remote servers are derived from the local configuration only where the cluster
+entry does not specify them, which assumes a uniformly configured cluster. In a cluster
+where nodes use different offsets, configure the actual port of every node explicitly - for
+stateless-worker distributed plans, each worker's shifted `streaming_exchange_port` in the
+worker cluster configuration.
+
+**Example**
+
+With `<port_offset>100</port_offset>`, `tcp_port=9000` will listen on port 9100.
+With `<port_offset>-5</port_offset>`, `http_port=8123` will listen on port 8118.
+
+```xml
+<port_offset>0</port_offset>
+```
+)", 0) \
     DECLARE(Bool, mysql_require_secure_transport, false, R"(If set to true, secure communication is required with clients over [mysql_port](/reference/settings/server-settings/settings/mysql#mysql_port). Connection with option `<--ssl-mode=none>` will be refused. Use it with [OpenSSL](/reference/settings/server-settings/settings/other#openssl) settings.)", 0) \
     DECLARE(Bool, postgresql_require_secure_transport, false, R"(If set to true, secure communication is required with clients over [postgresql_port](/reference/settings/server-settings/settings/postgresql#postgresql_port). Connection with option `<sslmode=disable>` will be refused. Use it with [OpenSSL](/reference/settings/server-settings/settings/other#openssl) settings.)", 0) \
     DECLARE(Bool, skip_check_for_incorrect_settings, false, R"(

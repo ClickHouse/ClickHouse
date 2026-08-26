@@ -21,6 +21,8 @@ using CreateServerFunc = std::function<ProtocolServerAdapter(UInt16)>;
 
 /// Try to create and optionally start a protocol server for the given listen_host / port_name pair.
 /// Handles duplicate detection, config lookup, and listen_try fallback.
+/// `port_offset` (0 by default) shifts the configured port by a fixed amount, allowing all server
+/// ports to be moved together; an unset / OS-assigned (`0`) port is never offset.
 /// Returns true if a new server was actually added.
 bool createServer(
     const Poco::Util::AbstractConfiguration & config,
@@ -30,6 +32,7 @@ bool createServer(
     bool start_server,
     std::vector<ProtocolServerAdapter> & servers,
     CreateServerFunc && func,
-    LoggerRawPtr log);
+    LoggerRawPtr log,
+    Int32 port_offset = 0);
 
 }

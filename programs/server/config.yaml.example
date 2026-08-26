@@ -62,6 +62,14 @@ http_port: 8123
 # See also 'tcp_port_secure' for secure connections.
 tcp_port: 9000
 
+# Offset for all listening ports (TCP, HTTP, Interserver, Keeper, etc.).
+# This is useful for running multiple ClickHouse instances on the same host.
+# For example, if port_offset is 100, tcp_port 9000 becomes 9100.
+# The offset can be positive or negative.
+# If any port number with offset goes out of valid range (1-65535),
+# the server will throw an exception and refuse to start.
+# port_offset: 0
+
 # Compatibility with MySQL protocol.
 # ClickHouse will pretend to be MySQL for applications connecting to this port.
 mysql_port: 9004

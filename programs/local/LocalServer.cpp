@@ -148,6 +148,7 @@ namespace ServerSetting
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
+    extern const ServerSettingsInt32 port_offset;
     extern const ServerSettingsUInt64 point_in_polygon_cache_size;
     extern const ServerSettingsString vector_similarity_index_cache_policy;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
@@ -776,6 +777,11 @@ void LocalServer::startServers(const ServerType & server_type)
     /// registry pointing at a port whose listener was just closed.
     const size_t servers_started_before = servers.size();
     std::vector<std::pair<const char *, UInt16>> ports_to_register;
+
+    /// Apply the same `port_offset` as `clickhouse-server`, so the listeners bind the shifted ports
+    /// and stay consistent with the embedded client, which derives its port through
+    /// `ConnectionParameters::getPortFromConfig` (that helper applies `port_offset` too).
+    const Int32 port_offset = server_settings[ServerSetting::port_offset];
     try
     {
         for (const auto & listen_host : listen_hosts)
@@ -803,7 +809,7 @@ void LocalServer::startServers(const ServerType & server_type)
                             *server_pool,
                             socket,
                             params));
-                }, &logger()))
+                }, &logger(), port_offset))
                     ports_to_register.emplace_back(port_name, servers.back().portNumber());
             }
 
@@ -830,7 +836,7 @@ void LocalServer::startServers(const ServerType & server_type)
                             /* connection_filter= */ nullptr,
                             ProfileEvents::InterfaceHTTPReceiveBytes,
                             ProfileEvents::InterfaceHTTPSendBytes));
-                }, &logger()))
+                }, &logger(), port_offset))
                     ports_to_register.emplace_back(port_name, servers.back().portNumber());
             }
         }

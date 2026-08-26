@@ -36,6 +36,7 @@
 #include <Common/isLocalAddress.h>
 #include <Common/ConcurrencyControl.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
+#include <Common/PortUtils.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
@@ -6422,6 +6423,21 @@ std::optional<UInt16> Context::getTCPPortSecure() const
     if (config.has("tcp_port_secure"))
         return config.getInt("tcp_port_secure");
     return {};
+}
+
+UInt16 Context::getBoundTCPPort() const
+{
+    const auto & config = getConfigRef();
+    return applyPortOffset(getTCPPort(), static_cast<Int32>(config.getInt64("port_offset", 0)));
+}
+
+std::optional<UInt16> Context::getBoundTCPPortSecure() const
+{
+    const auto & config = getConfigRef();
+    auto port = getTCPPortSecure();
+    if (!port)
+        return {};
+    return applyPortOffset(*port, static_cast<Int32>(config.getInt64("port_offset", 0)));
 }
 
 void Context::registerServerPort(String port_name, UInt16 port)

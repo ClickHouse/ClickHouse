@@ -3,6 +3,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/formatReadable.h>
+#include <Common/PortUtils.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DNSCacheUpdater.h>
@@ -130,10 +131,15 @@ void Keeper::createServer(const std::string & listen_host, const char * port_nam
     if (!config().has(port_name))
         return;
 
-    auto port = config().getInt(port_name);
+    const auto configured_port = config().getInt(port_name);
+    /// Shift the configured port by `port_offset` (0 by default), matching `clickhouse-server` and the
+    /// Raft endpoint handling in `KeeperStateManager`, so all listeners of a standalone keeper move
+    /// together. An unset / OS-assigned (`0`) port is never offset.
+    const Int32 port_offset = static_cast<Int32>(config().getInt64("port_offset", 0));
+    const UInt16 port = applyPortOffset(static_cast<UInt16>(configured_port), port_offset);
     try
     {
-        func(static_cast<UInt16>(port));
+        func(port);
     }
     catch (const Poco::Exception &)
     {

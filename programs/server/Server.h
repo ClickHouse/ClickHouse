@@ -100,6 +100,7 @@ private:
         const char * port_name,
         bool listen_try,
         bool start_server,
+        const ServerSettings & server_settings,
         std::vector<ProtocolServerAdapter> & servers,
         CreateServerFunc && func) const;
 

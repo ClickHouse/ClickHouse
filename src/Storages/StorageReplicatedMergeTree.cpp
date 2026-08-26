@@ -9985,7 +9985,7 @@ ReplicatedMergeTreeAddress StorageReplicatedMergeTree::getReplicatedMergeTreeAdd
     ReplicatedMergeTreeAddress res;
     res.host = host_port.first;
     res.replication_port = host_port.second;
-    res.queries_port = getContext()->getTCPPort();
+    res.queries_port = getContext()->getBoundTCPPort();
     res.database = table_id.database_name;
     res.table = table_id.table_name;
     res.scheme = getContext()->getInterserverScheme();

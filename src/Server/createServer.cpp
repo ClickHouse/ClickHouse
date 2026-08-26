@@ -5,6 +5,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/PortUtils.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -24,7 +25,8 @@ bool createServer(
     bool start_server,
     std::vector<ProtocolServerAdapter> & servers,
     CreateServerFunc && func,
-    LoggerRawPtr log)
+    LoggerRawPtr log,
+    Int32 port_offset)
 {
     /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
     if (config.getString(port_name, "").empty())
@@ -37,16 +39,23 @@ bool createServer(
             return false;
     }
 
-    auto port = config.getInt(port_name);
+    const auto configured_port = config.getInt(port_name);
+    /// Shift the configured port by `port_offset` (0 by default). An unset / OS-assigned (`0`) port is
+    /// left untouched so `tcp_port=0` still binds an ephemeral port instead of `port_offset`.
+    const UInt16 port = applyPortOffset(static_cast<UInt16>(configured_port), port_offset);
     try
     {
-        servers.push_back(func(static_cast<UInt16>(port)));
+        servers.push_back(func(port));
         try
         {
             if (start_server)
             {
                 servers.back().start();
-                LOG_INFO(log, "Listening for {}", servers.back().getDescription());
+                if (port_offset != 0 && configured_port != 0)
+                    LOG_INFO(log, "Listening for {} (configured port {} + offset {} = {})",
+                        servers.back().getDescription(), configured_port, port_offset, port);
+                else
+                    LOG_INFO(log, "Listening for {}", servers.back().getDescription());
             }
             return true;
         }
