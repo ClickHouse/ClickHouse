@@ -239,6 +239,17 @@ static ASTSelectQuery & getSelectQuery(ASTPtr ast)
     return ast->as<ASTSelectQuery &>();
 }
 
+/// True if a value of this type may contain a `UUID2` leaf, whose raw `Field` does not round trip
+/// through literal formatting (it shares `Field::Types::UUID` with the historical `UUID`).
+bool typeMayContainUUID2(const IDataType & type)
+{
+    bool result = false;
+    auto check = [&](const IDataType & nested) { result |= WhichDataType(nested).isUUID2(); };
+    check(type);
+    type.forEachChild(check);
+    return result;
+}
+
 /// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
 /// It should not be needed after we send a full plan for distributed queries.
 ASTPtr tryBuildAdditionalFilterAST(
@@ -292,15 +303,27 @@ ASTPtr tryBuildAdditionalFilterAST(
 
         if (node->column)
         {
-            /// getFieldFromColumnForASTLiteral (rather than the raw Field) is required for types whose
-            /// literal does not round trip through formatting, e.g. `UUID2` shares the `Field`
-            /// representation with `UUID` but a literal is always formatted with `UUID` semantics, so the
-            /// remote shard would reparse a different value from `_CAST(<literal>, 'UUID2')`. The helper
-            /// serializes such types as canonical text instead.
-            auto literal = make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node->column, 0, node->result_type));
+            ASTPtr literal;
+            if (typeMayContainDecimal(*node->result_type))
+                /// Serialize decimal-backed constants (Decimal/DateTime64/Time64, incl. nested) exactly so
+                /// the shard does not re-parse them through Float64 or DateTime64 text heuristics.
+                literal = columnConstantToExactLiteralAST(node->column, 0, node->result_type);
+            else if (typeMayContainUUID2(*node->result_type))
+                /// `UUID2` shares the `Field` representation with `UUID` but a literal is always formatted
+                /// with `UUID` semantics, so the remote shard would reparse a different value from
+                /// `_CAST(<literal>, 'UUID2')`. `getFieldFromColumnForASTLiteral` serializes such a value as
+                /// canonical text instead.
+                literal = make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node->column, 0, node->result_type));
+            else
+                /// Other types keep their raw Field literal. In particular a DateTime serialized as local
+                /// date-time text would be ambiguous across DST overlaps in non-UTC time zones (two instants
+                /// share one text, and parsing picks one side), whereas the raw Unix-timestamp literal is exact.
+                literal = make_intrusive<ASTLiteral>(node->column->getField());
             /// Need to enforce type of the literal, because some type is not comparable to its native type
             /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
-            auto casted_literal = makeASTFunction("_CAST", literal, make_intrusive<ASTLiteral>(node->result_type->getName()));
+            /// makeCastToTypeNameAST skips the wrap when the exact serialization already cast the value to
+            /// the result type (scalar Decimal/DateTime64/Time64), avoiding a redundant identity cast.
+            auto casted_literal = makeCastToTypeNameAST(std::move(literal), node->result_type->getName());
             node_to_ast[node] = std::move(casted_literal);
             stack.pop();
             continue;

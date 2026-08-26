@@ -10,6 +10,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -2123,20 +2124,26 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
         }
     }
 
+    /// A map with Enum keys can be indexed by the name of an enum value, e.g. `m['name']`.
+    /// Cast the index to the key type, so it is matched by the numeric value of the enum.
+    ColumnPtr index_column = key_argument.column;
+    if (isEnum(type_map.getKeyType()) && isStringOrFixedString(removeLowCardinality(key_argument.type)))
+        index_column = castColumn(key_argument, type_map.getKeyType());
+
     /// At first step calculate indices in array of values for requested keys.
     auto indices_column = DataTypeNumber<UInt64>().createColumn();
     indices_column->reserve(input_rows_count);
     auto & indices_data = assert_cast<ColumnVector<UInt64> &>(*indices_column).getData();
 
     bool executed = false;
-    if (!isColumnConst(*key_argument.column))
+    if (!isColumnConst(*index_column))
     {
-        executed = matchKeyToIndexNumber(keys_data, offsets, !!col_const_map, *key_argument.column, indices_data)
-            || matchKeyToIndexString(keys_data, offsets, !!col_const_map, *key_argument.column, indices_data);
+        executed = matchKeyToIndexNumber(keys_data, offsets, !!col_const_map, *index_column, indices_data)
+            || matchKeyToIndexString(keys_data, offsets, !!col_const_map, *index_column, indices_data);
     }
     else
     {
-        Field index = (*key_argument.column)[0];
+        Field index = (*index_column)[0];
         executed = matchKeyToIndexNumberConst(keys_data, offsets, index, indices_data)
             || matchKeyToIndexStringConst(keys_data, offsets, index, indices_data);
     }
@@ -3312,7 +3319,7 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
     FunctionDocumentation::Examples examples_null = {
         {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
-        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "NULL"},
+        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "\\N"},
         {"Array of indices", "SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])", "[10,NULL,20]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_null = {1, 1};

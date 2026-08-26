@@ -307,7 +307,16 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
 
     /// Verify that the constant value is compatible with the map's key type.
     if (!tmp_key_column->tryInsert(key_value))
-        return;
+    {
+        /// A map with Enum keys can also be indexed by the name of the enum value,
+        /// so convert the name to the numeric value of the enum.
+        if (!isEnum(key_type) || key_value.getType() != Field::Types::String)
+            return;
+
+        Field enum_value = tryConvertFieldToType(key_value, *key_type);
+        if (enum_value.isNull() || !tmp_key_column->tryInsert(enum_value))
+            return;
+    }
 
     /// Serialize the key to its text representation to construct the subcolumn name,
     /// e.g. the string key "foo" becomes the subcolumn suffix "key_foo".

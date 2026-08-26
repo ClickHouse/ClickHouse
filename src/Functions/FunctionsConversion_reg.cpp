@@ -707,9 +707,11 @@ toBFloat16('42.7')
 FORMAT Vertical;
         )",
         R"(
-toBFloat16(toFloat32(42.7)): 42.5
-toBFloat16(t⋯32('42.7')):    42.5
-toBFloat16('42.7'):          42.5
+Row 1:
+──────
+toBFloat16(toFloat32(42.7)):   42.5
+toBFloat16(toFloat32('42.7')): 42.5
+toBFloat16('42.7'):            42.5
         )"
     }
     };
@@ -861,11 +863,11 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-a:      2.0
+a:      2
 type_a: Decimal(18, 1)
-b:      4.20
+b:      4.2
 type_b: Decimal(18, 2)
-c:      4.200
+c:      4.2
 type_c: Decimal(18, 3)
         )"
     }
@@ -1132,7 +1134,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-value:           2025-01-01
+value:             2025-01-01
 toTypeName(value): Date32
         )"
     },
@@ -1145,7 +1147,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-value:           1899-01-01
+value:             1899-01-01
 toTypeName(value): Date32
         )"
     }
@@ -1377,9 +1379,9 @@ Converts an input value to a value of type [`DateTime64`](/reference/data-types/
 SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00.000', 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
         )"
     },
     {
@@ -1390,9 +1392,12 @@ SELECT toDateTime64(1546300800.000, 3) AS value, toTypeName(value);
 SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
-│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
-└─────────────────────────┴────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2019-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 9999-12-31 23:59:59.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
         )"
     },
     {
@@ -1401,9 +1406,9 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)──────────────┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul') │
+└─────────────────────────┴────────────────────────────────┘
         )"
     }
     };
@@ -1429,7 +1434,7 @@ Converts a String value to a UUID value.
 SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
         )",
         R"(
-┌─────────────────────────────────uuid─┐
+┌─uuid─────────────────────────────────┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
         )"
@@ -1986,7 +1991,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-toInt8OrZero('8'): 8
+toInt8OrZero('8'):   8
 toInt8OrZero('abc'): 0
         )"
     }
@@ -2035,7 +2040,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-toInt16OrZero('16'): 16
+toInt16OrZero('16'):  16
 toInt16OrZero('abc'): 0
         )"
     }
@@ -2084,7 +2089,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-toInt32OrZero('32'): 32
+toInt32OrZero('32'):  32
 toInt32OrZero('abc'): 0
         )"
     }
@@ -2248,11 +2253,9 @@ SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
        toBFloat16OrZero('12.3'), -- typical use
        toBFloat16OrZero('12.3456789') -- silent loss of precision
         )",
-        R"(
-0
-12.25
-12.3125
-        )"
+        R"DOCS_MD(
+0	12.25	12.3125
+        )DOCS_MD"
     }
     };
     FunctionDocumentation::IntroducedIn toBFloat16OrZero_introduced_in = {1, 1};
@@ -2558,7 +2561,7 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal32OrZero('42.7', 2)─┬─toDecimal32OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
@@ -2605,7 +2608,7 @@ SELECT toDecimal64OrZero('42.7', 2), toDecimal64OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal64OrZero('42.7', 2)─┬─toDecimal64OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
@@ -2647,7 +2650,7 @@ SELECT toDecimal128OrZero('42.7', 2), toDecimal128OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal128OrZero('42.7', 2)─┬─toDecimal128OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
@@ -2694,7 +2697,7 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal256OrZero('42.7', 2)─┬─toDecimal256OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
@@ -2830,9 +2833,9 @@ SELECT
     toIPv6OrZero('invalid::ip') AS invalid_ipv6
         )",
         R"(
-┌─valid_ipv6──────────────────────────┬─invalid_ipv6─┐
-│ 2001:db8:85a3::8a2e:370:7334        │ ::           │
-└─────────────────────────────────────┴──────────────┘
+┌─valid_ipv6───────────────────┬─invalid_ipv6─┐
+│ 2001:db8:85a3::8a2e:370:7334 │ ::           │
+└──────────────────────────────┴──────────────┘
         )"
     }
     };
@@ -2882,7 +2885,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt8OrNull('42'):  42
-toUInt8OrNull('abc'): \N
+toUInt8OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -2932,7 +2935,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt16OrNull('16'):  16
-toUInt16OrNull('abc'): \N
+toUInt16OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -2982,7 +2985,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt32OrNull('32'):  32
-toUInt32OrNull('abc'): \N
+toUInt32OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3032,7 +3035,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt64OrNull('64'):  64
-toUInt64OrNull('abc'): \N
+toUInt64OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3082,7 +3085,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt128OrNull('128'): 128
-toUInt128OrNull('abc'): \N
+toUInt128OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3132,7 +3135,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt256OrNull('256'): 256
-toUInt256OrNull('abc'): \N
+toUInt256OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3182,7 +3185,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt8OrNull('-8'):  -8
-toInt8OrNull('abc'): \N
+toInt8OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3232,7 +3235,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt16OrNull('-16'): -16
-toInt16OrNull('abc'): \N
+toInt16OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3282,7 +3285,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt32OrNull('-32'): -32
-toInt32OrNull('abc'): \N
+toInt32OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3332,7 +3335,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt64OrNull('-64'): -64
-toInt64OrNull('abc'): \N
+toInt64OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3382,7 +3385,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt128OrNull('-128'): -128
-toInt128OrNull('abc'):  \N
+toInt128OrNull('abc'):  ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3432,7 +3435,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt256OrNull('-256'): -256
-toInt256OrNull('abc'):  \N
+toInt256OrNull('abc'):  ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3476,11 +3479,9 @@ SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
        toBFloat16OrNull('12.3'), -- typical use
        toBFloat16OrNull('12.3456789') -- silent loss of precision
         )",
-        R"(
-\N
-12.25
-12.3125
-        )"
+        R"DOCS_MD(
+\N	12.25	12.3125
+        )DOCS_MD"
     }
     };
     FunctionDocumentation::IntroducedIn toBFloat16OrNull_introduced_in = {1, 1};
@@ -3530,7 +3531,7 @@ Row 1:
 ──────
 toFloat32OrNull('42.7'): 42.7
 toFloat32OrNull('NaN'):  nan
-toFloat32OrNull('abc'):  \N
+toFloat32OrNull('abc'):  ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3581,7 +3582,7 @@ Row 1:
 ──────
 toFloat64OrNull('42.7'): 42.7
 toFloat64OrNull('NaN'):  nan
-toFloat64OrNull('abc'):  \N
+toFloat64OrNull('abc'):  ᴺᵁᴸᴸ
         )"
     }
     };
@@ -3830,7 +3831,7 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal32OrNull('42.7', 2)─┬─toDecimal32OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
@@ -3875,7 +3876,7 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal64OrNull('42.7', 2)─┬─toDecimal64OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
@@ -3919,7 +3920,7 @@ SELECT toDecimal128OrNull('42.7', 2), toDecimal128OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal128OrNull('42.7', 2)─┬─toDecimal128OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
@@ -3964,7 +3965,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal256OrNull('42.7', 2)─┬─toDecimal256OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
@@ -4006,7 +4007,7 @@ SELECT
         )",
         R"(
 ┌─valid_uuid───────────────────────────┬─invalid_uuid─┐
-│ 550e8400-e29b-41d4-a716-446655440000 │         ᴺᵁᴸᴸ │
+│ 550e8400-e29b-41d4-a716-446655440000 │ ᴺᵁᴸᴸ         │
 └──────────────────────────────────────┴──────────────┘
         )"
     }
@@ -4062,7 +4063,7 @@ SELECT
         )",
         R"(
 ┌─valid_ip────┬─invalid_ip─┐
-│ 192.168.1.1 │       ᴺᵁᴸᴸ │
+│ 192.168.1.1 │ ᴺᵁᴸᴸ       │
 └─────────────┴────────────┘
         )"
     }
@@ -4104,9 +4105,9 @@ SELECT
     toIPv6OrNull('invalid::ip') AS invalid_ipv6
         )",
         R"(
-┌─valid_ipv6──────────────────────────┬─invalid_ipv6─┐
-│ 2001:db8:85a3::8a2e:370:7334        │         ᴺᵁᴸᴸ │
-└─────────────────────────────────────┴──────────────┘
+┌─valid_ipv6───────────────────┬─invalid_ipv6─┐
+│ 2001:db8:85a3::8a2e:370:7334 │ ᴺᵁᴸᴸ         │
+└──────────────────────────────┴──────────────┘
         )"
     }
     };
@@ -4213,7 +4214,7 @@ SELECT parseDateTimeBestEffortOrZero('23/10/2025 12:12:57') AS valid,
        parseDateTimeBestEffortOrZero('invalid') AS invalid
         )",
         R"(
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
         )"
@@ -4257,7 +4258,7 @@ SELECT parseDateTimeBestEffortOrNull('23/10/2025 12:12:57') AS valid,
        parseDateTimeBestEffortOrNull('invalid') AS invalid
         )",
         R"(
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
         )"
@@ -4291,7 +4292,7 @@ SELECT parseDateTimeBestEffortUS('02/10/2025') AS us_format,
        parseDateTimeBestEffortUS('15/08/2025') AS fallback_to_standard
         )",
         R"(
-┌─us_format───────────┬─fallback_to_standard─┐
+┌───────────us_format─┬─fallback_to_standard─┐
 │ 2025-02-10 00:00:00 │  2025-08-15 00:00:00 │
 └─────────────────────┴──────────────────────┘
         )"
@@ -4325,7 +4326,7 @@ SELECT parseDateTimeBestEffortUSOrZero('02/10/2025') AS valid_us,
        parseDateTimeBestEffortUSOrZero('invalid') AS invalid
         )",
         R"(
-┌─valid_us────────────┬─invalid─────────────┐
+┌────────────valid_us─┬─────────────invalid─┐
 │ 2025-02-10 00:00:00 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
         )"
@@ -4359,7 +4360,7 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
        parseDateTimeBestEffortUSOrNull('invalid') AS invalid
         )",
         R"(
-┌─valid_us────────────┬─invalid─┐
+┌────────────valid_us─┬─invalid─┐
 │ 2025-02-10 00:00:00 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
         )"
@@ -4418,7 +4419,7 @@ AS parseDateTime32BestEffort
         )",
         R"(
 ┌─parseDateTime32BestEffort─┐
-│       2015-07-07 12:04:41 │
+│       2010-09-10 06:51:25 │
 └───────────────────────────┘
         )"
     }
@@ -4450,7 +4451,7 @@ SELECT
     parseDateTime32BestEffortOrZero('invalid date') AS invalid
     )",
     R"(
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
     )"
@@ -4483,7 +4484,7 @@ SELECT
     parseDateTime32BestEffortOrNull('invalid date') AS invalid
         )",
         R"(
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
         )"
@@ -4558,7 +4559,7 @@ SELECT parseDateTime64BestEffortOrZero('2025-01-01 01:01:00.123') AS valid,
        parseDateTime64BestEffortOrZero('invalid') AS invalid
         )",
         R"(
-┌─valid───────────────────┬─invalid─────────────────┐
+┌───────────────────valid─┬─────────────────invalid─┐
 │ 2025-01-01 01:01:00.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
         )"
@@ -4591,7 +4592,7 @@ SELECT parseDateTime64BestEffortOrNull('2025-01-01 01:01:00.123') AS valid,
        parseDateTime64BestEffortOrNull('invalid') AS invalid
     )",
     R"(
-┌─valid───────────────────┬─invalid─┐
+┌───────────────────valid─┬─invalid─┐
 │ 2025-01-01 01:01:00.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
         )"
@@ -4624,7 +4625,7 @@ SELECT parseDateTime64BestEffortUS('02/10/2025 12:30:45.123') AS us_format,
        parseDateTime64BestEffortUS('15/08/2025 10:15:30.456') AS fallback_to_standard
         )",
         R"(
-┌─us_format───────────────┬─fallback_to_standard────┐
+┌───────────────us_format─┬────fallback_to_standard─┐
 │ 2025-02-10 12:30:45.123 │ 2025-08-15 10:15:30.456 │
 └─────────────────────────┴─────────────────────────┘
         )"
@@ -4657,7 +4658,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
        parseDateTime64BestEffortUSOrZero('invalid') AS invalid
         )",
         R"(
-┌─valid_us────────────────┬─invalid─────────────────┐
+┌────────────────valid_us─┬─────────────────invalid─┐
 │ 2025-02-10 12:30:45.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
         )"
@@ -4690,7 +4691,7 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
        parseDateTime64BestEffortUSOrNull('invalid') AS invalid
         )",
         R"(
-┌─valid_us────────────────┬─invalid─┐
+┌────────────────valid_us─┬─invalid─┐
 │ 2025-02-10 12:30:45.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
         )"

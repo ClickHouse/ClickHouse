@@ -3724,6 +3724,11 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
 
+    /// Must precede every side effect below: neither the transaction metadata removal nor the
+    /// metadata rewrite can be rolled back. The other direction takes no Keeper path at all.
+    if (to_replicated)
+        DatabaseOrdinary::checkReplicaPathIsSafe(create, getContext());
+
     /// Ensure the old detached table instance is destroyed before we remove
     /// transaction metadata files. Otherwise the old table's parts still hold
     /// in-memory version metadata referencing those files, and the debug
