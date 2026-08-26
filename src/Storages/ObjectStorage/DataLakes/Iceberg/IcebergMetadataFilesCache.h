@@ -61,7 +61,7 @@ using LatestMetadataVersionPtr = std::shared_ptr<LatestMetadataVersion>;
 /// snapshot is forward-declared because Snapshot.h includes this header.
 struct ParsedTableMetadata
 {
-    std::shared_ptr<const Iceberg::IcebergDataSnapshot> data_snapshot;
+    std::shared_ptr<Iceberg::IcebergDataSnapshot> data_snapshot;
     Iceberg::TableStateSnapshot table_state;
 };
 using ParsedTableMetadataPtr = std::shared_ptr<const ParsedTableMetadata>;
