@@ -1,8 +1,8 @@
 -- Tags: no-replicated-database, no-shared-merge-tree
 
 -- A granularity close to the maximum of `UInt64` must still return the rows that were written, for the
--- data marks of a part with non-adaptive granularity, for the granules of a secondary index, and when
--- the mark ranges of a reverse read are split.
+-- data marks of a part with non-adaptive granularity, for the granules of a secondary index, when a
+-- top-K read budgets granules across parts, and when the mark ranges of a reverse read are split.
 
 DROP TABLE IF EXISTS t_granularity_near_max;
 
@@ -74,6 +74,35 @@ SELECT 'skip index, no match', count(), sum(y) FROM t_skip_granularity_near_max 
 SETTINGS force_data_skipping_indices = 'i', use_statistics_for_part_pruning = 0;
 
 DROP TABLE t_skip_granularity_near_max;
+
+DROP TABLE IF EXISTS t_topk_across_parts;
+
+-- A top-K read keeps at least `LIMIT` times the index `GRANULARITY` granules across all parts. Two
+-- parts whose granule minimum differs are needed: the smaller minimum takes that whole budget, so a
+-- budget smaller than the first part's granule count drops the second part entirely.
+CREATE TABLE t_topk_across_parts (x UInt64, y UInt64, INDEX i y TYPE minmax GRANULARITY 18446744073709551615)
+ENGINE = MergeTree() ORDER BY x
+SETTINGS index_granularity = 1;
+
+SYSTEM STOP MERGES t_topk_across_parts;
+
+INSERT INTO t_topk_across_parts SELECT number * 2, number * 2 FROM numbers(2);
+INSERT INTO t_topk_across_parts SELECT number * 2 + 1, number * 2 + 1 FROM numbers(2);
+
+SELECT 'top-K across parts', y FROM t_topk_across_parts ORDER BY y LIMIT 18446744073709551615
+SETTINGS max_threads = 1, use_skip_indexes_on_data_read = 1, use_skip_indexes_for_top_k = 1,
+         use_top_k_dynamic_filtering = 1, enable_parallel_replicas = 0,
+         query_plan_max_limit_for_top_k_optimization = 0;
+
+-- Without the granule filter the arm above returns every row, so it cannot fail on its own. This
+-- counts the filter on the same query.
+SELECT 'top-K across parts, granule filter', countIf(explain LIKE '%Filter TopK Granules%')
+FROM (EXPLAIN indexes = 1 SELECT y FROM t_topk_across_parts ORDER BY y LIMIT 18446744073709551615
+      SETTINGS max_threads = 1, use_skip_indexes_on_data_read = 1, use_skip_indexes_for_top_k = 1,
+               use_top_k_dynamic_filtering = 1, enable_parallel_replicas = 0,
+               query_plan_max_limit_for_top_k_optimization = 0);
+
+DROP TABLE t_topk_across_parts;
 
 DROP TABLE IF EXISTS t_skip_granularity_one;
 
