@@ -1121,6 +1121,16 @@ export const kbIndex = {
       ]
     },
     {
+      "id": "setup-installation/set-up-clickhouse-documentation-mcp-server",
+      "title": "Настройте MCP-сервер документации ClickHouse",
+      "description": "Подключите AI-инструменты к документации ClickHouse с помощью Model Context Protocol.",
+      "href": "/ru/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
+      "category": "Setup & installation",
+      "tags": [
+        "Tools and Utilities"
+      ]
+    },
+    {
       "id": "performance-optimization/query-max-execution-time",
       "title": "Setting a limit on query execution time",
       "description": "How to enforce limit on max query execution time",

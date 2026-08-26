@@ -3756,3 +3756,39 @@ def test_query_condition_cache_overwrite_invalidation(started_cluster):
     assert hits_third == 0, f"Expected no stale cache hit after overwrite, got {hits_third}"
 
     instance.query(f"DROP TABLE {table_name}")
+
+
+def test_row_policy_over_csv(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+    filename = "test_row_policy_over_csv.csv"
+    url = f"http://{started_cluster.minio_ip}:{MINIO_INTERNAL_PORT}/{bucket}/{filename}"
+
+    run_query(
+        instance,
+        f"INSERT INTO TABLE FUNCTION s3('{url}', 'CSV', 'id UInt64, region String') "
+        f"SELECT number, ['East', 'West'][number % 2 + 1] FROM numbers(6) "
+        f"SETTINGS s3_truncate_on_insert=1",
+    )
+    run_query(
+        instance,
+        f"CREATE TABLE test_row_policy_csv (id UInt64, region String) ENGINE = S3('{url}', 'CSV')",
+    )
+    run_query(
+        instance,
+        "CREATE ROW POLICY test_row_policy_csv_p ON test_row_policy_csv "
+        "USING region = 'East' TO ALL",
+    )
+    try:
+        assert (
+            run_query(instance, "SELECT id, region FROM test_row_policy_csv ORDER BY id")
+            == "0\tEast\n2\tEast\n4\tEast\n"
+        )
+        assert (
+            run_query(instance, "SELECT id FROM test_row_policy_csv ORDER BY id")
+            == "0\n2\n4\n"
+        )
+        assert run_query(instance, "SELECT count() FROM test_row_policy_csv") == "3\n"
+    finally:
+        run_query(instance, "DROP ROW POLICY test_row_policy_csv_p ON test_row_policy_csv")
+        run_query(instance, "DROP TABLE test_row_policy_csv")
