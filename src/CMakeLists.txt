@@ -490,7 +490,9 @@ add_object_library(clickhouse_processors_queryplan_optimizations_cascades_rules 
 # floating-point return values with ymm-based memset zero-initialization.
 # Force -O2 for this file in debug x86 builds to avoid the buggy codegen.
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" AND ARCH_AMD64)
-    set_source_files_properties(Processors/QueryPlan/Optimizations/joinOrder.cpp PROPERTIES COMPILE_FLAGS "-O2")
+    set_source_files_properties(
+        Processors/QueryPlan/Optimizations/joinOrder.cpp
+        PROPERTIES COMPILE_FLAGS "-O2")
 endif()
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
