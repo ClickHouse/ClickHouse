@@ -297,9 +297,14 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     /// so every stream needs its own one. A plain instance is shared between all the streams.
     const bool expression_per_stream = actions_settings.enable_adaptive_short_circuit_lazy_execution;
 
+    /// All streams of the pipe have the same header, so compute the transformed header once
+    /// instead of in every FilterTransform instance: the computation is linear in the size
+    /// of the DAG, and there is one transform per stream. Every per-stream instance is built from
+    /// a clone of the same DAG, so the transformed header is shared by all of them.
     for (auto & and_atom : and_atoms)
     {
         auto expression = ExpressionActions::create(expression_per_stream ? and_atom.dag.clone() : std::move(and_atom.dag), actions_settings);
+        auto transformed_header = std::make_shared<const Block>(expression->getActionsDAG().updateHeader(pipeline.getHeader()));
 
         bool is_first_stream = true;
         pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
@@ -311,11 +316,13 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
                 stream_expression = ExpressionActions::create(and_atom.dag.clone(), actions_settings);
 
             /// Each split atom gets the same query condition cache key.
-            return std::make_shared<FilterTransform>(header, std::move(stream_expression), and_atom.name, true, on_totals, nullptr, condition);
+            return std::make_shared<FilterTransform>(header, transformed_header, std::move(stream_expression), and_atom.name, true, on_totals, nullptr, condition);
         });
     }
 
     auto expression = ExpressionActions::create(expression_per_stream ? actions_dag.clone() : std::move(actions_dag), actions_settings);
+
+    auto transformed_header = std::make_shared<const Block>(expression->getActionsDAG().updateHeader(pipeline.getHeader()));
 
     bool is_first_stream = true;
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
@@ -326,7 +333,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         if (expression_per_stream && !std::exchange(is_first_stream, false))
             stream_expression = ExpressionActions::create(actions_dag.clone(), actions_settings);
 
-        return std::make_shared<FilterTransform>(header, std::move(stream_expression), filter_column_name, remove_filter_column, on_totals, nullptr, condition);
+        return std::make_shared<FilterTransform>(header, transformed_header, std::move(stream_expression), filter_column_name, remove_filter_column, on_totals, nullptr, condition);
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
@@ -338,8 +345,9 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
                 nullptr);
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
+        auto converted_header = std::make_shared<const Block>(ExpressionTransform::transformHeader(pipeline.getHeader(), convert_actions->getActionsDAG()));
         pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                    { return std::make_shared<ExpressionTransform>(header, convert_actions, dataflow_cache_updater); });
+                                    { return std::make_shared<ExpressionTransform>(header, converted_header, convert_actions, dataflow_cache_updater); });
     }
     else
     {
