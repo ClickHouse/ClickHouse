@@ -77,27 +77,6 @@ std::unordered_map<std::string, IFileCachePriority::UsageStat> IFileCachePriorit
         magic_enum::enum_name(getType()));
 }
 
-void IFileCachePriority::removeEntries(
-    const std::vector<InvalidatedEntryInfo> & entries,
-    const CachePriorityGuard::WriteLock & lock)
-{
-    if (entries.empty())
-        return;
-
-    for (const auto & [entry, it] : entries)
-    {
-        /// We store `entry` shared pointer in addition to `it`
-        /// (which is an iterator pointing to the same entry)
-        /// because `it` could become invalid,
-        /// so we use `entry` to check validity of the iterator.
-        const auto entry_state = entry->getState();
-        chassert(entry_state == Entry::State::Invalidated || entry_state == Entry::State::Removed,
-                 fmt::format("Unexpected state: {}", magic_enum::enum_name(entry_state)));
-        if (entry_state != Entry::State::Removed)
-            it->remove(lock);
-    }
-}
-
 IFileCachePriority::IPriorityDump::IPriorityDump() = default;
 IFileCachePriority::IPriorityDump::~IPriorityDump() = default;
 

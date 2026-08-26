@@ -4,6 +4,7 @@
 #include <Interpreters/FileCache/ShardedMap.h>
 #include <Common/CurrentMetrics.h>
 #include <base/defines.h>
+#include <fmt/format.h>
 #include <boost/noncopyable.hpp>
 #include <atomic>
 #include <chrono>
@@ -19,23 +20,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
-/// This mutex guard is needed only for correctness of `OvercommitFileCachePriority::check` method,
-/// but not for cache correctness in general,
-/// because it makes sure per-user counters
-/// (`total_size` and `total_elements` in `CacheUsage` per-user state)
-/// are updated atomically with main cache state counters.
-/// The per-user `total_size` and `total_elements` counters are used for:
-/// 1. to decide from whom to evict according to overcommit policy
-/// 2. for system tables
-/// In both cases some temporary divergence from actual cache counters is fine,
-/// but we now have no divergence as atomicity is needed for `OvercommitFileCachePriority::check`'s success.
-struct CacheUsageStatGuard : private boost::noncopyable
-{
-    struct Lock : public std::unique_lock<std::mutex> { explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {} };
-    Lock lock() { return Lock(mutex); }
-    std::mutex mutex;
-};
 
 /// A caching eviction strategy, which allows to evict more from users which use the cache more.
 /// From each user cache is evicted according to LRU/SLRU eviction policies.
@@ -56,9 +40,31 @@ struct CacheUsage
     /// by corresponding eviction strategy priority.
     IFileCachePriority * const priority{};
 
-    std::shared_ptr<CacheUsageStatGuard> guard;
+    /// Applies a delta to `total_size`/`total_elements`. They are plain atomics, updated separately
+    /// from the priority's own counters, so they can transiently diverge from them; they feed only
+    /// overcommit eviction weights and system tables.
+    /// Defined inline: the public repo has no `CacheUsage.cpp`, but its `LRUFileCachePriority`
+    /// calls `update`, so the definition must travel with this header.
+    void update(int64_t size, int64_t elements)
+    {
+        if (!size && !elements)
+            return;
 
-    void update(int64_t size, int64_t elements, const CacheUsageStatGuard::Lock & lock);
+        chassert(
+            int64_t(total_size) + size >= 0,
+            fmt::format("Inconsistency in cache. Total size: {}, update: {}", total_size.load(), size));
+        chassert(
+            int64_t(total_elements) + elements >= 0,
+            fmt::format("Inconsistency in cache. Total elements: {}, update: {}", total_elements.load(), elements));
+
+        total_size += size;
+        total_elements += elements;
+    }
+
+    std::pair<size_t, size_t> getTotal() const
+    {
+        return {total_size, total_elements};
+    }
 
     std::atomic<UInt64> total_size = 0;
     std::atomic<UInt64> total_elements = 0;
