@@ -1479,7 +1479,7 @@ Prometheus エンドポイントのサーバー内のスレッド数。注: Prom
   ### ReaderExecutorModeledCostMsPerRequestedMiB
 </div>
 
-Experimental ReaderExecutor の読み取りパス効率: 直近の更新間隔における、リクエストされたバイト数 MiB あたりの推定コスト (ms) 。インスタンス全体での ProfileEvents ReaderExecutorModeledCostMicroseconds と ReaderExecutorRequestedBytes の差分の比です。低いほど良好です。帯域幅の下限は約 20 (正常なソースからの読み取り) で、cache ヒットでは 0 に近づき、過剰フェッチや不完全な connections により値が増加します。0 は、その間隔に executor による読み取りがなかったことを示します。
+Experimental ReaderExecutor の読み取りパス効率: 直近の更新間隔における、リクエストされたバイト数 MiB あたりの推定コスト (ms) 。インスタンス全体での ProfileEvents ReaderExecutorModeledCostMicroseconds と ReaderExecutorDeliveredBytes の差分の比です。低いほど良好です。帯域幅の下限は約 20 (正常なソースからの読み取り) で、cache ヒットでは 0 に近づき、過剰フェッチや不完全な connections により値が増加します。0 は、その間隔に executor による読み取りがなかったことを示します。
 
 <div id="replicasmaxabsolutedelay">
   ### ReplicasMaxAbsoluteDelay

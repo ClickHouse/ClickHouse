@@ -34,12 +34,15 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/Stopwatch.h>
 
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <future>
 #include <limits>
 #include <sstream>
+#include <thread>
+#include <vector>
 
 namespace DB::CoordinationSetting
 {
@@ -1293,6 +1296,102 @@ TEST(CoordinationRequestSize, WriteRejectsRequestOverInt32)
     EXPECT_THROW(request.write(wbuf, false, false), Coordination::Exception);
 }
 
+/// checkIfRequestIncreaseMem is the memory-soft-limit admission classifier. It is a pure function of
+/// the request, so it is tested here rather than through the integration test: reproducing sustained
+/// memory pressure is RSS-driven and decays as soon as the load stops, which makes any assertion that
+/// depends on Keeper still refusing inherently racy.
+namespace
+{
+
+Coordination::ZooKeeperRequestPtr makeSetRequest(const std::string & path, const std::string & data)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperSetRequest>();
+    request->path = path;
+    request->data = data;
+    request->version = -1;
+    return request;
+}
+
+Coordination::ZooKeeperRequestPtr makeCreateRequest(const std::string & path, const std::string & data)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    request->path = path;
+    request->data = data;
+    return request;
+}
+
+Coordination::ZooKeeperRequestPtr makeRemoveRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperRemoveRequest>();
+    request->path = path;
+    request->version = -1;
+    return request;
+}
+
+Coordination::ZooKeeperRequestPtr makeMultiRequest(const Coordination::Requests & subrequests)
+{
+    return std::make_shared<Coordination::ZooKeeperMultiRequest>(subrequests, Coordination::ACLs{});
+}
+
+}
+
+TEST(KeeperMemorySoftLimitAdmission, EmptySetIsNotMemoryIncreasing)
+{
+    /// The session-registration write from ZooKeeper::initSession. Refusing it is what locked tables
+    /// into readonly for the duration of a Keeper memory event: a Set cannot allocate a znode, and with
+    /// empty data the amount of stored data can only shrink.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(makeSetRequest("/clickhouse/sessions/zookeeper/uuid", "")));
+
+    /// A Set that actually carries data can grow the store, so it must still be refused - note this is
+    /// true even though the path is long, i.e. the decision is on the data and not on the request size.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeSetRequest("/clickhouse/sessions/zookeeper/uuid", "x")));
+}
+
+TEST(KeeperMemorySoftLimitAdmission, CreateIsAlwaysMemoryIncreasing)
+{
+    /// Unchanged behaviour, asserted so that narrowing the Set branch cannot silently widen this one.
+    /// An empty Create still allocates a znode, so unlike Set it is classified increasing.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeCreateRequest("/a", "")));
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeCreateRequest("/a", "data")));
+}
+
+TEST(KeeperMemorySoftLimitAdmission, MultiClassifiedBySumOfDataSizes)
+{
+    /// A Multi of only empty Sets has a zero delta and must be admitted. Before the fix this returned
+    /// true, because the branch summed bytesSize() - which includes the path, the version and the xid -
+    /// so an empty Set contributed growth proportional to its path length. `Set(<table>/replicas, "")`
+    /// in SharedMergeTree's activateReplica is exactly this shape.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(makeMultiRequest({
+        makeSetRequest("/some/quite/long/path/that/would/have/dominated/bytesSize", ""),
+        makeSetRequest("/another/long/path/replicas", ""),
+    })));
+
+    /// Data in any subrequest still makes the Multi increasing.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeMultiRequest({
+        makeSetRequest("/a", ""),
+        makeSetRequest("/b", "data"),
+    })));
+
+    /// So does a Create, which is the gate-2 shape from activateReplica: an ephemeral is_active node
+    /// plus Sets. This one genuinely allocates and is expected to stay refused.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeMultiRequest({
+        makeCreateRequest("/table/replicas/r1/is_active", ""),
+        makeSetRequest("/table/replicas/r1/host", "hostname"),
+        makeSetRequest("/table/replicas", ""),
+    })));
+}
+
+TEST(KeeperMemorySoftLimitAdmission, ReadsAndRemovesAreNotMemoryIncreasing)
+{
+    /// Reads fall through to the final `return false`, which is why a saturated Keeper still serves
+    /// them - the property the end-to-end test relies on.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(std::make_shared<Coordination::ZooKeeperGetRequest>()));
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(std::make_shared<Coordination::ZooKeeperListRequest>()));
+
+    /// A standalone Remove is not classified increasing. Deliberately unchanged by this fix.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(makeRemoveRequest("/a")));
+}
+
 namespace DB
 {
 
@@ -1371,6 +1470,11 @@ public:
     {
         std::lock_guard lock(dispatcher.new_session_id_mutex);
         return dispatcher.new_session_id_requests.count(internal_id);
+    }
+
+    static void interruptibleSleep(KeeperDispatcher & dispatcher, std::chrono::milliseconds period)
+    {
+        dispatcher.interruptibleSleep(period);
     }
 };
 
@@ -1652,6 +1756,130 @@ TEST(KeeperDispatcher, PendingSessionIDRequestsFailOnThrowingShutdown)
     }
 
     EXPECT_EQ(DispatcherAccessor::sessionIDWaiterCount(keeper_dispatcher, internal_id), 0u) << "the waiter entry leaked";
+}
+
+namespace
+{
+
+/// Millisecond counts a coordination wait must survive. The first is representable as nanoseconds
+/// but leaves less than a millisecond below Int64::max, so `steady_clock::now() + duration` wraps;
+/// the rest overflow the milliseconds to nanoseconds product itself.
+const std::vector<Int64> huge_timeouts_ms = {
+    9'223'372'036'854LL,
+    9'223'372'036'855LL,
+    9'223'372'036'854'775LL,
+    std::numeric_limits<Int64>::max(),
+};
+
+/// The predicate becomes true after this long, so a wait that kept its duration returns because the
+/// predicate fired, while a wait whose duration was lost returns immediately instead.
+constexpr Int64 notify_after_ms = 300;
+
+}
+
+/// A very long timeout must remain a very long timeout: with the raw conversion the deadline wraps
+/// into the past, so the wait gives up at once and reports that the log was not committed.
+TEST(KeeperContext, WaitCommittedUptoKeepsHugeTimeout)
+{
+    /// The parameter is unsigned, so a negative count arrives here as a huge positive one.
+    std::vector<UInt64> timeouts;
+    for (Int64 ms : huge_timeouts_ms)
+        timeouts.push_back(static_cast<UInt64>(ms));
+    timeouts.push_back(std::numeric_limits<UInt64>::max());
+
+    for (UInt64 timeout_ms : timeouts)
+    {
+        SCOPED_TRACE(timeout_ms);
+
+        auto keeper_context = std::make_shared<DB::KeeperContext>(true, std::make_shared<DB::CoordinationSettings>());
+        keeper_context->setLastCommitIndex(1);
+
+        std::thread committer(
+            [&]
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(notify_after_ms));
+                keeper_context->setLastCommitIndex(10);
+            });
+
+        Stopwatch watch;
+        const bool committed = keeper_context->waitCommittedUpto(10, timeout_ms);
+        const auto elapsed_ms = watch.elapsedMilliseconds();
+        committer.join();
+
+        EXPECT_TRUE(committed);
+        EXPECT_GE(elapsed_ms, static_cast<UInt64>(notify_after_ms) / 2);
+    }
+}
+
+/// All three callers of interruptibleSleep build the period from a coordination setting, so this
+/// covers each of them. The period arrives typed as std::chrono::milliseconds, whose representation
+/// is signed, so the reachable extremes are the signed ones.
+TEST(KeeperDispatcher, InterruptibleSleepKeepsHugePeriod)
+{
+    for (Int64 period_ms : huge_timeouts_ms)
+    {
+        SCOPED_TRACE(period_ms);
+
+        DB::KeeperDispatcher dispatcher;
+
+        std::thread shutdown_signaller(
+            [&]
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(notify_after_ms));
+                dispatcher.signalShutdown();
+            });
+
+        Stopwatch watch;
+        DispatcherAccessor::interruptibleSleep(dispatcher, std::chrono::milliseconds(period_ms));
+        const auto elapsed_ms = watch.elapsedMilliseconds();
+        /// Sampled before the join: the signaller sets the flag unconditionally, so a reading taken
+        /// afterwards would be true whatever ended the wait and would assert nothing.
+        const bool signalled_when_the_wait_returned = dispatcher.isShuttingDown();
+        shutdown_signaller.join();
+
+        EXPECT_GE(elapsed_ms, static_cast<UInt64>(notify_after_ms) / 2);
+        /// The elapsed bound alone would also accept a period silently shortened to anything above
+        /// 150 ms, which times out rather than keeping the requested period. This pins why the wait
+        /// ended: the predicate became true.
+        EXPECT_TRUE(signalled_when_the_wait_returned);
+    }
+}
+
+/// The opposite direction: a non-positive period must still return immediately, otherwise a
+/// shutdown path passing a wrapped negative count would hang instead of expiring at once.
+TEST(KeeperDispatcher, InterruptibleSleepReturnsAtOnceForNonPositivePeriod)
+{
+    /// Below the shortest spurious wait worth catching, so the ordering oracle can observe one.
+    constexpr Int64 signal_after_ms = 100;
+
+    for (Int64 period_ms : {Int64{0}, Int64{-1}, Int64{-9'223'372'036'854'775}})
+    {
+        SCOPED_TRACE(period_ms);
+
+        /// A fresh dispatcher per period: the flag latches once signalled, so a shared one would
+        /// already be shutting down after the first iteration and the oracle would read true
+        /// without any wait having happened.
+        DB::KeeperDispatcher dispatcher;
+
+        std::thread shutdown_signaller(
+            [&]
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(signal_after_ms));
+                dispatcher.signalShutdown();
+            });
+
+        Stopwatch watch;
+        DispatcherAccessor::interruptibleSleep(dispatcher, std::chrono::milliseconds(period_ms));
+        const auto elapsed_ms = watch.elapsedMilliseconds();
+        const bool signalled_when_the_wait_returned = dispatcher.isShuttingDown();
+        shutdown_signaller.join();
+
+        /// An elapsed bound accepts any wait shorter than the signal delay, so it cannot say the
+        /// wait did not happen. This pins the ordering: the call returned while the predicate was
+        /// still false.
+        EXPECT_FALSE(signalled_when_the_wait_returned);
+        EXPECT_LT(elapsed_ms, static_cast<UInt64>(notify_after_ms));
+    }
 }
 
 #endif
