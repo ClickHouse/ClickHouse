@@ -143,6 +143,10 @@ public:
     bool hasNumberLiteralText() const { return !number_literal_text.empty(); }
     const String & getNumberLiteralText() const { return number_literal_text; }
 
+    /// Carry the original text over to a re-typed copy of a NumberLiteral constant, so that a later
+    /// type-directed conversion still parses from the text instead of the already resolved value.
+    void setNumberLiteralText(String text) { number_literal_text = std::move(text); }
+
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
 

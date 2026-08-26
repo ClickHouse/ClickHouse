@@ -37,6 +37,7 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/exists.h>
 #include <Columns/validateColumnType.h>
@@ -986,6 +987,123 @@ static QueryTreeNodePtr buildScalarInComparison(
     return raw_if;
 }
 
+/// The type a number literal on the right of IN is compared against. Number literals resolve to
+/// `Float64` on their own, so they are re-parsed from their original text into this type instead of
+/// being rounded. Null when the left-hand side is not a plain numeric type: a `Tuple` one is matched
+/// element-wise, which is not handled here.
+static DataTypePtr getNumberLiteralReferenceTypeForIn(const DataTypePtr & left_type)
+{
+    if (!left_type)
+        return nullptr;
+
+    auto type = removeNullable(removeLowCardinality(left_type));
+    if (isNumber(*type) || isDecimal(*type))
+        return type;
+
+    return nullptr;
+}
+
+/// Parse one number literal text against the type it is compared with. Returns a null type when the
+/// default resolution must be kept.
+static std::pair<Field, DataTypePtr> resolveNumberLiteralAgainst(const String & text, const DataTypePtr & reference_type)
+{
+    auto [parsed_field, target_type] = resolveNumberLiteralForFunction(text, reference_type, /*is_comparison=*/ true);
+    if (!target_type)
+        return {};
+
+    /// Keep the default type when the resolved one has no common type with the left-hand side
+    /// (e.g. `1e60` against `Decimal64(1)`), so the rewrites can still build the comparison.
+    if (!tryGetLeastSupertype(DataTypes{reference_type, target_type}))
+        return {};
+
+    return {std::move(parsed_field), std::move(target_type)};
+}
+
+/// Re-type the NumberLiteral elements of an IN right-hand side against the type of the left-hand
+/// side. Without this the least supertype of a `Decimal` left-hand side and a `Float64` element is
+/// `Float64`, so both sides would be rounded through `Float64` before the comparison.
+static void resolveNumberLiteralElementsForIn(QueryTreeNodes & array_elements, const DataTypePtr & left_type)
+{
+    auto reference_type = getNumberLiteralReferenceTypeForIn(left_type);
+    if (!reference_type)
+        return;
+
+    for (auto & element : array_elements)
+    {
+        const auto * constant = element->as<ConstantNode>();
+        if (!constant || !constant->hasNumberLiteralText())
+            continue;
+
+        const auto & text = constant->getNumberLiteralText();
+        auto [parsed_field, target_type] = resolveNumberLiteralAgainst(text, reference_type);
+        if (!target_type)
+            continue;
+
+        auto resolved = std::make_shared<ConstantNode>(parsed_field, target_type);
+        resolved->setNumberLiteralText(text);
+        element = std::move(resolved);
+    }
+}
+
+/// A parenthesised list of literals on the right of IN (`x IN (1.1, 2.2)`) is parsed as a single
+/// tuple literal, so its number literals are resolved to `Float64` before the left-hand side type is
+/// known. Rebuild the constant from the original literal texts, typed against the left-hand side.
+/// The right-hand side stays a constant, so the set is still materialized as a set.
+static void resolveNumberLiteralsInConstantInSet(QueryTreeNodePtr & in_second_argument, const DataTypePtr & left_type)
+{
+    if (!in_second_argument->as<ConstantNode>())
+        return;
+
+    auto reference_type = getNumberLiteralReferenceTypeForIn(left_type);
+    if (!reference_type)
+        return;
+
+    const auto & original_ast = in_second_argument->getOriginalAST();
+    const auto * literal = original_ast ? original_ast->as<ASTLiteral>() : nullptr;
+    if (!literal || literal->value.getType() != Field::Types::Tuple)
+        return;
+
+    const auto & elements = literal->value.safeGet<Tuple>();
+    /// Checked before the rebuild below, which copies every element of a possibly huge IN list.
+    if (std::none_of(elements.begin(), elements.end(),
+                     [](const Field & element) { return element.getType() == Field::Types::Number; }))
+        return;
+
+    Tuple resolved_elements;
+    DataTypes resolved_types;
+    resolved_elements.reserve(elements.size());
+    resolved_types.reserve(elements.size());
+
+    bool any_element_resolved = false;
+    for (const auto & element : elements)
+    {
+        if (element.getType() == Field::Types::Number)
+        {
+            auto [parsed_field, target_type]
+                = resolveNumberLiteralAgainst(element.safeGet<NumberLiteral>().value, reference_type);
+            if (target_type)
+            {
+                resolved_elements.push_back(std::move(parsed_field));
+                resolved_types.push_back(std::move(target_type));
+                any_element_resolved = true;
+                continue;
+            }
+        }
+
+        /// The constant node conversion resolves a kept NumberLiteral element to its default type.
+        resolved_elements.push_back(element);
+        resolved_types.push_back(applyVisitor(FieldToDataType(), element));
+    }
+
+    if (!any_element_resolved)
+        return;
+
+    auto resolved_node = std::make_shared<ConstantNode>(
+        Field(std::move(resolved_elements)), std::make_shared<DataTypeTuple>(std::move(resolved_types)));
+    resolved_node->setOriginalAST(original_ast);
+    in_second_argument = std::move(resolved_node);
+}
+
 /// converts tuple to array with proper type handling
 QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
     const QueryTreeNodes & tuple_args,
@@ -997,6 +1115,9 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
     QueryTreeNodes array_elements = getArrayElementsForInTupleArguments(tuple_args, in_first_argument, scope, expand_single_tuple_value);
 
     bool left_is_null = isNullConstant(in_first_argument);
+
+    if (!left_is_null)
+        resolveNumberLiteralElementsForIn(array_elements, in_first_argument->getResultType());
 
     bool rhs_has_null = std::any_of(array_elements.begin(), array_elements.end(),
         [](const auto & arg)
@@ -2211,6 +2332,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             bool expand_single_tuple_value = false;
             bool wrapped_column_rhs = false;
 
+            if (!left_argument_is_lambda)
+                resolveNumberLiteralsInConstantInSet(in_second_argument, in_first_argument->getResultType());
+
             /// If the second argument of IN is a bare column reference (e.g. from `IN (col)` where the
             /// parentheses were stripped by the parser), decide how to treat it by its type.
             if (auto * in_second_argument_column = in_second_argument->as<ColumnNode>())
@@ -2603,6 +2727,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             if (target_type)
             {
                 auto new_constant = std::make_shared<ConstantNode>(parsed_field, target_type);
+                /// Keep the text so a later type-directed conversion (the IN set rewrite or
+                /// `castNodeToType`) can still parse it exactly instead of using the resolved value.
+                new_constant->setNumberLiteralText(const_node->getNumberLiteralText());
                 function_arguments[i] = new_constant;
                 argument_columns[i].column = new_constant->getColumn();
                 argument_columns[i].type = target_type;

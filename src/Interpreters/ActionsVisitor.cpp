@@ -109,13 +109,107 @@ static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypes
 
 namespace
 {
+/// The right-hand side of `IN` is compared against the left-hand side type, so a number literal
+/// element (which resolves to `Float64` on its own) is parsed from its original text against that
+/// type instead. Returns null when the left-hand side is not a plain numeric type: a `Tuple` one
+/// matches its elements positionally further down, which this does not handle.
+DataTypePtr getNumberLiteralReferenceTypeForIn(const DataTypePtr & left_arg_type)
+{
+    if (!left_arg_type)
+        return nullptr;
+
+    auto type = removeNullable(removeLowCardinality(left_arg_type));
+    if (isNumber(*type) || isDecimal(*type))
+        return type;
+
+    return nullptr;
+}
+
+/// Build the column and type of a set element that is a number literal, parsing it from the original
+/// literal text against `reference_type`. Returns false when the element is not a number literal.
+bool tryBuildNumberLiteralSetElement(
+    const ASTPtr & element, const DataTypePtr & reference_type, ColumnPtr & out_column, DataTypePtr & out_type)
+{
+    if (!reference_type)
+        return false;
+
+    const auto * literal = element->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::Number)
+        return false;
+
+    auto [parsed_field, target_type] = resolveNumberLiteralForFunction(
+        literal->value.safeGet<NumberLiteral>().value, reference_type, /*is_comparison=*/ true);
+    if (!target_type)
+        return false;
+
+    out_column = target_type->createColumnConst(1, parsed_field);
+    out_type = std::move(target_type);
+    return true;
+}
+
+/// Same for a whole right-hand side literal: a bare number literal (`x IN (1.1)`) or a parenthesised
+/// list of literals, which the parser folds into a single tuple literal (`x IN (1.1, 2.2)`) and whose
+/// number literals would otherwise resolve to `Float64` before the left-hand side type is known.
+bool tryBuildNumberLiteralSet(
+    const ASTPtr & right_arg, const DataTypePtr & reference_type, ColumnPtr & out_column, DataTypePtr & out_type)
+{
+    if (!reference_type)
+        return false;
+
+    if (tryBuildNumberLiteralSetElement(right_arg, reference_type, out_column, out_type))
+        return true;
+
+    const auto * literal = right_arg->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::Tuple)
+        return false;
+
+    const auto & elements = literal->value.safeGet<Tuple>();
+    /// Checked before the rebuild below, which copies every element of a possibly huge IN list.
+    if (std::none_of(elements.begin(), elements.end(),
+                     [](const Field & element) { return element.getType() == Field::Types::Number; }))
+        return false;
+
+    Tuple resolved_elements;
+    DataTypes resolved_types;
+    resolved_elements.reserve(elements.size());
+    resolved_types.reserve(elements.size());
+
+    bool any_element_resolved = false;
+    for (const auto & element : elements)
+    {
+        if (element.getType() == Field::Types::Number)
+        {
+            auto [parsed_field, target_type] = resolveNumberLiteralForFunction(
+                element.safeGet<NumberLiteral>().value, reference_type, /*is_comparison=*/ true);
+            if (target_type)
+            {
+                resolved_elements.push_back(std::move(parsed_field));
+                resolved_types.push_back(std::move(target_type));
+                any_element_resolved = true;
+                continue;
+            }
+        }
+
+        resolved_elements.push_back(element);
+        resolved_types.push_back(applyVisitor(FieldToDataType(), element));
+    }
+
+    if (!any_element_resolved)
+        return false;
+
+    out_type = std::make_shared<DataTypeTuple>(std::move(resolved_types));
+    /// A kept number literal element is resolved to its default type by the conversion.
+    out_column = out_type->createColumnConst(1, convertFieldToTypeOrThrow(Field(std::move(resolved_elements)), *out_type));
+    return true;
+}
+
 /// Build the constant right-hand side of `IN` as a single-row column plus its exact type, without
 /// materializing a `Field`. Each `tuple`/`array` element is evaluated individually
 /// (`evaluateConstantExpressionAsColumn` fast-paths literals) and assembled column-natively, because
 /// interpreting a large tuple/array as a whole function through `evaluateConstantExpression` is
 /// extremely slow.
 std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
-    const boost::intrusive_ptr<ASTFunction> & func, ContextPtr context)
+    const boost::intrusive_ptr<ASTFunction> & func, const DataTypePtr & number_literal_reference_type, ContextPtr context)
 {
     if (!func)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "IN: empty function AST for constant set");
@@ -134,6 +228,15 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 
         for (const auto & arg : args)
         {
+            ColumnPtr literal_column;
+            DataTypePtr literal_type;
+            if (tryBuildNumberLiteralSetElement(arg, number_literal_reference_type, literal_column, literal_type))
+            {
+                element_columns.emplace_back(literal_column->convertToFullColumnIfConst());
+                element_types.emplace_back(std::move(literal_type));
+                continue;
+            }
+
             const auto value = evaluateConstantExpressionAsColumn(arg, context);
             element_columns.emplace_back(value.getColumn()->convertToFullColumnIfConst());
             element_types.emplace_back(value.getType());
@@ -153,6 +256,8 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 
         for (const auto & arg : args)
         {
+            /// An `array` right-hand side is a value expression with a type of its own, so its
+            /// number literals keep the default `Float64` resolution, like in the analyzer.
             const auto value = evaluateConstantExpressionAsColumn(arg, context);
             element_columns.emplace_back(value.getColumn()->convertToFullColumnIfConst());
             element_types.emplace_back(value.getType());
@@ -198,9 +303,15 @@ ColumnsWithTypeAndName createBlockForSet(
     const ASTPtr & right_arg,
     ContextPtr context)
 {
-    const auto right_value = evaluateConstantExpressionAsColumn(right_arg, context);
-    const auto & right_arg_column = right_value.getColumn();
-    const auto & right_arg_type = right_value.getType();
+    ColumnPtr right_arg_column;
+    DataTypePtr right_arg_type;
+    if (!tryBuildNumberLiteralSet(
+            right_arg, getNumberLiteralReferenceTypeForIn(left_arg_type), right_arg_column, right_arg_type))
+    {
+        const auto right_value = evaluateConstantExpressionAsColumn(right_arg, context);
+        right_arg_column = right_value.getColumn();
+        right_arg_type = right_value.getType();
+    }
 
     GetSetElementParams params{
         .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
@@ -225,7 +336,8 @@ ColumnsWithTypeAndName createBlockForSet(
         .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
     };
 
-    auto [right_arg_column, right_arg_type] = buildCollectionColumnAndTypeFromASTFunction(right_arg, context);
+    auto [right_arg_column, right_arg_type] = buildCollectionColumnAndTypeFromASTFunction(
+        right_arg, getNumberLiteralReferenceTypeForIn(left_arg_type), context);
 
     /// Reuse the analyzer logic
     return getSetElementsForConstantValue(left_arg_type, right_arg_column, right_arg_type, params);
