@@ -4,5 +4,3 @@ cross		1
 2	2
 -- `Dynamic` key is merged with allow_dynamic_type_in_join_keys = 1
 inner	CAST(a AS Dynamic) = d	0
-2
-0

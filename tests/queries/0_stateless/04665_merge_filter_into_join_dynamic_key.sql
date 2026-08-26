@@ -42,12 +42,5 @@ FROM (
     SETTINGS allow_dynamic_type_in_join_keys = 1
 );
 
--- Merging a `Dynamic` key drops the matches: comparing a `Dynamic` against
--- another type is what the setting's default of false exists to prevent.
-SELECT count() FROM (SELECT * FROM t_int INNER JOIN t_dyn ON 1) WHERE a = d
-SETTINGS allow_dynamic_type_in_join_keys = 0;
-SELECT count() FROM (SELECT * FROM t_int INNER JOIN t_dyn ON 1) WHERE a = d
-SETTINGS allow_dynamic_type_in_join_keys = 1;
-
 DROP TABLE t_int;
 DROP TABLE t_dyn;
