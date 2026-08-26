@@ -238,3 +238,17 @@ SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
               toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
 FROM (EXPLAIN PLAN actions = 1 SELECT ts FROM t_outer_31 AS o WHERE EXISTS (SELECT 1 FROM t_inner_31 AS i WHERE i.ts = o.ts));
 SELECT ts FROM t_outer_31 AS o WHERE EXISTS (SELECT 1 FROM t_inner_31 AS i WHERE i.ts = o.ts) ORDER BY ts;
+
+SELECT '-- Case 32: outer UInt8 vs inner Bool; the member''s Bool custom name must be normalized away by a CAST (not an alias), otherwise expressions over the correlated column change rendering: toString(o.x) would print true instead of 1 and drop the row';
+CREATE TABLE t_outer_32 (x UInt8) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_32 (b Bool) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_32 VALUES (0), (1), (2);
+INSERT INTO t_inner_32 VALUES (true), (false);
+
+SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
+              toString(countIf(explain ILIKE '%cross%')),
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0),
+              toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_32 AS o WHERE EXISTS (SELECT 1 FROM t_inner_32 AS i WHERE i.b = o.x AND toString(o.x) = '1'));
+SELECT x FROM t_outer_32 AS o WHERE EXISTS (SELECT 1 FROM t_inner_32 AS i WHERE i.b = o.x) ORDER BY x;
+SELECT x FROM t_outer_32 AS o WHERE EXISTS (SELECT 1 FROM t_inner_32 AS i WHERE i.b = o.x AND toString(o.x) = '1') ORDER BY x;

@@ -64,3 +64,8 @@ plan: substituted=0
 -- Case 31: outer DateTime(\'UTC\') vs inner Nullable(DateTime(\'UTC\')); attribute-identical non-numeric types remain substitutable: the name-based check admits DateTime(\'UTC\') against Nullable(DateTime(\'UTC\')); inner NULL never matches
 plan: cross_joins=0 substituted=1 null_prefiltered=1
 1970-01-01 00:00:00
+-- Case 32: outer UInt8 vs inner Bool; the member\'s Bool custom name must be normalized away by a CAST (not an alias), otherwise expressions over the correlated column change rendering: toString(o.x) would print true instead of 1 and drop the row
+plan: cross_joins=0 substituted=1 null_prefiltered=0
+0
+1
+1

@@ -366,7 +366,11 @@ QueryPlan decorrelateQueryPlan(
                         substituted = &dag.addFunction(function_factory.get("assumeNotNull", query_context), {substituted}, {});
                     /// The remaining difference is a lossless wrapper change or numeric widening.
                     /// The named cast also serves as the renaming alias.
-                    if (!substituted->result_type->equals(*renaming.correlated_type))
+                    /// Compare full type names like classifySubstitutionConversion does: `IDataType::equals` cannot
+                    /// tell `Bool` from `UInt8`, and aliasing would smuggle the member's custom name into the
+                    /// correlated column (e.g. `toString` would render `true` instead of `1`). The `CAST` is an
+                    /// identity on the values for such storage-equal pairs.
+                    if (substituted->result_type->getName() != renaming.correlated_type->getName())
                         substituted = &dag.addCast(*substituted, renaming.correlated_type, renaming.correlated_name, query_context);
                     else
                         substituted = &dag.addAlias(*substituted, renaming.correlated_name);
