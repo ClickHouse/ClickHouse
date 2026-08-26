@@ -159,12 +159,8 @@ void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & o
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step);
 String dumpQueryPlanShort(const QueryPlan & query_plan);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
-
-// function called before tryMakeDistributedAggregation
 std::optional<PreformattedMessage> hasAggregationUnsupportedStepForDistributed(QueryPlan::Node & node);
-
 std::optional<PreformattedMessage> hasCascadesUnsupportedStepForDistributed(const IQueryPlanStep & step);
-
 std::optional<PreformattedMessage>  traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 
 
@@ -191,8 +187,6 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & node)
     return false;
 }
 
-
-// TODO group with ones below
 
 /// Rejects distributed reads a worker cannot reproduce: a pinned snapshot boundary
 /// (select_sequential_consistency) or the part-order virtual columns `_part_index` /
@@ -248,6 +242,10 @@ void convertLogicalJoinsForLocalExecution(QueryPlan::Node & root, QueryPlan::Nod
         });
 }
 
+/// True if the plan contains an in-order aggregation (the planner builds one when
+/// `force_aggregation_in_order` is set). It relies on its input arriving ordered by the
+/// group keys, which the exchanges do not preserve.
+/// Also true if contains a global GROUP BY limit since it can't be enforced once aggregation is split per bucket.
 std::optional<PreformattedMessage> hasAggregationUnsupportedStepForDistributed(QueryPlan::Node & node)
 {
     /// Is this a aggregating step?
@@ -255,9 +253,7 @@ std::optional<PreformattedMessage> hasAggregationUnsupportedStepForDistributed(Q
     if (!aggregating_step)
         return {};
 
-    /// True if the plan contains an in-order aggregation (the planner builds one when
-    /// `force_aggregation_in_order` is set). It relies on its input arriving ordered by the
-    /// group keys, which the exchanges do not preserve.
+
     if (aggregating_step && (aggregating_step->inOrder() || aggregating_step->explicitSortingRequired()))
     {
         return PreformattedMessage::create("make_distributed_plan does not support in-order aggregation");
@@ -267,7 +263,6 @@ std::optional<PreformattedMessage> hasAggregationUnsupportedStepForDistributed(Q
     if (node.children.size() != 1)
         return {};
 
-    /// A global GROUP BY limit can't be enforced once aggregation is split per bucket.
     if (aggregating_step->getParams().max_rows_to_group_by != 0)
         return PreformattedMessage::create("A global GROUP BY limit can't be enforced once aggregation is split per bucket.");
 
