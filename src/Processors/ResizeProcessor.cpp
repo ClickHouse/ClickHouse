@@ -160,6 +160,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
             if (state.status != OutputStatus::NeedData)
             {
                 state.status = OutputStatus::NeedData;
+                state.is_waiting = true;
                 waiting_outputs.push(output_port);
             }
         }
@@ -185,7 +186,22 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
                 state.status = InputStatus::Finished;
                 ++num_finished_inputs;
 
-                waiting_outputs.push(state.waiting_output);
+                /// Release the output this input was paired with, so that it can be handed to
+                /// another input or closed. Only an output that is free right now may be released:
+                /// an output in the `NotActive` state still holds a chunk that the downstream
+                /// processor has not consumed yet, and handing it to another input would break the
+                /// invariant checked below. Such an output is enqueued by the loop over
+                /// `updated_outputs` above as soon as it becomes pushable again. An input that was
+                /// never paired with an output has no output to release.
+                if (state.waiting_output)
+                {
+                    auto & released_state = output_port_state.at(state.waiting_output);
+                    if (released_state.status == OutputStatus::NeedData && !released_state.is_waiting)
+                    {
+                        released_state.is_waiting = true;
+                        waiting_outputs.push(state.waiting_output);
+                    }
+                }
             }
             continue;
         }
@@ -246,6 +262,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
         auto * waiting_output = waiting_outputs.front();
         auto & output_state = output_port_state.at(waiting_output);
         waiting_outputs.pop();
+        output_state.is_waiting = false;
 
         waiting_output->pushData(std::move(abandoned_chunks.back()));
         abandoned_chunks.pop_back();
@@ -263,6 +280,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
         input_port->setNeeded();
         input_state.status = InputStatus::NeedData;
         input_state.waiting_output = waiting_outputs.front();
+        output_port_state.at(waiting_outputs.front()).is_waiting = false;
 
         waiting_outputs.pop();
     }
@@ -273,6 +291,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
         auto * output_port = waiting_outputs.front();
         auto & output_state = output_port_state.at(output_port);
         waiting_outputs.pop();
+        output_state.is_waiting = false;
 
         if (output_state.status != OutputStatus::Finished)
            ++num_finished_outputs;

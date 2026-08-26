@@ -116,6 +116,9 @@ private:
     struct OutputPortState
     {
         OutputStatus status;
+        /// Whether the port is currently sitting in `waiting_outputs`. An output must be enqueued
+        /// at most once, otherwise it can be handed out to two different inputs at the same time.
+        bool is_waiting = false;
     };
 
     std::unordered_map<const InputPort *, InputPortState> input_port_state;
