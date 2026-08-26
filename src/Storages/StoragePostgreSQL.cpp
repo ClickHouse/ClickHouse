@@ -36,7 +36,6 @@
 
 #include <Parsers/getInsertQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -46,17 +45,13 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Storages/StorageFactory.h>
-#include <Storages/TableNameOrQuery.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 #include <base/range.h>
-
-#include <boost/algorithm/string/join.hpp>
 
 
 namespace DB
@@ -65,15 +60,11 @@ namespace Setting
 {
     extern const SettingsBool external_table_functions_use_nulls;
     extern const SettingsUInt64 glob_expansion_max_elements;
-}
-
-namespace PostgreSQLSetting
-{
-    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_size;
-    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_wait_timeout;
-    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_retries;
-    extern const PostgreSQLSettingsBool postgresql_connection_pool_auto_close_connection;
-    extern const PostgreSQLSettingsUInt64 postgresql_connection_attempt_timeout;
+    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const SettingsUInt64 postgresql_connection_pool_retries;
+    extern const SettingsUInt64 postgresql_connection_pool_size;
+    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
 }
 
 namespace ErrorCodes
@@ -81,19 +72,12 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int INCORRECT_QUERY;
-}
-
-namespace
-{
-/// Infer the structure of a result of a user-provided query by running it with `LIMIT 0` on the PostgreSQL side.
-ColumnsDescription doQueryResultStructure(pqxx::connection & connection, const String & query, bool use_nulls);
 }
 
 StoragePostgreSQL::StoragePostgreSQL(
     const StorageID & table_id_,
     postgres::PoolWithFailoverPtr pool_,
-    const TableNameOrQuery & remote_table_or_query_,
+    const String & remote_table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
@@ -101,7 +85,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     const String & remote_table_schema_,
     const String & on_conflict_)
     : StorageWithCommonVirtualColumns(table_id_)
-    , remote_table_or_query(remote_table_or_query_)
+    , remote_table_name(remote_table_name_)
     , remote_table_schema(remote_table_schema_)
     , on_conflict(on_conflict_)
     , pool(std::move(pool_))
@@ -111,7 +95,7 @@ StoragePostgreSQL::StoragePostgreSQL(
 
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromData(pool, remote_table_or_query, remote_table_schema, context_);
+        auto columns = getTableStructureFromData(pool, remote_table_name, remote_table_schema, context_);
         storage_metadata.setColumns(columns);
     }
     else
@@ -133,18 +117,14 @@ VirtualColumnsDescription StoragePostgreSQL::createVirtuals()
 
 ColumnsDescription StoragePostgreSQL::getTableStructureFromData(
     const postgres::PoolWithFailoverPtr & pool_,
-    const TableNameOrQuery & table_or_query,
+    const String & table,
     const String & schema,
     const ContextPtr & context_)
 {
     const bool use_nulls = context_->getSettingsRef()[Setting::external_table_functions_use_nulls];
     auto connection_holder = pool_->get();
-
-    if (table_or_query.isQuery())
-        return doQueryResultStructure(connection_holder->get(), table_or_query.getQuery(), use_nulls);
-
     auto columns_info = fetchPostgreSQLTableStructure(
-            connection_holder->get(), table_or_query.getTableName(), schema, use_nulls).physical_columns;
+            connection_holder->get(), table, schema, use_nulls).physical_columns;
 
     if (!columns_info)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table structure not returned");
@@ -166,14 +146,14 @@ public:
         SharedHeader sample_block,
         size_t max_block_size_,
         String remote_table_schema_,
-        TableNameOrQuery remote_table_or_query_,
+        String remote_table_name_,
         postgres::PoolWithFailoverPtr pool_
     )
         : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , logger(getLogger("ReadFromPostgreSQL"))
         , max_block_size(max_block_size_)
         , remote_table_schema(remote_table_schema_)
-        , remote_table_or_query(remote_table_or_query_)
+        , remote_table_name(remote_table_name_)
         , pool(std::move(pool_))
     {
     }
@@ -190,41 +170,28 @@ public:
             getOutputHeader(),
             max_block_size,
             remote_table_schema,
-            remote_table_or_query,
+            remote_table_name,
             pool);
     }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        String query;
-        if (remote_table_or_query.isQuery())
-        {
-            /// The user-provided query is passed to PostgreSQL as is, wrapped into a subquery to project
-            /// only the required columns. Predicate and LIMIT pushdown are not applied in this case, so
-            /// reject any outer filter under external_table_strict_query.
-            rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context);
-            query = buildQueryForExternalDatabaseSubquery(
-                remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotes);
-        }
-        else
-        {
-            std::optional<size_t> transform_query_limit;
-            if (limit && !filter_actions_dag)
-                transform_query_limit = limit;
+        std::optional<size_t> transform_query_limit;
+        if (limit && !filter_actions_dag)
+            transform_query_limit = limit;
 
-            /// Connection is already made to the needed database, so it should not be present in the query;
-            /// remote_table_schema is empty if it is not specified, will access only table_name.
-            query = transformQueryForExternalDatabase(
-                query_info,
-                required_source_columns,
-                storage_snapshot->metadata->getColumns().getOrdinary(),
-                IdentifierQuotingStyle::DoubleQuotes,
-                LiteralEscapingStyle::PostgreSQL,
-                remote_table_schema,
-                remote_table_or_query.getTableName(),
-                context,
-                transform_query_limit);
-        }
+        /// Connection is already made to the needed database, so it should not be present in the query;
+        /// remote_table_schema is empty if it is not specified, will access only table_name.
+        String query = transformQueryForExternalDatabase(
+            query_info,
+            required_source_columns,
+            storage_snapshot->metadata->getColumns().getOrdinary(),
+            IdentifierQuotingStyle::DoubleQuotes,
+            LiteralEscapingStyle::PostgreSQL,
+            remote_table_schema,
+            remote_table_name,
+            context,
+            transform_query_limit);
         LOG_TRACE(logger, "Query: {}", query);
 
         pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(pool->get(), query, getOutputHeader(), max_block_size)));
@@ -233,7 +200,7 @@ public:
     LoggerPtr logger;
     size_t max_block_size;
     String remote_table_schema;
-    TableNameOrQuery remote_table_or_query;
+    String remote_table_name;
     postgres::PoolWithFailoverPtr pool;
 };
 
@@ -269,7 +236,7 @@ void StoragePostgreSQL::readImpl(
         std::make_shared<const Block>(sample_block),
         max_block_size,
         remote_table_schema,
-        remote_table_or_query,
+        remote_table_name,
         pool);
     query_plan.addStep(std::move(reading));
 }
@@ -594,182 +561,18 @@ private:
 SinkToStoragePtr StoragePostgreSQL::write(
         const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */, bool /*async_insert*/)
 {
-    if (remote_table_or_query.isQuery())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot write into a PostgreSQL table representing the result of a query");
-
-    return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_or_query.getTableName(), remote_table_schema, on_conflict);
+    return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema, on_conflict);
 }
 
-postgres::ConnectionSSLParams StoragePostgreSQL::getSSLParams(const NamedCollection & named_collection)
-{
-    /// A path to a certificate or a key is only accepted from the server configuration file: the
-    /// server opens the file with its own privileges, so taking a path from SQL would let anyone
-    /// who can define a PostgreSQL source probe the local filesystem, and authenticate with a
-    /// client certificate they are not allowed to read themselves.
-    const bool from_config = named_collection.getSourceId() == NamedCollection::SourceId::CONFIG;
-
-    auto get_path = [&](const std::string & key, const std::string & contents_key)
-    {
-        auto value = named_collection.getOrDefault<String>(key, "");
-
-        /// Checked before the empty fast path: overriding a configured path with the empty string
-        /// would silently drop the credential the operator configured, e.g. disable the verification
-        /// of the server certificate against `sslrootcert`.
-        if (named_collection.isQueryOverridden(key))
-        {
-            /// Outside the server configuration file the path key is not accepted at all, overridden
-            /// or not, so the override rejection would name the wrong remedy.
-            if (!from_config)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "`{}` can only be specified in a named collection defined in the server configuration file. "
-                    "Pass the contents of the file in `{}` instead",
-                    key, contents_key);
-
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "`{}` cannot be overridden in a query. "
-                "Pass the contents of the file in `{}` instead",
-                key, contents_key);
-        }
-
-        /// An empty contents override never replaces the stored credential with another one - it can
-        /// only silently drop whatever form of it the collection carries, a path or the contents
-        /// alike. Checked before the empty fast path below so a credential the collection stores in
-        /// the contents form is protected too. When the collection stores no credential at all
-        /// (neither the path - a query cannot override it, so `value` is the collection's own - nor
-        /// the contents, read in its pre-override form), there is nothing to drop and the empty
-        /// override stays the no-op it is for the direct arguments.
-        if (named_collection.isQueryOverridden(contents_key) && named_collection.getOrDefault<String>(contents_key, "").empty()
-            && (!value.empty() || !named_collection.getValueBeforeQueryOverride(contents_key).value_or("").empty()))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "`{}` cannot be overridden with an empty `{}`", key, contents_key);
-
-        if (value.empty())
-            return value;
-
-        if (!from_config)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "`{}` can only be specified in a named collection defined in the server configuration file. "
-                "Pass the contents of the file in `{}` instead",
-                key, contents_key);
-
-        /// The contents are the SQL-safe form of the same credential, so a query passing them replaces
-        /// the path inherited from the collection - that is the only way to override the credential
-        /// from SQL at all. Both forms coming from the collection definition itself remain ambiguous.
-        if (named_collection.isQueryOverridden(contents_key))
-        {
-            /// A credential the operator explicitly locked (`<sslrootcert overridable="false">`) cannot
-            /// be replaced through the contents form either.
-            if (!named_collection.isOverridable(key, /* default_value= */ true))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
-
-            return String{};
-        }
-
-        if (!named_collection.getOrDefault<String>(contents_key, "").empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "`{}` and `{}` cannot be specified at the same time", key, contents_key);
-
-        return value;
-    };
-
-    postgres::ConnectionSSLParams ssl_params;
-    ssl_params.ssl_mode = named_collection.getOrDefault<String>("sslmode", "");
-    ssl_params.ssl_root_cert = get_path("sslrootcert", "sslrootcert_pem");
-    ssl_params.ssl_cert = get_path("sslcert", "sslcert_pem");
-    ssl_params.ssl_key = get_path("sslkey", "sslkey_pem");
-    ssl_params.ssl_root_cert_pem = named_collection.getOrDefault<String>("sslrootcert_pem", "");
-    ssl_params.ssl_cert_pem = named_collection.getOrDefault<String>("sslcert_pem", "");
-    ssl_params.ssl_key_pem = named_collection.getOrDefault<String>("sslkey_pem", "");
-    return ssl_params;
-}
-
-postgres::ConnectionSSLParams StoragePostgreSQL::extractSSLParamsFromArguments(ASTs & arguments, ContextPtr context_)
-{
-    /// The TLS/SSL parameters may follow the positional arguments as `key = value` pairs. Only
-    /// `sslmode` and the contents forms are accepted there: a certificate or key path is taken from
-    /// the server configuration file alone, for the reason described at `getSSLParams`.
-    static const std::initializer_list<std::pair<std::string_view, std::string_view>> tls_path_keys
-        = {{"sslrootcert", "sslrootcert_pem"}, {"sslcert", "sslcert_pem"}, {"sslkey", "sslkey_pem"}};
-
-    std::map<String, String> values;
-
-    size_t num_positional_arguments = arguments.size();
-    while (num_positional_arguments > 0)
-    {
-        const auto * function = arguments[num_positional_arguments - 1]->as<ASTFunction>();
-        if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
-            break;
-
-        const auto * identifier = function->arguments->children[0]->as<ASTIdentifier>();
-        if (!identifier)
-            break;
-
-        const String key = identifier->name();
-        bool is_accepted_key = (key == "sslmode");
-        for (const auto & [path_key, contents_key] : tls_path_keys)
-        {
-            if (key == path_key)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "`{}` can only be specified in a named collection defined in the server configuration file. "
-                    "Pass the contents of the file in `{}` instead",
-                    path_key, contents_key);
-            if (key == contents_key)
-                is_accepted_key = true;
-        }
-
-        /// Anything else is left in place, so that it is reported as an unexpected argument.
-        if (!is_accepted_key)
-            break;
-
-        auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function->arguments->children[1], context_);
-        if (!values.emplace(key, checkAndGetLiteralArgument<String>(value, key)).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument `{}` is specified more than once", key);
-
-        --num_positional_arguments;
-    }
-
-    arguments.resize(num_positional_arguments);
-
-    auto get = [&](const String & key)
-    {
-        auto it = values.find(key);
-        return it == values.end() ? String{} : it->second;
-    };
-
-    postgres::ConnectionSSLParams ssl_params;
-    ssl_params.ssl_mode = get("sslmode");
-    ssl_params.ssl_root_cert_pem = get("sslrootcert_pem");
-    ssl_params.ssl_cert_pem = get("sslcert_pem");
-    ssl_params.ssl_key_pem = get("sslkey_pem");
-    return ssl_params;
-}
-
-StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table)
+StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table)
 {
     StoragePostgreSQL::Configuration configuration;
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
     if (require_table)
-    {
-        /// The data source is either a remote table or a query passed to PostgreSQL as is.
-        if (named_collection.has("query"))
-            required_arguments.insert("query");
-        else
-            required_arguments.insert("table");
-    }
+        required_arguments.insert("table");
 
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments
-        = {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache",
-           "sslmode", "sslrootcert", "sslcert", "sslkey", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"};
-    if (storage_settings)
-        for (const auto & name : storage_settings->getAllRegisteredNames())
-            optional_arguments.insert(name);
-
-    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
+    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
+        named_collection, required_arguments, {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache"});
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())
@@ -789,57 +592,34 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     configuration.password = named_collection.get<String>("password");
     configuration.database = named_collection.getAny<String>({"db", "database"});
     if (require_table)
-    {
-        if (named_collection.has("query"))
-            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, named_collection.get<String>("query"));
-        else
-            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, named_collection.get<String>("table"));
-    }
+        configuration.table = named_collection.get<String>("table");
     configuration.schema = named_collection.getOrDefault<String>("schema", "");
     configuration.on_conflict = named_collection.getOrDefault<String>("on_conflict", "");
-
-    configuration.ssl = getSSLParams(named_collection);
-
-    if (storage_settings)
-        storage_settings->loadFromNamedCollection(named_collection);
 
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, const StorageID * table_id)
 {
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
     {
-        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true);
+        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, context);
     }
     else
     {
-        /// `engine_args` is a copy of the stored argument list, so removing the extracted trailing
-        /// `key = value` arguments here keeps them in the stored query, where they are masked when
-        /// it is formatted.
-        configuration.ssl = extractSSLParamsFromArguments(engine_args, context);
-
         if (engine_args.size() < 5 || engine_args.size() > 7)
         {
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Storage PostgreSQL requires from 5 to 7 parameters: "
-                "PostgreSQL('host:port', 'database', 'table' (or query), 'username', 'password' "
-                "[, 'schema', 'ON CONFLICT ...'] [, sslmode = '...', sslrootcert_pem = '...', "
-                "sslcert_pem = '...', sslkey_pem = '...']. Got: {}",
+                "PostgreSQL('host:port', 'database', 'table', 'username', 'password' "
+                "[, 'schema', 'ON CONFLICT ...']. Got: {}",
                 engine_args.size());
         }
 
-        /// The 3rd argument is either a table name, or a query passed to PostgreSQL as is - `(SELECT ...)` or `query('SELECT ...')`.
-        auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL);
-        for (size_t i = 0; i < engine_args.size(); ++i)
-        {
-            if (i == 2 && maybe_query)
-                continue;
-            engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], context);
-        }
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
         configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context->getSettingsRef()[Setting::glob_expansion_max_elements];
@@ -851,10 +631,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
             configuration.port = configuration.addresses[0].second;
         }
         configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
-        if (maybe_query)
-            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, *maybe_query);
-        else
-            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, checkAndGetLiteralArgument<String>(engine_args[2], "table"));
+        configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
         configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "user");
         configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
 
@@ -875,32 +652,20 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
-        /// Seed the connection-pool parameters from the query-level `postgresql_*` settings (preserving
-        /// the historical behaviour); a named collection may override them, and an explicit SETTINGS
-        /// clause on the table takes the final precedence.
-        PostgreSQLSettings postgresql_settings;
-        postgresql_settings.loadFromQueryContext(*args.getLocalContext());
-
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id);
-
-        if (args.storage_def)
-            postgresql_settings.loadFromQuery(*args.storage_def);
-
-        if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
-
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &args.table_id);
+        const auto & settings = args.getLocalContext()->getSettingsRef();
         auto pool = std::make_shared<postgres::PoolWithFailover>(
             configuration,
-            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size],
-            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_wait_timeout],
-            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_retries],
-            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_auto_close_connection],
-            postgresql_settings[PostgreSQLSetting::postgresql_connection_attempt_timeout]);
+            settings[Setting::postgresql_connection_pool_size],
+            settings[Setting::postgresql_connection_pool_wait_timeout],
+            settings[Setting::postgresql_connection_pool_retries],
+            settings[Setting::postgresql_connection_pool_auto_close_connection],
+            settings[Setting::postgresql_connection_attempt_timeout]);
 
         return std::make_shared<StoragePostgreSQL>(
             args.table_id,
             std::move(pool),
-            configuration.table_or_query,
+            configuration.table,
             args.columns,
             args.constraints,
             args.comment,
@@ -909,10 +674,8 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             configuration.on_conflict);
     },
     {
-        .supports_settings = true,
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::POSTGRES,
-        .has_builtin_setting_fn = PostgreSQLSettings::hasBuiltin,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -923,7 +686,7 @@ Currently, only PostgreSQL versions 12 and up are supported for the table engine
 :::
 
 :::tip
-Check out our [ClickHouse Managed Postgres](/products/managed-postgres/overview) service. Backed by NVMe storage that is physically co-located with compute, it delivers up to 10x faster performance for workloads that are disk-bound compared to alternatives using network-attached storage like EBS and allows you to replicate your Postgres data to ClickHouse using the Postgres CDC connector in ClickPipes.
+Check out our [Managed Postgres](/docs/cloud/managed-postgres) service. Backed by NVMe storage that is physically co-located with compute, it delivers up to 10x faster performance for workloads that are disk-bound compared to alternatives using network-attached storage like EBS and allows you to replicate your Postgres data to ClickHouse using the Postgres CDC connector in ClickPipes.
 :::
 
 ## Creating a table {#creating-a-table}
@@ -935,34 +698,27 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
 ) ENGINE = PostgreSQL({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
-SETTINGS
-    [ postgresql_connection_pool_size=16, ]
-    [ postgresql_connection_pool_wait_timeout=5000, ]
-    [ postgresql_connection_pool_retries=2, ]
-    [ postgresql_connection_pool_auto_close_connection=false, ]
-    [ postgresql_connection_attempt_timeout=2 ]
-;
 ```
 
-See a detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
+See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 The table structure can differ from the original PostgreSQL table structure:
 
 - Column names should be the same as in the original PostgreSQL table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the original PostgreSQL table. ClickHouse tries to [cast](/reference/engines/database-engines/postgresql#data_types-support) values to the ClickHouse data types.
-- The [external_table_functions_use_nulls](/reference/settings/session-settings/external-table#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+- Column types may differ from those in the original PostgreSQL table. ClickHouse tries to [cast](../../../engines/database-engines/postgresql.md#data_types-support) values to the ClickHouse data types.
+- The [external_table_functions_use_nulls](/operations/settings/settings#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
 
 - `host:port` — PostgreSQL server address.
 - `database` — Remote database name.
-- `table` — Remote table name, or a query passed to PostgreSQL as is (see [Passing a query instead of a table name](#passing-a-query)).
+- `table` — Remote table name.
 - `user` — PostgreSQL user.
 - `password` — User password.
 - `schema` — Non-default table schema. Optional.
 - `on_conflict` — Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
 
-[Named collections](/concepts/features/configuration/server-config/named-collections) (available since version 21.11) are recommended for production environment. Here is an example:
+[Named collections](/operations/named-collections.md) (available since version 21.11) are recommended for production environment. Here is an example:
 
 ```xml
 <named_collections>
@@ -981,85 +737,6 @@ Some parameters can be overridden by key value arguments:
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
-### TLS/SSL {#tls-ssl}
-
-TLS/SSL parameters are forwarded to `libpq` and can be set as named collection keys or trailing key-value arguments: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), and the certificates and the key, in one of two forms. When unset, `libpq` defaults apply (`sslmode=prefer`).
-
-- `sslrootcert` (CA certificate, or the special value `system`), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files. They can only be specified in a named collection defined in the server configuration file and cannot be overridden in a query: the server opens the files with its own privileges.
-- `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead of a path. They can be specified anywhere — in a query, in a named collection created with SQL, or as an override of a named collection — and are masked in logs and `SHOW` queries like a password.
-
-For example, to require an encrypted connection and verify the server certificate:
-
-```xml
-<named_collections>
-    <postgres_creds>
-        <host>localhost</host>
-        <port>5432</port>
-        <user>postgres</user>
-        <password>****</password>
-        <sslmode>verify-full</sslmode>
-        <sslrootcert>/etc/clickhouse-server/postgresql-ca.crt</sslrootcert>
-    </postgres_creds>
-</named_collections>
-```
-
-The same without a configuration file, passing the certificate contents in the query:
-
-```sql
-CREATE TABLE postgres_table (id UInt64, value String)
-ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
-                    sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
-...
------END CERTIFICATE-----');
-```
-
-## Settings {#settings}
-
-The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/reference/functions/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting.
-
-### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
-
-Connection pool size (if all connections are in use, the query waits until some connection is freed). Must be non-zero.
-
-Default value: `16`.
-
-### `postgresql_connection_pool_wait_timeout` {#postgresql-connection-pool-wait-timeout}
-
-Connection pool push/pop timeout in milliseconds on an empty pool. `0` means it blocks on an empty pool.
-
-Default value: `5000`.
-
-### `postgresql_connection_pool_retries` {#postgresql-connection-pool-retries}
-
-Connection pool push/pop retries number.
-
-Default value: `2`.
-
-### `postgresql_connection_pool_auto_close_connection` {#postgresql-connection-pool-auto-close-connection}
-
-Close the connection before returning it to the pool.
-
-Default value: `false`.
-
-### `postgresql_connection_attempt_timeout` {#postgresql-connection-attempt-timeout}
-
-Connection timeout in seconds of a single attempt to connect to the PostgreSQL end-point. The value is passed as a `connect_timeout` parameter of the connection URL.
-
-Default value: `2`.
-
-Example:
-
-```sql
-CREATE TABLE pg_table
-(
-    `float_nullable` Nullable(Float32),
-    `str` String,
-    `int_id` Int32
-)
-ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password')
-SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_close_connection = 1;
-```
-
 ## Implementation details {#implementation-details}
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
@@ -1067,23 +744,6 @@ SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_c
 Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
 
 All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
-
-## Passing a query instead of a table name {#passing-a-query}
-
-Instead of a table name, the `table` argument can be a `SELECT` query that is passed to PostgreSQL as is. The structure of the table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
-
-```sql
-CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
-CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
-```
-
-This is useful to push down joins, aggregations or any other processing to PostgreSQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`postgresql`](/reference/functions/table-functions/postgresql) table function.
-
-:::note
-The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the PostgreSQL dialect (PostgreSQL identifier quoting and string-literal escaping) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass PostgreSQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to PostgreSQL verbatim.
-
-Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from PostgreSQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings/external-table#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
-:::
 
 `INSERT` queries on PostgreSQL side run as `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` inside PostgreSQL transaction with auto-commit after each `INSERT` statement.
 
@@ -1151,7 +811,7 @@ int_id | int_nullable | float | str  | float_nullable
 
 ### Creating Table in ClickHouse, and connecting to  PostgreSQL table created above {#creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above}
 
-This example uses the [PostgreSQL table engine](/reference/engines/table-engines/integrations/postgresql) to connect the ClickHouse table to the PostgreSQL table and use both SELECT and INSERT statements to the PostgreSQL database:
+This example uses the [PostgreSQL table engine](/engines/table-engines/integrations/postgresql.md) to connect the ClickHouse table to the PostgreSQL table and use both SELECT and INSERT statements to the PostgreSQL database:
 
 ```sql
 CREATE TABLE default.postgresql_table
@@ -1165,7 +825,7 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgr
 
 ### Inserting initial data from PostgreSQL table into ClickHouse table, using a SELECT query {#inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query}
 
-The [postgresql table function](/reference/functions/table-functions/postgresql) copies the data from PostgreSQL to ClickHouse, which is often used for improving the query performance of the data by querying or performing analytics in ClickHouse rather than in PostgreSQL, or can also be used for migrating data from PostgreSQL to ClickHouse. Since we will be copying the data from PostgreSQL to ClickHouse, we will use a MergeTree table engine in ClickHouse and call it postgresql_copy:
+The [postgresql table function](/sql-reference/table-functions/postgresql.md) copies the data from PostgreSQL to ClickHouse, which is often used for improving the query performance of the data by querying or performing analytics in ClickHouse rather than in PostgreSQL, or can also be used for migrating data from PostgreSQL to ClickHouse. Since we will be copying the data from PostgreSQL to ClickHouse, we will use a MergeTree table engine in ClickHouse and call it postgresql_copy:
 
 ```sql
 CREATE TABLE default.postgresql_copy
@@ -1230,8 +890,8 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 
 **See Also**
 
-- [The `postgresql` table function](/reference/functions/table-functions/postgresql)
-- [Using PostgreSQL as a dictionary source](/reference/statements/create/dictionary/sources/postgresql)
+- [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
+- [Using PostgreSQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/postgresql)
 
 ## Related content {#related-content}
 
@@ -1240,111 +900,6 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 )DOCS_MD",
         .syntax = "ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password'[, 'schema', 'on_conflict'])",
         .related = {"MySQL", "SQLite", "MaterializedPostgreSQL"}});
-}
-
-namespace
-{
-ColumnsDescription doQueryResultStructure(pqxx::connection & connection, const String & query, bool use_nulls)
-{
-    /// Run the query with `LIMIT 0` inside a read-only transaction (so this also works against read-only
-    /// replicas) to obtain the result columns without fetching any data. The wrapping mirrors how the data
-    /// is read later (see buildQueryForExternalDatabaseSubquery).
-    pqxx::ReadTransaction tx(connection);
-    pqxx::result sample{tx.exec("SELECT * FROM (" + query + ") AS __subquery LIMIT 0")};
-
-    const auto num_columns = sample.columns();
-    if (num_columns == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL query returned no columns: {}", query);
-
-    /// Resolve the type names of the result columns from their type OIDs and type modifiers.
-    /// Carrying the type modifier (`format_type(atttypid, atttypmod)`, exactly as the table path does) is
-    /// required so that e.g. `numeric(78, 0)` is mapped to `Int256` instead of falling back to a generic
-    /// `Decimal128`. `WITH ORDINALITY` together with the explicit `ORDER BY` keeps the resolved type names
-    /// lined up with the result columns regardless of how the array is unnested.
-    std::vector<std::string> oids;
-    std::vector<std::string> type_modifiers;
-    oids.reserve(num_columns);
-    type_modifiers.reserve(num_columns);
-    for (pqxx::row_size_type i = 0; i < num_columns; ++i)
-    {
-        oids.push_back(std::to_string(sample.column_type(i)));
-        type_modifiers.push_back(std::to_string(sample.column_type_modifier(i)));
-    }
-
-    pqxx::result type_names{tx.exec(
-        "SELECT format_type(type_oid, type_mod) FROM unnest(ARRAY[" + boost::algorithm::join(oids, ",")
-        + "]::oid[], ARRAY[" + boost::algorithm::join(type_modifiers, ",")
-        + "]::integer[]) WITH ORDINALITY AS t(type_oid, type_mod, ord) ORDER BY ord")};
-
-    std::vector<String> resolved_types(num_columns);
-    std::vector<pqxx::row_size_type> array_columns;
-    for (pqxx::row_size_type i = 0; i < num_columns; ++i)
-    {
-        resolved_types[i] = type_names[i][0].as<std::string>();
-        if (resolved_types[i].ends_with("[]"))
-            array_columns.push_back(i);
-    }
-
-    /// PostgreSQL array type OIDs do not encode the number of dimensions, so an `integer[][]` result column
-    /// looks exactly like `integer[]`. Probe the actual data with `array_ndims` (as the table path does via
-    /// its `recheck_array` step) to learn the real dimensions; otherwise multidimensional arrays would be
-    /// inferred as one-dimensional and fail at read time with `Got more dimensions than expected`. When the
-    /// query returns no rows there is nothing to probe, and the dimensions stay at one (the result is empty
-    /// anyway).
-    std::vector<uint16_t> dimensions(num_columns, 1);
-    if (!array_columns.empty())
-    {
-        /// Reference the result columns positionally through an explicit column alias list, so we do not have
-        /// to rely on the (possibly duplicate or unnamed) result column names of an arbitrary query.
-        std::vector<std::string> alias_columns;
-        std::vector<std::string> ndims_exprs;
-        alias_columns.reserve(num_columns);
-        ndims_exprs.reserve(array_columns.size());
-        for (pqxx::row_size_type i = 0; i < num_columns; ++i)
-            alias_columns.push_back("c" + std::to_string(i));
-        for (auto i : array_columns)
-            ndims_exprs.push_back("array_ndims(c" + std::to_string(i) + ")");
-
-        pqxx::result ndims_result{tx.exec(
-            "SELECT " + boost::algorithm::join(ndims_exprs, ",") + " FROM (" + query + ") AS __subquery("
-            + boost::algorithm::join(alias_columns, ",") + ") LIMIT 1")};
-
-        if (!ndims_result.empty())
-        {
-            for (size_t j = 0; j < array_columns.size(); ++j)
-            {
-                const auto column = array_columns[j];
-                const auto & field = ndims_result[0][static_cast<pqxx::row_size_type>(j)];
-
-                /// `array_ndims` returns NULL when the sampled array value is NULL or empty, so the dimensions
-                /// cannot be inferred from the first row. Fail early with a clear error (as the table path does
-                /// in its `recheck_array` step) instead of silently inferring a one-dimensional array and then
-                /// failing at read time with the confusing `Got more dimensions than expected`.
-                if (field.is_null())
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot infer the number of dimensions of the array in column {} ({}) of the PostgreSQL "
-                        "query result, because its value in the first row is NULL or an empty array. "
-                        "Make sure the first row contains a non-empty array value.",
-                        column + 1, sample.column_name(column));
-
-                dimensions[column] = static_cast<uint16_t>(field.as<int>());
-            }
-        }
-    }
-
-    tx.commit();
-
-    NamesAndTypesList columns;
-    auto recheck_array = []() {}; /// Dimensions are resolved explicitly above, so the recheck callback is unused.
-    for (pqxx::row_size_type i = 0; i < num_columns; ++i)
-    {
-        auto data_type = convertPostgreSQLDataType(resolved_types[i], recheck_array, use_nulls, dimensions[i]);
-        columns.emplace_back(sample.column_name(i), data_type);
-    }
-
-    return ColumnsDescription{columns};
-}
 }
 
 }

@@ -44,9 +44,6 @@ public:
 
     void setCodec(CompressionCodecPtr codec_);
 
-    /// Returns the buffer that compressed data is written into.
-    WriteBuffer * getNestedBuffer() const { return &out; }
-
 private:
     void nextImpl() override;
     /// finalize call does not affect the out buffer.

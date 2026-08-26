@@ -276,7 +276,7 @@ public:
 
             if (chunk && chunk.getNumColumns() != result_block.columns())
                 throw Exception(
-                    ErrorCodes::WASM_ERROR,
+                    ErrorCodes::LOGICAL_ERROR,
                     "Different number of columns in result chunks, expected {}, got {}",
                     result_block.dumpStructure(),
                     chunk.dumpStructure());
@@ -289,13 +289,6 @@ public:
             if (!has_data)
                 break;
         }
-
-        if (result_chunk.getNumColumns() != result_block.columns())
-            throw Exception(
-                ErrorCodes::WASM_ERROR,
-                "WebAssembly function returned a result with {} columns, expected {}",
-                result_chunk.getNumColumns(), result_block.columns());
-
         result_block.setColumns(result_chunk.detachColumns());
     }
 
@@ -487,13 +480,6 @@ public:
     String getName() const override { return function_name; }
     bool isVariadic() const override { return false; }
     bool isDeterministic() const override { return user_defined_function->getIsDeterministic(); }
-    bool isSpatialPredicate() const override
-    {
-        auto val = user_defined_function->getSettings().getValue("is_spatial_predicate");
-        if (val.getType() == Field::Types::Bool)
-            return val.safeGet<bool>();
-        return val.safeGet<UInt64>() != 0;
-    }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /* arguments */) const override { return false; }
     size_t getNumberOfArguments() const override { return user_defined_function->getArguments().size(); }
 
@@ -839,13 +825,11 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         /// Serialization format for input/output data for ABI what uses serialization
         {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary", "Buffers"}}.withDefault("MsgPack")},
         {"webassembly_udf_enable_fuel", SettingBool{}.withDefault(true)},
-        /// Whether bbox-disjoint pruning is safe for this function (see IFunctionBase::isSpatialPredicate).
-        {"is_spatial_predicate", SettingBool{}.withDefault(false)},
     };
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    Strings getAllRegisteredNames() const override
     {
-        VectorWithMemoryTracking<String> result;
+        Strings result;
         result.reserve(settings_def.size());
         for (const auto & [name, _] : settings_def)
             result.push_back(name);

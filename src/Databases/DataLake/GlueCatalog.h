@@ -33,16 +33,13 @@ public:
         const String & endpoint,
         DB::ContextPtr context_,
         const CatalogSettings & settings_,
-        DB::ASTPtr table_engine_definition_,
-        bool allow_server_credentials_in_user_queries_);
+        DB::ASTPtr table_engine_definition_);
 
     ~GlueCatalog() override;
 
     bool empty() const override;
 
-    CatalogTables getTables() const override;
-
-    Namespaces getNamespaces() const override;
+    DB::Names getTables() const override;
 
     bool existsTable(const std::string & database_name, const std::string & table_name) const override;
 
@@ -80,7 +77,7 @@ public:
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
 
-    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
+    void dropTable(const String & namespace_name, const String & table_name) const override;
 
     /// Returns a callback that re-vends fresh AWS credentials from the configured
     /// credentials provider chain. Invoked by `ReadBufferFromS3` when an S3 call
@@ -105,8 +102,7 @@ private:
     DB::ASTPtr table_engine_definition;
 
     DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
-    CatalogTables getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
-    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
+    DB::Names getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
     void setCredentials(TableMetadata & metadata) const;
 
     /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.

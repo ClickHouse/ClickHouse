@@ -5,9 +5,6 @@
 #include <string>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -22,9 +19,9 @@ struct InterpolateDescription
 
     ActionsDAG actions;
 
-    UnorderedMapWithMemoryTracking<std::string, NameAndTypePair> required_columns_map; /// input column name -> {alias, type}
-    UnorderedSetWithMemoryTracking<std::string> result_columns_set; /// result block columns
-    VectorWithMemoryTracking<std::string> result_columns_order; /// result block columns order
+    std::unordered_map<std::string, NameAndTypePair> required_columns_map; /// input column name -> {alias, type}
+    std::unordered_set<std::string> result_columns_set; /// result block columns
+    std::vector<std::string> result_columns_order; /// result block columns order
 };
 
 using InterpolateDescriptionPtr = std::shared_ptr<InterpolateDescription>;

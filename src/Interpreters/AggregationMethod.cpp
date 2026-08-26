@@ -42,7 +42,6 @@ template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt
 template struct AggregationMethodOneNumber<UInt16, AggregatedDataWithNullableUInt16Key, false, true>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32Key, true, true>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64Key, true, true>;
-template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyHash64, true, true>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32KeyTwoLevel, true, true>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyTwoLevel, true, true>;
 template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false>;
@@ -191,8 +190,6 @@ template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128Hash64>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256Hash64>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256, true>;
-template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128Hash64, true>;
-template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256Hash64, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128, false, true>;

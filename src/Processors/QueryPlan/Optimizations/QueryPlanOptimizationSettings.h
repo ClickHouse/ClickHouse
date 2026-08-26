@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Joins.h>
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
@@ -31,8 +30,6 @@ struct QueryPlanOptimizationSettings
 
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
-    void keepOnlyExplicitlyEnabled(const Settings & from);
-
     /// Allows to globally disable all plan-level optimizations.
     /// Note: Even if set to 'true', individual optimizations may still be disabled via below settings.
     bool optimize_plan;
@@ -50,24 +47,20 @@ struct QueryPlanOptimizationSettings
     /// --- First-pass optimizations
     bool lift_up_array_join;
     bool push_down_limit;
-    bool aggregation_bucket_top_k;
     bool split_filter;
     bool merge_expressions;
     bool merge_filters;
     bool filter_push_down;
     bool convert_outer_join_to_inner_join;
-    bool short_circuit_constant_false_join;
     bool execute_functions_after_sorting;
     bool reuse_storage_ordering_for_window_functions;
     bool lift_up_union;
     bool aggregate_partitions_independently;
     bool limit_by_partitions_independently;
-    bool distinct_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
-    bool merge_expression_into_join;
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;
@@ -98,10 +91,7 @@ struct QueryPlanOptimizationSettings
     bool aggregation_in_order;
     bool optimize_projection;
     bool use_query_condition_cache;
-    bool use_query_condition_cache_for_top_k;
     bool read_in_order_through_join;
-    bool read_in_order_through_spilling_join;
-    bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;
 
@@ -109,8 +99,6 @@ struct QueryPlanOptimizationSettings
     bool build_sets = true; /// this one doesn't have a corresponding setting
     bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
-
-    bool enable_cascades_optimizer = false;
 
     bool make_distributed_plan = false;
     bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
@@ -123,7 +111,6 @@ struct QueryPlanOptimizationSettings
     bool distributed_plan_force_shuffle_aggregation = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
     bool distributed_aggregation_memory_efficient = true; /// Is the memory-saving mode of distributed aggregation enabled
     bool distributed_plan_prefer_replicas_over_workers = false; /// Use ReadFromMergeTree with catalog access over ReadFromMergeTreeAtWorker
-    bool exact_rows_before_limit = false; /// LIMIT must read its input to the end so rows_before_limit_at_least is exact
 
     /// ------------------------------------------------------
 
@@ -147,7 +134,6 @@ struct QueryPlanOptimizationSettings
 
     /// If lazy materialization optimisation is enabled
     bool optimize_lazy_materialization = false;
-    bool optimize_lazy_materialization_for_object_storage = false;
     size_t max_limit_for_lazy_materialization = 0;
 
     /// If lazy FINAL optimization for ReplacingMergeTree is enabled
@@ -164,7 +150,6 @@ struct QueryPlanOptimizationSettings
     /// If full text search using index in payload is enabled.
     bool direct_read_from_text_index;
     bool enable_full_text_index;
-    bool query_plan_optimize_count_from_text_index;
 
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;
@@ -183,22 +168,18 @@ struct QueryPlanOptimizationSettings
     UInt64 max_entries_for_hash_table_stats;
     UInt64 max_size_to_preallocate_for_joins;
     bool collect_hash_table_stats_during_joins;
-    bool collect_hash_table_stats_during_aggregation;
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};
     ExpressionActionsSettings actions_settings;
 
     /// JOIN runtime filter settings
     bool enable_join_runtime_filters = false; /// Filter left side by set of JOIN keys collected from the right side at runtime
-    bool enable_join_runtime_filters_index_analysis = false; /// Filter left side using pk/skip indexes
     UInt64 join_runtime_filter_exact_values_limit = 0;
     UInt64 join_runtime_bloom_filter_bytes = 0;
     UInt64 join_runtime_bloom_filter_hash_functions = 0;
     Float64 join_runtime_filter_pass_ratio_threshold_for_disabling = 0.7;
     UInt64 join_runtime_filter_blocks_to_skip_before_reenabling = 30;
     Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
-    UInt64 join_runtime_filter_min_probe_rows = 1000;
-    bool join_runtime_filter_size_from_hash_table_stats = false;
 
     std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
 
@@ -227,7 +208,6 @@ struct QueryPlanOptimizationSettings
     std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 
     bool parallel_replicas_filter_pushdown = false;
-    bool enable_parallel_replicas = false;
 };
 
 }

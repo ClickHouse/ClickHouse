@@ -10,7 +10,6 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -73,11 +72,9 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
 {
     DB::ColumnsWithTypeAndName names_and_types{
         {std::make_shared<DB::DataTypeString>(), "path"},
-        /// Partition values are nullable: Delta commits a JSON null for a null-equivalent
-        /// partition value (SQL NULL or empty string), distinct from the string "null".
         {std::make_shared<DB::DataTypeMap>(
             std::make_shared<DB::DataTypeString>(),
-            std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeString>())), "partitionValues"},
+            std::make_shared<DB::DataTypeString>()), "partitionValues"},
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
         {std::make_shared<DB::DataTypeTuple>(
@@ -150,13 +147,7 @@ const std::string & WriteTransaction::getDataPath() const
     return path_prefix;
 }
 
-const DB::NamesAndTypesList & WriteTransaction::getWriteSchema() const
-{
-    assertTransactionCreated();
-    return write_schema;
-}
-
-void WriteTransaction::create(const DB::Names & partition_columns, const DB::NamesAndTypesList & table_schema)
+void WriteTransaction::create()
 {
     auto * engine_builder = kernel_helper->createBuilder();
     engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
@@ -173,28 +164,16 @@ void WriteTransaction::create(const DB::Names & partition_columns, const DB::Nam
             engine.get()),
         "with_engine_info");
 
-    if (partition_columns.empty())
-    {
-        /// Unpartitioned tables: let the kernel build the write context.
-        unpartitioned_write_context = DeltaLake::KernelUtils::unwrapResult(
-            ffi::get_unpartitioned_write_context(transaction.get(), engine.get()),
-            "get_unpartitioned_write_context");
-        write_schema = DeltaLake::getWriteSchema(unpartitioned_write_context.get(), engine.get());
+    write_context = ffi::get_write_context(transaction.get());
+    write_schema = DeltaLake::getWriteSchema(write_context.get());
 
-        std::unique_ptr<std::string> write_path_raw(static_cast<std::string *>(
-            ffi::get_write_path(unpartitioned_write_context.get(), DeltaLake::KernelUtils::allocateString)));
-        if (!write_path_raw)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to get write path");
+    auto * write_path_raw = static_cast<std::string *>(
+        ffi::get_write_path(write_context.get(), DeltaLake::KernelUtils::allocateString));
+    if (!write_path_raw)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to get write path");
 
-        write_path = *write_path_raw;
-    }
-    else
-    {
-        /// delta-kernel exposes no partitioned write context via FFI (TODO(#2355)), so derive the
-        /// write schema and path directly; per-partition values are handled when committing.
-        write_schema = table_schema;
-        write_path = kernel_helper->getTableLocation();
-    }
+    write_path = *write_path_raw;
+    delete write_path_raw;
 
     auto pos = write_path.find("://");
     if (pos == std::string::npos)
@@ -274,12 +253,7 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     }
 
     ffi::add_files(transaction.get(), engine_data.release());
-    using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
-    KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
-        ffi::commit(transaction.release(), engine.get()),
-        "commit"));
-    auto * committed_handle = committed.get();
-    auto version = ffi::committed_transaction_version(&committed_handle);
+    auto version = DeltaLake::KernelUtils::unwrapResult(ffi::commit(transaction.release(), engine.get()), "commit");
 
     LOG_TEST(log, "Commit version: {}", version);
 }

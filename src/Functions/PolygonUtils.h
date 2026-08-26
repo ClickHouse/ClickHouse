@@ -168,9 +168,10 @@ public:
     /// ─ Default value is 16, which is a good compromise for most cases.
     static constexpr std::size_t max_elements_per_rtree_node = 16;
 
-    explicit PointInMultiPolygonRTree(const MultiPolygon & multi_polygon, UInt16 grid_size_ = 8)
+    explicit PointInMultiPolygonRTree(const MultiPolygon & multi_polygon_, UInt16 grid_size_ = 8)
+        : multi_polygon(multi_polygon_)
     {
-        build(multi_polygon, grid_size_);
+        build(grid_size_);
     }
 
     /// O(log N + K) where K = polygons that contain the point.
@@ -201,6 +202,7 @@ public:
     }
 
 private:
+    MultiPolygon multi_polygon;
     VectorWithMemoryTracking<PointInPolygonImpl> polygon_impls;
 
     /// Boost.Geometry split policy choices
@@ -214,10 +216,7 @@ private:
     /// Only becomes true if all polygons have empty bounding box.
     bool has_empty_bound = false;
 
-    /// The input multipolygon is consumed only to build the per-polygon impls and the R-tree; it is
-    /// intentionally not retained (contains() needs only the impls and the tree), which avoids keeping
-    /// a second full copy of every vertex alongside the per-polygon copies in polygon_impls.
-    void build(const MultiPolygon & multi_polygon, UInt16 grid_size)
+    void build(UInt16 grid_size)
     {
         polygon_impls.reserve(multi_polygon.size());
 
@@ -389,17 +388,11 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
     cell_width = (max_corner.x() - min_corner.x()) / grid_size;
     cell_height = (max_corner.y() - min_corner.y()) / grid_size;
 
-    /// Negative spans come from the inverse box boost::geometry::envelope leaves for an empty
-    /// geometry. NaN is not <= 0, so it reaches the finiteness check below.
-    if (cell_width <= 0 || cell_height <= 0)
+    if (cell_width == 0 || cell_height == 0)
     {
         has_empty_bound = true;
         return;
     }
-
-    /// 1 / +-inf is +-0.0, which is finite: the scales below would pass their own check.
-    if (!isFinite(cell_width) || !isFinite(cell_height))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: bounding box is unbounded");
 
     x_scale = 1 / cell_width;
     y_scale = 1 / cell_height;

@@ -7,6 +7,3 @@ SELECT formatQuery('ALTER TABLE a (DROP COLUMN b), DROP COLUMN c'); -- { serverE
 SELECT formatQuery('ALTER TABLE a DROP COLUMN b, (DROP COLUMN c)'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a (DROP COLUMN b), (DROP COLUMN c)');
 SELECT formatQuery('ALTER TABLE a DROP COLUMN b, DROP COLUMN c'); -- Make sure it is backward compatible
-
-SELECT '--- MOVE PARTITION TO TABLE is wrapped in parens like any other alter command';
-SELECT formatQuery('ALTER TABLE a MOVE PARTITION tuple() TO TABLE b');

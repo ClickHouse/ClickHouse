@@ -12,7 +12,6 @@ SET max_rows_to_group_by = 0;
 SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0;
-SET automatic_parallel_replicas_mode = 0;
 
 -- A distributed read cannot reproduce the coordinator's part ordering, so the part-order virtual
 -- columns are rejected at planning time (rather than silently returning worker-local values).
@@ -23,10 +22,6 @@ SELECT _part_starting_offset FROM t_read_rejects; -- { serverError SUPPORT_IS_DI
 -- oversized value is rejected at planning time instead of allocating that many tasks and ports.
 SELECT sum(x) FROM t_read_rejects SETTINGS distributed_plan_default_shuffle_join_bucket_count = 257; -- { serverError INVALID_SETTING_VALUE }
 SELECT sum(x) FROM t_read_rejects SETTINGS distributed_plan_default_reader_bucket_count = 257; -- { serverError INVALID_SETTING_VALUE }
--- The validation runs before the tryMakeDistributedRead pass sizes any vector, so a value near the type
--- maximum is rejected too instead of sizing a read-bucket vector to it and aborting (std::length_error).
-SELECT sum(x) FROM t_read_rejects SETTINGS distributed_plan_default_shuffle_join_bucket_count = 9223372036854775807; -- { serverError INVALID_SETTING_VALUE }
-SELECT sum(x) FROM t_read_rejects SETTINGS distributed_plan_default_reader_bucket_count = 9223372036854775807; -- { serverError INVALID_SETTING_VALUE }
 
 -- _part_offset alone is per-part and order-independent, so it stays supported.
 SELECT sum(_part_offset) FROM t_read_rejects;

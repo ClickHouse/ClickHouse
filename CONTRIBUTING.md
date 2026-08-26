@@ -28,7 +28,7 @@ Common entry points:
 - [Testing ClickHouse](https://clickhouse.com/docs/development/tests)
 - [C++ Style Guide](https://clickhouse.com/docs/development/style)
 
-If you want to contribute to documentation, see the [docs contribution guide](https://github.com/ClickHouse/ClickHouse/tree/master/docs#readme) in this repository (`docs/`). The live site is built with Mintlify.
+If you want to contribute to documentation, please see the [documentation repository](https://github.com/ClickHouse/clickhouse-docs).
 
 ## See Also
 
