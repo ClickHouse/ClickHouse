@@ -295,4 +295,15 @@ ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
     WHERE id = 1 SETTINGS mutations_sync = 2;
 SELECT 'C29', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
 
+-- An expression alias is in scope in the whole `SELECT` that declares it, including its `WITH`
+-- elements, so the right argument of the second `IN` is the tuple (1) and not the table (0).
+CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v12 AS
+    WITH ((7 IN ((7, 8) AS src)) AND (7 IN src)) AS flag SELECT toUInt64(flag) AS s;
+SELECT 'C30', s FROM {CLICKHOUSE_DATABASE_1:Identifier}.v12;
+
+-- A name in the same position that is not an alias still denotes the table (1).
+CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v13 AS
+    WITH (99 IN src) AS flag SELECT toUInt64(flag) AS s;
+SELECT 'C31', s FROM {CLICKHOUSE_DATABASE_1:Identifier}.v13;
+
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
