@@ -140,7 +140,15 @@ public:
         /// blocks their ordering domain. Once the last blocker of a domain resolves,
         /// put these files back through the regular filtering path instead of waiting
         /// for the object-storage listing to start another full pass.
+        /// This is only a shortcut, so the number of retained files is capped: a blocker
+        /// near the beginning of a large namespace would otherwise buffer the whole rest
+        /// of its domain in memory. Beyond the cap the files are simply not retained and
+        /// the next listing pass lists them again (the `processed` pointer cannot advance
+        /// past the blocker, so they stay within the listed range).
+        static constexpr size_t max_blocked_files_to_replay = 1000;
         std::map<OrderingDomain, ObjectInfos> blocked_files_per_domain TSA_GUARDED_BY(next_mutex);
+        size_t blocked_files_count TSA_GUARDED_BY(next_mutex) = 0;
+        bool blocked_files_replay_capped TSA_GUARDED_BY(next_mutex) = false;
 
         /// Ordered mode only. Committing a file declares every smaller path of its domain
         /// processed, so while a file of the domain
@@ -159,6 +167,7 @@ public:
         OrderingDomain getOrderingDomain(const std::string & path) const;
         void recordForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
         void resolveForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
+        void rememberBlockedFile(ObjectInfoPtr object) TSA_REQUIRES(next_mutex);
         void recheckBlockedFilesForDomain(const OrderingDomain & domain) TSA_REQUIRES(next_mutex);
         bool isBlockedByForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
 

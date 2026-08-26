@@ -548,7 +548,7 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
     for (auto & object : objects)
     {
         if (blocked_by_foreign_held_file.contains(object->getPath()))
-            blocked_files_per_domain[getOrderingDomain(object->getPath())].push_back(std::move(object));
+            rememberBlockedFile(std::move(object));
     }
 
     /// The states found terminal in keeper are terminal for the file status cache
@@ -708,6 +708,29 @@ void ObjectStorageQueueSource::FileIterator::resolveForeignHeldFile(const std::s
     }
 }
 
+void ObjectStorageQueueSource::FileIterator::rememberBlockedFile(ObjectInfoPtr object)
+{
+    /// Retaining the blocked files only saves them a relisting, so the memory spent on it
+    /// must not depend on the size of the namespace: a foreign-held file near the beginning
+    /// of a large domain blocks everything after it, which can be millions of objects.
+    /// Beyond the cap the file is dropped and listed again by the next pass.
+    if (blocked_files_count >= max_blocked_files_to_replay)
+    {
+        if (!std::exchange(blocked_files_replay_capped, true))
+        {
+            LOG_TRACE(
+                log,
+                "Not retaining more than {} files blocked by a foreign-held file of their ordering domain, "
+                "the rest will be listed again by the next pass",
+                max_blocked_files_to_replay);
+        }
+        return;
+    }
+
+    blocked_files_per_domain[getOrderingDomain(object->getPath())].push_back(std::move(object));
+    ++blocked_files_count;
+}
+
 void ObjectStorageQueueSource::FileIterator::recheckBlockedFilesForDomain(const OrderingDomain & domain)
 {
     const auto it = blocked_files_per_domain.find(domain);
@@ -715,6 +738,8 @@ void ObjectStorageQueueSource::FileIterator::recheckBlockedFilesForDomain(const 
         return;
 
     LOG_TEST(log, "Rechecking {} files after a foreign-held file in their ordering domain was resolved", it->second.size());
+    chassert(blocked_files_count >= it->second.size());
+    blocked_files_count -= it->second.size();
     std::move(it->second.begin(), it->second.end(), std::back_inserter(foreign_processing_files_to_recheck));
     blocked_files_per_domain.erase(it);
 }
@@ -883,7 +908,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
                     file_metadata->resetProcessing();
                 {
                     std::lock_guard lock(next_mutex);
-                    blocked_files_per_domain[getOrderingDomain(object_info->getPath())].push_back(std::move(object_info));
+                    rememberBlockedFile(std::move(object_info));
                 }
                 continue;
             }
