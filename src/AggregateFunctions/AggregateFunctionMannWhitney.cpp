@@ -305,7 +305,7 @@ SELECT mannWhitneyUTest('greater')(sample_data, sample_index) FROM mww_ttest;
         )",
         R"(
 ┌─mannWhitneyUTest('greater')(sample_data, sample_index)─┐
-│ (9,0.04042779918503192)                                │
+│ (9,0.04042779918502615)                                │
 └────────────────────────────────────────────────────────┘
         )"
     }

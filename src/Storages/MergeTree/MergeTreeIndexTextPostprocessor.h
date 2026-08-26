@@ -26,7 +26,6 @@ struct MergeTreeIndexTextInlineFilter
     struct Eq   { using is_transparent = void; bool operator()(std::string_view a, std::string_view b) const { return a == b; } };
     absl::flat_hash_set<std::string, Hash, Eq> tokens;
     bool drop_on_match = true;
-    bool shouldDrop(std::string_view token) const { return tokens.contains(token) == drop_on_match; }
 };
 
 /// Postprocessor for text index tokens.

@@ -45,6 +45,8 @@
 #include <base/types.h>
 #include <fmt/ranges.h>
 
+#include <numeric>
+
 namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
@@ -392,7 +394,7 @@ ColumnPtr deserializeTokensRaw(ReadBuffer & istr, size_t num_tokens)
     tokens_column->reserve(num_tokens);
 
     auto serialization_string = SerializationString::create();
-    serialization_string->deserializeBinaryBulk(*tokens_column, istr, 0, num_tokens, 0.0);
+    serialization_string->deserializeBinaryBulk(*tokens_column, istr, num_tokens, 0.0);
 
     return tokens_column;
 }
@@ -1258,7 +1260,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
     auto offsets = ColumnUInt64::create();
 
     auto serialization_number = SerializationNumber<UInt64>::create();
-    serialization_number->deserializeBinaryBulk(*offsets, istr, 0, num_sparse_index_tokens, 0.0);
+    serialization_number->deserializeBinaryBulk(*offsets, istr, num_sparse_index_tokens, 0.0);
     header.sparse_index = DictionarySparseIndex(std::move(tokens), std::move(offsets));
     return header;
 }
@@ -1642,26 +1644,79 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
         });
 }
 
-void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
+void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
 {
-    if (postprocessor_drop_filter && postprocessor_drop_filter->shouldDrop(token))
+    if (!postprocessor_drop_filter || postprocessor_drop_filter->drop_on_match)
         return;
+
+    const auto & filter_tokens = postprocessor_drop_filter->tokens;
+
+    /// StringHashTable::dispatch reads whole 8-byte words around short keys.
+    static constexpr size_t pad_left = 8;
+    const size_t total_size = std::accumulate(
+        filter_tokens.begin(), filter_tokens.end(), pad_left,
+        [](size_t sum, const auto & filter_token) { return sum + filter_token.size(); });
+
+    char * data = arena->alloc(total_size) + pad_left;
 
     bool inserted = false;
     TokenToPostingsBuilderMap::LookupResult it;
-    ArenaKeyHolder key_holder(token, *arena);
-    tokens_map.emplace(key_holder, it, inserted);
+    for (const auto & filter_token : filter_tokens)
+    {
+        memcpy(data, filter_token.data(), filter_token.size());
+        std::string_view key(data, filter_token.size());
+        data += filter_token.size();
+
+        tokens_map.emplace(key, it, inserted);
+        chassert(inserted);
+        it->getMapped().markFiltered();
+    }
+}
+
+void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
+{
+    bool inserted = false;
+    TokenToPostingsBuilderMap::LookupResult it;
+
+    if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match)
+    {
+        it = tokens_map.find(token);
+        if (!it)
+            return;
+
+        if (it->getMapped().isFiltered())
+            it->getMapped().clearFiltered();
+    }
+    else
+    {
+        ArenaKeyHolder key_holder(token, *arena);
+        tokens_map.emplace(key_holder, it, inserted);
+
+        if (postprocessor_drop_filter)
+        {
+            if (inserted)
+            {
+                if (postprocessor_drop_filter->tokens.contains(token))
+                {
+                    it->getMapped().markFiltered();
+                    return;
+                }
+            }
+            else if (it->getMapped().isFiltered())
+                return;
+        }
+
+        if (position_map)
+        {
+            TokenToPositionListMap::LookupResult pos_it;
+            position_map->emplace(key_holder, pos_it, inserted);
+            auto & positions_builder = pos_it->getMapped();
+            positions_builder.add(static_cast<UInt32>(current_row), token_position);
+        }
+    }
 
     PostingListBuilder & posting_list_builder = it->getMapped();
     posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
-
-    if (position_map)
-    {
-        TokenToPositionListMap::LookupResult pos_it;
-        position_map->emplace(key_holder, pos_it, inserted);
-        auto & positions_builder = pos_it->getMapped();
-        positions_builder.add(static_cast<UInt32>(current_row), token_position);
-    }
 
     ++num_processed_tokens;
 }
@@ -1680,6 +1735,9 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
         std::string_view token = key;
+        if (mapped.isFiltered())
+            return;
+        chassert(!mapped.isEmpty());
         sorted_tokens.push_back(SortedToken{token, &mapped, nullptr});
     });
 
@@ -1733,6 +1791,8 @@ void MergeTreeIndexTextGranuleBuilder::reset()
         position_map = std::make_unique<TokenToPositionListMap>();
     else
         position_map.reset();
+
+    seedDropFilter();
 }
 
 MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
@@ -1758,6 +1818,7 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
         if (const auto * inline_filter = postprocessor->getInlineFilter())
         {
             granule_builder.postprocessor_drop_filter = inline_filter;
+            granule_builder.seedDropFilter();
             use_postprocessor_drop_fast_path = true;
         }
     }
