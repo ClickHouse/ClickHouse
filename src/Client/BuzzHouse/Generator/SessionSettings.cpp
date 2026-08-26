@@ -392,7 +392,6 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_parallel_replicas", trueOrFalseSetting},
        {"enable_parallel_single_level_merge", trueOrFalseSetting},
        {"enable_producing_buckets_out_of_order_in_aggregation", trueOrFalseSetting},
-       {"enable_sharding_aggregator", trueOrFalseSetting},
        {"enable_software_prefetch_in_join", trueOrFalseSetting},
        {"join_algorithm",
         CHSetting(
