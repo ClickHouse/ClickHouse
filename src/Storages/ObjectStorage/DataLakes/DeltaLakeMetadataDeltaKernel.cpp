@@ -784,25 +784,6 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
     /// `_delta_log`); a new table needs an explicit schema.
     const bool has_explicit_columns = columns.has_value() && !columns->empty();
 
-    if (has_explicit_columns)
-    {
-        /// Reject unsupported columns before the first commit, else `_delta_log` is written (and the catalog
-        /// entry created) before `StorageObjectStorage`'s later `validateSupportedColumns` rejects the DDL.
-        if (!columns->hasOnlyOrdinary())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for DeltaLake CREATE TABLE");
-
-        /// Reject columns with virtual-column names before the first commit for the same reason.
-        const auto reserved_virtual_columns = VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
-        for (const auto & column : *columns)
-            if (reserved_virtual_columns.contains(column.name))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create DeltaLake table with column `{}` because it is reserved for a virtual column",
-                    column.name);
-    }
-
     /// Register with the catalog whenever one is present: an attach to an existing `_delta_log` must be registered even with writes off, and a fresh CREATE that needs writes is already rejected in `createTable`.
     const bool register_with_catalog = catalog != nullptr;
     if (register_with_catalog && catalog->getCatalogType() != DatabaseDataLakeCatalogType::UNITY)
@@ -823,6 +804,25 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Creating a new DeltaLake table or registering an existing one into a catalog with CREATE TABLE "
             "is experimental; set allow_delta_lake_create_table = 1 to enable it");
+
+    if (has_explicit_columns)
+    {
+        /// Reject unsupported columns before the first commit, else `_delta_log` is written (and the catalog
+        /// entry created) before `StorageObjectStorage`'s later `validateSupportedColumns` rejects the DDL.
+        if (!columns->hasOnlyOrdinary())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for DeltaLake CREATE TABLE");
+
+        /// Reject columns with virtual-column names before the first commit for the same reason.
+        const auto reserved_virtual_columns = VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
+        for (const auto & column : *columns)
+            if (reserved_virtual_columns.contains(column.name))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create DeltaLake table with column `{}` because it is reserved for a virtual column",
+                    column.name);
+    }
 
     /// With explicit columns, `createTable` writes commit 0 (fresh) or attaches (existing). Without columns
     /// we can only attach, so a fresh location (no `_delta_log`) is rejected here.
