@@ -98,11 +98,10 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
         });
 
         auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
-        /// createReadBuffer fills manifest_object_info.metadata->size_bytes via a HEAD request.
-        size_t manifest_file_bytes = manifest_object_info.metadata ? manifest_object_info.metadata->size_bytes : 0;
         auto manifest_file_deserializer = std::make_unique<Iceberg::AvroForIcebergDeserializer>(
             std::move(buffer), filename, getFormatSettings(local_context));
 
+        const size_t manifest_file_bytes = manifest_file_deserializer->bytesRead();
         return Iceberg::ManifestFileCacheableInfo{std::move(manifest_file_deserializer), manifest_file_bytes};
     };
 
