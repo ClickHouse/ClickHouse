@@ -43,6 +43,8 @@ set(dbms_sources)
 # Compile microbenchmark translation units in every build, but keep their comparatively expensive
 # executable links out of the default build unless ENABLE_BENCHMARKS is set. Individual executables
 # and the clickhouse-microbenchmarks aggregate target can still be built explicitly.
+add_custom_target (clickhouse-microbenchmarks-objects)
+
 if (ENABLE_BENCHMARKS)
     add_custom_target (clickhouse-microbenchmarks ALL)
 else ()
@@ -60,6 +62,7 @@ function (clickhouse_add_microbenchmark target)
     target_link_libraries (${object_target} PRIVATE
         ch_contrib::gbenchmark_all
         ${MICROBENCHMARK_LIBRARIES})
+    add_dependencies (clickhouse-microbenchmarks-objects ${object_target})
 
     clickhouse_add_executable (${target} EXCLUDE_FROM_ALL $<TARGET_OBJECTS:${object_target}>)
     target_link_libraries (${target} PRIVATE
@@ -977,6 +980,7 @@ if (ENABLE_TESTS)
     # attach all dbms gtest sources
     grep_gtest_sources("${ClickHouse_SOURCE_DIR}/src" dbms_gtest_sources)
     clickhouse_add_executable(unit_tests_dbms ${dbms_gtest_sources})
+    add_dependencies (unit_tests_dbms clickhouse-microbenchmarks-objects)
 
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE
