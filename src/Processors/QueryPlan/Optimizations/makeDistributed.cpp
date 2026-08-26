@@ -643,7 +643,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         gather_node.children = {&partial_aggregation_node};
 
         /// Replace original aggregation step with MergingAggregated step
-        aggregator_params.only_merge = true;    /// Merge partial aggregation results
+        aggregator_params.only_merge = true; /// Merge partial aggregation results
         QueryPlanStepPtr final_aggregation_step = std::make_unique<MergingAggregatedStep>(
             gather_node.step->getOutputHeader(),
             aggregator_params,

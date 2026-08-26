@@ -270,12 +270,13 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexConditionWithAlterna
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, alternative_key, filter_dag, context);
 }
 
-MergeTreeIndexFormat MergeTreeIndexMinMax::getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexMinMax::getPhysicalFormat(
+    const MergeTreeDataPartChecksums & checksums, const IDataPartStorage & storage, const std::string & relative_path_prefix) const
 {
-    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx2", &part.getDataPartStorage()))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", &storage))
         return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
 
-    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", &storage))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
 
     return {0 /* unknown */, {}};

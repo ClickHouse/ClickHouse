@@ -94,7 +94,11 @@ public:
         const ActionsDAG::Node * predicate, ContextPtr context, const AlternativeKeyExpressionPtr & alternative_key) const;
 
     MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
-    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
+    using IMergeTreeIndex::getPhysicalFormat;
+    MergeTreeIndexFormat getPhysicalFormat(
+        const MergeTreeDataPartChecksums & checksums,
+        const IDataPartStorage & storage,
+        const std::string & relative_path_prefix) const override;
     MergeTreeIndexSubstreams getAllSubstreamsInPart(
         const MergeTreeDataPartChecksums & checksums,
         const std::string & path_prefix,
