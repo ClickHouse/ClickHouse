@@ -119,7 +119,9 @@ SELECT
     countIf(dropoff_datetime IS NULL) AS dropoff_datetime_nulls,
     countIf(passenger_count IS NULL) AS passenger_count_nulls,
     countIf(trip_distance IS NULL) AS trip_distance_nulls,
+    countIf(ratecode_id IS NULL) AS ratecode_id_nulls,
     countIf(fare_amount IS NULL) AS fare_amount_nulls,
+    countIf(extra IS NULL) AS extra_nulls,
     countIf(mta_tax IS NULL) AS mta_tax_nulls,
     countIf(tip_amount IS NULL) AS tip_amount_nulls,
     countIf(tolls_amount IS NULL) AS tolls_amount_nulls,
@@ -139,7 +141,9 @@ pickup_datetime_nulls:     0
 dropoff_datetime_nulls:    0
 passenger_count_nulls:     0
 trip_distance_nulls:       0
+ratecode_id_nulls:          167200929
 fare_amount_nulls:         0
+extra_nulls:               0
 mta_tax_nulls:             137946731
 tip_amount_nulls:          0
 tolls_amount_nulls:        0
@@ -149,7 +153,7 @@ pickup_location_id_nulls:  0
 dropoff_location_id_nulls: 0
 ```
 
-Only `mta_tax` and `payment_type` contain null values in this dataset. The optimized schema retains `Nullable` for those columns and removes it from the others.
+Only `ratecode_id`, `mta_tax`, and `payment_type` contain null values in this dataset. The optimized schema retains `Nullable` for those columns and removes it from the others.
 
 ### Use LowCardinality for repeated values {#low-cardinality}
 
@@ -195,7 +199,7 @@ FROM nyc_taxi.trips_small_inferred;
    └───────────────────┴───────────────────┴──────────────────────┴──────────────────────┘
 ```
 
-Both integer columns fit in [`UInt8`](/reference/data-types/int-uint), although `passenger_count` reaches its maximum value of 255. The example also uses [`Float32`](/reference/data-types/float) for `trip_distance` and [`Decimal32`](/reference/data-types/decimal) for monetary values. It replaces the inferred [`DateTime64`](/reference/data-types/datetime64) columns with [`DateTime`](/reference/data-types/datetime) in the same `UTC` timezone because the example queries do not require fractional-second precision.
+Both integer columns fit in [`UInt8`](/reference/data-types/int-uint), although `passenger_count` reaches its maximum value of 255. The example also uses [`Float32`](/reference/data-types/float) for `trip_distance` and [`Decimal32`](/reference/data-types/decimal) for monetary values. All values in this dataset fit the target ranges, and the example accepts the reduced floating-point precision and cent-scale monetary precision because its workload compares aggregate results. Retain the wider source types when exact source values are required. The example replaces the inferred [`DateTime64`](/reference/data-types/datetime64) columns with [`DateTime`](/reference/data-types/datetime) in the same `UTC` timezone because the example queries do not require fractional-second precision.
 
 These choices are specific to this dataset. Confirm the range, precision, and nullability requirements of production data before applying the same changes.
 
@@ -211,7 +215,7 @@ CREATE TABLE nyc_taxi.trips_small_no_pk
     dropoff_datetime DateTime('UTC'),
     passenger_count UInt8,
     trip_distance Float32,
-    ratecode_id LowCardinality(String),
+    ratecode_id LowCardinality(Nullable(String)),
     pickup_location_id LowCardinality(String),
     dropoff_location_id LowCardinality(String),
     payment_type Nullable(UInt8),
@@ -285,7 +289,7 @@ CREATE TABLE nyc_taxi.trips_small_pk
     dropoff_datetime DateTime('UTC'),
     passenger_count UInt8,
     trip_distance Float32,
-    ratecode_id LowCardinality(String),
+    ratecode_id LowCardinality(Nullable(String)),
     pickup_location_id LowCardinality(String),
     dropoff_location_id LowCardinality(String),
     payment_type Nullable(UInt8),
