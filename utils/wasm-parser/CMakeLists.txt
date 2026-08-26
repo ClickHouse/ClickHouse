@@ -52,7 +52,7 @@ configure_file ("${CH}/src/Common/config.h.in" "${CMAKE_BINARY_DIR}/gen/Common/c
 # The transitive closure the parser actually needs. Everything not listed here is either
 # unreachable or replaced by wasm_runtime.cpp - see the comments in that file. A source that goes
 # missing from this list surfaces as an undefined symbol at link time, which is what the
-# `Standalone parser` CI job is for.
+# `Build (wasm_parser)` CI job is for.
 file (GLOB PARSER_SOURCES CONFIGURE_DEPENDS
     "${CH}/src/Parsers/*.cpp"
     "${CH}/src/Parsers/Access/*.cpp"
@@ -66,7 +66,7 @@ set (SUPPORT_SOURCES
     "${CH}/src/Common/AllocatorWithMemoryTracking.cpp"
     "${CH}/src/Common/CalendarTimeInterval.cpp"
     "${CH}/src/Common/ErrorCodes.cpp"
-    "${CH}/src/Common/Fiber.cpp"
+    "${CH}/src/Common/FiberLocal.cpp"
     "${CH}/src/Common/FieldVisitorConvertToNumber.cpp"
     "${CH}/src/Common/FieldVisitorDump.cpp"
     "${CH}/src/Common/FieldVisitorHash.cpp"
@@ -75,6 +75,7 @@ set (SUPPORT_SOURCES
     "${CH}/src/Common/IntervalKind.cpp"
     "${CH}/src/Common/KnownObjectNames.cpp"
     "${CH}/src/Common/PODArray.cpp"
+    "${CH}/src/Common/StackfulCoroutine.cpp"
     "${CH}/src/Common/StringUtils.cpp"
     "${CH}/src/Common/UTF8Helpers.cpp"
     "${CH}/src/Common/ZooKeeper/ZooKeeperPathUtils.cpp"

@@ -1,6 +1,5 @@
--- Tags: no-fasttest, no-replicated-database
+-- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
--- Tag no-replicated-database: `DatabaseReplicated` does not drop `TimeSeries` inner tables synchronously; deferred DROPs are rejected.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
