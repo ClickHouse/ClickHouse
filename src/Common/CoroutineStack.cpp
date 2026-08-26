@@ -12,7 +12,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/mman.h>
-#include <Common/FiberStack.h>
+#include <Common/CoroutineStack.h>
 
 #if defined(BOOST_USE_VALGRIND)
 #include <valgrind/valgrind.h>
@@ -55,13 +55,13 @@ namespace CurrentMetrics
 }
 
 
-FiberStack::FiberStack(size_t stack_size_)
+CoroutineStack::CoroutineStack(size_t stack_size_)
     : stack_size(stack_size_)
     , page_size(getPageSize())
 {
 }
 
-boost::context::stack_context FiberStack::allocate() const
+boost::context::stack_context CoroutineStack::allocate() const
 {
     Stopwatch watch;
 
@@ -75,7 +75,7 @@ boost::context::stack_context FiberStack::allocate() const
     void * data = ::aligned_alloc(page_size, num_bytes);
 
     if (!data)
-        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate FiberStack");
+        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate CoroutineStack");
 
     if constexpr (guardPagesEnabled())
     {
@@ -108,7 +108,7 @@ boost::context::stack_context FiberStack::allocate() const
     return sctx;
 }
 
-void FiberStack::deallocate(boost::context::stack_context & sctx) const
+void CoroutineStack::deallocate(boost::context::stack_context & sctx) const
 {
     Stopwatch watch;
 
