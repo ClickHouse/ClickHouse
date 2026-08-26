@@ -673,12 +673,21 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
             return "long";
         case TypeIndex::DateTime64:
         {
-            if (getDecimalScale(*type) != 6)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+            /// Iceberg has two timestamp precisions, and `IcebergSchemaProcessor` maps them
+            /// back to `DateTime64(6)` (`timestamp`) and `DateTime64(9)` (`timestamp_ns`).
+            /// Metadata-derived rewrite paths (compaction, mutations) reconstruct partition
+            /// types that way, so a `timestamp_ns` partition field must be accepted here too.
+            const auto scale = getDecimalScale(*type);
+            if (scale != 6 && scale != 9)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Unsupported type for Iceberg: {}. Only DateTime64(6) (Iceberg `timestamp`) and DateTime64(9) "
+                    "(Iceberg `timestamp_ns`) are supported",
+                    type->getName());
 
             Poco::JSON::Object::Ptr timestamp_type = new Poco::JSON::Object;
             timestamp_type->set("type", "long");
-            timestamp_type->set("logicalType", "timestamp-micros");
+            timestamp_type->set("logicalType", scale == 6 ? "timestamp-micros" : "timestamp-nanos");
             timestamp_type->set("adjust-to-utc", assert_cast<const DataTypeDateTime64 &>(*type).hasExplicitTimeZone());
             return timestamp_type;
         }
