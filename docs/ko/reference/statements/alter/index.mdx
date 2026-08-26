@@ -1,6 +1,6 @@
 ---
 description: 'ALTER에 대한 문서'
-sidebarTitle: 'ALTER'
+sidebarTitle: '개요'
 slug: /sql-reference/statements/alter/
 title: 'ALTER'
 doc_type: 'reference'
@@ -15,10 +15,13 @@ doc_type: 'reference'
 | [DELETE](/ko/reference/statements/alter/delete)                         |
 | [UPDATE](/ko/reference/statements/alter/update)                         |
 | [ORDER BY](/ko/reference/statements/alter/order-by)                     |
+| [SAMPLE BY](/ko/reference/statements/alter/sample-by)                   |
 | [INDEX](/ko/reference/statements/alter/skipping-index)                  |
+| [PROJECTION](/ko/reference/statements/alter/projection)                 |
 | [CONSTRAINT](/ko/reference/statements/alter/constraint)                 |
 | [TTL](/ko/reference/statements/alter/ttl)                               |
 | [STATISTICS](/ko/reference/statements/alter/statistics)                 |
+| [SETTING](/ko/reference/statements/alter/setting)                       |
 | [APPLY DELETED MASK](/ko/reference/statements/alter/apply-deleted-mask) |
 | [APPLY PATCHES](/ko/reference/statements/alter/apply-patches)           |
 
@@ -32,7 +35,7 @@ doc_type: 'reference'
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | [ALTER TABLE ... MODIFY QUERY](/ko/reference/statements/alter/view) | [구체화된 뷰(Materialized View)](/ko/reference/statements/create/view)의 구조를 수정합니다. |
 
-다음 `ALTER` SQL 문은 역할 기반 접근 제어와 관련된 개체를 수정합니다:
+다음 `ALTER` SQL 문은 역할 기반 접근 제어와 관련된 엔터티를 수정합니다:
 
 | SQL 문                                                            |
 | ---------------------------------------------------------------- |
@@ -40,12 +43,14 @@ doc_type: 'reference'
 | [ROLE](/ko/reference/statements/alter/role)                         |
 | [QUOTA](/ko/reference/statements/alter/quota)                       |
 | [ROW POLICY](/ko/reference/statements/alter/row-policy)             |
+| [MASKING POLICY](/ko/reference/statements/alter/masking-policy)     |
 | [SETTINGS PROFILE](/ko/reference/statements/alter/settings-profile) |
 
-| SQL 문                                                                  | 설명                                                                                      |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| [ALTER TABLE ... MODIFY COMMENT](/ko/reference/statements/alter/comment)  | 이전 설정 여부와 관계없이 테이블 주석을 추가, 수정 또는 제거합니다.                                                 |
-| [ALTER NAMED COLLECTION](/ko/reference/statements/alter/named-collection) | [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 수정합니다. |
+| SQL 문                                                                             | 설명                                                                                      |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY COMMENT](/ko/reference/statements/alter/comment)             | 이전 설정 여부와 관계없이 테이블 주석을 추가, 수정 또는 제거합니다.                                                 |
+| [ALTER DATABASE ... MODIFY COMMENT](/ko/reference/statements/alter/database-comment) | 이전 설정 여부와 관계없이 데이터베이스 주석을 추가, 수정 또는 제거합니다.                                              |
+| [ALTER NAMED COLLECTION](/ko/reference/statements/alter/named-collection)            | [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 수정합니다. |
 
 <div id="mutations">
   ## 뮤테이션
@@ -68,15 +73,37 @@ doc_type: 'reference'
 
 복제되지 않은 테이블에서는 모든 `ALTER` 쿼리가 동기식으로 수행됩니다. 복제된 테이블에서는 쿼리가 적절한 작업에 대한 지시만 `ZooKeeper`에 추가하고, 실제 작업은 가능한 한 빨리 수행됩니다. 다만, 쿼리는 이러한 작업이 모든 레플리카에서 완료될 때까지 기다릴 수 있습니다.
 
-뮤테이션을 생성하는 `ALTER` 쿼리(예: `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC` 등이 있으나 이에 국한되지는 않음)의 동기성은 [mutations&#95;sync](/ko/reference/settings/session-settings#mutations_sync) 설정으로 정의됩니다.
+뮤테이션을 생성하는 `ALTER` 쿼리(예: `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC` 등이 있으나 이에 국한되지는 않음)의 동기성은 [mutations&#95;sync](/ko/reference/settings/session-settings/mutations#mutations_sync) 설정으로 정의됩니다.
 
-메타데이터만 수정하는 다른 `ALTER` 쿼리의 경우 [alter&#95;sync](/ko/reference/settings/session-settings#alter_sync) 설정을 사용해 대기 동작을 설정할 수 있습니다.
+메타데이터만 수정하는 다른 `ALTER` 쿼리의 경우 [alter&#95;sync](/ko/reference/settings/session-settings/alter#alter_sync) 설정을 사용해 대기 동작을 설정할 수 있습니다.
 
-비활성 레플리카가 모든 `ALTER` 쿼리를 실행할 때까지 얼마나 오래 기다릴지(초 단위)는 [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ko/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) 설정으로 지정할 수 있습니다.
+비활성 레플리카가 모든 `ALTER` 쿼리를 실행할 때까지 얼마나 오래 기다릴지(초 단위)는 [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ko/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 설정으로 지정할 수 있습니다.
 
 <Note>
   모든 `ALTER` 쿼리에서 `alter_sync = 2`이고 일부 레플리카가 `replication_wait_for_inactive_replica_timeout` 설정에 지정된 시간보다 오래 비활성 상태로 남아 있으면 `UNFINISHED` 예외가 발생합니다.
 </Note>
+
+<div id="concurrent-alter-assignment-on-one-table">
+  ### 하나의 테이블에서 동시 `ALTER` 할당
+</div>
+
+복제된 테이블에서 동일한 테이블에 여러 개의 개별 `ALTER` 문을 짧은 간격으로 연속 제출하면 `CANNOT_ASSIGN_ALTER`(코드 517) 오류가 발생할 수 있습니다. 레플리카가 이전 `ALTER` 중 일부를 아직 적용하지 않은 경우(메타데이터 버전이 공통 메타데이터보다 뒤처진 경우) 복제 경로에서 이 오류가 발생합니다. 서버는 레플리카가 &quot;still not applied some of previous alters&quot; 또는 &quot;Probably too many alters executing concurrently&quot; 상태라고 표시할 수 있습니다. 이전 `ALTER`가 이미 할당된 후에도 이 상태가 계속될 수 있습니다. 이는 **일반적인 동시 메타데이터 `ALTER` / 뮤테이션** 관련 상태이며, 뮤테이션 전용 SQL 문에만 국한되지 않습니다. 일반적인 동시 메타데이터 변경(`ADD` / `DROP` / `MODIFY` 등)에서도 동일한 재시도 가능한 코드가 발생할 수 있습니다(예를 들어 `tests/queries/0_stateless/03518_alter_logical_race.sh`에서 다루는 재시도 경로를 참조하십시오).
+
+경합을 방지하는 방법:
+
+* 문법에서 허용하는 경우 독립적인 메타데이터 작업을 **하나의** 다중 절 `ALTER`로 결합하십시오(예: 여러 `ADD INDEX` 절).
+* `ALTER` 문을 순차적으로 실행하고, 이전 `ALTER`가 레플리카에 적용될 때까지 코드 517 오류 발생 시 재시도하십시오.
+* 뮤테이션을 생성하는 `ALTER`의 경우, 다음 작업을 제출하기 전에 [`mutations_sync`](/ko/reference/settings/session-settings/mutations#mutations_sync) 또는 [`system.mutations`](/ko/reference/system-tables/mutations)의 `is_done`과 같은 문서화된 확인 수단을 사용하여 이전 뮤테이션이 완료될 때까지 기다리십시오.
+
+<div id="combining-materialize-index-clauses">
+  ### `MATERIALIZE INDEX` 절 함께 사용하기
+</div>
+
+하나의 `ALTER`에 여러 `MATERIALIZE INDEX` 절을 포함할 수 있습니다. 현재 트리에서 다루는 사례는 여러 `ADD INDEX` 절과 해당 새 인덱스에 대한 `MATERIALIZE INDEX`를 하나의 SQL 문에 함께 지정하는 것입니다(`tests/queries/0_stateless/02911_add_index_and_materialize_index.sql` 참고). 이렇게 `ADD INDEX`와 `MATERIALIZE INDEX`를 함께 사용하는 형식은 `AlterCommand` 세그먼트와 `MutationCommand` 세그먼트를 혼합하므로, **`DatabaseReplicated`는 이를 `QUERY_IS_PROHIBITED`와 함께 거부합니다**(`InterpreterAlterQuery::validateReplicatedDatabaseSegments`). 일반(`DatabaseReplicated`가 아닌) 데이터베이스에서는 `02911` 예시가 유효합니다. `DatabaseReplicated`에서는 메타데이터 변경과 구체화 뮤테이션을 별도 SQL 문으로 실행하십시오.
+
+현재 구현에서는 뮤테이션을 준비할 때 각 `MATERIALIZE INDEX` 절을 테이블 메타데이터 스냅샷을 기준으로 해석합니다. 따라서 이미 존재하는 인덱스에 대해 구체화만 수행하는 여러 절 형식도 동일한 준비 경로를 따릅니다(뮤테이션만 포함하므로 하나의 세그먼트에 유지됩니다). 이 정확한 형식은 아직 별도의 stateless 테스트로 검증되지 않았습니다. 이러한 테스트가 추가되기 전까지는 별도로 보장되는 계약이 아니라 현재 구현 동작으로 간주하십시오.
+
+순서대로 뮤테이션을 적용해야 한다면, SQL 문마다 `MATERIALIZE INDEX`를 하나씩 실행하고 [`mutations_sync`](/ko/reference/settings/session-settings/mutations#mutations_sync)로 완료를 기다릴 수 있습니다.
 
 <div id="related-content">
   ## 관련 콘텐츠

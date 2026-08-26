@@ -12,12 +12,20 @@ hide_advert: true
 import GatherCredentials from '/snippets/zh/clickstack/_gather_credentials.mdx';
 import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.mdx';
 import ConfirmInUI from '/snippets/zh/clickstack/_confirm_in_ui.mdx';
+import { AgentPrompt } from '/snippets/zh/components/AgentPrompt/AgentPrompt.jsx';
 
 本指南将指导你针对现有的托管 ClickStack 服务部署 OpenTelemetry collector，或调整你现有的 collector 配置，然后验证数据是否已开始流转。
 
+在使用设置助手前，请先安装官方 ClickHouse agent skills：
+
+```bash
+npx skills add clickhouse/agent-skills
+```
+
 <AgentPrompt
-  prompt="使用 curl 下载、阅读并按照此文操作：https://clickhouse.com/docs/skills/clickstack-otel-collector/SKILL.md"
+  prompt="使用 clickstack-otel-collector 技能将 OpenTelemetry collector 接入我的托管 ClickStack 服务。"
   description="你的智能体会为你设置 ClickStack OpenTelemetry collector。适用于 Claude Code、Cursor、Codex 及其他编程智能体。"
+  repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
 "如果尚未安装 clickhousectl，请先安装并完成身份验证（会提示你提供 ClickHouse Cloud API key——可直接粘贴到聊天中，或自行运行登录命令）。",
 "询问目标 ClickHouse Cloud 服务的 ID 或名称，然后拉取其 HTTPS 端点。",
@@ -41,21 +49,15 @@ import ConfirmInUI from '/snippets/zh/clickstack/_confirm_in_ui.mdx';
 <Tabs>
   <Tab title="我还没有 collector">
     <Steps>
-      <Step>
-        ## 准备您的凭据
-
+      <Step title="准备您的凭据" id="gather-credentials">
         <GatherCredentials />
       </Step>
 
-      <Step>
-        ## 创建一个摄取用户
-
+      <Step title="创建一个摄取用户" id="create-ingestion-user">
         <CreateIngestionUser />
       </Step>
 
-      <Step>
-        ## 部署 collector
-
+      <Step title="部署 collector" id="deploy-the-collector">
         部署**ClickStack 版 OpenTelemetry Collector**，它已预先针对托管 ClickStack 完成配置。在下面的示例中，为了简化操作，我们在本地运行 collector，并在同一台机器上生成人工遥测数据。
 
         <Note>
@@ -94,9 +96,7 @@ import ConfirmInUI from '/snippets/zh/clickstack/_confirm_in_ui.mdx';
         </Info>
       </Step>
 
-      <Step>
-        ## 验证端点
-
+      <Step title="验证端点" id="verify-the-endpoint">
         向 collector 发送一些合成流量，以验证完整管道是否正常运行。我们使用 [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen)——OpenTelemetry Collector Contrib 提供的数据生成工具，它能够发送 OTLP 日志、链路追踪和指标，并提供多个命令行选项，用于控制数据在服务、严重级别、span 状态和指标类型等维度上的形态。
 
         通过其 Docker image 运行 (无需安装) 。定义一个简单的 wrapper，使下方命令更易读；`--add-host` 允许容器访问监听在宿主机上的 collector：
@@ -186,9 +186,7 @@ import ConfirmInUI from '/snippets/zh/clickstack/_confirm_in_ui.mdx';
         如需完整的标志列表及更多用法变体，请参阅 [使用 telemetrygen 生成合成数据](/zh/clickstack/example-datasets/telemetrygen)。
       </Step>
 
-      <Step>
-        ## 在 ClickStack UI 中确认
-
+      <Step title="在 ClickStack UI 中确认" id="confirm-in-ui">
         <ConfirmInUI />
       </Step>
     </Steps>
@@ -196,21 +194,15 @@ import ConfirmInUI from '/snippets/zh/clickstack/_confirm_in_ui.mdx';
 
   <Tab title="我有一个采集器">
     <Steps>
-      <Step>
-        ## 准备凭证
-
+      <Step title="准备您的凭据" id="gather-credentials-existing">
         <GatherCredentials />
       </Step>
 
-      <Step>
-        ## 创建用于摄取的用户
-
+      <Step title="创建摄取用户" id="create-ingestion-user-existing">
         <CreateIngestionUser />
       </Step>
 
-      <Step>
-        ## 调整 collector 配置
-
+      <Step title="调整 collector 配置" id="adapt-collector">
         扩展现有的 collector 配置，使其通过 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 将数据写入托管 ClickStack。
 
         <Info>
@@ -314,9 +306,7 @@ import ConfirmInUI from '/snippets/zh/clickstack/_confirm_in_ui.mdx';
         有关针对托管 ClickStack 配置 OpenTelemetry collectors 的更多详细信息，请参阅 [使用 OpenTelemetry 进行摄取](/zh/clickstack/ingesting-data/opentelemetry)。
       </Step>
 
-      <Step>
-        ## 验证端点
-
+      <Step title="验证端点" id="verify-the-endpoint-existing">
         向您的 collector 发送一些合成流量，以验证完整的管道是否正常运行。我们使用 [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen)——OpenTelemetry Collector Contrib 提供的数据生成工具，它能够发送 OTLP 日志、链路追踪和指标，并提供多个 flag，用于控制跨服务、严重级别、span 状态和指标类型的数据形态。
 
         通过其 Docker image 运行 (无需安装) 。将 `<your-collector-host>` 替换为您的 collector 监听的 host，并将 `authorization` 请求头 (或其他身份验证方式) 设置为您的 collector 所需的值：
@@ -337,9 +327,9 @@ import ConfirmInUI from '/snippets/zh/clickstack/_confirm_in_ui.mdx';
         ```
 
         <Info>
-          **预期结果**
+          **预期情况**
 
-          每次 `tg` 运行大约持续 20 秒 (由 `--duration 20s` 设置) ，并且在整个过程中都会持续输出详细日志，这属于正常现象；20 秒结束后，每次运行都会自行返回。下面这些日志已足以确认管道正常；可选的更完整方案会额外增加几次运行，因此需要几分钟。
+          每次 `tg` 运行大约持续 20 秒 (由 `--duration 20s` 设置) ，并会在整个过程中持续输出详细日志，这属于正常现象；每次运行在 20 秒结束后都会自行返回。下面这些日志足以用来确认管道是否正常；可选的更完整配置会额外增加几次运行，并需要几分钟。
         </Info>
 
         定义一个小型 `tg` 辅助函数，让每条命令只需指定变化的部分 (service、severity、status、attributes) ：
@@ -367,8 +357,8 @@ import ConfirmInUI from '/snippets/zh/clickstack/_confirm_in_ui.mdx';
 
         仅凭日志即可确认端点正常工作。如需更丰富的演示数据集、多服务服务地图以及各类指标图表，请展开并运行以下命令。这些命令复用了 `tg` 辅助工具，请在同一 shell 中执行。
 
-        <Accordion title="生成更详尽的遥测数据（可选）">
-          从多个健康服务以及一个故障依赖发送包含多个 span 的链路追踪。这样，服务地图会呈现更真实的形态：大部分服务健康，只有一个服务报错，同时也会填充错误视图：
+        <Accordion title="生成更丰富的遥测数据（可选）">
+          从多个健康服务以及一个故障依赖项发送包含多个 span 的链路追踪。这样，服务地图会呈现更贴近实际的形态：大多数服务健康，只有一个服务报错，同时仍会填充错误视图：
 
           ```shell
           # Healthy services: the bulk of the traffic, all spans Ok
@@ -384,7 +374,7 @@ import ConfirmInUI from '/snippets/zh/clickstack/_confirm_in_ui.mdx';
             --telemetry-attributes 'http.route="/charge"'
           ```
 
-          发送涵盖这三种常见类型的指标，这样图表中就会有 counter、gauge 和 distribution：
+          发送这三种常见类型的指标，这样图表中就会包含计数器、Gauge 和分布：
 
           ```shell
           tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
@@ -406,9 +396,7 @@ import ConfirmInUI from '/snippets/zh/clickstack/_confirm_in_ui.mdx';
         如需完整的标志列表及更多用法变体，请参阅 [使用 telemetrygen 生成合成数据](/zh/clickstack/example-datasets/telemetrygen)。
       </Step>
 
-      <Step>
-        ## 在 ClickStack UI 中确认
-
+      <Step title="在 ClickStack UI 中确认" id="confirm-in-ui-existing">
         <ConfirmInUI />
       </Step>
     </Steps>

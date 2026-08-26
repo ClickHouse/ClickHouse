@@ -32,6 +32,10 @@ storage configuration for the ClickHouse `MergeTree` family or `Log` family tabl
 family table engines can store data to `S3`, `AzureBlobStorage`, `HDFS` (unsupported) using a disk with types `s3`,
 `azure_blob_storage`, `hdfs` (unsupported) respectively.
 
+<Note>
+The `s3` disk type can also be used with S3-compatible object storage providers, such as Alibaba Cloud Object Storage Service. Configure `endpoint` with the provider's S3-compatible endpoint and account for any provider-specific compatibility requirements.
+</Note>
+
 Disk configuration requires:
 
 1. A `type` section, equal to one of `s3`, `azure_blob_storage`, `hdfs` (unsupported), `local_blob_storage`, `web`.
@@ -355,8 +359,6 @@ where `web` is from the server configuration file:
 | `s3_max_put_burst`                              | Maximum concurrent PUT requests before hitting RPS limit.                                                                                                                                                                                     | Same as `s3_max_put_rps`                 |
 | `s3_max_get_rps`                                | Maximum GET requests per second before throttling.                                                                                                                                                                                            | `0` (unlimited)                          |
 | `s3_max_get_burst`                              | Maximum concurrent GET requests before hitting RPS limit.                                                                                                                                                                                     | Same as `s3_max_get_rps`                 |
-| `read_resource`                                 | Resource name for [scheduling](/concepts/features/configuration/server-config/workload-scheduling) read requests.                                                                                                                                                             | Empty string (disabled)                  |
-| `write_resource`                                | Resource name for [scheduling](/concepts/features/configuration/server-config/workload-scheduling) write requests.                                                                                                                                                            | Empty string (disabled)                  |
 | `key_template`                                  | Defines object key generation format using [re2](https://github.com/google/re2/wiki/Syntax) syntax. Requires `storage_metadata_write_full_object_key` flag. Incompatible with `root path` in `endpoint`. Requires `key_compatibility_prefix`. | -                                        |
 | `key_compatibility_prefix`                      | Required with `key_template`. Specifies the previous `root path` from `endpoint` for reading older metadata versions.                                                                                                                         | -                                        |
 | `read_only`                                      | Only allowing reading from the disk.                                                                                                                                                                                                          | -                                        |
@@ -504,8 +506,6 @@ Authentication parameters (the disk will try all available methods **and** Manag
 |----------------------------------|------------------------------------------------------------------------------------|------------------------------------------|
 | `metadata_path`                  | Local filesystem path to store metadata files for Blob Storage.                    | `/var/lib/clickhouse/disks/<disk_name>/` |
 | `skip_access_check`              | If `true`, skips disk access checks during startup.                                | `false`                                  |
-| `read_resource`                  | Resource name for [scheduling](/concepts/features/configuration/server-config/workload-scheduling) read requests.  | Empty string (disabled)                  |
-| `write_resource`                 | Resource name for [scheduling](/concepts/features/configuration/server-config/workload-scheduling) write requests. | Empty string (disabled)                  |
 | `metadata_keep_free_space_bytes` | Amount of free metadata disk space to reserve.                                     | -                                        |
 
 Examples of working configurations can be found in integration tests directory (see e.g. [test_merge_tree_azure_blob_storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) or [test_azure_blob_storage_zero_copy_replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
@@ -1052,7 +1052,7 @@ SETTINGS storage_policy='web';
 | `remote_fs_read_backoff_threashold` | The maximum wait time when trying to read data for remote disk               | `10000` seconds |
 | `remote_fs_read_backoff_max_tries`  | The maximum number of attempts to read with backoff                          | `5`             |
 
-If a query fails with an exception `DB:Exception Unreachable URL`, then you can try to adjust the settings: [http_connection_timeout](/reference/settings/session-settings#http_connection_timeout), [http_receive_timeout](/reference/settings/session-settings#http_receive_timeout), [keep_alive_timeout](/reference/settings/server-settings/settings#keep_alive_timeout).
+If a query fails with an exception `DB:Exception Unreachable URL`, then you can try to adjust the settings: [http_connection_timeout](/reference/settings/session-settings/http#http_connection_timeout), [http_receive_timeout](/reference/settings/session-settings/http#http_receive_timeout), [keep_alive_timeout](/reference/settings/server-settings/settings/other#keep_alive_timeout).
 
 To get files for upload run:
 `clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (`--metadata-path` can be found in query `SELECT data_paths FROM system.tables WHERE name = 'table_name'`).

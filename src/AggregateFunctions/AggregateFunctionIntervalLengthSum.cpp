@@ -300,7 +300,7 @@ SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, en
         )",
         R"(
 ┌─id─┬─intervalLengthSum(start, end)─┬─toTypeName(intervalLengthSum(start, end))─┐
-│ a  │                           3.1 │ Float64                                   │
+│ a  │            3.0999999046325684 │ Float64                                   │
 └────┴───────────────────────────────┴───────────────────────────────────────────┘
         )"
     },

@@ -12,9 +12,10 @@ def kill_leftover_server_processes():
     an opaque `Connection refused`.
 
     Call this from every entry point that starts the job's own server on the
-    host, right before the first start. At that moment the current job has not
-    started any server yet, so anything matching here is a leftover from a
-    previous job and is stale by definition. Never runs locally: a local run
+    host, before the first start and before wiping the server working
+    directory, so a leftover cannot repopulate it. At that moment the current
+    job has not started any server yet, so anything matching here is a leftover
+    from a previous job and is stale by definition. Never runs locally: a local run
     may share the machine with a developer's own server that must not be
     touched.
     """

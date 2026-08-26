@@ -309,24 +309,12 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
         if (!array_join->isLeft())
             limit = 0;
 
-        const auto & array_joined_columns = array_join->getColumns();
-
         if (dag)
         {
-            std::unordered_set<std::string_view> keys_set(array_joined_columns.begin(), array_joined_columns.end());
-
             /// Remove array joined columns from outputs.
             /// Types are changed after ARRAY JOIN, and we can't use this columns anyway.
-            ActionsDAG::NodeRawConstPtrs outputs;
-            outputs.reserve(dag->getOutputs().size());
-
-            for (const auto & output : dag->getOutputs())
-            {
-                if (!keys_set.contains(output->result_name))
-                    outputs.push_back(output);
-            }
-
-            dag->getOutputs() = std::move(outputs);
+            const auto & array_joined_columns = array_join->getColumns();
+            dag->removeFromOutputs(NameSet(array_joined_columns.begin(), array_joined_columns.end()));
         }
     }
 }
@@ -610,17 +598,15 @@ SortingInputOrder buildInputOrderFromSortDescription(
             }
             else if (fixed_key_columns.contains(sort_column_node))
             {
-
-                if (next_sort_key == 0)
-                {
-                    // Disable virtual row optimization.
-                    // For example, when pk is (a,b), a = 1, order by b, virtual row should be
-                    // disabled in the following case:
-                    // 1st part (0, 100), (1, 2), (1, 3), (1, 4)
-                    // 2nd part (0, 100), (1, 2), (1, 3), (1, 4).
-
-                    can_optimize_virtual_row = false;
-                }
+                // A key column fixed by WHERE is skipped here without emitting a MatchInfo, so the
+                // matched columns after it become non-contiguous in the key. The virtual row builder
+                // and pk_header both assume the required key columns are a contiguous prefix and index
+                // them densely, so a skipped key shifts every later column onto the wrong key column
+                // (wrong value -> boundary violation, wrong type -> "Virtual row has different type").
+                // Disable virtual rows whenever a key column is skipped, e.g. pk (a,b) a=1 order by b:
+                // 1st part (0, 100), (1, 2), (1, 3), (1, 4)
+                // 2nd part (0, 100), (1, 2), (1, 3), (1, 4).
+                can_optimize_virtual_row = false;
 
                 //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
                 ++next_sort_key;
@@ -676,8 +662,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
     }
 
     /// If the prefix description is used, we can't restore the full description from PK value.
-    /// TODO: partial sort description can be used as well. Implement support later.
-    if (order_key_prefix_descr.size() < description.size() || pk_column_names.size() < next_sort_key)
+    if (pk_column_names.size() < next_sort_key)
         can_optimize_virtual_row = false;
 
     auto order_info = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);

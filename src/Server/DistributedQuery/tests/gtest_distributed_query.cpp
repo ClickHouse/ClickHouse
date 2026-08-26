@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <memory>
+#include <mutex>
 #include <boost/core/noncopyable.hpp>
 #include <gtest/gtest.h>
 #include <Common/CurrentThread.h>
@@ -468,17 +469,23 @@ void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 
 void registerPlanSteps()
 {
-    QueryPlanStepRegistry & registry = QueryPlanStepRegistry::instance();
+    /// The registry is process-wide and rejects a second registration of the same step, so register
+    /// once for the whole binary instead of per test.
+    static std::once_flag registered;
+    std::call_once(registered, []
+    {
+        QueryPlanStepRegistry & registry = QueryPlanStepRegistry::instance();
 
-    registerReadFromFileStep(registry);
-    registerShuffleSendStep(registry);
-    registerShuffleReceiveStep(registry);
-    registerJoinStep(registry);
-    registerGatherSendStep(registry);
-    registerGatherReceiveStep(registry);
-    registerPrintTSVStep(registry);
-    registerFilterStep(registry);
-    registerBuildRuntimeFilterStep(registry);
+        registerReadFromFileStep(registry);
+        registerShuffleSendStep(registry);
+        registerShuffleReceiveStep(registry);
+        registerJoinStep(registry);
+        registerGatherSendStep(registry);
+        registerGatherReceiveStep(registry);
+        registerPrintTSVStep(registry);
+        registerFilterStep(registry);
+        registerBuildRuntimeFilterStep(registry);
+    });
 }
 
 
@@ -507,6 +514,9 @@ try
     CurrentThread::attachToGroup(thread_group);
 
     query_context->setSetting("distributed_plan_force_exchange_kind", exchangeKind);
+
+    /// Each task runs its own pipeline; 4 is the shuffle bucket count the other pipelines use.
+    query_context->setSetting("max_threads", 4);
 
     {
         /// Create JOIN query plan
@@ -543,15 +553,16 @@ try
     auto cleanup = makeTemporaryFilesCleaner(object_storage, path, all_temporary_files_for_cleanup);
 
     query_context->setSetting("distributed_plan_execute_locally", 1);
-    auto cancellation_flag = std::make_shared<std::atomic<bool>>(false);
+    auto cancellation = std::make_shared<DistributedQueryCancellation>();
 
     /// Just execute the distributed query plan without checking the result
-    auto executor = createDistributedQueryExecutor(query_uuid, distributed_query_plan, nullptr, query_context, cancellation_flag);
+    auto executor = createDistributedQueryExecutor(
+        query_uuid, distributed_query_plan, nullptr, query_context, cancellation, std::make_shared<WakeupFd>());
 
     try
     {
         executor->start();
-        while (!executor->execute());
+        while (!executor->execute(/*poll_timeout_ms=*/ 100));
         executor->cleanup();
     }
     catch (...)
@@ -572,18 +583,67 @@ TEST_F(DistributedQueryTest, ShuffleHashJoin)
     executeTestWithExchangeKind("Streaming");
 }
 
-/// v1 for legacy-port-only sources (rolling-upgrade safe); v2 once a per-replica port appears.
+/// A stream with no columns (case of `SELECT count()`) carries only row counts, so its chunks are
+/// told apart from the end-of-data marker by the row count alone.
+TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
+{
+    auto context = Context::createCopy(getContext().context);
+    context->setSetting("distributed_plan_execute_locally", true);
+
+    auto exchange_lookup = createExchangeLookup(
+        "test_query", ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context,
+        /*execute_locally=*/true);
+
+    auto header = std::make_shared<const Block>();
+    const ExchangeStreamId stream_id("test_exchange", 0, 0);
+
+    Chunks chunks;
+    chunks.emplace_back(Columns{}, 3);
+    chunks.emplace_back(Columns{}, 4);
+
+    {
+        QueryPipelineBuilder builder;
+        builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks))));
+        builder.setSinks([&](const SharedHeader & sink_header, Pipe::StreamType) -> ProcessorPtr
+        {
+            return exchange_lookup->createSink(sink_header, stream_id);
+        });
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+        CompletedPipelineExecutor executor(pipeline);
+        executor.execute();
+    }
+
+    size_t total_rows = 0;
+    {
+        QueryPipeline pipeline(Pipe(exchange_lookup->createSource(header, stream_id)));
+        PullingPipelineExecutor executor(pipeline);
+        Chunk chunk;
+        while (executor.pull(chunk))
+            total_rows += chunk.getNumRows();
+    }
+
+    EXPECT_EQ(total_rows, 7u);
+}
+
+/// v1 only when every producer port matches the destination worker's exchange port (a v1
+/// consumer dials producers on its own port); v2 as soon as any producer differs.
 TEST(DistributedTaskSerializationVersion, LowersToV1ForLegacyPorts)
 {
-    const UInt64 server_exchange_port = 9000;
+    const UInt64 destination_exchange_port = 9000;
 
     ExchangeStreamSources sources;
-    EXPECT_EQ(chooseTaskSerializationVersion(sources, server_exchange_port), UInt64(1));
+    EXPECT_EQ(chooseTaskSerializationVersion(sources, destination_exchange_port), UInt64(1));
 
     sources.stream_hosts["s1"] = {"host1", 9000};
     sources.stream_hosts["s2"] = {"host2", 9000};
-    EXPECT_EQ(chooseTaskSerializationVersion(sources, server_exchange_port), UInt64(1));
+    EXPECT_EQ(chooseTaskSerializationVersion(sources, destination_exchange_port), UInt64(1));
 
     sources.stream_hosts["s3"] = {"host3", 9224};
-    EXPECT_EQ(chooseTaskSerializationVersion(sources, server_exchange_port), UInt64(2));
+    EXPECT_EQ(chooseTaskSerializationVersion(sources, destination_exchange_port), UInt64(2));
+
+    /// Producers agreeing among themselves is not enough: a destination whose own port
+    /// differs from the producers' port must still get a version-2 task.
+    ExchangeStreamSources uniform_sources;
+    uniform_sources.stream_hosts["s1"] = {"host1", 9000};
+    EXPECT_EQ(chooseTaskSerializationVersion(uniform_sources, /*destination_exchange_port=*/9224), UInt64(2));
 }

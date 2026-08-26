@@ -712,7 +712,7 @@ SELECT HEX(halfMD5('abc', 'cde', 'fgh'));
 
 引入版本：v20.1.0
 
-根据字符串计算 “HiveHash”。
+根据字符串计算 &quot;HiveHash&quot;。
 它实际上就是将符号位清零后的 [`JavaHash`](#javaHash)。
 在 3.0 之前的版本中，[Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) 使用此函数。
 
@@ -1908,7 +1908,7 @@ sipHash128Keyed((k0, k1), [arg1, arg2, ...])
 
 **参数**
 
-* `(k0, k1)` — 由两个 UInt64 值组成、表示键的 Tuple。[`Tuple(UInt64, UInt64)`](/zh/reference/data-types/tuple)
+* `(k0, k1)` — 由两个 UInt64 值组成、表示密钥的 Tuple。[`Tuple(UInt64, UInt64)`](/zh/reference/data-types/tuple)
 * `arg1[, arg2, ...]` — 用于计算哈希的数量可变的输入参数。[`Any`](/zh/reference/data-types/index)
 
 **返回值**
@@ -2689,6 +2689,46 @@ SELECT xxHash64('Hello, world!');
 ┌─xxHash64('Hello, world!')─┐
 │      17691043854468224118 │
 └───────────────────────────┘
+```
+
+<div id="xxHash64Spark">
+  ## xxHash64Spark
+</div>
+
+引入版本：v26.7.0
+
+使用与 Spark 相同的 seed 对字符串计算 [xxHash](http://cyan4973.github.io/xxHash/)。
+
+该函数与 [`xxHash64`](#xxHash64) 相同，但使用 seed `42`，并以 `Int64` 返回结果。
+仅支持 `String` 和 `NULL` 类型的输入。
+对于 `NULL`，该函数返回 `42`，与 Spark 的 seed 行为保持一致。
+
+**语法**
+
+```sql
+xxHash64Spark(arg)
+```
+
+**参数**
+
+* `arg` — 要进行哈希计算的输入字符串。[`String`](/zh/reference/data-types/string)
+
+**返回值**
+
+返回输入字符串经计算得到的 64 位哈希值。[`Int64`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**用法示例**
+
+```sql title=Query
+SELECT xxHash64Spark('ABC');
+```
+
+```response title=Response
+┌─xxHash64Spark('ABC')─┐
+│  4105715581806190027 │
+└──────────────────────┘
 ```
 
 <div id="xxh3">

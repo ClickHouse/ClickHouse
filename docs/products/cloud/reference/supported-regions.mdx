@@ -7,113 +7,97 @@ slug: /cloud/reference/supported-regions
 doc_type: 'reference'
 ---
 
-import EnterprisePlanFeatureBadge from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-## AWS regions {#aws-regions}
+## Supported regions {#supported-regions}
 
-- ap-northeast-1 (Tokyo)
-- ap-northeast-2 (South Korea, Seoul)
-- ap-south-1 (Mumbai)
-- ap-southeast-1 (Singapore)
-- ap-southeast-2 (Sydney)
-- eu-central-1 (Frankfurt)
-- eu-west-1 (Ireland)
-- eu-west-2 (London)
-- us-east-1 (N. Virginia)
-- us-east-2 (Ohio)
-- us-west-2 (Oregon)
-- il-central-1 (Israel, Tel Aviv)
+The following tables list supported regions by cloud provider. Badges indicate Private Region, HIPAA, and PCI availability. Regions without a badge don't currently offer any of these options.
 
-**Private Region:**
-- ca-central-1 (Canada)
-- af-south-1 (South Africa)
-- eu-north-1 (Stockholm)
-- sa-east-1 (South America)
-- ap-southeast-3 (Jakarta)
-- ap-east-1 (Hong Kong)
-- mx-central-1 (Mexico)
- 
-## Google Cloud regions {#google-cloud-regions}
+<Tabs>
+<Tab title="AWS" id="aws-regions" icon="aws">
 
-- asia-southeast1 (Singapore)
-- asia-northeast1 (Tokyo)
-- europe-west2 (London)
-- europe-west4 (Netherlands)
-- us-central1 (Iowa)
-- us-east1 (South Carolina)
+| Region | Availability |
+| --- | --- |
+| `af-south-1` | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+| `ap-east-1` | <Badge color="purple">Private</Badge> |
+| `ap-east-2` | <Badge color="purple">Private</Badge> |
+| `ap-northeast-1` | — |
+| `ap-northeast-2` | — |
+| `ap-south-1` | — |
+| `ap-southeast-1` | — |
+| `ap-southeast-2` | — |
+| `ap-southeast-3` | <Badge color="purple">Private</Badge> |
+| `ap-southeast-5` | <Badge color="purple">Private</Badge> |
+| `ca-central-1` | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+| `eu-central-1` | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+| `eu-north-1` | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+| `eu-west-1` | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+| `eu-west-2` | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+| `il-central-1` | — |
+| `me-central-1` | — |
+| `mx-central-1` | <Badge color="purple">Private</Badge> <Badge color="blue">PCI</Badge> |
+| `sa-east-1` | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+| `us-east-1` | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+| `us-east-2` | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+| `us-west-2` | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
 
-**Private Region:**
+</Tab>
+<Tab title="Google Cloud" id="google-cloud-regions" icon="/images/icons/cloud-providers/google-cloud-color.svg">
 
-- australia-southeast1(Sydney)
-- europe-west3 (Frankfurt)
-- europe-west6 (Zurich)
-- northamerica-northeast1 (Montréal)
-- us-west1 (Oregon)
+| Region | Availability |
+| --- | --- |
+| `asia-northeast1` | — |
+| `asia-southeast1` | — |
+| `australia-southeast1` | <Badge color="purple">Private</Badge> |
+| `europe-west2` | — |
+| `europe-west3` | <Badge color="purple">Private</Badge> |
+| `europe-west4` | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+| `europe-west6` | <Badge color="purple">Private</Badge> |
+| `northamerica-northeast1` | <Badge color="purple">Private</Badge> |
+| `us-central1` | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+| `us-east1` | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+| `us-west1` | <Badge color="purple">Private</Badge> |
 
-## Azure regions {#azure-regions}
+</Tab>
+<Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
 
-- West US 3 (Arizona)
-- East US 2 (Virginia)
-- Germany West Central (Frankfurt)
+| Region | Availability |
+| --- | --- |
+| `Australia East` | <Badge color="purple">Private</Badge> |
+| `East US 2` | — |
+| `Germany West Central` | — |
+| `Japan East` | <Badge color="purple">Private</Badge> |
+| `UAE North` | <Badge color="purple">Private</Badge> |
+| `West US 3` | — |
 
-**Private Region:**
-
-- Japan East (Tokyo, Saitama)
-- UAE North (Dubai)
-- Australia East (New South Wales)
+</Tab>
+</Tabs>
 
 <Note>
-Need to deploy to a region not currently listed? [Submit a request](https://clickhouse.com/pricing?modal=open). 
+Need to deploy to a region not currently listed? [Submit a request](https://clickhouse.com/pricing?modal=open).
 </Note>
 
 ## Private regions {#private-regions}
 
 <EnterprisePlanFeatureBadge feature="Private regions feature"/>
 
-We offer Private regions for our Enterprise tier services. Please [Contact us](https://clickhouse.com/company/contact) for private region requests.
+We offer Private Regions for Enterprise tier services. Please [contact us](https://clickhouse.com/company/contact) to request a Private Region.
 
-Key considerations for private regions:
+Key considerations for Private Regions:
+
 - Services won't auto-scale; however, manual vertical and horizontal scaling is supported.
 - Services can't be idled.
-- Status page isn't available for private regions.
-  
-Additional requirements may apply for HIPAA compliance (including signing a BAA). Note that HIPAA is currently available only for Enterprise tier services
 
-## HIPAA compliant regions {#hipaa-compliant-regions}
+Additional requirements may apply for HIPAA compliance, including signing a Business Associate Agreement (BAA). HIPAA is currently available only for Enterprise tier services.
+
+## HIPAA-compliant regions {#hipaa-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="HIPAA" support="true"/>
 
-Customers must sign a Business Associate Agreement (BAA) and request onboarding through Sales or Support to set up services in HIPAA compliant regions. The following regions support HIPAA compliance:
-- AWS af-south-1 (South Africa) **Private Region**
-- AWS ca-central-1 (Canada) **Private Region**
-- AWS eu-central-1 (Frankfurt)
-- AWS eu-north-1 (Stockholm) **Private Region**
-- AWS eu-west-1 (Ireland)
-- AWS eu-west-2 (London)
-- AWS sa-east-1 (South America) **Private Region**
-- AWS us-east-1 (N. Virginia)
-- AWS us-east-2 (Ohio)
-- AWS us-west-2 (Oregon)
-- GCP europe-west4 (Netherlands)
-- GCP us-central1 (Iowa)
-- GCP us-east1 (South Carolina)
+Customers must sign a BAA and request onboarding through Sales or Support to set up services in regions marked as HIPAA compliant in the table.
 
-## PCI compliant regions {#pci-compliant-regions}
+## PCI-compliant regions {#pci-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="PCI" support="true"/>
 
-Customers must request onboarding through Sales or Support to set up services in PCI compliant regions. The following regions support PCI compliance:
-- AWS af-south-1 (South Africa) **Private Region**
-- AWS ca-central-1 (Canada) **Private Region**
-- AWS eu-central-1 (Frankfurt)
-- AWS eu-north-1 (Stockholm) **Private Region**
-- AWS eu-west-1 (Ireland)
-- AWS eu-west-2 (London)
-- AWS mx-central-1 (Mexico) **Private Region**
-- AWS sa-east-1 (South America) **Private Region**
-- AWS us-east-1 (N. Virginia)
-- AWS us-east-2 (Ohio)
-- AWS us-west-2 (Oregon)
-- GCP europe-west4 (Netherlands)
-- GCP us-central1 (Iowa)
-- GCP us-east1 (South Carolina)
+Customers must request onboarding through Sales or Support to set up services in regions marked as PCI compliant in the table.

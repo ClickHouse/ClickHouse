@@ -35,9 +35,7 @@ Si desea probar la integración de logs de MySQL antes de configurar su propio e
 * Espacio suficiente en disco para los archivos de registro
 
 <Steps>
-  <Step>
-    #### Configurar el registro de MySQL
-
+  <Step title="Configurar el registro de MySQL" id="configure-mysql">
     MySQL admite varios tipos de registros. Para una monitorización completa con OpenTelemetry, recomendamos habilitar el registro de errores y el registro de consultas lentas.
 
     El archivo de configuración `my.cnf` o `my.ini` suele encontrarse en:
@@ -50,16 +48,16 @@ Si desea probar la integración de logs de MySQL antes de configurar su propio e
 
     ```ini
     [mysqld]
-    # Configuración del log de errores
+    # Error log configuration
     log_error = /var/log/mysql/error.log
 
-    # Configuración del log de consultas lentas
+    # Slow query log configuration
     slow_query_log = ON
     slow_query_log_file = /var/log/mysql/mysql-slow.log
     long_query_time = 1
     log_queries_not_using_indexes = ON
 
-    # Opcional: Log de consultas general (detallado, usar con precaución en producción)
+    # Optional: General query log (verbose, use with caution in production)
     # general_log = ON
     # general_log_file = /var/log/mysql/mysql-general.log
     ```
@@ -71,27 +69,25 @@ Si desea probar la integración de logs de MySQL antes de configurar su propio e
     Después de realizar estos cambios, reinicia MySQL:
 
     ```bash
-    # Para systemd
+    # For systemd
     sudo systemctl restart mysql
 
-    # Para Docker
+    # For Docker
     docker restart <mysql-container>
     ```
 
     Verifique que se estén escribiendo los logs:
 
     ```bash
-    # Verificar el log de errores
+    # Check error log
     tail -f /var/log/mysql/error.log
 
-    # Verificar el log de consultas lentas
+    # Check slow query log
     tail -f /var/log/mysql/mysql-slow.log
     ```
   </Step>
 
-  <Step>
-    #### Crear una configuración personalizada de OTel collector
-
+  <Step title="Crear una configuración personalizada de OTel collector" id="custom-otel">
     ClickStack le permite ampliar la configuración base de OpenTelemetry Collector montando un archivo de configuración personalizado y estableciendo una variable de entorno. La configuración personalizada se fusiona con la configuración base administrada por HyperDX mediante OpAMP.
 
     Cree un archivo llamado `mysql-logs-monitoring.yaml` con la siguiente configuración:
@@ -165,7 +161,7 @@ Si desea probar la integración de logs de MySQL antes de configurar su propio e
     Esta configuración:
 
     * Lee los logs de errores de MySQL y los logs de consultas lentas desde sus ubicaciones estándar
-    * Gestiona entradas de log de varias líneas (las consultas lentas abarcan varias líneas)
+    * Gestiona entradas de log de varias líneas (las consultas lentan abarcan varias líneas)
     * Analiza ambos formatos de log para extraer campos estructurados (level, error&#95;code, query&#95;time, rows&#95;examined)
     * Conserva las marcas de tiempo originales de los logs
     * Añade los atributos `source: mysql-error` y `source: mysql-slow` para filtrar en HyperDX
@@ -176,9 +172,7 @@ Si desea probar la integración de logs de MySQL antes de configurar su propio e
     </Note>
   </Step>
 
-  <Step>
-    #### Configura ClickStack para cargar una configuración personalizada
-
+  <Step title="Configura ClickStack para cargar una configuración personalizada" id="load-custom">
     Para habilitar una configuración personalizada del colector en tu despliegue existente de ClickStack, monta el archivo de configuración personalizado en `/etc/otelcol-contrib/custom.config.yaml` y establece la variable de entorno `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`.
 
     Actualiza la configuración de despliegue de ClickStack:
@@ -186,14 +180,14 @@ Si desea probar la integración de logs de MySQL antes de configurar su propio e
     ```yaml
     services:
       clickstack:
-        # ... configuración existente ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... otras variables de entorno ...
+          # ... other environment variables ...
         volumes:
           - ./mysql-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/mysql:/var/log/mysql:ro
-          # ... otros volúmenes ...
+          # ... other volumes ...
     ```
 
     <Note>
@@ -201,9 +195,7 @@ Si desea probar la integración de logs de MySQL antes de configurar su propio e
     </Note>
   </Step>
 
-  <Step>
-    #### Verificar logs en HyperDX
-
+  <Step title="Verificar logs en HyperDX" id="verifying-logs">
     Una vez configurado, inicia sesión en HyperDX y verifica que se estén recibiendo logs:
 
     1. Ve a la vista de búsqueda
@@ -224,16 +216,14 @@ Si desea probar la integración de logs de MySQL antes de configurar su propio e
 Para quienes quieran probar la integración de logs de MySQL antes de configurar sus sistemas de producción, proporcionamos un conjunto de datos de ejemplo con logs de MySQL generados previamente y patrones realistas.
 
 <Steps>
-  <Step>
-    #### Descargar el conjunto de datos de ejemplo
-
+  <Step title="Descargar el conjunto de datos de ejemplo" id="download-sample">
     Descargue los archivos de log de ejemplo:
 
     ```bash
-    # Descargar el log de errores
+    # Download error log
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/error.log
 
-    # Descargar el log de consultas lentas
+    # Download slow query log
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/mysql-slow.log
     ```
 
@@ -245,9 +235,7 @@ Para quienes quieran probar la integración de logs de MySQL antes de configurar
     * Secuencias de inicio y apagado del servidor de base de datos
   </Step>
 
-  <Step>
-    #### Crear la configuración del collector de prueba
-
+  <Step title="Crear la configuración del collector de prueba" id="test-config">
     Crea un archivo llamado `mysql-logs-demo.yaml` con la siguiente configuración:
 
     ```yaml
@@ -256,7 +244,7 @@ Para quienes quieran probar la integración de logs de MySQL antes de configurar
       filelog/mysql_error:
         include:
           - /tmp/mysql-demo/error.log
-        start_at: beginning  # Leer desde el principio para datos de demostración
+        start_at: beginning  # Read from beginning for demo data
         multiline:
           line_start_pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
         operators:
@@ -279,7 +267,7 @@ Para quienes quieran probar la integración de logs de MySQL antes de configurar
       filelog/mysql_slow:
         include:
           - /tmp/mysql-demo/mysql-slow.log
-        start_at: beginning  # Leer desde el principio para datos de demostración
+        start_at: beginning  # Read from beginning for demo data
         multiline:
           line_start_pattern: '^# Time:'
         operators:
@@ -313,9 +301,7 @@ Para quienes quieran probar la integración de logs de MySQL antes de configurar
     ```
   </Step>
 
-  <Step>
-    #### Ejecuta ClickStack con la configuración de demostración
-
+  <Step title="Ejecuta ClickStack con la configuración de demostración" id="run-demo">
     Ejecuta ClickStack con los logs de demostración y la configuración de demostración:
 
     ```bash
@@ -329,9 +315,7 @@ Para quienes quieran probar la integración de logs de MySQL antes de configurar
     ```
   </Step>
 
-  <Step>
-    #### Verifica los logs en HyperDX
-
+  <Step title="Verifica los logs en HyperDX" id="verify-demo-logs">
     Una vez que ClickStack esté en ejecución:
 
     1. Espera unos instantes a que ClickStack se inicialice por completo (normalmente, entre 30 y 60 segundos)
@@ -363,13 +347,11 @@ Para quienes quieran probar la integración de logs de MySQL antes de configurar
 Para ayudarte a empezar a supervisar MySQL con ClickStack, proporcionamos visualizaciones esenciales para los logs de MySQL.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mysql-logs-dashboard.json'} download="mysql-logs-dashboard.json" eventName="docs.mysql_logs_monitoring.dashboard_download">Descargar</TrackedLink> la configuración del dashboard
+  <Step title="Descargar la configuración del dashboard" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mysql-logs-dashboard.json'} download="mysql-logs-dashboard.json" eventName="docs.mysql_logs_monitoring.dashboard_download">Descargar el archivo de configuración del dashboard</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Importa el dashboard preconfigurado
-
+  <Step title="Importa el dashboard preconfigurado" id="import-dashboard">
     1. Abre HyperDX y ve a la sección Dashboards
     2. Haz clic en **Import Dashboard** en la esquina superior derecha, dentro del menú de puntos suspensivos
 
@@ -380,9 +362,7 @@ Para ayudarte a empezar a supervisar MySQL con ClickStack, proporcionamos visual
     <Image img="/images/clickstack/mysql/finish-import.webp" alt="Finalizar importación" />
   </Step>
 
-  <Step>
-    #### Ver el dashboard
-
+  <Step title="Ver el dashboard" id="created-dashboard">
     El dashboard se creará con todas las visualizaciones ya configuradas.
 
     <Image img="/images/clickstack/mysql/example-dashboard.webp" alt="Dashboard de ejemplo" />
@@ -491,4 +471,4 @@ Si el formato difiere significativamente, ajusta los patrones regex en la config
   ## Paso a producción
 </div>
 
-Esta guía amplía el OpenTelemetry Collector integrado de ClickStack para facilitar una configuración rápida. Para implementaciones en producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.
+Esta guía amplía el OpenTelemetry Collector integrado de ClickStack para facilitar una configuración rápida. Para implementaciones de producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para ver una configuración de producción.

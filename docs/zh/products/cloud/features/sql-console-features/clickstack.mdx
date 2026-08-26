@@ -1,0 +1,30 @@
+---
+sidebarTitle: 'ClickStack'
+slug: /cloud/manage/clickstack
+title: 'ClickStack'
+description: '提供 ClickStack UI——一个基于 ClickHouse 和 OpenTelemetry (OTel) 构建的生产级可观测性平台，将日志、链路追踪、指标和会话整合到一个高性能、可扩展的统一解决方案中。'
+doc_type: 'guide'
+keywords: ['HyperDX', '可观测性', '集成', 'Cloud 功能', '监控', 'ClickStack']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+[**托管 ClickStack**](/zh/clickstack/overview) 以完全托管的形式将开源的 [ClickStack](/zh/clickstack/overview) 可观测性平台带到 ClickHouse Cloud。它基于 ClickHouse 和 OpenTelemetry (OTel) 构建，将日志、链路追踪、指标和会话数据统一到一个高性能解决方案中。托管 ClickStack 专为监控和调试复杂系统而设计，使开发者和 SRE 无需在多个工具之间切换，也无需借助时间戳或关联 ID 手动拼接数据，即可对问题进行端到端追踪。
+
+作为托管产品，托管 ClickStack 提供了开源项目的能力，并将 ClickStack UI 直接集成到 ClickHouse Cloud 控制台中，同时提供原生的基于角色的访问控制 (RBAC)，以及 AI 笔记本和企业级告警等附加能力。您无需管理基础设施，也无需配置单独的身份验证。
+
+ClickStack UI (HyperDX) 是一个专为探索和可视化可观测性数据而打造的前端，支持 Lucene 风格查询和 SQL 查询、交互式仪表盘、告警、trace 探索等功能，并且针对以 ClickHouse 作为后端的使用场景进行了全面优化。
+
+托管 ClickStack 可一键启动并连接到您的数据，并完全集成到 ClickHouse Cloud 身份验证系统中，让您能够无缝、安全地访问可观测性洞察。
+
+<div id="main-concepts">
+  ## 部署
+</div>
+
+选择任一服务后，您都可以在左侧主导航菜单中找到 ClickStack。
+
+<Image img="/images/use-cases/observability/clickstack-cloud.webp" alt="ClickHouse Cloud 中的托管 ClickStack" size="lg" />
+
+要开始在 ClickHouse Cloud 中使用 ClickStack，我们建议您阅读专门的[入门指南](/zh/clickstack/deployment/managed)。
+
+有关 ClickStack 的更多信息，请参阅[完整文档](/zh/clickstack/overview)。

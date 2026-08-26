@@ -6,9 +6,7 @@ DROP TABLE IF EXISTS test;
 CREATE TABLE test (t Tuple(v Nullable(Tuple(w Nullable(UInt32))))) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test VALUES (((1))), (((NULL))), ((NULL));
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count(t.v.w) FROM test SETTINGS enable_analyzer = 1;
-SELECT count(__table1.`t.v.w`) AS `count(t.v.w)`
-FROM default.test AS __table1
-SETTINGS enable_analyzer = 1
+SELECT count(__table1.`t.v.w`) AS `count(t.v.w)`\nFROM default.test AS __table1\nSETTINGS enable_analyzer = 1
 SELECT count(t.v.w) FROM test;
 1
 DROP TABLE test;
@@ -16,9 +14,7 @@ DROP TABLE IF EXISTS test2;
 CREATE TABLE test2 (t Nullable(Tuple(u Nullable(UInt32)))) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test2 VALUES ((1)), ((NULL)), (NULL);
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count(t.u) FROM test2 SETTINGS enable_analyzer = 1;
-SELECT count(__table1.`t.u`) AS `count(t.u)`
-FROM default.test2 AS __table1
-SETTINGS enable_analyzer = 1
+SELECT count(__table1.`t.u`) AS `count(t.u)`\nFROM default.test2 AS __table1\nSETTINGS enable_analyzer = 1
 SELECT count(t.u) FROM test2;
 1
 DROP TABLE test2;

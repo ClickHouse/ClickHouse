@@ -1,13 +1,13 @@
 ---
 slug: /cloud/managed-postgres/connection
 sidebarTitle: '接続'
-title: 'Managed Postgres に接続する'
+title: 'ClickHouse Managed Postgres に接続する'
 description: 'ClickHouse Managed Postgres の接続文字列、PgBouncer の接続プーリング、TLS 設定'
 keywords: ['postgres 接続', '接続文字列', 'pgbouncer', 'tls', 'ssl']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
@@ -22,7 +22,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ## 接続情報の確認
 </div>
 
-アプリケーションを Managed Postgres に接続するには、インスタンスの左側のサイドバーにある **Connect** ビューを開きます。
+アプリケーションを ClickHouse Managed Postgres に接続するには、インスタンスの左側のサイドバーにある **Connect** ビューを開きます。
 
 <Image img="/images/managed-postgres/connect-button.webp" alt="接続情報を表示するには、左側のサイドバーで Connect をクリックします" size="md" border />
 
@@ -34,10 +34,10 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 * **Username**: データベースユーザー名 (デフォルト: `postgres`)
 * **Password**: データベースのパスワード (デフォルトではマスク表示。表示するには目のアイコンをクリックします)
-* **Server**: Managed Postgres インスタンスのホスト名
+* **Server**: ClickHouse Managed Postgres インスタンスのホスト名
 * **Port**: PostgreSQL のポート (デフォルト: `5432`)
 
-Managed Postgres では、データベースへのスーパーユーザーアクセスが提供されます。これらの認証情報を使用してスーパーユーザーとして接続すると、追加のユーザーを作成したり、データベースオブジェクトを管理したりできます。
+ClickHouse Managed Postgres では、データベースへのスーパーユーザーアクセスが提供されます。これらの認証情報を使用してスーパーユーザーとして接続すると、追加のユーザーを作成したり、データベースオブジェクトを管理したりできます。
 
 <div id="connection-string">
   ## 接続文字列のフォーマット
@@ -59,7 +59,7 @@ Managed Postgres では、データベースへのスーパーユーザーアク
   ## PgBouncer 接続プーリング
 </div>
 
-Managed Postgres には、サーバー側の接続プーリング用に [PgBouncer](https://www.pgbouncer.org/) インスタンスが付属しています。PgBouncer は、特に次のようなアプリケーションで、接続管理、パフォーマンス、リソース使用状況の改善に役立ちます。
+ClickHouse Managed Postgres には、サーバー側の接続プーリング用に [PgBouncer](https://www.pgbouncer.org/) インスタンスが付属しています。PgBouncer は、特に次のようなアプリケーションで、接続管理、パフォーマンス、リソース使用状況の改善に役立ちます。
 
 * 多数の接続を同時に開く
 * 接続の作成と切断を頻繁に行う
@@ -79,7 +79,7 @@ Managed Postgres には、サーバー側の接続プーリング用に [PgBounc
   ## TLS 設定
 </div>
 
-すべての Managed Postgres インスタンスは TLS によって保護されています。サポートされる最小バージョンは **TLS 1.3** です。
+すべての ClickHouse Managed Postgres インスタンスは TLS によって保護されています。サポートされる最小バージョンは **TLS 1.3** です。
 
 <div id="quick-connection">
   ### クイック接続 (TLS で暗号化)
@@ -99,7 +99,7 @@ psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/post
 
 <Image img="/images/managed-postgres/tls-ca-bundle.webp" alt="Settings タブから CA 証明書をダウンロード" size="md" border />
 
-CA 証明書は Managed Postgres インスタンスごとに固有であり、他のインスタンスでは使用できません。
+CA 証明書は ClickHouse Managed Postgres インスタンスごとに固有であり、他のインスタンスでは使用できません。
 
 検証済み TLS 接続で接続するには、`sslmode=verify-full` とダウンロードした証明書へのパスを追加します:
 

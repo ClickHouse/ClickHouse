@@ -30,10 +30,6 @@ ASTPtr ASTHypotheticalIndexQuery::clone() const
     if (index_decl)
     {
         res->index_decl = index_decl->clone();
-        /// `ASTIndexDeclaration::clone` does not carry this flag over. Preserve it so the
-        /// cloned declaration keeps its `CREATE INDEX` formatting.
-        if (auto * cloned_decl = res->index_decl->as<ASTIndexDeclaration>())
-            cloned_decl->part_of_create_index_query = index_decl->as<ASTIndexDeclaration &>().part_of_create_index_query;
         res->children.push_back(res->index_decl);
     }
 
@@ -45,7 +41,6 @@ ASTPtr ASTHypotheticalIndexQuery::clone() const
 void ASTHypotheticalIndexQuery::formatQueryImpl(
     WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
     ostr << indent_str;
 

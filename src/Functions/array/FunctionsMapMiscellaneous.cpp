@@ -27,11 +27,18 @@
 #include <Functions/identity.h>
 #include <Functions/FunctionFactory.h>
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <ranges>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool enable_lazy_columns_replication;
+}
 
 namespace ErrorCodes
 {
@@ -54,7 +61,13 @@ class FunctionMapToArrayAdapter : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapToArrayAdapter>(); }
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionMapToArrayAdapter>(context); }
+
+    explicit FunctionMapToArrayAdapter(const ContextPtr & context)
+        : enable_lazy_columns_replication(context->getSettingsRef()[Setting::enable_lazy_columns_replication])
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -122,7 +135,7 @@ public:
                     "Function {} requires at least one argument, passed {}", getName(), arguments.size());
 
         auto nested_arguments = arguments;
-        Adapter::extractNestedTypesAndColumns(nested_arguments);
+        extractNestedTypesAndColumns(nested_arguments);
 
         constexpr bool impl_has_get_return_type = requires
         {
@@ -164,7 +177,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto nested_arguments = arguments;
-        Adapter::extractNestedTypesAndColumns(nested_arguments);
+        extractNestedTypesAndColumns(nested_arguments);
 
         if constexpr (preserve_nested_low_cardinality)
         {
@@ -191,7 +204,19 @@ public:
     }
 
 private:
+    /// Adapters that synthesize a lambda-like ColumnFunction take the lazy replication flag
+    /// to defer the physical replication of the captured column: the capture stays lazy
+    /// (ColumnReplicated) until the lambda is executed.
+    void extractNestedTypesAndColumns(ColumnsWithTypeAndName & nested_arguments) const
+    {
+        if constexpr (requires { Adapter::extractNestedTypesAndColumns(nested_arguments, enable_lazy_columns_replication); })
+            Adapter::extractNestedTypesAndColumns(nested_arguments, enable_lazy_columns_replication);
+        else
+            Adapter::extractNestedTypesAndColumns(nested_arguments);
+    }
+
     Impl impl;
+    bool enable_lazy_columns_replication;
 };
 
 
@@ -458,7 +483,7 @@ struct MapLikeAdapter
         MapToNestedAdapter<Name, returns_map>::extractNestedTypes(types);
     }
 
-    static void extractNestedTypesAndColumns(ColumnsWithTypeAndName & arguments)
+    static void extractNestedTypesAndColumns(ColumnsWithTypeAndName & arguments, bool enable_lazy_columns_replication)
     {
         checkTypes(DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })});
         convertLowCardinalityColumnsToFull(arguments);
@@ -486,7 +511,14 @@ struct MapLikeAdapter
             /// Here we create ColumnFunction with already captured pattern column.
             /// Nested function will append keys and values column and it will work as desired lambda.
             auto function_base = std::make_shared<FunctionToFunctionBaseAdaptor>(function, lambda_argument_types, result_type);
-            function_column = ColumnFunction::create(pattern_arg.column->size(), std::move(function_base), ColumnsWithTypeAndName{pattern_arg});
+            function_column = ColumnFunction::create(
+                pattern_arg.column->size(),
+                std::move(function_base),
+                ColumnsWithTypeAndName{pattern_arg},
+                /*is_short_circuit_argument_=*/ false,
+                /*is_function_compiled_=*/ false,
+                /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
+                /*allow_lazy_replicated_captures_=*/ enable_lazy_columns_replication);
         }
 
         ColumnWithTypeAndName function_arg{function_column, function_type, position == 0 ? "__function_map_key_like" :  "__function_map_value_like"};
@@ -664,7 +696,7 @@ If elements with the same key exist in more than one input map, all elements are
     /// mapKeys documentation
     FunctionDocumentation::Description description_mapKeys = R"(
 Returns the keys of a given map.
-This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/operations/settings/settings#optimize_functions_to_subcolumns).
+This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 With the setting enabled, the function only reads the `keys` subcolumn instead of the entire map.
 The query `SELECT mapKeys(m) FROM table` is transformed to `SELECT m.keys FROM table`.
 )";
@@ -688,7 +720,7 @@ The query `SELECT mapKeys(m) FROM table` is transformed to `SELECT m.keys FROM t
     /// mapValues documentation
     FunctionDocumentation::Description description_mapValues = R"(
 Returns the values of a given map.
-This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/operations/settings/settings#optimize_functions_to_subcolumns).
+This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 With the setting enabled, the function only reads the `values` subcolumn instead of the entire map.
 The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FROM table`.
 )";
@@ -999,10 +1031,10 @@ INSERT INTO tab VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
 SELECT mapContainsValueLike(a, 'a%') FROM tab;
         )",
         R"(
-┌─mapContainsV⋯ke(a, 'a%')─┐
-│                        1 │
-│                        0 │
-└──────────────────────────┘
+┌─mapContainsValueLike(a, 'a%')─┐
+│                             1 │
+│                             0 │
+└───────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapContainsValueLike = {25, 5};
