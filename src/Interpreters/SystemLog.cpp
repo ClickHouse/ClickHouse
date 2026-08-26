@@ -31,6 +31,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/TransposedMetricLog.h>
+#include <Interpreters/BucketedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/BackgroundSchedulePoolLog.h>
@@ -215,15 +216,16 @@ std::shared_ptr<TSystemLog> createSystemLog(
         /// STORAGE POLICY expr is retained for backward compatible.
         String storage_policy = config.getString(config_prefix + ".storage_policy", "");
         String settings = config.getString(config_prefix + ".settings", "");
-        if (!storage_policy.empty() || !settings.empty())
-        {
-            log_settings.engine += " SETTINGS";
-            /// If 'storage_policy' is repeated, the 'settings' configuration is preferred.
-            if (!storage_policy.empty())
-                log_settings.engine += " storage_policy = " + quoteString(storage_policy);
-            if (!settings.empty())
-                log_settings.engine += (storage_policy.empty() ? " " : ", ") + settings;
-        }
+        /// Some logs add engine settings to the default table definition
+        /// (e.g. the bucketed Map serialization for the 'bucketed' schema of metric_log).
+        String merged_settings = TSystemLog::getDefaultEngineSettings();
+        if (!storage_policy.empty())
+            merged_settings += String(merged_settings.empty() ? "" : ", ") + "storage_policy = " + quoteString(storage_policy);
+        /// If 'storage_policy' is repeated, the 'settings' configuration is preferred.
+        if (!settings.empty())
+            merged_settings += String(merged_settings.empty() ? "" : ", ") + settings;
+        if (!merged_settings.empty())
+            log_settings.engine += " SETTINGS " + merged_settings;
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.
@@ -292,22 +294,29 @@ std::shared_ptr<TSystemLog> createSystemLog(
         if (schema == "wide")
             return std::make_shared<TSystemLog>(context, log_settings);
 
+        if (schema != "transposed" && schema != "transposed_with_wide_view" /* compatibility */ && schema != "bucketed")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide', 'transposed' and 'bucketed' are supported", schema);
+
         return {};
     }
-    else if (std::is_same_v<TSystemLog, TransposedMetricLog>)
+    else if constexpr (std::is_same_v<TSystemLog, TransposedMetricLog>)
     {
         auto schema = config.getString(config_prefix + ".schema_type", "wide");
         if (schema == "transposed" || schema == "transposed_with_wide_view" /* compatibility */)
-        {
             return std::make_shared<TSystemLog>(context, log_settings);
-        }
-        else if (schema != "wide")
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide' and 'transposed'", schema);
-        }
-    }
-    return std::make_shared<TSystemLog>(context, log_settings);
 
+        return {};
+    }
+    else if constexpr (std::is_same_v<TSystemLog, BucketedMetricLog>)
+    {
+        auto schema = config.getString(config_prefix + ".schema_type", "wide");
+        if (schema == "bucketed")
+            return std::make_shared<TSystemLog>(context, log_settings);
+
+        return {};
+    }
+    else
+        return std::make_shared<TSystemLog>(context, log_settings);
 }
 
 
@@ -355,11 +364,15 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 
 /// NOLINTEND(bugprone-macro-parentheses)
 
-    if (metric_log == nullptr && config.has("metric_log")
-        && (config.getString("metric_log.schema_type", "wide") == "transposed" || config.getString("metric_log.schema_type", "wide") == "transposed_with_wide_view"))
+    if (metric_log == nullptr && config.has("metric_log"))
     {
-        transposed_metric_log = createSystemLog<TransposedMetricLog>(
-            global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
+        auto schema = config.getString("metric_log.schema_type", "wide");
+        if (schema == "transposed" || schema == "transposed_with_wide_view" /* compatibility */)
+            transposed_metric_log = createSystemLog<TransposedMetricLog>(
+                global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
+        else if (schema == "bucketed")
+            bucketed_metric_log = createSystemLog<BucketedMetricLog>(
+                global_context, "system", "metric_log", config, "metric_log", BucketedMetricLog::DESCRIPTION);
     }
 
     bool should_prepare = global_context->getServerSettings()[ServerSetting::prepare_system_log_tables_on_startup];
@@ -391,6 +404,13 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
         transposed_metric_log->startCollect(ThreadName::TRANSPOSED_METRIC_LOG, collect_interval_milliseconds);
+    }
+
+    if (bucketed_metric_log)
+    {
+        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
+                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
+        bucketed_metric_log->startCollect(ThreadName::BUCKETED_METRIC_LOG, collect_interval_milliseconds);
     }
 
     if (error_log)
@@ -502,17 +522,36 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
     }
     else
     {
-        #define GET_MAP_VALUES(log_type, member, descr) \
-            { getLowerCaseAndRemoveUnderscores(#member), (member).get() }, \
-            { getLowerCaseAndRemoveUnderscores((member).get() ? (member)->getTableID().getFullTableName() : "system."#member), (member).get() },
+        std::unordered_map<String, ISystemLog *> logs_map;
 
-        std::unordered_map<String, ISystemLog *> logs_map
+        /// Several logs can be exposed under the same public table name: `system.metric_log` is
+        /// backed by `metric_log`, `transposed_metric_log` or `bucketed_metric_log` depending on
+        /// the configured `schema_type`, and only one of them is instantiated. The name must
+        /// resolve to the instantiated log, so an empty slot never replaces a live one.
+        auto add_log_name = [&](const String & name, ISystemLog * log)
         {
-            LIST_OF_ALL_SYSTEM_LOGS(GET_MAP_VALUES)
-            #if CLICKHOUSE_CLOUD
-                LIST_OF_CLOUD_SYSTEM_LOGS(GET_MAP_VALUES)
-            #endif
+            auto [it, inserted] = logs_map.emplace(name, log);
+            if (!inserted && it->second == nullptr)
+                it->second = log;
         };
+
+        /// A live log is registered under the name of the table it writes to as well, so that
+        /// `SYSTEM FLUSH LOGS metric_log` finds the log serving `system.metric_log` regardless
+        /// of which of the alternative implementations is instantiated.
+        #define GET_MAP_VALUES(log_type, member, descr) \
+            add_log_name(getLowerCaseAndRemoveUnderscores(#member), (member).get()); \
+            if ((member)) \
+            { \
+                add_log_name(getLowerCaseAndRemoveUnderscores((member)->getTableID().getFullTableName()), (member).get()); \
+                add_log_name(getLowerCaseAndRemoveUnderscores((member)->getTableID().table_name), (member).get()); \
+            } \
+            else \
+                add_log_name(getLowerCaseAndRemoveUnderscores("system."#member), nullptr);
+
+        LIST_OF_ALL_SYSTEM_LOGS(GET_MAP_VALUES)
+        #if CLICKHOUSE_CLOUD
+            LIST_OF_CLOUD_SYSTEM_LOGS(GET_MAP_VALUES)
+        #endif
         #undef GET_MAP_VALUES
 
         for (const auto & name : names)
@@ -1100,7 +1139,22 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     /// S3-backed engines do not support alias columns; `shouldSkipAliasColumns` returns
     /// `true` for `SharedSystemLogFlushPolicy` and for `DefaultSystemLogFlushPolicy` when
     /// `default_system_log_flush_policy.skip_alias_columns` is set to `true` in config.
-    if (!flush_policy->shouldSkipAliasColumns())
+    if (flush_policy->shouldSkipAliasColumns())
+    {
+        /// Some logs keep their user-facing interface only in the alias columns
+        /// (the `bucketed` schema of `system.metric_log` stores everything in a single Map
+        /// column and exposes every metric as an alias). Silently dropping the aliases would
+        /// silently break every query against such a table, so reject the combination instead.
+        if constexpr (requires { LogElement::alias_columns_are_required; })
+            if (LogElement::alias_columns_are_required)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The table {} cannot be created without alias columns, but they are disabled "
+                    "(the storage does not support them, or "
+                    "`default_system_log_flush_policy.skip_alias_columns` is set in the configuration). "
+                    "Use another schema of this table",
+                    table_id.getFullTableName());
+    }
+    else
         ordinary_columns.setAliases(alias_columns);
 
     new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
