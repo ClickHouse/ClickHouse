@@ -256,7 +256,9 @@ UInt64 unorderedQueryHash(const IAST & ast)
 {
     ASTPtr sorted = ast.clone();
     sortExpressionLists(*sorted);
-    return normalizedQueryHash(normalizedText(*sorted), /*keep_names=*/ false);
+
+    /// the plain text, not normalizedText - normalizing twice would read the placeholders back as SQL
+    return normalizedQueryHash(sorted->formatWithSecretsOneLine(), /*keep_names=*/ false);
 }
 
 }

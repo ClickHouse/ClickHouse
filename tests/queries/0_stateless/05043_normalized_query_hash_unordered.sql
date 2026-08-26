@@ -11,8 +11,9 @@ SELECT normalizedQueryHash('SELECT a, b FROM t') = normalizedQueryHash('SELECT b
 SELECT normalizedQueryHashUnordered('SELECT a FROM t WHERE x = 1') = normalizedQueryHashUnordered('SELECT a FROM t WHERE x = 2');
 SELECT normalizedQueryHashUnordered('SELECT a FROM t WHERE x IN (1, 2)') = normalizedQueryHashUnordered('SELECT a FROM t WHERE x IN (3, 4, 5)');
 
--- generated-looking identifiers become a placeholder, as before
+-- generated-looking identifiers become a placeholder, as before, and a literal `?` is not one of them
 SELECT normalizedQueryHashUnordered('SELECT `a1b2c3` FROM t') = normalizedQueryHashUnordered('SELECT `x9y8z7` FROM t');
+SELECT normalizedQueryHashUnordered('SELECT `?` FROM t') = normalizedQueryHashUnordered('SELECT `a1b2c3` FROM t');
 
 -- lossy on purpose: these are not the same query, but every expression list is sorted, so they share a hash
 SELECT normalizedQueryHashUnordered('SELECT a FROM t ORDER BY a, b') = normalizedQueryHashUnordered('SELECT a FROM t ORDER BY b, a');
@@ -47,6 +48,10 @@ SELECT normalizedQueryHashUnordered('SELECT a FROM t') = normalizedQueryHashUnor
 SELECT normalizedQueryHashUnordered('SELECT * FROM'); -- { serverError SYNTAX_ERROR }
 SELECT normalizedQueryHashUnorderedOrNull('SELECT * FROM');
 SELECT normalizedQueryHashUnorderedOrNull('SELECT a, b FROM t') = normalizedQueryHashUnorderedOrNull('SELECT b, a FROM t');
+
+-- parser knobs come from the session: with the setting off, SETTINGS after FORMAT is data rather than a clause
+SELECT normalizedQueryHashUnorderedOrNull('INSERT INTO t FORMAT CSV SETTINGS max_threads = 1') = normalizedQueryHashUnorderedOrNull('INSERT INTO t FORMAT CSV') SETTINGS allow_settings_after_format_in_insert = 0;
+SELECT normalizedQueryHashUnorderedOrNull('INSERT INTO t FORMAT CSV SETTINGS max_threads = 1') = normalizedQueryHashUnorderedOrNull('INSERT INTO t FORMAT CSV') SETTINGS allow_settings_after_format_in_insert = 1;
 
 -- hitting a parser limit is unparseable too
 SELECT normalizedQueryHashUnorderedOrNull('SELECT ' || repeat('(', 60) || '1' || repeat(')', 60)) IS NULL SETTINGS max_parser_depth = 40;

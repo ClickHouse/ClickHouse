@@ -21,6 +21,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool implicit_select;
 }
 
@@ -57,6 +58,7 @@ public:
         max_parser_depth = settings[Setting::max_parser_depth];
         max_parser_backtracks = settings[Setting::max_parser_backtracks];
         implicit_select = settings[Setting::implicit_select];
+        allow_settings_after_format_in_insert = settings[Setting::allow_settings_after_format_in_insert];
     }
 
     String getName() const override { return name; }
@@ -107,7 +109,7 @@ public:
             const char * end = begin + offsets[i] - prev_offset;
             prev_offset = offsets[i];
 
-            ParserQuery parser(end, false, implicit_select);
+            ParserQuery parser(end, allow_settings_after_format_in_insert, implicit_select);
             ASTPtr ast;
             try
             {
@@ -139,6 +141,7 @@ private:
     size_t max_parser_depth;
     size_t max_parser_backtracks;
     bool implicit_select;
+    bool allow_settings_after_format_in_insert;
 };
 
 }
@@ -156,7 +159,9 @@ shape, for example over `system.query_log`, and never to decide that two queries
 
 The argument is parsed as ClickHouse SQL under the current session's [`max_query_size`](/operations/settings/settings#max_query_size),
 [`max_parser_depth`](/operations/settings/settings#max_parser_depth), [`max_parser_backtracks`](/operations/settings/settings#max_parser_backtracks)
-and [`implicit_select`](/operations/settings/settings#implicit_select), not under the settings the query originally ran with.
+[`implicit_select`](/operations/settings/settings#implicit_select) and
+[`allow_settings_after_format_in_insert`](/operations/settings/settings#allow_settings_after_format_in_insert), not under the settings the query
+originally ran with.
 
 Throws in case of a parsing error.
     )";
