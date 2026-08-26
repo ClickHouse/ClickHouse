@@ -229,7 +229,6 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     }
 }
 
-/// Rebuilds the `IN` right-hand side as a literal tuple: a `Set` column has no `Field`, so emitting it as one gives `x IN NULL`.
 ASTPtr convertSetColumnToAST(const IColumn & column)
 {
     const auto * column_set = checkAndGetColumnConstData<const ColumnSet>(&column);
@@ -328,6 +327,7 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
             if (!node.column)
                 return nullptr;
 
+            /// A `Set` column has no `Field`, so emitting it as a literal would give `x IN NULL`.
             if (WhichDataType(node.result_type).isSet())
                 return convertSetColumnToAST(*node.column);
 
