@@ -211,9 +211,9 @@ public:
         {
             const auto & type = argument_types[i];
             auto serialization = type->getDefaultSerialization();
-            ColumnPtr column = type->createColumn();
-            NativeReader::readData(*serialization, column, buf, nullptr, num_rows, nullptr, nullptr);
-            state.columns.emplace_back(column->assumeMutable());
+            auto column = type->createColumn();
+            NativeReader::readData(*serialization, *column, buf, nullptr, num_rows, nullptr, nullptr);
+            state.columns.emplace_back(std::move(column));
         }
     }
 

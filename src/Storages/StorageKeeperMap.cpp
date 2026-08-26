@@ -90,7 +90,7 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
-    extern const SettingsUInt64 max_compress_block_size;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace FailPoints
@@ -1297,8 +1297,7 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         }
 
         TemporaryDataOnDiskSettings tmp_data_settings;
-        auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
-        tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
+        tmp_data_settings.buffer_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::temporary_files_buffer_size];
 
         auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
 
