@@ -1214,6 +1214,7 @@ static void injectTextIndexTokenizersAboveScan(const Stack & stack, ReadFromMerg
         tracked_columns.emplace(column.name, column.name);
 
     auto context = read_from_merge_tree_step.getContext();
+    bool crossed_join = false;
 
     for (auto it = stack.rbegin() + 1; it != stack.rend() && !tracked_columns.empty(); ++it)
     {
@@ -1225,17 +1226,17 @@ static void injectTextIndexTokenizersAboveScan(const Stack & stack, ReadFromMerg
             if (const auto * expression_step = typeid_cast<const ExpressionStep *>(node->step.get()))
                 tracked_columns = trackColumnsThroughDAG(expression_step->getExpression(), tracked_columns);
             /// A JOIN keeps the values of the columns it outputs, it only drops, reorders and duplicates rows.
-            else if (!typeid_cast<const JoinStep *>(node->step.get()) && !typeid_cast<const JoinStepLogical *>(node->step.get()))
+            else if (typeid_cast<const JoinStep *>(node->step.get()) || typeid_cast<const JoinStepLogical *>(node->step.get()))
+                crossed_join = true;
+            else
                 break;
 
             continue;
         }
 
-        /// A filter next to the scan is rewritten below instead, which also applies the preprocessor.
-        bool is_adjacent_to_scan = (it == stack.rbegin() + 1);
-
         ActionsDAG & filter_dag = filter_step->getExpression();
-        const auto * new_filter_node = is_adjacent_to_scan
+        /// Everything up to the first JOIN is the other walk's business, and it also applies the preprocessor.
+        const auto * new_filter_node = !crossed_join
             ? nullptr
             : injectTextIndexTokenizers(filter_dag, filter_step->getFilterColumnName(), tracked_columns, tokenizers, context);
 
@@ -1257,6 +1258,12 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     ReadFromMergeTree * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
     if (!read_from_merge_tree_step)
         return;
+
+    /// The walk below stops at a JOIN, because the rewrite it applies also wraps the haystack in the index
+    /// preprocessor, which describes a value the other side of a join does not have. A predicate stranded
+    /// above a JOIN still needs the tokenizer, so supply just that. Runs first: the walk below merges steps
+    /// away, which invalidates the parent chain in `stack`.
+    injectTextIndexTokenizersAboveScan(stack, *read_from_merge_tree_step);
 
     /// Text index conditions used to rewrite text-search functions. Direct-read-eligible entries come from the
     /// analyzed skip indexes; the rest are filled in from the index definitions, so the rewrite also covers the
@@ -1352,10 +1359,6 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
             node->step = std::make_unique<ExpressionStep>(input_header, dag.clone());
     }
 
-    /// The walk above stops at a JOIN, because the rewrite it applies also wraps the haystack in the index
-    /// preprocessor, which describes a value the other side of a join does not have. A predicate stranded
-    /// above a JOIN still needs the tokenizer, so supply just that, after the walk has had its chance.
-    injectTextIndexTokenizersAboveScan(stack, *read_from_merge_tree_step);
 }
 
 }
