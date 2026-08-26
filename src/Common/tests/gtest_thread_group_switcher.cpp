@@ -4,11 +4,18 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Interpreters/Context.h>
+
+namespace ProfileEvents
+{
+    extern const Event MemoryAllocatedWithoutCheck;
+    extern const Event MemoryAllocatedWithoutCheckBytes;
+}
 
 namespace DB
 {
@@ -126,6 +133,54 @@ TEST(ThreadGroupSwitcher, RestoresBorrowedThreadName)
                 << "borrowed thread's name must be restored, not left as the async-pool name";
             CurrentThread::detachFromGroupIfNotDetached();
         }
+    });
+    t.join();
+}
+
+/// Reparenting a thread's `MemoryTracker` flushes the untracked balance the thread carried in, and that
+/// flush increments `MemoryAllocatedWithoutCheck` and `MemoryAllocatedWithoutCheckBytes` on whatever
+/// `ProfileEvents::Counters` chain is in force. Those bytes predate the group, so they must not appear on
+/// the group's counters -- `system.query_log` reports the group's counters as the query's. The invariant is
+/// stated on `MemoryTracker::setParent`, and `detachFromGroup` observes it on the way out.
+TEST(ThreadGroupAttach, PreAttachUntrackedMemoryIsNotChargedToTheGroup)
+{
+    /// A dedicated thread so `current_thread` starts as nullptr and the balance below is this thread's
+    /// alone, independent of whatever other gtests in unit_tests_dbms left behind.
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto group = std::make_shared<ThreadGroup>(getContext().context, 0);
+
+        const auto group_events_before = group->performance_counters[ProfileEvents::MemoryAllocatedWithoutCheck];
+        const auto group_bytes_before = group->performance_counters[ProfileEvents::MemoryAllocatedWithoutCheckBytes];
+        const auto global_bytes_before = ProfileEvents::global_counters[ProfileEvents::MemoryAllocatedWithoutCheckBytes];
+
+        /// Written straight into the counter instead of allocated: a real allocation of this size can
+        /// be committed early by the shared per-CPU budget, which no setting of ours controls.
+        constexpr Int64 pre_attach_bytes = 1024 * 1024;
+        ts.untracked_memory.add(pre_attach_bytes);
+
+        /// The balance is still pending: any commit would have zeroed it.
+        ASSERT_GE(ts.untracked_memory.load(), pre_attach_bytes);
+        ASSERT_LT(ts.untracked_memory.load(), ts.untracked_memory_limit);
+
+        CurrentThread::attachToGroup(group);
+
+        EXPECT_EQ(group->performance_counters[ProfileEvents::MemoryAllocatedWithoutCheckBytes], group_bytes_before)
+            << "untracked memory carried into the group must not be reported as the group's";
+        EXPECT_EQ(group->performance_counters[ProfileEvents::MemoryAllocatedWithoutCheck], group_events_before)
+            << "the flush event itself must not be reported as the group's either";
+        /// Attribution, not suppression: the flush is still counted, outside the group.
+        EXPECT_GE(
+            ProfileEvents::global_counters[ProfileEvents::MemoryAllocatedWithoutCheckBytes] - global_bytes_before,
+            static_cast<UInt64>(pre_attach_bytes));
+
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        /// Nothing was really allocated, so give the seeded bytes back now that the tracker is parented
+        /// to `total_memory_tracker` again, or the rest of this binary sees them as global usage.
+        ts.untracked_memory.add(-pre_attach_bytes);
+        ts.flushUntrackedMemory();
     });
     t.join();
 }
