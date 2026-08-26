@@ -17,10 +17,14 @@ Int64 getCurrentQueryMemoryUsage();
 /// the data of an in-memory table. It is still settled when the query ends, but not reported as unaccounted.
 void setCurrentQueryMemoryDriftExpected();
 
-/// Hands `size` bytes of the current query over to a tracker of their own under the same user, for memory that
-/// outlives the query. They count against `max_memory_usage_for_user` while that tracker lives, and stop when it
-/// dies, wherever they are actually freed. Returns `nullptr`, moving nothing, if the query has no user.
-std::unique_ptr<MemoryTracker> handOverCurrentQueryMemoryToItsUser(Int64 size);
+/// A tracker for memory that outlives the current query, such as data waiting in the asynchronous insert queue.
+/// Allocate under it (`MemoryTrackerSwitcher`) and the bytes count against `max_memory_usage_for_user` until it
+/// dies, wherever they are actually freed. Returns `nullptr` if the query has no user.
+std::unique_ptr<MemoryTracker> createTrackerForMemoryOutlivingCurrentQuery();
+
+/// Gives what `tracker` holds back to the current query, for data that turned out not to outlive it. Leaves the
+/// tracker empty, so its destruction settles nothing.
+void giveMemoryBackToCurrentQuery(MemoryTracker & tracker);
 
 /// Create a memory tracker under the current query memory tracker.
 std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery();

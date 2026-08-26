@@ -75,7 +75,7 @@ public:
     void flush(const std::vector<StorageID> & tables);
 
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
-    PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context);
+    PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker = nullptr);
     size_t getPoolSize() const { return pool_size; }
 
     /// This method should be called manually because it's not flushed automatically in dtor
@@ -300,7 +300,7 @@ private:
 
     LoggerPtr log = getLogger("AsynchronousInsertQueue");
 
-    PushResult pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context);
+    PushResult pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker);
 
     Milliseconds getBusyWaitTimeoutMs(
         const Settings & settings,

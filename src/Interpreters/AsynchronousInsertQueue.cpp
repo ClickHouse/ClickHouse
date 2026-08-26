@@ -508,6 +508,10 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
     }
     preprocessInsertQuery(query, query_context);
 
+    /// The bytes read below outlive this query once queued; charge them to a tracker of their own from the
+    /// start instead of estimating the size afterwards.
+    auto queued_data_tracker = createTrackerForMemoryOutlivingCurrentQuery();
+
     StringWithMemoryTracking bytes;
     {
         /// Read at most 'async_insert_max_data_size' bytes of data.
@@ -520,25 +524,35 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
             *read_buf,
             {.read_no_more = query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
 
-        if (const auto * insert_query = query->as<ASTInsertQuery>())
         {
-            size_t expected_data_size = 0;
-            if (insert_query->data)
-                expected_data_size += insert_query->end - insert_query->data;
-            if (insert_query->tail)
-                expected_data_size += insert_query->tail->buffer().size();
+            std::optional<MemoryTrackerSwitcher> switcher;
+            if (queued_data_tracker)
+                switcher.emplace(queued_data_tracker.get());
 
-            expected_data_size = std::min(expected_data_size, size_t{query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
-            bytes.reserve(expected_data_size);
-        }
+            if (const auto * insert_query = query->as<ASTInsertQuery>())
+            {
+                size_t expected_data_size = 0;
+                if (insert_query->data)
+                    expected_data_size += insert_query->end - insert_query->data;
+                if (insert_query->tail)
+                    expected_data_size += insert_query->tail->buffer().size();
 
-        {
-            WriteBufferFromStringWithMemoryTracking write_buf(bytes);
-            copyData(limit_buf, write_buf);
+                expected_data_size = std::min(expected_data_size, size_t{query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
+                bytes.reserve(expected_data_size);
+            }
+
+            {
+                WriteBufferFromStringWithMemoryTracking write_buf(bytes);
+                copyData(limit_buf, write_buf);
+            }
         }
 
         if (!read_buf->eof())
         {
+            /// Falls back to the synchronous path: the data never gets queued, so give the bytes back to the query.
+            if (queued_data_tracker)
+                giveMemoryBackToCurrentQuery(*queued_data_tracker);
+
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
             ConcatReadBuffer::Buffers buffers;
@@ -554,14 +568,15 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         }
     }
 
-    return pushDataChunk(std::move(query), std::move(bytes), std::move(query_context));
+    return pushDataChunk(std::move(query), std::move(bytes), std::move(query_context), std::move(queued_data_tracker));
 }
 
-AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context)
+AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(
+    ASTPtr query, Block && block, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker)
 {
     query = query->clone();
     preprocessInsertQuery(query, query_context);
-    return pushDataChunk(std::move(query), std::move(block), std::move(query_context));
+    return pushDataChunk(std::move(query), std::move(block), std::move(query_context), std::move(queued_data_tracker));
 }
 
 std::vector<std::string> AsynchronousInsertQueue::getInsertQueryIds(InsertData & data)
@@ -572,16 +587,14 @@ std::vector<std::string> AsynchronousInsertQueue::getInsertQueryIds(InsertData &
     return query_ids;
 }
 
-AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context)
+AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
+    ASTPtr query, DataChunk && chunk, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker)
 {
     const auto & settings = query_context->getSettingsRef();
     validateSettings(settings, log);
     auto & insert_query = query->as<ASTInsertQuery &>();
 
     auto data_kind = chunk.getDataKind();
-    /// The data outlives this query and is freed by a flush thread, which cannot uncharge it here. Handing it to
-    /// the user keeps it counting against their limit while it waits, and leaves the query holding none of it.
-    auto queued_data_tracker = handOverCurrentQueryMemoryToItsUser(chunk.byteSize());
     auto entry = std::make_shared<InsertData::Entry>(
         std::move(chunk),
         query_context->getCurrentQueryId(),
