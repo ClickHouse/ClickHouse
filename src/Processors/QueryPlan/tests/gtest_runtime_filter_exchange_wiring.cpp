@@ -7,9 +7,11 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergeRuntimeFiltersStep.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeFilterExchangeWiring.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/CurrentThread.h>
@@ -156,6 +158,45 @@ void addConsumerStage(DistributedQueryPlan & plan, const String & name, size_t n
     for (size_t task = 0; task < num_tasks; ++task)
         stage.tasks.push_back(makeTask(name, task));
     plan.stages[name] = std::move(stage);
+}
+
+QueryPlanPtr makeLimitedApplyPlan(const String & filter_key, size_t limit)
+{
+    auto plan = std::make_unique<QueryPlan>();
+    plan->addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(dataHeader()))));
+    plan->addStep(std::make_unique<LimitStep>(dataHeader(), limit, /*offset=*/0));
+    auto dag = makeApplyFilterDAG(filter_key, "f");
+    const String filter_column_name = applyFilterResultName(dag);
+    plan->addStep(std::make_unique<FilterStep>(dataHeader(), std::move(dag), filter_column_name, /*remove_filter_column_=*/true));
+    return plan;
+}
+
+void addUnionConsumerStage(DistributedQueryPlan & plan, const String & name, size_t num_tasks, QueryPlanPtr first, QueryPlanPtr second)
+{
+    SharedHeaders headers;
+    headers.emplace_back(dataHeader());
+    headers.emplace_back(dataHeader());
+    DistributedQueryStage stage;
+    QueryPlan fragment;
+    fragment.unitePlans(std::make_unique<UnionStep>(std::move(headers)), {std::move(first), std::move(second)});
+    stage.query_plan_fragment = std::move(fragment);
+    for (size_t task = 0; task < num_tasks; ++task)
+        stage.tasks.push_back(makeTask(name, task));
+    plan.stages[name] = std::move(stage);
+}
+
+/// Two `__applyFilter` sites in one fragment, sized by Limit so admission can see them.
+/// UNION children are `[first_arm_limit, second_arm_limit]`; the wiring DFS is last-child-first.
+void addTwoSiteConsumerStage(
+    DistributedQueryPlan & plan,
+    const String & name,
+    size_t num_tasks,
+    const String & filter_key,
+    size_t first_arm_limit,
+    size_t second_arm_limit)
+{
+    addUnionConsumerStage(
+        plan, name, num_tasks, makeLimitedApplyPlan(filter_key, first_arm_limit), makeLimitedApplyPlan(filter_key, second_arm_limit));
 }
 
 /// Total exchange streams in the plan. Also asserts that the outputs and inputs pair up exactly:
@@ -609,4 +650,84 @@ TEST_F(RuntimeFilterExchangeWiring, BuildWithoutConsumersStaysLocal)
     EXPECT_TRUE(plan.exchange_descriptions.empty());
     EXPECT_EQ(next_exchange_id, 100u);
     expectLocalBuild(plan, "build");
+}
+
+TEST_F(RuntimeFilterExchangeWiring, SameStageTinySiteDoesNotVetoLargeSibling)
+{
+    /// UNION children [1e6, 10]: DFS visits the 10-row site first. The 1e6-row sibling still admits,
+    /// so the stage ships once.
+    DistributedQueryPlan plan;
+    addBuildStage(plan, "build", 1, "key");
+    auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
+    ASSERT_NE(build, nullptr);
+    build->setEstimatedBuildRows(100);
+    addTwoSiteConsumerStage(plan, "probe", 1, "key", /*first_arm_limit=*/1'000'000, /*second_arm_limit=*/10);
+
+    size_t next_exchange_id = 100;
+    wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
+
+    EXPECT_EQ(countStreams(plan), 1u);
+    expectWiredBuild(plan, "build", /*expect_merge_tree=*/false);
+    expectConsumerDescriptors(plan, "probe", *build);
+}
+
+TEST_F(RuntimeFilterExchangeWiring, SameStageHugeVisitedFirstStillWires)
+{
+    /// Reverse child order. Still one delivery.
+    DistributedQueryPlan plan;
+    addBuildStage(plan, "build", 1, "key");
+    auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
+    ASSERT_NE(build, nullptr);
+    build->setEstimatedBuildRows(100);
+    addTwoSiteConsumerStage(plan, "probe", 1, "key", /*first_arm_limit=*/10, /*second_arm_limit=*/1'000'000);
+
+    size_t next_exchange_id = 100;
+    wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
+
+    EXPECT_EQ(countStreams(plan), 1u);
+    expectWiredBuild(plan, "build", /*expect_merge_tree=*/false);
+    expectConsumerDescriptors(plan, "probe", *build);
+}
+
+TEST_F(RuntimeFilterExchangeWiring, SameStageBothTinyStaysLocal)
+{
+    DistributedQueryPlan plan;
+    addBuildStage(plan, "build", 1, "key");
+    auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
+    ASSERT_NE(build, nullptr);
+    build->setEstimatedBuildRows(100);
+    addTwoSiteConsumerStage(plan, "probe", 1, "key", /*first_arm_limit=*/10, /*second_arm_limit=*/10);
+
+    size_t next_exchange_id = 100;
+    wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
+
+    EXPECT_EQ(countStreams(plan), 0u);
+    EXPECT_TRUE(plan.exchange_descriptions.empty());
+    expectLocalBuild(plan, "build");
+}
+
+TEST_F(RuntimeFilterExchangeWiring, SameStageStatsLessSiblingStillAdmits)
+{
+    /// Tiny numbered site visited first, sibling has no row estimate. Budget is not upsized
+    /// (100 * 8 < 4096), so the no-estimate path admits.
+    DistributedQueryPlan plan;
+    addBuildStage(plan, "build", 1, "key");
+    auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
+    ASSERT_NE(build, nullptr);
+    build->setEstimatedBuildRows(100);
+
+    auto unknown = std::make_unique<QueryPlan>();
+    unknown->addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(dataHeader()))));
+    auto dag = makeApplyFilterDAG("key", "f");
+    const String filter_column_name = applyFilterResultName(dag);
+    unknown->addStep(std::make_unique<FilterStep>(dataHeader(), std::move(dag), filter_column_name, /*remove_filter_column_=*/true));
+
+    addUnionConsumerStage(plan, "probe", 1, std::move(unknown), makeLimitedApplyPlan("key", 10));
+
+    size_t next_exchange_id = 100;
+    wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
+
+    EXPECT_EQ(countStreams(plan), 1u);
+    expectWiredBuild(plan, "build", /*expect_merge_tree=*/false);
+    expectConsumerDescriptors(plan, "probe", *build);
 }

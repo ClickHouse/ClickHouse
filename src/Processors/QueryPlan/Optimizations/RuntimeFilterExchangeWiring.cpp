@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <limits>
 #include <map>
+#include <ranges>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -131,6 +132,66 @@ struct FilterConsumerSite
     String key_column;
 };
 
+/// Same three admission gates as before, on one apply site. `geometry` is the (possibly
+/// upsized) transport budget; the step is updated only if a stage ships.
+bool siteAdmitsRuntimeFilterTransport(
+    const FilterConsumerSite & site,
+    const BuildRuntimeFilterStep & producer,
+    UInt64 estimated_keys,
+    bool budget_is_upsized,
+    const RuntimeFilterGeometry & geometry)
+{
+    /// The estimate runs on the cut fragment and cannot see across exchange boundaries;
+    /// sites above a nested exchange (and Cloud worker-scan steps) yield no estimate and
+    /// take the no-estimate admission path.
+    auto site_stats = estimateReadRowsCount(*site.node);
+    if (site_stats.estimated_rows && estimated_keys >= *site_stats.estimated_rows)
+    {
+        LOG_TRACE(
+            getLogger("joinRuntimeFilter"),
+            "Runtime-filter transport of '{}' refused at '{}': {} estimated build keys vs {} estimated site rows",
+            producer.getFilterName(),
+            site.node->step->getName(),
+            estimated_keys,
+            *site_stats.estimated_rows);
+        return false;
+    }
+    if (auto it = site_stats.column_stats.find(site.key_column); !site.key_column.empty() && it != site_stats.column_stats.end()
+        && it->second.num_distinct_values > 0 && estimated_keys >= it->second.num_distinct_values)
+    {
+        LOG_TRACE(
+            getLogger("joinRuntimeFilter"),
+            "Runtime-filter transport of '{}' refused at '{}': {} estimated build keys vs {} distinct values of '{}'",
+            producer.getFilterName(),
+            site.node->step->getName(),
+            estimated_keys,
+            it->second.num_distinct_values,
+            site.key_column);
+        return false;
+    }
+    if (budget_is_upsized && !site_stats.estimated_rows)
+    {
+        LOG_TRACE(
+            getLogger("joinRuntimeFilter"),
+            "Runtime-filter transport of '{}' refused at '{}': {} bytes upsized exact budget, but the site rows are "
+            "unknown",
+            producer.getFilterName(),
+            site.node->step->getName(),
+            geometry.exact_bytes_limit);
+        return false;
+    }
+    LOG_TRACE(
+        getLogger("joinRuntimeFilter"),
+        "Runtime-filter transport of '{}' admitted at '{}': {} estimated build keys, {} exact bytes budget, {} exact "
+        "values limit",
+        producer.getFilterName(),
+        site.node->step->getName(),
+        estimated_keys,
+        geometry.exact_bytes_limit,
+        geometry.exact_values_limit);
+    return true;
+}
+
 }
 
 void restoreRuntimeFilterRendezvousKeys(QueryPlan & plan)
@@ -172,7 +233,7 @@ void wireRuntimeFilterExchangeTopology(
     DistributedQueryPlan & distributed_plan, size_t & next_exchange_id, ExchangeDescription::Kind default_kind)
 {
     std::unordered_map<String, FilterProducer> producers; /// by rendezvous key
-    std::unordered_map<String, std::map<String, FilterConsumerSite>> consumers; /// key -> stage -> first site
+    std::unordered_map<String, std::map<String, std::vector<FilterConsumerSite>>> consumers; /// key -> stage -> apply sites
 
     for (auto & [stage_name, stage] : distributed_plan.stages)
     {
@@ -198,29 +259,28 @@ void wireRuntimeFilterExchangeTopology(
             collectStepApplications(*node->step, applications);
             for (const auto & application : applications)
             {
-                /// The first site found in a stage is also the stage's admission representative,
-                /// arbitrary among multiple sites in the fragment. One delivery per stage: the
-                /// descriptor registers once per task, and extra sites share the registered filter
-                /// through the lookup.
-                consumers[application.filter_key].try_emplace(
-                    stage_name, FilterConsumerSite{.node = node, .key_column = application.key_column});
+                /// Every apply site in the stage is kept for admission. Delivery is still once per
+                /// stage: the descriptor registers once per task, and extra sites share the
+                /// registered filter through the lookup.
+                consumers[application.filter_key][stage_name].push_back(
+                    FilterConsumerSite{.node = node, .key_column = application.key_column});
             }
         }
     }
 
     for (auto & [key, producer] : producers)
     {
-        std::map<String, FilterConsumerSite> consuming_stages;
+        std::map<String, std::vector<FilterConsumerSite>> consuming_stages;
         if (auto consumers_it = consumers.find(key); consumers_it != consumers.end())
         {
-            for (const auto & [stage_name, site] : consumers_it->second)
+            for (const auto & [stage_name, sites] : consumers_it->second)
             {
                 /// Same-stage sites are not delivered over an exchange: a self-edge would cycle the
                 /// scheduler. Local `__applyFilter` uses this task's lookup (transport mode registers
                 /// the merged partial after serialize).
                 if (stage_name == producer.stage)
                     continue;
-                consuming_stages.emplace(stage_name, site);
+                consuming_stages.emplace(stage_name, sites);
             }
         }
         if (consuming_stages.empty())
@@ -254,7 +314,7 @@ void wireRuntimeFilterExchangeTopology(
         }
 
         std::vector<String> remote_stages;
-        for (const auto & [stage_name, site] : consuming_stages)
+        for (const auto & [stage_name, sites] : consuming_stages)
         {
             /// Uniform discovery could otherwise create a dependency cycle the stage scheduler
             /// does not guard against. Skip delivery to this stage; if every consuming stage is
@@ -262,62 +322,21 @@ void wireRuntimeFilterExchangeTopology(
             if (stageDependsOnTransitively(distributed_plan.stage_depends_on, producer.stage, stage_name))
                 continue;
 
-            /// Admission by the same estimates that sized the filter. Both gates assume the
-            /// usual join-key containment: a build key set at least as large as the site's key
-            /// set (or its whole row count) is not expected to prune anything, so shipping it
-            /// only costs. A filter with an upsized budget is only sent where the row estimate
-            /// confirmed the site outweighs it. With no estimates at all, transport stays as
-            /// it always was.
+            /// Cost check on every apply site in the stage. Ship once if any site would have
+            /// shipped: a tiny or stats-less first site must not veto a sibling that prunes.
+            /// Both gates assume the usual join-key containment: a build key set at least as
+            /// large as the site's key set (or its whole row count) is not expected to prune
+            /// anything, so shipping it only costs. A filter with an upsized budget is only
+            /// sent where the row estimate confirmed the site outweighs it. With no estimates
+            /// at all, transport stays as it always was.
             if (estimated_keys)
             {
-                /// The estimate runs on the cut fragment and cannot see across exchange boundaries;
-                /// sites above a nested exchange (and Cloud worker-scan steps) yield no estimate and
-                /// take the no-estimate admission path.
-                auto site_stats = estimateReadRowsCount(*site.node);
-                if (site_stats.estimated_rows && *estimated_keys >= *site_stats.estimated_rows)
-                {
-                    LOG_TRACE(
-                        getLogger("joinRuntimeFilter"),
-                        "Runtime-filter transport of '{}' refused at '{}': {} estimated build keys vs {} estimated site rows",
-                        producer.step->getFilterName(),
-                        site.node->step->getName(),
-                        *estimated_keys,
-                        *site_stats.estimated_rows);
+                const bool admitted = std::ranges::any_of(
+                    sites,
+                    [&](const FilterConsumerSite & site)
+                    { return siteAdmitsRuntimeFilterTransport(site, *producer.step, *estimated_keys, budget_is_upsized, geometry); });
+                if (!admitted)
                     continue;
-                }
-                if (auto it = site_stats.column_stats.find(site.key_column); !site.key_column.empty() && it != site_stats.column_stats.end()
-                    && it->second.num_distinct_values > 0 && *estimated_keys >= it->second.num_distinct_values)
-                {
-                    LOG_TRACE(
-                        getLogger("joinRuntimeFilter"),
-                        "Runtime-filter transport of '{}' refused at '{}': {} estimated build keys vs {} distinct values of '{}'",
-                        producer.step->getFilterName(),
-                        site.node->step->getName(),
-                        *estimated_keys,
-                        it->second.num_distinct_values,
-                        site.key_column);
-                    continue;
-                }
-                if (budget_is_upsized && !site_stats.estimated_rows)
-                {
-                    LOG_TRACE(
-                        getLogger("joinRuntimeFilter"),
-                        "Runtime-filter transport of '{}' refused at '{}': {} bytes upsized exact budget, but the site rows are "
-                        "unknown",
-                        producer.step->getFilterName(),
-                        site.node->step->getName(),
-                        geometry.exact_bytes_limit);
-                    continue;
-                }
-                LOG_TRACE(
-                    getLogger("joinRuntimeFilter"),
-                    "Runtime-filter transport of '{}' admitted at '{}': {} estimated build keys, {} exact bytes budget, {} exact "
-                    "values limit",
-                    producer.step->getFilterName(),
-                    site.node->step->getName(),
-                    *estimated_keys,
-                    geometry.exact_bytes_limit,
-                    geometry.exact_values_limit);
             }
 
             remote_stages.push_back(stage_name);
