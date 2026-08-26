@@ -53,8 +53,6 @@ public:
 
     const Field & getMin() const { return min; }
     const Field & getMax() const { return max; }
-    /// True if a numeric-tracking column held a non-NULL NaN (see StatisticsMinMax::hasNaN).
-    bool hasNaN() const { return has_nan; }
     UInt64 getStringTotalBytes() const { return string_total_bytes; }
     Int64 getStringLengthAvg() const;
     UInt64 getNullCount() const { return (is_nullable && has_default_count) ? default_count : 0; }
@@ -67,8 +65,6 @@ private:
     UInt64 string_total_bytes = 0;
     UInt64 default_count = 0; /// rows equal to the type default; == NULL count for a Nullable column
     UInt64 row_count = 0;
-
-    bool has_nan = false; /// numeric-tracking column contained a non-NULL NaN
 
     DataTypePtr data_type; /// stored with LowCardinality and Nullable removed
     /// Column-level default: the Field produced by `IColumn::insertDefault()`.

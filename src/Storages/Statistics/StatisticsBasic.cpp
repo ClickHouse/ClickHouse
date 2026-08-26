@@ -32,9 +32,6 @@ enum BasicFeatureMask : UInt8
     NumericMinMax = 1u << 0,
     StringLengthSum = 1u << 1,
     DefaultCount = 1u << 2,
-    NaNFlag = 1u << 3,
-    /// Distinguishes "no NaN" from "written before the flag existed"; both bits carry no payload.
-    NaNChecked = 1u << 4,
 };
 
 const NullMap * tryGetNullMap(const IColumn & column)
@@ -114,10 +111,6 @@ void StatisticsBasic::build(const ColumnPtr & column)
             min = min_field;
         if (!max_field.isNull() && (max.isNull() || max_field > max))
             max = max_field;
-
-        /// getExtremes skips NaN, so record it separately for part pruning.
-        if (!has_nan)
-            has_nan = StatisticsUtils::columnHasNaN(column);
     }
 
     if (tracks_string)
@@ -138,7 +131,6 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
             min = other->min;
         if (!other->max.isNull() && (max.isNull() || other->max > max))
             max = other->max;
-        has_nan |= other->has_nan;
     }
     if (tracks_string)
         string_total_bytes += other->string_total_bytes;
@@ -162,9 +154,6 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         mask |= BasicFeatureMask::StringLengthSum;
 
     mask |= BasicFeatureMask::DefaultCount;
-    mask |= BasicFeatureMask::NaNChecked;
-    if (has_nan)
-        mask |= BasicFeatureMask::NaNFlag;
     writeIntBinary(mask, buf);
 
     if (tracks_numeric)
@@ -199,17 +188,6 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*vers
     has_default_count = (mask & BasicFeatureMask::DefaultCount) != 0;
     if (has_default_count)
         readIntBinary(default_count, buf);
-
-    if (mask & BasicFeatureMask::NaNChecked)
-    {
-        has_nan = (mask & BasicFeatureMask::NaNFlag) != 0;
-    }
-    else
-    {
-        /// No flag stored: `[1.0, nan, 3.0]` was written with a finite [min, max] hiding the NaN, so
-        /// assume one may be there. A conservative keep, never a wrong skip. `data_type` is stripped.
-        has_nan = tracks_numeric && isFloat(data_type);
-    }
 }
 
 std::optional<Float64> StatisticsBasic::estimateLess(const Field & val) const

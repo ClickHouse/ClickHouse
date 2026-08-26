@@ -34,7 +34,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
@@ -313,10 +312,17 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAnd
     {
         FieldRef min_value;
         FieldRef max_value;
-        const ColumnWithTypeAndName & column = block.getColumnOrSubcolumnByName(column_name);
-        /// Shared with the minmax skip index: NaN-aware so a part mixing finite floats with NaN (e.g.
-        /// a nullable-float partition key) is not pruned for a negated range its NaN rows satisfy.
-        getMinMaxIndexExtremes(*column.column, 0, column.column->size(), min_value, max_value);
+        const ColumnWithTypeAndName & column_and_type = block.getColumnOrSubcolumnByName(column_name);
+        const auto & src_column = column_and_type.column;
+        /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
+        /// columns are untouched. LC(Nullable(T)) then takes getExtremesNullLast (keeps the +inf NULL
+        /// sentinel; otherwise mixed NULL/non-NULL parts lose it and IS NULL wrongly prunes). getExtremes
+        /// on LC materializes internally too, so this adds no extra work.
+        const auto column = src_column->lowCardinality() ? src_column->convertToFullColumnIfLowCardinality() : src_column;
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+            column_nullable->getExtremesNullLast(min_value, max_value, 0, column->size());
+        else
+            column->getExtremes(min_value, max_value, 0, column->size());
 
         if (!initialized)
             hyperrectangle.emplace_back(min_value, true, max_value, true);

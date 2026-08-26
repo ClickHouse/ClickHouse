@@ -27,10 +27,6 @@ enum class StatisticsFileVersion : UInt16
             /// the version field; deserialization returns nullptr if the stored type differs from
             /// the current column type, so stale statistics from a pending MODIFY COLUMN mutation
             /// are never used.
-    V5 = 5, /// float `MinMax` appends a trailing `UInt8 has_nan`. The byte is positional, so a file is
-            /// stamped V5 only when it carries one; `Basic` conveys the same flag through its feature
-            /// mask and stays V4. A file written without the flag is read conservatively (a float stat
-            /// may hold NaN), never pruning a NaN part wrongly.
 };
 
 class Field;
@@ -51,15 +47,9 @@ struct StatisticsUtils
     static std::optional<Float64> interpolateLessLinear(
         const Field & val, const Field & min, const Field & max, UInt64 row_count, const DataTypePtr & data_type);
 
-    /// True if `column` holds at least one non-NULL NaN. Numeric minmax statistics compute their
-    /// bounds with `getExtremes`, which skips NaN, so a column mixing finite floats with NaN stores
-    /// a clean finite [min, max] that hides the NaN; callers persist this flag so pruning can widen
-    /// the range back over NaN. Non-float columns can never contain NaN, so this returns false for them.
-    static bool columnHasNaN(const ColumnPtr & column);
-
     /// Returns true iff two aggregate functions have the same state size and identical argument
     /// types. Statistics implementations use this to decide whether states from two parts can be
-    /// merged: a column type change (e.g. numeric -> String) may preserve the state size while
+    /// merged: a column type change (e.g. numeric → String) may preserve the state size while
     /// switching to a different hash function, producing wrong estimates if the states are mixed.
     static bool isSame(const IAggregateFunction & a, const IAggregateFunction & b);
 };
@@ -82,10 +72,6 @@ public:
 
     virtual void serialize(WriteBuffer & buf) = 0;
     virtual void deserialize(ReadBuffer & buf, StatisticsFileVersion version) = 0;
-
-    /// Lowest file version that can represent what serialize() is about to write. The container
-    /// stamps the maximum over its statistics.
-    virtual StatisticsFileVersion requiredFileVersion() const { return StatisticsFileVersion::V4; }
 
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.
@@ -121,10 +107,6 @@ struct Estimate
     std::optional<Field> estimated_max;
     std::optional<UInt64> estimated_null_count;
     std::optional<UInt64> estimated_default_count;
-    /// The float column of this part holds a non-NULL NaN that [estimated_min, estimated_max] hides
-    /// (getExtremes skips NaN). Part pruning widens the range over NaN so a negated float range does
-    /// not drop the part.
-    bool has_nan = false;
 };
 
 using Estimates = std::unordered_map<String, Estimate>;

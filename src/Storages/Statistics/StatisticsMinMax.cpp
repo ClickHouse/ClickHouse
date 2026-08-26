@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/IDataType.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -46,11 +45,6 @@ void StatisticsMinMax::build(const ColumnPtr & column)
             max = max_field;
     }
 
-    /// getExtremes skips NaN, so a NaN in this block would be invisible in [min, max]. Record it
-    /// separately so part pruning keeps the part under a negated float range.
-    if (!has_nan)
-        has_nan = StatisticsUtils::columnHasNaN(column);
-
     row_count += column->size();
 }
 
@@ -61,7 +55,6 @@ void StatisticsMinMax::merge(const StatisticsPtr & other_stats)
         min = other->min;
     if (!other->max.isNull() && (max.isNull() || other->max > max))
         max = other->max;
-    has_nan |= other->has_nan;
     row_count += other->row_count;
 }
 
@@ -71,17 +64,6 @@ void StatisticsMinMax::serialize(WriteBuffer & buf)
     writeStringBinary(data_type->getName(), buf);
     writeFieldBinary(min, buf);
     writeFieldBinary(max, buf);
-    /// Written unconditionally to keep one layout; a reader that stops after `max` skips this byte
-    /// via the per-stat size prefix in the enclosing ColumnStatistics framing.
-    writeBinary(has_nan, buf);
-}
-
-StatisticsFileVersion StatisticsMinMax::requiredFileVersion() const
-{
-    /// Only a float can hold a NaN; for any other type an older reader derives the same false.
-    if (data_type && isFloat(removeLowCardinalityAndNullable(data_type)))
-        return StatisticsFileVersion::V5;
-    return StatisticsFileVersion::V4;
 }
 
 void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion version)
@@ -97,10 +79,6 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
         readFloatBinary(max_val, buf);
         min = min_val;
         max = max_val;
-        /// V1 predates the `has_nan` flag too, so a float part with a hidden NaN reads a finite
-        /// [min, max]. Apply the same conservative fallback as the V2..V4 path below.
-        if (isFloat(removeLowCardinalityAndNullable(data_type)))
-            has_nan = true;
         return;
     }
 
@@ -113,19 +91,6 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
     }
     min = readFieldBinary(buf);
     max = readFieldBinary(buf);
-
-    /// V5+ always appends `has_nan` right after `max`, so read exactly that one byte. Reading via
-    /// eof() would be wrong: `buf` is the shared file buffer that may still hold later stats.
-    if (version >= StatisticsFileVersion::V5)
-    {
-        readBinary(has_nan, buf);
-    }
-    else if (isFloat(removeLowCardinalityAndNullable(data_type)))
-    {
-        /// No flag stored: `[1.0, nan, 3.0]` was written with a finite [min, max] hiding the NaN, so
-        /// assume one may be there. A conservative keep, never a wrong skip.
-        has_nan = true;
-    }
 }
 
 std::optional<Float64> StatisticsMinMax::estimateLess(const Field & val) const
