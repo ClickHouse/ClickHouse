@@ -146,8 +146,8 @@ SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, toDecimal32(1000000, 0
 
 DROP TABLE t_intdiv_mono;
 
--- A Decimal dividend with an integer divisor still prunes: the result stays in the standard signed path and
--- the guard only rejects a Decimal divisor, so this monotonic case keeps its pruning.
+-- A Decimal dividend with an integer divisor still prunes when the divisor survives the cast into the
+-- dividend's native width (Int64 here), so this monotonic case keeps its pruning.
 CREATE TABLE t_intdiv_mono (a Decimal64(0)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 INSERT INTO t_intdiv_mono VALUES (10), (20), (30), (40), (50);
 SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, toInt64(10)) IN (2))
@@ -188,8 +188,8 @@ SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_intdiv_mono WHERE
 
 DROP TABLE t_intdiv_mono;
 
--- Decimal dividend with an integer divisor stays monotonic (only a Decimal divisor is rejected): pruning
--- preserved. As above, the EXPLAIN assertion confirms the index is actually used.
+-- Decimal dividend with an integer divisor that survives the cast into the dividend's native width
+-- (Int64 here) stays monotonic: pruning preserved, and the EXPLAIN assertion confirms the index is used.
 CREATE TABLE t_intdiv_mono (a Decimal64(0)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 INSERT INTO t_intdiv_mono SELECT number FROM numbers(100);
 SELECT (SELECT count() FROM t_intdiv_mono WHERE divide(a, toInt64(10)) IN (5))
