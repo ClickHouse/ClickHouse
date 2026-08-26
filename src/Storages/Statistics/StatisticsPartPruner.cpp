@@ -42,11 +42,8 @@ std::optional<Range> createRangeFromEstimate(const Estimate & estimate, const Da
         return make_whole_universe();
 
     /// The stored [min, max] is computed by getExtremes, which skips NaN, so it hides a NaN in the
-    /// part. Widen the right bound to NaN (which sorts after every finite value and +inf) so that
-    /// KeyCondition::checkInHyperrectangle sees `key_range.right.isNaN()` and refuses to report the
-    /// range as fully contained. That keeps the part under a negated float range like
-    /// `NOT (val BETWEEN a AND b)`, whose NaN rows must not be pruned (issue #106533 / #106948).
-    /// This mirrors the NaN-widening the minmax skip index applies in getMinMaxIndexExtremes.
+    /// part. A NaN right bound sorts after every finite value and +inf, which stops the range from
+    /// being reported as fully contained, so the part survives a negated float range.
     /// A nullable column already extends the right bound to +inf below, which likewise blocks
     /// containment, so the NaN widening is only needed for the non-nullable case.
     if (estimate.has_nan && !is_nullable)

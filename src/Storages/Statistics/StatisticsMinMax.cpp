@@ -47,7 +47,7 @@ void StatisticsMinMax::build(const ColumnPtr & column)
     }
 
     /// getExtremes skips NaN, so a NaN in this block would be invisible in [min, max]. Record it
-    /// separately so part pruning keeps the part under a negated float range (issue #106533).
+    /// separately so part pruning keeps the part under a negated float range.
     if (!has_nan)
         has_nan = StatisticsUtils::columnHasNaN(column);
 

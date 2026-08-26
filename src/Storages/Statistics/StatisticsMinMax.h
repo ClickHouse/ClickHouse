@@ -26,7 +26,7 @@ public:
     const Field & getMax() const { return max; }
 
     /// True if the part's float column holds a non-NULL NaN. `getExtremes` skips NaN, so [min, max]
-    /// hides it; part pruning uses this to keep the part under a negated float range (issue #106533).
+    /// hides it; part pruning uses this to keep the part under a negated float range.
     bool hasNaN() const { return has_nan; }
 
     std::optional<Float64> estimateLess(const Field & val) const override;

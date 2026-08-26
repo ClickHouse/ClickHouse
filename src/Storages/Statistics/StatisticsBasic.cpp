@@ -115,7 +115,7 @@ void StatisticsBasic::build(const ColumnPtr & column)
         if (!max_field.isNull() && (max.isNull() || max_field > max))
             max = max_field;
 
-        /// getExtremes skips NaN, so record it separately for part pruning (issue #106533).
+        /// getExtremes skips NaN, so record it separately for part pruning.
         if (!has_nan)
             has_nan = StatisticsUtils::columnHasNaN(column);
     }

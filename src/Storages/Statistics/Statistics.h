@@ -27,10 +27,10 @@ enum class StatisticsFileVersion : UInt16
             /// the version field; deserialization returns nullptr if the stored type differs from
             /// the current column type, so stale statistics from a pending MODIFY COLUMN mutation
             /// are never used.
-    V5 = 5, /// float `MinMax` appends a trailing `UInt8 has_nan` (issue #106533 / #106948). The byte
-            /// is positional, so a file is stamped V5 only when it carries one; `Basic` conveys the
-            /// same flag through its feature mask and stays V4. A file written without the flag is
-            /// read conservatively (a float stat may hold NaN), never pruning a NaN part wrongly.
+    V5 = 5, /// float `MinMax` appends a trailing `UInt8 has_nan`. The byte is positional, so a file is
+            /// stamped V5 only when it carries one; `Basic` conveys the same flag through its feature
+            /// mask and stays V4. A file written without the flag is read conservatively (a float stat
+            /// may hold NaN), never pruning a NaN part wrongly.
 };
 
 class Field;
@@ -53,10 +53,8 @@ struct StatisticsUtils
 
     /// True if `column` holds at least one non-NULL NaN. Numeric minmax statistics compute their
     /// bounds with `getExtremes`, which skips NaN, so a column mixing finite floats with NaN stores
-    /// a clean finite [min, max] that hides the NaN. Part pruning then wrongly drops such a part
-    /// under a negated float range (issue #106533 / #106948), the same hazard the minmax skip index
-    /// guards against. Callers persist the result so pruning can widen the range back over NaN.
-    /// Non-float columns can never contain NaN, so this returns false for them.
+    /// a clean finite [min, max] that hides the NaN; callers persist this flag so pruning can widen
+    /// the range back over NaN. Non-float columns can never contain NaN, so this returns false for them.
     static bool columnHasNaN(const ColumnPtr & column);
 
     /// Returns true iff two aggregate functions have the same state size and identical argument
@@ -125,7 +123,7 @@ struct Estimate
     std::optional<UInt64> estimated_default_count;
     /// The float column of this part holds a non-NULL NaN that [estimated_min, estimated_max] hides
     /// (getExtremes skips NaN). Part pruning widens the range over NaN so a negated float range does
-    /// not drop the part (issue #106533 / #106948).
+    /// not drop the part.
     bool has_nan = false;
 };
 
