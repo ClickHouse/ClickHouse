@@ -1,4 +1,4 @@
--- An empty set behind `IN (subquery)` must skip the read, `Nullable` column included.
+-- an empty set behind IN (subquery) must skip the read, Nullable column included
 DROP TABLE IF EXISTS t_short_circuit;
 DROP TABLE IF EXISTS t_short_circuit_final;
 DROP TABLE IF EXISTS t_short_circuit_set;
@@ -13,12 +13,12 @@ INSERT INTO t_short_circuit_final SELECT number, number FROM numbers(100000);
 SELECT count() FROM t_short_circuit WHERE b IN (SELECT b FROM t_short_circuit_set);
 SELECT count() FROM t_short_circuit WHERE b IN (SELECT b FROM t_short_circuit_set) AND a > 10 SETTINGS optimize_move_to_prewhere = 0;
 SELECT count() FROM t_short_circuit_final FINAL WHERE b IN (SELECT b FROM t_short_circuit_set);
--- `NOT IN` over an empty set matches everything, so this one must read the whole table.
+-- NOT IN over an empty set matches everything, so this one reads the whole table
 SELECT count() FROM t_short_circuit WHERE b NOT IN (SELECT b FROM t_short_circuit_set);
 
 SYSTEM FLUSH LOGS query_log;
 
--- `NOT IN` is left out: being the last query, its log entry races with the flush.
+-- NOT IN is left out - being the last query, its log entry races with the flush
 SELECT read_rows FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND query LIKE '%b IN (SELECT b FROM t_short_circuit_set)%' AND query NOT LIKE '%query_log%'
