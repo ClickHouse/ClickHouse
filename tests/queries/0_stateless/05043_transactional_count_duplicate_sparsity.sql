@@ -1,7 +1,7 @@
 -- Tags: no-parallel, no-ordinary-database, no-old-analyzer
 -- no-parallel: SYSTEM ENABLE FAILPOINT is server-global and the failpoint is one-shot, so a concurrent query would consume it
 -- no-ordinary-database: the test uses transactions
--- no-old-analyzer: `optimize_trivial_count_with_sparsity_filter` is implemented only in the new analyzer
+-- no-old-analyzer: `optimize_trivial_count_with_sparsity_filter` is implemented only in the analyzer
 
 -- `applyTrivialCountWithSparsityFilterIfPossible` serves `count()` with a predicate that exactly
 -- partitions a column into its defaults and non-defaults from the per-column `num_defaults` counter.
@@ -54,8 +54,7 @@ SELECT count() FROM transactional_count_duplicate_sparsity WHERE s > 0;
 -- transactions. It matters only where the engine is substituted with `ReplicatedMergeTree`, which does not
 -- support transactions and so allows a read-only `SELECT` inside one only with this setting off. That does
 -- not happen for this test today - every replicated-database job runs with the old analyzer, and the
--- `no-old-analyzer` tag above skips it there - so this is kept only to survive a future new-analyzer
--- replicated-database job.
+-- `no-old-analyzer` tag above skips it there - so this is kept only in case that changes.
 SELECT 'inside a transaction the defaults count must stay 152000, not be multiplied by the number of replicas';
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 BEGIN TRANSACTION;
