@@ -382,6 +382,8 @@ Because the compression codec does not change the serialized representation of t
 
 Implemented as a [mutation](/reference/statements/alter/index#mutations). The codec is taken from the table metadata at the moment the mutation is executed, so a preceding codec change must already be applied -- with the default `alter_sync` it is, but if you change the codec with `alter_sync = 0` and issue `RECOMPRESS COLUMN` immediately, the mutation can run before the replica applies the metadata change and then recompress the data with the previous codec.
 
+Dropping the target of a recompression that is still queued is allowed: the recompression only re-serializes the data streams of its own target, so it is skipped for every part once the column is no longer stored. `RENAME COLUMN` of the target is rejected while the recompression is queued, because the recompression is carried over to the new name and is executed there.
+
 `RECOMPRESS COLUMN` is not supported on tables with a `UNIQUE KEY`.
 
 It is also not supported for a column whose codec is lossy (such as `SZ3`) when something derived from the column would keep describing the values as they were before the recompression: a lossy codec does not reproduce the original values, and the recompression does not rebuild the dependents. This applies when:

@@ -1,9 +1,13 @@
--- A queued recompression whose target is dropped must not force a whole-part rewrite of
--- surviving columns with their newly changed codecs.
+-- Dropping the target of a queued recompression is allowed: a `RECOMPRESS COLUMN` only re-serializes
+-- the data streams of its own target, and it is skipped for every part once that column is no longer
+-- stored. `ALTER TABLE ... DROP COLUMN` is a barrier command, so on a non-replicated table it waits
+-- for the queued recompression to finish first; a replica that applies the metadata change earlier
+-- skips the recompression instead.
 
--- Full part storage is pinned (`min_bytes_for_full_part_storage` may be randomized in tests):
--- a packed part does not support in-place recompression, so the queued `RECOMPRESS COLUMN b`
--- would rewrite the part as a whole, touching every column. This test exercises the in-place path.
+-- The recompression must not rewrite the part as a whole and pick up the meanwhile-changed codec of
+-- a surviving column. Full part storage is pinned (`min_bytes_for_full_part_storage` may be
+-- randomized in tests): a packed part does not support in-place recompression and legitimately
+-- rewrites every column, which is not what this test is about.
 DROP TABLE IF EXISTS t_recompress_dropped_target;
 
 CREATE TABLE t_recompress_dropped_target
@@ -21,19 +25,12 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
 INSERT INTO t_recompress_dropped_target
 SELECT number, repeat('a', 100), toString(number), toString(number) FROM numbers(10000);
 
--- Keep this mutation queued (stopping merges also stops mutations), then remove its target and
--- change another column's codec. Dropping the target of a pending recompression is allowed: the
--- recompression is skipped once the column is gone.
-SYSTEM STOP MERGES t_recompress_dropped_target;
-
 ALTER TABLE t_recompress_dropped_target RECOMPRESS COLUMN b SETTINGS mutations_sync = 0;
 ALTER TABLE t_recompress_dropped_target MODIFY COLUMN a String CODEC(ZSTD);
 ALTER TABLE t_recompress_dropped_target DROP COLUMN b SETTINGS mutations_sync = 0;
 
--- Let the queued mutations run. This final recompression waits for all prior mutations without
--- rewriting `a`; the old bug sent the dropped target through a whole-part rewrite and recompressed
--- `a` as an unintended side effect.
-SYSTEM START MERGES t_recompress_dropped_target;
+-- Waits for all prior mutations. The old bug sent the dropped target through a whole-part rewrite and
+-- recompressed `a` as an unintended side effect.
 ALTER TABLE t_recompress_dropped_target RECOMPRESS COLUMN c SETTINGS mutations_sync = 2;
 
 SELECT 'dropped target does not rewrite surviving column', sum(data_compressed_bytes) > 1000000

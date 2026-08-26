@@ -1,3 +1,5 @@
+SET check_query_single_value_result = 1;
+
 -- A wide part that predates an unrelated `ADD COLUMN` stores fewer columns than the table metadata
 -- has. `RECOMPRESS COLUMN` of a column that inherits the table-wide `default_compression_codec` needs
 -- the whole-part rewrite (the in-place path can only resolve `Default` against the part's stored
