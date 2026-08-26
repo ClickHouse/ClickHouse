@@ -59,7 +59,7 @@ TEST(ArrayJoinStep, UseNullsFlagIsNormalizedToLeftArrayJoin)
         EXPECT_EQ(step.getOutputHeader()->getByName("arr").type->getName(), "UInt64");
 
         UInt8 flags = serializeAndGetFlags(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-        EXPECT_EQ(flags & 4, 0);
+        EXPECT_EQ(flags & 32, 0);
 
         /// An older peer must still accept it.
         EXPECT_NO_THROW(serializeAndGetFlags(step, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS - 1));
@@ -77,7 +77,7 @@ TEST(ArrayJoinStep, UseNullsFlagIsNormalizedToLeftArrayJoin)
         EXPECT_EQ(step.getOutputHeader()->getByName("arr").type->getName(), "Nullable(UInt64)");
 
         UInt8 flags = serializeAndGetFlags(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-        EXPECT_EQ(flags & 4, 4);
+        EXPECT_EQ(flags & 32, 32);
 
         EXPECT_THROW(
             serializeAndGetFlags(step, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS - 1),
