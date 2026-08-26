@@ -1,0 +1,7 @@
+-- plan keeps partitioned_hash inside the spilling wrapper
+1
+-- checksum vs hash
+20000	199990000
+20000	199990000
+-- switched to grace
+1

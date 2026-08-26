@@ -48,7 +48,8 @@ public:
         size_t max_block_size_,
         bool on_totals_ = false,
         bool default_totals_ = false,
-        FinishCounterPtr finish_counter_ = nullptr);
+        FinishCounterPtr finish_counter_ = nullptr,
+        size_t stream_index_ = 0);
 
     ~JoiningTransform() override;
 
@@ -83,6 +84,8 @@ private:
     JoinResultPtr join_result;
 
     FinishCounterPtr finish_counter;
+    /// Stable 0-based probe lane, so a join can bind lock-free per-lane scratch; see `IJoin.h`.
+    size_t stream_index = 0;
     IBlocksStreamPtr non_joined_blocks;
     size_t max_block_size;
 
@@ -95,7 +98,7 @@ private:
 class FillingRightJoinSideTransform final : public IProcessor
 {
 public:
-    FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
+    FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_, size_t build_lane_ = 0);
     String getName() const override { return "FillingRightJoinSide"; }
 
     InputPort * addTotalsPort();
@@ -109,6 +112,8 @@ public:
 private:
     JoinPtr join;
     FinishCounterPtr finish_counter;
+    /// Stable 0-based build lane; the counterpart for `addBlockToJoin`.
+    size_t build_lane = 0;
     Chunk chunk;
     bool stop_reading = false;
     bool for_totals = false;

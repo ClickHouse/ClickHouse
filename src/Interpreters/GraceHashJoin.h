@@ -67,6 +67,8 @@ class GraceHashJoin final : public IJoin
     };
 
 public:
+    using IJoin::addBlockToJoin;
+    using IJoin::joinBlock;
     using BucketPtr = std::shared_ptr<FileBucket>;
     using Buckets = std::vector<BucketPtr>;
 

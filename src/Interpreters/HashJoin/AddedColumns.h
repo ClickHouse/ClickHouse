@@ -77,6 +77,8 @@ struct LazyOutput
     /// Filled in the AddedColumns ctor for the hot `fillFromRowRefs` path; empty for joinGet / ASOF.
     std::vector<const IColumn * const *> emit_block_columns;
     std::vector<const ColumnReplicated * const *> emit_block_replicated;
+    /// One prebuilt raw-data table per output column; a null `data_by_block` keeps the generic path.
+    std::vector<StoredColumnsIndex::DirectGatherColumn> emit_direct_gather;
 
     std::vector<size_t> right_indexes;
     NamesAndTypes type_name;
@@ -85,6 +87,10 @@ struct LazyOutput
     bool output_by_row_list = false;
     size_t output_by_row_list_threshold = 0;
     size_t join_data_avg_perkey_rows = 0;
+
+    /// Set only by `PartitionedHashJoin`. The values produced are identical either way; the flag
+    /// exists so the other hash joins keep their exact code path.
+    bool use_direct_typed_gather = false;
 
     const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
     size_t getRowCount() const { return row_count; }
@@ -222,7 +228,8 @@ public:
                     saved_block_sample.columns(),
                     lazy_output.right_indexes,
                     lazy_output.emit_block_columns,
-                    lazy_output.emit_block_replicated);
+                    lazy_output.emit_block_replicated,
+                    &lazy_output.emit_direct_gather);
         }
     }
 

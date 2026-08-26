@@ -66,6 +66,15 @@ struct RowRef
     /// same on little- and big-endian systems: block_no (with INLINE_FLAG in its MSB) lands in the
     /// high half and row_no in the low half, matching the refWord* decoders below either way.
     UInt64 encode() const { return (static_cast<UInt64>(block_no) << 32) | row_no; }
+
+    /// The exact inverse of `encode`, `INLINE_FLAG` included, so re-encoding reproduces the word.
+    static RowRef fromWord(UInt64 word)
+    {
+        RowRef ref;
+        ref.row_no = static_cast<UInt32>(word);
+        ref.block_no = static_cast<UInt32>(word >> 32);
+        return ref;
+    }
 };
 
 static_assert(sizeof(RowRef) == 8, "RowRef must stay 8 bytes: it is the hash map cell payload");
@@ -436,6 +445,23 @@ public:
         PODArray<const IColumn *> by_block;
         /// `repl_by_block[b]` is that column as `ColumnReplicated *` if it is one, otherwise nullptr.
         PODArray<const ColumnReplicated *> repl_by_block;
+        /// `data_by_block[b]` is that column's raw fixed-width base, or nullptr for a cleared block;
+        /// valid only when `direct_gather_ok`. Prebuilt because resolving it per emit call would put
+        /// `blocks x columns` cold `typeid_cast` chains on every output chunk, which dominated the
+        /// probe of a large build with narrow probe blocks.
+        PODArray<const void *> data_by_block;
+        /// All stored blocks share the saved-block structure, so one `typeid_cast` of this column
+        /// validates the whole table.
+        const IColumn * sample_column = nullptr;
+        bool direct_gather_ok = false;
+    };
+
+    /// What `LazyOutput` gets for one output column; `data_by_block` is null when the column cannot
+    /// take the direct gather.
+    struct DirectGatherColumn
+    {
+        const void * const * data_by_block = nullptr;
+        const IColumn * sample_column = nullptr;
     };
 
     /// Registers a stored block, returns its block_no. Throws when the 2^31 limit
@@ -472,7 +498,8 @@ public:
         size_t saved_columns_count,
         const std::vector<size_t> & positions,
         std::vector<const IColumn * const *> & out_columns,
-        std::vector<const ColumnReplicated * const *> & out_replicated);
+        std::vector<const ColumnReplicated * const *> & out_replicated,
+        std::vector<DirectGatherColumn> * out_direct_gather = nullptr);
 
     /// Invalidate the emit table after the stored columns are replaced in place (e.g. shrinkStoredBlocksToFit
     /// `cloneResized`), which would otherwise leave the cached `const IColumn *` dangling. Bumps the generation.

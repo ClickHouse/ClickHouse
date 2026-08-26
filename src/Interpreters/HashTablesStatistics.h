@@ -72,6 +72,28 @@ struct HashJoinEntry
     size_t source_rows; // the number of rows in the source table
 };
 
+struct PartitionedHashJoinEntry
+{
+    /// `HashJoinEntry`'s maximum-until-much-lower policy, applied to the total: the per-partition
+    /// breakdown legitimately changes shape between observations, so the total is the only
+    /// comparable summary.
+    bool shouldBeUpdated(const PartitionedHashJoinEntry & new_entry) const
+    {
+        return new_entry.total_distinct < total_distinct / 2 || total_distinct < new_entry.total_distinct;
+    }
+
+    std::string dump() const
+    {
+        return fmt::format("bits={}, total_distinct={}, partitions={}", bits, total_distinct, per_partition.size());
+    }
+
+    /// Separate from `HashJoinEntry` so the two algorithms cannot clobber each other's entry for
+    /// the same query key.
+    size_t bits = 0; // the build's partition-plan bits when this entry was published
+    size_t total_distinct = 0; // exact total distinct join keys inserted (sum of the leaves below)
+    std::vector<size_t> per_partition; // exact distinct keys per leaf, size 2^bits, MSB-first order
+};
+
 /** Collects observed HashTable-s sizes to avoid redundant intermediate resizes.
   */
 template <typename Entry>

@@ -44,11 +44,13 @@ public:
         return std::make_shared<ConstantJoin>(table_join_, right_sample_block_, any_take_last_row);
     }
 
+    using IJoin::addBlockToJoin;
     bool addBlockToJoin(const Block & source_block, bool check_limits) override;
     bool addBlockToJoin(const Block & source_block, size_t num_rows, bool check_limits) override;
 
     void checkTypesOfKeys(const Block &) const override {}
 
+    using IJoin::joinBlock;
     JoinResultPtr joinBlock(Block block) override;
 
     size_t getTotalRowCount() const override { return in_memory_rows; }

@@ -298,7 +298,8 @@ void StoredColumnsIndex::resolveEmitColumns(
     size_t saved_columns_count,
     const std::vector<size_t> & positions,
     std::vector<const IColumn * const *> & out_columns,
-    std::vector<const ColumnReplicated * const *> & out_replicated)
+    std::vector<const ColumnReplicated * const *> & out_replicated,
+    std::vector<DirectGatherColumn> * out_direct_gather)
 {
     std::lock_guard guard(mutex);
 
@@ -320,6 +321,11 @@ void StoredColumnsIndex::resolveEmitColumns(
     out_replicated.clear();
     out_columns.reserve(positions.size());
     out_replicated.reserve(positions.size());
+    if (out_direct_gather)
+    {
+        out_direct_gather->clear();
+        out_direct_gather->reserve(positions.size());
+    }
     for (size_t pos : positions)
     {
         chassert(pos < saved_columns_count);
@@ -328,18 +334,35 @@ void StoredColumnsIndex::resolveEmitColumns(
             auto emit_column = std::make_unique<EmitColumn>();
             emit_column->by_block.resize(num_blocks);
             emit_column->repl_by_block.resize(num_blocks);
+            emit_column->data_by_block.resize(num_blocks);
+            emit_column->direct_gather_ok = true;
             for (size_t b = 0; b < num_blocks; ++b)
             {
                 const StoredBlock * block = blocks[b];
                 /// A cleared/popped slot keeps a null entry: no live ref points to it (mirrors `at()`).
                 emit_column->by_block[b] = block ? block->columns[pos].get() : nullptr;
                 emit_column->repl_by_block[b] = block ? block->replicated_columns[pos] : nullptr;
+                emit_column->data_by_block[b] = nullptr;
+                if (!block)
+                    continue;
+                const IColumn & column = *block->columns[pos];
+                if (!emit_column->sample_column)
+                    emit_column->sample_column = &column;
+                if (emit_column->repl_by_block[b] || !column.isFixedAndContiguous())
+                    emit_column->direct_gather_ok = false;
+                else
+                    emit_column->data_by_block[b] = column.getRawData().data();
             }
             emit_columns[pos] = std::move(emit_column);
         }
         const EmitColumn & emit_column = *emit_columns[pos];
         out_columns.push_back(emit_column.by_block.data());
         out_replicated.push_back(emit_column.repl_by_block.data());
+        if (out_direct_gather)
+            out_direct_gather->push_back(
+                emit_column.direct_gather_ok
+                    ? DirectGatherColumn{.data_by_block = emit_column.data_by_block.data(), .sample_column = emit_column.sample_column}
+                    : DirectGatherColumn{});
     }
 }
 

@@ -165,6 +165,9 @@
     M(ConcurrentHashJoinPoolThreads, "Number of threads in the thread pool for concurrent hash join.") \
     M(ConcurrentHashJoinPoolThreadsActive, "Number of threads in the thread pool for concurrent hash join running a task.") \
     M(ConcurrentHashJoinPoolThreadsScheduled, "Number of queued or active jobs in the thread pool for concurrent hash join.") \
+    M(PartitionedHashJoinPoolThreads, "Number of threads in the thread pool for the post-build phase of partitioned hash join.") \
+    M(PartitionedHashJoinPoolThreadsActive, "Number of threads in the thread pool for the post-build phase of partitioned hash join running a task.") \
+    M(PartitionedHashJoinPoolThreadsScheduled, "Number of queued or active jobs in the thread pool for the post-build phase of partitioned hash join.") \
     M(HashedDictionaryThreads, "Number of threads in the HashedDictionary thread pool.") \
     M(HashedDictionaryThreadsActive, "Number of threads in the HashedDictionary thread pool running a task.") \
     M(HashedDictionaryThreadsScheduled, "Number of queued or active jobs in the HashedDictionary thread pool.") \

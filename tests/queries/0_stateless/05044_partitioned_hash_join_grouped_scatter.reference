@@ -1,0 +1,11 @@
+-- checksum vs hash
+1500000	224999250000
+1500000	224999250000
+1500000	224999250000
+1500000	224999250000
+-- below the band the same build spills to grace instead
+1500000	224999250000
+-- at least one build grouped its scatter without switching to grace
+1	1
+-- and the build below the band did switch
+1

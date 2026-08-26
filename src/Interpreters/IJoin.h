@@ -117,6 +117,15 @@ public:
         return addBlockToJoin(block, check_limits);
     }
 
+    /// The 0-based build lane, one per filling transform and assigned in `QueryPipelineBuilder`, so
+    /// a join can index stable per-lane state instead of keying a thread-id map: executor threads
+    /// migrate between transforms, the lane does not. Some pipeline shapes hand out lanes above the
+    /// join's thread count, so an implementation must tolerate an out-of-range lane.
+    virtual bool addBlockToJoin(const Block & block, size_t num_rows, bool check_limits, size_t /*build_lane*/) /// NOLINT
+    {
+        return addBlockToJoin(block, num_rows, check_limits);
+    }
+
     /* Some initialization may be required before joinBlock() call.
      * It's better to done in in constructor, but left block exact structure is not known at that moment.
      * TODO: pass correct left block sample to the constructor.
@@ -128,6 +137,9 @@ public:
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).
     /// Could be called from different threads in parallel.
     virtual JoinResultPtr joinBlock(Block block) = 0;
+
+    /// The probe-side counterpart, one per `JoiningTransform` stream, under the same tolerance rule.
+    virtual JoinResultPtr joinBlock(Block block, size_t /*lane*/) { return joinBlock(std::move(block)); }
 
     /** Set/Get totals for right table
       * Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
