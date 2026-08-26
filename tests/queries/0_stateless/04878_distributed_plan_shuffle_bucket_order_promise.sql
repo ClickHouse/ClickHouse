@@ -89,9 +89,21 @@ SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucke
     SETTINGS make_distributed_plan = 0;
 
 -- The shuffle strategy stays available, including under its force setting, when nothing downstream
--- requires bucket order. Both settings that create the promise are pinned on, so what keeps the shuffle
--- here is the `Complete` stage alone: a guard reading those settings instead of the promise fails these
--- two rows. This is also the default configuration, since both settings default to 1.
+-- requires bucket order. The first row is the shard plan of the query the guard acts on, with both
+-- settings that create the promise turned off: the same plan loses the shuffle above when they are on,
+-- so a guard demoting every non-final aggregation fails here.
+SELECT count() > 0 FROM
+    (EXPLAIN PLAN actions = 1, distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k
+        SETTINGS make_distributed_plan = 1,
+                 distributed_aggregation_memory_efficient = 0,
+                 enable_memory_bound_merging_of_aggregation_results = 0,
+                 distributed_plan_force_shuffle_aggregation = 1)
+    WHERE explain ILIKE '%by hash(%'
+    SETTINGS make_distributed_plan = 0;
+
+-- The next two rows keep the `Complete` stage, with both settings pinned on, so what keeps the shuffle
+-- there is the stage alone: a guard reading those settings instead of the promise fails them. That is
+-- also the default configuration, since both settings default to 1.
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT k, sum(v) FROM t_shuffle_bucket_order GROUP BY k
         SETTINGS make_distributed_plan = 1,
                  distributed_aggregation_memory_efficient = 1,
