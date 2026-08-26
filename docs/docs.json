@@ -215,6 +215,9 @@
       "src": "/_site/customizations/tab-nav.js"
     },
     {
+      "src": "/_site/customizations/webterminal.js"
+    },
+    {
       "src": "/_site/customizations/nav-icon-preload.js"
     },
     {
