@@ -447,7 +447,13 @@ Unlike the query log table itself, `system.user_query_log` can be read without a
 
 This is only supported when the query log is stored locally. If `query_log.engine` is configured as `Distributed` or any other engine that delegates reads to another server, `system.user_query_log` refuses to read from it and throws an exception, because the required access check cannot be enforced across a ClickHouse-protocol server boundary. In that case, disable the table with `query_log.enable_user_query_log = 0`.
 
-The table can be disabled with the `query_log.enable_user_query_log` server setting. If the query log is not configured, or its table has not been created yet, `system.user_query_log` is empty.
+<Info>
+**Availability**
+
+`system.user_query_log` is attached only when the `query_log.enable_user_query_log` server setting is enabled, which is the default. When the setting is `0`, the table does not exist and queries against it fail with `UNKNOWN_TABLE`.
+
+When `query_log.enable_user_query_log` is enabled but the backing query log is not configured or its table has not been created yet, `system.user_query_log` exists but is empty.
+</Info>
 
 Conditions on the partition and key columns of the query log (`event_date`, `event_time`, `query_start_time`, `query_id`, `type`, and similar scalar columns) compared with constants are pushed down to the backing query log table, so ordinary lookups such as the example below keep partition pruning and do not scan the whole retained log.
 

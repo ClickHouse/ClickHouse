@@ -90,6 +90,10 @@ def main():
             "dead_letter_queue",
             "handle_error_mode",
         ),
+        SOURCE_ROOT / "Storages" / "System" / "StorageSystemUserQueryLog.cpp": (
+            "query_log.enable_user_query_log",
+            "exists but is empty",
+        ),
     }
     for source_file, requirements in availability_requirements.items():
         documentation = source_documents[source_file]
