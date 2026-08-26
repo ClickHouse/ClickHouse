@@ -207,6 +207,7 @@ static struct InitFiu
     ONCE(oom_canary_force_oom_evidence) \
     PAUSEABLE(truncate_database_tables_pause) \
     REGULAR(datalake_try_get_table_return_nullptr) \
+    REGULAR(datalake_simulate_missing_table_state) \
     REGULAR(datalake_get_tables_throw) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \

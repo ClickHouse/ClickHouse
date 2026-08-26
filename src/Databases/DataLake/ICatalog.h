@@ -10,12 +10,38 @@
 #include <Databases/DataLake/DatabaseDataLakeStorageType.h>
 #include <Poco/JSON/Object.h>
 
+#include <functional>
+#include <unordered_map>
+
+namespace DB
+{
+struct DatabaseDataLakeSettings;
+}
+
 namespace DataLake
 {
 
 using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
 StorageType parseStorageTypeFromString(const std::string &type);
+
+/// Registry of `ALTER DATABASE ... MODIFY SETTING` validators. Each catalog that
+/// supports altering settings registers its own validator; catalog types without
+/// a registered validator do not support altering settings and get `NOT_IMPLEMENTED`.
+class CatalogSettingsAlterValidatorFactory
+{
+public:
+    using Validator = std::function<void(const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes)>;
+
+    static CatalogSettingsAlterValidatorFactory & instance();
+
+    void registerValidator(DB::DatabaseDataLakeCatalogType catalog_type, Validator validator);
+
+    void validate(const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes) const;
+
+private:
+    std::unordered_map<DB::DatabaseDataLakeCatalogType, Validator> validators;
+};
 
 struct DataLakeSpecificProperties
 {
@@ -178,8 +204,13 @@ public:
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
 
-    /// Creates new table in catalog.
+    /// Creates new table in catalog. Callers must ensure the namespace exists before
+    /// writing any table files to storage: a catalog that shares its storage view with
+    /// the data refuses to create a namespace over a plain directory those files create.
     virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
+
+    /// Creates the namespace unless it already exists.
+    virtual void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
 
     /// Updates metadata in catalog.
     virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
@@ -210,6 +241,28 @@ public:
     virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & /*storage_id*/)
     {
         return std::nullopt;
+    }
+
+    /// Result of `prepareSettingsChanges`: the new catalog state built off to the side,
+    /// ready to be published by `commitSettingsChanges`.
+    struct PreparedSettingsChanges
+    {
+        virtual ~PreparedSettingsChanges() = default;
+    };
+    using PreparedSettingsChangesPtr = std::unique_ptr<PreparedSettingsChanges>;
+
+    /// Validate `ALTER DATABASE ... MODIFY SETTING` changes and build the new catalog
+    /// state without publishing anything (may throw, may do network I/O). The state
+    /// becomes visible only after `commitSettingsChanges`, so the caller can persist
+    /// the changes in between and abandon the prepared state on failure.
+    virtual PreparedSettingsChangesPtr prepareSettingsChanges(const DB::SettingsChanges & changes);
+
+    /// Publish the state built by `prepareSettingsChanges`. Must not fail.
+    virtual void commitSettingsChanges(PreparedSettingsChangesPtr prepared);
+
+    void applySettingsChanges(const DB::SettingsChanges & changes)
+    {
+        commitSettingsChanges(prepareSettingsChanges(changes));
     }
 
 protected:

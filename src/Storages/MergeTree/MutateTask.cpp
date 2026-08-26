@@ -1242,31 +1242,63 @@ static NameToNameVector collectFilesForRenames(
                 if (updated_columns_in_patches.contains(command.rename_to))
                     continue;
 
-                String escaped_name_from = escapeForFileName(command.column_name);
-                String escaped_name_to = escapeForFileName(command.rename_to);
-
-                ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+                const auto * substreams = source_part->getColumnsSubstreams().tryGetColumnSubstreams(command.column_name);
+                if (substreams)
                 {
+                    /// Use columns_substreams.txt as the source of truth for substream file names.
+                    /// This way the file renames stay consistent with the new columns_substreams.txt
+                    /// produced by addRenamedColumnToColumnsSubstreams (both use getFileNameForRenamedColumnStream
+                    /// on the same source names).
                     auto storage_settings = source_part->storage.getSettings();
-
-                    String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
-                    String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
-
-                    auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(full_stream_from, ".bin", source_part->checksums);
-                    if (!stream_from)
-                        return;
-
-                    String stream_to = replaceFileNameToHashIfNeeded(full_stream_to, *storage_settings, &new_part->getDataPartStorage());
-
-                    if (stream_from != stream_to)
+                    for (const auto & substream : *substreams)
                     {
-                        add_rename(*stream_from + ".bin", stream_to + ".bin");
-                        add_rename(*stream_from + mrk_extension, stream_to + mrk_extension);
-                    }
-                };
+                        auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", source_part->checksums);
+                        if (!stream_from)
+                            continue;
 
-                if (auto serialization = source_part->tryGetSerialization(command.column_name))
-                    serialization->enumerateStreams(callback);
+                        String renamed = ISerialization::getFileNameForRenamedColumnStream(
+                            command.column_name, command.rename_to, substream);
+                        String stream_to = replaceFileNameToHashIfNeeded(
+                            renamed, *storage_settings, &new_part->getDataPartStorage());
+
+                        if (*stream_from != stream_to)
+                        {
+                            add_rename(*stream_from + ".bin", stream_to + ".bin");
+                            add_rename(*stream_from + mrk_extension, stream_to + mrk_extension);
+                        }
+                    }
+                }
+                else
+                {
+                    /// Fallback for parts without columns_substreams.txt (discarded due to corruption or old parts).
+                    /// Use getStreamNameForColumn with bidirectional fallback to find the actual file
+                    /// regardless of whether the part was written with a different escape_variant_subcolumn_filenames value.
+                    String escaped_name_from = escapeForFileName(command.column_name);
+                    String escaped_name_to = escapeForFileName(command.rename_to);
+
+                    ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+                    {
+                        auto storage_settings = source_part->storage.getSettings();
+
+                        String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+                        String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
+
+                        auto stream_from = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, storage_settings);
+                        if (!stream_from)
+                            return;
+
+                        String stream_to = replaceFileNameToHashIfNeeded(full_stream_to, *storage_settings, &new_part->getDataPartStorage());
+
+                        if (*stream_from != stream_to)
+                        {
+                            add_rename(*stream_from + ".bin", stream_to + ".bin");
+                            add_rename(*stream_from + mrk_extension, stream_to + mrk_extension);
+                        }
+                    };
+
+                    if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                        serialization->enumerateStreams(callback);
+                }
             }
             else if (command.type == MutationCommand::Type::UPDATE || command.type == MutationCommand::Type::READ_COLUMN || command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {

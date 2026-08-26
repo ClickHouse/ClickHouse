@@ -100,6 +100,7 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Functions/AI/AIQuotaTracker.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
@@ -279,6 +280,10 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
+    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -1500,12 +1505,27 @@ DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<
     if (auto it = shard.set.find(id); it != shard.set.end())
     {
         DatabaseAndTable storage = DatabaseCatalog::instance().tryGetByUUID(it->uuid);
-        if (storage.second)
+        /// The cache is keyed by qualified name only (see `StorageCache::Shard::set`), so a hit can
+        /// carry a UUID that no longer matches the name we are resolving. Return the cached storage
+        /// only if it is still fresh. Otherwise the entry is stale and must not be reused:
+        ///  - the table no longer exists by its UUID (e.g. a refreshable materialized view's inner
+        ///    table was dropped and recreated), or
+        ///  - the UUID still exists but the name was reassigned to a different table by a rename or
+        ///    exchange within the same query. This happens during `CREATE OR REPLACE`, which creates a
+        ///    temporary table, populates it (caching the temporary name -> temporary UUID here), then
+        ///    atomically swaps it with the target via `EXCHANGE`. After the swap the temporary name
+        ///    refers to the old table that is about to be dropped, but the cache would still hand out
+        ///    the new (now live) table - so dropping by the temporary name would shut down the live
+        ///    table instead and break it (e.g. detaching a materialized view from its source), or
+        ///  - the caller asked for a specific UUID but the cached entry resolves to a different one
+        ///    (a same-name replacement); returning it would silently substitute the wrong table
+        ///    instead of letting the fresh lookup report `UNKNOWN_TABLE`/`TABLE_UUID_MISMATCH`.
+        /// In all cases remove the stale entry and fall through to a fresh lookup by name.
+        if (storage.second
+            && storage.second->getStorageID().getQualifiedName() == id.getQualifiedName()
+            && (!id.hasUUID() || it->uuid == id.uuid))
             return storage;
 
-        /// The table was cached but no longer exists by its UUID
-        /// (e.g. refreshable materialized view's inner table was dropped and recreated).
-        /// Remove the stale entry and fall through to a fresh lookup by name.
         shard.set.erase(it);
     }
 
@@ -2322,10 +2342,10 @@ ClassifierPtr Context::getWorkloadClassifier() const
     return classifier;
 }
 
-void Context::releaseWorkloadResources() const
+void Context::releaseQuerySlot() const
 {
     if (auto elem = getProcessListElementSafe())
-        elem->releaseWorkloadResources();
+        elem->releaseQuerySlot();
 }
 
 String Context::getMergeWorkload() const
@@ -8113,6 +8133,24 @@ ReverseLookupCache & Context::getReverseLookupCache() const
             ReverseLookupCache::DEFAULT_SIZE_RATIO);
     }
     return *query_context->reverse_lookup_cache;
+}
+
+AIQuotaTrackerPtr Context::getAIQuotaTracker() const
+{
+    auto query_context = getQueryContext();
+
+    const auto & settings_ref = query_context->getSettingsRef();
+
+    std::lock_guard<ContextSharedMutex> lock(query_context->mutex);
+    if (!query_context->ai_quota_tracker)
+    {
+        query_context->ai_quota_tracker = std::make_shared<AIQuotaTracker>(
+            settings_ref[Setting::ai_function_max_input_tokens_per_query],
+            settings_ref[Setting::ai_function_max_output_tokens_per_query],
+            settings_ref[Setting::ai_function_max_api_calls_per_query],
+            settings_ref[Setting::ai_function_throw_on_quota_exceeded]);
+    }
+    return query_context->ai_quota_tracker;
 }
 
 void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)

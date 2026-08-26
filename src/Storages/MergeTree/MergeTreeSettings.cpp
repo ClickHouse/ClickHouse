@@ -691,6 +691,22 @@ namespace ErrorCodes
     Allow creating text indexes with the experimental `positions` argument which
     stores token positions to support exact phrase matching.
     )", BETA) \
+    DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V1_WithCodec, R"(
+The preferred on-disk serialization format version for writing text indexes.
+
+The setting is a preference rather than a hard constraint: if the configured version cannot
+represent an index, a newer version that can represent it is chosen automatically, and
+writing a text index never fails because of this setting.
+
+During a rolling upgrade, pin the format with the profile-level `compatibility` setting on
+the already upgraded servers, so that they keep writing the format that older servers can still read.
+
+Possible values:
+
+- `v0_initial` — The original format. Does not persist the posting list codec type.
+- `v1_with_codec` — Persists the posting list codec type in the text index header.
+- `v2_with_positions` — Persists token positions for indexes with `positions`.
+)", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
     parts were selected. A lower setting will trigger selecting tasks in
