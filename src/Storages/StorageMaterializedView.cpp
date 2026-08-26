@@ -275,7 +275,13 @@ StorageMaterializedView::StorageMaterializedView(
     const bool is_fresh_definition = mode == LoadingStrictnessLevel::CREATE
         || (mode == LoadingStrictnessLevel::ATTACH && !query.attach_short_syntax);
     if (query.refresh_strategy && query.refresh_strategy->isIncremental() && is_fresh_definition)
+    {
+        /// A replacement builds a fresh cursor, so the next refresh would replay the source and duplicate rows.
+        if (query.create_or_replace || query.replace_view)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "CREATE OR REPLACE and REPLACE are not supported for incremental refreshable materialized views");
         validateIncrementalDefinition(select.select_query, mv_db_context);
+    }
 
     storage_metadata.setSelectQuery(select);
     if (!comment.empty())

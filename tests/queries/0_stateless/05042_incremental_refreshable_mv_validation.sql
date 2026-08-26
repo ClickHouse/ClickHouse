@@ -74,6 +74,12 @@ CREATE MATERIALIZED VIEW val_mv_repl
 -- MODIFY QUERY is not supported for an incremental MV: it would leave the cursor stale.
 ALTER TABLE val_mv MODIFY QUERY SELECT k, v FROM val_src WHERE k > 0; -- { serverError NOT_IMPLEMENTED }
 
+-- CREATE OR REPLACE is not supported for an incremental MV: the replacement would start from a fresh cursor.
+CREATE OR REPLACE MATERIALIZED VIEW val_mv
+    REFRESH EVERY 10 YEAR APPEND INCREMENTAL
+    TO val_tgt EMPTY
+    AS SELECT k, v FROM val_src; -- { serverError NOT_IMPLEMENTED }
+
 DROP TABLE val_mv;
 DROP TABLE val_tgt;
 DROP TABLE val_mem;
