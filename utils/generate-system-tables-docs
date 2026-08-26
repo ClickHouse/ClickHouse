@@ -35,12 +35,20 @@ GENERATED_SECTION_HEADING_RE = re.compile(
     re.MULTILINE,
 )
 
-# A few historical pages have a filename which differs from the table name.
-# Generate the canonical, more complete page instead of the legacy duplicate.
+# A few historical pages are published under both a canonical filename and a
+# legacy duplicate. Generate every published copy until navigation redirects
+# or removes the legacy route, so none of them retain stale content.
 DOC_FILENAMES = {
-    "delta_lake_metadata_log": "delta_metadata_log.mdx",
-    "warnings": "system_warnings.mdx",
+    "delta_lake_metadata_log": (
+        "delta_metadata_log.mdx",
+        "delta_lake_metadata_log.mdx",
+    ),
+    "warnings": ("system_warnings.mdx", "warnings.mdx"),
 }
+
+
+def documentation_filenames(table_name):
+    return DOC_FILENAMES.get(table_name, (f"{table_name}.mdx",))
 
 
 def load_async_metrics_generator():
@@ -329,25 +337,25 @@ def generate_pages(docs_dir, full_documentation, table_comments):
         documentation_md = full_documentation[table_name]
         comment = table_comments.get(table_name) or extract_page_summary(documentation_md)
 
-        doc_filename = DOC_FILENAMES.get(table_name, f"{table_name}.mdx")
-        doc_filepath = os.path.join(docs_dir, doc_filename)
+        for doc_filename in documentation_filenames(table_name):
+            doc_filepath = os.path.join(docs_dir, doc_filename)
 
-        if os.path.isfile(doc_filepath):
-            changed = update_full_doc_file(doc_filepath, documentation_md)
-            if changed:
-                updated += 1
-                print(f"  Updated: {doc_filename}")
+            if os.path.isfile(doc_filepath):
+                changed = update_full_doc_file(doc_filepath, documentation_md)
+                if changed:
+                    updated += 1
+                    print(f"  Updated: {doc_filename}")
+                else:
+                    skipped += 1
             else:
-                skipped += 1
-        else:
-            create_doc_file(
-                doc_filepath,
-                table_name,
-                comment,
-                documentation_md,
-            )
-            created += 1
-            print(f"  Created: {doc_filename}")
+                create_doc_file(
+                    doc_filepath,
+                    table_name,
+                    comment,
+                    documentation_md,
+                )
+                created += 1
+                print(f"  Created: {doc_filename}")
 
     return updated, created, skipped
 

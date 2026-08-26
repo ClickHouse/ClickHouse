@@ -440,9 +440,17 @@ def extract_metrics_from_source(text, macros, source_path):
     return results
 
 
-def slugify(name):
-    """Anchor id matching the existing docs convention."""
-    return re.sub(r"[^a-z0-9_]+", "", name.lower())
+def documentation_anchor(name):
+    """Match `documentationAnchor` in `StorageSystemDocumentation.cpp`."""
+    result = []
+    for character in name:
+        if character.isascii() and character.isalnum():
+            result.append(character.lower())
+        elif not result or result[-1] != "-":
+            result.append("-")
+    while result and result[-1] == "-":
+        result.pop()
+    return "".join(result)
 
 
 def render_markdown(metrics):
@@ -451,14 +459,25 @@ def render_markdown(metrics):
     for name, description, _ in metrics:
         descriptions_by_name.setdefault(name, set()).add(description)
 
+    conflicting_names = sorted(
+        name
+        for name, descriptions in descriptions_by_name.items()
+        if len(descriptions) != 1
+    )
+    if conflicting_names:
+        raise ValueError(
+            "Conflicting descriptions for asynchronous metrics: "
+            + ", ".join(conflicting_names)
+        )
+
     lines = []
     for name in sorted(descriptions_by_name, key=lambda item: (item.lower(), item)):
-        anchor = slugify(name)
+        anchor = documentation_anchor(name)
         lines.append(f"### {name} {{#{anchor}}}")
         lines.append("")
-        for description in sorted(descriptions_by_name[name]):
-            lines.append(description.strip())
-            lines.append("")
+        description = next(iter(descriptions_by_name[name]))
+        lines.append(description.strip())
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -488,21 +507,12 @@ def update_doc_file(filepath, generated_block):
 def generate_markdown():
     """Extract all documented asynchronous metrics and render their catalog."""
     metrics = []
-    duplicates = {}
     for relpath in SOURCE_FILES:
         path = os.path.join(REPO_ROOT, relpath)
         with open(path, "r") as f:
             text = f.read()
         macros = parse_macros(text)
         extracted = extract_metrics_from_source(text, macros, relpath)
-        for name, desc, _ in extracted:
-            existing = duplicates.get(name)
-            if existing is not None and existing != desc:
-                print(
-                    f"warning: metric '{name}' has different descriptions in code",
-                    file=sys.stderr,
-                )
-            duplicates[name] = desc
         metrics.extend(extracted)
 
     return render_markdown(metrics), len(set(name for name, _, _ in metrics))

@@ -345,6 +345,23 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 Contains information about all successful and failed login and logout events.
 
+<Info>
+**Availability**
+
+`system.session_log` is created only when the server configuration contains a `session_log` section. The section is commented out in the default configuration, so queries against the table fail with `UNKNOWN_TABLE` until it is enabled. For example:
+
+```xml
+<clickhouse>
+    <session_log>
+        <database>system</database>
+        <table>session_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </session_log>
+</clickhouse>
+```
+</Info>
+
 ## Reading rotated tables after an upgrade {#reading-rotated-tables-after-an-upgrade}
 
 When a new value is added to the `interface` enumeration, the table already stored on disk keeps the older `Enum8` definition. On the first start of the new version, `system.session_log` is renamed to `system.session_log_<N>` and a fresh table with the current schema is created in its place; the schema of the rotated table is not changed.

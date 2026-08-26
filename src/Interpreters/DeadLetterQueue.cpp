@@ -145,6 +145,23 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 Contains information about messages received via a streaming engine and parsed with errors. Currently implemented for Kafka and RabbitMQ.
 
+<Info>
+**Availability**
+
+`system.dead_letter_queue` is created only when the server configuration contains a `dead_letter_queue` section. The streaming engine must also set its engine-specific `handle_error_mode` setting to `dead_letter_queue` to write rejected messages. Without the server configuration section, queries against the table fail with `UNKNOWN_TABLE`.
+
+```xml
+<clickhouse>
+    <dead_letter_queue>
+        <database>system</database>
+        <table>dead_letter_queue</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </dead_letter_queue>
+</clickhouse>
+```
+</Info>
+
 Logging is enabled by specifying `dead_letter_queue` for the engine specific `handle_error_mode` setting.
 
 The flushing period of data is set in `flush_interval_milliseconds` parameter of the [dead_letter_queue](/reference/settings/server-settings/settings/other#dead_letter_queue) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/reference/statements/system#flush-logs) query.
