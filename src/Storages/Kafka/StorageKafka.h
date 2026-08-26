@@ -83,8 +83,8 @@ public:
     bool prefersLargeBlocks() const override { return false; }
 
     void pushConsumer(KafkaConsumerPtr consumer);
-    /// `poll_batch_size_override` caps the polls of the returned consumer; `0` keeps its configured
-    /// `kafka_poll_max_batch_size`.
+    /// `poll_batch_size_override` replaces the poll size of the returned consumer; `0` keeps its
+    /// configured `kafka_poll_max_batch_size`.
     KafkaConsumerPtr popConsumer(std::chrono::milliseconds timeout, size_t poll_batch_size_override);
 
     const auto & getFormatName() const { return format_name; }

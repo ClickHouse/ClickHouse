@@ -262,6 +262,8 @@ def test_batch_size_is_reduced_after_memory_limit(kafka_cluster):
         # size that fits. Without this the arm would only show that a reduction was logged and that
         # everything arrived once the pressure was gone, which a reduction that shrinks nothing
         # satisfies as well.
+        # This has to stay the first case in the file: the limit is enforced on resident memory, and
+        # the later cases leave it at the ceiling, where no block of any size completes.
         delivered = wait_for_delivery_at_reduced_size(after=REDUCTION_LINE)
         assert delivered, "no cycle delivered rows at a reduced size while memory was pinned"
         assert max(delivered) <= BLOCK_SIZE // 2, delivered
@@ -293,12 +295,13 @@ def test_reduction_is_not_restored_after_success(kafka_cluster):
         # More successful cycles: none of them may raise the level (nothing fails any more) and
         # none may lower it back.
         produce_wide_messages(kafka_cluster, topic_name, count=4)
-        instance.query_with_retry(
+        got = instance.query_with_retry(
             "SELECT count() FROM test.dst",
             retry_count=180,
             sleep_time=1,
             check_callback=lambda res: int(res.strip() or 0) == MESSAGES + 4,
         )
+        assert int(got.strip()) == MESSAGES + 4, got
         assert reductions_event() == after_drain
 
         # A restored size would stop logging the reduced-size line, or log a larger size again.
@@ -331,12 +334,13 @@ def test_reduction_is_reset_by_reattach(kafka_cluster):
 
         # The memory is free again, so a full-size block fits: a correct reset logs nothing.
         produce_wide_messages(kafka_cluster, topic_name, count=4)
-        instance.query_with_retry(
+        got = instance.query_with_retry(
             "SELECT count() FROM test.dst",
             retry_count=180,
             sleep_time=1,
             check_callback=lambda res: int(res.strip() or 0) == MESSAGES + 4,
         )
+        assert int(got.strip()) == MESSAGES + 4, got
         assert reduced_block_sizes() == []
 
 

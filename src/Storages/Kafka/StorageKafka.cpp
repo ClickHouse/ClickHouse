@@ -502,8 +502,8 @@ KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout, si
     {
         CurrentMetrics::add(CurrentMetrics::KafkaConsumersInUse, 1);
         ret_consumer_ptr->inUse();
-        /// Set here rather than by the caller: a pooled consumer keeps whatever the previous holder
-        /// left, and its own `subscribe` polls before the caller regains control.
+        /// A pooled consumer keeps the previous holder's override, and `subscribe` ends with a poll
+        /// of its own, so the size has to be installed on every acquisition.
         ret_consumer_ptr->setPollBatchSizeOverride(poll_batch_size_override);
     }
     return ret_consumer_ptr;
