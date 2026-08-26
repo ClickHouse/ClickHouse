@@ -1109,3 +1109,70 @@ def test_file_uri_with_localhost_authority(started_cluster):
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == "1\talpha\n2\tbeta\n3\tgamma\n"
 
     instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
+
+
+# A local file outside the table directory cannot be served by a cluster function: the task
+# distributor hands every file to an arbitrary replica, and nothing says the replicas share the
+# coordinator's filesystem, so the query would read another host's file (or fail on a missing one).
+# It fails closed instead, whatever the cluster looks like.
+# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3789962927
+def test_cluster_function_rejects_external_local_file(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+
+    TABLE_NAME = f"test_cluster_external_local_{get_uuid_str()}"
+
+    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
+
+    default_upload_directory(started_cluster, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+    # The data files live only on node1's filesystem, which is exactly the situation the cluster
+    # function cannot serve.
+    base_path = _rewrite_data_paths_to_local_uri(started_cluster, TABLE_NAME, "localhost")
+
+    minio_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}"
+    error = instance.query_and_get_error(
+        f"SELECT * FROM icebergS3Cluster('cluster_single_node', s3, filename='{base_path}/', format=Parquet, "
+        f"url='{minio_url}/{started_cluster.minio_bucket}/') ORDER BY id")
+    assert "cannot be read by a cluster function" in error
+
+    # The same table reads fine without the cluster function: everything is resolved on node1.
+    _create_iceberg_s3_table(started_cluster, TABLE_NAME, base_path)
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == "1\talpha\n2\tbeta\n3\tgamma\n"
+    instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
+
+
+# A `file://` data path that escapes the table directory must get its own storage rooted at that
+# path: the table's own `local` storage resolves every key relative to the table root and rejects
+# anything above it, so reusing it for a same-scheme path would fail the read.
+# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3789962911
+def test_local_table_with_data_files_outside_table_directory(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+
+    TABLE_NAME = f"test_local_outside_dir_{get_uuid_str()}"
+    external_dir = f"/var/lib/clickhouse/user_files/iceberg_external_{get_uuid_str()}"
+
+    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
+
+    host_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    metadata_dir = os.path.join(host_path, "metadata")
+    data_dir = os.path.join(host_path, "data")
+
+    # Point every data file at a directory next to the table, not under it.
+    for manifest in [f for f in find_files(metadata_dir, ".avro") if not os.path.basename(f).startswith("snap-")]:
+        modify_avro_file(manifest, ["data_file", "file_path"], lambda p: f"file://{external_dir}/{os.path.basename(p)}")
+
+    default_upload_directory(started_cluster, "local", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+    for f in find_files(data_dir, ".parquet"):
+        started_cluster.default_local_uploader.upload_file(f, f"{external_dir}/{os.path.basename(f)}")
+    # Drop the in-table copies so the rows can only come from the external directory.
+    instance.exec_in_container(["bash", "-c", f"rm -f {host_path}/data/*.parquet"])
+
+    instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+    instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE=IcebergLocal(local, path = '{host_path}', format=Parquet)")
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == "1\talpha\n2\tbeta\n3\tgamma\n"
+
+    instance.query(f"DROP TABLE {TABLE_NAME} SYNC")

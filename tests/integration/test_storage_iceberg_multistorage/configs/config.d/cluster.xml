@@ -16,5 +16,15 @@
                 </replica>
             </shard>
         </cluster_simple>
+        <!-- The fixture starts a single node, so a cluster function must be pointed at a cluster
+             that only contains it. -->
+        <cluster_single_node>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster_single_node>
     </remote_servers>
 </clickhouse>

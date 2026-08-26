@@ -83,6 +83,31 @@ std::string normalizeScheme(const std::string & scheme)
     return scheme_lowercase;
 }
 
+/// `file` and `hdfs` object storages are rooted at the table location: every key they are given is
+/// resolved relative to that root (and, for local files, rejected when it escapes it). A path with the
+/// same scheme and authority is therefore readable through the base storage only while it stays inside
+/// the table prefix; anything above it needs its own storage rooted higher up.
+bool isPrefixScopedScheme(const std::string & normalized_scheme)
+{
+    return normalized_scheme == "file" || normalized_scheme == "hdfs";
+}
+
+/// Whether `target_key` lies inside the directory `base_key`. Both keys come from the same scheme, so
+/// they are written the same way (`file` keeps the leading slash, the others do not).
+bool keyIsInsidePrefix(const std::string & base_key, const std::string & target_key)
+{
+    if (base_key.empty())
+        return true;
+
+    auto base = std::filesystem::path(base_key).lexically_normal().string();
+    const auto target = std::filesystem::path(target_key).lexically_normal().string();
+    if (base.empty())
+        return true;
+    if (!base.ends_with('/'))
+        base.push_back('/');
+    return target.starts_with(base);
+}
+
 std::string factoryTypeForScheme(const std::string & normalized_scheme)
 {
     if (normalized_scheme == "s3") return "s3";
@@ -93,13 +118,46 @@ std::string factoryTypeForScheme(const std::string & normalized_scheme)
 }
 
 #if USE_AWS_S3
-/// For s3:// URIs (generic), bucket needs to match.
+/// The S3-compatible schemes name distinct providers even though they share the parsing machinery:
+/// `s3`/`s3a`/`s3n` address a bucket without naming an endpoint, while `gs`/`gcs` and `oss` pin the
+/// bucket to Google Cloud Storage and to Alibaba OSS respectively. An `http(s)` URI carries the
+/// endpoint itself, so it has no family of its own.
+std::string s3ProviderFamily(const std::string & scheme)
+{
+    const auto scheme_lowercase = Poco::toLower(scheme);
+    if (scheme_lowercase == "s3" || scheme_lowercase == "s3a" || scheme_lowercase == "s3n")
+        return "s3";
+    if (scheme_lowercase == "gs" || scheme_lowercase == "gcs")
+        return "gcs";
+    if (scheme_lowercase == "oss")
+        return "oss";
+    return "";
+}
+
+/// Two provider-named schemes may address the same storage only when they name the same provider;
+/// when either side is an explicit `http(s)` endpoint, the endpoint comparison decides instead.
+bool s3ProviderFamiliesCompatible(const std::string & base_scheme, const std::string & target_scheme)
+{
+    const auto base_family = s3ProviderFamily(base_scheme);
+    const auto target_family = s3ProviderFamily(target_scheme);
+    if (base_family.empty() || target_family.empty())
+        return true;
+    return base_family == target_family;
+}
+
+/// For bucket-addressed URIs (`s3://`, `gs://`, `oss://`, ...) the bucket must match and both sides
+/// must name the same provider: a bucket name alone does not identify a storage across providers.
 /// For explicit http(s):// URIs, both bucket and endpoint must match.
-bool s3URIMatches(const S3::URI & target_uri, const std::string & base_bucket, const std::string & base_endpoint, const std::string & target_scheme_normalized)
+bool s3URIMatches(
+    const S3::URI & target_uri,
+    const std::string & base_bucket,
+    const std::string & base_endpoint,
+    const std::string & target_scheme_normalized,
+    bool provider_families_compatible)
 {
     bool bucket_matches = (target_uri.bucket == base_bucket);
     bool endpoint_matches = (target_uri.endpoint == base_endpoint);
-    bool is_generic_s3_uri = (target_scheme_normalized == "s3");
+    bool is_generic_s3_uri = (target_scheme_normalized == "s3") && provider_families_compatible;
     return bucket_matches && (endpoint_matches || is_generic_s3_uri);
 }
 
@@ -125,7 +183,7 @@ std::string azureAccountFromServiceUrl(const std::string & url)
     auto path_begin = url.find('/', host_begin);
     std::string host = url.substr(host_begin, path_begin == std::string::npos ? std::string::npos : path_begin - host_begin);
 
-    if (host.find(".core.") != std::string::npos)
+    if (host.contains(".core."))
         return Poco::toLower(host.substr(0, host.find('.')));
 
     if (path_begin == std::string::npos)
@@ -666,13 +724,12 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
     if (target_scheme_normalized == "s3" || target_scheme_normalized == "https" || target_scheme_normalized == "http")
     {
         std::string normalized_path = path;
-        if (target_decomposed.scheme == "s3a" || target_decomposed.scheme == "s3n" || target_decomposed.scheme == "oss")
+        /// `s3a` / `s3n` are Hadoop spellings of `s3` that `S3::URI` does not know; every other
+        /// scheme (`gs`, `gcs`, `oss`, ...) has its own endpoint mapping there and must be kept,
+        /// otherwise the file would be looked up on Amazon S3 instead of its own provider.
+        if (target_decomposed.scheme == "s3a" || target_decomposed.scheme == "s3n")
         {
             normalized_path = "s3://" + target_decomposed.authority + "/" + target_decomposed.key;
-        }
-        else if (target_decomposed.scheme == "gcs")
-        {
-            normalized_path = "gs://" + target_decomposed.authority + "/" + target_decomposed.key;
         }
         /// Paths from metadata already have correct encoding; disable Poco::URI
         /// percent-decoding so that keys like `col=12%3A00%3A00` are preserved as-is.
@@ -682,6 +739,11 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
 
         std::string key_to_use = s3_uri.key;
 
+        /// A bucket name is only meaningful within one provider, so a `gs://` or `oss://` path never
+        /// resolves to an `s3://` base storage (and vice versa) just because the bucket names agree.
+        const bool provider_families_compatible
+            = s3ProviderFamiliesCompatible(table_location_decomposed.scheme, target_decomposed.scheme);
+
         bool use_base_storage = false;
         if (base_storage->getType() == ObjectStorageType::S3)
         {
@@ -690,7 +752,7 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
                 const std::string base_bucket = s3_storage->getObjectsNamespace();
                 const std::string base_endpoint = s3_storage->getDescription();
 
-                if (s3URIMatches(s3_uri, base_bucket, base_endpoint, target_scheme_normalized))
+                if (s3URIMatches(s3_uri, base_bucket, base_endpoint, target_scheme_normalized, provider_families_compatible))
                     use_base_storage = true;
             }
         }
@@ -698,13 +760,9 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
         if (!use_base_storage && (base_scheme_normalized == "s3" || base_scheme_normalized == "https" || base_scheme_normalized == "http"))
         {
             std::string normalized_table_location = table_location;
-            if (table_location_decomposed.scheme == "s3a" || table_location_decomposed.scheme == "s3n" || table_location_decomposed.scheme == "oss")
+            if (table_location_decomposed.scheme == "s3a" || table_location_decomposed.scheme == "s3n")
             {
                 normalized_table_location = "s3://" + table_location_decomposed.authority + "/" + table_location_decomposed.key;
-            }
-            else if (table_location_decomposed.scheme == "gcs")
-            {
-                normalized_table_location = "gs://" + table_location_decomposed.authority + "/" + table_location_decomposed.key;
             }
             S3::URI base_s3_uri(normalized_table_location, /*allow_archive_path_syntax*/ false,
                                 /*keep_presigned_query_parameters*/ true, /*uri_style*/ S3UriStyle::AUTO,
@@ -712,7 +770,7 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
 
             /// The path matches the table's `location` but not the base storage, so its raw key
             /// is not valid there: return nullopt to remap it through `IcebergPathResolver`.
-            if (s3URIMatches(s3_uri, base_s3_uri.bucket, base_s3_uri.endpoint, target_scheme_normalized))
+            if (s3URIMatches(s3_uri, base_s3_uri.bucket, base_s3_uri.endpoint, target_scheme_normalized, provider_families_compatible))
                 return std::nullopt;
         }
 
@@ -759,7 +817,7 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
 
             if (!base_endpoint.empty())
             {
-                if (base_endpoint.find(".s3.") != std::string::npos && base_endpoint.find(".amazonaws.com") != std::string::npos)
+                if (base_endpoint.contains(".s3.") && base_endpoint.contains(".amazonaws.com"))
                 {
                     /// AWS-style: https://oldbucket.s3.us-east-1.amazonaws.com -> https://newbucket.s3.us-east-1.amazonaws.com
                     size_t s3_pos = base_endpoint.find(".s3.");
@@ -938,11 +996,15 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
                 // For HDFS, compare endpoints (namenode addresses)
                 std::string target_endpoint = target_scheme_normalized + "://" + target_decomposed.authority;
 
-                if (base_endpoint == target_endpoint)
+                /// The base storage resolves keys relative to the table directory, so it can serve the
+                /// target only while the target stays under that directory (see `keyIsInsidePrefix`).
+                const bool inside_table_prefix = keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key);
+
+                if (base_endpoint == target_endpoint && inside_table_prefix)
                     use_base_storage = true;
 
                 // Also check if table_location matches
-                if (!use_base_storage && base_scheme_normalized == "hdfs")
+                if (!use_base_storage && base_scheme_normalized == "hdfs" && inside_table_prefix)
                 {
                     if (table_location_decomposed.authority == target_decomposed.authority)
                         use_base_storage = true;
@@ -955,8 +1017,13 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
     }
     #endif
 
-    /// Fallback for schemes not handled above (e.g., abfs, file)
-    if (base_scheme_normalized == target_scheme_normalized && table_location_decomposed.authority == target_decomposed.authority)
+    /// Fallback for schemes not handled above (e.g., abfs, file). A prefix-scoped backend serves the
+    /// path only while it stays inside the table directory; otherwise the target gets its own storage
+    /// rooted at its own location below, because the base one would resolve the key against the table
+    /// root (`hdfs`) or refuse it outright (`file`).
+    if (base_scheme_normalized == target_scheme_normalized && table_location_decomposed.authority == target_decomposed.authority
+        && (!isPrefixScopedScheme(target_scheme_normalized)
+            || keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key)))
         return std::make_pair(base_storage, target_decomposed.key);
 
     const std::string type_for_factory = factoryTypeForScheme(target_scheme_normalized);

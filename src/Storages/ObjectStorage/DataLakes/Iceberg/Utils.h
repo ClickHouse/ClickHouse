@@ -24,6 +24,9 @@ using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
 /// These functions are always available; they return fallback values when USE_AVRO is not defined
 ObjectStoragePtr getResolvedStorageFromObjectInfo([[maybe_unused]] const ObjectInfoPtr & object_info, const ObjectStoragePtr & default_storage);
 std::optional<String> getMetadataPathFromObjectInfo([[maybe_unused]] const ObjectInfoPtr & object_info);
+/// Whether the coordinator resolved this object to a storage other than the table's own one, i.e. the
+/// file lives outside the table location.
+bool objectRequiresExternalStorage([[maybe_unused]] const ObjectInfoPtr & object_info);
 }
 
 #if USE_AVRO

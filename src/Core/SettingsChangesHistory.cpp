@@ -57,6 +57,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"object_storage_propagate_credentials_to_other_storages", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -160,7 +161,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_trivial_view_pushdown_to_distributed", false, true, "New setting to push the full outer query to shards for trivial views over Distributed tables."},
             {"filesystem_cache_wait_for_concurrent_download_timeout_milliseconds", 60000, 1000, "New setting to bound how long a read waits for a file segment being downloaded to the filesystem cache by a concurrent query; on timeout the read bypasses the cache instead of waiting indefinitely. The previous value 60000 corresponds to the old behavior (one full 60 s wait cycle on the downloader)."},
             {"text_index_posting_list_apply_mode", "materialize", "lazy", "Text index queries now decode posting lists on demand with a cursor instead of materializing them into Roaring Bitmaps, which reduces memory usage and CPU time for selective queries."},
-            {"object_storage_propagate_credentials_to_other_storages", false, false, "New setting"},
             {"filesystem_cache_verbose_logging", false, false, "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."},
             {"enable_function_early_short_circuit", false, false, "New setting"},
             {"merge_tree_prefetch_json_shared_data_substreams", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."},

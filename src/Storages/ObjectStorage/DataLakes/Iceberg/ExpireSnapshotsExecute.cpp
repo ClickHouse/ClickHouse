@@ -143,6 +143,7 @@ Pipe resultToPipe(const ExpireSnapshotsResult & result)
     add("deleted_manifest_files_count", result.deleted_manifest_files_count);
     add("deleted_manifest_lists_count", result.deleted_manifest_lists_count);
     add("deleted_statistics_files_count", result.deleted_statistics_files_count);
+    add("failed_deletions_count", result.failed_deletions_count);
     add("dry_run", result.dry_run ? 1 : 0);
 
     const size_t rows = columns[0]->size();
@@ -675,7 +676,8 @@ void updateMetadataForExpiration(
     metadata->set(Iceberg::f_last_updated_ms, ms.count());
 }
 
-void deleteExpiredFiles(
+/// Returns the number of files that could not be deleted.
+Int64 deleteExpiredFiles(
     const std::vector<Iceberg::IcebergPathFromMetadata> & files_to_delete,
     const Iceberg::IcebergPathResolver & path_resolver,
     ObjectStoragePtr object_storage,
@@ -683,6 +685,7 @@ void deleteExpiredFiles(
     LoggerPtr log,
     SecondaryStorages & secondary_storages)
 {
+    Int64 failed_deletions = 0;
     for (const auto & file_path : files_to_delete)
     {
         try
@@ -695,9 +698,11 @@ void deleteExpiredFiles(
         }
         catch (...)
         {
+            ++failed_deletions;
             LOG_WARNING(log, "Failed to delete file {}: {}", file_path, getCurrentExceptionMessage(false));
         }
     }
+    return failed_deletions;
 }
 
 }
@@ -856,8 +861,14 @@ ExpireSnapshotsResult expireSnapshots(
         }
 
         LOG_INFO(log, "Deleting {} expired files for {} expired snapshots", expired_files.all_paths.size(), partition.expired_snapshot_ids.size());
-        deleteExpiredFiles(expired_files.all_paths, persistent_table_components.path_resolver, object_storage, context, log, secondary_storages);
-        LOG_INFO(log, "Expired {} snapshots, deleted {} files", partition.expired_snapshot_ids.size(), expired_files.all_paths.size());
+        const Int64 failed_deletions = deleteExpiredFiles(
+            expired_files.all_paths, persistent_table_components.path_resolver, object_storage, context, log, secondary_storages);
+        LOG_INFO(
+            log,
+            "Expired {} snapshots, deleted {} files, failed to delete {} files",
+            partition.expired_snapshot_ids.size(),
+            static_cast<Int64>(expired_files.all_paths.size()) - failed_deletions,
+            failed_deletions);
 
         return ExpireSnapshotsResult{
             .deleted_data_files_count = expired_files.data_files,
@@ -865,6 +876,7 @@ ExpireSnapshotsResult expireSnapshots(
             .deleted_equality_delete_files_count = expired_files.equality_delete_files,
             .deleted_manifest_files_count = expired_files.manifest_files,
             .deleted_manifest_lists_count = expired_files.manifest_lists,
+            .failed_deletions_count = failed_deletions,
             .dry_run = false,
         };
     }

@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -24,7 +25,22 @@ String getSchedulingIdentifier(const ObjectInfoPtr & object_info, bool send_over
     /// For Iceberg objects addressed by an external (absolute) path, schedule by that metadata path
     /// so the same physical file maps to a stable replica regardless of the coordinator's key.
     if (auto metadata_path = getMetadataPathFromObjectInfo(object_info))
+    {
+        /// A `file://` path names the local filesystem of whichever node opens it, and this distributor
+        /// hands tasks to an arbitrary replica, so an external local file would be read from the wrong
+        /// machine (or be missing there). There is no node the task could be pinned to either: the
+        /// coordinator is not necessarily one of the replicas. Fail closed instead of returning the
+        /// contents of a same-named file from another host.
+        if (objectRequiresExternalStorage(object_info) && SchemeAuthorityKey(*metadata_path).scheme == "file")
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Iceberg metadata references the file '{}' on the local filesystem, outside of the table location. "
+                "Such a file cannot be read by a cluster function, which distributes the work across replicas that "
+                "do not share this filesystem. Read the table without the `*Cluster` function instead",
+                *metadata_path);
+
         return object_info->getIdentifierForPath(*metadata_path);
+    }
 
     return object_info->getIdentifier();
 }
