@@ -111,16 +111,14 @@ SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
 FROM (EXPLAIN PLAN actions = 1 SELECT x, (SELECT count() FROM t_inner_5 AS i WHERE i.x = o.x) FROM t_outer_5 AS o);
 SELECT x, (SELECT count() FROM t_inner_5 AS i WHERE i.x = o.x) FROM t_outer_5 AS o ORDER BY x;
 
-SELECT '-- Case 6: the correlated column is also used in a second expression inside the subquery';
+SELECT '-- Case 6: guarded, the correlated column is also used in a second expression inside the subquery; after substitution that expression would be evaluated on the inner values, so the identifier is not substituted';
 CREATE TABLE t_outer_6 (x Int64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_inner_6 (x Nullable(Int64), y Int64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_outer_6 VALUES (0), (1), (2), (3);
 INSERT INTO t_inner_6 VALUES (NULL, 100), (1, 10), (2, 1), (3, 3);
 
-SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
-              toString(countIf(explain ILIKE '%cross%')),
-              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0),
-              toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
+SELECT format('plan: substituted={}',
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0))
 FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_6 AS o WHERE EXISTS (SELECT 1 FROM t_inner_6 AS i WHERE i.x = o.x AND i.y + o.x > 5));
 SELECT x FROM t_outer_6 AS o WHERE EXISTS (SELECT 1 FROM t_inner_6 AS i WHERE i.x = o.x AND i.y + o.x > 5) ORDER BY x;
 

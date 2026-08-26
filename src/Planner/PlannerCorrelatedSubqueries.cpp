@@ -49,6 +49,7 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage.h>
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -161,6 +162,19 @@ struct ColumnWithTypeHash
 
 using ColumnEquivalenceClasses = EquivalenceClasses<ColumnWithType, ColumnWithTypeHash>;
 
+/// Per-UNION-arm decorrelation scope (see the UnionStep handler): equivalence classes from one
+/// arm must not leak into another, while usage restrictions inherited from shared ancestor
+/// steps apply to every arm.
+struct DecorrelationScope
+{
+    ColumnEquivalenceClasses equivalence_classes;
+    /// Correlated identifiers used in this scope anywhere except the recorded equality
+    /// conjuncts. Substituting them would evaluate those expressions on the inner values
+    /// (including rows that never match any outer value), so e.g. a division that is safe
+    /// over the outer domain could throw.
+    std::unordered_set<String> identifiers_used_outside_equalities;
+};
+
 struct DecorrelationContext
 {
     const CorrelatedSubquery & correlated_subquery;
@@ -168,9 +182,9 @@ struct DecorrelationContext
     QueryPlan query_plan; // LHS plan
     QueryPlan correlated_query_plan;
     CorrelatedPlanStepMap correlated_plan_steps;
-    /// Equivalence classes stack for subqueries. Equivalence classes should not be propagated
+    /// Scope stack for subqueries. Equivalence classes should not be propagated
     /// to the subqueries of the JOIN or UNION steps.
-    std::vector<ColumnEquivalenceClasses> equivalence_class_stack;
+    std::vector<DecorrelationScope> scope_stack;
     /// Whether the optimizer will turn the referenced input subplan into an in-memory ChunkBuffer.
     /// Decided once here (see decorrelateQueryPlan); buildLogicalJoin uses it to pick the join kind.
     bool uses_in_memory_buffer = false;
@@ -268,6 +282,33 @@ const ActionsDAG::Node & addAccurateCastOrNull(
     return dag.addFunction(FunctionFactory::instance().get("accurateCastOrNull", query_context), {&node, &type_name_node}, {});
 }
 
+/// Collects correlated identifiers (PLACEHOLDER nodes) whose uses are not limited to the recorded
+/// equality conjuncts. The allowed consumers are exactly the recorded equality nodes; any other
+/// edge into a placeholder, and any placeholder that is itself an output (e.g. a projection column,
+/// the filter column, or a bare conjunct consumed by the `and` combiner), counts as a use.
+void collectIdentifiersUsedOutsideEqualities(
+    const ActionsDAG & dag,
+    const std::unordered_set<const ActionsDAG::Node *> & recorded_equalities,
+    std::unordered_set<String> & result)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (recorded_equalities.contains(&node))
+            continue;
+        for (const auto * child : node.children)
+        {
+            if (child->type == ActionsDAG::ActionType::PLACEHOLDER)
+                result.insert(child->result_name);
+        }
+    }
+
+    for (const auto * output : dag.getOutputs())
+    {
+        if (output->type == ActionsDAG::ActionType::PLACEHOLDER)
+            result.insert(output->result_name);
+    }
+}
+
 /// Correlated subquery is represented by implicit dependent join operator.
 /// This function builds a query plan to evaluate correlated subquery by
 /// pushing dependent join down and replacing it with CROSS JOIN.
@@ -296,8 +337,14 @@ QueryPlan decorrelateQueryPlan(
             std::vector<ExpressionRenaming> expression_renamings;
             for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
             {
+                /// A use outside the recorded equalities would be evaluated on the substituted inner
+                /// values, including rows that never match any outer value (e.g. a division that is
+                /// safe over the outer domain could throw), so such identifiers are never substituted.
+                if (context.scope_stack.back().identifiers_used_outside_equalities.contains(correlated_column_identifier))
+                    continue;
+
                 /// Hash and equality use only the name, so the type may be left empty for the lookup.
-                auto equivalence_class = context.equivalence_class_stack.back().getClass(ColumnWithType{correlated_column_identifier, nullptr});
+                auto equivalence_class = context.scope_stack.back().equivalence_classes.getClass(ColumnWithType{correlated_column_identifier, nullptr});
                 if (!equivalence_class)
                     continue;
 
@@ -387,9 +434,9 @@ QueryPlan decorrelateQueryPlan(
                     /// type can never satisfy the recorded equality (a top-level AND-conjunct of an
                     /// ancestor FilterStep), so they are dropped up front. This guarantees the
                     /// default values produced by assumeNotNull for such rows never exist in any
-                    /// downstream step, independently of filter/expression step merging,
-                    /// short-circuit settings, and other expressions over the correlated column
-                    /// (which could otherwise throw on values the original query never evaluates).
+                    /// downstream step: under filter/expression step merging and short-circuit
+                    /// settings, the retained recorded equality itself is evaluated on the
+                    /// not-yet-filtered rows.
                     /// The retained recorded equality would still drop these rows by itself, but
                     /// only after downstream expressions computed on the garbage values.
                     ActionsDAG filter_dag(decorrelated_plan_header->getNamesAndTypesList());
@@ -573,6 +620,10 @@ QueryPlan decorrelateQueryPlan(
 
     if (auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get()))
     {
+        /// Any correlated placeholder use in a projection expression is a use.
+        collectIdentifiersUsedOutsideEqualities(
+            expression_step->getExpression(), {}, context.scope_stack.back().identifiers_used_outside_equalities);
+
         auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
 
         auto input_header = decorrelated_query_plan.getCurrentHeader();
@@ -592,6 +643,7 @@ QueryPlan decorrelateQueryPlan(
         auto & dag = filter_step->getExpression();
         auto * predicate = const_cast<ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
         auto conjuncts_list = getConjunctsList(predicate);
+        std::unordered_set<const ActionsDAG::Node *> recorded_equality_nodes;
         for (const auto * conjunct : conjuncts_list)
         {
             bool is_equality = conjunct->type == ActionsDAG::ActionType::FUNCTION && conjunct->function_base->getName() == "equals";
@@ -615,7 +667,9 @@ QueryPlan decorrelateQueryPlan(
                 /// FixedString, ...) has comparison semantics that are not consistent with CAST, so it
                 /// is not recorded. Substitution is additionally restricted in `classifySubstitutionConversion`:
                 /// float correlated bases are never substituted (signed zero), and `Bool` correlated
-                /// bases only from `Bool` members (the custom name is load-bearing).
+                /// bases only from `Bool` members (the custom name is load-bearing). Substitution also
+                /// requires the identifier to have no uses outside the recorded equalities
+                /// (see `identifiers_used_outside_equalities`).
                 auto lhs_base = removeNullable(removeLowCardinality(lhs_type));
                 auto rhs_base = removeNullable(removeLowCardinality(rhs_type));
                 bool equal_bases = lhs_base->equals(*rhs_base);
@@ -624,11 +678,18 @@ QueryPlan decorrelateQueryPlan(
                 if (!equal_bases && !safe_number_pair)
                     continue;
 
-                context.equivalence_class_stack.back().add(
+                context.scope_stack.back().equivalence_classes.add(
                     ColumnWithType{arguments[0]->result_name, lhs_type},
                     ColumnWithType{arguments[1]->result_name, rhs_type});
+                recorded_equality_nodes.insert(conjunct);
             }
         }
+        /// An `equals` conjunct that failed the recording type guard is not an allowed consumer:
+        /// its identifiers stay unsubstituted (conservative — substitution could change that
+        /// equality's evaluation).
+        collectIdentifiersUsedOutsideEqualities(
+            dag, recorded_equality_nodes, context.scope_stack.back().identifiers_used_outside_equalities);
+
         auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
         auto input_header = decorrelated_query_plan.getCurrentHeader();
 
@@ -665,9 +726,15 @@ QueryPlan decorrelateQueryPlan(
             QueryPlan::Node * subplan_root
         ) -> QueryPlan
         {
-            current_context.equivalence_class_stack.emplace_back();
+            /// Fresh equivalence classes: an equality inside one arm must not enable substitution in a
+            /// sibling. The usage set is inherited: a use recorded by a step shared above the union
+            /// receives the arm's substituted column through the union output, so it must disable
+            /// substitution in every arm. The copy keeps uses discovered inside one arm local to it.
+            DecorrelationScope child_scope;
+            child_scope.identifiers_used_outside_equalities = current_context.scope_stack.back().identifiers_used_outside_equalities;
+            current_context.scope_stack.push_back(std::move(child_scope));
             auto decorrelated_isolated_plan = decorrelateQueryPlan(current_context, subplan_root);
-            current_context.equivalence_class_stack.pop_back();
+            current_context.scope_stack.pop_back();
             return decorrelated_isolated_plan;
         };
 
@@ -695,6 +762,21 @@ QueryPlan decorrelateQueryPlan(
     }
     if (auto * aggeregating_step = typeid_cast<AggregatingStep *>(node->step.get()))
     {
+        /// At entry the parameters are the user's — the decorrelation appends its own keys only
+        /// afterwards. A correlated identifier among the user's keys or aggregate arguments is a
+        /// use outside the recorded equalities.
+        {
+            const auto & user_params = aggeregating_step->getAggregatorParameters();
+            for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
+            {
+                bool used = std::ranges::contains(user_params.keys, correlated_column_identifier);
+                for (const auto & aggregate : user_params.aggregates)
+                    used = used || std::ranges::contains(aggregate.argument_names, correlated_column_identifier);
+                if (used)
+                    context.scope_stack.back().identifiers_used_outside_equalities.insert(correlated_column_identifier);
+            }
+        }
+
         auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
         auto input_header = decorrelated_query_plan.getCurrentHeader();
 
@@ -1017,7 +1099,7 @@ void buildQueryPlanForCorrelatedSubquery(
                 .query_plan = std::move(query_plan),
                 .correlated_query_plan = std::move(correlated_plan),
                 .correlated_plan_steps = std::move(correlated_step_map),
-                .equivalence_class_stack = { ColumnEquivalenceClasses{} }
+                .scope_stack = { DecorrelationScope{} }
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
@@ -1065,7 +1147,7 @@ void buildQueryPlanForCorrelatedSubquery(
                 .query_plan = std::move(query_plan),
                 .correlated_query_plan = std::move(correlated_plan),
                 .correlated_plan_steps = std::move(correlated_step_map),
-                .equivalence_class_stack = { ColumnEquivalenceClasses{} }
+                .scope_stack = { DecorrelationScope{} }
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
