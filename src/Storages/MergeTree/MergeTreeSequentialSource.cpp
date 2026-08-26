@@ -351,6 +351,9 @@ Pipe createMergeTreeSequentialSource(
     info->part_starting_offset_in_query = data_part.part_starting_offset_in_query;
     info->const_virtual_fields.emplace("_part_index", info->part_index_in_query);
     info->const_virtual_fields.emplace("_part_starting_offset", info->part_starting_offset_in_query);
+    /// No `SAMPLE` clause reaches this path, so the sample factor is 1 - the same value
+    /// `ReadFromMergeTree` publishes for a query without `SAMPLE`.
+    info->const_virtual_fields.emplace("_sample_factor", 1.0);
     /// The reader's true end: the given ranges, or the whole part. Keeps the
     /// executor's long connection spanning the ranges of a merge/mutation read
     /// now that per-range extents no longer carry the reach past themselves.

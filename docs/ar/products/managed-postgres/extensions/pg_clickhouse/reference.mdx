@@ -13,7 +13,7 @@ keywords: ['PostgreSQL', 'Postgres', 'FDW', 'مغلف البيانات الخا�
 
 pg&#95;clickhouse هو امتداد لـ PostgreSQL يتيح تنفيذ الاستعلامات عن بُعد
 على قواعد بيانات ClickHouse، بما في ذلك [مغلف البيانات الخارجية]. وهو يدعم
-PostgreSQL 13 والإصدارات الأحدث وClickHouse 23 والإصدارات الأحدث.
+PostgreSQL 13 والإصدارات الأحدث وClickHouse 23.3 والإصدارات الأحدث.
 
 <div id="getting-started">
   ## البدء
@@ -29,8 +29,8 @@ docker run --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
 docker exec -it pg_clickhouse psql -U postgres
 ```
 
-راجع [الدليل التعليمي](/ar/products/managed-postgres/extensions/pg_clickhouse/tutorial) لبدء استيراد جداول ClickHouse
-ودفع تنفيذ الاستعلامات إلى المصدر.
+راجع [الدليل التعليمي](/ar/products/managed-postgres/extensions/pg_clickhouse/tutorial)
+لبدء استيراد جداول ClickHouse ودفع تنفيذ الاستعلامات إلى المصدر.
 
 <div id="usage">
   ## الاستخدام
@@ -154,10 +154,6 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
   القيم &quot;none&quot; أو &quot;lz4&quot; أو &quot;zstd&quot;. القيمة الافتراضية هي &quot;lz4&quot;. ويتجاهله مشغّل &quot;http&quot;.
 * `dbname`: قاعدة بيانات ClickHouse التي ستُستخدم عند الاتصال. القيمة الافتراضية هي
   &quot;default&quot;.
-* `fetch_size`: الحجم التقريبي للدفعة بالبايت في HTTP streaming. تُقسَّم الدفعات
-  عند حدود الصفوف. القيمة الافتراضية هي `50000000` (50 MB). تؤدي القيمة `0` إلى تعطيل
-  التدفق وتخزين الاستجابة الكاملة مؤقتًا في الذاكرة. ويمكن للجداول الأجنبية تجاوز هذه
-  القيمة.
 * `host`: اسم مضيف خادم ClickHouse. القيمة الافتراضية هي &quot;localhost&quot;;
 * `port`: المنفذ المطلوب الاتصال به على خادم ClickHouse. تكون القيم الافتراضية
   كما يلي:
@@ -335,7 +331,7 @@ CREATE FOREIGN TABLE acts (
     sign       smallint
 ) SERVER taxi_srv OPTIONS(
     table_name 'acts'
-    engine 'CollapsingMergeTree'
+    engine 'CollapsingMergeTree(sign)'
 );
 ```
 
@@ -343,9 +339,6 @@ CREATE FOREIGN TABLE acts (
 
 * `database`: اسم قاعدة البيانات البعيدة. تكون القيمة الافتراضية هي قاعدة البيانات
   المعرّفة للخادم الخارجي.
-* `fetch_size`: الحجم التقريبي للدفعة بالبايت من أجل HTTP streaming. يتجاوز
-  قيمة `fetch_size` على مستوى الخادم. القيمة الافتراضية هي `50000000` ‏(50 MB). تؤدي القيمة `0` إلى تعطيل
-  البث وتخزين الاستجابة الكاملة في الذاكرة المؤقتة.
 * `table_name`: اسم الجدول البعيد. تكون القيمة الافتراضية هي الاسم المحدد
   للجدول الخارجي.
 * `engine`: [محرك الجدول] المستخدم في جدول ClickHouse. بالنسبة إلى
@@ -614,6 +607,84 @@ try=# EXPLAIN (ANALYZE, VERBOSE)
 عدد الصفوف التي يجب سحبها مرة أخرى إلى Postgres من 1000 (كلّها)
 إلى 8 فقط، صف واحد لكل عقدة.
 
+<div id="partitioned-tables">
+  ### الجداول المُقسَّمة
+</div>
+
+يمكن أن يضم [جدول مُقسَّم] في PostgreSQL أقسامًا محلية وأخرى خارجية تستند إلى ClickHouse. ومن الأنماط الشائعة نقل البيانات الأقدم إلى ClickHouse، مع إبقاء البيانات الأحدث في PostgreSQL:
+
+```sql
+CREATE TABLE events (id int, ts date, val int, amt float8)
+    PARTITION BY RANGE (ts);
+
+-- 2023 data lives on ClickHouse
+CREATE FOREIGN TABLE events_2023 PARTITION OF events
+    FOR VALUES FROM ('2023-01-01') TO ('2024-01-01')
+    SERVER ch_svr OPTIONS (table_name 'events');
+
+-- 2024 data stays local
+CREATE TABLE events_2024 PARTITION OF events
+    FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+```
+
+للاطلاع على مثال يوضح كيفية نقل البيانات من التقسيمات المحلية إلى التقسيمات الخارجية، راجع
+[offload-partition.sql].
+
+تتطلب عمليات التجميع عبر التقسيمات المحلية والخارجية [التجميع حسب التقسيم]، وهو معطّل افتراضيًا في PostgreSQL:
+
+```pgsql
+SET enable_partitionwise_aggregate = on;
+```
+
+عند تمكين `enable_partitionwise_aggregate`، ينفّذ PostgreSQL *تجميعًا جزئيًا*
+أسفل `Append`، ثم تدمج عملية *التجميع النهائي* أعلاه هذه النتائج الجزئية في نتيجة واحدة.
+ويدفع pg&#95;clickhouse التجميع الجزئي للقسم الأجنبي إلى ClickHouse:
+
+```pgsql
+try=# EXPLAIN (VERBOSE, COSTS OFF)
+       SELECT count(*), sum(val), min(ts), max(ts) FROM events;
+                                                       QUERY PLAN
+-------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate
+   Output: count(*), sum(events.val), min(events.ts), max(events.ts)
+   ->  Append
+         ->  Foreign Scan
+               Output: (PARTIAL count(*)), (PARTIAL sum(events.val)), (PARTIAL min(events.ts)), (PARTIAL max(events.ts))
+               Relations: Aggregate on (events_2023 events)
+               Remote SQL: SELECT count(*), sum(val), min(ts), max(ts) FROM "default".events
+         ->  Partial Aggregate
+               Output: PARTIAL count(*), PARTIAL sum(events_1.val), PARTIAL min(events_1.ts), PARTIAL max(events_1.ts)
+               ->  Seq Scan on public.events_2024 events_1
+                     Output: events_1.val, events_1.ts
+```
+
+<div id="when-partial-aggregates-push-down">
+  #### متى يُدفَع التجميع الجزئي إلى المصدر
+</div>
+
+يمثّل PostgreSQL التجميع الجزئي بوصفه *حالة انتقالية* تجمعها خطوة
+الإنهاء عبر الأقسام. لا يستطيع pg&#95;clickhouse دفع التجميع الجزئي لقسم ما إلى المصدر
+إلا إذا أمكن تمثيله كقيمة في ClickHouse:
+
+* **دوال التجميع القابلة للتفكيك** التي تكون حالتها الانتقالية هي القيمة
+  النهائية بالفعل، تُدفَع مباشرةً إلى المصدر: `count` و`sum` و`min` و`max` و`bool_and`/`every`
+  و`bool_or` و`bit_and` و`bit_or` و`bit_xor`.
+* تُدفَع **`avg` على الأعداد الصحيحة** إلى المصدر بحالتها `{count, sum}` على شكل مصفوفة.
+* تُدفَع **`avg` و`var_pop` و`var_samp` و`stddev_pop` و`stddev_samp` على
+  الأعداد ذات الفاصلة العائمة** إلى المصدر بحالتها `{N, sum, sum of squared deviations}` على
+  شكل مصفوفة.
+
+يُدفَع `FILTER (WHERE …)` إلى المصدر مع دوال التجميع هذه.
+
+<div id="when-they-fall-back">
+  #### الحالات التي تلجأ فيها إلى البديل
+</div>
+
+لا يتوفر للتجميعات التي تكون حالة انتقالها من نوع PostgreSQL المعتم `internal`
+تمثيل قابل للنقل، لذا يجلب القسم الخارجي صفوفها ويجمعها محليًا بدلًا من ذلك.
+يشمل ذلك كل ما يتعلق بـ `numeric`، إضافةً إلى `avg(bigint)` و`avg(interval)`.
+كما تلجأ تجميعات `DISTINCT` وتجميعات المجموعات المرتبة والتجميعات متغيرة الوسائط إلى البديل.
+
 <div id="prepare-execute-deallocate">
   ### PREPARE, EXECUTE, DEALLOCATE
 </div>
@@ -763,8 +834,16 @@ ClickHouse] التي ستُطبَّق على الاستعلامات اللاحق
 SET pg_clickhouse.session_settings = 'join_use_nulls 1, final 1';
 ```
 
-القيمة الافتراضية هي `join_use_nulls 1, group_by_use_nulls 1, final 1`. عيّنه إلى
-سلسلة فارغة للعودة إلى إعدادات خادم ClickHouse.
+القيمة الافتراضية هي
+
+```
+join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0
+```
+
+عيّنه إلى سلسلة فارغة للعودة إلى إعدادات خادم ClickHouse —
+لكن لاحظ أن صحة تمرير إلى النظام البعيد تعتمد على بعض هذه الإعدادات الافتراضية:
+`join_use_nulls` لعمليات الربط الخارجي و`transform_null_in` لفئة `IN`
+(راجع [دلالات IN وNULL](#in-and-null-semantics)).
 
 ```sql
 SET pg_clickhouse.session_settings = '';
@@ -927,6 +1006,11 @@ PostgreSQL. يستخدم [IMPORT FOREIGN SCHEMA](#import-foreign-schema) الن�
 | UInt8      | smallint         |                                        |
 | UUID       | uuid             |                                        |
 
+يمكن أيضاً قراءة أي عمود كنوع `text` أو `varchar` أو أي نوع سلسلة آخر. تأخذ القيمة
+نوع PostgreSQL المذكور أعلاه، ثم تُعرَض عبر دالة الإخراج الخاصة بذلك النوع.
+تظل قيم UInt64 التي تتجاوز الحد الأقصى لـ bigint تُنتج خطأً، لذا اعرضها
+باستخدام دالة ClickHouse `toString()`.
+
 ترد أدناه ملاحظات وتفاصيل إضافية.
 
 <div id="bytea">
@@ -936,8 +1020,8 @@ PostgreSQL. يستخدم [IMPORT FOREIGN SCHEMA](#import-foreign-schema) الن�
 لا يوفر ClickHouse ما يعادل النوع [BYTEA] في PostgreSQL، غير أنه يتيح تخزين أي بايتات في النوع [String]. بوجه عام، ينبغي ربط سلاسل ClickHouse بالنوع [TEXT] في PostgreSQL، أما عند استخدام البيانات الثنائية فيُربط بالنوع [BYTEA]. مثال:
 
 ```sql
--- Create clickHouse table with String columns.
-SELECT clickhouse_raw_query($$
+-- Create ClickHouse table with String columns.
+CALL clickhouse_perform('ch_srv', $$
     CREATE TABLE bytes (
         c1 Int8, c2 String, c3 String
     ) ENGINE = MergeTree ORDER BY (c1);
@@ -971,7 +1055,7 @@ SELECT * FROM bytes;
 (4 rows)
 ```
 
-تجدر الإشارة إلى أنه في حال وجود أي بايتات فارغة (nul) في أعمدة ClickHouse، فلن يُخرج الجدول الخارجي الذي يستخدم أعمدة [TEXT] القيم الصحيحة:
+تجدر الإشارة إلى أنه في حال وجود أي بايتات فارغة (nul) في أعمدة ClickHouse، فلن يُخرج الجدول الأجنبي الذي يستخدم أعمدة [TEXT] القيم الصحيحة:
 
 ```sql
 -- Create foreign table with TEXT columns.
@@ -1059,6 +1143,14 @@ SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM texts ORDER B
   #### `clickhouse_raw_query`
 </div>
 
+<Warning>
+  متوقفة: تُصدر `clickhouse_raw_query()` تحذيرًا بأنها متوقفة وسيجري
+  إزالتها في الإصدار التالي. استخدم [`clickhouse_query`](#clickhouse_query) لقراءة
+  الصفوف و[`clickhouse_perform`](#clickhouse_perform) لتنفيذ العبارات
+  التي لا تُرجع شيئًا. تعيد كلتاهما استخدام برنامج التشغيل وبيانات الاعتماد وقاعدة
+  البيانات وذاكرة التخزين المؤقت للاتصالات الخاصة بالخادم المُهيأ بدلًا من سلسلة اتصال مخصصة.
+</Warning>
+
 ```sql
 SELECT clickhouse_raw_query(
     'CREATE TABLE t1 (x String) ENGINE = Memory',
@@ -1066,17 +1158,25 @@ SELECT clickhouse_raw_query(
 );
 ```
 
-اتصل بخدمة ClickHouse عبر واجهة HTTP الخاصة بها، ونفّذ استعلامًا واحدًا
+اتصل بخدمة ClickHouse، ونفّذ استعلامًا واحدًا
 ثم افصل الاتصال. يحدّد الوسيط الاختياري الثاني سلسلة اتصال تكون قيمتها
 الافتراضية `host=localhost port=8123`. معاملات الاتصال
 المدعومة هي:
 
+* `driver`: برنامج تشغيل الاتصال المراد استخدامه، إما &quot;http&quot; أو &quot;binary&quot;؛ والقيمة الافتراضية
+  هي &quot;http&quot;
 * `host`: المضيف المراد الاتصال به؛ مطلوب.
-* `port`: منفذ HTTP المراد الاتصال به؛ القيمة الافتراضية هي `8123` ما لم يكن `host` هو
-  مضيف ClickHouse Cloud، وفي هذه الحالة تكون القيمة الافتراضية `8443`
+* `port`: المنفذ المراد الاتصال به. القيمة الافتراضية هي `8123` لبرنامج التشغيل &quot;http&quot; أو
+  `9000` لبرنامج التشغيل &quot;binary&quot;، وتتغير إلى `8443` أو `9440` على التوالي
+  عندما يكون `host` مضيف ClickHouse Cloud
 * `dbname`: اسم قاعدة البيانات المراد الاتصال بها.
 * `username`: اسم المستخدم الذي سيتم الاتصال باسمه؛ القيمة الافتراضية `default`
 * `password`: كلمة المرور المستخدمة للمصادقة؛ والقيمة الافتراضية هي عدم استخدام كلمة مرور
+
+يعيد كلا برنامجي التشغيل صفوفًا مفصولة بعلامات الجدولة (مع تمثيل القيم الخالية كـ `\N`)، لكن
+تختلف طريقة تمثيل كل قيمة: يعيد برنامج التشغيل &quot;http&quot; تنسيق TSV
+الخاص بـ ClickHouse حرفيًا، بينما يمرر برنامج التشغيل &quot;binary&quot; كل قيمة عبر
+دالة الإخراج في PostgreSQL.
 
 بشكل افتراضي، لا يملك أي دور صلاحية `EXECUTE` لهذه الدالة؛ لذا احرص على [GRANT]
 صلاحية الوصول فقط للأدوار التي تحتاج فعليًا إلى تنفيذ استعلامات ClickHouse
@@ -1104,11 +1204,90 @@ SELECT clickhouse_raw_query(
 (1 row)
 ```
 
+<div id="clickhouse_server_version">
+  #### `clickhouse_server_version`
+</div>
+
+```sql
+SELECT clickhouse_server_version('taxi_srv');
+```
+
+أبلِغ عن إصدار خادم ClickHouse، بصيغة `major.minor.patch`، للخادم
+الخارجي المُسمّى، مع الاتصال به عند الضرورة باستخدام خيارات الخادم وتعيين
+المستخدم الخاص بالمستخدم الحالي:
+
+```sql
+ clickhouse_server_version
+---------------------------
+ 25.8.1
+(1 row)
+```
+
+يقرأ الإصدار من مصافحة الاتصال عبر البروتوكول الأصلي، أو عبر HTTP
+باستخدام استعلام واحد هو `SELECT version()`، ويخزّنه مؤقتًا طوال مدة
+الاتصال.
+
+<div id="clickhouse_query">
+  #### `clickhouse_query`
+</div>
+
+```sql
+SELECT * FROM clickhouse_query(
+    'server',
+    'SELECT id, name, salary FROM remote_table WHERE salary > 50000'
+) AS ch(id int, name text, salary numeric);
+```
+
+نفّذ استعلامًا على خادم خارجي مُهيّأ مسبقًا وأعِد
+صفوفه في صورة علاقة، مع تعيين كل عمود في نتائج ClickHouse إلى نوع PostgreSQL
+المسمّى في قائمة تعريف الأعمدة. ويُعاد استخدام `driver` الخاص بالخادم،
+وبيانات الاعتماد وقاعدة البيانات وذاكرة التخزين المؤقت للاتصال.
+
+الوسيط الأول هو اسم خادم أُنشئ باستخدام [CREATE SERVER]. يجب توفير
+قائمة تعريف أعمدة (`AS name(col type, ...)`): يحتاج PostgreSQL إلى
+معرفة بنية النتيجة قبل جلب الصفوف، ويجب أن تطابق الأعمدة التي يعيدها الاستعلام. تُحوَّل القيم
+من ClickHouse إلى الأنواع المعلنة بالطريقة نفسها التي يُحوَّل بها عمود في جدول أجنبي.
+أما العبارات التي لا تعيد نتائج، مثل DDL،
+فلا تتطلب تعريفًا؛ نفّذها باستخدام
+[`clickhouse_perform`](#clickhouse_perform) بدلًا من ذلك.
+
+لا يملك أي دور صلاحية `EXECUTE` افتراضيًا؛ استخدم `GRANT` لمنح دور
+إمكانية استخدام الدالة.
+
+```sql
+GRANT EXECUTE ON FUNCTION clickhouse_query(text, text) TO ch_admin;
+```
+
+<div id="clickhouse_perform">
+  #### `clickhouse_perform`
+</div>
+
+```sql
+CALL clickhouse_perform(
+    'server',
+    'CREATE TABLE remote_table (id Int32) ENGINE = MergeTree ORDER BY id'
+);
+```
+
+نفّذ عبارةً على خادم خارجي مُهيّأ مسبقًا وتجاهل
+أي نتيجة. استخدمها للعبارات التي لا تُرجع صفوفًا، مثل DDL، حيث لا يملك
+[`clickhouse_query`](#clickhouse_query) شكل نتيجة ليُصرَّح عنه. وتحدّد
+الخادم بالطريقة نفسها التي يستخدمها `clickhouse_query`، مع إعادة استخدام `driver`،
+وبيانات الاعتماد، وقاعدة البيانات، وذاكرة التخزين المؤقت للاتصال.
+
+وبوصفها إجراءً، يجب استدعاؤها باستخدام [CALL]، وليس `SELECT`، ولا تُرجع
+صفوفًا. لا يملك أي دور صلاحية `EXECUTE` افتراضيًا؛ استخدم `GRANT` لمنح دورٍ ما صلاحية
+استخدام الإجراء.
+
+```sql
+GRANT EXECUTE ON PROCEDURE clickhouse_perform(text, text) TO ch_admin;
+```
+
 <div id="pushdown-functions">
   ### دوال Pushdown
 </div>
 
-يقوم `pg_clickhouse` بتمرير مجموعة فرعية من دوال PostgreSQL المضمّنة المستخدمة
+يقوم pg&#95;clickhouse بتمرير مجموعة فرعية من دوال PostgreSQL المضمّنة المستخدمة
 في الشروط (البندين `HAVING` و`WHERE`). وتتوافق هذه المجموعة الفرعية مع
 مكافئاتها في ClickHouse كما يلي:
 
@@ -1145,11 +1324,17 @@ SELECT clickhouse_raw_query(
 * `extract(field FROM source)`: نفس التعيينات كما في `date_part`
 * `date(timestamp)` &amp; `date(timestamptz)`: [toDate](/ar/reference/functions/regular-functions/type-conversion-functions#toDate)
   (تُفكّك إلى الاسم المستعار `date` في CH)
-* `array_position`: [indexOf](/ar/reference/functions/regular-functions/array-functions#indexOf)
+* `array_position`: [indexOf](/ar/reference/functions/regular-functions/array-functions#indexOf) مع
+  [nullIf](reference/functions/regular-functions/functions-for-nulls#nullif)
+  لتحويل `0` إلى `NULL`، واستخدام
+  [arraySlice](reference/functions/regular-functions/array-functions#arraySlice)
+  عند وجود وسيطة ثالثة تحدد فهرس بدء البحث؛ لاحظ أن `nan` لا يطابق حاليًا [أي قيمة](https://github.com/ClickHouse/ClickHouse/issues/113169)
 * `array_cat`: [arrayConcat](/ar/reference/functions/regular-functions/array-functions#arrayConcat)
 * `array_append`: [arrayPushBack](/ar/reference/functions/regular-functions/array-functions#arrayPushBack)
 * `array_prepend`: [arrayPushFront](/ar/reference/functions/regular-functions/array-functions#arrayPushFront)
 * `array_remove`: [arrayRemove](/ar/reference/functions/regular-functions/array-functions#arrayRemove)
+* `cardinality`: [length](reference/functions/regular-functions/array-functions#length)
+* `array_length(array, 1)`: `nullIf(length(array), 0)`
 * `array_length` &amp; `cardinality`: [length](/ar/reference/functions/regular-functions/array-functions#length)
 * `array_to_string`: [arrayStringConcat](/ar/reference/functions/regular-functions/array-functions#arrayStringConcat)
 * `string_to_array`: [splitByString](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByString)
@@ -1161,8 +1346,8 @@ SELECT clickhouse_raw_query(
 * `array_sample`: [arrayRandomSample](/ar/reference/functions/regular-functions/array-functions#arrayRandomSample)
 * `array_sort`: [arraySort](/ar/reference/functions/regular-functions/array-functions#arraySort) / [arrayReverseSort](/ar/reference/functions/regular-functions/array-functions#arrayReverseSort)
 * `btrim`: [trimBoth](/ar/reference/functions/regular-functions/string-functions#trimboth)
-* `ltrim`: [ltrim](/ar/reference/functions/regular-functions/string-functions#ltrim)
-* `rtrim`: [rtrim](/ar/reference/functions/regular-functions/string-functions#rtrim)
+* `ltrim`: [trimLeft](/ar/reference/functions/regular-functions/string-functions#trimLeft)
+* `rtrim`: [trimRight](/ar/reference/functions/regular-functions/string-functions#trimRight)
 * `concat_ws`: [concatWithSeparator](/ar/reference/functions/regular-functions/string-functions#concatwithseparator)
 * `lower(text)`: [lowerUTF8](/ar/reference/functions/regular-functions/string-functions#lowerutf8)
 * `upper(text)`: [upperUTF8](/ar/reference/functions/regular-functions/string-functions#upperutf8)
@@ -1181,12 +1366,21 @@ SELECT clickhouse_raw_query(
 * `regexp_replace`: [replaceRegexpOne](/ar/reference/functions/regular-functions/string-replace-functions#replaceRegexpOne) أو [replaceRegexpOne](/ar/reference/functions/regular-functions/string-replace-functions#replaceRegexpAll) عند وجود العلامة `g`
 * `regexp_split_to_array`: [splitByRegexp](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)
 * `md5`: [MD5](/ar/reference/functions/regular-functions/hash-functions#MD5)
+* `encode(bytea, fmt)` عندما يكون `fmt` ثابتًا نصيًا (دون تمييز بين حالة الأحرف):
+  * `encode(bytea, 'hex')`: [hex](/ar/reference/functions/regular-functions/encoding-functions#hex)
+    مُغلّفة بـ [lower](/ar/reference/functions/regular-functions/string-functions#lower)،
+    لأن PostgreSQL يُنتج قيم hex بأحرف صغيرة.
+  * `encode(bytea, 'base64')`: [base64Encode](/ar/reference/functions/regular-functions/encoding-functions#base64encode)
+    مُغلّفة بـ [replaceRegexpAll](/ar/reference/functions/regular-functions/string-replace-functions#replaceRegexpAll)
+    لمحاكاة فاصل الأسطر بتنسيق MIME (RFC 2045) في PostgreSQL كل 76 حرفًا.
+  * `encode(bytea, 'base64url')` (PostgreSQL 19+): [base64URLEncode](/ar/reference/functions/regular-functions/encoding-functions#base64urlencode)،
+    التي تطابق أبجدية URL في PostgreSQL وفق RFC 4648 من دون padding.
 * `json_extract_path_text`: [صياغة العمود الفرعي](/ar/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `json_extract_path`: [toJSONString](/ar/reference/functions/regular-functions/json-functions#toJSONString) + [صياغة العمود الفرعي](/ar/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `jsonb_extract_path_text`: [صياغة العمود الفرعي](/ar/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `jsonb_extract_path`: [toJSONString](/ar/reference/functions/regular-functions/json-functions#toJSONString) + [صياغة العمود الفرعي](/ar/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `bit_count(bytea)`: [bitCount](/ar/reference/functions/regular-functions/bit-functions#bitcount)
-* `to_timestamp(float8)`: [fromUnixTimestamp](/ar/reference/functions/regular-functions/date-time-functions#fromUnixTimestamp)
+* `to_timestamp(float8)`: [toDateTime64](/ar/reference/functions/regular-functions/type-conversion-functions#todatetime64)
 * `to_char(timestamp[tz], fmt)`: [formatDateTime](/ar/reference/functions/regular-functions/date-time-functions#formatDateTime)
   عندما يكون `fmt` ثابتًا نصيًا وكانت كل كلمة مفتاحية فيه لها مقابل
   مطابق في ClickHouse. راجع [to&#95;char()](#to_char) ضمن ملاحظات
@@ -1228,11 +1422,44 @@ SELECT clickhouse_raw_query(
 * `->>` (استخراج عنصر من JSON/JSONB كنص): [sub-column syntax](/ar/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `->` (استخراج من JSON/JSONB): [toJSONString](/ar/reference/functions/regular-functions/json-functions#toJSONString) + [sub-column syntax](/ar/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 
+<div id="in-and-null-semantics">
+  ### دلالات `IN` وNULL
+</div>
+
+يقيّم ClickHouse التعبير `IN` وفق منطق ثنائي القيم: فعندما لا يجد الفحص
+تطابقاً، يعيد `0` حتى عند وجود NULL، بينما يحسب PostgreSQL
+NULL. وللحفاظ على دلالات PostgreSQL، يدفع pg&#95;clickhouse عائلة `IN`
+إلى المصدر عند استخدامها مع قائمة أو مصفوفة ثابتة (`IN`، `NOT IN`، `= ANY`، `= ALL`،
+`<> ANY`، `<> ALL`) دون استثناء: إما الصيغة الأصلية أو منخفضة التكلفة عندما يمكنه
+إثبات أن لا قيمة الفحص ولا أي عنصر في المصفوفة يمكن أن يكون NULL، أو صيغة `CASE`
+محمية في الحالات الأخرى تتحقق من قيم NULL وقت التشغيل،
+وتحسب الإجابة الدقيقة ثلاثية القيم في PostgreSQL (TRUE، FALSE، NULL)
+في جميع السياقات، بما في ذلك مواضع القيم مثل قائمة `SELECT` أو
+`GROUP BY`.
+
+يُدفع أيضاً عامل التصفية `NOT IN (SELECT ...)` المستخدم مع الأعمدة القابلة لـNULL
+إلى المصدر، ويُعاد تحويله إلى نص مع حواجز تعويضية تحافظ على سلوك PostgreSQL: فالمجموعة
+التي تحتوي على NULL تستبعد كل صف، ولا تنجح قيمة فحص NULL إلا
+مع مجموعة فارغة. يُحذف كل حاجز عندما يثبت تعريف `NOT NULL`
+عدم الحاجة إليه. وعلى خلاف صيغ المصفوفة أعلاه، لا ينطبق هذا الحاجز إلا في شرط تصفية
+عادي (أو تحت `NOT`)؛ وما زلنا لا ندفع
+`IN (SELECT ...)` إلى المصدر (في موضع قيمة)، ولا أجسام الاستعلامات الفرعية
+المجمّعة أو المجمّعة تجميعياً. يؤدي تعريف الأعمدة بأنها `NOT NULL` إلى زيادة الدفع إلى المصدر
+إلى أقصى حد، إذ يتيح إرسال الصيغة الأرخص غير المحمية بدلاً من ذلك؛ ويطبّق [IMPORT FOREIGN SCHEMA] هذا تلقائياً على
+أعمدة ClickHouse غير `Nullable`. ويتتبع الإثبات الثوابت غير NULL،
+وأعمدة `NOT NULL`، والعمليات الحسابية الأساسية (`+`، `-`، `*`، و`-` الأحادية) عليها.
+
+تفترض هذه القواعد الإعداد الافتراضي في ClickHouse، وهو `transform_null_in = 0`، الذي
+يضبطه pg&#95;clickhouse لكل استعلام عبر القيمة الافتراضية للمعلمة
+[`pg_clickhouse.session_settings`](#pg_clickhousesession_settings)
+حتى لا يتمكن ملف تعريف خادم ClickHouse من تغييره بصمت. يؤدي ضبط
+`transform_null_in = 1` إلى الإخلال بدلالات كل تعبير `IN` مدفوع إلى المصدر.
+
 <div id="custom-functions">
   ### الدوال المخصصة
 </div>
 
-توفّر هذه الدوال المخصصة التي أنشأها `pg_clickhouse` دعم pushdown للاستعلامات الخارجية
+توفّر هذه الدوال المخصصة التي أنشأها pg&#95;clickhouse دعم pushdown للاستعلامات الخارجية
 لبعض دوال ClickHouse التي لا يوجد لها ما يكافئها في PostgreSQL. وإذا
 تعذّر تطبيق pushdown على أيٍّ من هذه الدوال، فسيُرفع استثناء.
 
@@ -1249,8 +1476,9 @@ SELECT clickhouse_raw_query(
   #### re2
 </div>
 
-تُمرَّر جميع دوال [امتداد re2] مباشرةً إلى ClickHouse بنسبة 1:1:
+تُمرَّر جميع معاملات ودوال [امتداد re2] مباشرةً إلى ClickHouse بنسبة 1:1:
 
+* `@~` → [match](/ar/reference/functions/regular-functions/string-search-functions#match)
 * `re2match` → [match](/ar/reference/functions/regular-functions/string-search-functions#match)
 * `re2extract` → [extract](/ar/reference/functions/regular-functions/string-search-functions#extract)
 * `re2extractall` → [extractAll](/ar/reference/functions/regular-functions/string-search-functions#extractAll)
@@ -1305,6 +1533,7 @@ SELECT clickhouse_raw_query(
 
 تدعم دوال التجميع التالية في PostgreSQL آلية pushdown إلى ClickHouse.
 
+* [any&#95;value](/ar/reference/functions/aggregate-functions/any)
 * [array&#95;agg](/ar/reference/functions/aggregate-functions/groupArray)
 * [avg](/ar/reference/functions/aggregate-functions/avg)
 * [bit&#95;and](/ar/reference/functions/aggregate-functions/groupBitAnd)
@@ -1313,16 +1542,23 @@ SELECT clickhouse_raw_query(
 * [bool&#95;and / every](/ar/reference/functions/aggregate-functions/groupBitAnd)
 * [bool&#95;or](/ar/reference/functions/aggregate-functions/groupBitOr)
 * [count](/ar/reference/functions/aggregate-functions/count)
+* [corr](/ar/reference/functions/aggregate-functions/corr)
+* [covarpop](/ar/reference/functions/aggregate-functions/covarPop)
+* [covarsamp](/ar/reference/functions/aggregate-functions/covarSamp)
 * [min](/ar/reference/functions/aggregate-functions/min)
 * [max](/ar/reference/functions/aggregate-functions/max)
+* [stddev&#95;pop](/ar/reference/functions/aggregate-functions/stddevPop)
+* [stddev&#95;samp / stddev](/ar/reference/functions/aggregate-functions/stddevSamp)
 * [string&#95;agg](/ar/reference/functions/aggregate-functions/groupConcat)
 * [sum](/ar/reference/functions/aggregate-functions/sum)
+* [var&#95;op](/ar/reference/functions/aggregate-functions/varPop)
+* [var&#95;samp /variance](/ar/reference/functions/aggregate-functions/varSamp)
 
 <div id="custom-aggregates">
   ### دوال التجميع المخصصة
 </div>
 
-توفّر دوال التجميع المخصصة هذه، التي أنشأها `pg_clickhouse`، إمكانية pushdown للاستعلامات الخارجية لبعض دوال التجميع في ClickHouse التي لا يقابلها ما يعادلها في PostgreSQL. وإذا تعذر pushdown لأي من هذه الدوال، فسيُرفَع استثناء.
+توفّر دوال التجميع المخصصة هذه، التي أنشأها pg&#95;clickhouse، إمكانية pushdown للاستعلامات الخارجية لبعض دوال التجميع في ClickHouse التي لا يقابلها ما يعادلها في PostgreSQL. وإذا تعذر pushdown لأي من هذه الدوال، فسيُرفَع استثناء.
 
 * [argMax](/ar/reference/functions/aggregate-functions/argMax)
 * [argMin](/ar/reference/functions/aggregate-functions/argMin)
@@ -1339,8 +1575,7 @@ SELECT clickhouse_raw_query(
   ### Pushdown دوال التجميع المرتبة حسب المجموعة
 </div>
 
-تُطابِق دوال [ordered-set aggregate functions] هذه دوال [Parametric
-aggregate functions] في ClickHouse، وذلك بتمرير *المعامل المباشر* الخاص بها كـ parameter، وتمرير
+تُطابِق دوال [دوال التجميع للمجموعات المرتبة] هذه دوال [دوال التجميع ذات المعلمات] في ClickHouse، وذلك بتمرير *المعامل المباشر* الخاص بها كـ parameter، وتمرير
 تعبيرات `ORDER BY` الخاصة بها على أنها arguments. على سبيل المثال، query PostgreSQL هذه:
 
 ```sql
@@ -1357,32 +1592,55 @@ SELECT quantile(0.25)(a) FROM t1;
 غير مدعومتين، وستؤديان إلى ظهور خطأ.
 
 * `percentile_cont(double)`: [quantile](/ar/reference/functions/aggregate-functions/quantile)
+* `percentile_cont(double[])`: [quantiles](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantiles)
+* `percentile_disc(double)`: [quantileExactLow](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantileExactLow)
+* `percentile_disc(double[])`: [quantilesExactLow](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantilesExactLow)
+
+<div id="custom-ordered-set-aggregates">
+  ### دوال التجميع المخصصة للمجموعات المرتبة
+</div>
+
+توفر دوال [دوال التجميع للمجموعات المرتبة] المخصصة هذه، التي أنشأها pg&#95;clickhouse،
+إمكانية pushdown الاستعلامات الخارجية لبعض دوال [دوال التجميع ذات المعلمات] في ClickHouse. إذا تعذر pushdown أي من هذه الدوال، فستُطلق
+استثناءً.
+
 * `quantile(double)`: [quantile](/ar/reference/functions/aggregate-functions/quantile)
 * `quantileExact(double)`: [quantileExact](/ar/reference/functions/aggregate-functions/quantileExact)
 
-<div id="pushdown-window-functions">
-  ### دوال النافذة ذات pushdown إلى ClickHouse
+<div id="custom-ordered-set-aggregates">
+  ### دوال التجميع المخصصة للمجموعات المرتبة
 </div>
 
-يمكن تنفيذ pushdown لـ [window functions] هذه في PostgreSQL إلى ClickHouse باستخدام عبارات `OVER
-(PARTITION BY ... ORDER BY ...)`، بما في ذلك تحديدات الإطار حيثما ينطبق ذلك.
+توفّر دوال [دوال التجميع للمجموعات المرتبة] المخصصة هذه، التي أنشأتها pg&#95;clickhouse،
+ميزة pushdown الاستعلامات الخارجية لتنفيذ دوال ClickHouse [دوال التجميع ذات المعلمات]. وإذا تعذّر pushdown أي من هذه الدوال، فستُطلق
+استثناءً.
 
-* [row&#95;number](/ar/reference/functions/window-functions/index#row_number)
-* [rank](/ar/reference/functions/window-functions/index#rank)
-* [dense&#95;rank](/ar/reference/functions/window-functions/index#dense_rank)
-* [ntile](/ar/reference/functions/window-functions/index#ntile)
-* [cume&#95;dist](/ar/reference/functions/window-functions/index#cume_dist)
-* [percent&#95;rank](/ar/reference/functions/window-functions/index#percent_rank)
-* [lead](/ar/reference/functions/window-functions/index#lead)
-* [lag](/ar/reference/functions/window-functions/index#lag)
-* [first&#95;value](/ar/reference/functions/window-functions/index#first_value)
-* [last&#95;value](/ar/reference/functions/window-functions/index#last_value)
-* [nth&#95;value](/ar/reference/functions/window-functions/index#nth_value)
-* `min` / `max` (مع العبارة `OVER`)
+* [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
+* [quantileExact](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileexact)
 
-تتجاوز دوال الترتيب (`row_number`, `rank`, `dense_rank`, `ntile`, `cume_dist`,
-`percent_rank`) عبارة الإطار الخاصة بها عند تنفيذ pushdown إلى ClickHouse، لأن ClickHouse
-يرفض تحديدات الإطار لهذه الدوال.
+<div id="pushdown-window-functions">
+  ### دوال النافذة pushdown
+</div>
+
+تخضع دوال النافذة التالية في PostgreSQL لـ pushdown إلى ClickHouse باستخدام عبارات `OVER
+(PARTITION BY ... ORDER BY ...)`، بما في ذلك مواصفات الإطار عند الاقتضاء.
+
+* [row&#95;number](https://clickhouse.com/docs/reference/functions/window-functions/row_number)
+* [rank](https://clickhouse.com/docs/reference/functions/window-functions/rank)
+* [dense&#95;rank](https://clickhouse.com/docs/reference/functions/window-functions/dense_rank)
+* [ntile](https://clickhouse.com/docs/reference/functions/window-functions/ntile)
+* [cume&#95;dist](https://clickhouse.com/docs/reference/functions/window-functions/cume_dist)
+* [percent&#95;rank](https://clickhouse.com/docs/reference/functions/window-functions/percent_rank)
+* [lead](https://clickhouse.com/docs/reference/functions/window-functions/lead)
+* [lag](https://clickhouse.com/docs/reference/functions/window-functions/lag)
+* [first&#95;value](https://clickhouse.com/docs/reference/functions/window-functions/first_value)
+* [last&#95;value](https://clickhouse.com/docs/reference/functions/window-functions/last_value)
+* [nth&#95;value](https://clickhouse.com/docs/reference/functions/window-functions/nth_value)
+* `min` / `max` (مع عبارة `OVER`)
+
+تُهمل دوال الترتيب (`row_number` و`rank` و`dense_rank` و`ntile` و`cume_dist`
+و`percent_rank`) عبارة الإطار الخاصة بها عند pushdown، لأن ClickHouse
+لا يقبل مواصفات الإطار لهذه الدوال.
 
 <div id="compatibility-notes">
   ## ملاحظات حول التوافق
@@ -1562,6 +1820,8 @@ pushdown التعبيرات النمطية في Postgres إلى ClickHouse، و�
 
 [CREATE SERVER]: https://www.postgresql.org/docs/current/sql-createserver.html "PostgreSQL Docs: CREATE SERVER"
 
+[CALL]: https://www.postgresql.org/docs/current/sql-call.html "PostgreSQL Docs: CALL"
+
 [ALTER SERVER]: https://www.postgresql.org/docs/current/sql-alterserver.html "PostgreSQL Docs: ALTER SERVER"
 
 [DROP SERVER]: https://www.postgresql.org/docs/current/sql-dropserver.html "PostgreSQL Docs: DROP SERVER"
@@ -1592,6 +1852,12 @@ pushdown التعبيرات النمطية في Postgres إلى ClickHouse، و�
 
 [SELECT]: https://www.postgresql.org/docs/current/sql-select.html "PostgreSQL Docs: SELECT"
 
+[partitioned table]: https://www.postgresql.org/docs/current/ddl-partitioning.html "PostgreSQL Docs: تقسيم الجداول"
+
+[partitionwise aggregation]: https://www.postgresql.org/docs/current/runtime-config-query.html#GUC-ENABLE-PARTITIONWISE-AGGREGATE "PostgreSQL Docs: enable_partitionwise_aggregate"
+
+[offload-partition.sql]: https://github.com/ClickHouse/pg_clickhouse/blob/main/doc/offload-partition.sql
+
 [PREPARE]: https://www.postgresql.org/docs/current/sql-prepare.html "PostgreSQL Docs: PREPARE"
 
 [EXECUTE]: https://www.postgresql.org/docs/current/sql-execute.html "PostgreSQL Docs: EXECUTE"
@@ -1610,46 +1876,46 @@ pushdown التعبيرات النمطية في Postgres إلى ClickHouse، و�
 
 [ALTER ROLE]: https://www.postgresql.org/docs/current/sql-alterrole.html "PostgreSQL Docs: ALTER ROLE"
 
-[shared library preloading]: https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-PRELOAD "PostgreSQL Docs: التحميل المسبق للمكتبات المشتركة"
+[shared library preloading]: https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-PRELOAD "PostgreSQL Docs: التحميل المسبق للمكتبة المشتركة"
 
 [ordered-set aggregate functions]: https://www.postgresql.org/docs/current/functions-aggregate.html#FUNCTIONS-ORDEREDSET-TABLE
 
-[Parametric aggregate functions]: /reference/functions/aggregate-functions/parametric-functions
+[parametric aggregate functions]: /reference/functions/aggregate-functions/parametric-functions
 
-[ClickHouse settings]: /reference/settings/session-settings "مستندات ClickHouse: إعدادات الجلسة"
+[ClickHouse settings]: /reference/settings/session-settings "ClickHouse Docs: إعدادات الجلسة"
 
-[dollar quoting]: https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-DOLLAR-QUOTING "مستندات PostgreSQL: ثوابت السلاسل النصية المحاطة بعلامات الدولار"
+[dollar quoting]: https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-DOLLAR-QUOTING "PostgreSQL Docs: ثوابت السلاسل النصية المحاطة بعلامات الدولار"
 
-[PREPARE notes]: https://www.postgresql.org/docs/current/sql-prepare.html#SQL-PREPARE-NOTES "مستندات PostgreSQL: ملاحظات PREPARE"
+[PREPARE notes]: https://www.postgresql.org/docs/current/sql-prepare.html#SQL-PREPARE-NOTES "PostgreSQL Docs: ملاحظات PREPARE"
 
-[query parameters]: /guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements#alternatives-to-prepared-statements-in-clickhouse "مستندات ClickHouse: بدائل العبارات المُحضَّرة في ClickHouse"
+[query parameters]: /guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements#alternatives-to-prepared-statements-in-clickhouse "ClickHouse Docs: بدائل العبارات المُحضَّرة في ClickHouse"
 
 [underlying bug]: https://github.com/ClickHouse/ClickHouse/issues/85847 "ClickHouse/ClickHouse#85847 بعض الاستعلامات في النماذج متعددة الأجزاء لا تقرأ الإعدادات"
 
 [fixed]: https://github.com/ClickHouse/ClickHouse/pull/85570 "ClickHouse/ClickHouse#85570 إصلاح HTTP مع multipart"
 
-[BYTEA]: https://www.postgresql.org/docs/current/datatype-binary.html "مستندات PostgreSQL: أنواع البيانات الثنائية"
+[BYTEA]: https://www.postgresql.org/docs/current/datatype-binary.html "PostgreSQL Docs: أنواع البيانات الثنائية"
 
-[GRANT]: https://www.postgresql.org/docs/current/sql-grant.html "مستندات PostgreSQL: GRANT"
+[GRANT]: https://www.postgresql.org/docs/current/sql-grant.html "PostgreSQL Docs: GRANT"
 
-[String]: /reference/data-types/string "مستندات ClickHouse: String"
+[String]: /reference/data-types/string "ClickHouse Docs: String"
 
-[TEXT]: https://www.postgresql.org/docs/current/datatype-character.html "مستندات PostgreSQL: أنواع المحارف"
+[TEXT]: https://www.postgresql.org/docs/current/datatype-character.html "PostgreSQL Docs: أنواع المحارف"
 
-[window functions]: https://www.postgresql.org/docs/current/functions-window.html "مستندات PostgreSQL: دوال النافذة"
+[window functions]: https://www.postgresql.org/docs/current/functions-window.html "PostgreSQL Docs: دوال النافذة"
 
-[POSIX Regular Expressions]: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-POSIX-REGEXP "مستندات PostgreSQL: تعبيرات POSIX النمطية"
+[POSIX Regular Expressions]: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-POSIX-REGEXP "PostgreSQL Docs: تعبيرات POSIX النمطية"
 
-[Postgres flags]: https://www.postgresql.org/docs/current/functions-matching.html#POSIX-EMBEDDED-OPTIONS-TABLE "مستندات PostgreSQL: أحرف الخيارات المضمّنة ARE"
+[Postgres flags]: https://www.postgresql.org/docs/current/functions-matching.html#POSIX-EMBEDDED-OPTIONS-TABLE "PostgreSQL Docs: أحرف الخيارات المضمّنة ARE"
 
 [RE2]: https://github.com/google/re2/wiki/Syntax "بناء جملة RE2"
 
 [re2 extension]: https://github.com/ClickHouse/pg_re2 "pg_re2: دوال تعبيرات نمطية متوافقة مع ClickHouse باستخدام RE2"
 
-[intarray]: https://www.postgresql.org/docs/current/intarray.html "مستندات PostgreSQL: intarray"
+[intarray]: https://www.postgresql.org/docs/current/intarray.html "PostgreSQL Docs: intarray"
 
-[fuzzystrmatch]: https://www.postgresql.org/docs/current/fuzzystrmatch.html "مستندات PostgreSQL: fuzzystrmatch"
+[fuzzystrmatch]: https://www.postgresql.org/docs/current/fuzzystrmatch.html "PostgreSQL Docs: fuzzystrmatch"
 
-[`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html "مستندات PostgreSQL: دوال تنسيق أنواع البيانات"
+[`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html "PostgreSQL Docs: دوال تنسيق أنواع البيانات"
 
-[formatDateTime]: /reference/functions/regular-functions/date-time-functions#formatDateTime "مستندات ClickHouse: formatDateTime"
+[formatDateTime]: /reference/functions/regular-functions/date-time-functions#formatDateTime "ClickHouse Docs: formatDateTime"
