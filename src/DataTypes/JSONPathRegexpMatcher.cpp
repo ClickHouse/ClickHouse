@@ -26,9 +26,6 @@ namespace
 {
 
 constexpr size_t RE2_MAX_MEMORY = 8 * 1024 * 1024;
-/// `RE2` doesn't expose the size of a compiled instruction. This estimate is used only by
-/// `allocatedBytes`; actual allocations are tracked by the global allocation interceptors.
-constexpr size_t ESTIMATED_BYTES_PER_RE2_INSTRUCTION = 32;
 
 re2::RE2::Options makeRE2Options()
 {
@@ -149,22 +146,6 @@ struct JSONPathRegexpMatcher::Impl
         return (partial_set && matchesSet(*partial_set, re2_path)) || (full_set && matchesSet(*full_set, re2_path));
     }
 
-    size_t allocatedBytes() const
-    {
-        size_t bytes = sizeof(*this);
-        if (single_regexp)
-        {
-            bytes += sizeof(*single_regexp);
-            bytes += static_cast<size_t>(single_regexp->ProgramSize() + single_regexp->ReverseProgramSize())
-                * ESTIMATED_BYTES_PER_RE2_INSTRUCTION;
-        }
-        if (partial_set)
-            bytes += sizeof(*partial_set);
-        if (full_set)
-            bytes += sizeof(*full_set);
-        return bytes;
-    }
-
     JSONPathRegexpMatchMode single_mode = JSONPathRegexpMatchMode::Partial;
     std::unique_ptr<re2::RE2> single_regexp;
     std::unique_ptr<re2::RE2::Set> partial_set;
@@ -190,15 +171,6 @@ JSONPathRegexpMatcher::~JSONPathRegexpMatcher() = default;
 bool JSONPathRegexpMatcher::matches(std::string_view path) const
 {
     return impl->matches(path);
-}
-
-size_t JSONPathRegexpMatcher::allocatedBytes() const
-{
-    size_t bytes = sizeof(*this) + rules.capacity() * sizeof(JSONPathRegexpRule);
-    for (const auto & rule : rules)
-        bytes += rule.pattern.capacity();
-    bytes += impl->allocatedBytes();
-    return bytes;
 }
 
 }

@@ -50,12 +50,6 @@ public:
     const std::vector<JSONPathRegexpRule> & getRules() const { return rules; }
     bool empty() const { return rules.empty(); }
 
-    /// Returns the matcher object, canonical rule storage and the known compiled matcher storage.
-    /// `RE2`'s lazily-created DFA cache is not exposed by `RE2`; its real allocations are nevertheless
-    /// accounted by ClickHouse's global new/delete memory-tracking interceptors and bounded by the
-    /// `RE2` `max_mem` option configured in the implementation.
-    size_t allocatedBytes() const;
-
 private:
     struct Impl;
 
