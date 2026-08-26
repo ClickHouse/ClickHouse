@@ -2,6 +2,7 @@ BACKUP_CREATED
 RESTORED
 1. restored view definitions:
 v_globalin	WHERE a GLOBAL IN (DST.u)
+v_ignoreset	WHERE inIgnoreSet(a, DST.u)
 v_in	WHERE a IN (DST.u)
 v_notin	WHERE a NOT IN (DST.u)
 v_nullin	WHERE nullIn(a, DST.u)
@@ -17,3 +18,15 @@ SRC.t	[1,2,3]
 DST.t	[1,2,3,999]
 4. control, a buffer whose destination is outside the restored set keeps it:
 OUT.dest	[777]
+5. a table-level rename moves the buffer destination with it:
+BACKUP_CREATED
+RESTORED
+SRC.t	[1,2,3]
+SRC.t2	[1,2,3,555]
+6. the restored views still resolve once the source database is gone:
+v_in	resolves
+v_notin	resolves
+v_globalin	resolves
+v_nullin	resolves
+v_ignoreset	resolves
+v_out	resolves

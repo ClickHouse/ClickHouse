@@ -348,7 +348,7 @@ namespace
         }
         else if (storage.engine->name == "Buffer")
         {
-            /// Syntax: CREATE TABLE ... Engine=Buffer(destination_database, destination_table, num_layers, ...)
+            /// Syntax: CREATE TABLE ... Engine=Buffer(destination_database, destination_table, num_buckets, ...)
             /// The first two arguments name the table the buffer flushes into, so leaving them unrenamed
             /// makes writes to the restored table land in the source database.
             replaceDatabaseAndTableNameInArguments(*storage.engine, data, 0, 1);
@@ -361,11 +361,12 @@ namespace
         {
             replaceTableNameInArgument(function, data, 0);
         }
-        else if (functionIsInOrGlobalInOperator(function.name))
+        else if (functionIsInOrGlobalInOperator(function.name) || functionIsInIgnoreSetOperator(function.name))
         {
-            /// Syntax: <expr> IN <table>, and the same for the rest of the operator family: `NOT IN`,
-            /// `GLOBAL IN`, `nullIn` and so on all resolve their right-hand side as a table name the
-            /// same way, so all of them have to follow the rename.
+            /// Syntax: <expr> IN <table>, and the same for the rest of the family: `NOT IN`, `GLOBAL IN`,
+            /// `nullIn`, the `IgnoreSet` counterparts and so on all resolve their right-hand side as a
+            /// table name the same way, so all of them have to follow the rename. This is the same set
+            /// of names the analyzer treats as an IN function, see `isNameOfInFunction`.
             replaceTableNameInArgument(function, data, 1);
         }
         else if (function.name == "merge")
