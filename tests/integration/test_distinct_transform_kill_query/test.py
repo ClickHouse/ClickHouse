@@ -674,7 +674,7 @@ def test_lc_null_keys_kill_query(started_cluster):
     )
 
     query = """SELECT count() FROM numbers(1000000)
-WHERE (number, number) IN (SELECT k, k FROM null_keys_mt)
+WHERE (number, number) IN (SELECT k, k FROM null_keys_mt_lc)
 FORMAT Null
 SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1, max_rows_to_read=0"""
 

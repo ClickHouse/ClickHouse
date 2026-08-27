@@ -612,8 +612,13 @@ void DistinctTransform::transform(Chunk & chunk)
             }
 
             /// The keep-mask application is a monolithic pass over every key column; poll for a hard
-            /// cancellation between columns so a KILL arriving during materialization is honored
-            /// promptly rather than only after the whole chunk is copied.
+            /// cancellation between columns and within each column's materialization so a KILL arriving
+            /// during the copy is honored promptly rather than only after the whole chunk is materialized.
+            /// Each column is filtered in chunks of `filter_chunk_rows` rows (producing the same result as
+            /// a single `column->filter(keep, num_kept)` call) so a cancellation check can run between
+            /// chunks, including for the common single-column `IN (subquery)` set build where there is only
+            /// one column to materialize.
+            constexpr size_t filter_chunk_rows = 1u << 13; /// 8192
             for (auto & column : columns)
             {
                 FailPointInjection::pauseFailPoint("distinct_transform_filter_pause");
@@ -625,7 +630,33 @@ void DistinctTransform::transform(Chunk & chunk)
                     stopReading();
                     return;
                 }
-                column = column->filter(keep, num_kept);
+
+                if (num_rows <= filter_chunk_rows)
+                {
+                    column = column->filter(keep, num_kept);
+                    continue;
+                }
+
+                auto filtered = column->cloneEmpty();
+                size_t offset = 0;
+                while (offset < num_rows)
+                {
+                    if (isCancelled() && !isCancelledBySoftTimeout())
+                    {
+                        if (timeoutShouldThrow())
+                            process_list_element->checkTimeLimit(); // throws TIMEOUT_EXCEEDED
+                        chunk.clear();
+                        stopReading();
+                        return;
+                    }
+                    const size_t len = std::min(filter_chunk_rows, num_rows - offset);
+                    IColumn::Filter sub_keep(keep.begin() + offset, keep.begin() + offset + len);
+                    const auto sub_kept = countBytesInFilter(sub_keep);
+                    auto sub = column->cut(offset, len)->filter(sub_keep, sub_kept);
+                    filtered->insertRangeFrom(*sub, 0, sub->size());
+                    offset += len;
+                }
+                column = std::move(filtered);
             }
             num_rows = num_kept;
 
