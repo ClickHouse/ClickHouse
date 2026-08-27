@@ -43,7 +43,12 @@ FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
 
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    return object_storage->patchSettings(read_settings);
+    return object_storage->patchSettings(IObjectStorage::patchSettings(read_settings));
+}
+
+WriteSettings CachedObjectStorage::patchSettings(const WriteSettings & write_settings) const
+{
+    return object_storage->patchSettings(IObjectStorage::patchSettings(write_settings));
 }
 
 void CachedObjectStorage::startup()
