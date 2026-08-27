@@ -262,8 +262,7 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
 }
 
 
-/// Secure-only: the bug is TLS-specific (a blocking-only `silkBioRead`/`silkBioWrite` surfaces
-/// through `SSL_peek`, not through a raw, BIO-less socket read). Reuses the
+/// Secure-only tests for the TLS BIO and direct OpenSSL operations. Reuses the
 /// `SecurePolicy policy` member from the typed fixture rather than redeclaring it.
 using SilkFiberSecureSocketTest = SilkFiberSocketTest<SecurePolicy>;
 
@@ -289,15 +288,12 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
             char pong[1] = {};
             EXPECT_EQ(socket.receiveBytes(pong, sizeof(pong)), 1);
 
-            /// A long receive timeout. Pre-fix, `silkBioRead` has no non-blocking mode and always
-            /// parks the caller in a fiber wait up to this timeout, so a slow probe below proves
-            /// the bug; a fast one proves the fix.
+            /// A long receive timeout. The probe must remain non-blocking regardless of it.
             socket.setReceiveTimeout(Poco::Timespan(5, 0));
 
             /// The actual production sequence (`DB::getSocketState(StreamSocket)`, the core of the
-            /// connection pool's staleness check in `HTTPConnectionPool.cpp`): it puts the silk
-            /// socket into don't-wait mode with `setDontWait` - `Socket::setBlocking(false)` is rejected
-            /// by silk sockets - and calls `SSL_peek`, which reaches OpenSSL's socket BIO, i.e. `silkBioRead`.
+            /// connection pool's staleness check in `HTTPConnectionPool.cpp`) calls `SSL_peek`,
+            /// which reaches the always non-blocking Silk TLS BIO.
             Stopwatch watch;
             state = DB::getSocketState(socket);
             elapsed_us = watch.elapsedMicroseconds();
@@ -321,17 +317,13 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
     EXPECT_EQ(state, DB::SocketState::Idle);
     EXPECT_LT(elapsed_us, 500'000U)
         << "getSocketState() took " << elapsed_us
-        << "us: silkBioRead ignored non-blocking mode and blocked on the receive timeout instead "
-           "of returning EAGAIN immediately";
+        << "us: the Silk TLS BIO blocked on the receive timeout instead of returning EAGAIN immediately";
 }
 
 
-/// The same bug at the raw level, without any ClickHouse helper: a plain `SSL_peek` on a
-/// non-blocking TLS connection with no data pending must return `SSL_ERROR_WANT_READ`
-/// immediately. This is exactly how a non-blocking consumer uses the socket - and the only way,
-/// since silk sockets reject `Socket::setBlocking(false)`: the socket is put into don't-wait
-/// mode with `setDontWait` and only `silkBioRead` ever observes it. Pre-fix, the BIO has no
-/// non-blocking mode and parks the caller for the full receive timeout.
+/// At the raw level, without a ClickHouse helper, a plain `SSL_peek` on an idle TLS connection
+/// must return `SSL_ERROR_WANT_READ` immediately. Silk sockets reject `Socket::setBlocking(false)`,
+/// so the BIO itself has to be non-blocking.
 TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
 {
     auto listener = policy.makeListener();
@@ -354,11 +346,10 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
 
             socket.setReceiveTimeout(Poco::Timespan(5, 0));
 
-            /// Put the socket into don't-wait mode - what any non-blocking user must do here,
-            /// since `Socket::setBlocking(false)` throws on a silk socket.
+            /// The Silk TLS BIO is always non-blocking. OpenSSL operations return WANT_READ or
+            /// WANT_WRITE and `SecureSocketImpl` performs the fiber-aware wait outside OpenSSL.
             auto * secure = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(socket.impl());
             SSL * ssl = secure->ssl();
-            secure->setDontWait(true);
 
             char c = 0;
             ERR_clear_error();
@@ -367,7 +358,6 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
             ssl_error = SSL_get_error(ssl, res);
             elapsed_us = watch.elapsedMicroseconds();
 
-            secure->setDontWait(false);
             socket.close();
             return 0;
         },
@@ -386,8 +376,60 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
     EXPECT_EQ(ssl_error, SSL_ERROR_WANT_READ);
     EXPECT_LT(elapsed_us, 500'000U)
         << "SSL_peek() took " << elapsed_us
-        << "us on an idle non-blocking connection: silkBioRead ignored non-blocking mode and "
-           "blocked on the receive timeout instead of returning EAGAIN immediately";
+        << "us on an idle connection: the Silk TLS BIO blocked on the receive timeout instead "
+           "of returning EAGAIN immediately";
+}
+
+
+/// `SSL_read` itself must not suspend a fiber: otherwise the fiber can resume on another OS-thread,
+/// and the subsequent `SSL_get_error` would inspect a different thread's OpenSSL error queue.
+TEST_F(SilkFiberSecureSocketTest, SslReadReturnsWantReadWithoutSuspending)
+{
+    auto listener = policy.makeListener();
+    const uint16_t port = listener.address().port();
+
+    uint64_t elapsed_us = 0;
+    int ssl_error = 0;
+
+    silk::FiberFuture client_future;
+    const int run_result = Silk::spawn(
+        [port, impl = policy.makeClient(), &elapsed_us, &ssl_error]() -> int
+        {
+            Poco::Net::StreamSocket socket(impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+
+            socket.sendBytes("x", 1);
+            char pong[1] = {};
+            EXPECT_EQ(socket.receiveBytes(pong, sizeof(pong)), 1);
+            socket.setReceiveTimeout(Poco::Timespan(2, 0));
+
+            auto * secure = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(socket.impl());
+            SSL * ssl = secure->ssl();
+            char c = 0;
+            ERR_clear_error();
+            Stopwatch watch;
+            const int res = SSL_read(ssl, &c, 1);
+            ssl_error = SSL_get_error(ssl, res);
+            elapsed_us = watch.elapsedMicroseconds();
+
+            socket.close();
+            return 0;
+        },
+        client_future);
+    ASSERT_EQ(run_result, 0);
+
+    auto peer = listener.acceptConnection();
+    char ping[1] = {};
+    ASSERT_EQ(peer.receiveBytes(ping, sizeof(ping)), 1);
+    peer.sendBytes("y", 1);
+
+    client_future.wait();
+    peer.close();
+
+    EXPECT_EQ(ssl_error, SSL_ERROR_WANT_READ);
+    EXPECT_LT(elapsed_us, 500'000U)
+        << "SSL_read took " << elapsed_us
+        << "us: the Silk TLS BIO suspended inside the OpenSSL operation";
 }
 
 

@@ -90,13 +90,10 @@ public:
         : socket_impl(socket_impl_)
     {
 #if USE_SILK
-        if (auto * fiber_socket_impl = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
-        {
-            was_blocking = !fiber_socket_impl->getDontWait();
-            if (was_blocking)
-                fiber_socket_impl->setDontWait(true);
+        /// The Silk TLS BIO is always non-blocking so that an OpenSSL operation cannot
+        /// suspend and migrate between the operation and `SSL_get_error`.
+        if (dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
             return;
-        }
 #endif
         was_blocking = socket_impl.getBlocking();
         if (was_blocking)
@@ -110,13 +107,6 @@ public:
 
         try
         {
-#if USE_SILK
-            if (auto * fiber_socket_impl = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
-            {
-                fiber_socket_impl->setDontWait(false);
-                return;
-            }
-#endif
             socket_impl.setBlocking(true);
         }
         catch (...)
@@ -130,8 +120,7 @@ public:
 
 private:
     Poco::Net::SocketImpl & socket_impl;
-    /// For regular (non-silk) socket: whether it was blocking before.
-    /// For silk socket: whether it was dont-wait before.
+    /// Whether a regular (non-Silk) socket was blocking before the probe.
     bool was_blocking = false;
 };
 
