@@ -201,11 +201,17 @@ function makeElement(tag) {
         applyColumnColors() {},
         applyPinnedColumns() {},
         refreshColumnColor() {},
+        refreshSortIndicators() {},
+        refreshFilterIndicators() {},
+        refreshCellControls() {},
+        renderPagination() {},
         transposeIfNeeded() {},
+        expandSingleValueIfNeeded() {},
         _changeTableLayout() {},
         finalizeFailedTable() {},
         start() {},
         finish() {},
+        clearBar() {},
         updateProgress() {},
         updateText() {},
         resetViewToggles() {},
@@ -699,6 +705,144 @@ async function main() {
               !out.script.includes('<a href'), out.script);
         check(scenario, 'a protocol-relative link does not render',
               !out.protocol_relative.includes('<a href'), out.protocol_relative);
+    }
+
+    /// Contract 4: stopping a run AFTER the editor moved to another cell repaints the shared row
+    /// from the newly active cell right away. `cancelTabRun` goes through `abortTabQuery`, which
+    /// forgets `tab.runCell` before `endFlight` decides how to repaint - the stopped cell must be
+    /// handed through explicitly, or the row stays painted with the stopped cell's cleared state
+    /// under the active cell until some later activation.
+    {
+        const scenario = 'stop-after-editor-moved-repaints-chrome';
+        const r = await runScenario(js, { href: base });
+        const out = evalJSON(r.sandbox, `
+            const tab = getActiveTab();
+            addCell(tab, 'query', tab.cells.length);
+            const [a, b] = tab.cells;
+            tab.activeCellId = b.id;
+            a.view = 'result'; b.view = 'result';
+            /// Cell A's (multi-query) run hid the logo for A; B has an idle result showing it.
+            a.logoVisible = false; b.logoVisible = true;
+            tab.inFlight = true; tab.runCell = a;
+            a.progressPhase = 'running';
+            syncActiveTabChrome();
+            const running = { logo: logoEl.style.display };
+            /// The Run->Stop button, pressed while the editor is on B.
+            cancelTabRun(tab);
+            const stopped = {
+                logo: logoEl.style.display,
+                inFlight: tab.inFlight,
+                runCell: tab.runCell,
+                aPhase: a.progressPhase,
+            };
+            /// A view toggle right after the stop must act on B, not on the stopped A.
+            progressEl.dispatchEvent(new CustomEvent('set-view', { detail: { view: 'logs' } }));
+            return { running, stopped, aView: a.view, bView: b.view };
+        `);
+        check(scenario, 'while running the chrome follows the running cell',
+              out.running.logo === 'none', out.running);
+        check(scenario, 'the stop ends the flight',
+              out.stopped.inFlight === false && out.stopped.runCell === null, out.stopped);
+        check(scenario, "the stopped cell's progress state is reset",
+              out.stopped.aPhase === 'idle', out.stopped);
+        check(scenario, 'the shared row is repainted from the active cell immediately',
+              out.stopped.logo === 'block', out.stopped);
+        check(scenario, 'a toggle right after the stop acts on the active cell',
+              out.bView === 'logs' && out.aView === 'result', { aView: out.aView, bView: out.bView });
+    }
+
+    /// Contract 5: a toggle in a non-active cell also refreshes that cell's serialized copy inside
+    /// the CURRENT history entry. The entry's notebook (\`state.cells\`) is what Close tab + Back
+    /// rebuilds the tab from, and \`closeTab\` does not refresh a background tab's entries - so
+    /// without the in-place patch the toggle would be silently lost on that restore.
+    {
+        const scenario = 'history-entry-keeps-off-active-cell-state';
+        const r = await runScenario(js, { href: base });
+        const out = evalJSON(r.sandbox, `
+            const tab = getActiveTab();
+            addCell(tab, 'query', tab.cells.length);
+            const [a, b] = tab.cells;
+            tab.activeCellId = b.id;
+            a.query = 'SELECT 1'; a.result = { ok: true, data: null };
+            b.result = { ok: true, data: null };
+            /// Write the entry the browser would hold before the user leaves via Back.
+            writeHistoryEntry(tab);
+            /// A color toggle and a pin in the VISIBLE, non-active cell A.
+            a.colorModes['id'] = 'heatmap';
+            persistColorModes(a);
+            a.pinnedColumns['id'] = true;
+            persistPinnedColumns(a);
+            const entry = history.state;
+            const a_copy = (entry.cells || []).find(c => c.id === a.id) || null;
+            const b_copy = (entry.cells || []).find(c => c.id === b.id) || null;
+            return {
+                cells: (entry.cells || []).length,
+                a_modes: (a_copy && a_copy.result && a_copy.result.color_modes) || null,
+                a_pins: (a_copy && a_copy.result && a_copy.result.pinned_columns) || null,
+                b_modes: (b_copy && b_copy.result && b_copy.result.color_modes) || null,
+                url: location.href,
+            };
+        `);
+        check(scenario, 'the entry carries the notebook', out.cells === 2, out.cells);
+        check(scenario, "the entry's copy of the toggled cell carries the color mode",
+              out.a_modes && out.a_modes.id === 'heatmap', out.a_modes);
+        check(scenario, "the entry's copy of the toggled cell carries the pin",
+              out.a_pins && out.a_pins.id === true, out.a_pins);
+        check(scenario, "the other cell's copy is untouched",
+              !out.b_modes || Object.keys(out.b_modes).length === 0, out.b_modes);
+        check(scenario, 'the URL is still not re-stamped from a non-active cell',
+              !/color_modes|pinned_columns/.test(out.url), out.url);
+    }
+
+    /// Contract 6: the history entry's notebook payload is bounded. Each cell's result snapshot is
+    /// individually capped, so a LONG notebook would otherwise grow \`history.state\` linearly with
+    /// the cell count until the browser rejects the write. Over the budget the largest snapshots
+    /// are stripped (those cells restore query-only from the entry, like an oversized single
+    /// result already does), and a write the browser still rejects degrades in place instead of
+    /// throwing out of the run or tab operation that triggered it.
+    {
+        const scenario = 'history-payload-is-bounded';
+        const r = await runScenario(js, { href: base });
+        const out = evalJSON(r.sandbox, `
+            const tab = getActiveTab();
+            /// A notebook whose per-cell snapshots are each under the per-result cap while their
+            /// sum is far over the notebook-wide budget.
+            const chunk = 'x'.repeat(90000);
+            for (let i = 0; i < 40; ++i) addCell(tab, 'query', tab.cells.length);
+            for (const c of tab.cells) { c.query = 'SELECT 1'; c.result = { ok: true, data: chunk }; }
+            writeHistoryEntry(tab);
+            const entry = history.state;
+            const kept = entry.cells.filter(c => c.result).length;
+            const size = JSON.stringify(entry.cells).length;
+            /// The live notebook (and through it IndexedDB) keeps every snapshot; only the entry
+            /// is trimmed.
+            const live = tab.cells.filter(c => c.result).length;
+
+            /// A browser rejecting even the bounded entry: the write must degrade, not throw.
+            const real_replace = history.replaceState.bind(history);
+            let rejected = 0;
+            history.replaceState = (st, title, url) => {
+                if (st && st.cells && st.cells.some(c => c.result)) { ++rejected; throw new Error('quota'); }
+                real_replace(st, title, url);
+            };
+            let threw = false;
+            try { writeHistoryEntry(tab, null, true); } catch (e) { threw = true; }
+            history.replaceState = real_replace;
+            const degraded = history.state;
+            return { cells: entry.cells.length, kept, size, live, threw, rejected,
+                     degraded_results: degraded.cells.filter(c => c.result).length,
+                     degraded_cells: degraded.cells.length,
+                     degraded_query: degraded.cells[0] && degraded.cells[0].query };
+        `);
+        check(scenario, 'the entry still carries every cell', out.cells === 41, out.cells);
+        check(scenario, 'the payload is bounded by the notebook budget', out.size <= 2100000, out.size);
+        check(scenario, 'the snapshots that fit are kept', out.kept > 0 && out.kept < 41, out.kept);
+        check(scenario, 'the trim strips snapshots only from the entry', out.live === 41, out.live);
+        check(scenario, 'a rejected write degrades instead of throwing',
+              out.threw === false && out.rejected > 0, out);
+        check(scenario, 'the degraded entry keeps the notebook structure query-only',
+              out.degraded_results === 0 && out.degraded_cells === 41 && out.degraded_query === 'SELECT 1',
+              out);
     }
 
     if (failures) {

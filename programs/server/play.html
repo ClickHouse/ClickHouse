@@ -12886,18 +12886,50 @@ async function renderSnapshotIntoElement(el, snap, cell, matToken) {
     return true;
 }
 
+/// The cell's serialized copy inside a history entry's notebook (`state.cells`), refreshed from
+/// the live cell - or null when the entry does not carry this cell. The entry's notebook is what
+/// a Close tab + Back rebuilds the tab from (`resolveTabForState`), and `closeTab` does not
+/// refresh a background tab's entries - so every cell-scoped persist path must keep the copy in
+/// step with the cell's own snapshot, or a toggle made outside the entry's top-level fields (which
+/// describe the active cell only) is lost on that restore.
+function refreshedHistoryCells(entry, cell) {
+    if (!cell || !entry || !Array.isArray(entry.cells)) return null;
+    const index = entry.cells.findIndex(c => c && c.id === cell.id);
+    if (index < 0) return null;
+    const cells = entry.cells.slice();
+    cells[index] = serializeCell(cell);
+    return cells;
+}
+
+/// Refresh `cell`'s copy inside the CURRENT history entry in place (see `refreshedHistoryCells`).
+/// Only a cell of the active tab has a current entry to patch; a background tab's entries are
+/// refreshed wholesale when that tab is next left/synced (`writeHistoryEntry`).
+function patchHistoryCellCopy(cell) {
+    const tab = getActiveTab();
+    if (!tab || !cell || cell.tab !== tab) return;
+    const cur = history.state;
+    const cells = refreshedHistoryCells(cur, cell);
+    if (!cells) return;
+    try {
+        history.replaceState({ ...cur, cells: cells }, document.title);
+    } catch (e) {
+        /// History manipulation is not allowed for the 'file:' protocol.
+    }
+}
+
 /// Persist the per-column color coding modes so reloads, shares, and Back/Forward keep them.
 /// The modes belong to ONE notebook cell's displayed result, so record them on THAT cell's result
 /// snapshot (persisted to IndexedDB and re-applied when the cell is re-shown). The URL and the
 /// current history entry describe the active cell only, so they are re-stamped in place - without
 /// creating a new record - just for a toggle made in the active cell; a toggle in another cell of
-/// the notebook still travels with that cell's own snapshot.
+/// the notebook still travels with that cell's own snapshot and with the entry's notebook copy
+/// (`patchHistoryCellCopy`).
 function persistColorModes(cell) {
     const tab = getActiveTab();
     cell = cell || (tab ? activeCell(tab) : null);
     const modes = cell ? cell.colorModes : {};
     if (cell && cell.result) cell.result.color_modes = modes;
-    if (!tab || activeCell(tab) !== cell) { scheduleSave(); return; }
+    if (!tab || activeCell(tab) !== cell) { patchHistoryCellCopy(cell); scheduleSave(); return; }
     const url = new URL(window.location);
     if (Object.keys(modes).length > 0) {
         url.searchParams.set('color_modes', JSON.stringify(modes));
@@ -12912,6 +12944,9 @@ function persistColorModes(cell) {
         const next = cur.result
             ? { ...cur, result: { ...cur.result, color_modes: modes } }
             : { ...cur, color_modes: modes };
+        /// The entry's notebook copy carries this cell too (see `refreshedHistoryCells`).
+        const cells = refreshedHistoryCells(cur, cell);
+        if (cells) next.cells = cells;
         try {
             history.replaceState(next, document.title, url.toString());
         } catch (e) {
@@ -12931,7 +12966,7 @@ function persistPinnedColumns(cell) {
     cell = cell || (tab ? activeCell(tab) : null);
     const pins = cell ? cell.pinnedColumns : {};
     if (cell && cell.result) cell.result.pinned_columns = pins;
-    if (!tab || activeCell(tab) !== cell) { scheduleSave(); return; }
+    if (!tab || activeCell(tab) !== cell) { patchHistoryCellCopy(cell); scheduleSave(); return; }
     const url = new URL(window.location);
     if (Object.keys(pins).length > 0) {
         url.searchParams.set('pinned_columns', JSON.stringify(pins));
@@ -12946,6 +12981,9 @@ function persistPinnedColumns(cell) {
         const next = cur.result
             ? { ...cur, result: { ...cur.result, pinned_columns: pins } }
             : { ...cur, pinned_columns: pins };
+        /// The entry's notebook copy carries this cell too (see `refreshedHistoryCells`).
+        const cells = refreshedHistoryCells(cur, cell);
+        if (cells) next.cells = cells;
         try {
             history.replaceState(next, document.title, url.toString());
         } catch (e) {
@@ -12976,7 +13014,7 @@ function persistResultShape(cell) {
         cell.result.filters = filters;
         cell.result.pagination = pagination;
     }
-    if (!tab || activeCell(tab) !== cell) { scheduleSave(); return; }
+    if (!tab || activeCell(tab) !== cell) { patchHistoryCellCopy(cell); scheduleSave(); return; }
     const url = new URL(window.location);
     const set = (name, value) => {
         if (value === null) url.searchParams.delete(name);
@@ -12998,6 +13036,9 @@ function persistResultShape(cell) {
         const next = cur.result
             ? { ...cur, result: { ...cur.result, ...shape } }
             : { ...cur, ...shape };
+        /// The entry's notebook copy carries this cell too (see `refreshedHistoryCells`).
+        const cells = refreshedHistoryCells(cur, cell);
+        if (cells) next.cells = cells;
         try {
             history.replaceState(next, document.title, url.toString());
         } catch (e) {
@@ -14434,7 +14475,7 @@ function deleteCell(tab, cell) {
     markBootstrapDirty();
     /// Deleting the cell a query is streaming into would leave the run writing to a detached
     /// element: stop it first, exactly as the Stop button would.
-    if (tab.inFlight && tab.runCell === cell) { abortTabQuery(tab); endFlight(tab); progressEl.clear(); }
+    if (tab.inFlight && tab.runCell === cell) { abortTabQuery(tab); endFlight(tab, cell); progressEl.clear(); }
     captureActiveTab();
     const was_active = activeCell(tab) === cell;
     tab.cells.splice(index, 1);
@@ -15416,6 +15457,38 @@ function serializeCell(cell) {
     };
 }
 
+/// The notebook payload of ONE history entry, bounded. IndexedDB keeps every cell's full result
+/// snapshot, but a history entry is structured-cloned by the browser into a budget that is per
+/// ENTRY (Firefox rejects writes past ~16 MiB) - and the per-result cap (~100 KB, see
+/// `saveHistory`) bounds each snapshot, not the notebook, so `history.state` would otherwise grow
+/// linearly with the cell count. Once the serialized results exceed the notebook-wide budget,
+/// strip result snapshots - largest first, so as few cells as possible degrade - leaving those
+/// cells query-only in this entry, exactly how an oversized single result is already persisted.
+/// A Back that recreates a closed tab from such an entry re-runs nothing: the stripped cells
+/// simply restore without their result, and IndexedDB (which carries the full notebook) remains
+/// the primary restore source everywhere else.
+const HISTORY_NOTEBOOK_BUDGET = 2000000;
+function serializeCellsForHistory(tab) {
+    const cells = tab.cells.map(serializeCell);
+    let total = 0;
+    const sizes = cells.map(c => {
+        if (!c.result) return 0;
+        let size;
+        try { size = JSON.stringify(c.result).length; } catch (e) { size = HISTORY_NOTEBOOK_BUDGET; }
+        total += size;
+        return size;
+    });
+    if (total <= HISTORY_NOTEBOOK_BUDGET) return cells;
+    const by_size_desc = cells.map((c, i) => i).sort((a, b) => sizes[b] - sizes[a]);
+    for (const i of by_size_desc) {
+        if (total <= HISTORY_NOTEBOOK_BUDGET) break;
+        if (!cells[i].result) continue;
+        total -= sizes[i];
+        cells[i] = { ...cells[i], result: null };
+    }
+    return cells;
+}
+
 /// Rebuild a tab's notebook from a persisted record. Records written before notebook mode
 /// existed carry no `cells`: they describe exactly one query cell.
 function deserializeCells(record) {
@@ -15738,8 +15811,10 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
         /// A history entry can outlive the tab it describes: Close tab followed by Back must
         /// restore the complete notebook, not just the editor cell represented by `query`.
         /// The snapshots are plain data (`serializeCell` omits DOM and transient run state), so
-        /// they are safe for the browser's structured-clone history state.
-        cells: tab.cells.map(serializeCell),
+        /// they are safe for the browser's structured-clone history state - but their TOTAL size
+        /// is bounded (`serializeCellsForHistory`): the per-result cap is per snapshot, so a long
+        /// notebook would otherwise grow `history.state` past the browser's history-state budget.
+        cells: serializeCellsForHistory(tab),
         activeCellId: tab.activeCellId,
         /// The notebook cell this entry describes. Restored by `window.onpopstate` BEFORE the
         /// entry's query and result are written through the tab's cell accessors: without it,
@@ -15809,10 +15884,27 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
     if (history_params.length > 0) history_url += '?' + history_params.join('&');
     history_url += '#' + toBase64(recorded_query);
 
-    if (!cur || unchanged || (forceReplace && sameTab)) {
-        history.replaceState(state, title, history_url);
-    } else {
-        history.pushState(state, title, history_url);
+    const write = (entry) => {
+        if (!cur || unchanged || (forceReplace && sameTab)) {
+            history.replaceState(entry, title, history_url);
+        } else {
+            history.pushState(entry, title, history_url);
+        }
+    };
+    /// Fail closed when the browser rejects the entry (its history-state budget, or history being
+    /// unavailable under the 'file:' protocol): the run or tab operation that triggered this write
+    /// must not die on the history stamp. Degrade in two steps - first drop the result snapshots
+    /// (the only unbounded-ish payload; the notebook structure and queries survive), then the
+    /// whole notebook copy - and give up on the entry only when even that minimal state is
+    /// rejected. IndexedDB persistence (`scheduleSave` below) is unaffected either way.
+    try {
+        write(state);
+    } catch (e) {
+        try {
+            write({ ...state, result: null, cells: state.cells.map(c => c.result ? { ...c, result: null } : c) });
+        } catch (e2) {
+            try { write({ ...state, result: null, cells: [] }); } catch (e3) {}
+        }
     }
     document.title = title;
     /// The query this entry (and the URL) now holds. When it is the launch snapshot rather than the
@@ -16440,9 +16532,14 @@ function beginFlight(tab, launchInteractionGen) {
     }
 }
 
-function endFlight(tab) {
+/// `stopped_cell` names the cell whose run just ended when the caller had to clear `tab.runCell`
+/// before getting here (`cancelTabRun` / `deleteCell` go through `abortTabQuery` first): the
+/// repaint decision below needs the cell the shared chrome was following, and falling back to
+/// `updateRunButtons` for a run stopped after the editor moved off would leave the row under the
+/// active cell still painted with the stopped cell's cleared state.
+function endFlight(tab, stopped_cell) {
     tab.inFlight = false;
-    const cell = tab.runCell;
+    const cell = tab.runCell || stopped_cell || null;
     tab.runCell = null;
     if (cell) updateCellStatus(cell);
     updateTabIndicator(tab);
@@ -16674,9 +16771,11 @@ function cancelTabRun(tab)
     /// The cell being stopped, before `abortTabQuery` forgets it.
     const cell = tab.runCell || activeCell(tab);
     /// Bump the tab's run generation and abort its requests so postImpl/postSingle/postMulti
-    /// see a stale run token and bail out before saving history.
+    /// see a stale run token and bail out before saving history. `abortTabQuery` forgets
+    /// `tab.runCell`, so hand the stopped cell to `endFlight` explicitly: the shared row may be
+    /// following it rather than the active cell, and the repaint decision needs to know.
     abortTabQuery(tab);
-    endFlight(tab);
+    endFlight(tab, cell);
     /// The query was stopped, not completed: drop the 'running' progress state and its live
     /// snapshot, so reopening this cell does not replay a spinning hourglass / stale "still
     /// running" bar via `syncActiveTabChrome`.
