@@ -4,6 +4,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/TokenIterator.h>
 #include <IO/ReadHelpers.h>
 
 #include <algorithm>
@@ -109,6 +111,27 @@ size_t computeFieldDumpNestingDepth(std::string_view dump)
             --depth;
     }
     return max_depth;
+}
+
+/// A `NumberLiteral` is formatted back into the query verbatim, so accept only text that
+/// `ParserNumber` reads as exactly one deferred literal.
+Field parseDeferredNumberLiteral(const String & text)
+{
+    Tokens tokens(text.data(), text.data() + text.size());
+    IParser::Pos pos(tokens, /*max_depth=*/ 0, /*max_backtracks=*/ 0);
+    Expected expected;
+    ASTPtr ast;
+
+    /// The literal keeps the text it was parsed from, so requiring it back means the whole `value`
+    /// was one number: a prefix parse (`1)`) or a `Field` dump (`Number_1`) does not match.
+    const auto * literal = ParserNumber().parse(pos, ast, expected) ? ast->as<ASTLiteral>() : nullptr;
+    if (!literal || literal->value.getType() != Field::Types::Number
+        || literal->value.safeGet<NumberLiteral>().value != text)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'value' of a Number field is not a numeric literal that keeps its original text "
+            "during AST JSON deserialization");
+
+    return literal->value;
 }
 
 }
@@ -235,6 +258,14 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Expected a string 'value' for String field during AST JSON deserialization");
         return Field(obj.getValue<String>("value"));
+    }
+
+    if (field_type == "Number")
+    {
+        if (!obj.has("value") || !obj.get("value").isString())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected a string 'value' for Number field during AST JSON deserialization");
+        return parseDeferredNumberLiteral(obj.getValue<String>("value"));
     }
 
     if (field_type == "Array")
