@@ -169,6 +169,27 @@ def test_restore_rejects_entity_kind_mismatch():
     assert "CANNOT_RESTORE_TABLE" in error
 
 
+def test_restore_workloads_only_missing_resource_dependency():
+    # A workloads-only backup does not include RESOURCE definitions. Restoring it on a server that lacks a
+    # SQL-defined resource a workload references (SETTINGS ... FOR <resource>) must fail early with a clear
+    # CANNOT_RESTORE_TABLE, instead of an opaque reference error -- the two system tables must be backed up
+    # and restored together.
+    instance.query("CREATE RESOURCE sql_res (WRITE DISK sql_disk, READ DISK sql_disk)")
+    instance.query("CREATE WORKLOAD sql_wl IN all SETTINGS max_io_requests = 50 FOR sql_res")
+
+    backup_name = new_backup_name()
+    # Only system.workloads -- deliberately excluding system.resources.
+    instance.query(f"BACKUP TABLE system.workloads TO {backup_name}")
+
+    instance.query("DROP WORKLOAD sql_wl")
+    instance.query("DROP RESOURCE sql_res")
+
+    error = instance.query_and_get_error(
+        f"RESTORE TABLE system.workloads FROM {backup_name}"
+    )
+    assert "CANNOT_RESTORE_TABLE" in error
+
+
 def test_backup_restore_on_cluster():
     # node1 and node2 share a single Keeper-backed workload entity storage (configs/replicated_workloads.xml),
     # so an entity created on one node replicates to the other. This exercises the ON CLUSTER coordination

@@ -438,6 +438,8 @@ BACKUP TABLE system.workloads, TABLE system.resources TO Disk('backups', 'wl_bac
 
 Only SQL-defined entities are backed up. Configuration-based workloads and resources (defined via `<resources_and_workloads>` in the server configuration file) are not included — they are part of the server configuration, which should be backed up separately.
 
+Always back up and restore `system.workloads` and `system.resources` together in the same command. A workload can reference a resource (via `SETTINGS ... FOR <resource>`) and a parent workload, and a backup of `system.workloads` alone does not pull in the referenced resource definitions. Restoring a workload whose referenced resource is neither in the backup nor already present on the target server fails.
+
 To restore workloads and resources from a backup:
 
 ```sql
