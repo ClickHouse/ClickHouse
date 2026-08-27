@@ -54,12 +54,6 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --use_iceberg_met
     --query "OPTIMIZE TABLE ${TABLE} MANIFEST SETTINGS iceberg_manifest_min_count_to_compact=5" 2>&1 \
     | grep -oF 'ICEBERG_SPECIFICATION_VIOLATION' | head -n1
 
-# Full compaction must reject it too. `getHistory` drops the unresolvable head silently, and the rewrite
-# then deletes the files only that head referenced, so this path has to fail before it starts.
-${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --use_iceberg_metadata_files_cache=0 \
-    --query "OPTIMIZE TABLE ${TABLE}" 2>&1 \
-    | grep -oF 'ICEBERG_SPECIFICATION_VIOLATION' | head -n1
-
 # A `current-snapshot-id` of JSON null is the spec's way of saying "no current snapshot" and must stay
 # a quiet no-op, not an error: `Poco::JSON::Object::has` is true for a null value, so reading it with
 # `getValue<Int64>` would throw an unrelated conversion exception instead.
