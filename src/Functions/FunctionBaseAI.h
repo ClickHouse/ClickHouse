@@ -135,13 +135,12 @@ public:
 
     /// Whether a failed provider request should be retried: transient network failures and
     /// transient/server-side HTTP responses are retriable, deterministic argument/usage errors are not.
-    static bool isRetriableProviderError(std::exception_ptr exception);
+    /// `eptr` must be the currently handled exception, i.e. `std::current_exception()`.
+    static bool isRetriableProviderError(std::exception_ptr eptr);
 
 protected:
     ContextPtr context;
     ContextPtr getContext() const { return context; }
-
-    virtual String functionName() const = 0;
 
     /// Function-specific parameters accepted in the trailing `Map(String, String)` argument, on top
     /// of `commonParams`. Each entry carries its own default (or is required). Default: none.

@@ -24,8 +24,8 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 
-#include <exception>
-#include <thread>
+#include <exception> /// std::current_exception for retry classification
+#include <thread> /// thread::sleep for retry backoff
 
 namespace ProfileEvents
 {
@@ -45,10 +45,6 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
     extern const SettingsBool ai_function_throw_on_error;
-    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
-    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsNonZeroUInt64 ai_function_embedding_max_batch_size;
     extern const SettingsString ai_function_embedding_default_credentials;
 }
@@ -99,6 +95,7 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args{
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
+            {"model", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
         FunctionArgumentDescriptors optional_args{
             {"params", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap), &isColumnConst, "const Map(String, String)"},
@@ -108,13 +105,11 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
     }
 
-    /// Parameters accepted in the trailing `Map(String, String)` argument. `aiEmbed` does not inherit
-    /// `FunctionBaseAI`, so it declares its own spec (no `max_tokens`, which embeddings do not use).
+    /// Parameters accepted in the optional trailing `Map(String, String)` argument.
     static AIParamSpecs embeddingParams()
     {
         return {
             {"credentials", AIParamKind::String, std::nullopt},
-            {"model", AIParamKind::String, std::nullopt, /*inherit_from_collection=*/ true},
             {"dimensions", AIParamKind::UInt, Field(UInt64(0))},
         };
     }
@@ -126,7 +121,7 @@ public:
             getContext(), arguments, embeddingParams(), settings[Setting::ai_function_embedding_default_credentials]);
 
         UInt64 dimensions = params.getUInt("dimensions");
-        String model = params.getString("model");
+        String model(arguments[model_arg_index].column->getDataAt(0));
 
         auto provider = createAIProvider(
             params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
@@ -143,11 +138,8 @@ public:
         bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
         size_t max_batch_size = static_cast<size_t>(settings[Setting::ai_function_embedding_max_batch_size].value);
 
-        AIQuotaTracker quota(
-            settings[Setting::ai_function_max_input_tokens_per_query].value,
-            settings[Setting::ai_function_max_output_tokens_per_query].value,
-            settings[Setting::ai_function_max_api_calls_per_query].value,
-            settings[Setting::ai_function_throw_on_quota_exceeded].value);
+        /// Shared across every AI function call in the query
+        auto quota_tracker = getContext()->getAIQuotaTracker();
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
@@ -198,7 +190,7 @@ public:
 
         for (size_t batch_start = 0; batch_start < live_rows.size(); batch_start += max_batch_size)
         {
-            if (quota.checkQuotas())
+            if (quota_tracker->checkQuotas())
             {
                 rows_skipped += live_rows.size() - batch_start;
                 break;
@@ -209,6 +201,7 @@ public:
             AIEmbeddingRequest ai_embedding_request;
             ai_embedding_request.model = model;
             ai_embedding_request.dimensions = dimensions;
+            ai_embedding_request.function_name = getName();
             ai_embedding_request.inputs.reserve(batch_end - batch_start);
 
             for (size_t k = batch_start; k < batch_end; ++k)
@@ -218,24 +211,24 @@ public:
             bool batch_ok = false;
             for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
             {
-                /// Check quotas before every request.
-                /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
-                if (quota.checkQuotas())
+                /// Reserve an API-call slot before each request; this also performs a quota check.
+                /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
+                if (!quota_tracker->recordApiCall())
                     break;
 
                 try
                 {
-                    /// update api_calls/quotas before call so failed calls are still added to total
                     ++total_api_calls;
-                    quota.recordAttempt();
                     ai_embedding_response = provider->embed(ai_embedding_request, timeouts);
                     total_input_tokens += ai_embedding_response.input_tokens;
-                    quota.recordTokens(ai_embedding_response.input_tokens, 0);
+                    quota_tracker->recordTokens(ai_embedding_response.input_tokens, 0);
                     batch_ok = true;
                     break;
                 }
                 catch (...)
                 {
+                    /// Retry transient failures (network errors, provider-side HTTP errors) like the
+                    /// `url` table function does; deterministic errors are surfaced immediately.
                     if (attempt < max_retries && FunctionBaseAI::isRetriableProviderError(std::current_exception()))
                     {
                         std::this_thread::sleep_for(std::chrono::milliseconds(FunctionBaseAI::computeRetryBackoffMs(retry_delay_ms, attempt)));
@@ -288,6 +281,7 @@ public:
 
 private:
     static constexpr size_t text_arg_index = 0;
+    static constexpr size_t model_arg_index = 1;
 
     ContextPtr context;
     ContextPtr getContext() const { return context; }
@@ -306,25 +300,30 @@ Within a single block of rows, inputs are grouped into batches of up to
 [`ai_function_embedding_max_batch_size`](/operations/settings/settings#ai_function_embedding_max_batch_size)
 entries per HTTP request to reduce per-call overhead.
 
-Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
-are taken from the `credentials` key of the optional parameter map, or from the
+Credentials (a named collection specifying the provider, endpoint, and optionally an API key)
+are taken from the `credentials` key of the parameter map, or from the
 `ai_function_embedding_default_credentials` setting when the map omits it. Note that `aiEmbed` uses a
-separate default-credentials setting from the text functions, since an embeddings endpoint and model
-differ from a chat one.
+separate default-credentials setting from the text functions, since an embeddings endpoint differs
+from a chat one.
+
+The `model` is a required positional argument (a constant `String`). Unlike the text functions,
+`aiEmbed` does not read `model` from the named collection or the parameter map. A named collection
+that defines `model` is rejected.
 
 The optional `dimensions` parameter, when supported by the model (e.g. OpenAI's `text-embedding-3-*`),
 requests a vector of the given size; otherwise the model's native size is returned.
 )",
-        .syntax = "aiEmbed(text[, params])",
+        .syntax = "aiEmbed(text, model[, params])",
         .arguments
         = {{"text", "Text to embed.", {"String"}},
-           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `dimensions` (target dimensionality of the output vector; `0` or omitted means the model's native size). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}}},
+           {"model", "Embedding model name.", {"const String"}},
+           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the output vector; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}}},
         .returned_value = {"The embedding vector, or an empty array if the input is NULL or empty, the request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Array(Float32)"}},
         .examples
-        = {{"Embed a single string (map parameter can be omitted if the `ai_function_embedding_default_credentials` setting is set)", "SELECT aiEmbed('Hello world', map('credentials', 'ai_embedding_credentials'))", ""},
-           {"With explicit dimensions", "SELECT aiEmbed('Hello world', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))", ""},
-           {"Embed a column of texts", "SELECT aiEmbed(title, map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10", ""}},
-        .introduced_in = {26, 6},
+        = {{"Embed a single string (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)", "SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))", ""},
+           {"With explicit dimensions", "SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))", ""},
+           {"Embed a column of texts", "SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10", ""}},
+        .introduced_in = {26, 5},
         .category = FunctionDocumentation::Category::AI});
 }
 

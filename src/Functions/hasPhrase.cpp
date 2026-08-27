@@ -11,7 +11,6 @@
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <Common/FunctionDocumentation.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <ranges>
 
@@ -32,7 +31,7 @@ constexpr size_t arg_input = 0;
 constexpr size_t arg_phrase = 1;
 constexpr size_t arg_tokenizer = 2;
 
-VectorWithMemoryTracking<String> initializePhraseTokens(const ColumnsWithTypeAndName & arguments, const ITokenizer & tokenizer, std::string_view function_name)
+std::vector<String> initializePhraseTokens(const ColumnsWithTypeAndName & arguments, const ITokenizer & tokenizer, std::string_view function_name)
 {
     auto column_phrase = arguments[arg_phrase].column;
 
@@ -47,17 +46,17 @@ VectorWithMemoryTracking<String> initializePhraseTokens(const ColumnsWithTypeAnd
     auto phrase_str = phrase_field.safeGet<String>();
 
     /// Tokenize the phrase, preserving order (no deduplication).
-    VectorWithMemoryTracking<String> tokens;
+    std::vector<String> tokens;
     tokenizer.stringToTokens(phrase_str.data(), phrase_str.size(), tokens);
     return tokens;
 }
 
 /// KMP style failure array.
 /// For example, phrase "a a b" in input "a a a b" correctly matches at positions 1-3.
-VectorWithMemoryTracking<size_t> buildFailureFunction(const VectorWithMemoryTracking<String> & phrase_tokens)
+std::vector<size_t> buildFailureFunction(const std::vector<String> & phrase_tokens)
 {
     const size_t size = phrase_tokens.size();
-    VectorWithMemoryTracking<size_t> failure(size, 0);
+    std::vector<size_t> failure(size, 0);
 
     size_t k = 0;
     for (size_t i = 1; i < size; ++i)
@@ -77,7 +76,7 @@ VectorWithMemoryTracking<size_t> buildFailureFunction(const VectorWithMemoryTrac
 /// Matcher that checks if all phrase tokens appear consecutively in the input's token stream.
 struct MatchPhraseMatcher
 {
-    MatchPhraseMatcher(const VectorWithMemoryTracking<String> & phrase_tokens_, const VectorWithMemoryTracking<size_t> & failure_)
+    MatchPhraseMatcher(const std::vector<String> & phrase_tokens_, const std::vector<size_t> & failure_)
         : phrase_tokens(phrase_tokens_)
         , failure(failure_)
         , match_position(0)
@@ -112,8 +111,8 @@ struct MatchPhraseMatcher
     void reset() { match_position = 0; }
 
 private:
-    const VectorWithMemoryTracking<String> & phrase_tokens;
-    const VectorWithMemoryTracking<size_t> & failure;
+    const std::vector<String> & phrase_tokens;
+    const std::vector<size_t> & failure;
     size_t match_position;
 };
 
@@ -124,8 +123,8 @@ void executeMatchPhrase(
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
     const ITokenizer * tokenizer,
-    const VectorWithMemoryTracking<String> & phrase_tokens,
-    const VectorWithMemoryTracking<size_t> & failure_table)
+    const std::vector<String> & phrase_tokens,
+    const std::vector<size_t> & failure_table)
 {
     MatchPhraseMatcher matcher(phrase_tokens, failure_table);
 
@@ -185,7 +184,7 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
     const auto tokenizer_name = arguments.size() < 3 || !arguments[arg_tokenizer].column ? SplitByNonAlphaTokenizer::getExternalName()
                                                                                          : arguments[arg_tokenizer].column->getDataAt(0);
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
-    static const UnorderedSetWithMemoryTracking<ITokenizer::Type> supported_types = {
+    static const std::unordered_set<ITokenizer::Type> supported_types = {
         ITokenizer::Type::SplitByNonAlpha,
         ITokenizer::Type::SplitByString,
         ITokenizer::Type::AsciiCJK,

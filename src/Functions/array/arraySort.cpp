@@ -90,18 +90,22 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
     ColumnPtr mapped,
     const ColumnWithTypeAndName * fixed_arguments)
 {
-    /// The limit (how many elements to partially sort) may differ from row to row when it is passed
-    /// as a non-constant column, so it is read per-row inside the loop below.
-    [[maybe_unused]] const IColumn * limit_column = nullptr;
-    if constexpr (is_partial)
+    [[maybe_unused]] const auto limit = [&]() -> size_t
     {
-        if (!fixed_arguments)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Expected fixed arguments to get the limit for partial array sort");
+        if constexpr (is_partial)
+        {
+            if (!fixed_arguments)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected fixed arguments to get the limit for partial array sort"
+                );
 
-        limit_column = fixed_arguments[0].column.get();
-    }
+            /// During dryRun the input column might be empty
+            if (!fixed_arguments[0].column->empty())
+                return fixed_arguments[0].column->getUInt(0);
+        }
+        return 0;
+    }();
 
     const ColumnArray::Offsets & offsets = array.getOffsets();
 
@@ -118,7 +122,6 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
         auto next_offset = offsets[i]; \
         if constexpr (is_partial) \
         { \
-            const size_t limit = limit_column->getUInt(i); \
             if (limit) \
             { \
                 const auto effective_limit = std::min<size_t>(limit, next_offset - current_offset); \
@@ -229,7 +232,7 @@ If the array to sort contains `-Inf`, `NULL`, `NaN`, or `Inf` they will be sorte
     FunctionDocumentation::Arguments arguments = {
         {"f(y1[, y2 ... yN])", "The lambda function to apply to elements of array `x`."},
         {"arr", "An array to be sorted. [`Array(T)`](/sql-reference/data-types/array)"},
-        {"arr1, ..., arrN", "Optional. N additional arrays, in the case when `f` accepts multiple arguments."}
+        {"arr1, ..., yN", "Optional. N additional arrays, in the case when `f` accepts multiple arguments."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns the array `arr` sorted in ascending order if no lambda function is provided, otherwise
@@ -262,7 +265,7 @@ If the array to sort contains `-Inf`, `NULL`, `NaN`, or `Inf` they will be sorte
 
 `arrayReverseSort` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
     )";
-    syntax = "arrayReverseSort([f,] arr [, arr1, ... ,arrN])";
+    syntax = "arrayReverseSort([f,] arr [, arr1, ... ,arrN)";
     returned_value = {R"(
 Returns the array `x` sorted in descending order if no lambda function is provided, otherwise
 it returns an array sorted according to the logic of the provided lambda function, and then reversed. [`Array(T)`](/sql-reference/data-types/array).
@@ -282,12 +285,12 @@ This function is the same as `arraySort` but with an additional `limit` argument
 To retain only the sorted elements use `arrayResize`.
 :::
     )";
-    syntax = "arrayPartialSort([f,] limit, arr [, arr1, ... ,arrN])";
+    syntax = "arrayPartialSort([f,] arr [, arr1, ... ,arrN], limit)";
     arguments = {
         {"f(arr[, arr1, ... ,arrN])", "The lambda function to apply to elements of array `x`.", {"Lambda function"}},
-        {"limit", "Index value up until which sorting will occur.", {"(U)Int*"}},
         {"arr", "Array to be sorted.", {"Array(T)"}},
-        {"arr1, ... ,arrN", "N additional arrays, in the case when `f` accepts multiple arguments.", {"Array(T)"}}
+        {"arr1, ... ,arrN", "N additional arrays, in the case when `f` accepts multiple arguments.", {"Array(T)"}},
+        {"limit", "Index value up until which sorting will occur.", {"(U)Int*"}}
     };
     returned_value = {R"(
 Returns an array of the same size as the original array where elements in the range `[1..limit]` are sorted
@@ -312,7 +315,7 @@ This function is the same as `arrayReverseSort` but with an additional `limit` a
 To retain only the sorted elements use `arrayResize`.
 :::
     )";
-    syntax = "arrayPartialReverseSort([f,] limit, arr [, arr1, ... ,arrN])";
+    syntax = "arrayPartialReverseSort([f,] arr [, arr1, ... ,arrN], limit)";
     returned_value = {R"(
 Returns an array of the same size as the original array where elements in the range `[1..limit]` are sorted
 in descending order. The remaining elements `(limit..N]` are in an unspecified order.

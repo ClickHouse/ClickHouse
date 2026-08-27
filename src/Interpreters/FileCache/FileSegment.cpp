@@ -5,8 +5,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheUtils.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <base/EnumReflection.h>
 #include <base/getThreadId.h>
 #include <base/hex.h>
@@ -24,6 +22,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event FileSegmentWaitMicroseconds;
+    extern const Event FileSegmentWaitTimeouts;
     extern const Event FileSegmentCompleteMicroseconds;
     extern const Event FileSegmentLockMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
@@ -52,6 +51,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char cache_filesystem_failure[];
+    extern const char file_segment_pause_before_write[];
 }
 
 String toString(FileSegmentKind kind)
@@ -134,12 +134,8 @@ const LoggerPtr & FileSegment::getLog() const
 
 FileSegment::State FileSegment::state() const
 {
-    /// Read without lock. This is safe because every terminal state is published as the last write
-    /// of its transition: in particular DOWNLOADED is set only after the segment is fully
-    /// finalized (writer flushed and closed, reader released, range/size settled - see
-    /// `setDownloadedUnlocked` and `shrinkFileSegmentToDownloadedSize`). So an observer of a state
-    /// here is guaranteed to also see all the state that belongs to it.
-    return download_state.load();
+    auto lk = lock();
+    return download_state;
 }
 
 String FileSegment::getPath() const
@@ -177,7 +173,8 @@ void FileSegment::setDownloadState(State state, const FileSegmentGuard::Lock & l
 
 size_t FileSegment::getReservedSize() const
 {
-    return reserved_size.load();
+    auto lk = lock();
+    return reserved_size;
 }
 
 FileSegment::Priority::IteratorPtr FileSegment::getQueueIterator() const
@@ -225,9 +222,8 @@ size_t FileSegment::getDownloadedSize() const
 
 bool FileSegment::isDownloaded() const
 {
-    /// Read without lock, see the comment in `state`: DOWNLOADED is published last, so observing it here
-    /// implies a fully-downloaded, consistent segment.
-    return download_state.load() == State::DOWNLOADED;
+    auto lk = lock();
+    return download_state == State::DOWNLOADED;
 }
 
 time_t FileSegment::getFinishedDownloadTime() const
@@ -291,8 +287,8 @@ String FileSegment::getOrSetDownloader()
 
 void FileSegment::resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock)
 {
-    chassert(isDownloaderUnlocked(lock));
-    chassert(download_state == State::DOWNLOADING);
+    assert(isDownloaderUnlocked(lock));
+    assert(download_state == State::DOWNLOADING);
 
     size_t current_downloaded_size = getDownloadedSize();
     /// range().size() can equal 0 in case of write-though cache.
@@ -399,6 +395,9 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
 
 void FileSegment::write(char * from, size_t size, size_t offset_in_file)
 {
+    /// Keeps the segment in DOWNLOADING state, for testing the concurrent download wait timeout.
+    FailPointInjection::pauseFailPoint(FailPoints::file_segment_pause_before_write);
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentWriteMicroseconds);
     auto file_segment_path = getPath();
     DownloadState * download = nullptr;
@@ -424,8 +423,8 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Attempt to write {} bytes to offset: {}, but current write offset is {} ({})",
-                size, offset_in_file, first_non_downloaded_offset, getInfoForLog());
+                "Attempt to write {} bytes to offset: {}, but current write offset is {}",
+                size, offset_in_file, first_non_downloaded_offset);
         }
 
         const size_t current_downloaded_size = getDownloadedSize();
@@ -534,7 +533,7 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
     chassert(getCurrentWriteOffset() == offset_in_file + size);
 }
 
-FileSegment::State FileSegment::wait(size_t offset)
+FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
 {
     OpenTelemetry::SpanHolder span("FileSegment::wait");
     span.addAttribute("clickhouse.key", key().toString());
@@ -556,28 +555,21 @@ FileSegment::State FileSegment::wait(size_t offset)
         chassert(!getDownloaderUnlocked(lk).empty());
         chassert(!isDownloaderUnlocked(lk));
 
-        /// Wait for the download in short slices so that cancellation of the waiting query
-        /// (KILL QUERY, max_execution_time, a dropped/stopped refreshable materialized view, ...)
-        /// is observed promptly. The condition variable is only notified on download progress, so a
-        /// stalled or dead downloader would otherwise pin this thread — and anything blocked on it,
-        /// e.g. RefreshTask::shutdown() -> deactivate() — until the full timeout. throwIfKilled()
-        /// re-raises the query's original cancellation reason rather than a generic one.
-        QueryStatusPtr query_status;
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            query_status = query_context->getProcessListElementSafe();
-
         auto downloaded = [&, this]()
         {
             return download_state != State::DOWNLOADING || offset < getCurrentWriteOffset();
         };
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
         while (true)
         {
-            if (query_status)
-                query_status->throwIfKilled();
-            if (cv.wait_for(lk, std::chrono::seconds(1), downloaded))
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= deadline)
+            {
+                ProfileEvents::increment(ProfileEvents::FileSegmentWaitTimeouts);
                 break;
-            if (std::chrono::steady_clock::now() >= deadline)
+            }
+            const auto slice = std::min<std::chrono::steady_clock::duration>(std::chrono::seconds(1), deadline - now);
+            if (cv.wait_for(lk, slice, downloaded))
                 break;
         }
     }
@@ -616,15 +608,14 @@ bool FileSegment::reserve(
     size_t size_to_reserve,
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
-    FileCacheReserveStat * reserve_stat,
-    size_t reserve_hint)
+    FileCacheReserveStat * reserve_stat)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
 
-    size_t current_downloaded_size = 0;
+    size_t current_downloaded_size;
 
-    bool is_file_segment_size_exceeded = false;
+    bool is_file_segment_size_exceeded;
     {
         auto lk = lock();
 
@@ -645,41 +636,18 @@ bool FileSegment::reserve(
         chassert(reserved_size >= current_downloaded_size);
     }
 
-    chassert(range().size() >= reserved_size);
+    /**
+     * It is possible to have downloaded_size < reserved_size when reserve is called
+     * in case previous downloader did not fully download current file_segment
+     * and the caller is going to continue;
+     */
 
-    if (reserved_size > current_downloaded_size)
-    {
-        const size_t available_reserved = reserved_size - current_downloaded_size;
-        if (available_reserved >= size_to_reserve)
-            return true;
-        size_to_reserve -= available_reserved;
-    }
+    size_t already_reserved_size = reserved_size - current_downloaded_size;
 
-    const size_t minimum_reserve_size = size_to_reserve;
+    if (already_reserved_size >= size_to_reserve)
+        return true;
 
-    if (!is_unbound)
-    {
-        const auto reserve_granularity = cache->getReserveGranularity();
-        if (reserve_granularity && reserve_granularity > size_to_reserve)
-        {
-            size_to_reserve = reserved_size + reserve_granularity > range().size()
-                ? range().size() - reserved_size
-                : reserve_granularity;
-
-            /// `reserve_hint` is measured from the current download offset, so the read ends at
-            /// `read_horizon` in segment-relative terms. Don't reserve ahead past it.
-            const size_t read_horizon = current_downloaded_size + reserve_hint;
-            if (reserve_hint
-                && read_horizon > reserved_size
-                && read_horizon < reserved_size + size_to_reserve)
-                size_to_reserve = read_horizon - reserved_size;
-        }
-    }
-
-    /// The reserve-ahead caps above (segment range, read horizon) are only an upper bound; they
-    /// must never reserve less than the current write needs, otherwise the write would exceed the
-    /// reservation. A bare assert would not protect release builds, so clamp explicitly.
-    size_to_reserve = std::max(size_to_reserve, minimum_reserve_size);
+    size_to_reserve = size_to_reserve - already_reserved_size;
 
     /// This (resizable file segments) is allowed only for single threaded use of file segment.
     /// Currently it is used only for temporary files through cache.
@@ -706,28 +674,16 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock & lock)
     if (download_state == State::DOWNLOADED)
         return;
 
+    download_state = State::DOWNLOADED;
     download_finished_time = timeInSeconds(std::chrono::system_clock::now());
 
     if (download_data && download_data->cache_writer)
-    {
-        try
-        {
-            download_data->cache_writer->finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(getLog(), "Failed to finalize cache writer while marking file segment as downloaded");
-            setDownloadFailedUnlocked(lock);
-            return;
-        }
-    }
+        download_data->cache_writer->finalize();
 
     resetDownloadDataUnlocked(lock);
 
     chassert(downloaded_size > 0);
     chassert(fs::file_size(getPath()) == downloaded_size);
-
-    download_state = State::DOWNLOADED;
 }
 
 void FileSegment::setDownloadFailed()
@@ -813,18 +769,6 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     chassert(result_size <= range().size());
     chassert(result_size >= downloaded_size);
 
-    /// Return the reserve-ahead surplus (reserved but not downloaded, see `FileSegment::reserve`)
-    /// to the cache: the segment is complete, nothing will fill the rest, so the surplus must not
-    /// stay charged against the quota. Done before the `result_size == range().size()` early return
-    /// below, since with `reserve_granularity == boundary_alignment` a tiny read rounds up to the
-    /// whole range and would otherwise keep a full granule charged.
-    chassert(reserved_size >= downloaded_size);
-    if (reserved_size > downloaded_size)
-    {
-        queue_iterator->decrementSize(reserved_size - downloaded_size);
-        reserved_size = downloaded_size.load();
-    }
-
     if (result_size == range().size())
     {
         /// Nothing to resize;
@@ -834,17 +778,23 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     LOG_TEST(getLog(),"Shrinking file segment {} -> {} (downloaded size: {})",
              range().size(), result_size, downloaded_size.load());
 
-    segment_range.right = segment_range.left + result_size - 1;
-
     if (downloaded_size == result_size)
     {
+        setDownloadState(State::DOWNLOADED, lock);
         /// Terminal state: free the download-only state so it is not leaked on an
         /// already-cached segment (and to uphold the `!download_data` invariant).
         resetDownloadDataUnlocked(lock);
-        setDownloadState(State::DOWNLOADED, lock);
     }
     else
         setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
+
+    segment_range.right = segment_range.left + result_size - 1;
+
+    if (reserved_size > result_size)
+    {
+        queue_iterator->decrementSize(reserved_size - result_size);
+        reserved_size = result_size;
+    }
 }
 
 size_t FileSegment::getSizeForBackgroundDownload() const
@@ -866,7 +816,7 @@ size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard:
     chassert(downloaded_size <= range().size());
 
     const size_t background_download_max_file_segment_size = cache->getBackgroundDownloadMaxFileSegmentSize();
-    size_t desired_size = 0;
+    size_t desired_size;
     if (downloaded_size >= background_download_max_file_segment_size)
         desired_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
     else
@@ -984,14 +934,7 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
                     {
                         if (download_data->cache_writer)
                         {
-                            try
-                            {
-                                download_data->cache_writer->finalize();
-                            }
-                            catch (...)
-                            {
-                                tryLogCurrentException(getLog(), "Failed to finalize cache writer on complete");
-                            }
+                            download_data->cache_writer->finalize();
                             download_data->cache_writer.reset();
                         }
                         download_data->remote_file_reader.reset();
@@ -1023,14 +966,7 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
                     {
                         if (download_data->cache_writer)
                         {
-                            try
-                            {
-                                download_data->cache_writer->finalize();
-                            }
-                            catch (...)
-                            {
-                                tryLogCurrentException(getLog(), "Failed to finalize cache writer on complete");
-                            }
+                            download_data->cache_writer->finalize();
                             download_data->cache_writer.reset();
                         }
                         download_data->remote_file_reader.reset();
@@ -1269,10 +1205,6 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
 
 bool FileSegment::isDetached() const
 {
-    /// Keep the lock: `complete` uses `isDetached` to confirm a benign concurrent detach when
-    /// `lockKeyMetadata` fails. `setDetachedState` sets DETACHED and resets `key_metadata` under
-    /// the segment lock, so only taking the lock here guarantees we observe DETACHED once the key
-    /// metadata is gone - a bare atomic load could race and turn the detach into a `LOGICAL_ERROR`.
     auto lk = lock();
     return download_state == State::DETACHED;
 }

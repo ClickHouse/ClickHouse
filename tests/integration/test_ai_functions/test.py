@@ -70,7 +70,8 @@ def get_profile_events(query_id):
             ProfileEvents['AIInputTokens'] AS input_tokens,
             ProfileEvents['AIOutputTokens'] AS output_tokens,
             ProfileEvents['AIRowsProcessed'] AS rows_processed,
-            ProfileEvents['AIRowsSkipped'] AS rows_skipped
+            ProfileEvents['AIRowsSkipped'] AS rows_skipped,
+            peak_threads_usage AS peak_threads
         FROM system.query_log
         WHERE query_id = '{query_id}' AND type = 'QueryFinish'
         LIMIT 1
@@ -121,28 +122,24 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"CREATE NAMED COLLECTION ai_embed AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
         instance.query(
             f"CREATE NAMED COLLECTION ai_embed_error AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_error', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
         instance.query(
             f"CREATE NAMED COLLECTION ai_embed_dup_index AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_dup_index', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
         instance.query(
             f"CREATE NAMED COLLECTION ai_embed_wrong_count AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_wrong_count', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
         # Endpoints that drop the connection for the first N requests (armed via /set-flaky),
@@ -158,7 +155,6 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"CREATE NAMED COLLECTION ai_embed_flaky AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_flaky', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
 
@@ -295,10 +291,10 @@ def test_generate_model_override_with_default_credentials(started_cluster):
 
 
 def test_embed_model_override_with_default_credentials(started_cluster):
-    """Same for aiEmbed: `map('model', ...)` overrides the embedding model on the request, with the
-    collection selected via `ai_function_embedding_default_credentials`."""
+    """Same for aiEmbed: the required positional `model` argument sets the embedding model on the
+    request, with the collection selected via `ai_function_embedding_default_credentials`."""
     instance.query(
-        "SELECT aiEmbed('hi', map('model', 'override-embed-model'))",
+        "SELECT aiEmbed('hi', 'override-embed-model')",
         settings={**AI_SETTINGS, "ai_function_embedding_default_credentials": "ai_embed"},
     )
     assert json.loads(last_request()["body"])["model"] == "override-embed-model"
@@ -562,7 +558,7 @@ def parse_embedding(s):
 def test_embed_basic(started_cluster):
     """Single-row aiEmbed returns an `Array(Float32)` of the model's native size."""
     result = instance.query(
-        "SELECT aiEmbed('hello', map('credentials', 'ai_embed'))",
+        "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed'))",
         settings=AI_SETTINGS,
     )
     vec = parse_embedding(result)
@@ -570,12 +566,24 @@ def test_embed_basic(started_cluster):
     assert any(v != 0.0 for v in vec)
 
 
+def test_embed_rejects_model_in_named_collection(started_cluster):
+    """aiEmbed takes `model` as a positional argument and never reads it from the named collection.
+    A collection that defines `model` (e.g. the text collection `ai_mock`) is rejected rather than
+    silently ignored."""
+    error = instance.query_and_get_error(
+        "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_mock'))",
+        settings=AI_SETTINGS,
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "defines 'model'" in error
+
+
 def test_embed_uses_embedding_default_credentials(started_cluster):
     """End-to-end default-credentials path for embeddings: with no `credentials` in the call, a real
     (non-empty) request must actually use `ai_function_embedding_default_credentials`. Confirms the
     embedding default is applied on the request path, not only for the zero-row fast path."""
     result = instance.query(
-        "SELECT aiEmbed('hello')",
+        "SELECT aiEmbed('hello', 'test-embed-model')",
         settings={**AI_SETTINGS, "ai_function_embedding_default_credentials": "ai_embed"},
     )
     vec = parse_embedding(result)
@@ -588,7 +596,7 @@ def test_embed_multiple_rows(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('alpha'), ('beta'), ('gamma')")
     result = instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input ORDER BY x",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input ORDER BY x",
         settings=AI_SETTINGS,
     )
     rows = [parse_embedding(line) for line in result.strip().split("\n")]
@@ -601,7 +609,7 @@ def test_embed_multiple_rows(started_cluster):
 def test_embed_with_dimensions(started_cluster):
     """The `dimensions` argument is forwarded to the provider and honored in the response."""
     result = instance.query(
-        "SELECT aiEmbed('hello world', map('credentials', 'ai_embed', 'dimensions', '16'))",
+        "SELECT aiEmbed('hello world', 'test-embed-model', map('credentials', 'ai_embed', 'dimensions', '16'))",
         settings=AI_SETTINGS,
     )
     vec = parse_embedding(result)
@@ -616,7 +624,7 @@ def test_embed_null_and_empty_input(started_cluster):
     )
     qid = unique_query_id("embed_null_empty")
     result = instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input_nullable ORDER BY x NULLS FIRST",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input_nullable ORDER BY x NULLS FIRST",
         settings=AI_SETTINGS,
         query_id=qid,
     )
@@ -642,7 +650,7 @@ def test_embed_profile_events_token_accounting(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('abc'), ('de'), ('fghi')")
     qid = unique_query_id("embed_tokens")
     instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings=AI_SETTINGS,
         query_id=qid,
     )
@@ -662,7 +670,7 @@ def test_embed_batching(started_cluster):
     )
     qid = unique_query_id("embed_batch")
     instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={**AI_SETTINGS, "ai_function_embedding_max_batch_size": 2},
         query_id=qid,
     )
@@ -676,7 +684,7 @@ def test_embed_batching(started_cluster):
 def test_embed_error_throw(started_cluster):
     """By default, provider errors propagate as `RECEIVED_ERROR_FROM_REMOTE_IO_SERVER`."""
     error = instance.query_and_get_error(
-        "SELECT aiEmbed('hello', map('credentials', 'ai_embed_error'))",
+        "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed_error'))",
         settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
@@ -687,7 +695,7 @@ def test_embed_error_graceful(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('a'), ('b')")
     result = instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed_error')) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_error')) FROM test_input",
         settings={
             **AI_SETTINGS,
             "ai_function_throw_on_error": 0,
@@ -701,7 +709,7 @@ def test_embed_error_graceful(started_cluster):
 def test_embed_duplicate_index_rejected(started_cluster):
     """`OpenAIProvider::embed` rejects responses with duplicate `index` values."""
     error = instance.query_and_get_error(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed_dup_index')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_dup_index')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
         settings={**AI_SETTINGS, "ai_function_max_retries": 0},
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
@@ -711,7 +719,7 @@ def test_embed_duplicate_index_rejected(started_cluster):
 def test_embed_wrong_count_rejected(started_cluster):
     """`OpenAIProvider::embed` rejects responses whose `data` size != number of inputs."""
     error = instance.query_and_get_error(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed_wrong_count')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_wrong_count')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
         settings={**AI_SETTINGS, "ai_function_max_retries": 0},
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
@@ -722,7 +730,7 @@ def test_embed_empty_input_table(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     qid = unique_query_id("embed_zero_rows")
     result = instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings=AI_SETTINGS,
         query_id=qid,
     )
@@ -742,7 +750,7 @@ def test_embed_quota_input_tokens_exceeded(started_cluster):
     # Each batch costs `sum(len(text))` input tokens. With batch_size=1 and rows
     # of length 5 ("row_0".."row_3"), the second batch pushes us over a 5-token cap.
     result = instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={
             **AI_SETTINGS,
             "ai_function_embedding_max_batch_size": 1,
@@ -817,7 +825,7 @@ def test_embed_retries_on_network_error(started_cluster):
     set_flaky(2)
     qid = unique_query_id("embed_retry_net")
     result = instance.query(
-        "SELECT aiEmbed('hello', map('credentials', 'ai_embed_flaky'))",
+        "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed_flaky'))",
         settings={
             **AI_SETTINGS,
             "ai_function_max_retries": 5,
@@ -925,12 +933,34 @@ def test_generate_retry_respects_api_call_quota(started_cluster):
     assert int(events["rows_skipped"]) == 1
 
 
+def test_function_name_header(started_cluster):
+    """The OpenAI provider tags every request with an `X-ClickHouse-AI-Function` header carrying the
+    SQL name of the calling function, so the upstream endpoint can tell which function made the call.
+    Covers the chat path (aiGenerate/aiClassify/aiExtract/aiTranslate) and the embedding path (aiEmbed)."""
+    cases = [
+        ("aiGenerate", "SELECT aiGenerate('hi', map('credentials', 'ai_mock'))"),
+        (
+            "aiClassify",
+            "SELECT aiClassify('hi', ['a', 'b'], map('credentials', 'ai_mock'))",
+        ),
+        ("aiExtract", "SELECT aiExtract('hi', 'the price', map('credentials', 'ai_mock'))"),
+        ("aiTranslate", "SELECT aiTranslate('hi', 'French', map('credentials', 'ai_mock'))"),
+        (
+            "aiEmbed",
+            "SELECT aiEmbed('hi', 'test-embed-model', map('credentials', 'ai_embed'))",
+        ),
+    ]
+    for name, query in cases:
+        instance.query(query, settings=AI_SETTINGS)
+        assert last_request()["headers"].get("x-clickhouse-ai-function") == name
+
+
 def test_embed_retry_respects_api_call_quota(started_cluster):
     """The embedding path enforces the same per-attempt API-call quota: a retriable HTTP 500 is not
     retried past `ai_function_max_api_calls_per_query`."""
     qid = unique_query_id("embed_quota_caps_retries")
     result = instance.query(
-        "SELECT aiEmbed('server error', map('credentials', 'ai_embed_error'))",
+        "SELECT aiEmbed('server error', 'test-embed-model', map('credentials', 'ai_embed_error'))",
         settings={
             **AI_SETTINGS,
             "ai_function_max_retries": 5,
@@ -948,3 +978,350 @@ def test_embed_retry_respects_api_call_quota(started_cluster):
     assert int(events["api_calls"]) == 1
     assert int(events["rows_processed"]) == 0
     assert int(events["rows_skipped"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# How many API calls a query shape issues
+#
+# These assert `AIAPICalls`, not output: the count is a property of the planner and the
+# row loop, and it is what an implementation that evaluated AI functions lazily would
+# change. Exact integers, so they hold on any host given the pinned settings.
+# ---------------------------------------------------------------------------
+
+LAZY_ROWS = 64
+LAZY_BLOCK = 16
+LAZY_DISTINCT = 4
+CHAT_CALL = "aiClassify(x, ['positive','negative','neutral'], map('credentials', 'ai_mock'))"
+EMBED_CALL = "aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed'))"
+
+
+@pytest.fixture(scope="module")
+def call_count_tables(started_cluster):
+    """One-part tables for the call-count scenarios, plus a duplicate-heavy one."""
+    instance.query("DROP TABLE IF EXISTS lazy_rows SYNC")
+    instance.query(
+        "CREATE TABLE lazy_rows (id UInt32, x String) ENGINE = MergeTree ORDER BY id"
+    )
+    instance.query(
+        f"INSERT INTO lazy_rows SELECT number, concat('row ', toString(number)) "
+        f"FROM numbers({LAZY_ROWS})"
+    )
+    instance.query("OPTIMIZE TABLE lazy_rows FINAL")
+
+    instance.query("DROP TABLE IF EXISTS lazy_dup SYNC")
+    instance.query(
+        "CREATE TABLE lazy_dup (id UInt32, x String) ENGINE = MergeTree ORDER BY id"
+    )
+    instance.query(
+        f"INSERT INTO lazy_dup SELECT number, concat('dup ', toString(number % "
+        f"{LAZY_DISTINCT})) FROM numbers({LAZY_ROWS})"
+    )
+    instance.query("OPTIMIZE TABLE lazy_dup FINAL")
+    yield
+    instance.query("DROP TABLE IF EXISTS lazy_rows SYNC")
+    instance.query("DROP TABLE IF EXISTS lazy_dup SYNC")
+
+
+def run_and_count_calls(sql, prefix, extra_settings=None):
+    """Run `sql` and return the number of provider requests it issued."""
+    settings = dict(AI_SETTINGS)
+    settings["max_block_size"] = LAZY_BLOCK
+    settings["max_threads"] = 1
+    # `preferred_block_size_bytes` can split a block below `max_block_size` on its own.
+    settings["preferred_block_size_bytes"] = 0
+    if extra_settings:
+        settings.update(extra_settings)
+    qid = unique_query_id(prefix)
+    instance.query(sql, settings=settings, query_id=qid)
+    return int(get_profile_events(qid)["api_calls"])
+
+
+# `expected` is what the implementation does today; `ideal` is what a maximally lazy
+# implementation would do. They differ only for dedup, which does not exist: identical
+# inputs are embedded once per row (`aiEmbed.cpp`, the live-row collection loop).
+@pytest.mark.parametrize(
+    "case, sql, expected, ideal, settings",
+    [
+        (
+            "filter",
+            f"SELECT {CHAT_CALL} FROM lazy_rows WHERE id % 8 = 0 FORMAT Null",
+            LAZY_ROWS // 8,
+            LAZY_ROWS // 8,
+            {},
+        ),
+        (
+            "limit",
+            f"SELECT {CHAT_CALL} FROM lazy_rows LIMIT 5 FORMAT Null",
+            5,
+            5,
+            {},
+        ),
+        (
+            "order_by_limit",
+            f"SELECT {CHAT_CALL} FROM lazy_rows ORDER BY id LIMIT 5 FORMAT Null",
+            5,
+            5,
+            {},
+        ),
+        (
+            "ai_predicate_last",
+            f"SELECT count() FROM lazy_rows WHERE id % 8 = 0 AND {CHAT_CALL} = 'positive' "
+            f"FORMAT Null",
+            LAZY_ROWS // 8,
+            LAZY_ROWS // 8,
+            {},
+        ),
+        (
+            "short_circuit_if",
+            f"SELECT if(id % 8 = 0, {CHAT_CALL}, '') FROM lazy_rows FORMAT Null",
+            LAZY_ROWS // 8,
+            LAZY_ROWS // 8,
+            {"short_circuit_function_evaluation": "force_enable"},
+        ),
+        (
+            "prewhere",
+            f"SELECT {CHAT_CALL} FROM lazy_rows PREWHERE id % 8 = 0 FORMAT Null",
+            LAZY_ROWS // 8,
+            LAZY_ROWS // 8,
+            {},
+        ),
+        (
+            # Batch size 1 makes one request per input, so the count can show dedup.
+            # It does not: every row is embedded even though there are four distinct values.
+            "no_dedup_of_identical_inputs",
+            f"SELECT {EMBED_CALL} FROM lazy_dup FORMAT Null",
+            LAZY_ROWS,
+            LAZY_DISTINCT,
+            {"ai_function_embedding_max_batch_size": 1},
+        ),
+        (
+            # The control for the case above: deduplicating in SQL costs four requests.
+            "distinct_subquery_control",
+            f"SELECT {EMBED_CALL} FROM (SELECT DISTINCT x FROM lazy_dup) FORMAT Null",
+            LAZY_DISTINCT,
+            LAZY_DISTINCT,
+            {"ai_function_embedding_max_batch_size": 1},
+        ),
+        (
+            # Common subexpression elimination: `aiEmbed` is deterministic, so evaluating
+            # it in both the filter and the projection must not double the requests.
+            "cse_filter_and_projection",
+            f"SELECT {EMBED_CALL} FROM lazy_rows WHERE length({EMBED_CALL}) > 0 FORMAT Null",
+            LAZY_ROWS,
+            LAZY_ROWS,
+            {"ai_function_embedding_max_batch_size": 1},
+        ),
+    ],
+)
+def test_api_call_count_per_query_shape(call_count_tables, case, sql, expected, ideal, settings):
+    calls = run_and_count_calls(sql, f"calls_{case}", settings)
+    assert calls == expected, (
+        f"{case}: {calls} API calls, expected {expected} (a maximally lazy implementation "
+        f"would issue {ideal})"
+    )
+
+
+def _create_quota_parts(name, parts=8, rows_per_part=8, index_granularity=None):
+    """Create a MergeTree table of `parts` unmerged parts (merges stopped) so a scan over it
+    produces several blocks - the shape needed to tell a per-query quota from a per-block one.
+    A single-part table cannot: one block is one allowance. `SYSTEM STOP MERGES` keeps a
+    background merge from collapsing the parts before the scan and masking the difference.
+
+    `index_granularity` pins a small, fixed granule size (adaptive granularity disabled) so the
+    number of marks is deterministic - needed when a test relies on the read pool splitting the
+    scan across threads, which is driven by mark count."""
+    instance.query(f"DROP TABLE IF EXISTS {name} SYNC")
+    create = f"CREATE TABLE {name} (id UInt32, x String) ENGINE = MergeTree ORDER BY id"
+    if index_granularity is not None:
+        create += f" SETTINGS index_granularity = {index_granularity}, index_granularity_bytes = 0"
+    instance.query(create)
+    instance.query(f"SYSTEM STOP MERGES {name}")
+    for part in range(parts):
+        base = part * rows_per_part
+        instance.query(
+            f"INSERT INTO {name} SELECT number + {base}, "
+            f"concat('row ', toString(number + {base})) FROM numbers({rows_per_part})"
+        )
+
+
+# `max_block_size` = 8 with 8-row parts gives one block per part, so a per-block tracker
+# reaches at most 8 (< the caps below) and never fires, while a per-query tracker accumulates
+# across all 64 rows.
+_QUOTA_SCOPE_SETTINGS = {
+    "max_block_size": 8,
+    "max_threads": 1,
+    "preferred_block_size_bytes": 0,
+}
+
+
+def test_api_call_quota_is_per_query(started_cluster):
+    """`ai_function_max_api_calls_per_query` must bound the query, not each block of it.
+
+    The tracker is shared per query (owned by the query `Context`), so every block and every
+    pipeline stream draws on one allowance. It used to be a stack local in `executeImpl` with
+    no shared state, so each block started with a fresh allowance and the effective ceiling
+    grew with the data.
+    """
+    limit = 10
+    _create_quota_parts("quota_parts")
+    try:
+        qid = unique_query_id("quota_scope")
+        instance.query(
+            f"SELECT {CHAT_CALL} FROM quota_parts FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                **_QUOTA_SCOPE_SETTINGS,
+                "ai_function_max_api_calls_per_query": limit,
+                "ai_function_throw_on_quota_exceeded": 0,
+            },
+            query_id=qid,
+        )
+        calls = int(get_profile_events(qid)["api_calls"])
+    finally:
+        instance.query("DROP TABLE IF EXISTS quota_parts SYNC")
+
+    assert calls <= limit, (
+        f"{calls} API calls with ai_function_max_api_calls_per_query = {limit}: the quota "
+        "is tracked per executeImpl call, so the query spent a multiple of its own cap"
+    )
+
+
+def test_api_call_quota_throws_per_query(started_cluster):
+    """With `ai_function_throw_on_quota_exceeded = 1` (the default) the query must raise once
+    the per-query call quota is reached. No single 8-row block reaches the cap of 10, so a
+    per-block tracker never throws and the query completes; the per-query tracker throws."""
+    _create_quota_parts("quota_throw")
+    try:
+        error = instance.query_and_get_error(
+            f"SELECT {CHAT_CALL} FROM quota_throw FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                **_QUOTA_SCOPE_SETTINGS,
+                "ai_function_max_api_calls_per_query": 10,
+                "ai_function_throw_on_quota_exceeded": 1,
+            },
+        )
+    finally:
+        instance.query("DROP TABLE IF EXISTS quota_throw SYNC")
+
+    assert "AI API call limit reached" in error, error
+
+
+def test_input_token_quota_is_per_query(started_cluster):
+    """`ai_function_max_input_tokens_per_query` must bound the query too. The mock reports
+    `prompt_tokens = 10` per chat call, so a per-block tracker tops out at 80 tokens per 8-row
+    block (< the 100-token cap) and never fires, while the per-query tracker stops the scan."""
+    limit = 100
+    _create_quota_parts("quota_tokens")
+    try:
+        qid = unique_query_id("quota_tokens")
+        instance.query(
+            f"SELECT {CHAT_CALL} FROM quota_tokens FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                **_QUOTA_SCOPE_SETTINGS,
+                "ai_function_max_input_tokens_per_query": limit,
+                "ai_function_throw_on_quota_exceeded": 0,
+            },
+            query_id=qid,
+        )
+        input_tokens = int(get_profile_events(qid)["input_tokens"])
+    finally:
+        instance.query("DROP TABLE IF EXISTS quota_tokens SYNC")
+
+    assert input_tokens <= limit, (
+        f"{input_tokens} input tokens with ai_function_max_input_tokens_per_query = {limit}: "
+        "the quota is tracked per executeImpl call, so the query spent a multiple of its cap"
+    )
+
+
+def test_api_call_quota_holds_under_concurrency(started_cluster):
+    """The API-call cap must hold when several pipeline threads reserve slots against the shared
+    tracker at once. The slot is claimed with an atomic bounded increment (`tryReserveApiCall`), so
+    two threads cannot both pass a stale check and overshoot.
+
+    The table has enough marks (small pinned granularity over 16 parts) that the read pool hands the
+    scan - and thus the AI function - to several threads under `max_threads = 8`. `peak_threads_usage`
+    from `system.query_log` is the count of threads that ran simultaneously; asserting it is > 1
+    means a green result proves the concurrent reservation path was exercised, not that the scan
+    happened to collapse to one stream. The query wants 2048 calls but must make at most `limit`."""
+    limit = 10
+    _create_quota_parts("quota_concurrent", parts=16, rows_per_part=128, index_granularity=8)
+    try:
+        qid = unique_query_id("quota_concurrent")
+        instance.query(
+            f"SELECT {CHAT_CALL} FROM quota_concurrent FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                "max_block_size": 8,
+                "max_threads": 8,
+                "ai_function_max_api_calls_per_query": limit,
+                "ai_function_throw_on_quota_exceeded": 0,
+            },
+            query_id=qid,
+        )
+        events = get_profile_events(qid)
+        calls = int(events["api_calls"])
+        peak_threads = int(events["peak_threads"])
+    finally:
+        instance.query("DROP TABLE IF EXISTS quota_concurrent SYNC")
+
+    assert peak_threads > 1, (
+        f"query peaked at {peak_threads} simultaneous thread(s); the concurrent reservation path was "
+        "not exercised, so this test would not catch a check-then-act overshoot"
+    )
+    assert calls <= limit, (
+        f"{calls} API calls with ai_function_max_api_calls_per_query = {limit} and {peak_threads} peak "
+        "threads: concurrent streams overshot the per-query cap"
+    )
+
+
+def test_api_call_quota_ignores_subquery_settings(started_cluster):
+    """`ai_function_max_*_per_query` is read from the top-level query context, so a nested
+    subquery's own `SETTINGS` override of it does not apply: the whole query shares one budget
+    seeded from the outer settings. A subquery runs in a copied child context carrying its own
+    settings, but the quota tracker lives on the query context, so those overrides are ignored."""
+    _create_quota_parts("quota_levels")  # 8 parts x 8 rows = 64 rows, one API call per row
+    try:
+        # The subquery caps at 5, the outer query at 20. A result of 20 shows the outer
+        # (query-context) value governs; the subquery override (which would give 5, as would a
+        # min-of-both rule) is ignored.
+        qid = unique_query_id("quota_levels_outer_wins")
+        instance.query(
+            f"SELECT c FROM (SELECT {CHAT_CALL} AS c FROM quota_levels "
+            "SETTINGS ai_function_max_api_calls_per_query = 5) FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                **_QUOTA_SCOPE_SETTINGS,
+                "ai_function_max_api_calls_per_query": 20,
+                "ai_function_throw_on_quota_exceeded": 0,
+            },
+            query_id=qid,
+        )
+        outer_wins = int(get_profile_events(qid)["api_calls"])
+
+        # The quota is set only in the subquery; the outer query leaves it at the default (far
+        # above 64). The subquery cap is ignored, so all 64 rows run rather than stopping at 5 -
+        # a quota set only in a subquery has no effect.
+        qid = unique_query_id("quota_levels_subquery_only")
+        instance.query(
+            f"SELECT c FROM (SELECT {CHAT_CALL} AS c FROM quota_levels "
+            "SETTINGS ai_function_max_api_calls_per_query = 5) FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                **_QUOTA_SCOPE_SETTINGS,
+                "ai_function_throw_on_quota_exceeded": 0,
+            },
+            query_id=qid,
+        )
+        subquery_only = int(get_profile_events(qid)["api_calls"])
+    finally:
+        instance.query("DROP TABLE IF EXISTS quota_levels SYNC")
+
+    assert outer_wins == 20, (
+        f"expected the top-level cap (20) to govern, got {outer_wins}: a subquery-scoped SETTINGS "
+        "override of ai_function_max_api_calls_per_query must not change the query budget"
+    )
+    assert subquery_only == 64, (
+        f"expected all 64 rows to run (a quota set only in the subquery is ignored), got {subquery_only}"
+    )

@@ -9,8 +9,8 @@ namespace DB
 class MergeTreeIndexGranularityConstant final : public MergeTreeIndexGranularity
 {
 private:
-    size_t constant_granularity{};
-    size_t last_mark_granularity{};
+    size_t constant_granularity;
+    size_t last_mark_granularity;
 
     size_t num_marks_without_final = 0;
     bool has_final_mark = false;
@@ -52,6 +52,7 @@ public:
 
     std::shared_ptr<MergeTreeIndexGranularity> optimize() override { return nullptr; }
     std::string describe() const override;
+    std::shared_ptr<MergeTreeIndexGranularity> clone() const override { return std::make_shared<MergeTreeIndexGranularityConstant>(*this); }
 };
 
 }

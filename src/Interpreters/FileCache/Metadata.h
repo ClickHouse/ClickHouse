@@ -10,8 +10,7 @@
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 #include <Interpreters/FileCache/ShardedMap.h>
 #include <Common/SharedMutex.h>
-#include <Common/ThreadPool_fwd.h>
-#include <functional>
+#include <Common/ThreadPool.h>
 
 #include <map>
 #include <memory>
@@ -131,7 +130,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     /// Will only fail if key is not in ACTIVE state, e.g. REMOVING or REMOVED.
     LockedKeyPtr tryLock();
 
-    [[nodiscard]] std::error_code createBaseDirectory();
+    bool createBaseDirectory(bool throw_if_failed = false);
 
     std::string getPath() const;
 
@@ -187,8 +186,6 @@ public:
         size_t background_download_threads_,
         bool write_cache_per_user_directory_);
 
-    virtual ~CacheMetadata();
-
     void startup();
 
     bool isEmpty() const;
@@ -230,10 +227,7 @@ public:
         bool is_initial_load = false);
 
     void removeKey(const Key & key, bool if_exists, const UserID & user_id);
-
-    /// Returns true if the client was fully purged; false if any key kept
-    /// non-releasable (held) segments and survived — retry on a later sweep.
-    bool removeAllKeys(const UserID & user_id);
+    void removeAllKeys(const UserID & user_id);
 
     void shutdown();
 
@@ -244,8 +238,6 @@ public:
 
     bool isBackgroundDownloadEnabled();
 
-    void setClientAccessCallback(std::function<void(const UserID &)> callback) { on_client_access = std::move(callback); }
-
 private:
     static constexpr size_t buckets_num = 1024;
 
@@ -253,7 +245,6 @@ private:
     const CleanupQueuePtr cleanup_queue;
     const DownloadQueuePtr download_queue;
     const bool write_cache_per_user_directory;
-    std::function<void(const UserID &)> on_client_access;
 
     LoggerPtr log;
     mutable SharedMutex key_prefix_directory_mutex;
@@ -275,11 +266,6 @@ private:
     /// cache key, so each distinct origin is stored exactly once instead of being duplicated
     /// across the (much more numerous) key buckets.
     OriginInfoPtr getOrCreateSharedOrigin(const OriginInfo & origin);
-
-    /// Drop every shared origin owned by this client from the dedup pool. Called once all of the
-    /// client's keys are removed (see removeAllKeys), so the pool does not leak entries for clients
-    /// that come and go, in particular under idle-client TTL eviction.
-    void removeSharedOrigins(const UserID & user_id);
 
     mutable FileCacheUtils::ShardedMap<OriginPoolKey, OriginInfoPtr> origins;
 

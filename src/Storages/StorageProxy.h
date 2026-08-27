@@ -30,12 +30,10 @@ public:
     bool noPushingToViewsOnInserts() const override { return getNested()->noPushingToViewsOnInserts(); }
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }
     bool supportsSubcolumns() const override { return getNested()->supportsSubcolumns(); }
-    /// The IStorage default ties this to supportsSubcolumns(); forward it so a proxy around a
-    /// storage that opts out of the rewrite (e.g. Distributed) does not re-advertise true.
-    bool supportsOptimizationToSubcolumns() const override { return getNested()->supportsOptimizationToSubcolumns(); }
     bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
+    ColumnSizeByName getColumnSizes(const Names & columns) const override { return getNested()->getColumnSizes(columns); }
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & base_metadata, ContextPtr query_context) const override
     {
@@ -109,8 +107,7 @@ public:
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
     {
         getNested()->alter(params, context, alter_lock_holder);
-        auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, true);
-        IStorage::setInMemoryMetadata(*nested_metadata);
+        IStorage::setInMemoryMetadata(*getNested()->getInMemoryMetadataPtr(context, true));
     }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override
@@ -165,7 +162,6 @@ public:
     }
 
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableCanBeDropped(query_context); }
-    void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableSizeBelowDropLimit(query_context); }
 
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }

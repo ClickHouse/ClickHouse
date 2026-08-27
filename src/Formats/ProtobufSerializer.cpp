@@ -133,14 +133,16 @@ namespace
 
     std::string_view googleWrapperColumnName(const FieldDescriptor & field_descriptor)
     {
-        chassert(isGoogleWrapperField(field_descriptor));
+        assert(isGoogleWrapperField(field_descriptor));
         return field_descriptor.message_type()->field(0)->name();
     }
 
     // Should we omit null values (zero for numbers / empty string for strings) while storing them.
     bool shouldSkipZeroOrEmpty(const FieldDescriptor & field_descriptor, bool google_wrappers_special_treatment = false)
     {
-        if (!field_descriptor.is_optional())
+        /// `FieldDescriptor::is_optional` was removed along with the rest of the label accessors;
+        /// a singular field is one that is neither repeated nor required.
+        if (field_descriptor.is_repeated() || field_descriptor.is_required())
             return false;
         if (field_descriptor.containing_type()->options().map_entry())
             return false;
@@ -283,7 +285,7 @@ namespace
         {
             try
             {
-                DestType result{};
+                DestType result;
                 ReadBufferFromMemory buf(str.data(), str.length());
                 readText(result, buf);
                 return result;
@@ -299,7 +301,7 @@ namespace
         {
             if constexpr (std::is_same_v<DestType, SrcType>)
                 return value;
-            DestType result{};
+            DestType result;
             try
             {
                 /// TODO: use accurate::convertNumeric() maybe?
@@ -964,7 +966,7 @@ namespace
             const ProtobufReaderOrWriter & reader_or_writer_)
             : BaseClass(column_name_, field_descriptor_, reader_or_writer_), enum_data_type(enum_data_type_)
         {
-            chassert(enum_data_type);
+            assert(enum_data_type);
             setFunctions();
             prepareEnumMapping();
         }
@@ -1046,7 +1048,7 @@ namespace
 
         void checkEnumDataTypeValue(NumberType value)
         {
-            enum_data_type->getNameForValue(value); /// Throws an exception if the value isn't defined in the DataTypeEnum.
+            enum_data_type->findByValue(value); /// Throws an exception if the value isn't defined in the DataTypeEnum.
         }
 
         std::string_view enumDataTypeValueToString(NumberType value) const { return std::string_view{enum_data_type->getNameForValue(value)}; }
@@ -1909,7 +1911,7 @@ namespace
         {
             auto & column_af = assert_cast<ColumnAggregateFunction &>(column->assumeMutableRef());
             Arena & arena = column_af.createOrGetArena();
-            AggregateDataPtr data = nullptr;
+            AggregateDataPtr data;
             readStr(text_buffer);
             data = stringToData(text_buffer, arena);
 
@@ -1970,7 +1972,7 @@ namespace
     };
 
 
-    /// Wraps a structure (field, Message, etc) which is a member of OneOf (protobuf union)
+    /// Wraps a structute (field, Message, etc) which is a member of OneOf (protobuf union)
     class ProtobufSerializerOneOf : public ProtobufSerializer
     {
     public:
@@ -1984,7 +1986,7 @@ namespace
 
         void setColumns(const ColumnPtr * columns, size_t num_columns) override
         {
-            chassert(num_columns > presence_column_idx);
+            assert(num_columns > presence_column_idx);
 
             Columns cols;
             cols.reserve(num_columns - 1);
@@ -2033,11 +2035,6 @@ namespace
                 presence_column->insert(0);
 
             nested_serializer->insertDefaults(row_num);
-        }
-
-        void resetState() override
-        {
-            nested_serializer->resetState();
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
@@ -2137,11 +2134,6 @@ namespace
             column_nullable.getNullMapData().push_back(false);
         }
 
-        void resetState() override
-        {
-            nested_serializer->resetState();
-        }
-
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
             writeIndent(out, indent) << "ProtobufSerializerNullable ->\n";
@@ -2183,7 +2175,6 @@ namespace
         void writeRow(size_t row_num) override { nested_serializer->writeRow(row_num); }
         void readRow(size_t row_num) override { nested_serializer->readRow(row_num); }
         void insertDefaults(size_t row_num) override { nested_serializer->insertDefaults(row_num); }
-        void resetState() override { nested_serializer->resetState(); }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
@@ -2277,11 +2268,6 @@ namespace
             column_lc.insertFromFullColumn(*default_value_column, 0);
         }
 
-        void resetState() override
-        {
-            nested_serializer->resetState();
-        }
-
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
             writeIndent(out, indent) << "ProtobufSerializerLowCardinality ->\n";
@@ -2370,11 +2356,6 @@ namespace
             if (row_num < column_array.size())
                 return;
             column_array.insertDefault();
-        }
-
-        void resetState() override
-        {
-            element_serializer->resetState();
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
@@ -2485,12 +2466,6 @@ namespace
             }
         }
 
-        void resetState() override
-        {
-            for (const auto & element_serializer : element_serializers)
-                element_serializer->resetState();
-        }
-
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
             writeIndent(out, indent) << "ProtobufSerializerTupleAsArray: column " << quoteString(column_name) << " ("
@@ -2559,7 +2534,7 @@ namespace
             if (!num_columns_)
                 wrongNumberOfColumns(num_columns_, ">0");
 
-            Columns field_columns;
+            std::vector<ColumnPtr> field_columns;
             for (const FieldInfo & info : field_infos)
             {
                 if (info.field_serializer)
@@ -2650,7 +2625,7 @@ namespace
 
                 try
                 {
-                    int field_tag = 0;
+                    int field_tag;
                     while (reader->readFieldNumber(field_tag))
                     {
                         size_t field_index = findFieldIndexByFieldTag(field_tag);
@@ -2689,7 +2664,6 @@ namespace
                         if (column->size() > old_size)
                             column->popBack(column->size() - old_size);
                     }
-                    resetState();
                     throw;
                 }
             }
@@ -2713,19 +2687,6 @@ namespace
             }
 
             addDefaultsToMissingColumns(row_num);
-        }
-
-        void resetState() override
-        {
-            for (auto & info : field_infos)
-            {
-                info.field_read = false;
-                if (info.field_serializer)
-                    info.field_serializer->resetState();
-            }
-
-            last_field_tag = 0;
-            last_field_index = static_cast<size_t>(-1);
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
@@ -2922,11 +2883,10 @@ namespace
                 writer->endMessage(/*with_length_delimiter = */ true);
         }
 
-        void resetState() override
+        void reset() override
         {
             first_call_of_write_row = true;
             first_call_of_read_row = true;
-            serializer->resetState();
         }
 
         void startReading() override
@@ -2942,7 +2902,7 @@ namespace
         {
             startReading();
 
-            int field_tag = 0;
+            int field_tag;
             if (!reader->readFieldNumber(field_tag))
                 throw Exception(ErrorCodes::PROTOBUF_BAD_CAST, "Unexpected end of ProtobufList message");
 
@@ -2983,7 +2943,7 @@ namespace
                 wrongNumberOfColumns(num_columns, "1");
             const auto & column_tuple = assert_cast<const ColumnTuple &>(*columns[0]);
             size_t tuple_size = column_tuple.tupleSize();
-            chassert(tuple_size);
+            assert(tuple_size);
             Columns element_columns;
             element_columns.reserve(tuple_size);
             for (size_t i : collections::range(tuple_size))
@@ -3002,7 +2962,6 @@ namespace
         void writeRow(size_t row_num) override { message_serializer->writeRow(row_num); }
         void readRow(size_t row_num) override { message_serializer->readRow(row_num); }
         void insertDefaults(size_t row_num) override { message_serializer->insertDefaults(row_num); }
-        void resetState() override { message_serializer->resetState(); }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
@@ -3156,11 +3115,6 @@ namespace
             }
         }
 
-        void resetState() override
-        {
-            message_serializer->resetState();
-        }
-
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
             writeIndent(out, indent) << "ProtobufSerializerFlattenedNestedAsArrayOfNestedMessages: columns ";
@@ -3233,7 +3187,7 @@ namespace
             }
 
             missing_column_indices.clear();
-            chassert(column_names.size() >= used_column_indices.size());
+            assert(column_names.size() >= used_column_indices.size());
             missing_column_indices.reserve(column_names.size() - used_column_indices.size());
             auto used_column_indices_sorted = std::move(used_column_indices);
             ::sort(used_column_indices_sorted.begin(), used_column_indices_sorted.end());
@@ -3378,7 +3332,7 @@ namespace
         static void removeNonArrayElements(DataTypes & data_types, std::vector<T1> & elements1, std::vector<T2> & elements2)
         {
             size_t initial_size = data_types.size();
-            chassert(initial_size == elements1.size() && initial_size == elements2.size());
+            assert(initial_size == elements1.size() && initial_size == elements2.size());
             data_types.reserve(initial_size * 2);
             elements1.reserve(initial_size * 2);
             elements2.reserve(initial_size * 2);
@@ -3474,7 +3428,7 @@ namespace
                                             const FieldDescriptor & field_descriptor_,
                                             std::unique_ptr<ProtobufSerializer> field_serializer_)
             {
-                chassert(&field_descriptor_);
+                assert(&field_descriptor_);
                 auto it = field_descriptors_in_use.find(&field_descriptor_);
                 if (it != field_descriptors_in_use.end())
                 {
@@ -3523,7 +3477,7 @@ namespace
                     {
                         auto itused = used_column_indices_sorted.find(index);
 
-                        chassert(itused != used_column_indices_sorted.end());
+                        assert(itused != used_column_indices_sorted.end());
                         index = std::distance(used_column_indices_sorted.begin(), itused);
                     }
                 }

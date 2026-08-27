@@ -95,6 +95,8 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     http_request.setContentType("application/json");
     if (!api_key.empty()) /// not all providers need API key
         http_request.set("Authorization", "Bearer " + api_key);
+    chassert(!ai_request.function_name.empty());
+    http_request.set("X-ClickHouse-AI-Function", ai_request.function_name);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);
@@ -178,6 +180,8 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     http_request.setContentType("application/json");
     if (!api_key.empty()) /// not all providers need API key
         http_request.set("Authorization", "Bearer " + api_key);
+    chassert(!ai_embedding_request.function_name.empty());
+    http_request.set("X-ClickHouse-AI-Function", ai_embedding_request.function_name);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);

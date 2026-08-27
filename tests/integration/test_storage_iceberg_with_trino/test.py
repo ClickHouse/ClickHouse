@@ -17,11 +17,6 @@ WAREHOUSE_BUCKET = "warehouse-rest"
 
 CATALOG_DATABASE = "iceberg_trino_test"
 
-# Transient at startup: the coordinator registers in system.runtime.nodes (so the
-# readiness probe passes) before the scheduler's worker node map is populated, so the
-# first distributed scans fail with this until scheduling catches up.
-TRINO_NO_NODES_ERROR = "No nodes available to run query"
-
 
 def _get_uuid_str() -> str:
     return str(uuid.uuid4()).replace("-", "_")
@@ -61,41 +56,34 @@ def _trino_container_name(cluster: ClickHouseCluster) -> str:
     return f"{project}-trino-1"
 
 
-def _trino_exec(cluster: ClickHouseCluster, sql: str, retries: int = 20) -> str:
+def _trino_exec(cluster: ClickHouseCluster, sql: str) -> str:
     container = _trino_container_name(cluster)
-    last_proc = None
-    for attempt in range(retries):
-        last_proc = subprocess.run(
-            [
-                "docker",
-                "exec",
-                container,
-                "trino",
-                "--server",
-                "http://localhost:8080",
-                "--catalog",
-                "iceberg",
-                "--schema",
-                NAMESPACE,
-                "--output-format",
-                "TSV",
-                "--execute",
-                sql,
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if last_proc.returncode == 0:
-            return last_proc.stdout
-        # Retry only the startup scheduling race; any other error is a real failure.
-        if TRINO_NO_NODES_ERROR in last_proc.stderr and attempt < retries - 1:
-            time.sleep(1)
-            continue
-        break
-    raise RuntimeError(
-        f"Trino query failed (exit {last_proc.returncode}):\n"
-        f"  SQL: {sql}\n  stdout: {last_proc.stdout}\n  stderr: {last_proc.stderr}"
+    proc = subprocess.run(
+        [
+            "docker",
+            "exec",
+            container,
+            "trino",
+            "--server",
+            "http://localhost:8080",
+            "--catalog",
+            "iceberg",
+            "--schema",
+            NAMESPACE,
+            "--output-format",
+            "TSV",
+            "--execute",
+            sql,
+        ],
+        capture_output=True,
+        text=True,
     )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Trino query failed (exit {proc.returncode}):\n"
+            f"  SQL: {sql}\n  stdout: {proc.stdout}\n  stderr: {proc.stderr}"
+        )
+    return proc.stdout
 
 
 def _wait_for_trino_ready(cluster: ClickHouseCluster, timeout_seconds: int) -> None:
@@ -103,11 +91,8 @@ def _wait_for_trino_ready(cluster: ClickHouseCluster, timeout_seconds: int) -> N
     last_err: Exception | None = None
     while time.time() < deadline:
         try:
-            out = _trino_exec(
-                cluster,
-                "SELECT count(*) FROM system.runtime.nodes WHERE state = 'active'",
-            )
-            if out.strip().isdigit() and int(out.strip()) >= 1:
+            out = _trino_exec(cluster, "SELECT 1")
+            if out.strip() == "1":
                 return
         except Exception as e:
             last_err = e

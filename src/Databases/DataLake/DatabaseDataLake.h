@@ -8,6 +8,7 @@
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Common/MultiVersion.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 
 namespace DB
@@ -22,10 +23,7 @@ public:
         const DatabaseDataLakeSettings & settings_,
         ASTPtr database_engine_definition_,
         ASTPtr table_engine_definition_,
-        UUID uuid,
-        bool allow_server_credentials_in_user_queries_,
-        bool is_loading_from_existing_metadata_,
-        bool lazy_init);
+        UUID uuid);
 
     String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
     UUID getUUID() const override { return db_uuid; }
@@ -44,25 +42,11 @@ public:
         const FilterByNameFunction & filter_by_table_name,
         bool skip_not_loaded) const override;
 
-    DatabaseTablesIteratorPtr getTablesIteratorWithHint(
-        ContextPtr context,
-        const FilterByNameFunction & filter_by_table_name,
-        bool skip_not_loaded,
-        const TablesFilter & tables_filter) const override;
-
     /// skip_not_loaded flag ignores all non-iceberg tables
     std::vector<LightWeightTableDetails> getLightweightTablesIterator(
         ContextPtr context,
         const FilterByNameFunction & filter_by_table_name,
         bool skip_not_loaded) const override;
-
-    std::vector<LightWeightTableDetails> getLightweightTablesIteratorWithHint(
-        ContextPtr context,
-        const FilterByNameFunction & filter_by_table_name,
-        bool skip_not_loaded,
-        const TablesFilter & tables_filter) const override;
-
-    VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const override;
 
     void checkDatabase() const override;
 
@@ -81,6 +65,8 @@ public:
         const String & name,
         bool /*sync*/) override;
 
+    void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
+
     std::shared_ptr<DataLake::ICatalog> getCatalog() const;
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
@@ -90,43 +76,22 @@ private:
     /// Iceberg Catalog url.
     const std::string url;
     /// SETTINGS from CREATE query.
-    const DatabaseDataLakeSettings settings;
+    MultiVersion<DatabaseDataLakeSettings> database_settings;
     /// Database engine definition taken from initial CREATE DATABASE query.
-    const ASTPtr database_engine_definition;
+    ASTPtr database_engine_definition TSA_GUARDED_BY(mutex);
     const ASTPtr table_engine_definition;
     const LoggerPtr log;
     /// Crendetials to authenticate Iceberg Catalog.
     Poco::Net::HTTPBasicCredentials credentials;
-    /// Effective `s3_allow_server_credentials_in_user_queries` captured when the database was created (or
-    /// implied when it is loaded from existing metadata). The catalog clients are built once and cached, so
-    /// the restriction cannot be read from the query context of whichever query touches the catalog first.
-    const bool allow_server_credentials_in_user_queries;
-    /// True when the database is loaded from existing metadata (server startup or RESTORE). If the catalog
-    /// then fails to authenticate because its credentials are server-managed and restricted, the catalog is
-    /// left unavailable (rather than aborting startup), so the server still starts and only this database is
-    /// inaccessible -- mirroring the behavior of persistent S3/S3Queue tables.
-    const bool is_loading_from_existing_metadata;
 
+    /// Guards `catalog_impl` because settings alter can rebuild it concurrently with readers.
     mutable std::mutex catalog_mutex;
     mutable std::shared_ptr<DataLake::ICatalog> catalog_impl TSA_GUARDED_BY(catalog_mutex);
-    /// Set when `catalog_impl` could not be built because its server-managed credentials are restricted on
-    /// load; `getCatalog` then throws this so every query against the database reports a clear error.
-    mutable String catalog_unavailable_reason TSA_GUARDED_BY(catalog_mutex);
 
     void validateSettings();
 
-    /// Builds `catalog_impl` based on the configured catalog type. Constructing a catalog can
-    /// validate credentials and perform network I/O (e.g. RestCatalog reads the catalog config),
-    /// so on ATTACH (server startup) it is deferred to the first access via `getCatalog` instead
-    /// of running eagerly in the constructor. That keeps one misconfigured or unreachable database
-    /// from blocking server startup. On CREATE it still runs eagerly so problems are reported up
-    /// front. Guarded by `catalog_mutex` because lazy initialization can race concurrent readers.
-    void initialize() const TSA_REQUIRES(catalog_mutex);
-
-    /// `initialize`, but when loading from existing metadata a catalog that resolves the now-restricted server
-    /// identity is left unavailable (its reason recorded) instead of propagating, so server startup is not
-    /// aborted; a user-initiated create/attach stays fail-closed and the `ACCESS_DENIED` propagates.
-    void initializeOrLeaveUnavailable() const TSA_REQUIRES(catalog_mutex);
+    /// Drop the cached catalog so the next `getCatalog` rebuilds it from the current settings.
+    void resetCatalog() const TSA_REQUIRES(catalog_mutex);
 
     std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(
         DatabaseDataLakeStorageType type,

@@ -7,6 +7,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Interpreters/Context.h>
 #include <Common/FailPoint.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -23,6 +25,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
+}
 
 namespace MergeTreeSetting
 {
@@ -129,7 +136,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     if (first_time)
     {
         LOG_DEBUG(log, "Activating replica.");
-        chassert(storage.is_readonly);
+        assert(storage.is_readonly);
     }
     else if (storage.is_readonly)
     {
@@ -153,7 +160,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     {
         /// The exception when you try to zookeeper_init usually happens if DNS does not work or the connection with ZK fails
         tryLogCurrentException(log, "Failed to establish a new ZK connection. Will try again");
-        chassert(storage.is_readonly);
+        assert(storage.is_readonly);
         return false;
     }
 
@@ -162,7 +169,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     if (!tryStartup())
     {
-        chassert(storage.is_readonly);
+        assert(storage.is_readonly);
         return false;
     }
 
@@ -170,15 +177,16 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     /// Start queue processing
     storage.background_operations_assignee.start();
-    storage.background_streaming_assignee.start();
     storage.queue_updating_task->activateAndSchedule();
     storage.mutations_updating_task->activateAndSchedule();
     storage.mutations_finalizing_task->activateAndSchedule();
     storage.merge_selecting_task->activateAndSchedule();
     storage.cleanup_thread.start();
+    storage.async_block_ids_cache.start();
     storage.part_check_thread.start();
 
-    storage.deduplication_hashes_cache.start();
+    if (storage.getContext()->getServerSettings()[ServerSetting::insert_deduplication_version].value != InsertDeduplicationVersions::OLD_SEPARATE_HASHES)
+        storage.deduplication_hashes_cache.start();
 
     LOG_DEBUG(log, "Table started successfully");
     return true;
@@ -220,6 +228,10 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         if (replica_metadata_version_exists)
         {
             auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+            /// This metadata snapshot lives for the table's lifetime, so route the clone into the
+            /// dedicated MergeTree arena like the ALTER paths (this runs on the restarting thread,
+            /// outside the constructor's arena scope).
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             storage.setInMemoryMetadata(storage_metadata_snapshot->withMetadataVersion(replica_metadata_version));
         }
         else

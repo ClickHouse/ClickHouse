@@ -18,10 +18,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include "config.h"
 
@@ -464,10 +462,10 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     ColumnPtr result;
     if (useDefaultImplementationForLowCardinalityColumns())
     {
+        ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
+
         if (const auto * res_low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(result_type.get()))
         {
-            ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
-
             bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments();
 
             const auto & dictionary_type = res_low_cardinality_type->getDictionaryType();
@@ -497,23 +495,6 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
         }
         else
         {
-            /// Fast path: detect low-cardinality via types only (a column is low-cardinality iff its type
-            /// is), which is cheap for scalar types and lets us avoid copying/converting the (potentially
-            /// very wide) argument list when nothing is low-cardinality.
-            bool has_low_cardinality = false;
-            for (const auto & argument : arguments)
-            {
-                if (recursiveRemoveLowCardinality(argument.type).get() != argument.type.get())
-                {
-                    has_low_cardinality = true;
-                    break;
-                }
-            }
-
-            if (!has_low_cardinality)
-                return executeWithoutLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run);
-
-            ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
             convertLowCardinalityColumnsToFull(columns_without_low_cardinality);
             result = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, result_type, input_rows_count, dry_run);
         }
@@ -531,21 +512,6 @@ ColumnPtr IExecutableFunction::execute(
 
     if (useDefaultImplementationForReplicatedColumns())
     {
-        /// Fast path: with no replicated columns there is nothing to convert, so skip copying the
-        /// (potentially very wide) argument list and pass it straight through.
-        bool has_replicated_column = false;
-        for (const auto & argument : arguments)
-        {
-            if (typeid_cast<const ColumnReplicated *>(argument.column.get()))
-            {
-                has_replicated_column = true;
-                break;
-            }
-        }
-
-        if (!has_replicated_column)
-            return executeWithoutReplicatedColumns(arguments, result_type, input_rows_count, dry_run);
-
         /// If we have only constants and replicated columns with the same indexes
         /// we can execute function on nested columns and create replicated column
         /// from the result using common indexes.
@@ -625,14 +591,10 @@ ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
         size_t num_sparse_columns = 0;
         size_t num_full_columns = 0;
         size_t sparse_column_position = 0;
-        bool has_any_sparse_column = false;
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             const auto * column_sparse = checkAndGetColumn<ColumnSparse>(arguments[i].column.get());
-            /// A sparse column may also be nested inside a Tuple or Replicated column, in which case
-            /// `recursiveRemoveSparse` (used below) still has to convert it, so detect it recursively.
-            has_any_sparse_column |= recursiveHasSparse(arguments[i].column);
             /// In rare case, when sparse column doesn't have default values,
             /// it's more convenient to convert it to full before execution of function.
             if (column_sparse && column_sparse->getNumberOfDefaultRows())
@@ -645,11 +607,6 @@ ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
                 ++num_full_columns;
             }
         }
-
-        /// Fast path: with no sparse columns there is nothing to convert, so skip copying the
-        /// (potentially very wide) argument list and pass it straight through.
-        if (!has_any_sparse_column)
-            return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 
         auto columns_without_sparse = arguments;
         if (num_sparse_columns == 1 && num_full_columns == 0)
@@ -782,8 +739,6 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
 
 FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & arguments) const
 {
-    FunctionBasePtr base;
-
     /// Use FunctionBaseDynamicAdaptor if default implementation for Dynamic is enabled and we have Dynamic type in arguments.
     if (useDefaultImplementationForDynamic())
     {
@@ -795,14 +750,13 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
                 DataTypes data_types(arguments.size());
                 for (size_t i = 0; i < arguments.size(); ++i)
                     data_types[i] = arguments[i].type;
-                base = std::make_shared<FunctionBaseDynamicAdaptor>(shared_from_this(), std::move(data_types));
-                break;
+                return std::make_shared<FunctionBaseDynamicAdaptor>(shared_from_this(), std::move(data_types));
             }
         }
     }
 
     /// Use FunctionBaseVariantAdaptor if default implementation for Variant is enabled and we have Variant type in arguments.
-    if (!base && useDefaultImplementationForVariant())
+    if (useDefaultImplementationForVariant())
     {
         checkNumberOfArguments(arguments.size());
 
@@ -811,22 +765,13 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
             if (isVariant(arg.type))
             {
                 ColumnsWithTypeAndName args_copy = arguments;
-                base = std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(args_copy));
-                break;
+                return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(args_copy));
             }
         }
     }
 
-    if (!base)
-    {
-        auto return_type = getReturnType(arguments);
-        base = buildImpl(arguments, return_type);
-    }
-
-    if (base && factory_handle)
-        base->setFactoryHandle(factory_handle);
-
-    return base;
+    auto return_type = getReturnType(arguments);
+    return buildImpl(arguments, return_type);
 }
 
 void IFunctionOverloadResolver::getLambdaArgumentTypes(DataTypes & arguments [[maybe_unused]]) const
@@ -965,7 +910,7 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
         ValuesWithType unwrapped_arguments;
         unwrapped_arguments.reserve(arguments.size());
 
-        VectorWithMemoryTracking<llvm::Value *> is_null_values;
+        std::vector<llvm::Value *> is_null_values;
 
         auto skip_arguments = getArgumentsThatDontParticipateInCompilation(arguments_types);
         for (size_t i = 0; i < arguments.size(); ++i)

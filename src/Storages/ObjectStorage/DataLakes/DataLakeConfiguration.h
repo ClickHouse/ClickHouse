@@ -21,6 +21,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <optional>
 #include <memory>
 #include <string>
@@ -70,9 +71,6 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
 }
 
-struct FormatParserSharedResources;
-using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
-
 template <typename T>
 concept StorageConfiguration = std::derived_from<T, StorageObjectStorageConfiguration>;
 
@@ -100,9 +98,6 @@ public:
     StorageObjectStorageConfiguration::Path getRawPath() const override
     {
         auto result = BaseStorageConfiguration::getRawPath().path;
-        if (result.empty())
-            return StorageObjectStorageConfiguration::Path("");
-
         return StorageObjectStorageConfiguration::Path(result.ends_with('/') ? result : result + "/");
     }
 
@@ -158,14 +153,13 @@ public:
 
     void mutate(const MutationCommands & commands,
         ContextPtr context,
-        StoragePtr storage_ptr,
         const StorageID & storage_id,
         StorageMetadataPtr metadata_snapshot,
         std::shared_ptr<DataLake::ICatalog> catalog,
         const std::optional<FormatSettings> & format_settings) override
     {
         assertInitialized();
-        current_metadata->mutate(commands, storage_ptr, context, storage_id, metadata_snapshot, catalog, format_settings);
+        current_metadata->mutate(commands, shared_from_this(), context, storage_id, metadata_snapshot, catalog, format_settings);
     }
 
     void checkMutationIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const MutationCommands & commands) override
@@ -180,15 +174,11 @@ public:
         current_metadata->checkAlterIsPossible(commands);
     }
 
-    void alter(
-        ObjectStoragePtr object_storage,
-        const AlterCommands & params,
-        ContextPtr context,
-        const StorageID & storage_id,
-        std::shared_ptr<DataLake::ICatalog> catalog) override
+    void alter(ObjectStoragePtr object_storage, const AlterCommands & params, ContextPtr context) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        current_metadata->alter(params, context, storage_id, catalog);
+        current_metadata->alter(params, context);
+
     }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, StorageObjectStorageConfiguration::CredentialsConfigurationCallback refresh_credentials_callback) override
@@ -355,17 +345,13 @@ public:
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] const StorageID & table_id) const override
     {
 #if USE_AVRO && USE_PARQUET
-        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].changed
-            || (*settings)[DataLakeStorageSetting::storage_catalog_url].changed
-            || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Don't use deprecated settings storage_catalog_type, storage_catalog_url, storage_aws_access_key_id");
+        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].changed || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Don't use deprecated settings storage_catalog_type and storage_catalog_url");
         const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
-        /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
-        /// regular `Atomic`/`Ordinary` database, or a database not currently registered during
-        /// async load), so return nullptr rather than throwing. Callers treat a null catalog as
-        /// "no catalog integration", the same as the base-class default.
-        auto datalake_database = std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(db_name));
+        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(db_name);
+        if (!database)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Database {} not found", db_name);
+        auto datalake_database = std::dynamic_pointer_cast<DatabaseDataLake>(database);
         if (!datalake_database)
             return nullptr;
         return datalake_database->getCatalog();
@@ -415,9 +401,10 @@ private:
         if (object_storage->getType() == ObjectStorageType::Local)
         {
             auto user_files_path = local_context->getUserFilesPath();
-            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
+            const auto & table_path = this->getPathForRead().path;
+            if (!fileOrSymlinkPathStartsWith(table_path, user_files_path) || !pathStartsWith(table_path, user_files_path))
                 throw Exception(
-                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
+                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", table_path, user_files_path);
         }
     }
 

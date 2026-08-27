@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 import time
+from pathlib import Path
 
 import grpc
 import psycopg2
@@ -21,7 +22,7 @@ from requests.exceptions import ConnectionError
 from urllib3.util.retry import Retry
 
 from helpers.client import Client, QueryRuntimeException
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, run_and_check
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")

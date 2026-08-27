@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
+#include <algorithm>
 #include <atomic>
 #include <filesystem>
 #include <map>
@@ -26,19 +27,12 @@
 
 #include <boost/algorithm/string/split.hpp>
 
-#if defined(THREAD_SANITIZER)
-#include <absl/debugging/stacktrace.h>
-#endif
-
 #if defined(OS_DARWIN)
 /// This header contains functions like `backtrace` and `backtrace_symbols`
 /// Which will be used for stack unwinding on Mac.
 /// Read: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/backtrace.3.html
 #include <execinfo.h>
 #endif
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace
 {
@@ -338,7 +332,7 @@ void StackTrace::forEachFrame(
     for (size_t i = offset; i < size; ++i)
     {
         StackTrace::Frame current_frame;
-        DB::VectorWithMemoryTracking<DB::Dwarf::SymbolizedFrame> inline_frames;
+        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
         const auto * object = symbol_index.findObject(current_frame.virtual_addr);
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
@@ -413,7 +407,7 @@ void StackTrace::forEachFrame(
     for (size_t i = offset; i < size; ++i)
     {
         StackTrace::Frame current_frame;
-        DB::VectorWithMemoryTracking<DB::Dwarf::SymbolizedFrame> inline_frames;
+        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
         current_frame.physical_addr = frame_pointers[i];
 
@@ -476,63 +470,10 @@ void StackTrace::forEachFrame(
 
 StackTrace::StackTrace(const ucontext_t & signal_context)
 {
+    tryCapture();
+
     /// This variable from signal handler is not instrumented by Memory Sanitizer.
     __msan_unpoison(&signal_context, sizeof(signal_context));
-
-    /// Capture via libunwind directly, NOT via `tryCapture()`. Under TSan
-    /// `tryCapture()` would route through abseil's frame-pointer walker,
-    /// and the rbp chain inside a crash signal handler cannot cross glibc's
-    /// `__restore_rt` signal trampoline. As observed under TSan:
-    ///
-    ///   Stack trace: 0x... 0x... 0x... 0x... 0x...   <-- abseil, 5 frames total
-    ///   0. src/Common/StackTrace.cpp: StackTrace::StackTrace(ucontext_t const&)
-    ///   1. src/Common/SignalHandlers.cpp: signalHandler(int, siginfo_t*, void*)
-    ///   2. __tsan::CallUserSignalHandler(...)
-    ///   3. sighandler(int, __sanitizer::__sanitizer_siginfo*, void*)
-    ///   4. ? @ 0x42520                                <-- __restore_rt, FP walk dies here
-    ///
-    /// Address `0x42520` in glibc 2.35 (Ubuntu) disassembles to exactly two
-    /// instructions:
-    ///   mov $0xf, %rax        ; syscall 15 = rt_sigreturn
-    ///   syscall
-    /// — i.e. `__restore_rt`, the signal trampoline the kernel installs as
-    /// the handler's "return address". It is a hand-written asm stub with no
-    /// frame-pointer prologue, so abseil's `[rbp]`/`[rbp+8]` walk reaches it
-    /// (the kernel preserves `rbp` across signal delivery, and TSan's
-    /// `sighandler`/`CallUserSignalHandler` were compiled with frame
-    /// pointers) but cannot continue past it. `executeQuery` and everything
-    /// below it are missing entirely — exactly the part of the stack the
-    /// `arrayExists(x -> x LIKE '%executeQuery%', trace_full)` predicate in
-    /// `test_crash_log_extra_fields` is asserting against.
-    ///
-    /// Libunwind walks `.eh_frame` CFI rather than the rbp chain, and glibc
-    /// ships a CFI entry for `__restore_rt` that says "the previous frame's
-    /// register state lives in the saved `ucontext_t` on the stack at this
-    /// known offset". With that, libunwind crosses the trampoline and
-    /// continues unwinding from the interrupted PC back through the user
-    /// frames (`raise` → `abort` → `terminate_handler` → throw site →
-    /// `DB::executeQueryImpl` → ... → TCPHandler), giving the full trace
-    /// the crash log is supposed to capture.
-    ///
-    /// Why this doesn't matter for SIGUSR1/SIGUSR2 in `tryCapture()`: the profiler
-    /// timer interrupts user code (ClickHouse, built with
-    /// `-fno-omit-frame-pointer`), so the saved `rbp` at signal time points
-    /// into a frame whose chain abseil can follow without ever needing to
-    /// cross the trampoline. SIGABRT delivered from `abort()` interrupts
-    /// libc's `tgkill` syscall stub — built without frame pointers — so the
-    /// FP chain on the interrupted-code side is already broken by the time
-    /// the handler runs.
-    ///
-    /// And the async-unwinder safety concern that motivated using abseil in
-    /// `tryCapture()` (a SIGUSR1/SIGUSR2 storm fighting TSan over libunwind's
-    /// internal `dl_iterate_phdr` lock) does not apply here: crash signals
-    /// fire synchronously, exactly once, on the thread that crashed.
-#if defined(OS_DARWIN)
-    size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
-#else
-    size = unw_backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
-#endif
-    __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 
     void * caller_address = getCallerAddress(signal_context);
 
@@ -568,41 +509,84 @@ void StackTrace::tryCapture()
 {
 #if defined(OS_DARWIN)
     size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
-#elif defined(THREAD_SANITIZER)
-    /// Under TSan, use abseil's frame-pointer-based unwinding instead of libunwind.
-    /// libunwind's async stack unwinding races with TSan's own concurrent
-    /// frame-pointer walking. ASan/MSan/UBSan don't have this problem and use
-    /// libunwind like a non-sanitizer build.
-    int captured = absl::GetStackTrace(frame_pointers.data(), static_cast<int>(FRAMEPOINTER_CAPACITY), /* skip_count= */ 0);
-    size = captured > 0 ? static_cast<size_t>(captured) : 0;
 #else
     size = unw_backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
 #endif
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
 
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-
 /// ClickHouse uses bundled libc++ so type names will be the same on every system thus it's safe to hardcode them
 constexpr std::pair<std::string_view, std::string_view> replacements[]
     = {{"::__1", ""}, {"std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "String"}};
 
-// Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
-// information but pollute stack traces).
+/// The type-erasing wrappers of `std::function`, spelled as they appear after @c replacements dropped
+/// the `::__1` ABI namespace. These are the frames whose demangled names are pure noise: they spell out
+/// the whole captured type and say nothing that the surrounding frames do not already say. Everything
+/// else keeps its name, including a `std::` symbol that merely happens to live in a `__functional`
+/// header (`std::hash`, `std::less`, ...) - such a frame is where the code really is, so its name is
+/// the only useful part of it. In particular, the generic invocation helpers (`std::invoke`,
+/// `std::__invoke`, `std::mem_fn`) are deliberately not here: they are not `std::function`-specific,
+/// and a frame's name can name the callable they dispatch to - a single-frame prefix match cannot tell
+/// a `std::function` trampoline from a direct use, so they keep their names.
+constexpr std::string_view std_function_plumbing[] = {
+    "std::__function::",  /// `__func`, `__value_func`, `__alloc_func`, `__policy_func`, `__policy_invoker`
+};
+
+/// The members of `std::function` itself that carry the noise: the type-erasing call operator, and the
+/// constructors, the assignment operators and the destructor, which copy, move and destroy the captured
+/// callable. Every other member (`swap`, `target`, `target_type`, `operator bool`, ...) does work of its
+/// own and is a normal frame, so it keeps its name. The constructor is spelled both as
+/// `function(std::function<` (the copy and move constructors - spelled with the argument so that the
+/// default constructor `function()` and `function(std::nullptr_t)`, which merely create an empty object
+/// and have short, informative names, are not caught) and as `function<` (the constructor taking a
+/// callable, which is a function template, so its own template arguments follow the name:
+/// `function<MyCallable, void>(MyCallable&&)`); the assignment operator likewise as
+/// `operator=(std::function<` (the copy and move assignment; `operator=(std::nullptr_t)` just resets the
+/// object and stays visible) and as `operator=<` (the callable-taking overload:
+/// `operator=<MyCallable, void>(MyCallable&&)`).
+constexpr std::string_view std_function_noisy_members[]
+    = {"operator()", "function(std::function<", "function<", "~function(", "operator=(std::function<", "operator=<"};
+
+static bool isStdFunctionPlumbing(const String & symbol_name)
+{
+    if (std::ranges::any_of(std_function_plumbing, [&](std::string_view prefix) { return symbol_name.starts_with(prefix); }))
+        return true;
+
+    constexpr std::string_view std_function = "std::function<";
+    if (!symbol_name.starts_with(std_function))
+        return false;
+
+    /// Skip the template argument list to reach the member name: the signature of the callable can nest
+    /// its own `<` and `>`, so the closing bracket is the one that brings the depth back to zero.
+    size_t depth = 1;
+    size_t pos = std_function.size();
+    for (; pos < symbol_name.size() && depth != 0; ++pos)
+    {
+        if (symbol_name[pos] == '<')
+            ++depth;
+        else if (symbol_name[pos] == '>')
+            --depth;
+    }
+    if (depth != 0)
+        return false;
+
+    std::string_view member{symbol_name};
+    member.remove_prefix(pos);
+    if (!member.starts_with("::"))
+        return false;
+    member.remove_prefix(2);
+
+    return std::ranges::any_of(std_function_noisy_members, [&](std::string_view noisy) { return member.starts_with(noisy); });
+}
+
+// Hide the name of `std::function` plumbing frames (the `__func`/`__value_func`/`__policy_func`
+// trampolines from libc++'s `__functional` headers): their demangled names are huge - they spell out
+// the whole captured lambda type - and they say nothing that the surrounding frames don't already say.
 // Replace parts from @c replacements with shorter aliases
-static String collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
+String StackTrace::collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
 {
     if (symbol_name.empty())
         return "?";
-
-    if (file.has_value())
-    {
-        std::string_view file_copy = file.value();
-        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != std::string_view::npos)
-            file_copy.remove_suffix(file_copy.size() - trim_pos);
-        if (file_copy.ends_with("functional"))
-            return "?";
-    }
 
     // TODO myrrc surely there is a written version already for better in place search&replace
     for (auto [needle, to] : replacements)
@@ -615,10 +599,24 @@ static String collapseDemangledNames(std::optional<std::string_view> file, Strin
         }
     }
 
+    /// The file of a frame is the source line the *instruction* maps to, which is not necessarily
+    /// where the enclosing function is defined: a compiler-generated or inlined `std::function`
+    /// operation puts a line-table entry pointing into `__functional` in the middle of an ordinary
+    /// function. Requiring the symbol to name the plumbing as well keeps the frame of such a function
+    /// named - it is the only useful part of the frame, and dropping it left `trace_full` in
+    /// `system.crash_log` with a bare `?` for the frame that actually crashed. This is much more
+    /// likely in a ThinLTO build, where `std::function` calls are inlined across translation units.
+    if (file.has_value() && isStdFunctionPlumbing(symbol_name))
+    {
+        std::string_view file_copy = file.value();
+        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != std::string_view::npos)
+            file_copy.remove_suffix(file_copy.size() - trim_pos);
+        if (file_copy.ends_with("functional"))
+            return "?";
+    }
+
     return symbol_name;
 }
-
-#endif
 
 struct StackTraceRefTriple
 {
@@ -675,7 +673,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         }
 
         if (frame.symbol.has_value())
-            out << collapseDemangledNames(frame.file, frame.symbol.value());
+            out << StackTrace::collapseDemangledNames(frame.file, frame.symbol.value());
         else
             out << "?";
 
@@ -819,5 +817,3 @@ void StackTrace::dropCache()
 
 thread_local bool asynchronous_stack_unwinding = false;
 thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;
-
-#pragma clang diagnostic pop

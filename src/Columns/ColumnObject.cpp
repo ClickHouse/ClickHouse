@@ -5,8 +5,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
@@ -374,56 +372,6 @@ bool ColumnObject::isDefaultAt(size_t n) const
         return false;
 
     return true;
-}
-
-UInt64 ColumnObject::getNumberOfDefaultRows() const
-{
-    /// Avoid the O(rows * paths) per-row virtual `isDefaultAt` calls of the IColumnHelper
-    /// default: query each subcolumn's non-default rows once and union them in a bitmap.
-    const size_t num_rows = size();
-    if (num_rows == 0)
-        return 0;
-
-    PaddedPODArray<UInt8> non_default_anywhere;
-    non_default_anywhere.resize_fill(num_rows);  /// zero-initialised via memset
-    size_t num_non_default = 0;
-
-    auto add_non_defaults_of = [&](const IColumn & column)
-    {
-        if (num_non_default == num_rows)
-            return;
-
-        const size_t num_defaults_in_column = column.getNumberOfDefaultRows();
-        if (num_defaults_in_column == num_rows)
-            return;
-        if (num_defaults_in_column == 0)
-        {
-            std::memset(non_default_anywhere.data(), 1, num_rows);
-            num_non_default = num_rows;
-            return;
-        }
-
-        IColumn::Offsets non_default_indices;
-        column.getIndicesOfNonDefaultRows(non_default_indices, /*from=*/0, /*limit=*/0);
-        for (UInt64 idx : non_default_indices)
-        {
-            if (!non_default_anywhere[idx])
-            {
-                non_default_anywhere[idx] = 1;
-                ++num_non_default;
-            }
-        }
-    };
-
-    for (const auto & [path, column] : typed_paths)
-        add_non_defaults_of(*column);
-
-    for (const auto & [path, column] : dynamic_paths_ptrs)
-        add_non_defaults_of(*column);
-
-    add_non_defaults_of(*shared_data);
-
-    return num_rows - num_non_default;
 }
 
 std::string_view ColumnObject::getDataAt(size_t) const
@@ -1105,13 +1053,13 @@ void ColumnObject::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
 void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in)
 {
     size_t current_size = size();
-    size_t num_paths = 0;
+    size_t num_paths;
     readBinaryLittleEndian<size_t>(num_paths, in);
 
     const auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
     for (size_t i = 0; i != num_paths; ++i)
     {
-        size_t path_size = 0;
+        size_t path_size;
         readBinaryLittleEndian<size_t>(path_size, in);
 
         if (in.available() < path_size)
@@ -1124,7 +1072,7 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
         in.ignore(path_size);
 
         /// Deserialize binary value and try to insert it to dynamic paths or shared data.
-        size_t value_size = 0;
+        size_t value_size;
         readBinaryLittleEndian<size_t>(value_size, in);
 
         /// Check if we have this path in dynamic paths.
@@ -1171,16 +1119,16 @@ void ColumnObject::skipSerializedInArena(ReadBuffer & in) const
         typed_paths.find(path)->second->skipSerializedInArena(in);
 
     /// Second, skip all other paths and values.
-    size_t num_paths = 0;
+    size_t num_paths;
     readBinaryLittleEndian<size_t>(num_paths, in);
 
     for (size_t i = 0; i != num_paths; ++i)
     {
-        size_t path_size = 0;
+        size_t path_size;
         readBinaryLittleEndian<size_t>(path_size, in);
         in.ignore(path_size);
 
-        size_t value_size = 0;
+        size_t value_size;
         readBinaryLittleEndian<size_t>(value_size, in);
         in.ignore(value_size);
     }
@@ -1237,55 +1185,31 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
 
 void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
+    /// Typed paths are always in the same order for all instances of the same Object type,
+    /// so there is no need to hash the paths themselves.
     for (const auto & path : sorted_typed_paths)
         typed_paths.find(path)->second->updateHashWithValueRange(begin, end, hash);
 
+    /// Dynamic paths may differ, so we hash the paths together with values.
     for (const auto & path : sorted_dynamic_paths)
+    {
+        hash.update(path.size());
+        hash.update(path);
         dynamic_paths.find(path)->second->updateHashWithValueRange(begin, end, hash);
+    }
 
     shared_data->updateHashWithValueRange(begin, end, hash);
 }
 
-void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+WeakHash32 ColumnObject::getWeakHash32() const
 {
-    /// Like `updateHashWithValueRange`, this hashes the physical path layout: it does NOT guarantee
-    /// equal hashes for a logically equal object whose paths are split differently between dynamic
-    /// columns and `shared_data` across blocks; the in-memory scatter consumers only need fast
-    /// per-query partitioning.
-    ///
-    /// Build the finalized per-row object hash by chaining the sub-objects in the existing
-    /// typed paths → dynamic paths → shared data order. `shared_data` always exists, so the
-    /// buffer is always seeded (no empty-object special case needed).
-    auto computeFinalizedInto = [&](UInt32 * out)
-    {
-        bool first = true;
-        for (const auto & [_, column] : typed_paths)
-        {
-            column->computeHashInto(row_begin, row_end, out, first);
-            first = false;
-        }
-        for (const auto & [_, column] : dynamic_paths_ptrs)
-        {
-            column->computeHashInto(row_begin, row_end, out, first);
-            first = false;
-        }
-        shared_data->computeHashInto(row_begin, row_end, out, first);
-    };
-
-    if (initial)
-    {
-        computeFinalizedInto(hash_out);
-        return;
-    }
-
-    /// Non-initial: build the finalized object hash in a scratch buffer, then combine that single
-    /// value into the prior key columns' hash (rather than streaming sub-objects straight into
-    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
-    const size_t n = row_end - row_begin;
-    PaddedPODArray<UInt32> object_hash(n);
-    computeFinalizedInto(object_hash.data());
-    for (size_t i = 0; i < n; ++i)
-        hash_out[i] = combineWeakHash32(object_hash[i], hash_out[i]);
+    WeakHash32 hash(size());
+    for (const auto & [_, column] : typed_paths)
+        hash.update(column->getWeakHash32());
+    for (const auto & [_, column] : dynamic_paths_ptrs)
+        hash.update(column->getWeakHash32());
+    hash.update(shared_data->getWeakHash32());
+    return hash;
 }
 
 void ColumnObject::updateHashFast(SipHash & hash) const
@@ -1537,28 +1461,31 @@ void ColumnObject::protect()
 
 void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback callback)
 {
-    for (auto & [_, column] : typed_paths)
-        callback(column);
-    for (auto & [path, column] : dynamic_paths)
+    for (const auto & path : sorted_typed_paths)
+        callback(typed_paths.find(path)->second);
+    for (const auto & path : sorted_dynamic_paths)
     {
-        callback(column);
-        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(column.get());
+        auto it = dynamic_paths.find(path);
+        callback(it->second);
+        dynamic_paths_ptrs[it->first] = assert_cast<ColumnDynamic *>(it->second.get());
     }
     callback(shared_data);
 }
 
 void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMutableColumnCallback callback)
 {
-    for (auto & [_, column] : typed_paths)
+    for (const auto & path : sorted_typed_paths)
     {
+        auto & column = typed_paths.find(path)->second;
         callback(*column);
         column->forEachMutableSubcolumnRecursively(callback);
     }
-    for (auto & [path, column] : dynamic_paths)
+    for (const auto & path : sorted_dynamic_paths)
     {
-        callback(*column);
-        column->forEachMutableSubcolumnRecursively(callback);
-        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(column.get());
+        auto it = dynamic_paths.find(path);
+        callback(*it->second);
+        it->second->forEachMutableSubcolumnRecursively(callback);
+        dynamic_paths_ptrs[it->first] = assert_cast<ColumnDynamic *>(it->second.get());
     }
     callback(*shared_data);
     shared_data->forEachMutableSubcolumnRecursively(callback);
@@ -1566,23 +1493,25 @@ void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMuta
 
 void ColumnObject::forEachSubcolumn(DB::IColumn::ColumnCallback callback) const
 {
-    for (const auto & [_, column] : typed_paths)
-        callback(column);
-    for (const auto & [path, column] : dynamic_paths)
-        callback(column);
+    for (const auto & path : sorted_typed_paths)
+        callback(typed_paths.find(path)->second);
+    for (const auto & path : sorted_dynamic_paths)
+        callback(dynamic_paths.find(path)->second);
 
     callback(shared_data);
 }
 
 void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveColumnCallback callback) const
 {
-    for (const auto & [_, column] : typed_paths)
+    for (const auto & path : sorted_typed_paths)
     {
+        const auto & column = typed_paths.find(path)->second;
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
     }
-    for (const auto & [path, column] : dynamic_paths)
+    for (const auto & path : sorted_dynamic_paths)
     {
+        const auto & column = dynamic_paths.find(path)->second;
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
     }
@@ -2447,38 +2376,7 @@ void ColumnObject::validateDynamicPathsSizes() const
         if (column->size() != expected_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
     }
-}
 
-bool ColumnObject::isEmptyAt(size_t n) const
-{
-    /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
-    if (!typed_paths.empty())
-        return false;
-
-    /// Check if all dynamic paths have NULL at this row
-    for (const auto & [path, column] : dynamic_paths_ptrs)
-    {
-        if (!column->isNullAt(n))
-            return false;
-    }
-
-    /// Check if there is no paths in shared data.
-    return shared_data->isDefaultAt(n);
-}
-
-bool ColumnObject::hasNonEmptyRows() const
-{
-    /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
-    if (!typed_paths.empty())
-        return true;
-
-    for (size_t i = 0; i != size(); ++i)
-    {
-        if (!isEmptyAt(i))
-            return true;
-    }
-
-    return false;
 }
 
 }

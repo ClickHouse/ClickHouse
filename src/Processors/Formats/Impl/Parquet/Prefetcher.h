@@ -29,6 +29,10 @@ public:
     /// Waits for in-progress reads to complete, cancels queued reads that haven't started yet.
     ~Prefetcher();
 
+    /// Same handshake as the destructor. After this returns, no background task reads through the
+    /// ReadBuffer passed to init() anymore, so that buffer may be destroyed. Idempotent.
+    void shutdownTasks();
+
     /// Not thread safe.
     /// All ranges must be registered before any reading happens (except direct readSync).
     /// Ranges are allowed to overlap a little, but this decreases the effectiveness of range
@@ -123,8 +127,8 @@ private:
             Deallocated,
         };
 
-        size_t offset{};
-        size_t length{};
+        size_t offset;
+        size_t length;
         double memory_amplification = 1;
 
         /// TODO [parquet]: If the range is long, it may make sense to have multiple subtasks reading parts of
@@ -171,13 +175,13 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
 
     std::mutex read_mutex;
-    ReadMode read_mode{};
+    ReadMode read_mode;
     SeekableReadBuffer * reader = nullptr;
     PaddedPODArray<char> entire_file;
 
-    size_t file_size{};
-    size_t min_bytes_for_seek{};
-    size_t bytes_per_read_task{};
+    size_t file_size;
+    size_t min_bytes_for_seek;
+    size_t bytes_per_read_task;
 
     std::shared_ptr<ShutdownHelper> shutdown = std::make_shared<ShutdownHelper>();
 
