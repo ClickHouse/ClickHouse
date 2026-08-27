@@ -297,12 +297,12 @@ Los usuarios pueden especificar opcionalmente una cláusula `WHERE` con condicio
 ClickHouse evaluará estas condiciones de filtro mediante la estrategia de post-filtering o pre-filtering.
 En resumen, ambas estrategias determinan el orden en que se evalúan los filtros:
 
-* El posfiltrado significa que primero se evalúa el índice de similitud vectorial y, después, ClickHouse evalúa los filtros adicionales especificados en la cláusula `WHERE`.
+* El postfiltrado significa que primero se evalúa el índice de similitud vectorial y, después, ClickHouse evalúa los filtros adicionales especificados en la cláusula `WHERE`.
 * El prefiltrado significa que el orden de evaluación de los filtros es el inverso.
 
 Las estrategias tienen distintas compensaciones:
 
-* El posfiltrado tiene el problema general de que puede devolver menos filas de las solicitadas en la cláusula `LIMIT <N>`. Esta situación se produce cuando una o más filas de resultado devueltas por el índice de similitud vectorial no cumplen los filtros adicionales.
+* El postfiltrado tiene el problema general de que puede devolver menos filas de las solicitadas en la cláusula `LIMIT <N>`. Esta situación se produce cuando una o más filas de resultado devueltas por el índice de similitud vectorial no cumplen los filtros adicionales.
 * El prefiltrado es, por lo general, un problema no resuelto. Algunas bases de datos vectoriales especializadas proporcionan algoritmos de prefiltrado, pero la mayoría de las bases de datos relacionales (incluido ClickHouse) recurren a la búsqueda exacta de vecinos, es decir, a un escaneo por fuerza bruta sin índice.
 
 La estrategia utilizada depende de la condición de filtrado.
@@ -355,7 +355,7 @@ ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empire
 LIMIT 10
 ```
 
-Suponiendo que solo un número muy pequeño de libros cuesta menos de 2 dólares, el posfiltrado puede devolver cero filas porque las 10 coincidencias principales devueltas por el índice vectorial podrían tener todas un precio superior a 2 dólares.
+Suponiendo que solo un número muy pequeño de libros cuesta menos de 2 dólares, el postfiltrado puede devolver cero filas porque las 10 coincidencias principales devueltas por el índice vectorial podrían tener todas un precio superior a 2 dólares.
 Al forzar el prefiltrado (añada `SETTINGS vector_search_filter_strategy = 'prefilter'` a la consulta), ClickHouse primero encuentra todos los libros con un precio inferior a 2 dólares y luego ejecuta una búsqueda vectorial por fuerza bruta sobre los libros encontrados.
 
 Como enfoque alternativo para resolver el problema anterior, [vector&#95;search&#95;index&#95;fetch&#95;multiplier](/es/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier) (valor predeterminado: `1.0`, máximo: `1000.0`) puede configurarse con un valor &gt; `1.0` (por ejemplo, `2.0`).

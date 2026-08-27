@@ -101,12 +101,14 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [reader_executor_max_tail_for_drain](/reference/settings/session-settings/reader-executor#reader_executor_max_tail_for_drain) | `1048576` |
 | [reader_executor_window_size](/reference/settings/session-settings/reader-executor#reader_executor_window_size) | `4194304` |
 | [reader_executor_block_size](/reference/settings/session-settings/reader-executor#reader_executor_block_size) | `1048576` |
+| [group_by_top_k_optimization_observation_rows](/reference/settings/session-settings/group-by#group_by_top_k_optimization_observation_rows) | `65536` |
 | [query_plan_optimize_join_order_max_searched_plans](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_max_searched_plans) | `100000` |
 | [query_plan_optimize_join_order_randomize](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_randomize) | `0` |
 | [ast_fuzzer_runs](/reference/settings/session-settings/ast-fuzzer#ast_fuzzer_runs) | `0` |
 | [ast_fuzzer_any_query](/reference/settings/session-settings/ast-fuzzer#ast_fuzzer_any_query) | `0` |
 | [allow_fuzz_query_functions](/reference/settings/session-settings/allow#allow_fuzz_query_functions) | `0` |
 | [reserve_memory](/reference/settings/session-settings/other#reserve_memory) | `0` |
+| [resumable_backup_from_snapshot](/reference/settings/session-settings/other#resumable_backup_from_snapshot) | `0` |
 | [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages) | `0` |
 | [enable_materialized_cte](/reference/settings/session-settings/enable#enable_materialized_cte) | `0` |
 | [analyzer_inline_views](/reference/settings/session-settings/other#analyzer_inline_views) | `0` |
@@ -120,10 +122,15 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [allow_experimental_nlp_functions](/reference/settings/session-settings/allow-experimental#allow_experimental_nlp_functions) | `0` |
 | [allow_experimental_hash_functions](/reference/settings/session-settings/allow-experimental#allow_experimental_hash_functions) | `0` |
 | [allow_experimental_time_series_table](/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) | `0` |
+| [time_series_prefer_recent_samples_table](/reference/settings/session-settings/other#time_series_prefer_recent_samples_table) | `1` |
 | [unique_key_max_encoded_size](/reference/settings/session-settings/unique-key#unique_key_max_encoded_size) | `256` |
 | [unique_key_probe_implementation](/reference/settings/session-settings/unique-key#unique_key_probe_implementation) | `auto` |
 | [allow_experimental_unique_key](/reference/settings/session-settings/allow-experimental#allow_experimental_unique_key) | `0` |
 | [allow_experimental_codecs](/reference/settings/session-settings/allow-experimental#allow_experimental_codecs) | `0` |
+| [enable_alp_codec](/reference/settings/session-settings/enable#enable_alp_codec) | `0` |
+| [enable_quantized_codec](/reference/settings/session-settings/enable#enable_quantized_codec) | `0` |
+| [enable_sz3_codec](/reference/settings/session-settings/enable#enable_sz3_codec) | `0` |
+| [enable_zxc_codec](/reference/settings/session-settings/enable#enable_zxc_codec) | `0` |
 | [throw_on_unsupported_query_inside_transaction](/reference/settings/session-settings/throw-on#throw_on_unsupported_query_inside_transaction) | `1` |
 | [wait_changes_become_visible_after_commit_mode](/reference/settings/session-settings/other#wait_changes_become_visible_after_commit_mode) | `wait_unknown` |
 | [implicit_transaction](/reference/settings/session-settings/implicit#implicit_transaction) | `0` |
@@ -146,7 +153,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [allow_experimental_polyglot_dialect](/reference/settings/session-settings/allow-experimental#allow_experimental_polyglot_dialect) | `0` |
 | [enable_json_ast_dialect](/reference/settings/session-settings/enable#enable_json_ast_dialect) | `0` |
 | [polyglot_dialect](/reference/settings/session-settings/other#polyglot_dialect) | `` |
-| [enable_adaptive_memory_spill_scheduler](/reference/settings/session-settings/enable-adaptive#enable_adaptive_memory_spill_scheduler) | `0` |
+| [enable_adaptive_memory_spill_scheduler](/reference/settings/session-settings/enable#enable_adaptive_memory_spill_scheduler) | `0` |
 | [allow_experimental_cleanup_old_data_files_compaction](/reference/settings/session-settings/allow-experimental#allow_experimental_cleanup_old_data_files_compaction) | `0` |
 | [allow_experimental_iceberg_compaction](/reference/settings/session-settings/allow-experimental#allow_experimental_iceberg_compaction) | `0` |
 | [iceberg_manifest_min_count_to_compact](/reference/settings/session-settings/iceberg#iceberg_manifest_min_count_to_compact) | `30` |
@@ -160,6 +167,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [distributed_plan_default_shuffle_join_bucket_count](/reference/settings/session-settings/distributed-plan#distributed_plan_default_shuffle_join_bucket_count) | `8` |
 | [distributed_plan_default_reader_bucket_count](/reference/settings/session-settings/distributed-plan#distributed_plan_default_reader_bucket_count) | `8` |
 | [distributed_plan_workers_num](/reference/settings/session-settings/distributed-plan#distributed_plan_workers_num) | `0` |
+| [distributed_plan_workers_provisioning_timeout_ms](/reference/settings/session-settings/distributed-plan#distributed_plan_workers_provisioning_timeout_ms) | `10000` |
 | [distributed_plan_force_exchange_kind](/reference/settings/session-settings/distributed-plan#distributed_plan_force_exchange_kind) | `` |
 | [distributed_plan_max_rows_to_broadcast](/reference/settings/session-settings/distributed-plan#distributed_plan_max_rows_to_broadcast) | `20000` |
 | [distributed_plan_prefer_replicas_over_workers](/reference/settings/session-settings/distributed-plan#distributed_plan_prefer_replicas_over_workers) | `0` |
