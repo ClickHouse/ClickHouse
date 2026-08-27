@@ -20,6 +20,7 @@
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/AcceptCertificateHandler.h>
 #include <Poco/Net/RejectCertificateHandler.h>
+#include <Poco/Net/KeyConsoleHandler.h>
 #include <Poco/Net/PrivateKeyPassphraseHandler.h>
 #include <Poco/Net/Utility.h>
 #endif
@@ -104,10 +105,9 @@ String stripSecureScheme(const String & host)
 /// this object before `Poco::Net::Context` ensures the event has a live
 /// subscriber when the encrypted key is loaded. For unencrypted keys the
 /// callback is never fired and this class has no effect.
-/// Only the password-in-config layout is supported
-/// (`privateKeyPassphraseHandler.name = KeyFileHandler` with
-/// `privateKeyPassphraseHandler.options.password` set); interactive handlers
-/// such as `KeyConsoleHandler` are not wired and will receive an empty passphrase.
+/// Used when `privateKeyPassphraseHandler.name` is `KeyFileHandler` or absent.
+/// `KeyConsoleHandler` (stdin prompt) is handled separately via
+/// `Poco::Net::KeyConsoleHandler`. Any other `name` value raises `BAD_ARGUMENTS`.
 class ConfigPassphraseHandler final : public Poco::Net::PrivateKeyPassphraseHandler
 {
 public:
@@ -778,8 +778,28 @@ void KeeperClient::connectToKeeper()
             /// the `Context` constructor (`SSL_CTX_use_PrivateKey_file`). Without a
             /// subscribed handler at that point the passphrase arrives as `""` and
             /// key loading fails with `"bad decrypt"`.
-            Poco::Net::SSLManager::PrivateKeyPassphraseHandlerPtr passphrase_handler(
-                new ConfigPassphraseHandler(loaded_config));
+            ///
+            /// Select the passphrase handler based on
+            /// `openSSL.client.privateKeyPassphraseHandler.name`.
+            /// `KeyFileHandler` (and the absent-name default) reads the password
+            /// from `openSSL.client.privateKeyPassphraseHandler.options.password`
+            /// in the ClickHouse config file. `KeyConsoleHandler` prompts stdin.
+            /// Note: the standard `KeyFileHandler` reads from
+            /// `Poco::Util::Application::instance().config()` (CLI options only),
+            /// so `ConfigPassphraseHandler` is used instead to reach `loaded_config`.
+            const String passphrase_handler_name = loaded_config.getString(
+                "openSSL.client.privateKeyPassphraseHandler.name", "KeyFileHandler");
+
+            Poco::Net::SSLManager::PrivateKeyPassphraseHandlerPtr passphrase_handler;
+            if (passphrase_handler_name == "KeyConsoleHandler")
+                passphrase_handler = new Poco::Net::KeyConsoleHandler(/*server=*/false);
+            else if (passphrase_handler_name == "KeyFileHandler")
+                passphrase_handler = new ConfigPassphraseHandler(loaded_config);
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Unsupported privateKeyPassphraseHandler.name '{}': "
+                    "keeper-client supports 'KeyFileHandler' and 'KeyConsoleHandler'",
+                    passphrase_handler_name);
 
             auto context = Poco::Net::Context::Ptr(new Poco::Net::Context(
                 Poco::Net::Context::TLSV1_2_CLIENT_USE,
