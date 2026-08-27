@@ -300,6 +300,7 @@ The `max_joined_block_size_bytes` combined with this setting is helpful to avoid
     DECLARE(Bool, parallel_non_joined_rows_processing, true, R"(
 Allow multiple threads to process non-joined rows from the right table in parallel during RIGHT and FULL JOINs.
 This can speed up the non-joined phase of hash joins with large right tables.
+When enabled, unmatched right rows may be emitted in a different order than the serial path; use `ORDER BY` when the query needs a stable order.
 When disabled, non-joined rows are processed by a single thread.
 )", 0) \
     DECLARE(MaxThreads, max_insert_threads, 0, R"(
