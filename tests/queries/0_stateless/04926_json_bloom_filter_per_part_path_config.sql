@@ -17,13 +17,13 @@ SETTINGS index_granularity = 1;
 
 INSERT INTO json_bf_per_part_config VALUES (1, '{"old_path":"old","new_path":"old-hit"}');
 
-SYSTEM STOP MERGES json_bf_per_part_config;
+ALTER TABLE json_bf_per_part_config DETACH PARTITION tuple();
 ALTER TABLE json_bf_per_part_config DROP INDEX idx;
-KILL MUTATION WHERE table = 'json_bf_per_part_config' AND database = currentDatabase() FORMAT Null;
 ALTER TABLE json_bf_per_part_config ADD INDEX idx data TYPE jsonbf_v1(
     false_positive_rate = 0.0001,
     include_paths = ['new_path'],
     skip_paths = ['old_path']) GRANULARITY 1;
+ALTER TABLE json_bf_per_part_config ATTACH PARTITION tuple();
 
 INSERT INTO json_bf_per_part_config VALUES (2, '{"old_path":"new","new_path":"new-hit"}');
 
@@ -34,7 +34,6 @@ SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_bf_per_part_config WHERE data.new_path = 'missing'
 SETTINGS force_data_skipping_indices = 'idx';
 
-SYSTEM START MERGES json_bf_per_part_config;
 OPTIMIZE TABLE json_bf_per_part_config FINAL;
 
 SELECT groupArray(id) FROM json_bf_per_part_config WHERE data.new_path = 'old-hit'
