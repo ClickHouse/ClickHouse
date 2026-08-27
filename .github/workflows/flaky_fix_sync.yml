@@ -1,0 +1,167 @@
+name: Flaky Fix Backport Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      since_days:
+        description: 'How many days back to scan upstream (default: 7)'
+        required: false
+        type: string
+        default: '7'
+      pattern:
+        description: 'Commit subject pattern to match (case-insensitive)'
+        required: false
+        type: string
+        default: 'fix flaky'
+      upstream_ref:
+        description: 'Upstream branch/ref to scan'
+        required: false
+        type: string
+        default: 'master'
+      branches:
+        description: 'Comma-separated target branches (default: the branch this workflow is run from)'
+        required: false
+        type: string
+        default: ''
+      create_pr:
+        description: 'Cherry-pick missing commits and open a backport PR'
+        required: false
+        type: boolean
+        default: false
+
+  schedule:
+    - cron: '0 10 * * 1'  # Every Monday at 06:00 EDT (10:00 UTC)
+
+
+jobs:
+  setup:
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker]
+    outputs:
+      branches: ${{ steps.set_branches.outputs.branches }}
+    steps:
+      - id: set_branches
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BRANCHES="${{ inputs.branches }}"
+            if [ -z "$BRANCHES" ]; then
+              BRANCHES="${{ github.ref_name }}"
+            fi
+            JSON=$(echo "$BRANCHES" | tr ',' '\n' | jq -Rsc 'split("\n") | map(gsub("^\\s+|\\s+$";"") | select(length > 0))')
+            echo "branches=$JSON" >> $GITHUB_OUTPUT
+          else
+            echo "branches=[\"antalya-26.3\", \"stable-26.3\", \"antalya-26.6\"]" >> $GITHUB_OUTPUT
+          fi
+
+  check:
+    needs: setup
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker]
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJSON(needs.setup.outputs.branches) }}
+    steps:
+      - name: Check out target branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Restore workflow scripts
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: .wf
+          sparse-checkout: |
+            tests/ci/check_for_flaky_fixes.py
+            tests/ci/backport_flaky_fixes.py
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Check for missing flaky-fix backports
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 .wf/tests/ci/check_for_flaky_fixes.py \
+            --since-days "${{ github.event.inputs.since_days || '7' }}" \
+            --pattern "${{ github.event.inputs.pattern || 'fix flaky' }}" \
+            --upstream-ref "${{ github.event.inputs.upstream_ref || 'master' }}" \
+            --md-output flaky_fix_report_${{ matrix.branch }}.md \
+            --json-output flaky_fix_${{ matrix.branch }}.json
+
+      - name: Write summary
+        if: always()
+        run: cat flaky_fix_report_${{ matrix.branch }}.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload check results
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-fix-check-${{ matrix.branch }}
+          path: |
+            flaky_fix_report_${{ matrix.branch }}.md
+            flaky_fix_${{ matrix.branch }}.json
+
+  backport:
+    needs: [check, setup]
+    # inputs.create_pr is a real boolean; github.event.inputs.create_pr is the string "true"/"false".
+    if: ${{ always() && !cancelled() && (github.event_name == 'schedule' || inputs.create_pr) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJSON(needs.setup.outputs.branches) }}
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker]
+    steps:
+      - name: Check out target branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
+          fetch-depth: 1
+          filter: blob:none
+
+      - name: Restore workflow scripts
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: .wf
+          sparse-checkout: |
+            tests/ci/check_for_flaky_fixes.py
+            tests/ci/backport_flaky_fixes.py
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Download check results
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: flaky-fix-check-${{ matrix.branch }}
+
+      - name: Configure git identity
+        if: steps.download.outcome == 'success'
+        run: |
+          git config user.name altinity-robot
+          git config user.email altinity-robot@users.noreply.github.com
+
+      - name: Add upstream promisor remote
+        if: steps.download.outcome == 'success'
+        run: |
+          git remote add upstream https://github.com/ClickHouse/ClickHouse.git
+          git config remote.upstream.promisor true
+          git config remote.upstream.partialclonefilter blob:none
+
+      - name: Cherry-pick and open PR
+        if: steps.download.outcome == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 .wf/tests/ci/backport_flaky_fixes.py \
+            --json-file flaky_fix_${{ matrix.branch }}.json \
+            --repo "${{ github.repository }}"
