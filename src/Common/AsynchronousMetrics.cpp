@@ -436,25 +436,29 @@ const std::unordered_map<std::string_view, LegacyMetricName> & getLegacyMetricNa
         std::unordered_map<std::string_view, LegacyMetricName> res;
 
         /// The CPU core number was appended to the metric name: `OSUserTimeCPU3`.
-        for (std::string_view metric : {
-            "OSUserTimeCPU", "OSNiceTimeCPU", "OSSystemTimeCPU", "OSIdleTimeCPU", "OSIOWaitTimeCPU",
-            "OSIrqTimeCPU", "OSSoftIrqTimeCPU", "OSStealTimeCPU", "OSGuestTimeCPU", "OSGuestNiceTimeCPU"})
+        constexpr std::string_view key_appended_metrics[]
+            = {"OSUserTimeCPU", "OSNiceTimeCPU", "OSSystemTimeCPU", "OSIdleTimeCPU", "OSIOWaitTimeCPU",
+               "OSIrqTimeCPU", "OSSoftIrqTimeCPU", "OSStealTimeCPU", "OSGuestTimeCPU", "OSGuestNiceTimeCPU"};
+
+        for (std::string_view metric : key_appended_metrics)
             res.emplace(metric, LegacyMetricName{String(metric), ""});
 
         /// The key was appended to the metric name after an underscore: `BlockReadBytes_sda`.
-        for (std::string_view metric : {
-            "CPUFrequencyMHz",
-            "BlockReadOps", "BlockWriteOps", "BlockDiscardOps",
-            "BlockReadMerges", "BlockWriteMerges", "BlockDiscardMerges",
-            "BlockReadBytes", "BlockWriteBytes", "BlockDiscardBytes",
-            "BlockReadTime", "BlockWriteTime", "BlockDiscardTime",
-            "BlockInFlightOps", "BlockActiveTime", "BlockQueueTime",
-            "BlockActiveTimePerOp", "BlockQueueTimePerOp",
-            "NetworkReceiveBytes", "NetworkReceivePackets", "NetworkReceiveErrors", "NetworkReceiveDrop",
-            "NetworkSendBytes", "NetworkSendPackets", "NetworkSendErrors", "NetworkSendDrop",
-            "DiskTotal", "DiskUsed", "DiskAvailable", "DiskUnreserved",
-            "DiskPutObjectThrottlerRPS", "DiskPutObjectThrottlerAvailable",
-            "DiskGetObjectThrottlerRPS", "DiskGetObjectThrottlerAvailable"})
+        constexpr std::string_view underscore_and_key_appended_metrics[]
+            = {"CPUFrequencyMHz",
+               "BlockReadOps", "BlockWriteOps", "BlockDiscardOps",
+               "BlockReadMerges", "BlockWriteMerges", "BlockDiscardMerges",
+               "BlockReadBytes", "BlockWriteBytes", "BlockDiscardBytes",
+               "BlockReadTime", "BlockWriteTime", "BlockDiscardTime",
+               "BlockInFlightOps", "BlockActiveTime", "BlockQueueTime",
+               "BlockActiveTimePerOp", "BlockQueueTimePerOp",
+               "NetworkReceiveBytes", "NetworkReceivePackets", "NetworkReceiveErrors", "NetworkReceiveDrop",
+               "NetworkSendBytes", "NetworkSendPackets", "NetworkSendErrors", "NetworkSendDrop",
+               "DiskTotal", "DiskUsed", "DiskAvailable", "DiskUnreserved",
+               "DiskPutObjectThrottlerRPS", "DiskPutObjectThrottlerAvailable",
+               "DiskGetObjectThrottlerRPS", "DiskGetObjectThrottlerAvailable"};
+
+        for (std::string_view metric : underscore_and_key_appended_metrics)
             res.emplace(metric, LegacyMetricName{String(metric) + "_", ""});
 
         /// The memory controller number was in the middle of the name: `EDAC0_Correctable`.
