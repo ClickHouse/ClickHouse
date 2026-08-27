@@ -3765,7 +3765,7 @@ def test_writes_azure(started_cluster):
     check_data(10)
 
     instance.query(
-        f"INSERT INTO TABLE FUNCTION {table_function} SELECT number, toString(number) FROM numbers(10, 10)"
+        f"INSERT INTO TABLE FUNCTION {table_function} SELECT toInt32(number) AS id, toString(number) AS name FROM numbers(10, 10)"
     )
     check_data(20)
 
