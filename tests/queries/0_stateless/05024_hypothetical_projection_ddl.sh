@@ -77,7 +77,7 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_c ON t_hypo_proj_drift (SELECT a, c ORDER BY c);
     ALTER TABLE t_hypo_proj_drift DROP COLUMN c SETTINGS mutations_sync = 2;
     EXPLAIN WHATIF SELECT a FROM t_hypo_proj_drift WHERE b = 1;
-" 2>&1 | grep -oE 'reason: +Hypothetical projection no longer matches the current table schema' | awk '{$1=$1; print}'
+" 2>&1 | grep -oE 'reason: +Hypothetical projection can no longer be added to this table' | awk '{$1=$1; print}'
 
 # the same MergeTree projection gates the real ADD PROJECTION enforces
 echo "--- commit_order needs the same gates as a real projection ---"
@@ -98,7 +98,7 @@ $CLICKHOUSE_CLIENT -q "
 " 2>&1 | grep -oE 'reason: +Hypothetical projection can no longer be added to this table' | awk '{$1=$1; print}'
 
 echo "--- a name taken by a real projection is rejected ---"
-$CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL PROJECTION p_real ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);" 2>&1 | grep -m1 -oE 'BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL PROJECTION p_real ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);" 2>&1 | grep -m1 -oE 'ILLEGAL_PROJECTION'
 
 echo "--- duplicate without IF NOT EXISTS is rejected ---"
 $CLICKHOUSE_CLIENT -q "

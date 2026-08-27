@@ -108,14 +108,6 @@ BlockIO createHypotheticalProjection(
     /// definition that could not be materialized is rejected here too
     checkProjectionIsAddable(merge_tree, metadata, query, context);
 
-    if (metadata->projections.has(projection_desc.name))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Hypothetical projection '{}' conflicts with an existing projection on {}.{}",
-            projection_desc.name,
-            table_id.getDatabaseName(),
-            table_id.getTableName());
-
     store.addProjection(table_id, projection_desc, query.if_not_exists);
     return {};
 }
