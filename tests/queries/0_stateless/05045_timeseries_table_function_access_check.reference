@@ -1,0 +1,16 @@
+describe with SHOW COLUMNS on both tables
+id	UInt64					
+timestamp	DateTime64(3)					
+value	Float64					
+select with SELECT on both tables
+1	42
+selector, prometheusQuery and the persistent table over the selector
+0
+3
+0
+select again after the row policy is dropped
+1	42
+rows after the insert
+2
+the target table still exists under its own name
+1

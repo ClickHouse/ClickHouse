@@ -131,11 +131,16 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
+    /// The types below are read from the TimeSeries table and from its tags target, so reaching them
+    /// requires what describing those two tables requires.
+    checkAccessToTimeSeriesTable(time_series_storage_id, context, AccessType::SHOW_COLUMNS);
+
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
     auto tags_target = time_series_storage->getTargetTable(ViewTarget::Tags, context);
+    checkAccessToTimeSeriesTargetTable(tags_target, context, AccessType::SHOW_COLUMNS);
     auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(context, false);
     DataTypePtr id_data_type = tags_target_metadata->columns.get(TimeSeriesColumnNames::ID).type;
 
@@ -811,6 +816,12 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* num_streams */)
 {
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
+
+    /// Authorized here rather than where this storage is created, so that a persistent table built over this
+    /// table function is authorized on every read, with the reader's own grants. The resolved storage names
+    /// itself, which is the table the rows below are read from even if the configured name has since changed.
+    checkAccessToTimeSeriesTable(time_series_storage->getStorageID(), context, AccessType::SELECT);
+
     auto time_series_settings = time_series_storage->getStorageSettings();
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;

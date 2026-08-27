@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Access/Common/AccessType.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -149,5 +150,15 @@ private:
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);
 std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr storage);
+
+/// Checks that the current user is allowed to reach a TimeSeries table through a table function.
+/// A row policy on a TimeSeries table is not enforceable on the rows such a function returns, so in the
+/// read direction this fails closed instead of silently returning rows the policy hides.
+void checkAccessToTimeSeriesTable(const StorageID & time_series_storage_id, const ContextPtr & context, AccessType access_type);
+
+/// Checks that the current user is allowed to reach a target table of a TimeSeries table through a table
+/// function. An `Alias` target exposes the data and metadata of another table, which a grant on the alias
+/// itself does not cover.
+void checkAccessToTimeSeriesTargetTable(const StoragePtr & target_table, const ContextPtr & context, AccessType access_type);
 
 }

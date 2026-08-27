@@ -1,5 +1,8 @@
 #include <Storages/StorageTimeSeries.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
@@ -19,6 +22,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -41,6 +45,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -710,6 +715,40 @@ std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr 
         ErrorCodes::UNEXPECTED_TABLE_ENGINE,
         "This operation can be executed on a TimeSeries table only, the engine of table {} is not TimeSeries",
         storage->getStorageID().getNameForLogs());
+}
+
+
+void checkAccessToTimeSeriesTable(const StorageID & time_series_storage_id, const ContextPtr & context, AccessType access_type)
+{
+    context->checkAccess(access_type, time_series_storage_id);
+
+    if (access_type != AccessType::SELECT)
+        return;
+
+    auto row_policy_filter = context->getRowPolicyFilter(
+        time_series_storage_id.getDatabaseName(), time_series_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    /// The rows are the target table's, and its columns are not the TimeSeries table's, so a filter written
+    /// against the latter has nothing here to evaluate against and cannot be translated.
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "A row policy is defined on table {}, and it cannot be enforced on the rows returned by this table "
+            "function because they belong to a target table with different columns",
+            time_series_storage_id.getNameForLogs());
+}
+
+
+void checkAccessToTimeSeriesTargetTable(const StoragePtr & target_table, const ContextPtr & context, AccessType access_type)
+{
+    context->checkAccess(access_type, target_table->getStorageID());
+
+    if (const auto * alias = target_table->as<StorageAlias>();
+        alias && !alias->isTargetTableGranted(context, access_type, {}))
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Not enough privileges to access the table that {} points to",
+            target_table->getStorageID().getNameForLogs());
 }
 
 

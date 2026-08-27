@@ -87,15 +87,25 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         ContextPtr context,
         const String & /* table_name */,
         ColumnsDescription /* cached_columns */,
-        bool /* is_insert_query */) const
+        bool is_insert_query) const
 {
-    return getTargetTable(context);
+    /// Both tables, because the equivalent direct operation on the TimeSeries table authorizes both:
+    /// the TimeSeries table the user named, and the target table its rows actually come from.
+    const auto access_type = is_insert_query ? AccessType::INSERT : AccessType::SELECT;
+    checkAccessToTimeSeriesTable(time_series_storage_id, context, access_type);
+    auto target_table = getTargetTable(context);
+    checkAccessToTimeSeriesTargetTable(target_table, context, access_type);
+    return target_table;
 }
 
 template <ViewTarget::Kind target_kind>
 ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
-    auto metadata_snapshot = getTargetTable(context)->getInMemoryMetadataPtr(context, false);
+    /// Resolving a table structure is a read operation whatever the direction of the enclosing query.
+    checkAccessToTimeSeriesTable(time_series_storage_id, context, AccessType::SHOW_COLUMNS);
+    auto target_table = getTargetTable(context);
+    checkAccessToTimeSeriesTargetTable(target_table, context, AccessType::SHOW_COLUMNS);
+    auto metadata_snapshot = target_table->getInMemoryMetadataPtr(context, false);
     return metadata_snapshot->columns;
 }
 
