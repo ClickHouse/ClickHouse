@@ -343,6 +343,11 @@ void deserializeFillColumnDescription(FillColumnDescription & fill, ReadBuffer &
 {
     UInt8 flags = 0;
     readIntBinary(flags, in);
+    /// Reject a flag bit we do not understand before reading the rest of the payload, so that a
+    /// malformed stream fails closed instead of desynchronizing (as `NegativeLimitStep` does).
+    if (flags & ~UInt8(0x0F))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Unsupported flags {0:#04x} in a serialized WITH FILL description", UInt64(flags));
 
     fill.fill_from = readFieldBinary(in);
     if (flags & 1)
@@ -410,6 +415,9 @@ void deserializeSortDescription(
         readStringBinary(desc.column_name, in);
         UInt8 flags = 0;
         readIntBinary(flags, in);
+        if (flags & ~UInt8(0x0F))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Unsupported flags {0:#04x} in a serialized sort description", UInt64(flags));
 
         desc.direction = (flags & 1) ? 1 : -1;
         desc.nulls_direction = (flags & 2) ? 1 : -1;

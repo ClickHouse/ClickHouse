@@ -163,6 +163,10 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
 
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
+    /// Fail closed on a flag bit this version does not know, rather than desynchronizing the stream.
+    if (flags & ~UInt8(0x03))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "FillingStep: unsupported flags {0:#04x}", UInt64(flags));
 
     InterpolateDescriptionPtr interpolate_description;
     if (flags & 2)
