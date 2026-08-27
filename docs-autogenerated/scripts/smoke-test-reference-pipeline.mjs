@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 
 import { rewriteGeneratedCodeBlocksInSource } from '../src/markdown/rewrite-generated-code-blocks.mjs';
 import { entityAliases, splitEntitySections } from './export-reference-docs.mjs';
+import { resolveStatementPages } from './lib/statement-metadata.mjs';
+import { loadStatementRegistrations } from './lib/statement-source.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectDirectory = path.resolve(scriptDirectory, '..');
@@ -160,14 +162,37 @@ async function main() {
     const documents = (await readJson(path.join(artifactDirectory, 'documents.json'))).documents;
     const search = (await readJson(path.join(artifactDirectory, 'search.json'))).records;
     const navigation = await readJson(path.join(artifactDirectory, 'navigation.json'));
-    const statementPageDefinition = await readJson(path.join(projectDirectory, 'statement-pages.json'));
+    const legacyStatementRoutes = await readJson(
+      path.join(projectDirectory, 'legacy-statement-routes.json'),
+    );
+    const statementRegistrations = await loadStatementRegistrations(repositoryDirectory);
+    const generatedStatementPages = resolveStatementPages(
+      statementRegistrations,
+      legacyStatementRoutes,
+    );
+    const cleanSlateStatementPages = resolveStatementPages(
+      statementRegistrations,
+      { schemaVersion: 1, routes: {} },
+    );
+    requireValue(
+      generatedStatementPages.every((page, index) => {
+        const { legacyRoutes: _legacyRoutes, ...metadata } = page;
+        const { legacyRoutes: _cleanLegacyRoutes, ...cleanMetadata }
+          = cleanSlateStatementPages[index];
+        return JSON.stringify(metadata) === JSON.stringify(cleanMetadata);
+      }),
+      'Legacy URL compatibility data changed generated statement metadata',
+    );
     const redirects = (await readJson(path.join(generatedDirectory, 'data/redirects.json'))).redirects;
     const selectPage = await readFile(
       path.join(generatedDirectory, 'mintlify/docs/reference/statements/select.mdx'),
       'utf8',
     );
     const alterModifyQueryPage = await readFile(
-      path.join(generatedDirectory, 'mintlify/docs/reference/statements/alter/view.mdx'),
+      path.join(
+        generatedDirectory,
+        'mintlify/docs/reference/statements/alter/table/modify-query.mdx',
+      ),
       'utf8',
     );
     const routes = new Set(documents.map((document) => document.route));
@@ -189,6 +214,11 @@ async function main() {
         === '/docs/reference/statements/select',
       'The legacy `SELECT` index route was not retained after removing its Markdown source',
     );
+    requireValue(
+      redirectMap.get('/docs/reference/statements/alter/view')
+        === '/docs/reference/statements/alter/table/modify-query',
+      'A pre-generation statement route was not retained as a compatibility redirect',
+    );
 
     const generatedStatements = documents.filter(
       (document) => document.sourcePath.startsWith('statements/'),
@@ -207,10 +237,11 @@ async function main() {
       'Individual `SYSTEM` statements are missing from search',
     );
     const documentById = new Map(documents.map((document) => [document.id, document]));
-    const sourceStatementDocuments = Object.values(statementPageDefinition.pages)
+    const sourceStatementDocuments = generatedStatementPages
       .map(({ id }) => documentById.get(id));
     requireValue(
-      sourceStatementDocuments.length === 100
+      sourceStatementDocuments.length === statementRegistrations.length
+        && sourceStatementDocuments.length >= 100
         && sourceStatementDocuments.every((document) => (
           document?.sourcePath.startsWith('src/Parsers/')
           && document.content.length > 0
@@ -218,10 +249,19 @@ async function main() {
       'Statement pages still depend on generated Markdown under `docs/reference/statements`',
     );
     requireValue(
+      documents.every((document) => (
+        !document.sourcePath.startsWith('statements/')
+        || document.sourcePath.startsWith('statements/create/dictionary/')
+      )),
+      'A source-owned statement Markdown page leaked into the clean-slate artifact',
+    );
+    requireValue(
       selectPage.includes('title: "SELECT"')
         && selectPage.includes('sidebarTitle: "Overview"')
         && selectPage.includes('keywords: []')
         && selectPage.includes('doc_type: "reference"')
+        && selectPage.includes('stableId: "reference:statement:select"')
+        && selectPage.includes('parent: null')
         && selectPage.includes('sourcePath: "src/Parsers/ParserSelectQuery.cpp"'),
       'The source-generated `SELECT` page is missing generated frontmatter or provenance',
     );
@@ -235,7 +275,7 @@ async function main() {
       'reference.statements.alter.table',
     );
     requireValue(
-      alterNavigation?.children[0]?.documentId === 'reference:statements/alter/index'
+      alterNavigation?.children[0]?.documentId === 'reference:statement:alter'
         && alterNavigation.children[1]?.id === 'reference.statements.alter.table',
       '`ALTER` navigation does not start with its overview and `ALTER TABLE` primitive',
     );
@@ -255,7 +295,7 @@ async function main() {
     );
     const createNavigation = findNavigationNode(navigation.root, 'reference.statements.create');
     requireValue(
-      createNavigation?.children[0]?.documentId === 'reference:statements/create/index'
+      createNavigation?.children[0]?.documentId === 'reference:statement:create'
         && createNavigation.children[1]?.id === 'reference.statements.create-dictionary'
         && createNavigation.children[2]?.id === 'reference.statements.create-table',
       '`CREATE` navigation does not follow its primitive hierarchy',

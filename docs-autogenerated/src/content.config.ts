@@ -18,6 +18,8 @@ const reference = defineCollection({
     stableId: z.string(),
     entityKind: z.string(),
     featureState: z.enum(['beta', 'experimental']).nullable(),
+    parent: z.string().nullable(),
+    related: z.array(z.string()),
     sourcePath: z.string(),
     contentHash: z.string(),
     aliases: z.array(z.string()),

@@ -552,6 +552,8 @@ function frontmatter(document, sidebarTitle) {
     `stableId: ${JSON.stringify(document.id)}`,
     `entityKind: ${JSON.stringify(document.entityKind)}`,
     `featureState: ${JSON.stringify(document.featureState ?? null)}`,
+    `parent: ${JSON.stringify(document.parent ?? null)}`,
+    `related: ${JSON.stringify(document.related ?? [])}`,
     `sourcePath: ${JSON.stringify(document.sourcePath)}`,
     `contentHash: ${JSON.stringify(document.contentHash)}`,
     `aliases: ${JSON.stringify(document.aliases)}`,

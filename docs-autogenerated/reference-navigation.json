@@ -233,9 +233,9 @@
           "id": "reference.statements.alter",
           "label": "ALTER",
           "match": { "routePrefix": "/docs/reference/statements/alter" },
-          "documentIds": ["reference:statements/alter/index"],
+          "documentIds": ["reference:statement:alter"],
           "childrenOrder": [
-            "reference:statements/alter/index",
+            "reference:statement:alter",
             "reference.statements.alter.table"
           ],
           "groups": [
@@ -243,7 +243,7 @@
               "id": "reference.statements.alter.table",
               "label": "ALTER TABLE",
               "match": {
-                "routePrefix": "/docs/reference/statements/alter/",
+                "routePrefix": "/docs/reference/statements/alter/table/",
                 "titlePrefix": "ALTER TABLE"
               },
               "stripDocumentTitlePrefix": "ALTER TABLE "
@@ -259,9 +259,9 @@
           "id": "reference.statements.create",
           "label": "CREATE",
           "match": { "routePrefix": "/docs/reference/statements/create" },
-          "documentIds": ["reference:statements/create/index"],
+          "documentIds": ["reference:statement:create"],
           "childrenOrder": [
-            "reference:statements/create/index",
+            "reference:statement:create",
             "reference.statements.create-dictionary",
             "reference.statements.create-table"
           ],
@@ -270,9 +270,9 @@
               "id": "reference.statements.create-dictionary",
               "label": "CREATE DICTIONARY",
               "match": { "sourcePrefix": "statements/create/dictionary" },
-              "documentIds": ["reference:statements/create/dictionary"],
+              "documentIds": ["reference:statement:create-dictionary"],
               "childrenOrder": [
-                "reference:statements/create/dictionary",
+                "reference:statement:create-dictionary",
                 "reference.statements.create-dictionary.layouts",
                 "reference.statements.create-dictionary.sources"
               ],
@@ -293,8 +293,8 @@
               "id": "reference.statements.create-table",
               "label": "CREATE TABLE",
               "match": { "routePrefix": "/docs/reference/statements/create/table" },
-              "documentIds": ["reference:statements/create/table"],
-              "childrenOrder": ["reference:statements/create/table"]
+              "documentIds": ["reference:statement:create-table"],
+              "childrenOrder": ["reference:statement:create-table"]
             }
           ]
         },
@@ -302,20 +302,20 @@
           "id": "reference.statements.select",
           "label": "SELECT",
           "match": { "routePrefix": "/docs/reference/statements/select" },
-          "documentIds": ["reference:statements/select/index"],
-          "childrenOrder": ["reference:statements/select/index"]
+          "documentIds": ["reference:statement:select"],
+          "childrenOrder": ["reference:statement:select"]
         },
         {
           "id": "reference.statements.set",
           "label": "SET",
           "match": { "routePrefix": "/docs/reference/statements/set" },
           "documentIds": [
-            "reference:statements/set",
-            "reference:statements/set-role"
+            "reference:statement:set",
+            "reference:statement:set-role"
           ],
           "childrenOrder": [
-            "reference:statements/set",
-            "reference:statements/set-role"
+            "reference:statement:set",
+            "reference:statement:set-role"
           ]
         },
         {
