@@ -32,7 +32,9 @@ SELECT number + 1, [[(0.4, 0.4), (0.6, 0.4), (0.6, 0.6), (0.4, 0.6)]] FROM numbe
 SET optimize_move_to_prewhere = 0;
 
 -- A `LineString` constant in the polygon position runs as a `Ring`. The point below is inside it,
--- and the sibling conjunct on the indexed column must still prune its granule away.
+-- and the sibling conjunct on the indexed column must still prune its granule away. The `EXPLAIN`
+-- shows two `Granules:` lines: the primary key over `id` selects the granule (`1/1`), and
+-- `idx_bbox_poly` then drops it (`0/1`).
 SELECT 'linestring const', extract(explain, '(Parts:.*|Granules:.*)')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_pip_ring_alias
       WHERE pointInPolygon((500.5, 500.5), CAST([(500., 500.), (501., 500.), (501., 501.), (500., 501.)], 'LineString'))
