@@ -56,13 +56,14 @@ SELECT 'granules read', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT sum(x) FROM t_wpk_chain WHERE toInt64(x) BETWEEN -50 AND -40)
 WHERE explain ILIKE '%Granules: 2/8%';
 
--- Without a cast the same shape was always correct, so a failure here means something else broke.
+-- The same chain with no cast, as a control: a failure here points outside the cast path.
 SELECT 'no cast',
     (SELECT (count(), sum(x)) FROM t_wpk_chain WHERE abs(negate(x)) BETWEEN 10 AND 20),
     (SELECT (count(), sum(x)) FROM t_wpk_chain_unsorted WHERE abs(negate(x)) BETWEEN 10 AND 20);
 
--- The chain shapes the fix is about must still prune. Result comparisons alone cannot show this: a
--- chain that declines analysis reads every granule and returns the same correct rows.
+-- A widening cast followed by another monotonic function must still prune. Result comparisons
+-- alone cannot show this: a chain that declines analysis reads every granule and returns the
+-- same correct rows.
 SET use_lightweight_primary_key_index_analysis = 1;
 SELECT 'chain granules read, lightweight analysis', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT sum(x) FROM t_wpk_chain WHERE abs(negate(toInt64(x))) BETWEEN 10 AND 20)
