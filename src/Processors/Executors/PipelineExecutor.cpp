@@ -195,9 +195,15 @@ void PipelineExecutor::cancel(ExecutionStatus reason)
 
 void PipelineExecutor::cancelReading()
 {
-    if (!cancelled_reading)
+    if (!cancelled_reading.exchange(true))
     {
-        cancelled_reading = true;
+        /// Like `cancel`, `cancelReading` may be called from another thread
+        /// (e.g. `PullingAsyncPipelineExecutor::cancelReading`) while the executor thread is
+        /// entering `finalizeExecution`. The synchronous `onCancel` calls below can drain late
+        /// `Progress` / `ProfileInfo` packets into `ISource::read_progress` (e.g. `RemoteSource`),
+        /// so they have to be serialized with the final progress collection — otherwise the
+        /// drained progress could arrive after the final replay and never be forwarded.
+        std::lock_guard lock(cancel_mutex);
         graph->cancel(IProcessor::CancelReason::PartialResult);
     }
 }
