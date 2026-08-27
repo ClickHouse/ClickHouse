@@ -19,6 +19,7 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Disks/IDisk.h>
 
 #include <fmt/ranges.h>
@@ -35,6 +36,11 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
+}
+
 namespace Setting
 {
     extern const SettingsBool allow_suspicious_indices;
@@ -46,7 +52,8 @@ namespace
 /// drive the real `ALTER TABLE ... ADD PROJECTION` validation, which covers the merging-mode,
 /// UNIQUE KEY and projection-property checks (commit_order, block number/offset columns)
 void checkProjectionIsAddable(
-    const MergeTreeData & merge_tree, const ASTHypotheticalObjectQuery & query, const ContextPtr & context)
+    const MergeTreeData & merge_tree, const StorageMetadataPtr & metadata,
+    const ASTHypotheticalObjectQuery & query, const ContextPtr & context)
 {
     auto command_ast = make_intrusive<ASTAlterCommand>();
     command_ast->type = ASTAlterCommand::ADD_PROJECTION;
@@ -59,6 +66,8 @@ void checkProjectionIsAddable(
 
     AlterCommands commands;
     commands.push_back(std::move(*command));
+    /// checkAlterIsPossible applies the commands, which requires prepare first
+    commands.prepare(*metadata, (*merge_tree.getSettings())[MergeTreeSetting::share_nested_offsets]);
     merge_tree.checkAlterIsPossible(commands, context);
 }
 
@@ -97,7 +106,7 @@ BlockIO createHypotheticalProjection(
 
     /// run the engine's own ADD PROJECTION validation rather than copying its checks, so a
     /// definition that could not be materialized is rejected here too
-    checkProjectionIsAddable(merge_tree, query, context);
+    checkProjectionIsAddable(merge_tree, metadata, query, context);
 
     if (metadata->projections.has(projection_desc.name))
         throw Exception(

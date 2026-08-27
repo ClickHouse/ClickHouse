@@ -16,6 +16,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ProjectionsDescription.h>
@@ -39,6 +40,11 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsString ignore_data_skipping_indices;
     extern const SettingsString force_data_skipping_indices;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 namespace ErrorCodes
@@ -81,6 +87,7 @@ StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & contex
 void appendProjectionCandidates(
     WhatIfResult & result, const HypotheticalObjectStore & store, const MergeTreeData & data, const ContextPtr & context)
 {
+    auto metadata = data.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
     for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
     {
         WhatIfCandidateResult r;
@@ -101,6 +108,8 @@ void appendProjectionCandidates(
             {
                 AlterCommands commands;
                 commands.push_back(std::move(*command));
+                /// checkAlterIsPossible applies the commands, which requires prepare first
+                commands.prepare(*metadata, (*data.getSettings())[MergeTreeSetting::share_nested_offsets]);
                 data.checkAlterIsPossible(commands, context);
             }
         }
