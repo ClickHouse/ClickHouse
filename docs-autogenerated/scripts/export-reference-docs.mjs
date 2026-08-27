@@ -607,7 +607,13 @@ function navigationGroupMatches(document, group) {
     || document.sourcePath.startsWith(group.match.sourcePrefix);
   const kindMatches = group.match.entityKinds === undefined
     || group.match.entityKinds.includes(document.entityKind);
-  return explicitlyIncluded || (prefixMatches && kindMatches);
+  const titlePrefixMatches = group.match.titlePrefix === undefined
+    || document.title.startsWith(group.match.titlePrefix);
+  return explicitlyIncluded || (prefixMatches && kindMatches && titlePrefixMatches);
+}
+
+function navigationDocumentLabel(document, group) {
+  return group.useDocumentTitle ? document.title : document.name;
 }
 
 function excludedSourcePathSet(definition) {
@@ -660,8 +666,23 @@ function resolveNavigation(definition, documents) {
     if (group.match?.entityKinds !== undefined && !Array.isArray(group.match.entityKinds)) {
       throw new Error(`Invalid entityKinds in reference navigation group ${group.id}`);
     }
+    if (group.match?.titlePrefix !== undefined && typeof group.match.titlePrefix !== 'string') {
+      throw new Error(`Invalid titlePrefix in reference navigation group ${group.id}`);
+    }
     if (group.documentIds !== undefined && !Array.isArray(group.documentIds)) {
       throw new Error(`Invalid documentIds in reference navigation group ${group.id}`);
+    }
+    if (group.childrenOrder !== undefined && !Array.isArray(group.childrenOrder)) {
+      throw new Error(`Invalid childrenOrder in reference navigation group ${group.id}`);
+    }
+    if ((group.childrenOrder ?? []).some((childId) => typeof childId !== 'string')) {
+      throw new Error(`Invalid childrenOrder entry in reference navigation group ${group.id}`);
+    }
+    if (new Set(group.childrenOrder ?? []).size !== (group.childrenOrder ?? []).length) {
+      throw new Error(`Duplicate childrenOrder entry in reference navigation group ${group.id}`);
+    }
+    if (group.useDocumentTitle !== undefined && typeof group.useDocumentTitle !== 'boolean') {
+      throw new Error(`Invalid useDocumentTitle in reference navigation group ${group.id}`);
     }
     if (group.groupBySourcePage !== undefined && typeof group.groupBySourcePage !== 'boolean') {
       throw new Error(`Invalid groupBySourcePage in reference navigation group ${group.id}`);
@@ -702,7 +723,9 @@ function resolveNavigation(definition, documents) {
             if (rightOrder === undefined) return -1;
             return leftOrder - rightOrder;
           }
-          return left.name.localeCompare(right.name);
+          return navigationDocumentLabel(left, group).localeCompare(
+            navigationDocumentLabel(right, group),
+          );
         });
       const groupedDocuments = new Map();
       const ungroupedDocuments = [];
@@ -726,7 +749,7 @@ function resolveNavigation(definition, documents) {
       const documentNodes = ungroupedDocuments.map((document) => ({
         type: 'document',
         documentId: document.id,
-        label: document.name,
+        label: navigationDocumentLabel(document, group),
         route: document.route,
       }));
       const generatedGroupNodes = [...groupedDocuments.values()]
@@ -747,9 +770,24 @@ function resolveNavigation(definition, documents) {
         }));
       const resolvedGroupNodes = [...nested, ...generatedGroupNodes];
       const groupNodes = resolvedGroupNodes.map(({ allDocumentIds: _allDocumentIds, ...node }) => node);
-      const children = group.documentsPosition === 'after'
+      const defaultChildren = group.documentsPosition === 'after'
         ? [...groupNodes, ...documentNodes]
         : [...documentNodes, ...groupNodes];
+      const childById = new Map(defaultChildren.map((child) => [
+        child.type === 'group' ? child.id : child.documentId,
+        child,
+      ]));
+      const children = (group.childrenOrder ?? []).map((childId) => {
+        const child = childById.get(childId);
+        if (!child) {
+          throw new Error(`Unknown childrenOrder entry ${childId} in reference navigation group ${group.id}`);
+        }
+        childById.delete(childId);
+        return child;
+      });
+      children.push(...defaultChildren.filter((child) => (
+        childById.has(child.type === 'group' ? child.id : child.documentId)
+      )));
       const allDocumentIds = [
         ...ungroupedDocuments.map((document) => document.id),
         ...resolvedGroupNodes.flatMap((node) => node.allDocumentIds),

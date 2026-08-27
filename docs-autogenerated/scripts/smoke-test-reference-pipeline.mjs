@@ -196,6 +196,28 @@ async function main() {
       findNavigationNode(navigation.root, 'reference.statements.system')?.children.length > 1,
       'Individual `SYSTEM` statements are missing from navigation',
     );
+    const alterNavigation = findNavigationNode(navigation.root, 'reference.statements.alter');
+    const alterTableNavigation = findNavigationNode(
+      navigation.root,
+      'reference.statements.alter.table',
+    );
+    requireValue(
+      alterNavigation?.children[0]?.documentId === 'reference:statements/alter/index'
+        && alterNavigation.children[1]?.id === 'reference.statements.alter.table',
+      '`ALTER` navigation does not start with its overview and `ALTER TABLE` primitive',
+    );
+    requireValue(
+      alterTableNavigation?.children.some((child) => child.label === 'ALTER TABLE ... COLUMN')
+        && alterTableNavigation.children.some((child) => child.label === 'ALTER TABLE ... CONSTRAINT'),
+      '`ALTER TABLE` variants are missing from their primitive navigation group',
+    );
+    const createNavigation = findNavigationNode(navigation.root, 'reference.statements.create');
+    requireValue(
+      createNavigation?.children[0]?.documentId === 'reference:statements/create/index'
+        && createNavigation.children[1]?.id === 'reference.statements.create-dictionary'
+        && createNavigation.children[2]?.id === 'reference.statements.create-table',
+      '`CREATE` navigation does not follow its primitive hierarchy',
+    );
     for (const title of ['sequenceMatch', 'GROUPING']) {
       const sourceContainsTitle = documents.some(
         (document) => document.sourcePath.includes('aggregate-functions')

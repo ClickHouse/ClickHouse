@@ -230,28 +230,99 @@
       "documentsPosition": "after",
       "groups": [
         {
+          "id": "reference.statements.alter",
+          "label": "ALTER",
+          "match": { "sourcePrefix": "statements/alter/" },
+          "documentIds": ["reference:statements/alter/index"],
+          "childrenOrder": [
+            "reference:statements/alter/index",
+            "reference.statements.alter.table"
+          ],
+          "groups": [
+            {
+              "id": "reference.statements.alter.table",
+              "label": "ALTER TABLE",
+              "match": {
+                "sourcePrefix": "statements/alter/",
+                "titlePrefix": "ALTER TABLE"
+              },
+              "useDocumentTitle": true
+            }
+          ]
+        },
+        {
+          "id": "reference.statements.check",
+          "label": "CHECK",
+          "match": { "sourcePrefix": "statements/check-" }
+        },
+        {
+          "id": "reference.statements.create",
+          "label": "CREATE",
+          "match": { "sourcePrefix": "statements/create/" },
+          "documentIds": ["reference:statements/create/index"],
+          "childrenOrder": [
+            "reference:statements/create/index",
+            "reference.statements.create-dictionary",
+            "reference.statements.create-table"
+          ],
+          "groups": [
+            {
+              "id": "reference.statements.create-dictionary",
+              "label": "CREATE DICTIONARY",
+              "match": { "sourcePrefix": "statements/create/dictionary" },
+              "documentIds": ["reference:statements/create/dictionary"],
+              "childrenOrder": [
+                "reference:statements/create/dictionary",
+                "reference.statements.create-dictionary.layouts",
+                "reference.statements.create-dictionary.sources"
+              ],
+              "groups": [
+                {
+                  "id": "reference.statements.create-dictionary.layouts",
+                  "label": "Layouts",
+                  "match": { "sourcePrefix": "statements/create/dictionary/layouts/" }
+                },
+                {
+                  "id": "reference.statements.create-dictionary.sources",
+                  "label": "Sources",
+                  "match": { "sourcePrefix": "statements/create/dictionary/sources/" }
+                }
+              ]
+            },
+            {
+              "id": "reference.statements.create-table",
+              "label": "CREATE TABLE",
+              "match": { "sourcePrefix": "statements/create/table" },
+              "documentIds": ["reference:statements/create/table"],
+              "childrenOrder": ["reference:statements/create/table"]
+            }
+          ]
+        },
+        {
+          "id": "reference.statements.select",
+          "label": "SELECT",
+          "match": { "sourcePrefix": "statements/select/" },
+          "documentIds": ["reference:statements/select/index"],
+          "childrenOrder": ["reference:statements/select/index"]
+        },
+        {
+          "id": "reference.statements.set",
+          "label": "SET",
+          "match": { "sourcePrefix": "statements/set" },
+          "documentIds": [
+            "reference:statements/set",
+            "reference:statements/set-role"
+          ],
+          "childrenOrder": [
+            "reference:statements/set",
+            "reference:statements/set-role"
+          ]
+        },
+        {
           "id": "reference.statements.system",
           "label": "SYSTEM",
           "match": { "sourcePrefix": "statements/system.mdx" },
           "groupBySourcePage": true
-        },
-        {
-          "id": "reference.statements.create-dictionary",
-          "label": "CREATE DICTIONARY",
-          "match": { "sourcePrefix": "statements/create/dictionary/" },
-          "documentsPosition": "after",
-          "groups": [
-            {
-              "id": "reference.statements.create-dictionary.layouts",
-              "label": "Layouts",
-              "match": { "sourcePrefix": "statements/create/dictionary/layouts/" }
-            },
-            {
-              "id": "reference.statements.create-dictionary.sources",
-              "label": "Sources",
-              "match": { "sourcePrefix": "statements/create/dictionary/sources/" }
-            }
-          ]
         }
       ]
     },
