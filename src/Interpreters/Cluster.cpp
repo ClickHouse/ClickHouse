@@ -363,6 +363,12 @@ void Clusters::setCluster(const String & cluster_name, const std::shared_ptr<Clu
     impl[cluster_name] = cluster;
 }
 
+void Clusters::removeCluster(const String & cluster_name)
+{
+    std::lock_guard lock(mutex);
+    impl.erase(cluster_name);
+}
+
 
 void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config)
 {

@@ -6789,10 +6789,17 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
 {
     std::lock_guard lock(shared->clusters_mutex);
 
-    if (!shared->clusters)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Clusters are not set");
+    getClustersImpl(lock)->setCluster(cluster_name, cluster);
+}
 
-    shared->clusters->setCluster(cluster_name, cluster);
+void Context::removeCluster(const String & cluster_name)
+{
+    std::lock_guard lock(shared->clusters_mutex);
+
+    if (!shared->clusters)
+        return;
+
+    shared->clusters->removeCluster(cluster_name);
 }
 
 

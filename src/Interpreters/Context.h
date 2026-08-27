@@ -1740,6 +1740,7 @@ public:
 
     /// Sets custom cluster, but doesn't update configuration
     void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
+    void removeCluster(const String & cluster_name);
     void reloadClusterConfig() const;
 
     bool isDistributedCacheServer() const;
