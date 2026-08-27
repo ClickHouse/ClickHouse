@@ -234,8 +234,9 @@ SQLQueryPiece applyFunctionOverRange(
             /// SELECT <aggregate_function>(timeSeriesRange(<start_time>, <end_time>, <step>),
             ///                             arrayResize([], <count_of_time_steps>, <scalar_value>)) AS values
             /// FROM <subquery>
+            const auto & scalar_data_type = argument.value_data_type ? argument.value_data_type : context.scalar_data_type;
             ASTPtr value = (argument.store_method == StoreMethod::CONST_SCALAR)
-                ? timeSeriesScalarToAST(argument.scalar_value, context.scalar_data_type)
+                ? timeSeriesScalarToAST(argument.scalar_value, scalar_data_type)
                 : make_intrusive<ASTIdentifier>(ColumnNames::Value);
 
             /// arrayResize([], <count_of_time_steps>, <scalar_value>)

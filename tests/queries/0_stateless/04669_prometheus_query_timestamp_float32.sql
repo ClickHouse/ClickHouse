@@ -91,6 +91,26 @@ FROM prometheusQueryRange(
 ARRAY JOIN time_series AS sample
 ORDER BY sample.1;
 
+-- (`Float64` for `timestamp`), not with the table's own `Float32` sample type.
+SELECT toTypeName(value), value
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'label_replace(timestamp(vector(1)), "dst", "x", "", "")',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
+SELECT toTypeName(value), value
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'label_join(timestamp(vector(1)), "dst", "-", "", "")',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
+-- `unless`: the left operand keeps its `Float64` values because the right operand has different labels.
+SELECT toTypeName(value), value
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'label_replace(timestamp(vector(1)), "dst", "x", "", "") unless vector(0)',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
 DROP TABLE promql_timestamp_float32;
 DROP TABLE promql_timestamp_float32_tags;
 DROP TABLE promql_timestamp_float32_samples;
