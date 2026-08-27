@@ -193,7 +193,7 @@ public:
             flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
         const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-        const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
+        const auto & value_column = typeid_cast<const ColVecValueType &>(*columns[1]);
         const TimestampType * timestamp_data = timestamp_column.getData().data();
         const ValueType * value_data = value_column.getData().data();
 
