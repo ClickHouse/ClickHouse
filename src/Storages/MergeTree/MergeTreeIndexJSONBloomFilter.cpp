@@ -1745,10 +1745,11 @@ MergeTreeIndexSubstreams MergeTreeIndexJSONBloomFilter::getSubstreams() const
 }
 
 MergeTreeIndexFormat MergeTreeIndexJSONBloomFilter::getPhysicalFormat(
-    const IMergeTreeDataPart & part,
+    const MergeTreeDataPartChecksums & checksums,
+    const IDataPartStorage & storage,
     const std::string & relative_path_prefix) const
 {
-    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx2", &part.getDataPartStorage()))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", &storage))
         return {2, getSubstreams()};
     return {0, {}};
 }
