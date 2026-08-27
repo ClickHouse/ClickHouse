@@ -40,10 +40,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const IMergeTreeDataPart::TTLInfos & old_ttl_infos,
         time_t current_time,
-        bool force,
-        /// Include the rows-WHERE TTLs even when no source part reported an expired row. Set for
-        /// merges whose output can hold a value no source row had, where that report says nothing.
-        bool force_rows_where_ttl);
+        bool force);
 
     TTLDeleteFilterTransform(const SharedHeader & header_, std::shared_ptr<const SharedState> shared_state_);
 

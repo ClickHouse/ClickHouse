@@ -53,8 +53,7 @@ TTLDeleteFilterTransform::build(
     const StorageMetadataPtr & metadata_snapshot,
     const IMergeTreeDataPart::TTLInfos & old_ttl_infos,
     time_t current_time,
-    bool force,
-    bool force_rows_where_ttl)
+    bool force)
 {
     auto state = std::make_shared<SharedState>();
     state->current_time = current_time;
@@ -85,7 +84,7 @@ TTLDeleteFilterTransform::build(
             if (it != old_ttl_infos.rows_where_ttl.end())
                 old_ttl_info = it->second;
 
-            if (!force && !force_rows_where_ttl && !isTTLExpired(old_ttl_info.min, current_time))
+            if (!force && !isTTLExpired(old_ttl_info.min, current_time))
                 continue;
 
             auto expressions = buildTTLExpressions(where_ttl, subqueries, context);

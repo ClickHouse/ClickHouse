@@ -645,11 +645,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     /// `part_min_ttl` for a rows-WHERE TTL only counts rows that already pass the WHERE, so it cannot
     /// see a condition that first becomes true in the merge output. Re-evaluate it from the output
-    /// instead of trusting the source parts. Patch parts do that on any merge mode: the merge reads
-    /// the patched values, so a lightweight `UPDATE` of a column the WHERE reads can first make the
-    /// condition true here, while `ttl_infos` above was seeded from the base parts only.
-    if (global_ctx->metadata_snapshot->hasAnyRowsWhereTTL()
-        && (mergeCanChangeColumnValues(global_ctx->merging_params.mode) || !global_ctx->future_part->patch_parts.empty()))
+    /// instead of trusting the source parts.
+    if (global_ctx->metadata_snapshot->hasAnyRowsWhereTTL() && mergeCanChangeColumnValues(global_ctx->merging_params.mode))
     {
         ctx->need_remove_expired_values = true;
         ctx->force_rows_where_ttl = true;
@@ -2906,8 +2903,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const IMergeTreeDataPart::TTLInfos & old_ttl_infos_,
         time_t current_time_,
-        bool force_,
-        bool force_rows_where_ttl_)
+        bool force_)
         : ITransformingStep(input_header_, TTLDeleteFilterTransform::transformHeader(input_header_), getTraits())
     {
         /// Build TTL expressions once and share them across all per-stream
@@ -2916,8 +2912,7 @@ public:
         /// during execution.
         PreparedSets::Subqueries subqueries_for_sets;
         std::tie(shared_state, subqueries_for_sets)
-            = TTLDeleteFilterTransform::build(
-                context_, metadata_snapshot_, old_ttl_infos_, current_time_, force_, force_rows_where_ttl_);
+            = TTLDeleteFilterTransform::build(context_, metadata_snapshot_, old_ttl_infos_, current_time_, force_);
 
         /// Build sets eagerly here rather than via addCreatingSetsStep.
         /// If they were built inside the merge pipeline, the subquery progress (rows read)
@@ -3369,8 +3364,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->metadata_snapshot,
             global_ctx->new_data_part->ttl_infos,
             global_ctx->time_of_merge,
-            ctx->force_ttl,
-            ctx->force_rows_where_ttl);
+            ctx->force_ttl);
 
         ttl_filter_step->setStepDescription("TTL delete filter");
         merge_parts_query_plan.addStep(std::move(ttl_filter_step));
