@@ -9,6 +9,7 @@
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/ErrnoException.h>
 #include <Common/MemoryWorker.h>
 #include <Common/formatReadable.h>
@@ -413,6 +414,130 @@ AsynchronousMetricValues AsynchronousMetrics::getValues() const
 {
     SharedLockGuard lock(values_mutex);
     return values;
+}
+
+namespace
+{
+
+/// The two parts of the pre-26.8 name of a key-value metric family, surrounding the key.
+struct LegacyMetricName
+{
+    String prefix;
+    String suffix;
+};
+
+/// The metric families that were turned into key-value metrics in version 26.8, and how their keys used to be
+/// mangled into the metric name before that. The table is historical and does not grow: a key-value metric
+/// family introduced later never had a legacy name.
+const std::unordered_map<std::string_view, LegacyMetricName> & getLegacyMetricNames()
+{
+    static const std::unordered_map<std::string_view, LegacyMetricName> result = []
+    {
+        std::unordered_map<std::string_view, LegacyMetricName> res;
+
+        /// The CPU core number was appended to the metric name: `OSUserTimeCPU3`.
+        for (std::string_view metric : {
+            "OSUserTimeCPU", "OSNiceTimeCPU", "OSSystemTimeCPU", "OSIdleTimeCPU", "OSIOWaitTimeCPU",
+            "OSIrqTimeCPU", "OSSoftIrqTimeCPU", "OSStealTimeCPU", "OSGuestTimeCPU", "OSGuestNiceTimeCPU"})
+            res.emplace(metric, LegacyMetricName{String(metric), ""});
+
+        /// The key was appended to the metric name after an underscore: `BlockReadBytes_sda`.
+        for (std::string_view metric : {
+            "CPUFrequencyMHz",
+            "BlockReadOps", "BlockWriteOps", "BlockDiscardOps",
+            "BlockReadMerges", "BlockWriteMerges", "BlockDiscardMerges",
+            "BlockReadBytes", "BlockWriteBytes", "BlockDiscardBytes",
+            "BlockReadTime", "BlockWriteTime", "BlockDiscardTime",
+            "BlockInFlightOps", "BlockActiveTime", "BlockQueueTime",
+            "BlockActiveTimePerOp", "BlockQueueTimePerOp",
+            "NetworkReceiveBytes", "NetworkReceivePackets", "NetworkReceiveErrors", "NetworkReceiveDrop",
+            "NetworkSendBytes", "NetworkSendPackets", "NetworkSendErrors", "NetworkSendDrop",
+            "DiskTotal", "DiskUsed", "DiskAvailable", "DiskUnreserved",
+            "DiskPutObjectThrottlerRPS", "DiskPutObjectThrottlerAvailable",
+            "DiskGetObjectThrottlerRPS", "DiskGetObjectThrottlerAvailable"})
+            res.emplace(metric, LegacyMetricName{String(metric) + "_", ""});
+
+        /// The memory controller number was in the middle of the name: `EDAC0_Correctable`.
+        res.emplace("EDACCorrectable", LegacyMetricName{"EDAC", "_Correctable"});
+        res.emplace("EDACUncorrectable", LegacyMetricName{"EDAC", "_Uncorrectable"});
+
+        /// The logging channel name was in the middle of the name: `AsyncLoggingTextLogQueueSize`.
+        res.emplace("AsyncLoggingQueueSize", LegacyMetricName{"AsyncLogging", "QueueSize"});
+
+        /// The disk name was a prefix of the name: `s3_diskDeadBlobsQueueEstimate`.
+        res.emplace("DeadBlobsQueueEstimate", LegacyMetricName{"", "DeadBlobsQueueEstimate"});
+        res.emplace("MissingBlobsQueueEstimate", LegacyMetricName{"", "MissingBlobsQueueEstimate"});
+
+        return res;
+    }();
+
+    return result;
+}
+
+}
+
+String getLegacyAsynchronousMetricName(const String & metric, const String & key)
+{
+    /// `Temperature` merged two families named differently: the thermal zones (`/sys/class/thermal`), whose
+    /// numeric keys were appended right after the name (`Temperature3`), and the hardware monitors
+    /// (`/sys/class/hwmon`), whose names were appended after an underscore (`Temperature_coretemp_Core_0`).
+    if (metric == "Temperature")
+    {
+        if (!key.empty() && std::all_of(key.begin(), key.end(), isNumericASCII))
+            return "Temperature" + key;
+        return "Temperature_" + key;
+    }
+
+    const auto & legacy_names = getLegacyMetricNames();
+    auto it = legacy_names.find(std::string_view{metric});
+    if (it == legacy_names.end())
+        return {};
+
+    return it->second.prefix + key + it->second.suffix;
+}
+
+void applyAsynchronousMetricsKeyValuesMode(AsynchronousMetricValues & values, AsynchronousMetricsKeyValuesMode mode)
+{
+    if (mode == AsynchronousMetricsKeyValuesMode::KeyValues)
+        return;
+
+    AsynchronousMetricValues legacy_values;
+    std::vector<String> metrics_to_remove;
+
+    for (const auto & [name, value] : values)
+    {
+        if (!value.isMap())
+            continue;
+
+        bool has_legacy_name = false;
+
+        for (const auto & [key, key_value] : value.key_values)
+        {
+            String legacy_name = getLegacyAsynchronousMetricName(name, key);
+            if (legacy_name.empty())
+                continue;
+
+            has_legacy_name = true;
+
+            AsynchronousMetricValue legacy_value;
+            legacy_value.value = key_value;
+            legacy_value.documentation = value.documentation;
+            legacy_value.source = value.source;
+            legacy_values[std::move(legacy_name)] = legacy_value;
+        }
+
+        /// A family that has no legacy name (it appeared after the change) is published as it is,
+        /// because there is nothing else it could be published as.
+        if (has_legacy_name && mode == AsynchronousMetricsKeyValuesMode::LegacyNames)
+            metrics_to_remove.push_back(name);
+    }
+
+    for (const auto & name : metrics_to_remove)
+        values.erase(name);
+
+    /// A legacy name is the name that the very same measurement had before the change, so it never collides
+    /// with the name of another metric.
+    values.merge(legacy_values);
 }
 
 namespace
@@ -2758,6 +2883,11 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     updateImpl(update_time, current_time, force_update, first_run, new_values);
 
     new_values["AsynchronousMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous metrics (this is the overhead of asynchronous metrics)." };
+
+    /// Publish the key-value metrics in the form the consumers are configured to expect. This is done once,
+    /// here, so that every consumer of the values (`system.asynchronous_metric_log` below,
+    /// `system.asynchronous_metrics`, the Prometheus endpoint and Graphite) sees a consistent picture.
+    applyAsynchronousMetricsKeyValuesMode(new_values, getAsynchronousMetricsKeyValuesMode(context->getConfigRef()));
 
     logImpl(new_values);
 
