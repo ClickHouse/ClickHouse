@@ -1,0 +1,45 @@
+-- no policy: table function returns all rows
+Alice
+Bob
+Carol
+Dave
+-- base table honours the policy
+Alice
+Carol
+-- projection stores the policy column: filter is applied
+Alice
+Carol
+-- filter applied even when the policy column is selected explicitly
+Alice	engineering
+Carol	engineering
+-- projection lacks the policy column: read is refused
+-- bare-column policy is enforced (expect 1, 3)
+1
+3
+-- policy on the _partition_id virtual is enforced (expect 1, 3)
+1
+3
+-- DEFAULT column stored: filtered on the stored value (expect 1, 2)
+1
+2
+-- user PREWHERE does not observe policy-hidden rows (expect 1, 3)
+1
+3
+-- LIMIT returns visible rows, not rows hidden by the policy (expect 1)
+1
+-- read-in-order + LIMIT skips the policy-hidden leading rows (expect 51)
+51
+-- row policy and additional_table_filters both apply (expect 1, 4)
+1
+4
+-- policy on an ALIAS column: read is refused
+-- policy on a DEFAULT column with only its dependency stored: read is refused
+-- policy on a MATERIALIZED column with only its dependency stored: read is refused
+-- policy on a position-relative virtual (_part_offset): read is refused
+-- same position-relative virtual wrapped in a SQL UDF: read is refused
+-- policy on a column shadowed by a projection expression: read is refused
+-- aggregate projection under a row policy: read is refused
+-- policy on the _block_number virtual: read is refused
+-- policy on the projection-only _parent_part_offset name: read is refused
+-- table-function row policy combines with the parent policy, both applied (expect no rows)
+-- pending on-the-fly mutation under a row policy: read is refused
