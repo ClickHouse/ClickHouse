@@ -258,3 +258,20 @@ SELECT count() FROM (EXPLAIN indexes = 1 SELECT sum(a) FROM t_intdiv_mono WHERE 
        WHERE explain LIKE '%Granules: 3/5%';
 
 DROP TABLE t_intdiv_mono;
+
+-- Decimal128 and Decimal256 dividends truncate through the wider arms of the same width switch: an
+-- all-ones unsigned constant casts to -1, so the direction reverses as it does for Decimal32 above.
+-- The constant must arrive as a string, because a literal this wide parses as Float64.
+CREATE TABLE t_intdiv_mono (a Decimal(38, 4)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 2;
+INSERT INTO t_intdiv_mono SELECT toDecimal128(number, 4) FROM numbers(10);
+SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, toUInt128('340282366920938463463374607431768211455')) < -4)
+     = (SELECT countIf(intDiv(a, toUInt128('340282366920938463463374607431768211455')) < -4) FROM t_intdiv_mono);
+
+DROP TABLE t_intdiv_mono;
+
+CREATE TABLE t_intdiv_mono (a Decimal(76, 4)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 2;
+INSERT INTO t_intdiv_mono SELECT toDecimal256(number, 4) FROM numbers(10);
+SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, toUInt256('115792089237316195423570985008687907853269984665640564039457584007913129639935')) < -4)
+     = (SELECT countIf(intDiv(a, toUInt256('115792089237316195423570985008687907853269984665640564039457584007913129639935')) < -4) FROM t_intdiv_mono);
+
+DROP TABLE t_intdiv_mono;

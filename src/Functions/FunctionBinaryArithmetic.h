@@ -3985,7 +3985,7 @@ public:
             case sizeof(Int64): return exceeds(std::type_identity<Int64>{});
             case sizeof(Int128): return exceeds(std::type_identity<Int128>{});
             case sizeof(Int256): return exceeds(std::type_identity<Int256>{});
-            default: return true;
+            default: return true; /// unreachable for the four `Decimal` widths above; fails close if a new one appears
         }
     }
 
