@@ -160,7 +160,7 @@ Names filterStreamingVirtualColumns(Names columns)
 bool isSortLimitReached(const SizeLimits & sort_limits, const StreamReadProgress & read_progress)
 {
     return !sort_limits.check(
-        read_progress.round_read_rows, read_progress.round_read_bytes, "rows or bytes to sort",
+        read_progress.current_round_read_rows, read_progress.current_round_read_bytes, "rows or bytes to sort",
         ErrorCodes::TOO_MANY_ROWS_OR_BYTES);
 }
 
@@ -174,7 +174,7 @@ bool isReadLimitReached(const StorageLimitsListPtr & storage_limits, const Strea
         if (limits.local_limits.mode == LimitsMode::LIMITS_TOTAL)
         {
             const bool within_limits = limits.local_limits.size_limits.check(
-                read_progress.read_rows, read_progress.read_bytes, "rows or bytes to read",
+                read_progress.overall_read_rows, read_progress.overall_read_bytes, "rows or bytes to read",
                 ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES);
 
             if (!within_limits)
@@ -182,7 +182,7 @@ bool isReadLimitReached(const StorageLimitsListPtr & storage_limits, const Strea
         }
 
         const bool within_leaf_limits = limits.leaf_limits.check(
-            read_progress.read_rows, read_progress.read_bytes, "rows or bytes to read on leaf node",
+            read_progress.overall_read_rows, read_progress.overall_read_bytes, "rows or bytes to read on leaf node",
             ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES);
 
         if (!within_leaf_limits)
