@@ -1,5 +1,6 @@
 full columns	1
 full dropped discovery	1
+full installed discovery	1
 quick parts	1
 quick parts_columns	1
 quick projection_parts	1
@@ -7,6 +8,7 @@ quick projection_parts_columns	1
 quick parts_columns_wide	1
 quick dropped_tables_parts	1
 quick dropped_tables_parts_discovery	1
+quick parts_installed_discovery	1
 fast parts 1
 fast parts_columns 1
 fast projection_parts 1
@@ -23,3 +25,4 @@ fast parts_columns_meta 1
 fast projection_parts_columns_meta 1
 fast parts_columns_snap_wide 1
 fast projection_parts_columns_snap_wide 1
+fast parts_installed_discovery 1

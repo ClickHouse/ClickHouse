@@ -25,6 +25,13 @@ void slowDownSystemPartsEnumeration(const String & table_name);
 /// `COLUMNS_CANCELLATION_CHECK_PERIOD` enumerated columns of a part.
 void slowDownSystemPartsColumnsEnumeration(const String & table_name, size_t column_position);
 
+/// The same, but for the storage-discovery prepass of `StoragesInfoStream` (the eager walk over
+/// all databases and tables): sleeps on every walked table with the matching name, so that the
+/// tests can prove that the walk itself stops at its cancellation checkpoint. It is scoped to
+/// a narrower table-name prefix than `slowDownSystemPartsEnumeration`, so that the discovery
+/// fixture does not slow down the walk for the queries that test the later checkpoints.
+void slowDownSystemPartsDiscovery(const String & table_name);
+
 /// The same, but for the column-metadata prepass of the column-oriented tables. It is scoped to
 /// a narrower table-name prefix than the loops above, so that the tests can exercise the prepass
 /// checkpoints and the later per-part / per-column checkpoints independently: a query over a

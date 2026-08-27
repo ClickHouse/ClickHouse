@@ -91,6 +91,22 @@ void slowDownSystemPartsColumnsEnumeration([[maybe_unused]] const String & table
     });
 }
 
+void slowDownSystemPartsDiscovery([[maybe_unused]] const String & table_name)
+{
+    fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
+    {
+        /// Sleep on every walked table of the storage-discovery prepass, so that a test can prove
+        /// by counting the sleeps that the cancellation checkpoint of the walk stops it. The
+        /// narrower name prefix keeps the walk fast for the tables that test the later
+        /// per-part / per-column checkpoints.
+        if (table_name.starts_with("t_slowdown_system_parts_discovery"))
+        {
+            ProfileEvents::increment(ProfileEvents::SystemPartsEnumerationSlowdownSleeps);
+            sleepForMilliseconds(500);
+        }
+    });
+}
+
 void slowDownSystemPartsMetadataEnumeration([[maybe_unused]] const String & table_name, [[maybe_unused]] size_t column_position)
 {
     fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
@@ -316,6 +332,9 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                     }
 
                     String table_name = iterator->name();
+
+                    slowDownSystemPartsDiscovery(table_name);
+
                     StoragePtr storage = iterator->table();
                     if (!storage)
                         continue;

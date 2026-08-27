@@ -35,6 +35,10 @@
 #   '_snap' name marker the failpoint sleeps 500 ms per enumerated part inside the walk itself
 #   and polls the callback on every part (its regular cadence of 8192 parts cannot be reached
 #   with a fixture of a reasonable size);
+# - the checkpoint of the database/table discovery walk in `StoragesInfoStream`: for the tables
+#   with the '_discovery' name marker the failpoint sleeps 500 ms per walked table, and the
+#   fixture lives in a dedicated database so that the sleeps do not slow down the walk for the
+#   other checks;
 # - the checkpoints of the column-metadata prepass of the column-oriented tables: for the tables
 #   with the '_meta' name marker the failpoint sleeps 500 ms per 128 enumerated metadata
 #   columns inside the prepass;
@@ -67,6 +71,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 NUM_PARTS=10
 # This fixture exercises the eager storage-discovery pass in `StoragesDroppedInfoStream`.
 NUM_DROPPED_TABLES=10
+# This fixture exercises the eager database/table discovery walk in `StoragesInfoStream`.
+# It lives in a separate database: the walk enumerates every table of the walked database
+# regardless of the query's table filter, so keeping these tables next to the other fixtures
+# would add discovery sleeps to every other check.
+NUM_DISCOVERY_TABLES=10
 # A table with many columns in a single part: exercises the checkpoints of the column-enumeration
 # loops, which fire every 128 enumerated columns: 1025 columns give 8 checkpoints per part.
 NUM_WIDE_COLUMNS=1024
@@ -86,8 +95,19 @@ DROPPED_DISCOVERY_TABLES=$(for i in $(seq 1 $NUM_DROPPED_TABLES); do echo "
 CREATE TABLE ${DROPPED_DISCOVERY_TABLE_PREFIX}$i (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO ${DROPPED_DISCOVERY_TABLE_PREFIX}$i VALUES (1);
 DROP TABLE ${DROPPED_DISCOVERY_TABLE_PREFIX}$i SETTINGS database_atomic_wait_for_drop_and_detach_synchronously = 0;"; done)
+# The '_discovery' name marker slows down the database/table discovery walk in
+# `StoragesInfoStream` (500 ms per walked table), so the checks over this database prove that
+# the walk stops at its cancellation checkpoint instead of enumerating every table.
+DISCOVERY_DATABASE="${CLICKHOUSE_DATABASE}_discovery"
+DISCOVERY_TABLES=$(for i in $(seq 1 $NUM_DISCOVERY_TABLES); do echo "
+CREATE TABLE $DISCOVERY_DATABASE.t_slowdown_system_parts_discovery_$i (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO $DISCOVERY_DATABASE.t_slowdown_system_parts_discovery_$i VALUES (1);"; done)
 
 $CLICKHOUSE_CLIENT --query "
+DROP DATABASE IF EXISTS $DISCOVERY_DATABASE;
+CREATE DATABASE $DISCOVERY_DATABASE;
+$DISCOVERY_TABLES
+
 DROP TABLE IF EXISTS t_slowdown_system_parts;
 DROP TABLE IF EXISTS $DROPPED_TABLE;
 DROP TABLE IF EXISTS t_slowdown_system_parts_wide;
@@ -142,6 +162,7 @@ $DROPPED_DISCOVERY_TABLES
 -- Sanity check: without any limits, the whole result is built.
 SELECT 'full columns', count() = $NUM_WIDE_COLUMNS + 1 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_slowdown_system_parts_wide';
 SELECT 'full dropped discovery', count() = $NUM_DROPPED_TABLES FROM system.dropped_tables_parts WHERE database = currentDatabase() AND table LIKE '${DROPPED_DISCOVERY_TABLE_PREFIX}%';
+SELECT 'full installed discovery', count() = $NUM_DISCOVERY_TABLES FROM system.parts WHERE database = '$DISCOVERY_DATABASE';
 
 -- The table is dropped but kept in system.dropped_tables_parts for database_atomic_delay_before_drop_table_sec.
 DROP TABLE $DROPPED_TABLE SETTINGS database_atomic_wait_for_drop_and_detach_synchronously = 0;
@@ -175,6 +196,19 @@ function check_break_dropped_discovery()
     "
 }
 
+function check_break_installed_discovery()
+{
+    echo "
+    TRUNCATE TABLE t_break_result;
+
+    INSERT INTO t_break_result
+        SELECT name FROM system.parts WHERE database = '$DISCOVERY_DATABASE'
+        SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'break';
+
+    SELECT 'quick parts_installed_discovery', count() < $NUM_DISCOVERY_TABLES FROM t_break_result;
+    "
+}
+
 function disable_slowdown_failpoint()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT slowdown_system_parts_enumeration" > /dev/null 2>&1 ||:
@@ -196,6 +230,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT slowdown_system_parts_enumer
     check_break_query parts_columns_wide parts_columns t_slowdown_system_parts_wide $((NUM_WIDE_COLUMNS + 1))
     check_break_query dropped_tables_parts dropped_tables_parts $DROPPED_TABLE $NUM_PARTS
     check_break_dropped_discovery
+    check_break_installed_discovery
 } | $CLICKHOUSE_CLIENT
 
 # $1 - the position of the check, $2 - a label, $3 - the system table, $4 - the source table,
@@ -209,6 +244,16 @@ function counted_query()
     FORMAT Null
     SETTINGS max_execution_time = 0.5, timeout_overflow_mode = 'break',
              log_comment = '$QUERY_LOG_PREFIX $1 $2';
+    "
+}
+
+function counted_installed_discovery()
+{
+    echo "
+    SELECT name FROM system.parts WHERE database = '$DISCOVERY_DATABASE'
+    FORMAT Null
+    SETTINGS max_execution_time = 0.5, timeout_overflow_mode = 'break',
+             log_comment = '$QUERY_LOG_PREFIX 17 parts_installed_discovery';
     "
 }
 
@@ -255,6 +300,11 @@ function counted_dropped_discovery()
     # a single returned part alone performs at least eight more sleeps.
     counted_query 15 parts_columns_snap_wide parts_columns t_slowdown_system_parts_snap_wide
     counted_query 16 projection_parts_columns_snap_wide projection_parts_columns t_slowdown_system_parts_snap_wide
+
+    # The '_discovery' fixture runs into its deadline inside the database/table discovery walk of
+    # `StoragesInfoStream` (500 ms per walked table, one sleep per table for the full walk over
+    # its dedicated database), so it pins the cancellation checkpoint of the walk itself.
+    counted_installed_discovery
 } | $CLICKHOUSE_CLIENT
 
 disable_slowdown_failpoint
@@ -282,4 +332,5 @@ DROP TABLE t_slowdown_system_parts_snap;
 DROP TABLE t_slowdown_system_parts_snap_wide;
 DROP TABLE t_slowdown_system_parts_meta;
 DROP TABLE t_slowdown_system_parts;
+DROP DATABASE $DISCOVERY_DATABASE;
 "
