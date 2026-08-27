@@ -2321,8 +2321,13 @@ ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<pa
 **Syntax**
 
 ```sql
+-- Account key
 CREATE TABLE table_name
-ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, extra_credentials(client_id=, tenant_id=)])
+ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+-- Workload identity (mutually exclusive with account_name / account_key)
+CREATE TABLE table_name
+ENGINE = DeltaLake(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])
 ```
 
 **Arguments**
@@ -2333,7 +2338,7 @@ ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpa
 - `blobpath` — Path to the Delta Lake table within the container
 - `account_name` — Azure storage account name
 - `account_key` — Azure storage account key
-- `extra_credentials` — Optional. Use `client_id` and `tenant_id` for Azure workload identity authentication. Takes priority over `account_name` and `account_key`. This is not the S3 `role_arn` form of `extra_credentials`.
+- `extra_credentials` — Optional alternative to `account_name` / `account_key`. Use `client_id` and `tenant_id` for Azure workload identity authentication. Cannot be combined with account credentials. This is not the S3 `role_arn` form of `extra_credentials`.
 
 Engine parameters can be specified using [Named Collections](/operations/named-collections.md). Named collections accept the same `client_id` and `tenant_id` keys.
 
@@ -2463,7 +2468,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
         },
         Documentation{
             .description = "Provides a read-only integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage.",
-            .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath [, extra_credentials(client_id=, tenant_id=)])",
+            .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath) | ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=))",
             .related = {"DeltaLake"}});
 #    endif
     factory.registerStorage(

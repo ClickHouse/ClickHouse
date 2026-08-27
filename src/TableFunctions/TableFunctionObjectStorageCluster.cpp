@@ -511,7 +511,8 @@ deltaLakeCluster(cluster_name, named_collection[, option=value [,..]])
 deltaLakeS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 deltaLakeS3Cluster(cluster_name, named_collection[, option=value [,..]])
 
-deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method] [,extra_credentials(client_id=, tenant_id=)])
+deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzureCluster(cluster_name, storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [,format] [,compression_method])
 deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
 ```
 `deltaLakeS3Cluster` is an alias to `deltaLakeCluster`, both are for S3. 
@@ -521,7 +522,7 @@ deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
 - `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
 - Description of all other arguments coincides with description of arguments in equivalent [deltaLake](/reference/functions/table-functions/deltalake) table function.
 - An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
-- For Azure (`deltaLakeAzureCluster`), `extra_credentials` takes `client_id` and `tenant_id` for workload identity. The process must also have `AZURE_FEDERATED_TOKEN_FILE` set (`AZURE_TENANT_ID` / `AZURE_CLIENT_ID` if not passed explicitly; `AZURE_AUTHORITY_HOST` is optional).
+- For Azure (`deltaLakeAzureCluster`), `extra_credentials` takes `client_id` and `tenant_id` for workload identity and cannot be combined with `account_name` / `account_key`. The process must also have `AZURE_FEDERATED_TOKEN_FILE` set (`AZURE_TENANT_ID` / `AZURE_CLIENT_ID` if not passed explicitly; `AZURE_AUTHORITY_HOST` is optional).
 
 ## Returned value {#returned-value}
 
@@ -556,7 +557,8 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionDeltaLakeAzureCluster>(
         {
             .description = R"(The table function can be used to read the DeltaLake table stored on Azure object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "deltaLakeAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
+            .syntax = "deltaLakeAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])\n"
+                      "deltaLakeAzureCluster(cluster, storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=))",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}

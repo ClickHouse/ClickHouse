@@ -127,6 +127,39 @@ std::optional<std::string> findBuilderOption(
             return v;
     return std::nullopt;
 }
+
+/// Snapshot and restore process-global AZURE_* env vars so tests do not wipe
+/// values that were already set in the environment.
+class ScopedEnv
+{
+public:
+    ScopedEnv(const char * name_, const char * value)
+        : name(name_)
+    {
+        if (const char * previous_value = std::getenv(name)) // NOLINT(concurrency-mt-unsafe)
+            previous = previous_value;
+
+        if (value)
+            setenv(name, value, 1); // NOLINT(concurrency-mt-unsafe)
+        else
+            unsetenv(name); // NOLINT(concurrency-mt-unsafe)
+    }
+
+    ~ScopedEnv()
+    {
+        if (previous)
+            setenv(name, previous->c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        else
+            unsetenv(name); // NOLINT(concurrency-mt-unsafe)
+    }
+
+    ScopedEnv(const ScopedEnv &) = delete;
+    ScopedEnv & operator=(const ScopedEnv &) = delete;
+
+private:
+    const char * name;
+    std::optional<std::string> previous;
+};
 }
 
 /// Empty connection string
@@ -183,15 +216,10 @@ TEST(DeltaLakeAzureKernelHelper, ConnectionStringSetsAccountName)
 /// object_store does not read the environment on its own.
 TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityForwardsEnvironment)
 {
-    setenv("AZURE_TENANT_ID", "11111111-1111-1111-1111-111111111111", 1); // NOLINT(concurrency-mt-unsafe)
-    setenv("AZURE_CLIENT_ID", "22222222-2222-2222-2222-222222222222", 1); // NOLINT(concurrency-mt-unsafe)
-    setenv("AZURE_FEDERATED_TOKEN_FILE", "/var/run/secrets/azure/tokens/azure-identity-token", 1); // NOLINT(concurrency-mt-unsafe)
-    unsetenv("AZURE_AUTHORITY_HOST"); // NOLINT(concurrency-mt-unsafe)
-    SCOPE_EXIT({
-        unsetenv("AZURE_TENANT_ID"); // NOLINT(concurrency-mt-unsafe)
-        unsetenv("AZURE_CLIENT_ID"); // NOLINT(concurrency-mt-unsafe)
-        unsetenv("AZURE_FEDERATED_TOKEN_FILE"); // NOLINT(concurrency-mt-unsafe)
-    });
+    ScopedEnv env_tenant("AZURE_TENANT_ID", "11111111-1111-1111-1111-111111111111");
+    ScopedEnv env_client("AZURE_CLIENT_ID", "22222222-2222-2222-2222-222222222222");
+    ScopedEnv env_token_file("AZURE_FEDERATED_TOKEN_FILE", "/var/run/secrets/azure/tokens/azure-identity-token");
+    ScopedEnv env_authority("AZURE_AUTHORITY_HOST", nullptr);
 
     DB::AzureBlobStorage::ConnectionParams params;
     params.endpoint.storage_account_url = "https://testaccount.blob.core.windows.net";
@@ -227,14 +255,9 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityForwardsEnvironment)
 /// azure_endpoint, or the builder falls back to the default public host.
 TEST(DeltaLakeAzureKernelHelper, WorkloadIdentitySetsEndpointForNonDefaultHost)
 {
-    setenv("AZURE_TENANT_ID", "11111111-1111-1111-1111-111111111111", 1); // NOLINT(concurrency-mt-unsafe)
-    setenv("AZURE_CLIENT_ID", "22222222-2222-2222-2222-222222222222", 1); // NOLINT(concurrency-mt-unsafe)
-    setenv("AZURE_FEDERATED_TOKEN_FILE", "/var/run/secrets/azure/tokens/azure-identity-token", 1); // NOLINT(concurrency-mt-unsafe)
-    SCOPE_EXIT({
-        unsetenv("AZURE_TENANT_ID"); // NOLINT(concurrency-mt-unsafe)
-        unsetenv("AZURE_CLIENT_ID"); // NOLINT(concurrency-mt-unsafe)
-        unsetenv("AZURE_FEDERATED_TOKEN_FILE"); // NOLINT(concurrency-mt-unsafe)
-    });
+    ScopedEnv env_tenant("AZURE_TENANT_ID", "11111111-1111-1111-1111-111111111111");
+    ScopedEnv env_client("AZURE_CLIENT_ID", "22222222-2222-2222-2222-222222222222");
+    ScopedEnv env_token_file("AZURE_FEDERATED_TOKEN_FILE", "/var/run/secrets/azure/tokens/azure-identity-token");
 
     DB::AzureBlobStorage::ConnectionParams params;
     params.endpoint.storage_account_url = "https://testaccount.blob.core.usgovcloudapi.net";
@@ -257,13 +280,9 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentitySetsEndpointForNonDefaultHost)
 /// the IDs on ConnectionParams, not just the builder plumbing.
 TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityForwardsExplicitIds)
 {
-    unsetenv("AZURE_TENANT_ID"); // NOLINT(concurrency-mt-unsafe)
-    setenv("AZURE_CLIENT_ID", "99999999-9999-9999-9999-999999999999", 1); // NOLINT(concurrency-mt-unsafe)
-    setenv("AZURE_FEDERATED_TOKEN_FILE", "/var/run/secrets/azure/tokens/azure-identity-token", 1); // NOLINT(concurrency-mt-unsafe)
-    SCOPE_EXIT({
-        unsetenv("AZURE_CLIENT_ID"); // NOLINT(concurrency-mt-unsafe)
-        unsetenv("AZURE_FEDERATED_TOKEN_FILE"); // NOLINT(concurrency-mt-unsafe)
-    });
+    ScopedEnv env_tenant("AZURE_TENANT_ID", nullptr);
+    ScopedEnv env_client("AZURE_CLIENT_ID", "99999999-9999-9999-9999-999999999999");
+    ScopedEnv env_token_file("AZURE_FEDERATED_TOKEN_FILE", "/var/run/secrets/azure/tokens/azure-identity-token");
 
     const auto params = DB::getAzureConnectionParams(
         "https://testaccount.blob.core.windows.net",
@@ -295,10 +314,10 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityForwardsExplicitIds)
 /// Missing tenant / client / token-file must fail here, not later inside object_store.
 TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityRequiresConfiguration)
 {
-    unsetenv("AZURE_TENANT_ID"); // NOLINT(concurrency-mt-unsafe)
-    unsetenv("AZURE_CLIENT_ID"); // NOLINT(concurrency-mt-unsafe)
-    unsetenv("AZURE_FEDERATED_TOKEN_FILE"); // NOLINT(concurrency-mt-unsafe)
-    unsetenv("AZURE_AUTHORITY_HOST"); // NOLINT(concurrency-mt-unsafe)
+    ScopedEnv env_tenant("AZURE_TENANT_ID", nullptr);
+    ScopedEnv env_client("AZURE_CLIENT_ID", nullptr);
+    ScopedEnv env_token_file("AZURE_FEDERATED_TOKEN_FILE", nullptr);
+    ScopedEnv env_authority("AZURE_AUTHORITY_HOST", nullptr);
 
     DB::AzureBlobStorage::ConnectionParams params;
     params.endpoint.storage_account_url = "https://testaccount.blob.core.windows.net";
@@ -321,9 +340,9 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityRequiresConfiguration)
 /// extra_credentials can supply tenant/client, but the projected token file is still required.
 TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityRequiresTokenFileWithExplicitIds)
 {
-    unsetenv("AZURE_TENANT_ID"); // NOLINT(concurrency-mt-unsafe)
-    unsetenv("AZURE_CLIENT_ID"); // NOLINT(concurrency-mt-unsafe)
-    unsetenv("AZURE_FEDERATED_TOKEN_FILE"); // NOLINT(concurrency-mt-unsafe)
+    ScopedEnv env_tenant("AZURE_TENANT_ID", nullptr);
+    ScopedEnv env_client("AZURE_CLIENT_ID", nullptr);
+    ScopedEnv env_token_file("AZURE_FEDERATED_TOKEN_FILE", nullptr);
 
     const auto params = DB::getAzureConnectionParams(
         "https://testaccount.blob.core.windows.net",
@@ -351,14 +370,9 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityRequiresTokenFileWithExplicitId
 /// derives from the account name, so azure_endpoint must still be forwarded.
 TEST(DeltaLakeAzureKernelHelper, WorkloadIdentitySetsEndpointForPrivateLinkHost)
 {
-    setenv("AZURE_TENANT_ID", "11111111-1111-1111-1111-111111111111", 1); // NOLINT(concurrency-mt-unsafe)
-    setenv("AZURE_CLIENT_ID", "22222222-2222-2222-2222-222222222222", 1); // NOLINT(concurrency-mt-unsafe)
-    setenv("AZURE_FEDERATED_TOKEN_FILE", "/var/run/secrets/azure/tokens/azure-identity-token", 1); // NOLINT(concurrency-mt-unsafe)
-    SCOPE_EXIT({
-        unsetenv("AZURE_TENANT_ID"); // NOLINT(concurrency-mt-unsafe)
-        unsetenv("AZURE_CLIENT_ID"); // NOLINT(concurrency-mt-unsafe)
-        unsetenv("AZURE_FEDERATED_TOKEN_FILE"); // NOLINT(concurrency-mt-unsafe)
-    });
+    ScopedEnv env_tenant("AZURE_TENANT_ID", "11111111-1111-1111-1111-111111111111");
+    ScopedEnv env_client("AZURE_CLIENT_ID", "22222222-2222-2222-2222-222222222222");
+    ScopedEnv env_token_file("AZURE_FEDERATED_TOKEN_FILE", "/var/run/secrets/azure/tokens/azure-identity-token");
 
     DB::AzureBlobStorage::ConnectionParams params;
     params.endpoint.storage_account_url = "https://testaccount.privatelink.blob.core.windows.net";
