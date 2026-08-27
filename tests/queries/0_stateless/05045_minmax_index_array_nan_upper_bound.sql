@@ -18,16 +18,21 @@ SELECT 'array positive prunes other granule', count() > 0 FROM (
 SELECT 'array negated indexed', count() FROM t_arr WHERE NOT (a <= [3.]);
 SELECT 'array negated no index', count() FROM t_arr WHERE NOT (a <= [3.]) SETTINGS use_skip_indexes = 0;
 
--- GRANULARITY 2 spans two marks, so the bound is merged across two update() calls. The merge keeps
--- its own right end when the NaN arrives first and takes the new one when it arrives second.
+-- With GRANULARITY 2 an index entry spans two marks, so the NaN must set the upper bound
+-- whichever of the two marks it arrives in.
 DROP TABLE IF EXISTS t_g2_first;
 CREATE TABLE t_g2_first (id UInt64, a Array(Float64), INDEX idx_a a TYPE minmax GRANULARITY 2)
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
-INSERT INTO t_g2_first VALUES (1, [1.]), (2, [nan]), (3, [3.]), (4, [100.]), (5, [150.]), (6, [200.]);
+INSERT INTO t_g2_first VALUES (1, [1.]), (2, [nan]), (3, [3.]), (4, [100.]), (5, [150.]), (6, [200.]),
+    (7, [10.]), (8, [20.]), (9, [30.]), (10, [40.]), (11, [50.]), (12, [60.]);
 
 SELECT 'granularity 2 nan in first mark indexed', count() FROM t_g2_first WHERE a > [500.];
 SELECT 'granularity 2 nan in first mark no index', count() FROM t_g2_first WHERE a > [500.] SETTINGS use_skip_indexes = 0;
+SELECT 'granularity 2 nan in first mark prunes finite entry', count() > 0 FROM (
+    EXPLAIN indexes = 1 SELECT sum(id) FROM t_g2_first WHERE a > [500.]
+    SETTINGS use_skip_indexes_on_data_read = 0, optimize_use_implicit_projections = 0
+) WHERE explain LIKE '%Granules: 2/4%';
 
 DROP TABLE IF EXISTS t_g2_second;
 CREATE TABLE t_g2_second (id UInt64, a Array(Float64), INDEX idx_a a TYPE minmax GRANULARITY 2)
@@ -47,6 +52,10 @@ INSERT INTO t_map VALUES (4, map('k', 100.)), (5, map('k', 150.)), (6, map('k', 
 
 SELECT 'map positive indexed', count() FROM t_map WHERE a > map('k', 500.);
 SELECT 'map positive no index', count() FROM t_map WHERE a > map('k', 500.) SETTINGS use_skip_indexes = 0;
+SELECT 'map still prunes', count() > 0 FROM (
+    EXPLAIN indexes = 1 SELECT sum(id) FROM t_map WHERE a > map('k', 500.)
+    SETTINGS use_skip_indexes_on_data_read = 0, optimize_use_implicit_projections = 0
+) WHERE explain LIKE '%Granules: 1/2%';
 
 DROP TABLE IF EXISTS t_nullable;
 CREATE TABLE t_nullable (id UInt64, a Array(Nullable(Float64)), INDEX idx_a a TYPE minmax GRANULARITY 1)
@@ -107,6 +116,20 @@ SELECT 'mixed leaves no index', count() FROM t_mixed
 WHERE a > [(500., 'a', toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'), toLowCardinality('x'), toIPv6('::1'), toDate('2020-01-01'))]
 SETTINGS use_skip_indexes = 0;
 
+DROP TABLE IF EXISTS t_bool;
+CREATE TABLE t_bool (id UInt64, a Array(Tuple(Float64, Bool)), INDEX idx_a a TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_bool VALUES (1, [(1., true)]), (2, [(nan, true)]), (3, [(3., true)]);
+INSERT INTO t_bool VALUES (4, [(100., true)]), (5, [(150., true)]), (6, [(200., true)]);
+
+SELECT 'bool leaf indexed', count() FROM t_bool WHERE a > [(500., true)];
+SELECT 'bool leaf no index', count() FROM t_bool WHERE a > [(500., true)] SETTINGS use_skip_indexes = 0;
+SELECT 'bool leaf still prunes', count() > 0 FROM (
+    EXPLAIN indexes = 1 SELECT sum(id) FROM t_bool WHERE a > [(500., true)]
+    SETTINGS use_skip_indexes_on_data_read = 0, optimize_use_implicit_projections = 0
+) WHERE explain LIKE '%Granules: 1/2%';
+
 DROP TABLE t_arr;
 DROP TABLE t_g2_first;
 DROP TABLE t_g2_second;
@@ -115,3 +138,4 @@ DROP TABLE t_nullable;
 DROP TABLE t_finite;
 DROP TABLE t_str;
 DROP TABLE t_mixed;
+DROP TABLE t_bool;

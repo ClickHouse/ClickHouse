@@ -5,10 +5,12 @@ array negated indexed	4
 array negated no index	4
 granularity 2 nan in first mark indexed	1
 granularity 2 nan in first mark no index	1
+granularity 2 nan in first mark prunes finite entry	1
 granularity 2 nan in second mark indexed	1
 granularity 2 nan in second mark no index	1
 map positive indexed	1
 map positive no index	1
+map still prunes	1
 nullable element indexed	2
 nullable element no index	2
 finite array still prunes	1
@@ -19,3 +21,6 @@ string array indexed	1
 string array no index	1
 mixed leaves indexed	1
 mixed leaves no index	1
+bool leaf indexed	1
+bool leaf no index	1
+bool leaf still prunes	1
