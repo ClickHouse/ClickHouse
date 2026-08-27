@@ -99,6 +99,18 @@ DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTyp
 KeyDescription getSortingKeyDescriptionFromMetadata(
     Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
+
+void forEachAvroEntry(
+    const String & filename,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    const String & logger_name,
+    std::function<void(const avro::GenericDatum &)> callback);
+
+using PartitionColumnValues = std::vector<std::pair<String, DB::Field>>;
+
+PartitionColumnValues getIdentityPartitionColumnValues(
+    const ProcessedManifestFileEntry & manifest_file_entry, const IcebergSchemaProcessor & schema_processor);
 }
 
 #endif
