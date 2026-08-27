@@ -95,7 +95,7 @@ namespace
             unscaled_value += scaler;
         }
 
-        return DB::DecimalField<DecimalType>(static_cast<NativeType>(unscaled_value), scale);
+        return DB::DecimalField<DecimalType>(unscaled_value, scale);
     }
 
     /// Iceberg stores lower_bounds and upper_bounds serialized with some custom deserialization as bytes array
