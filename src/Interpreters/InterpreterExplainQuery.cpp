@@ -1412,6 +1412,37 @@ bool referencesCheckableTables(const ASTPtr & node)
     return false;
 }
 
+/// Whether resolving the query may reach outside the server: a registered table function is free to
+/// connect to a remote system while resolving (e.g. `mysql(...)` fetches the table structure over the
+/// wire), which `EXPLAIN QUERY TREE run_passes = 0` - a "dump without resolving" mode - must never
+/// trigger, even from the throwaway copy resolved for the access check, and even when the function
+/// sits in a branch unrelated to the tables the check guards (query analysis resolves the whole tree,
+/// there is no way to resolve one branch in isolation). `view` and `viewIfPermitted` only wrap a
+/// subquery and resolve locally, so they do not count by themselves; the generic recursion still
+/// descends into their arguments, where any other registered table function does count.
+bool referencesResolvableTableFunctions(const ASTPtr & node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * table_expression = node->as<ASTTableExpression>())
+    {
+        if (table_expression->table_function)
+        {
+            const auto * function = table_expression->table_function->as<ASTFunction>();
+            if (function && function->name != "view" && function->name != "viewIfPermitted"
+                && TableFunctionFactory::instance().isTableFunctionName(function->name))
+                return true;
+        }
+    }
+
+    for (const auto & child : node->children)
+        if (referencesResolvableTableFunctions(child))
+            return true;
+
+    return false;
+}
+
 bool explainQueryTree(
     ASTPtr explained_query,
     ContextPtr query_context,
@@ -1473,9 +1504,14 @@ bool explainQueryTree(
             /// The dumped tree here is the unresolved `query_tree`, which never carries resolved column
             /// names or types, so the dump itself cannot leak table metadata. We still resolve a throwaway
             /// copy to reproduce the planner's `SELECT` access check on the referenced tables - but only
-            /// when the query references something the check could guard (see `referencesCheckableTables`),
-            /// so that a query reading only from genuine table functions is dumped without resolving them.
-            if (referencesCheckableTables(explained_query))
+            /// when the query references something the check could guard (see `referencesCheckableTables`)
+            /// and resolving cannot reach outside the server (see `referencesResolvableTableFunctions`):
+            /// a query mentioning a registered table function anywhere - alone or next to ordinary tables -
+            /// is dumped without the check, because resolving the copy would resolve that function too,
+            /// with the connection attempts this mode exists to avoid. Skipping the check is fail-safe
+            /// here: it can only let the unresolved dump through, which reveals nothing beyond the user's
+            /// own query text.
+            if (referencesCheckableTables(explained_query) && !referencesResolvableTableFunctions(explained_query))
                 resolveThenCheckAccessRights(query_tree->clone(), query_tree_pass_manager, query_context);
         }
     }

@@ -1,0 +1,6 @@
+granted table: OK
+table without a grant: ACCESS_DENIED
+table without a grant inside the view wrapper: ACCESS_DENIED
+granted table with the function in an IN subquery: OK
+granted table joined with the function: OK
+ungranted table with the function in an IN subquery: OK
