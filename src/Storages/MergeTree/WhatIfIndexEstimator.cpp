@@ -110,9 +110,9 @@ void appendProjectionCandidates(
             {
                 AlterCommands commands;
                 commands.push_back(std::move(*command));
-                /// checkAlterIsPossible applies the commands, which requires prepare first
+                /// the eligibility check applies the commands, which requires prepare first
                 commands.prepare(*metadata, (*data.getSettings())[MergeTreeSetting::share_nested_offsets]);
-                data.checkAlterIsPossible(commands, context);
+                data.checkAlterEligibility(commands, context);
             }
         }
         catch (const Exception &)

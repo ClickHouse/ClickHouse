@@ -5015,6 +5015,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Schema-changing ALTER is rejected while a streaming query holds a subscription on this table.");
     }
 
+    checkAlterEligibility(commands, local_context);
+}
+
+void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, ContextPtr local_context) const
+{
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto storage_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;

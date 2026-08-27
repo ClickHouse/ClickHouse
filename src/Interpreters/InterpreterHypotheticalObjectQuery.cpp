@@ -66,9 +66,9 @@ void checkProjectionIsAddable(
 
     AlterCommands commands;
     commands.push_back(std::move(*command));
-    /// checkAlterIsPossible applies the commands, which requires prepare first
+    /// the eligibility check applies the commands, which requires prepare first
     commands.prepare(*metadata, (*merge_tree.getSettings())[MergeTreeSetting::share_nested_offsets]);
-    merge_tree.checkAlterIsPossible(commands, context);
+    merge_tree.checkAlterEligibility(commands, context);
 }
 
 /// Mirrors `ALTER TABLE ... ADD PROJECTION`: the descriptor is built and validated the same way,
