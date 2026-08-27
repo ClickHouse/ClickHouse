@@ -24,39 +24,29 @@ static ColumnPtr calculateWatermarkColumn(const ExpressionActionsPtr & actions, 
 }
 
 CalculateWatermarksTransform::CalculateWatermarksTransform(
-    SharedHeader input_header_,
-    SharedHeader output_header_,
-    std::string event_time_column_,
+    SharedHeader header_,
     ActionsDAG watermark_expression_,
     ContextPtr context_)
-    : IInflatingTransform(std::move(input_header_), std::move(output_header_))
-    , event_time_column(std::move(event_time_column_))
+    : IInflatingTransform(header_, header_)
     , watermark_expression(std::make_shared<ExpressionActions>(std::move(watermark_expression_), ExpressionActionsSettings(context_)))
 {
 }
 
 void CalculateWatermarksTransform::consume(Chunk chunk)
 {
-    const auto & input_header = getInputPort().getHeader();
     const size_t num_rows = chunk.getNumRows();
-
-    auto block = input_header.cloneWithColumns(chunk.getColumns());
-    const auto event_time_col = block.getByName(event_time_column).column->convertToFullColumnIfConst();
-    const auto watermark_col = calculateWatermarkColumn(watermark_expression, std::move(block));
-
-    auto columns = chunk.detachColumns();
-    columns.emplace_back(event_time_col);
-    columns.emplace_back(watermark_col);
-    chunk.setColumns(std::move(columns), num_rows);
-    pending_chunks.push(std::move(chunk));
-
     if (num_rows == 0)
+    {
+        pending_chunks.push(std::move(chunk));
         return;
+    }
 
     Field min_value;
     Field max_value;
-    watermark_col->getExtremes(min_value, max_value, 0, num_rows);
+    auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
+    calculateWatermarkColumn(watermark_expression, std::move(block))->getExtremes(min_value, max_value, 0, num_rows);
 
+    pending_chunks.push(std::move(chunk));
     pending_chunks.push(WatermarkMarker::create(getOutputPort().getHeader(), std::move(max_value)));
 }
 
