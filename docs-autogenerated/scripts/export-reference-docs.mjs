@@ -337,7 +337,7 @@ function splitRouteSegment(value, sourcePath) {
   return segment;
 }
 
-function promoteNestedHeadings(content) {
+function promoteNestedHeadings(content, levels = 1) {
   let fence = null;
 
   return content
@@ -350,9 +350,10 @@ function promoteNestedHeadings(content) {
         return line;
       }
       if (fence) return line;
-      return line.replace(/^(#{3,6})(\s+)/, (_line, heading, whitespace) => (
-        `${heading.slice(1)}${whitespace}`
-      ));
+      return line.replace(/^(#{2,6})(\s+)/, (_line, heading, whitespace) => {
+        if (heading.length <= levels + 1) return _line;
+        return `${heading.slice(levels)}${whitespace}`;
+      });
     })
     .join('\n')
     .trim();
@@ -374,7 +375,100 @@ function settingFeatureState(content) {
   return null;
 }
 
+function splitSystemStatementSections(content, relativePath, route) {
+  const headings = [];
+  let offset = 0;
+  let fence = null;
+  let parent = null;
+
+  for (const line of content.split(/(?<=\n)/)) {
+    const lineWithoutNewline = line.replace(/\r?\n$/, '');
+    const fenceMatch = lineWithoutNewline.match(/^\s*(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      if (!fence) fence = fenceMatch[1];
+      else if (fence[0] === fenceMatch[1][0] && fenceMatch[1].length >= fence.length) fence = null;
+    } else if (!fence) {
+      const heading = lineWithoutNewline.match(/^(#{2,4})\s+(.+?)\s+\{#([^}\n]+)\}\s*$/);
+      if (heading) {
+        const depth = heading[1].length;
+        const record = {
+          depth,
+          title: heading[2],
+          anchor: heading[3],
+          start: offset,
+          bodyStart: offset + line.length,
+          parent,
+          isStatement: depth <= 3 && (
+            heading[2].startsWith('SYSTEM ')
+            || heading[3] === 'sync-database-replica'
+          ),
+        };
+        headings.push(record);
+        if (depth === 2) parent = record;
+      }
+    }
+    offset += line.length;
+  }
+
+  const statements = headings.filter((heading) => heading.isStatement);
+  if (statements.length < 2) return [];
+
+  const prefix = content.slice(0, statements[0].start).trim();
+  const statementRoutes = new Map(statements.map(({ anchor }) => [
+    anchor,
+    `${route}/${splitRouteSegment(anchor, relativePath)}`,
+  ]));
+  const localRoutes = new Map(headings.map(({ anchor }) => [anchor, `${route}#${anchor}`]));
+  for (const [anchor, statementRoute] of statementRoutes) localRoutes.set(anchor, statementRoute);
+
+  const parentsWithStatementChildren = new Set(
+    statements
+      .filter((heading) => heading.depth === 3 && heading.parent)
+      .map((heading) => heading.parent.anchor),
+  );
+
+  function rewriteLocalStatementLinks(sectionContent) {
+    return sectionContent
+      .replace(/\]\(#([^)]+)\)/g, (match, anchor) => (
+        localRoutes.has(anchor) ? `](${localRoutes.get(anchor)})` : match
+      ))
+      .replace(/href=(['"])#([^'"]+)\1/g, (match, quote, anchor) => (
+        localRoutes.has(anchor) ? `href=${quote}${localRoutes.get(anchor)}${quote}` : match
+      ));
+  }
+
+  return statements.map((heading) => {
+    const headingIndex = headings.indexOf(heading);
+    const nextBoundary = headings.slice(headingIndex + 1).find((candidate) => (
+      candidate.isStatement || candidate.depth <= heading.depth
+    ));
+    const body = content.slice(heading.bodyStart, nextBoundary?.start ?? content.length).trim();
+    const sectionContent = [
+      prefix,
+      promoteNestedHeadings(body, heading.depth - 1),
+    ].filter(Boolean).join('\n\n');
+
+    let group = { anchor: 'general', title: 'General' };
+    if (heading.depth === 3 && heading.parent) group = heading.parent;
+    else if (parentsWithStatementChildren.has(heading.anchor)) group = heading;
+
+    return {
+      ...heading,
+      route: statementRoutes.get(heading.anchor),
+      descriptionContent: body,
+      navigationGroup: {
+        id: `reference.source.statements.system.${splitRouteSegment(group.anchor, relativePath)}`,
+        label: navigationLabel(group.title),
+      },
+      content: rewriteLocalStatementLinks(sectionContent),
+    };
+  });
+}
+
 function splitEntitySections(content, entityKind, relativePath, route) {
+  if (entityKind === 'statement' && relativePath === 'statements/system.mdx') {
+    return splitSystemStatementSections(content, relativePath, route);
+  }
   if (!['aggregate-function', 'function', 'setting'].includes(entityKind)) return [];
   if (relativePath === 'settings/beta-and-experimental-features.mdx') return [];
 
@@ -824,49 +918,54 @@ async function main() {
 
     const sourceId = `reference:${relativePath.replace(/\.mdx?$/, '')}`;
     const splitSections = splitEntitySections(content, entityKind, relativePath, route);
+    const keepSourceDocument = relativePath === 'statements/system.mdx' && splitSections.length > 0;
+    const sourceDocumentRecord = {
+      id: sourceId,
+      entityKind,
+      name: keepSourceDocument ? 'Overview' : documentName,
+      title,
+      description,
+      aliases,
+      route,
+      legacyRoutes: legacyRoute && legacyRoute !== route ? [legacyRoute] : [],
+      sourcePath: relativePath,
+      featureState: entityKind === 'setting'
+        && relativePath !== 'settings/beta-and-experimental-features.mdx'
+        ? settingFeatureState(content)
+        : null,
+      content,
+    };
     const documentRecords = splitSections.length > 0
-      ? splitSections.map((section, index) => ({
-        id: `${sourceId}/${section.anchor}`,
-        entityKind,
-        name: section.title,
-        title: section.title,
-        description: entityDescription(section.descriptionContent, description),
-        aliases: entityAliases(section.descriptionContent, section.title),
-        route: section.route,
-        legacyRoutes: [
-          `${route}#${section.anchor}`,
-          ...(legacyRoute && legacyRoute !== route ? [`${legacyRoute}#${section.anchor}`] : []),
-          ...(index === 0 ? [
-            route,
-            ...(legacyRoute && legacyRoute !== route ? [legacyRoute] : []),
-          ] : []),
-        ],
-        sourcePath: relativePath,
-        featureState: entityKind === 'setting' ? settingFeatureState(section.content) : null,
-        navigationGroup: {
-          id: `reference.source.${relativePath.replace(/\.mdx?$/, '').replace(/[^A-Za-z0-9_-]+/g, '.')}`,
-          label: navigationLabel(String(
-            entityKind === 'function' ? title : (frontmatter.sidebarTitle ?? title),
-          )),
-        },
-        content: section.content,
-      }))
-      : [{
-        id: sourceId,
-        entityKind,
-        name: documentName,
-        title,
-        description,
-        aliases,
-        route,
-        legacyRoutes: legacyRoute && legacyRoute !== route ? [legacyRoute] : [],
-        sourcePath: relativePath,
-        featureState: entityKind === 'setting'
-          && relativePath !== 'settings/beta-and-experimental-features.mdx'
-          ? settingFeatureState(content)
-          : null,
-        content,
-      }];
+      ? [
+        ...(keepSourceDocument ? [sourceDocumentRecord] : []),
+        ...splitSections.map((section, index) => ({
+          id: `${sourceId}/${section.anchor}`,
+          entityKind,
+          name: section.title,
+          title: section.title,
+          description: entityDescription(section.descriptionContent, description),
+          aliases: entityAliases(section.descriptionContent, section.title),
+          route: section.route,
+          legacyRoutes: [
+            `${route}#${section.anchor}`,
+            ...(legacyRoute && legacyRoute !== route ? [`${legacyRoute}#${section.anchor}`] : []),
+            ...(!keepSourceDocument && index === 0 ? [
+              route,
+              ...(legacyRoute && legacyRoute !== route ? [legacyRoute] : []),
+            ] : []),
+          ],
+          sourcePath: relativePath,
+          featureState: entityKind === 'setting' ? settingFeatureState(section.content) : null,
+          navigationGroup: section.navigationGroup ?? {
+            id: `reference.source.${relativePath.replace(/\.mdx?$/, '').replace(/[^A-Za-z0-9_-]+/g, '.')}`,
+            label: navigationLabel(String(
+              entityKind === 'function' ? title : (frontmatter.sidebarTitle ?? title),
+            )),
+          },
+          content: section.content,
+        })),
+      ]
+      : [sourceDocumentRecord];
 
     for (const document of documentRecords) {
       if (routes.has(document.route)) {

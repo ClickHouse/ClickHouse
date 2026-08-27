@@ -230,6 +230,12 @@
       "documentsPosition": "after",
       "groups": [
         {
+          "id": "reference.statements.system",
+          "label": "SYSTEM",
+          "match": { "sourcePrefix": "statements/system.mdx" },
+          "groupBySourcePage": true
+        },
+        {
           "id": "reference.statements.create-dictionary",
           "label": "CREATE DICTIONARY",
           "match": { "sourcePrefix": "statements/create/dictionary/" },
