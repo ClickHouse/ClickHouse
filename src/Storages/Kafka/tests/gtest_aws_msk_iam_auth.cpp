@@ -270,11 +270,19 @@ TEST(AWSMSKIAMAuth, SetupResolvesEnvironmentCredentials)
     AwsEnvironmentVariableScope token("AWS_WEB_IDENTITY_TOKEN_FILE", /*hide=*/true);
     AwsEnvironmentVariableScope profile("AWS_PROFILE", /*hide=*/true);
     AwsEnvironmentVariableScope default_profile("AWS_DEFAULT_PROFILE", /*hide=*/true);
+    // Hiding the two variables above only seals the environment side. The web-identity resolver falls
+    // back to the cached config-file profile, so a runner whose ~/.aws/config carries web-identity
+    // settings would still insert the provider ahead of the environment one. Point both files at
+    // /dev/null for the test duration: an empty profile cannot source a role_arn or a token file.
+    AwsEnvironmentVariableScope config_file("AWS_CONFIG_FILE", /*hide=*/false);
+    AwsEnvironmentVariableScope shared_credentials_file("AWS_SHARED_CREDENTIALS_FILE", /*hide=*/false);
 
     /// NOLINTBEGIN(concurrency-mt-unsafe): single-threaded gtest, no concurrent getenv/setenv.
     ::setenv("AWS_ACCESS_KEY_ID", "AKID_MSK_ENV_TEST", /*overwrite=*/1);
     ::setenv("AWS_SECRET_ACCESS_KEY", "secret_msk_env_test", /*overwrite=*/1);
     ::setenv("AWS_EC2_METADATA_DISABLED", "true", /*overwrite=*/1);
+    ::setenv("AWS_CONFIG_FILE", "/dev/null", /*overwrite=*/1);
+    ::setenv("AWS_SHARED_CREDENTIALS_FILE", "/dev/null", /*overwrite=*/1);
     /// NOLINTEND(concurrency-mt-unsafe)
 
     cppkafka::Configuration cfg;
