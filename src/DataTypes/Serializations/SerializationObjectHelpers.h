@@ -35,7 +35,7 @@ std::vector<std::string_view> scanPathNamesForBucket(
     size_t target_bucket, size_t num_buckets);
 
 /// Insert data from flattened representation of an Object column to a usual Object column.
-void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, Columns && flattened_columns, ColumnObject & object_column, size_t num_rows);
+void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, MutableColumns && flattened_columns, ColumnObject & object_column, size_t num_rows);
 
 /// Get the bucket number for a specific path.
 size_t getSharedDataPathBucket(std::string_view path, size_t num_buckets);
@@ -83,6 +83,6 @@ void collectSharedDataFromBuckets(const Columns & shared_data_buckets, IColumn &
 std::pair<ColumnPtr, DataTypePtr> createPathsIndexes(const std::unordered_map<std::string_view, size_t> & path_to_index, const IColumn & paths_column, size_t start, size_t end);
 
 /// Deserialize up to limit indexes from the read buffer and collect corresponding paths to the paths_column.
-void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr, std::vector<String> && paths, size_t rows_offset, size_t limit);
+void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr, std::vector<String> && paths, size_t limit);
 
 }

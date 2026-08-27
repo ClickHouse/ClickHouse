@@ -120,9 +120,6 @@ struct DeserializeBinaryBulkStateObjectSharedData : public ISerialization::Deser
     ISerialization::DeserializeBinaryBulkStatePtr map_state;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_map_states;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_structure_states;
-    /// Some chunks can be partially read, we need to remember how many rows
-    /// were already read from the last incomplete chunk.
-    size_t last_incomplete_chunk_offset = 0;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -133,22 +130,6 @@ struct DeserializeBinaryBulkStateObjectSharedData : public ISerialization::Deser
         for (size_t bucket = 0; bucket != bucket_structure_states.size(); ++bucket)
             new_state->bucket_structure_states[bucket] = bucket_structure_states[bucket] ? bucket_structure_states[bucket]->clone() : nullptr;
         return new_state;
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (map_state)
-            callback(map_state);
-        for (const auto & bucket_map_state : bucket_map_states)
-        {
-            if (bucket_map_state)
-                callback(bucket_map_state);
-        }
-        for (const auto & bucket_structure_state : bucket_structure_states)
-        {
-            if (bucket_structure_state)
-                callback(bucket_structure_state);
-        }
     }
 };
 
@@ -1060,7 +1041,6 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObjectSharedData::des
 }
 
 std::shared_ptr<SerializationObjectSharedData::ChunkStructures> SerializationObjectSharedData::deserializeStructure(
-    size_t rows_offset,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state,
@@ -1098,13 +1078,13 @@ std::shared_ptr<SerializationObjectSharedData::ChunkStructures> SerializationObj
             deserializeChunkStructurePrefix(*structure_prefix_stream, chunk_structure, structure_state);
             total_chunk_rows += chunk_structure.num_rows;
             result->push_back(std::move(chunk_structure));
-        } while (total_chunk_rows < rows_offset + limit);
+        } while (total_chunk_rows < limit);
         settings.path.pop_back();
 
-        if (total_chunk_rows != rows_offset + limit)
+        if (total_chunk_rows != limit)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Expected total chunk rows {} to equal requested rows {} in Compact part",
-                total_chunk_rows, rows_offset + limit);
+                total_chunk_rows, limit);
 
         /// Read all chunk suffixes from StructureSuffix stream.
         settings.path.push_back(Substream::ObjectSharedDataStructureSuffix);
@@ -1113,30 +1093,13 @@ std::shared_ptr<SerializationObjectSharedData::ChunkStructures> SerializationObj
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty structure suffix stream for object shared data");
 
         for (auto & chunk : *result)
-            deserializeChunkStructureSuffix(*structure_suffix_stream, chunk);
-        settings.path.pop_back();
-
-        /// Set offset and limit for each chunk. All chunks are read fully.
-        /// The rows_offset/limit apply to the overall range across all chunks.
-        size_t remaining_offset = rows_offset;
-        size_t remaining_limit = limit;
-        for (auto & chunk : *result)
         {
-            if (remaining_offset >= chunk.num_rows)
-            {
-                chunk.offset = chunk.num_rows;
-                chunk.limit = 0;
-                remaining_offset -= chunk.num_rows;
-            }
-            else
-            {
-                chunk.offset = remaining_offset;
-                size_t available = chunk.num_rows - remaining_offset;
-                chunk.limit = std::min(available, remaining_limit);
-                remaining_limit -= chunk.limit;
-                remaining_offset = 0;
-            }
+            deserializeChunkStructureSuffix(*structure_suffix_stream, chunk);
+            /// All chunks of a Compact granule are read fully.
+            chunk.offset = 0;
+            chunk.limit = chunk.num_rows;
         }
+        settings.path.pop_back();
     }
     /// In Wide part we can read multiple chunks together and read only part of last chunk.
     else
@@ -1150,7 +1113,7 @@ std::shared_ptr<SerializationObjectSharedData::ChunkStructures> SerializationObj
         if (!settings.continuous_reading)
             structure_state.last_chunk_structure.clear();
 
-        size_t rows_to_read = limit + rows_offset;
+        size_t rows_to_read = limit;
         while (rows_to_read != 0)
         {
             auto & current_chunk = structure_state.last_chunk_structure;
@@ -1171,36 +1134,20 @@ std::shared_ptr<SerializationObjectSharedData::ChunkStructures> SerializationObj
                 remaining_rows_in_chunk = current_chunk.num_rows;
             }
 
+            /// offset and limit in current chunk may be non 0 if we already read from this chunk before,
+            /// so start reading from the last read row (offset + limit).
+            current_chunk.offset += current_chunk.limit;
+
             /// Check if we need to read the whole chunk.
             if (remaining_rows_in_chunk <= rows_to_read)
             {
-                /// Check if we need to skip all rows in this chunk.
-                if (rows_offset >= remaining_rows_in_chunk)
-                {
-                    current_chunk.offset = current_chunk.num_rows;
-                    current_chunk.limit = 0;
-                    rows_offset -= remaining_rows_in_chunk;
-                }
-                /// Otherwise some rows from this chunk will be read.
-                else
-                {
-                    /// offset and limit in current chunk may be non 0 if we already read from this chunk before.
-                    /// We need to start reading starting from last read row (offset + limit)
-                    current_chunk.offset += current_chunk.limit + rows_offset;
-                    current_chunk.limit = current_chunk.num_rows - current_chunk.offset;
-                    rows_offset = 0;
-                }
-
+                current_chunk.limit = current_chunk.num_rows - current_chunk.offset;
                 rows_to_read -= remaining_rows_in_chunk;
             }
             /// Otherwise we read only a part of the chunk.
             else
             {
-                /// offset and limit in current chunk may be non 0 if we already read from this chunk before.
-                /// We need to start reading starting from last read row (offset + limit)
-                current_chunk.offset += current_chunk.limit + rows_offset;
-                current_chunk.limit = rows_to_read - rows_offset;
-                rows_offset = 0;
+                current_chunk.limit = rows_to_read;
                 rows_to_read = 0;
             }
 
@@ -1485,31 +1432,10 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
                 SubstreamsCache cache_for_subcolumns;
                 for (auto pos : order)
                 {
-                    ColumnPtr subcolumn = subcolumns_infos[pos].type->createColumn();
-                    subcolumns_substream_data[pos].serialization->deserializeBinaryBulkWithMultipleStreams(subcolumn, 0, chunk_structure.num_rows, deserialization_settings, subcolumns_substream_data[pos].deserialize_state, &cache_for_subcolumns);
+                    auto subcolumn = subcolumns_infos[pos].type->createColumn();
+                    subcolumns_substream_data[pos].serialization->deserializeBinaryBulkWithMultipleStreams(*subcolumn, chunk_structure.num_rows, deserialization_settings, subcolumns_substream_data[pos].deserialize_state, &cache_for_subcolumns);
                     paths_data_chunk.paths_subcolumns_data[requested_path][subcolumns_infos[pos].name] = std::move(subcolumn);
                 }
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-                /// The local `cache_for_subcolumns` and `deserialize_states_cache` (and the per-subcolumn
-                /// deserialize states) are dropped when this block ends, before the outer
-                /// `SubstreamsCachePathsDataElement` that later covers these subcolumns is created. Verify
-                /// here that the reference counts of the just-produced path subcolumns account for those
-                /// holders too, so a broken copy-on-write reference count on a shared child (e.g. array
-                /// offsets or a LowCardinality dictionary) is not freed at this earlier destruction point
-                /// while it is still referenced from a produced subcolumn (issue #105626).
-                ColumnsOwnershipValidator ownership_validator;
-                ownership_validator.add(cache_for_subcolumns);
-                ownership_validator.add(deserialize_states_cache);
-                for (const auto & data : subcolumns_substream_data)
-                    ownership_validator.add(data.deserialize_state);
-                Columns produced_subcolumns;
-                const auto & subcolumns_of_path = paths_data_chunk.paths_subcolumns_data[requested_path];
-                produced_subcolumns.reserve(subcolumns_of_path.size());
-                for (const auto & [_, column] : subcolumns_of_path)
-                    produced_subcolumns.push_back(column);
-                ownership_validator.validate(produced_subcolumns);
-#endif
             }
             /// Otherwise read the whole path data.
             else
@@ -1517,24 +1443,10 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
                 deserialization_settings.getter = [&](const SubstreamPath &) -> ReadBuffer * { return data_stream; };
                 settings.seek_stream_to_mark_callback(settings.path, path_info.data_mark);
                 DeserializeBinaryBulkStatePtr path_state;
-                ColumnPtr dynamic_column = dynamic_type->createColumn();
+                auto dynamic_column = dynamic_type->createColumn();
                 dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
-                dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_column, 0, chunk_structure.num_rows, deserialization_settings, path_state, nullptr);
+                dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(*dynamic_column, chunk_structure.num_rows, deserialization_settings, path_state, nullptr);
                 paths_data_chunk.paths_data[requested_path] = std::move(dynamic_column);
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-                /// The local `path_state` is dropped right here, before the outer
-                /// `SubstreamsCachePathsDataElement` that later covers the produced column is created.
-                /// The state can hold column references through nested states (e.g. nested `Object`
-                /// or `LowCardinality` content of the path values), so verify that the reference
-                /// count of the just-produced path column accounts for those holders too, and a
-                /// broken copy-on-write reference count on a shared child is not freed at this
-                /// earlier destruction point while it is still referenced from the produced column
-                /// (issue #105626).
-                ColumnsOwnershipValidator ownership_validator;
-                ownership_validator.add(path_state);
-                ownership_validator.validate({paths_data_chunk.paths_data[requested_path]});
-#endif
             }
         }
     }
@@ -1547,8 +1459,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
 
 
 void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
     ISerialization::DeserializeBinaryBulkStatePtr & state,
@@ -1561,13 +1472,10 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
     if (serialization_version.value == SerializationVersion::MAP)
     {
-        /// If we don't have it in cache, deserialize and put deserialized map in cache.
-        if (!insertDataFromSubstreamsCacheIfAny(cache, settings, column))
-        {
-            size_t prev_size = column->size();
-            serialization_map->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, shared_data_state->map_state, cache);
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
-        }
+        /// Deserialize the shared data map and cache it for path subcolumn reads (SerializationObjectSharedDataPath).
+        size_t prev_size = column.size();
+        serialization_map->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, shared_data_state->map_state, cache);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
     }
     else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
     {
@@ -1576,23 +1484,15 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         {
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
-            /// Check if we have map column for this bucket in cache.
-            /// Map column for bucket from cache must contain only rows from current deserialization.
-            if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
-            {
-                shared_data_buckets[bucket] = cached_column_with_num_read_rows->first;
-            }
-            /// If we don't have it in cache, deserialize and put deserialized map in cache.
-            else
-            {
-                shared_data_buckets[bucket] = column->cloneEmpty();
-                serialization_map->deserializeBinaryBulkWithMultipleStreams(shared_data_buckets[bucket], rows_offset, limit, settings, shared_data_state->bucket_map_states[bucket], cache);
-                addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, shared_data_buckets[bucket], shared_data_buckets[bucket]->size());
-            }
+            /// Deserialize the bucket's map and cache it for a path subcolumn read of the same bucket.
+            auto mutable_bucket_column = column.cloneEmpty();
+            serialization_map->deserializeBinaryBulkWithMultipleStreams(*mutable_bucket_column, limit, settings, shared_data_state->bucket_map_states[bucket], cache);
+            shared_data_buckets[bucket] = std::move(mutable_bucket_column);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, shared_data_buckets[bucket], shared_data_buckets[bucket]->size());
             settings.path.pop_back();
         }
 
-        collectSharedDataFromBuckets(shared_data_buckets, *column->assumeMutable());
+        collectSharedDataFromBuckets(shared_data_buckets, column);
     }
     else if (serialization_version.value == SerializationVersion::ADVANCED
              || serialization_version.value == SerializationVersion::ADVANCED_CHUNKED)
@@ -1601,7 +1501,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
             return;
 
-        size_t prev_size = column->size();
+        size_t prev_size = column.size();
 
         /// In Compact part we always read whole chunk(s), so we don't need to worry about reading partial data.
         if (settings.data_part_type == MergeTreeDataPartType::Compact)
@@ -1642,12 +1542,12 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                     deserializeChunkStructurePrefix(*structure_prefix_stream, chunk_structure, *structure_state);
                     total_chunk_rows += chunk_structure.num_rows;
                     chunk_structures.push_back(std::move(chunk_structure));
-                } while (total_chunk_rows < rows_offset + limit);
+                } while (total_chunk_rows < limit);
 
-                if (total_chunk_rows != rows_offset + limit)
+                if (total_chunk_rows != limit)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Expected total chunk rows {} to equal requested rows {} in Compact part in bucket {}",
-                        total_chunk_rows, rows_offset + limit, bucket);
+                        total_chunk_rows, limit, bucket);
 
                 settings.path.pop_back();
 
@@ -1690,10 +1590,11 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 {
                     for (size_t i = 0; i != chunk_structure.num_paths; ++i)
                     {
-                        ColumnPtr path_column = dynamic_type->createColumn();
+                        auto path_column = dynamic_type->createColumn();
                         DeserializeBinaryBulkStatePtr path_state;
                         dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
-                        dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(path_column, chunk_structure.num_rows, 0, deserialization_settings, path_state, nullptr);
+                        /// We only need to consume this path's data from the stream to advance to the next path; the column is discarded.
+                        dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(*path_column, chunk_structure.num_rows, deserialization_settings, path_state, nullptr);
                     }
                 }
 
@@ -1762,9 +1663,9 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             }
 
             /// Now we have per-chunk path lists and can deserialize shared data copy with paths indexes and values.
-            auto & shared_data_array_column = assert_cast<ColumnArray &>(*column->assumeMutable());
+            auto & shared_data_array_column = assert_cast<ColumnArray &>(column);
             auto & shared_data_tuple_column = assert_cast<ColumnTuple &>(shared_data_array_column.getData());
-            auto & offsets_column = shared_data_array_column.getOffsetsPtr();
+            auto & offsets_column = shared_data_array_column.getOffsetsColumn();
             auto & paths_column = shared_data_tuple_column.getColumn(0);
             auto & values_column = shared_data_tuple_column.getColumn(1);
 
@@ -1773,17 +1674,16 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
             settings.path.push_back(Substream::ObjectSharedDataCopy);
 
-            /// Read array sizes for all rows (including rows we'll skip via rows_offset).
+            /// Read array sizes.
             settings.path.push_back(Substream::ObjectSharedDataCopySizes);
             if (settings.seek_stream_to_current_mark_callback)
                 settings.seek_stream_to_current_mark_callback(settings.path);
 
-            if (!SerializationArray::deserializeOffsetsBinaryBulk(offsets_column, rows_offset + limit, settings, cache))
+            if (!SerializationArray::deserializeOffsetsBinaryBulk(offsets_column, limit, settings, cache))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data copy sizes");
             settings.path.pop_back();
 
-            /// Read paths indexes per-chunk. Each chunk has its own path-to-index mapping,
-            /// so we calculate per-chunk offset/limit from rows_offset and read indexes in one pass.
+            /// Read paths indexes per-chunk: each chunk has its own path-to-index mapping.
             settings.path.push_back(Substream::ObjectSharedDataCopyPathsIndexes);
             auto * indexes_stream = settings.getter(settings.path);
             if (!indexes_stream)
@@ -1791,48 +1691,18 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
             auto & offsets = shared_data_array_column.getOffsets();
             size_t offsets_current_chunk_start = prev_offset_size;
-            size_t remaining_offset = rows_offset;
-            size_t remaining_limit = limit;
             for (size_t chunk_idx = 0; chunk_idx < chunks_paths.size(); ++chunk_idx)
             {
-                size_t chunk_offset = 0;
-                size_t chunk_limit = 0;
-                if (remaining_offset >= chunks_num_rows[chunk_idx])
-                {
-                    chunk_offset = chunks_num_rows[chunk_idx];
-                    chunk_limit = 0;
-                    remaining_offset -= chunks_num_rows[chunk_idx];
-                }
-                else
-                {
-                    chunk_offset = remaining_offset;
-                    chunk_limit = std::min(chunks_num_rows[chunk_idx] - remaining_offset, remaining_limit);
-                    remaining_limit -= chunk_limit;
-                    remaining_offset = 0;
-                }
-
-                /// Calculate how many nested rows should be skipped in this chunk.
-                size_t nested_offset = offsets[offsets_current_chunk_start + chunk_offset - ssize_t(1)] - offsets[offsets_current_chunk_start - ssize_t(1)];
-                /// Calculate how many nested rows should be read in this chunk.
-                size_t nested_limit
-                    = offsets[offsets_current_chunk_start + chunk_offset + chunk_limit - ssize_t(1)]
-                    - offsets[offsets_current_chunk_start + chunk_offset - ssize_t(1)];
+                /// All chunks of a Compact granule are read fully.
+                size_t chunk_nested_limit
+                    = offsets[offsets_current_chunk_start + chunks_num_rows[chunk_idx] - ssize_t(1)]
+                    - offsets[offsets_current_chunk_start - ssize_t(1)];
                 /// Read indexes and collect paths into paths_column.
-                deserializeIndexesAndCollectPaths(paths_column, *indexes_stream, std::move(chunks_paths[chunk_idx]), nested_offset, nested_limit);
-                offsets_current_chunk_start += chunk_offset + chunk_limit;
+                deserializeIndexesAndCollectPaths(paths_column, *indexes_stream, std::move(chunks_paths[chunk_idx]), chunk_nested_limit);
+                offsets_current_chunk_start += chunks_num_rows[chunk_idx];
             }
             settings.path.pop_back();
 
-            /// Fix up offsets to remove skipped rows.
-            size_t nested_offset = 0;
-            if (rows_offset)
-            {
-                size_t skipped_idx = std::min(prev_offset_size + rows_offset, offsets.size()) - 1;
-                nested_offset = offsets[skipped_idx] - prev_last_offset;
-                for (auto i = prev_offset_size; i + rows_offset < offsets.size(); ++i)
-                    offsets[i] = offsets[i + rows_offset] - nested_offset;
-                offsets_column->assumeMutable()->popBack(rows_offset);
-            }
             size_t nested_limit = offsets.back() - prev_last_offset;
 
             /// Read paths values.
@@ -1841,7 +1711,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             if (!values_stream)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data copy values");
 
-            SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_offset, nested_limit, 0);
+            SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_limit, 0);
             settings.path.pop_back();
 
             settings.path.pop_back();
@@ -1851,12 +1721,8 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         {
             /// Collect list of paths from all buckets for each chunk.
             std::vector<std::vector<String>> chunks_paths;
-            /// Collect offsets and limits for each chunk.
-            std::vector<size_t> chunks_offsets;
+            /// Collect the number of rows to read for each chunk.
             std::vector<size_t> chunks_limits;
-
-            if (!settings.continuous_reading)
-                shared_data_state->last_incomplete_chunk_offset = 0;
 
             for (size_t bucket = 0; bucket != buckets; ++bucket)
             {
@@ -1865,34 +1731,17 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
                 auto * structure_state = checkAndGetState<DeserializeBinaryBulkStateObjectSharedDataStructure>(shared_data_state->bucket_structure_states[bucket]);
                 /// Read structure for all chunks in this bucket.
-                auto chunk_structures = deserializeStructure(rows_offset, limit, settings, *structure_state, cache);
+                auto chunk_structures = deserializeStructure(limit, settings, *structure_state, cache);
                 if (!chunk_structures)
                     return;
 
-                /// Initialize chunks_paths/chunks_offsets/chunks_limits on first bucket.
+                /// Initialize chunks_paths/chunks_limits on first bucket.
                 if (bucket == 0)
                 {
                     chunks_paths.resize(chunk_structures->size());
-                    chunks_offsets.reserve(chunk_structures->size());
                     chunks_limits.reserve(chunk_structures->size());
                     for (size_t chunk_idx = 0; chunk_idx != chunk_structures->size(); ++chunk_idx)
-                    {
-                        chunks_offsets.push_back((*chunk_structures)[chunk_idx].offset);
-                        /// Offset in the first chunk includes rows that we could already read before.
-                        if (chunk_idx == 0)
-                            chunks_offsets.back() -= shared_data_state->last_incomplete_chunk_offset;
                         chunks_limits.push_back((*chunk_structures)[chunk_idx].limit);
-                    }
-
-                    if (!chunk_structures->empty())
-                    {
-                        /// Update last_incomplete_chunk_offset if there are remaining rows in the last chunk.
-                        const auto & last_chunk = chunk_structures->back();
-                        if (last_chunk.offset + last_chunk.limit < last_chunk.num_rows)
-                            shared_data_state->last_incomplete_chunk_offset = last_chunk.offset + last_chunk.limit;
-                        else
-                            shared_data_state->last_incomplete_chunk_offset = 0;
-                    }
                 }
 
                 for (size_t chunk_idx = 0; chunk_idx != chunk_structures->size(); ++chunk_idx)
@@ -1904,9 +1753,9 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Now we have a list of all paths stored in each chunk. Read shared data copy with paths indexes and values.
             settings.path.push_back(Substream::ObjectSharedDataCopy);
 
-            auto & shared_data_array_column = assert_cast<ColumnArray &>(*column->assumeMutable());
+            auto & shared_data_array_column = assert_cast<ColumnArray &>(column);
             auto & shared_data_tuple_column = assert_cast<ColumnTuple &>(shared_data_array_column.getData());
-            auto & offsets_column = shared_data_array_column.getOffsetsPtr();
+            auto & offsets_column = shared_data_array_column.getOffsetsColumn();
             auto & paths_column = shared_data_tuple_column.getColumn(0);
             auto & values_column = shared_data_tuple_column.getColumn(1);
 
@@ -1915,7 +1764,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
             /// Read array sizes.
             settings.path.push_back(Substream::ObjectSharedDataCopySizes);
-            if (!SerializationArray::deserializeOffsetsBinaryBulk(offsets_column, rows_offset + limit, settings, cache))
+            if (!SerializationArray::deserializeOffsetsBinaryBulk(offsets_column, limit, settings, cache))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data copy sizes");
 
             settings.path.pop_back();
@@ -1932,44 +1781,30 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             auto & offsets = shared_data_array_column.getOffsets();
             for (size_t chunk_idx = 0; chunk_idx != chunks_paths.size(); ++chunk_idx)
             {
-                /// Calculate how many nested rows should be skipped in this chunk.
-                size_t nested_offset = offsets[offsets_current_chunk_start + chunks_offsets[chunk_idx] - ssize_t(1)] - offsets[offsets_current_chunk_start - ssize_t(1)];
-                /// Calculate how many nested rows should be read in this chunk.
-                size_t nested_limit
-                    = offsets[offsets_current_chunk_start + chunks_offsets[chunk_idx] + chunks_limits[chunk_idx] - ssize_t(1)]
-                    - offsets[offsets_current_chunk_start + chunks_offsets[chunk_idx] - ssize_t(1)];
+                /// Calculate how many index entries should be read for this chunk.
+                size_t chunk_nested_limit
+                    = offsets[offsets_current_chunk_start + chunks_limits[chunk_idx] - ssize_t(1)]
+                    - offsets[offsets_current_chunk_start - ssize_t(1)];
                 /// Read indexes and collect paths into paths_column.
-                deserializeIndexesAndCollectPaths(paths_column, *indexes_stream, std::move(chunks_paths[chunk_idx]), nested_offset, nested_limit);
-                offsets_current_chunk_start += chunks_offsets[chunk_idx] + chunks_limits[chunk_idx];
+                deserializeIndexesAndCollectPaths(paths_column, *indexes_stream, std::move(chunks_paths[chunk_idx]), chunk_nested_limit);
+                offsets_current_chunk_start += chunks_limits[chunk_idx];
             }
             settings.path.pop_back();
 
             /// Values can be read as usual String column from multiple chunks.
-            /// We need to calculate offset and limit for it based on offsets.
-            size_t nested_offset = 0;
-            if (rows_offset)
-            {
-                size_t skipped_idx = std::min(prev_offset_size + rows_offset, offsets.size()) - 1;
-                nested_offset = offsets[skipped_idx] - prev_last_offset;
-
-                for (auto i = prev_offset_size; i + rows_offset < offsets.size(); ++i)
-                    offsets[i] = offsets[i + rows_offset] - nested_offset;
-
-                offsets_column->assumeMutable()->popBack(rows_offset);
-            }
-
+            /// We need to calculate the limit for it based on offsets.
             size_t nested_limit = offsets.back() - prev_last_offset;
 
             /// Read values.
             settings.path.push_back(Substream::ObjectSharedDataCopyValues);
             auto * values_stream = settings.getter(settings.path);
-            SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_offset, nested_limit, 0);
+            SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_limit, 0);
             settings.path.pop_back();
 
             settings.path.pop_back();
         }
 
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
     }
     else
     {

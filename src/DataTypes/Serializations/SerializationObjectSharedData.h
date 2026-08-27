@@ -114,8 +114,7 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -216,9 +215,8 @@ private:
 
     static DeserializeBinaryBulkStatePtr deserializeStructureStatePrefix(DeserializeBinaryBulkSettings & settings, SubstreamsDeserializeStatesCache * cache);
 
-    /// Deserialize data from ObjectSharedDataStructure stream with specified offset/limit.
+    /// Deserialize data from ObjectSharedDataStructure stream with specified limit.
     static std::shared_ptr<ChunkStructures> deserializeStructure(
-        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state,
@@ -293,30 +291,6 @@ private:
     struct SubstreamsCachePathsDataElement : public ISubstreamsCacheElement
     {
         explicit SubstreamsCachePathsDataElement(std::shared_ptr<PathsDataChunks> paths_data_chunks_) : paths_data_chunks(paths_data_chunks_) {}
-
-        void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-        {
-            if (!paths_data_chunks)
-                return;
-
-            for (const auto & chunk : *paths_data_chunks)
-            {
-                for (const auto & [path, column] : chunk.paths_data)
-                {
-                    if (column)
-                        callback(column);
-                }
-
-                for (const auto & [path, subcolumns] : chunk.paths_subcolumns_data)
-                {
-                    for (const auto & [subcolumn_name, column] : subcolumns)
-                    {
-                        if (column)
-                            callback(column);
-                    }
-                }
-            }
-        }
 
         std::shared_ptr<PathsDataChunks> paths_data_chunks;
     };
