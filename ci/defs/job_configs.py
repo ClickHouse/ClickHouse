@@ -416,6 +416,7 @@ class JobConfigs:
             parameter=BuildTypes.AMD_RELEASE,
             provides=[
                 ArtifactNames.CH_AMD_RELEASE,
+                ArtifactNames.CH_AMD_RELEASE_STRIPPED,
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.RPM_AMD_RELEASE,
                 ArtifactNames.TGZ_AMD_RELEASE,
@@ -427,6 +428,7 @@ class JobConfigs:
             parameter=BuildTypes.ARM_RELEASE,
             provides=[
                 ArtifactNames.CH_ARM_RELEASE,
+                ArtifactNames.CH_ARM_RELEASE_STRIPPED,
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,

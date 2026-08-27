@@ -992,6 +992,13 @@ jobs:
           path: ci/tmp/build/programs/self-extracting/clickhouse
 
 
+      - name: Upload artifact CH_AMD_RELEASE_STRIPPED
+        uses: actions/upload-artifact@v7
+        with:
+          name: CH_AMD_RELEASE_STRIPPED
+          path: ci/tmp/build/programs/self-extracting/clickhouse-stripped
+
+
       - name: Upload artifact DEB_AMD_RELEASE
         uses: actions/upload-artifact@v7
         with:
@@ -1075,6 +1082,13 @@ jobs:
         with:
           name: CH_ARM_RELEASE
           path: ci/tmp/build/programs/self-extracting/clickhouse
+
+
+      - name: Upload artifact CH_ARM_RELEASE_STRIPPED
+        uses: actions/upload-artifact@v7
+        with:
+          name: CH_ARM_RELEASE_STRIPPED
+          path: ci/tmp/build/programs/self-extracting/clickhouse-stripped
 
 
       - name: Upload artifact DEB_ARM_RELEASE

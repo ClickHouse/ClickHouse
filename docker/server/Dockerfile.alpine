@@ -107,6 +107,9 @@ RUN mkdir -p \
     && chown root:clickhouse "${DEFAULT_LOG_DIR}" \
     && chmod ugo+Xrw -R "${DEFAULT_DATA_DIR}" "${DEFAULT_LOG_DIR}" "${DEFAULT_CLIENT_CONFIG_DIR}" "${DEFAULT_SERVER_CONFIG_DIR}"
 
+RUN apk update
+RUN apk add --upgrade libssl3 libcrypto3
+
 VOLUME "${DEFAULT_DATA_DIR}"
 EXPOSE 9000 8123 9009
 
