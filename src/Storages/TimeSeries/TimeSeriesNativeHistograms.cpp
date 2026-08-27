@@ -164,7 +164,7 @@ void validateTimeSeriesHistogramSample(const ColumnTuple & tuple, size_t row)
     constexpr UInt8 known_flags
         = TimeSeriesHistogramFlags::IsFloat | TimeSeriesHistogramFlags::CounterResetHintMask | TimeSeriesHistogramFlags::StaleMarker;
     if (flags & ~known_flags)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram has unknown flag bits set: {}", flags);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram has unknown flag bits set: {}", static_cast<UInt32>(flags));
 
     const Int64 schema = tuple.getColumn(TimeSeriesHistogramsTupleIndex::Schema).getInt(row);
     const bool custom_buckets = (schema == HISTOGRAM_CUSTOM_BUCKETS_SCHEMA);
