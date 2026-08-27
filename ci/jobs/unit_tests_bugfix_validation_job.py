@@ -58,12 +58,10 @@ BEFORE_SRC_NORMALIZED = f"{REPO_NORMALIZED}/{BEFORE_SRC}"
 BEFORE_BUILD_NORMALIZED = f"{BEFORE_SRC_NORMALIZED}/build"
 BEFORE_BINARY = f"{BEFORE_SRC}/build/src/unit_tests_dbms"
 
-# Build types the "before" binary is validated on, in order; the first is what
-# `Unit tests (asan_ubsan)` uses for the PR binary. A later arm is reached only when its
-# predecessor ran every touched test and none failed: a test whose failure mode needs a
-# sanitizer the arm lacks passes there either way, so one arm cannot separate "the test does
-# not catch the bug" from "this build cannot observe it". Every arm is a cold build, so the
-# list stops at two and `amd_msan`/`amd_debug` remain blind spots.
+# Build types the "before" binary is validated on, in order. A test whose failure mode
+# needs a sanitizer the arm lacks passes there either way, so one arm cannot separate
+# "the test does not catch the bug" from "this build cannot observe it". Every arm is a
+# cold build, so the list stops at two and `amd_msan`/`amd_debug` remain blind spots.
 BEFORE_BUILD_TYPES = (BuildTypes.AMD_ASAN_UBSAN, BuildTypes.AMD_TSAN)
 
 # gtest test-registration macros whose first argument is the test-suite name.
@@ -967,16 +965,18 @@ def main():
                 compile_result, test_files
             )
             if attributed_to and len(arms_tried) > 1:
-                # An earlier arm compiled this same overlay, so the failure cannot mean the
-                # test depends on the fix's interface; whatever differs is build-type specific.
+                # An earlier arm compiled this same overlay, so the failure is confined to
+                # what this build type compiles differently, and decides nothing either way.
                 compile_result.set_status(Result.Status.ERROR)
                 compile_result.set_info(
                     f"The before-binary compiled the overlaid unit-test changes on "
                     f"{arms_tried[0]} but not on {build_type}: "
                     + attributed_to
-                    + ". The difference is specific to this build type, not a dependency on "
-                    "the interface this PR introduces. This is inconclusive — NOT a "
-                    "refutation. " + (compile_result.info or "")
+                    + ". Only what this build type compiles differently can be at fault, "
+                    "which may include a sanitizer-conditional part of the test that depends "
+                    "on the interface this PR introduces. Either way nothing can be "
+                    "concluded: this is inconclusive — NOT a refutation. "
+                    + (compile_result.info or "")
                 )
                 results.append(compile_result)
                 finalize(
@@ -1104,9 +1104,9 @@ def main():
         # from a test that does not catch the bug.
         if len(arms_tried) < len(BEFORE_BUILD_TYPES):
             before_result.set_info(
-                f"All touched unit tests PASS on the {build_type} before-binary, which "
-                f"cannot observe a failure mode specific to another build type, not a "
-                f"refutation. Escalating to {BEFORE_BUILD_TYPES[len(arms_tried)]}."
+                f"All touched unit tests PASS on the {build_type} before-binary. That is not "
+                f"a refutation: this build cannot observe a failure mode specific to another "
+                f"build type. Escalating to {BEFORE_BUILD_TYPES[len(arms_tried)]}."
             )
             results.append(before_result)
             continue
