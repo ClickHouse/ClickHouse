@@ -667,6 +667,14 @@ class ArtifactConfigs:
         name=ArtifactNames.LLVM_COVERAGE_INFO_FILE,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/llvm_coverage.info",
+        # The LLVM Coverage job deliberately publishes no .info when its
+        # measurement is incomplete (a shard profile is missing or corrupt), so
+        # that "an .info exists for a commit" means "that commit's measurement
+        # merged every shard". The diff gate walks master ancestors and uses the
+        # first commit with an .info as its baseline, so withholding the file is
+        # what keeps incomplete master runs out of the baseline series. A missing
+        # file must therefore not redden the job that skipped on purpose.
+        optional=True,
     )
     clickhouse_debians = Artifact.Config(
         name="*",
