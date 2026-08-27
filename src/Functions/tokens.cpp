@@ -290,6 +290,12 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         auto tokenizer = createTokenizer(arguments, getName());
+        if (tokenizer->getType() == ITokenizer::Type::JSONPathValues)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Function '{}' does not support the '{}' tokenizer",
+                getName(),
+                tokenizer->getTokenizerExternalName());
 
         if constexpr (TokensTraits::mode == TokensMode::LikePattern)
         {

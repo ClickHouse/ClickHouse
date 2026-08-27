@@ -170,6 +170,13 @@ FunctionBasePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::buildI
         : arguments[arg_tokenizer].column->getDataAt(0);
 
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
+    if (tokenizer->getType() == ITokenizer::Type::JSONPathValues)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Function '{}' does not support the '{}' tokenizer",
+            getName(),
+            tokenizer->getTokenizerExternalName());
+
     auto search_tokens = initializeSearchTokens(arguments, *tokenizer, getName());
     DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
     return std::make_shared<FunctionBaseHasAnyAllTokens<HasTokensTraits>>(std::move(tokenizer), std::move(search_tokens), std::move(argument_types), return_type);
