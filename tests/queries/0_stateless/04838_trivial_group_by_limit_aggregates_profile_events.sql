@@ -14,7 +14,7 @@
 -- replicas), so the cutoff intentionally stays off there.
 --
 -- `enable_analyzer = 1` is pinned because the aggregate cutoff is armed by the planner of
--- the new analyzer; with the old analyzer the events never fire.
+-- the analyzer; with the old analyzer the events never fire.
 SET enable_analyzer = 1;
 
 SELECT toUInt64(number) AS k, count() AS c, sum(number) AS s FROM numbers_mt(1000000) GROUP BY k LIMIT 5 FORMAT Null

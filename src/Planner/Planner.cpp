@@ -118,7 +118,6 @@ namespace Setting
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
-    extern const SettingsBool make_distributed_plan;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool query_cache_for_subqueries;
