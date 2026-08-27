@@ -98,12 +98,12 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     }
     else if (const auto * intersect_or_except_step = typeid_cast<const IntersectOrExceptStep *>(plan_step))
     {
-        /// INTERSECT keeps at most the smallest input, EXCEPT at most the first input, whose
-        /// header (and so column statistics) the output reuses.
+        /// The output reuses the first input's header and so its column statistics. Only
+        /// `INTERSECT ALL` is bounded by the smallest input; the `DISTINCT` variants keep every
+        /// matching duplicate of the first input at this step (a separate `Distinct` above
+        /// deduplicates), and `EXCEPT` keeps at most the first input.
         ExpressionStatistics result = input_statistics(0);
-        const auto op = intersect_or_except_step->getOperator();
-        if (op == IntersectOrExceptStep::Operator::INTERSECT_ALL
-            || op == IntersectOrExceptStep::Operator::INTERSECT_DISTINCT)
+        if (intersect_or_except_step->getOperator() == IntersectOrExceptStep::Operator::INTERSECT_ALL)
         {
             for (size_t input_index = 1; input_index < expression->inputs.size(); ++input_index)
             {
@@ -111,6 +111,10 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
                 result.estimated_row_count = std::min(result.estimated_row_count, other.estimated_row_count);
                 result.max_row_count = std::min(result.max_row_count, other.max_row_count);
             }
+            /// Without the clamp a row-count reduction could leave a column NDV above the row count.
+            for (auto & [column_name, column_stats] : result.column_statistics)
+                column_stats.num_distinct_values = std::min(column_stats.num_distinct_values,
+                    static_cast<UInt64>(std::max(result.estimated_row_count, 1.0)));
         }
         result.min_row_count = 0;
         group->statistics = std::move(result);

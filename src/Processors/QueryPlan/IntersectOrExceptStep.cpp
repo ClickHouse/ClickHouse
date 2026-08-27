@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static bool containsAggregateStateColumn(const IColumn & column)
@@ -185,13 +186,28 @@ QueryPlanStepPtr IntersectOrExceptStep::clone() const
     return std::make_unique<IntersectOrExceptStep>(*this);
 }
 
+/// First query-plan serialization version that registers the "IntersectOrExcept" step.
+static constexpr auto MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP = 10;
+
 void IntersectOrExceptStep::serialize(Serialization & ctx) const
 {
+    /// Throw rather than send a step name an older peer does not know.
+    if (ctx.version < MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: serializing an IntersectOrExceptStep requires query plan serialization "
+            "version >= {}; all nodes must run the same version", MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP);
+
     writeIntBinary(static_cast<UInt8>(current_operator), ctx.out);
 }
 
 QueryPlanStepPtr IntersectOrExceptStep::deserialize(Deserialization & ctx)
 {
+    /// Mirrors the guard in `serialize`: a peer below this version cannot have written this step.
+    if (ctx.version < MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: deserializing an IntersectOrExceptStep requires query plan serialization "
+            "version >= {}; all nodes must run the same version", MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP);
+
     UInt8 operator_value = 0;
     readIntBinary(operator_value, ctx.in);
     const auto current_operator = static_cast<Operator>(operator_value);
