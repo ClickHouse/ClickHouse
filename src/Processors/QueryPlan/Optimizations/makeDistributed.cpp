@@ -1,7 +1,7 @@
-#include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #if CLICKHOUSE_CLOUD
 #include <Processors/QueryPlan/ReadFromMergeTreeAtWorker.h>
 #endif
@@ -74,8 +74,7 @@ std::optional<PreformattedMessage> hasUnsupportedStepRemoteExecution(const Query
     /// `optimizeUnusedCommonSubplans`). The post-optimization check in `convertToDistributed`
     /// stays strict and backstops that guarantee. The children (the subplan's real steps) are
     /// still checked below.
-    if (typeid_cast<const CommonSubplanReferenceStep *>(node.step.get())
-        || typeid_cast<const CommonSubplanStep *>(node.step.get()))
+    if (typeid_cast<const CommonSubplanReferenceStep *>(node.step.get()) || typeid_cast<const CommonSubplanStep *>(node.step.get()))
     {
         if (!allow_subplan_placeholders)
             return PreformattedMessage::create("subplan placeholder step: {}", node.step->getName());
@@ -159,12 +158,13 @@ void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & o
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step);
 String dumpQueryPlanShort(const QueryPlan & query_plan);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
-std::optional<PreformattedMessage> hasAggregationUnsupportedStepForDistributed(QueryPlan::Node & node);
+std::optional<PreformattedMessage> hasAggregationUnsupportedStepForDistributed(QueryPlan::Node & node, bool enable_cascades_optimizer);
 std::optional<PreformattedMessage> hasCascadesUnsupportedStepForDistributed(const IQueryPlanStep & step);
-std::optional<PreformattedMessage>  traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
+std::optional<PreformattedMessage>
+traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 
 
-// checks if there is read unsupported case
+/// Returns the reason a `ReadFromMergeTree` cannot ship as a distributed read, or nullopt.
 std::optional<PreformattedMessage> isReadFromMergeTreeSupportedForDistributed(const ReadFromMergeTree * read);
 
 /// Returns true if the plan contains a step the distributed pipeline cannot handle yet: WITH TOTALS
@@ -176,8 +176,7 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & node)
     const auto * step = node.step.get();
     /// These steps produce non-Main pipe streams (totals/extremes) or rely on a single-node
     /// aggregation shape; exchanges only carry the Main stream, so keep such plans local.
-    if (typeid_cast<const TotalsHavingStep *>(step)
-        || typeid_cast<const ExtremesStep *>(step))
+    if (typeid_cast<const TotalsHavingStep *>(step) || typeid_cast<const ExtremesStep *>(step))
         return true;
     /// A PASTE join pairs rows by position. An exchange below it (e.g. a gather over a
     /// distributed read) reorders rows arbitrarily and silently changes the pairing.
@@ -203,20 +202,22 @@ std::optional<PreformattedMessage> isReadFromMergeTreeSupportedForDistributed(co
         return std::make_optional(PreformattedMessage::create("make_distributed_plan does not support a read-in-order distributed read"));
 
     if (read->hasPinnedBlockNumbers())
-        return std::make_optional(PreformattedMessage::create(
-            "make_distributed_plan does not support a distributed read with a pinned block-number "
-            "boundary (for example select_sequential_consistency)"));
+        return std::make_optional(
+            PreformattedMessage::create(
+                "make_distributed_plan does not support a distributed read with a pinned block-number "
+                "boundary (for example select_sequential_consistency)"));
 
     /// A `STREAM` read cannot be serialized, and every distributed read ships as a
     /// serialized fragment; reject it here instead of from `serialize` mid-execution.
     if (read->getQueryInfo().isStream())
-        return std::make_optional(PreformattedMessage::create(
-            "make_distributed_plan does not support a distributed read with the STREAM modifier"));
+        return std::make_optional(
+            PreformattedMessage::create("make_distributed_plan does not support a distributed read with the STREAM modifier"));
 
     for (const auto & column : read->getAllColumnNames())
         if (column == "_part_index" || column == "_part_starting_offset")
-            return std::make_optional(PreformattedMessage::create(
-                "make_distributed_plan does not support a distributed read exposing the {} virtual column", column));
+            return std::make_optional(
+                PreformattedMessage::create(
+                    "make_distributed_plan does not support a distributed read exposing the {} virtual column", column));
 
 
 
@@ -246,7 +247,7 @@ void convertLogicalJoinsForLocalExecution(QueryPlan::Node & root, QueryPlan::Nod
 /// `force_aggregation_in_order` is set). It relies on its input arriving ordered by the
 /// group keys, which the exchanges do not preserve.
 /// Also true if contains a global GROUP BY limit since it can't be enforced once aggregation is split per bucket.
-std::optional<PreformattedMessage> hasAggregationUnsupportedStepForDistributed(QueryPlan::Node & node)
+std::optional<PreformattedMessage> hasAggregationUnsupportedStepForDistributed(QueryPlan::Node & node, bool enable_cascades_optimizer)
 {
     /// Is this a aggregating step?
     auto * aggregating_step = typeid_cast<AggregatingStep *>(node.step.get());
@@ -260,10 +261,20 @@ std::optional<PreformattedMessage> hasAggregationUnsupportedStepForDistributed(Q
     /// distributed path uses. Shuffle is impossible here, so
     /// `distributed_plan_force_shuffle_aggregation` cannot apply either.
 
+    /// An in-order aggregation (or one that requires explicit sorting, `force_aggregation_in_order`)
+    /// relies on its input arriving ordered by the group keys, which neither the rule-based exchanges
+    /// nor the ones Cascades inserts preserve, so check it for both planners. Note that
+    /// `explicitSortingRequired` can be true while `inOrder` is false (a keyless aggregation), and
+    /// `AggregatingStep::isSerializable` refuses to ship either.
     if (aggregating_step->inOrder() || aggregating_step->explicitSortingRequired())
     {
         return PreformattedMessage::create("make_distributed_plan does not support in-order aggregation");
     }
+
+    /// The checks below mirror the rule-based `tryMakeDistributedAggregation`; the Cascades planner
+    /// splits aggregation by its own rules.
+    if (enable_cascades_optimizer)
+        return {};
 
     /// Only one source is expected for aggregation step
     if (node.children.size() != 1)
@@ -288,8 +299,7 @@ std::optional<PreformattedMessage> hasCascadesUnsupportedStepForDistributed(cons
     /// (`ReadFromStorageStep`, e.g. a `viewExplain` read, derives from `ReadFromPreparedSource`.)
     if (dynamic_cast<const ReadFromPreparedSource *>(&step))
         return PreformattedMessage::create(
-            "make_distributed_plan with enable_cascades_optimizer does not support the '{}' step",
-            step.getName());
+            "make_distributed_plan with enable_cascades_optimizer does not support the '{}' step", step.getName());
 
     /// A read from a `Distributed` table (or the `remote`/`cluster` table functions) with remote
     /// shards fans out by itself and cannot be planned as part of the distributed plan; without
@@ -305,34 +315,31 @@ std::optional<PreformattedMessage> hasCascadesUnsupportedStepForDistributed(cons
     /// refuses to distribute such joins too).
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(&step);
         join_step && join_step->getJoinOperator().locality == JoinLocality::Local)
-        return PreformattedMessage::create(
-            "make_distributed_plan with enable_cascades_optimizer does not support LOCAL JOIN");
+        return PreformattedMessage::create("make_distributed_plan with enable_cascades_optimizer does not support LOCAL JOIN");
 
     /// An in-order aggregation assumes its input arrives ordered by the group keys, which the
     /// exchanges Cascades inserts do not guarantee, and `AggregatingStep::isSerializable` refuses
     /// to ship it. Reject it up front instead of failing later while serializing a fragment.
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(&step);
         aggregating_step && aggregating_step->inOrder())
-        return PreformattedMessage::create(
-            "make_distributed_plan with enable_cascades_optimizer does not support in-order aggregation");
+        return PreformattedMessage::create("make_distributed_plan with enable_cascades_optimizer does not support in-order aggregation");
 
     /// Defensive, same as above. A non-Full sorting step (FinishSorting, MergingSorted)
     /// requires ordered input, which Cascades does not model, and no rule implements it.
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(&step);
         sorting_step && sorting_step->getType() != SortingStep::Type::Full)
-        return PreformattedMessage::create(
-            "make_distributed_plan with enable_cascades_optimizer supports only full sorting steps");
+        return PreformattedMessage::create("make_distributed_plan with enable_cascades_optimizer supports only full sorting steps");
 
     /// `WITH FILL` is not supported yet.
     if (typeid_cast<const FillingStep *>(&step))
-        return PreformattedMessage::create(
-            "make_distributed_plan with enable_cascades_optimizer does not support WITH FILL");
+        return PreformattedMessage::create("make_distributed_plan with enable_cascades_optimizer does not support WITH FILL");
 
     return std::nullopt;
 }
 
 
-std::optional<PreformattedMessage> traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings)
+std::optional<PreformattedMessage>
+traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (!optimization_settings.make_distributed_plan)
     {
@@ -340,8 +347,10 @@ std::optional<PreformattedMessage> traversePlanForUnsupportedDistributedStep(Que
     }
     std::optional<PreformattedMessage> unsupported_step;
     Stack stack{};
-    traverseQueryPlan(stack, root,
-        [&](auto &){},
+    traverseQueryPlan(
+        stack,
+        root,
+        [&](auto &) { },
         [&](QueryPlan::Node & frame_node)
         {
             if (unsupported_step)
@@ -352,7 +361,7 @@ std::optional<PreformattedMessage> traversePlanForUnsupportedDistributedStep(Que
             /// Rejects distributed reads a worker cannot reproduce: a pinned snapshot boundary
             /// (select_sequential_consistency) or the part-order virtual columns `_part_index` /
             /// `_part_starting_offset`. Done at planning time so it fails cleanly before the pipeline is built.
-            if (const auto *step = typeid_cast<const ReadFromMergeTree*>(frame_node.step.get()); step != nullptr)
+            if (const auto * step = typeid_cast<const ReadFromMergeTree *>(frame_node.step.get()); step != nullptr)
             {
                 if (auto maybe_unsupported = isReadFromMergeTreeSupportedForDistributed(step); maybe_unsupported.has_value())
                 {
@@ -375,19 +384,17 @@ std::optional<PreformattedMessage> traversePlanForUnsupportedDistributedStep(Que
             if (planHasUnsupportedDistributedStep(frame_node))
             {
                 /// These steps produce non-Main pipe streams (totals/extremes) or rely on a single-node
-                unsupported_step = PreformattedMessage::create("make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE, extremes or PASTE JOIN");
+                unsupported_step = PreformattedMessage::create(
+                    "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE, extremes or PASTE JOIN");
                 return;
             }
 
 
-            if (!optimization_settings.enable_cascades_optimizer)
+            if (auto res = hasAggregationUnsupportedStepForDistributed(frame_node, optimization_settings.enable_cascades_optimizer);
+                res.has_value())
             {
-
-                if (auto res = hasAggregationUnsupportedStepForDistributed(frame_node); res.has_value())
-                {
-                    unsupported_step = std::move(res);
-                    return;
-                }
+                unsupported_step = std::move(res);
+                return;
             }
 
             if (optimization_settings.enable_cascades_optimizer && frame_node.step)
@@ -656,12 +663,6 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
     QueryPlan::Node * source = node.children[0];
 
     Names aggregation_keys = aggregating_step->getParams().keys;
-
-    // verified in hasAggregationUnsupportedStepForDistributed
-    /// A global GROUP BY limit can't be enforced once aggregation is split per bucket.
-    if (aggregating_step->getParams().max_rows_to_group_by != 0)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "ERROR OLD: make_distributed_plan does not support aggregation with max_rows_to_group_by");
 
     enum AggregationStrategy
     {
