@@ -308,6 +308,8 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
     if (keys_size == 1 && key_columns[0]->isNumeric())
     {
         size_t size_of_field = key_columns[0]->sizeOfValueIfFixed();
+        /// The loop above bails out before assigning `key_sizes` for a `LowCardinality` column.
+        key_sizes[0] = size_of_field;
         if (size_of_field == 1)
             return Type::key8;
         if (size_of_field == 2)
