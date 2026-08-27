@@ -40,3 +40,13 @@ EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('http://localho
 
 -- A url with no signature in it is left alone.
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('http://localhost:11111/devstoreaccount1/cont', 'cont', 'data.parquet', 'Parquet');
+
+-- The unified url entrypoints dispatch Azure schemes to AzureBlobStorage and must mask the same SAS.
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM url('az://account.blob.core.windows.net/cont/data.csv?sp=r&sig=SEKRIT_URL_FUNCTION', 'CSV');
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM url(nc_04909_missing, url = 'azure://account.blob.core.windows.net/cont/data.csv?sp=r&sig=SEKRIT_URL_OVERRIDE');
+
+DROP TABLE IF EXISTS t_url_azure_sas;
+CREATE TABLE t_url_azure_sas (x UInt8)
+ENGINE = URL('abfss://cont@account.dfs.core.windows.net/data.csv?sp=r&sig=SEKRIT_URL_ENGINE', 'CSV');
+SHOW CREATE TABLE t_url_azure_sas;
+DROP TABLE t_url_azure_sas;
