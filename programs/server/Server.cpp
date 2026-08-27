@@ -850,6 +850,48 @@ int readNumber(const String & path)
     return result;
 }
 
+/// Tells the filesystem type the given directory resides on - e.g. "ext4" or "xfs" -, by picking the
+/// longest matching mount point from /proc/self/mounts, the same way the mount point scan inside
+/// `sanityChecks` does. Returns an empty string when no mount point covers `directory`.
+String getDirectoryFilesystemType(const std::string & directory)
+{
+    std::error_code ec;
+    const String canonical_directory = fs::canonical(directory, ec).string();
+    String filesystem_type_of_directory;
+    size_t longest_mount_point_match = 0;
+
+    ReadBufferFromFile mounts_file("/proc/self/mounts");
+    while (!mounts_file.eof())
+    {
+        String line;
+        readStringUntilNewlineInto(line, mounts_file);
+        if (!mounts_file.eof())
+            mounts_file.ignore();
+
+        /// Fields: device, mount point, filesystem type. Skip mount points with escaped characters.
+        size_t p1 = line.find(' ');
+        size_t p2 = (p1 == String::npos) ? String::npos : line.find(' ', p1 + 1);
+        size_t p3 = (p2 == String::npos) ? String::npos : line.find(' ', p2 + 1);
+        if (p3 == String::npos)
+            continue;
+        String mount_point = line.substr(p1 + 1, p2 - p1 - 1);
+        String fs_type = line.substr(p2 + 1, p3 - p2 - 1);
+        if (mount_point.contains('\\'))
+            continue;
+
+        const bool contains_directory = canonical_directory == mount_point
+            || (canonical_directory.starts_with(mount_point)
+                && (mount_point == "/" || canonical_directory[mount_point.size()] == '/'));
+        if (contains_directory && mount_point.size() >= longest_mount_point_match)
+        {
+            longest_mount_point_match = mount_point.size();
+            filesystem_type_of_directory = fs_type;
+        }
+    }
+
+    return filesystem_type_of_directory;
+}
+
 #endif
 
 void sanityChecks(Server & server, const ServerSettings & server_settings)
@@ -933,9 +975,18 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 "Linux kernel version {} is too old: IPv6 packets can be dropped randomly. Consider upgrading the kernel.",
                 linux_version.toString());
         else if (linux_version >= VersionNumber{4, 16, 0} && linux_version < VersionNumber{4, 16, 4})
-            kernel_warning = PreformattedMessage::create(
-                "Linux kernel version {} has a known ext4 filesystem corruption bug (fixed in 4.16.4). Consider upgrading the kernel.",
-                linux_version.toString());
+        {
+            /// The corruption bug lives in ext4, so warn only when the <path> directory actually
+            /// resides on ext4: identical kernels with ClickHouse on xfs, zfs or any other
+            /// filesystem are not affected and must not raise a system.warnings alarm. Warn as
+            /// before when the filesystem cannot be told - going quiet on an unreadable
+            /// /proc/self/mounts would trade a false alarm for a blind spot.
+            const String data_fs_type = getDirectoryFilesystemType(data_path);
+            if (data_fs_type.empty() || data_fs_type == "ext4")
+                kernel_warning = PreformattedMessage::create(
+                    "Linux kernel version {} has a known ext4 filesystem corruption bug (fixed in 4.16.4). Consider upgrading the kernel.",
+                    linux_version.toString());
+        }
         else if (linux_version >= VersionNumber{5, 5, 0} && linux_version < VersionNumber{5, 6, 13})
             kernel_warning = PreformattedMessage::create(
                 "Linux kernel version {} has broken nested epoll_wait (fixed in 5.6.13). Consider upgrading the kernel.",
