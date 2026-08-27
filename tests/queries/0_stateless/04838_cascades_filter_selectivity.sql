@@ -38,10 +38,11 @@ SELECT 'default factor:', countIf(explain LIKE '%Filter (HAVING) (rows: ~1980000
     SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1
 ) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
--- The decorrelated `EXISTS` leaves a filter that repeats the join equality (removes nothing:
--- the keys are one equivalence class) next to the correlated `<>` (removes 1/NDV): the
--- 300000000-row join estimate keeps 300000000 x (1 - 1/3000000) = 299999900 rows.
-SELECT 'join equality and <>:', countIf(explain LIKE '%Filter%(rows: ~299999900.0,%') > 0 FROM (
+-- The decorrelated `EXISTS` deduplicates the correlation domain (`Distinct` on `k`: 6000000
+-- rows), so the join with the 3000000-key dim estimates 3000000 rows. The filter repeats the
+-- join equality (removes nothing: the keys are one equivalence class) next to the correlated
+-- `<>` (removes 1/NDV): 3000000 x (1 - 1/3000000) = 2999999 rows.
+SELECT 'join equality and <>:', countIf(explain LIKE '%Filter%(rows: ~2999999.0,%') > 0 FROM (
     EXPLAIN estimates = 1 SELECT count() FROM t_filter_sel AS a
     WHERE EXISTS (SELECT 1 FROM t_filter_dim AS b WHERE b.k = a.k AND b.k <> a.v)
     SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1,

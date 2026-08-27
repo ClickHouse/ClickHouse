@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
@@ -95,6 +96,10 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     else if (const auto * limit_step = typeid_cast<const LimitStep *>(plan_step))
     {
         group->statistics = deriveLimitStatistics(*limit_step, input_statistics(0));
+    }
+    else if (const auto * distinct_step = typeid_cast<const DistinctStep *>(plan_step); distinct_step && !distinct_step->isPreliminary())
+    {
+        group->statistics = deriveDistinctStatistics(*distinct_step, input_statistics(0));
     }
     else if (const auto * intersect_or_except_step = typeid_cast<const IntersectOrExceptStep *>(plan_step))
     {
@@ -620,35 +625,43 @@ ExpressionStatistics StatisticsDerivation::deriveExpressionStatistics(const Expr
     return result_statistics;
 }
 
+/// NDV of a group key in the input; without stats, assume it is 10% of the input rows.
+static Float64 keyDistinctValues(const String & column, const ExpressionStatistics & input_statistics)
+{
+    auto column_stats = input_statistics.column_statistics.find(column);
+    if (column_stats != input_statistics.column_statistics.end())
+        return std::min(Float64(column_stats->second.num_distinct_values), input_statistics.max_row_count);
+    return 0.1 * input_statistics.estimated_row_count;
+}
+
+/// Estimated and maximum count of distinct value combinations of the given columns: the
+/// estimate takes the largest single-column NDV, the maximum takes the product. This is the
+/// output row count of an aggregation on the columns and of a `DISTINCT` over them.
+static std::pair<Float64, Float64> estimateGroupCount(const Names & columns, const ExpressionStatistics & input_statistics)
+{
+    Float64 largest_ndv = 1;
+    Float64 ndv_product = 1;
+    for (const auto & column : columns)
+    {
+        Float64 ndv = keyDistinctValues(column, input_statistics);
+        largest_ndv = std::max(largest_ndv, ndv);
+        ndv_product *= ndv;
+    }
+    return {std::min(largest_ndv, input_statistics.estimated_row_count),
+            std::min(ndv_product, input_statistics.max_row_count)};
+}
+
 ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics)
 {
     const auto & aggregator_params = aggregating_step.getAggregatorParameters();
-    Float64 max_key_number_of_distinct_values = 1;
-    Float64 max_total_number_of_distinct_values = 1;
     ExpressionStatistics aggregation_statistics;
     for (const auto & key : aggregator_params.keys)
-    {
-        /// Without stats for the key, assume its NDV is 10% of the input rows.
-        Float64 key_number_of_distinct_values = 0.1 * input_statistics.estimated_row_count;
-
-        auto key_stats = input_statistics.column_statistics.find(key);
-        if (key_stats != input_statistics.column_statistics.end())
-        {
-            key_number_of_distinct_values = Float64(key_stats->second.num_distinct_values);
-            key_number_of_distinct_values = std::min(key_number_of_distinct_values, input_statistics.max_row_count);
-        }
-
-        aggregation_statistics.column_statistics[key].num_distinct_values = UInt64(key_number_of_distinct_values);
-
-        max_key_number_of_distinct_values = std::max(max_key_number_of_distinct_values, key_number_of_distinct_values);
-        max_total_number_of_distinct_values *= key_number_of_distinct_values;
-    }
+        aggregation_statistics.column_statistics[key].num_distinct_values
+            = UInt64(keyDistinctValues(key, input_statistics));
 
     aggregation_statistics.min_row_count = 0;
-    /// Estimate cardinality of aggregation as max NDV across individual aggregation keys
-    aggregation_statistics.estimated_row_count = std::min(max_key_number_of_distinct_values, input_statistics.estimated_row_count);
-    /// Maximum number of rows is the product of all aggregation key NDVs
-    aggregation_statistics.max_row_count = std::min(max_total_number_of_distinct_values, input_statistics.max_row_count);
+    std::tie(aggregation_statistics.estimated_row_count, aggregation_statistics.max_row_count)
+        = estimateGroupCount(aggregator_params.keys, input_statistics);
     /// Group-by keys pass through with their input value sizes.
     for (auto & [column_name, column_stats] : aggregation_statistics.column_statistics)
     {
@@ -707,6 +720,20 @@ ExpressionStatistics StatisticsDerivation::deriveLimitStatistics(const LimitStep
         trimStatisticsByLimit(result_statistics, limit_step.getLimit());
     }
     return result_statistics;
+}
+
+ExpressionStatistics StatisticsDerivation::deriveDistinctStatistics(const DistinctStep & distinct_step, const ExpressionStatistics & input_statistics)
+{
+    /// One output row per distinct value combination.
+    ExpressionStatistics result = input_statistics;
+    std::tie(result.estimated_row_count, result.max_row_count)
+        = estimateGroupCount(distinct_step.getColumnNames(), input_statistics);
+    result.min_row_count = input_statistics.min_row_count > 0 ? 1 : 0;
+    /// Without the clamp the row-count reduction could leave a column NDV above the row count.
+    for (auto & [column_name, column_stats] : result.column_statistics)
+        column_stats.num_distinct_values = std::min(column_stats.num_distinct_values,
+            static_cast<UInt64>(std::max(result.estimated_row_count, 1.0)));
+    return result;
 }
 
 Float64 StatisticsDerivation::estimateReadBytesPerRow(const ReadFromMergeTree & read_step, const ExpressionStatistics & statistics)
