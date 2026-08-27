@@ -118,6 +118,8 @@ struct AggregateFunctionTimeseriesMadToGridTraits
 
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` collects their values.
     using Bucket = Samples;
+
+    static constexpr UInt16 FORMAT_VERSION = 1;
 };
 
 
@@ -142,7 +144,6 @@ public:
         return {};
     }
 
-    static constexpr UInt16 FORMAT_VERSION = 1;
     static constexpr bool DateTime64Supported = true;
 };
 
