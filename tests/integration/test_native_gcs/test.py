@@ -419,15 +419,21 @@ def test_profile_events(started_cluster):
     node.query("DROP TABLE gcs_events SYNC")
 
 
-def test_profile_events_list_objects_counts_every_page(started_cluster):
-    """`GCSListObjects` counts REST calls, so a listing that the SDK pages through must be counted
-    once per page: the library fetches the later pages of a `ListObjectsReader` on its own as the
-    iteration advances, and counting only the first one would make the counter useless for
-    rate-limit and cost analysis (the S3 and Azure backends count per request too)."""
+def test_profile_events_list_objects_is_counted_by_the_transport(started_cluster):
+    """`GCSListObjects` counts `objects.list` REST calls, and the increment lives in the transport
+    rather than at the call site: the library fetches the later pages of a `ListObjectsReader` on its
+    own as the iteration advances, so a call-site counter would see one call for a whole paged
+    listing and be useless for rate-limit and cost analysis (the S3 and Azure backends count per
+    request too).
+
+    Only the "the request is counted at all" half of that can be asserted here: `fake-gcs-server`
+    1.52.2 honours `maxResults` but never returns a `nextPageToken`, so a listing against the
+    emulator is always a single page (and lowering `s3_list_object_keys_size` silently truncates it
+    rather than paging), leaving no way to observe a multi-page listing.
+    """
     node = started_cluster.instances["node"]
 
     objects = 6
-    page_size = 2
     for i in range(objects):
         node.query(
             f"INSERT INTO FUNCTION gcs('{gcs_url(f'list_pages/part{i}.tsv')}', NOSIGN, 'TSV', 'a UInt64') "
@@ -438,7 +444,7 @@ def test_profile_events_list_objects_counts_every_page(started_cluster):
     assert objects * 10 == int(
         node.query(
             f"SELECT count() FROM gcs('{gcs_url('list_pages/*.tsv')}', NOSIGN, 'TSV', 'a UInt64')",
-            settings={"use_native_gcs": 1, "s3_list_object_keys_size": page_size},
+            settings={"use_native_gcs": 1},
             query_id=query_id,
         )
     )
@@ -451,7 +457,7 @@ def test_profile_events_list_objects_counts_every_page(started_cluster):
             f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
     )
-    assert list_calls >= objects // page_size
+    assert list_calls >= 1
 
 
 def test_profile_events_table_function_is_not_counted_as_disk(started_cluster):
@@ -508,9 +514,12 @@ def test_parallel_download_of_one_object(started_cluster):
     )
 
     def read(query_id, threads):
+        # `sum(a)` rather than `count()`: a count over a file is answered from the row-count cache
+        # (`use_cache_for_count_from_files`, on by default) as soon as one query has read the object,
+        # so the second of the two reads below would not touch object storage at all.
         return int(
             node.query(
-                f"SELECT count() FROM gcs('{url}', NOSIGN, 'TSV', 'a UInt64')",
+                f"SELECT sum(a) FROM gcs('{url}', NOSIGN, 'TSV', 'a UInt64')",
                 query_id=query_id,
                 settings={
                     "use_native_gcs": 1,
@@ -532,8 +541,9 @@ def test_parallel_download_of_one_object(started_cluster):
     serial_id = f"gcs_serial_{uuid.uuid4()}"
     parallel_id = f"gcs_parallel_{uuid.uuid4()}"
 
-    assert num_rows == read(serial_id, 1)
-    assert num_rows == read(parallel_id, 4)
+    expected_sum = num_rows * (num_rows - 1) // 2
+    assert expected_sum == read(serial_id, 1)
+    assert expected_sum == read(parallel_id, 4)
 
     node.query("SYSTEM FLUSH LOGS")
 
