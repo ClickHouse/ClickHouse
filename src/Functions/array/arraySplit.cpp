@@ -118,12 +118,12 @@ REGISTER_FUNCTION(ArraySplit)
     FunctionDocumentation::Description description = "Split a source array into multiple arrays. When `func(x [, y1, ..., yN])` returns something other than zero, the array will be split to the left of the element. The array will not be split before the first element.";
     FunctionDocumentation::Syntax syntax = "arraySplit(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments = {
-        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).[Lambda function](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)."},
-        {"source_arr", "The source array to split [`Array(T)`](/reference/data-types/array)."},
-        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/reference/data-types/array)."}
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).[Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source_arr", "The source array to split [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of arrays", {"Array(Array(T))"}};
-    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res", "[[1,2,3],[4,5]]"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res", "[[1, 2, 3], [4, 5]]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
@@ -138,7 +138,7 @@ REGISTER_FUNCTION(ArraySplit)
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_split = {"Returns an array of arrays.", {"Array(Array(T))"}};
-    FunctionDocumentation::Examples examples_split = {{"Usage example", "SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res", "[[1],[2,3,4],[5]]"}};
+    FunctionDocumentation::Examples examples_split = {{"Usage example", "SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res", "[[1], [2, 3, 4], [5]]"}};
     FunctionDocumentation::IntroducedIn introduced_in_split = {20, 1};
     FunctionDocumentation::Category category_split = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_split = {description_split, syntax_split, arguments_split, {}, returned_value_split, examples_split, introduced_in_split, category_split};

@@ -14,12 +14,6 @@
 namespace DB
 {
 
-CertificateReloader & CertificateReloader::instance()
-{
-    static CertificateReloader instance;
-    return instance;
-}
-
 namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
@@ -270,25 +264,6 @@ bool CertificateReloader::registerAdditionalContext(SSL_CTX * ctx, const std::st
 
     LOG_DEBUG(log, "Registered additional SSL context for prefix '{}'", prefix);
     return true;
-}
-
-
-std::optional<X509Certificate> CertificateReloader::getCertificate(const std::string & prefix) const
-{
-    std::lock_guard lock{data_mutex};
-
-    auto it = data_index.find(prefix);
-    if (it == data_index.end())
-        return {};
-
-    auto current = it->second->data.get();
-    if (!current || current->certs_chain.empty())
-        return {};
-
-    /// `X509` is reference counted and immutable, so the certificate can be shared with the caller.
-    X509 * leaf_certificate = static_cast<X509 *>(current->certs_chain.front());
-    X509_up_ref(leaf_certificate);
-    return X509Certificate(leaf_certificate);
 }
 
 

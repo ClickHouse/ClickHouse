@@ -131,7 +131,7 @@ public:
 
 REGISTER_FUNCTION(FirstNonDefault)
 {
-    FunctionDocumentation doc{};
+    FunctionDocumentation doc;
     doc.description = "Returns the first non-default value from a set of arguments";
     doc.syntax = "firstNonDefault(arg1[, arg2[ ...]])";
     doc.arguments = {
@@ -143,7 +143,7 @@ REGISTER_FUNCTION(FirstNonDefault)
     doc.returned_value = FunctionDocumentation::ReturnedValue{"Result type is the supertype of all arguments", {}};
     doc.examples = {
         {"integers", "SELECT firstNonDefault(0, 1, 2)", "1"},
-        {"strings", "SELECT firstNonDefault('', 'hello', 'world')", "hello"},
+        {"strings", "SELECT firstNonDefault('', 'hello', 'world')", "'hello'"},
         {"nulls", "SELECT firstNonDefault(NULL, 0 :: UInt8, 1 :: UInt8)", "1"},
         {"nullable zero", "SELECT firstNonDefault(NULL, 0 :: Nullable(UInt8), 1 :: Nullable(UInt8))", "0"},
     };

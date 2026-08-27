@@ -4,7 +4,6 @@
 
 #if USE_AVRO
 
-#include <optional>
 #include <string>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
@@ -27,16 +26,6 @@
 namespace avro
 {
 class GenericDatum;
-}
-
-namespace DB
-{
-struct StorageID;
-}
-
-namespace DataLake
-{
-class ICatalog;
 }
 
 namespace DB::Iceberg
@@ -107,19 +96,6 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     bool force_fetch_latest_metadata = true,
     bool ignore_explicit_metadata_file_path = false);
 
-MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
-    const ObjectStoragePtr & object_storage,
-    const std::shared_ptr<DataLake::ICatalog> & catalog,
-    const String & table_identifier,
-    const String & table_path,
-    const DataLakeStorageSettings & data_lake_settings,
-    IcebergMetadataFilesCachePtr metadata_cache,
-    const ContextPtr & local_context,
-    Poco::Logger * log,
-    const std::optional<String> & table_uuid,
-    CompressionMethod known_compression_method,
-    bool ignore_explicit_metadata_file_path = true);
-
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);
 std::string normalizeUuid(const std::string & uuid);
@@ -149,11 +125,6 @@ void forEachAvroEntry(
     ContextPtr context,
     const String & logger_name,
     std::function<void(const avro::GenericDatum &)> callback);
-
-using PartitionColumnValues = std::vector<std::pair<String, DB::Field>>;
-
-PartitionColumnValues getIdentityPartitionColumnValues(
-    const ProcessedManifestFileEntry & manifest_file_entry, const IcebergSchemaProcessor & schema_processor);
 }
 
 #endif

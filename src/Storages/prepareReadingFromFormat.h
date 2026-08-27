@@ -70,7 +70,7 @@ namespace DB
         NamesAndTypesList file_columns;
         /// Columns which are read from path to data file.
         /// (Hive partition columns).
-        UnorderedMapWithMemoryTracking<std::string, DataTypePtr> hive_partition_columns_to_read_from_file_path_map;
+        std::unordered_map<std::string, DataTypePtr> hive_partition_columns_to_read_from_file_path_map;
     };
 
     /// Get all needed information for reading from data in some input format.
@@ -96,17 +96,6 @@ namespace DB
     Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns);
 
     ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info);
-
-    /// Lazy materialization (see optimizeLazyMaterialization2): split `info` into the info for the
-    /// main reading pass and the info for the lazy reading pass. The physical columns that the
-    /// format reads and nothing needs before the LIMIT (i.e. that are not in `required_names`, not
-    /// inputs of the PREWHERE / row-level filter, not virtual or hive partition columns, and not
-    /// pinned by a `DEFAULT` expression dependency) are deferred to the lazy pass. On success,
-    /// `info` is reduced to the remaining columns with a `__global_row_index` UInt64 column
-    /// appended to its source header, and the returned info describes the deferred columns alone
-    /// (no virtual columns, no filters). Returns std::nullopt (leaving `info` untouched) if there
-    /// is nothing to defer.
-    std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromFormatInfo & info, const NameSet & required_names);
 
     /// Returns the serialization hints from the insertion table (if it's set in the Context).
     SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);

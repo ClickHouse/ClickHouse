@@ -3,10 +3,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/CancellationChecker.h>
 
-#include <base/arithmeticOverflow.h>
-
 #include <chrono>
-#include <limits>
 #include <mutex>
 
 
@@ -17,18 +14,9 @@ namespace DB
 /// Tasks may be cancelled slightly later than their exact timeout, but never before.
 static constexpr UInt64 CANCELLATION_GRID_MS = 100;
 
-/// The deadline used when `now + timeout` is not representable: the grid boundary just past the
-/// largest microsecond count that fits in `Int64`, about 292 thousand years from the epoch.
-/// Saturating there moves the deadline later, never earlier, so a query is still never cancelled
-/// before its own `max_execution_time`.
-static constexpr UInt64 MAX_DEADLINE_MS
-    = ((static_cast<UInt64>(std::numeric_limits<Int64>::max()) / 1000 + CANCELLATION_GRID_MS) / CANCELLATION_GRID_MS)
-    * CANCELLATION_GRID_MS;
-
-/// `std::condition_variable::wait_for` converts the duration to nanoseconds internally, which
-/// overflows for deadlines far in the future, so the worker waits in slices of at most one day and
-/// re-arms afterwards. Waking up once a day while an effectively infinite timeout is pending is free.
-static constexpr UInt64 MAX_WAIT_MS = 24 * 60 * 60 * 1000;
+/// Maximum allowed timeout is 1 year in milliseconds.
+/// This prevents overflow in chrono calculations and ensures reasonable behavior.
+static constexpr Int64 MAX_TIMEOUT_MS = 365LL * 24 * 60 * 60 * 1000;
 
 struct CancellationChecker::QueryToTrack
 {
@@ -92,40 +80,27 @@ void CancellationChecker::terminateThread()
     cond_var.notify_all();
 }
 
-UInt64 CancellationChecker::taskDeadlineMs(std::chrono::steady_clock::time_point now, Int64 timeout_us)
+bool CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 timeout, OverflowMode overflow_mode)
 {
-    /// Round the current time *up* to a whole microsecond: truncating it drops a sub-microsecond
-    /// remainder, and when `now + timeout` then lands exactly on a whole millisecond the alignment
-    /// below adds no padding, placing the deadline up to one microsecond before the exact one.
-    const Int64 now_us = std::chrono::ceil<std::chrono::microseconds>(now.time_since_epoch()).count();
-
-    /// A `max_execution_time` large enough to overflow the deadline is not representable; saturate
-    /// instead of truncating the timeout, so the query is never cancelled ahead of the configured limit.
-    Int64 deadline_us = 0;
-    if (common::addOverflow(now_us, timeout_us, deadline_us))
-        return MAX_DEADLINE_MS;
-
-    /// Round the exact deadline up to a whole millisecond. Rounding either the current time or the
-    /// timeout down loses the microsecond precision of `max_execution_time` and can cancel a query
-    /// ahead of its own timeout when grid alignment adds no padding.
-    const UInt64 deadline_ms = std::chrono::ceil<std::chrono::milliseconds>(std::chrono::microseconds(deadline_us)).count();
-    /// Round up to the next grid boundary to enable batching of timeout checks.
-    /// This ensures tasks are never cancelled before their timeout, only slightly after.
-    return ((deadline_ms + CANCELLATION_GRID_MS - 1) / CANCELLATION_GRID_MS) * CANCELLATION_GRID_MS;
-}
-
-bool CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 timeout_us, OverflowMode overflow_mode)
-{
-    if (timeout_us <= 0) // Avoid cases when the timeout is less or equal zero
+    if (timeout <= 0) // Avoid cases when the timeout is less or equal zero
     {
         LOG_TEST(log, "Did not add the task because the timeout is 0, query_id: {}", query->getClientInfo().current_query_id);
         return false;
     }
 
+    /// Cap timeout to 1 year to prevent overflow in chrono calculations.
+    /// std::condition_variable::wait_for converts milliseconds to nanoseconds internally
+    /// (multiplying by 1,000,000), which overflows for values close to INT64_MAX.
+    const Int64 capped_timeout = std::min(timeout, MAX_TIMEOUT_MS);
+
     std::unique_lock<std::mutex> lock(m);
-    LOG_TEST(log, "Added to set. query: {}, timeout: {} microseconds", query->getInfo().query, timeout_us);
-    const UInt64 end_time = taskDeadlineMs(std::chrono::steady_clock::now(), timeout_us);
-    auto iter = query_set.emplace(query, timeout_us, end_time, overflow_mode);
+    LOG_TEST(log, "Added to set. query: {}, timeout: {} milliseconds", query->getInfo().query, capped_timeout);
+    const auto now = std::chrono::steady_clock::now();
+    const UInt64 now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    /// Round up to the next grid boundary to enable batching of timeout checks.
+    /// This ensures tasks are never cancelled before their timeout, only slightly after.
+    const UInt64 end_time = ((now_ms + capped_timeout + CANCELLATION_GRID_MS - 1) / CANCELLATION_GRID_MS) * CANCELLATION_GRID_MS;
+    auto iter = query_set.emplace(query, capped_timeout, end_time, overflow_mode);
     if (iter == query_set.begin()) // Only notify if the new task is the earliest one
         cond_var.notify_all();
     return true;
@@ -172,7 +147,7 @@ void CancellationChecker::workerFunction()
 
                 LOG_DEBUG(
                     log,
-                    "Cancelling the task because of the timeout: {} us, query_id: {}",
+                    "Cancelling the task because of the timeout: {} ms, query_id: {}",
                     next_task_it->timeout,
                     next_task_it->query->getClientInfo().current_query_id);
 
@@ -195,43 +170,27 @@ void CancellationChecker::workerFunction()
         /// proper timeout for waking up the thread
         if (query_set.empty())
         {
-            armed_deadline = 0;
             cond_var.wait(lock, [&] { return stop_thread || !query_set.empty(); });
         }
         else
         {
             chassert(!query_set.empty());
-            /// `appendTask` may insert a deadline earlier than the one this wait is armed for;
-            /// the wait must be re-armed then, or the notification is swallowed and the new
-            /// deadline fires only when the stale (later) one expires.
-            armed_deadline = query_set.begin()->endtime;
-            /// The wait is sliced (see `MAX_WAIT_MS`); a slice that elapses without the predicate
-            /// becoming true simply re-arms the wait on the next iteration of the loop.
             cond_var.wait_for(
                 lock,
-                std::chrono::milliseconds(std::min(armed_deadline - now_ms, MAX_WAIT_MS)),
+                std::chrono::milliseconds(query_set.begin()->endtime - now_ms),
                 [&] {
                     /// Use fresh time to avoid spinning when the predicate is re-evaluated after spurious wakeups.
                     UInt64 fresh_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-                    return stop_thread
-                        || (!query_set.empty()
-                            && (query_set.begin()->endtime <= fresh_now_ms || query_set.begin()->endtime < armed_deadline));
+                    return stop_thread || (!query_set.empty() && query_set.begin()->endtime <= fresh_now_ms);
                 });
         }
     }
-    armed_deadline = 0;
 
     /// `terminateThread` flips `stop_thread` to true to signal exit; clear it here while still
     /// holding the lock so the singleton is left in a re-runnable state. This is mainly relevant
     /// to tests that own the worker thread and may want to spin it up again later; the server
     /// starts the worker exactly once during boot, so for the production code path this is a no-op.
     stop_thread = false;
-}
-
-UInt64 CancellationChecker::getArmedDeadline()
-{
-    std::unique_lock<std::mutex> lock(m);
-    return armed_deadline;
 }
 
 }
