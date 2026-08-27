@@ -30,12 +30,10 @@ SELECT [[(100., 100.), (110., 100.), (110., 110.), (100., 100.)]], 'abcd', 'abcd
 SET short_circuit_function_evaluation = 'disable';
 SET optimize_move_to_prewhere = 0;
 
--- A non-geometry CONSTANT argument: the sibling conjunct must not prune the exception away.
-SELECT 'const number', extract(explain, '(Parts:.*|Granules:.*)')
-FROM (EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_non_geometry_argument
-      WHERE pointInPolygon((0., 0.), poly) AND polygonsIntersectCartesian(poly, 1))
-WHERE explain LIKE '%Granules:%';
-
+-- A non-geometry CONSTANT argument: the sibling conjunct must not prune the exception away. The
+-- assertion is the exception itself rather than a granule count -- the constant is rejected while
+-- the plan's header is computed, so this shape cannot be spelled as a bare `EXPLAIN` (see
+-- `05051_spatial_bbox_empty_geometry_no_validate_pruning`).
 SELECT count() FROM test_spatial_bbox_non_geometry_argument
 WHERE pointInPolygon((0., 0.), poly) AND polygonsIntersectCartesian(poly, 1); -- { serverError BAD_ARGUMENTS }
 
@@ -44,12 +42,6 @@ WHERE pointInPolygon((0., 0.), poly)
   AND polygonsWithinCartesian(poly, CAST('abcd', 'FixedString(4)')); -- { serverError BAD_ARGUMENTS }
 
 -- A non-geometry sibling COLUMN, which reaches the same `callOnGeometryDataType` rejection.
-SELECT 'sibling column', extract(explain, '(Parts:.*|Granules:.*)')
-FROM (EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_non_geometry_argument
-      WHERE pointInPolygon((0., 0.), poly)
-        AND polygonsIntersectCartesian(f, [[(10., 10.), (11., 10.), (11., 11.), (10., 10.)]]))
-WHERE explain LIKE '%Granules:%';
-
 SELECT count() FROM test_spatial_bbox_non_geometry_argument
 WHERE pointInPolygon((0., 0.), poly)
   AND polygonsIntersectCartesian(f, [[(10., 10.), (11., 10.), (11., 11.), (10., 10.)]]); -- { serverError BAD_ARGUMENTS }
