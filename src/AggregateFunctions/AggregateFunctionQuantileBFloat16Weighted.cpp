@@ -80,7 +80,7 @@ SELECT quantileBFloat16Weighted(0.75)(a, w), quantileBFloat16Weighted(0.75)(b, w
         )",
         R"(
 ┌─quantileBFloat16Weighted(0.75)(a, w)─┬─quantileBFloat16Weighted(0.75)(b, w)─┐
-│                                    3 │                                    1 │
+│                                    4 │                                    1 │
 └──────────────────────────────────────┴──────────────────────────────────────┘
         )"
     }
