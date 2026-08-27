@@ -6752,7 +6752,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 auto val = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
                                                  : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-                select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, make_intrusive<ASTLiteral>(val));
+                select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, makeLimitExpression(val));
             }
             if (select->limitByOffset())
             {
@@ -6763,7 +6763,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 auto val = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
                                                  : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-                select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, make_intrusive<ASTLiteral>(val));
+                select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, makeLimitExpression(val));
             }
             /// Toggle LIMIT BY ALL. The flag and the LIMIT_BY list must stay in sync
             /// (ALL = flag + empty list, explicit = no flag + non-empty list): flipping only
@@ -8714,15 +8714,25 @@ ASTPtr QueryFuzzer::makeParameterizedIdentifier(const ASTIdentifier & ident)
     if (ident.isParam() || ident.name_parts.empty() || param_counter + ident.name_parts.size() > max_query_parameters)
         return nullptr;
 
+    /// A half-converted identifier is dropped whole, so on bail-out the params already made for
+    /// its parts must not stay behind in last_query_parameters or keep their share of the budget.
+    const uint32_t saved_param_counter = param_counter;
     auto name_parts = ident.name_parts;
     ASTs name_params;
+    auto rollback = [&]() -> ASTPtr
+    {
+        for (const auto & p : name_params)
+            last_query_parameters.erase(typeid_cast<const ASTQueryParameter &>(*p).name);
+        param_counter = saved_param_counter;
+        return nullptr;
+    };
     for (auto & part : name_parts)
     {
         if (part.empty())
-            return nullptr;
+            return rollback();
         auto param = makeQueryParameter("Identifier", part);
         if (!param)
-            return nullptr;
+            return rollback();
         name_params.emplace_back(std::move(param));
         part.clear();
     }
