@@ -114,17 +114,16 @@ Only the parameters listed below are accepted; any other name fails the load, so
 | `num_iterations` | Number of boosting rounds (how many trees to train). A positive integer, used as the training loop count rather than forwarded to the booster. Default `100`. |
 | `booster` | Booster type: `gbtree`, `gblinear`, or `dart`. |
 | `objective` | Learning objective, e.g. `reg:squarederror` or `binary:logistic`. Must be an objective that predicts a single value per row; multiclass objectives (`multi:softmax`, `multi:softprob`) are rejected. |
-| `eval_metric` | Evaluation metric(s) used during training. |
-| `seed` | Random number seed. |
-| `verbosity` | Logging verbosity: `0` (silent) to `3` (debug). |
-| `nthread` | Number of parallel threads used for training. |
+| `seed` | Random number seed. Training is otherwise deterministic, so this only changes the model when a stochastic parameter (`subsample`, `sampling_method`, any `colsample_*`) is also set. |
+| `verbosity` | Logging verbosity: `0` (silent) to `3` (debug). Affects only XGBoost's own log output, which does not currently go through the ClickHouse logger, and never the trained model. |
+| `nthread` | Number of parallel threads used for training. Accepted and forwarded, but currently has no effect: the bundled XGBoost is built without OpenMP, so training and prediction always run on a single thread. |
 | `eta` | Step-size shrinkage applied after each boosting round. |
 | `gamma` | Minimum loss reduction required to make a further split on a leaf. |
 | `max_depth` | Maximum depth of a tree. |
 | `min_child_weight` | Minimum sum of instance weight (hessian) needed in a child. |
 | `max_delta_step` | Maximum delta step allowed for each leaf's output. |
 | `subsample` | Fraction of the training rows sampled for each boosting round. |
-| `sampling_method` | Row sampling method: `uniform` or `gradient_based`. |
+| `sampling_method` | Row sampling method: `uniform` or `gradient_based`. Has no effect unless `subsample` is set to less than `1`. |
 | `colsample_bytree` / `colsample_bylevel` / `colsample_bynode` | Fraction of columns (features) sampled per tree / per level / per split. |
 | `lambda` | L2 regularization term on weights (aliases). |
 | `alpha` | L1 regularization term on weights (aliases). |
@@ -168,7 +167,15 @@ The parameter names map to the prediction parameters of XGBoost's `XGBoosterPred
 
 ## Notes {#notes}
 
-- **Computational dictionary semantics.** This is a *computational* dictionary: it holds a trained model, not rows, and `predictXGBoost` is the only way to query it. The generic dictionary interface is not supported and reports an error: `dictGet` (there is no stored attribute to look up — the "key" is a feature vector to predict from), `dictHas` (no keys are stored), `SELECT * FROM dict` and joining the dictionary as a table. Because `predictXGBoost` is the only entry point, the `enable_xgboost` setting is in charge of every prediction.
+- **Computational dictionary semantics.** This is a *computational* dictionary: it holds a trained model, not rows, and `predictXGBoost` is the only way to query it. The generic dictionary interface is not supported and reports an error: `dictGet` (there is no stored attribute to look up — the "key" is a feature vector to predict from), `dictHas` (no keys are stored), `SELECT * FROM dict` and joining the dictionary as a table. Because `predictXGBoost` is the only entry point, the `enable_xgboost` setting must be enabled for every prediction.
 - **Numeric columns only.** Every feature (key) column must be a native numeric type and the target attribute must be `Float32` or `Float64`. Values are read as floats during training and prediction.
 - **`system.dictionaries` reports no stored items.** The dictionary trains a model instead of storing rows, so `element_count` is `0`, as it is for a `direct` dictionary, and `bytes_allocated` is `0` too: the trained model belongs to XGBoost, which does not report how much memory it holds. `query_count` and `found_rate` count the rows predicted through `predictXGBoost`.
+- **A failed reload keeps the previous model.** If retraining fails — the source table is gone, its schema changed, a hyperparameter is no longer accepted — the dictionary does not start failing predictions. It keeps serving the last model that trained successfully, and records the error instead. Compare `last_successful_update_time` with `last_exception` in `system.dictionaries` to tell whether the model still reflects the current source data:
+
+  ```sql
+  SELECT name, status, last_successful_update_time, last_exception
+  FROM system.dictionaries
+  WHERE name = 'model';
+  ```
+
 - **Feature order matters.** `predictXGBoost` binds its positional feature arguments to the key columns in declaration order, and the number of feature arguments must match the number of key columns.

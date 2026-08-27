@@ -245,7 +245,6 @@ UnorderedMapWithMemoryTracking<String, String> XGBoostModel::sanitizeTrainingPar
     static const std::unordered_set<String> allowed_keys{ // STYLE_CHECK_ALLOW_STD_CONTAINERS
         "booster",
         "objective",
-        "eval_metric",
         "seed",
         "verbosity",
         "nthread",
