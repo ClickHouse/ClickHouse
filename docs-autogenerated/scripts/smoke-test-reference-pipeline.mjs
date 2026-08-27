@@ -301,6 +301,16 @@ async function main() {
     );
 
     for (const [id, label] of [
+      ['reference.functions.regular', 'Regular'],
+      ['reference.functions.aggregate', 'Aggregate'],
+      ['reference.functions.table', 'Table'],
+      ['reference.functions.window', 'Window'],
+      ['reference.source.functions.regular-functions.ai-functions', 'AI'],
+      ['reference.source.functions.regular-functions.bit-functions', 'Bit'],
+      [
+        'reference.source.functions.regular-functions.string-search-functions',
+        'Searching in Strings',
+      ],
       ['reference.source.functions.regular-functions.string-functions', 'Strings'],
       ['reference.source.functions.regular-functions.time-series-functions', 'Time series'],
       ['reference.source.functions.regular-functions.ulid-functions', 'ULIDs'],
@@ -310,12 +320,13 @@ async function main() {
         `Function navigation group ${id} does not use the concise label ${label}`,
       );
     }
+    const functionNavigation = findNavigationNode(navigation.root, 'reference.functions');
     requireValue(
-      flattenNavigationNodes(navigation.root).every((node) => (
+      flattenNavigationNodes(functionNavigation?.children).every((node) => (
         node.type !== 'group'
-        || !/^Functions for working with\s+/i.test(String(node.label))
+        || !/\bFunctions\b/i.test(String(node.label))
       )),
-      'A function navigation group still uses the redundant `Functions for working with` prefix',
+      'A nested function navigation group still includes the redundant word `Functions`',
     );
 
     requireValue(

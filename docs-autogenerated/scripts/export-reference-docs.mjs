@@ -566,7 +566,11 @@ function navigationLabel(value) {
 
 function functionNavigationGroupLabel(value) {
   const label = navigationLabel(value);
-  const conciseLabel = label.replace(/^Functions for working with\s+/i, '').trim();
+  const conciseLabel = label
+    .replace(/^Functions for working with\s+/i, '')
+    .replace(/^Functions for\s+/i, '')
+    .replace(/\s+Functions$/i, '')
+    .trim();
   if (conciseLabel === label || !conciseLabel) return label;
   return conciseLabel[0].toLocaleUpperCase() + conciseLabel.slice(1);
 }

@@ -149,23 +149,23 @@
       "groups": [
         {
           "id": "reference.functions.regular",
-          "label": "Regular functions",
+          "label": "Regular",
           "match": { "sourcePrefix": "functions/regular-functions/" },
           "groupBySourcePage": true
         },
         {
           "id": "reference.functions.aggregate",
-          "label": "Aggregate functions",
+          "label": "Aggregate",
           "match": { "sourcePrefix": "functions/aggregate-functions/" }
         },
         {
           "id": "reference.functions.table",
-          "label": "Table functions",
+          "label": "Table",
           "match": { "sourcePrefix": "functions/table-functions/" }
         },
         {
           "id": "reference.functions.window",
-          "label": "Window functions",
+          "label": "Window",
           "match": { "sourcePrefix": "functions/window-functions/" }
         }
       ]
