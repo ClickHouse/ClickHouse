@@ -277,11 +277,7 @@ public:
         }
 
         if (!output.canPush())
-        {
-            left_input.setNotNeeded();
-            right_input.setNotNeeded();
             return Status::PortFull;
-        }
 
         if (!ready_chunks.empty())
         {
@@ -292,9 +288,11 @@ public:
 
         if (!left_chunk.has_value() && !aligner.hasPendingLeftRows() && !left_input.isFinished())
         {
-            left_input.setNeeded();
             if (!left_input.hasData())
+            {
+                left_input.setNeeded();
                 return Status::NeedData;
+            }
 
             left_chunk = left_input.pull(/*set_not_needed=*/true);
         }
@@ -304,9 +302,11 @@ public:
 
         if (!left_infos_only && !right_chunk.has_value() && !aligner.hasPendingRightRows() && !right_input.isFinished())
         {
-            right_input.setNeeded();
             if (!right_input.hasData())
+            {
+                right_input.setNeeded();
                 return Status::NeedData;
+            }
 
             right_chunk = right_input.pull(/*set_not_needed=*/true);
         }
