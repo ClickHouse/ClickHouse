@@ -40,19 +40,24 @@ query="SELECT d FROM ${CLICKHOUSE_DATABASE}.dynamic_qd FORMAT Native"
 # as a result; `--fail` covers a failure that comes before the first byte. Without the
 # check, a transient error (e.g. a parallel-replicas teardown race, see issue #116341)
 # would feed exception text into the `INSERT ... FORMAT Native` round trips below and fail
-# them with a misleading `Unknown type code`. A recognized broken stream is retried: the
-# transient is not what this test covers.
+# them with a misleading `Unknown type code`. A recognized broken stream (`curl` exit code
+# 18) is retried: the transient is not what this test covers. Any other failure is
+# deterministic and aborts the test at once - the harness runs the script without `errexit`,
+# so a `return` would let it keep going on a partial blob.
 fetch_blob()
 {
-    local url="$1" fetch_query="$2" out="$3" error
+    local url="$1" fetch_query="$2" out="$3" error status=0
     for _ in {1..10}
     do
-        if error=$($CLICKHOUSE_CURL --fail -sS "$url" --data-binary "$fetch_query" 2>&1 > "$out"); then
-            return 0
+        error=$($CLICKHOUSE_CURL --fail -sS "$url" --data-binary "$fetch_query" 2>&1 > "$out") && return 0
+        status=$?
+        if [ "$status" -ne 18 ]
+        then
+            break
         fi
     done
-    echo "failed to fetch a Native blob after 10 attempts: $error"
-    return 1
+    echo "failed to fetch a Native blob (curl exit code $status): $error"
+    exit 1
 }
 
 announced_version()
