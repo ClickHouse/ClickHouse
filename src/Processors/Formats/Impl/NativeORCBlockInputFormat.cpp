@@ -172,6 +172,23 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
     return std::make_unique<ORCInputStreamFromString>(std::move(file_data), file_size);
 }
 
+/// The default ORC memory pool allocates with `std::malloc`, which returns a null pointer when it
+/// fails - and the library dereferences it - and which is invisible to the memory tracker. A
+/// malformed file can ask for an arbitrarily large buffer, so allocate through `operator new`
+/// instead: it is accounted for and it throws instead of returning null.
+class ORCMemoryPool : public orc::MemoryPool
+{
+public:
+    char * malloc(uint64_t size) override { return new char[size]; }
+    void free(char * p) override { delete[] p; }
+};
+
+orc::MemoryPool & getORCMemoryPool()
+{
+    static ORCMemoryPool pool;
+    return pool;
+}
+
 static const orc::Type * getORCTypeByName(const orc::Type & schema, const String & name, bool ignore_case)
 {
     for (UInt64 i = 0; i != schema.getSubtypeCount(); ++i)
@@ -818,6 +835,7 @@ static void getFileReader(
         return;
 
     orc::ReaderOptions options;
+    options.setMemoryPool(getORCMemoryPool());
     /// ORC library requires rangeSizeLimit > holeSizeLimit.
     static constexpr uint64_t default_range_size_limit = 10 * 1024 * 1024UL;
     /// Clamp to avoid overflow when computing holeSizeLimit + 1.
