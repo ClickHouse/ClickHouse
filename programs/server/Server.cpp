@@ -1065,33 +1065,33 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 if (!name.starts_with("md"))
                     continue;
 
-                auto sync_action_path = entry.path() / "md" / "sync_action";
-                if (fs::exists(sync_action_path))
-                {
-                    String sync_action = readLine(sync_action_path.string());
-                    if (sync_action != "idle")
-                    {
-                        resync_warning = PreformattedMessage::create(
-                            "Linux mdraid array {} is currently performing `{}`. Disk I/O performance can be degraded. Check {}",
-                            name, sync_action, sync_action_path.string());
-                    }
-                }
-
-                auto array_state_path = entry.path() / "md" / "array_state";
-                if (fs::exists(array_state_path))
-                {
-                    static const std::unordered_set<String> normal_states = {"active", "active-idle", "clean", "write-pending", "readonly", "read-auto"};
-                    String array_state = readLine(array_state_path.string());
-                    if (!normal_states.contains(array_state))
-                    {
-                        degraded_warning = PreformattedMessage::create(
-                            "Linux mdraid array {} has state `{}`. Check {}",
-                            name, array_state, array_state_path.string());
-                    }
-                }
-
                 try
                 {
+                    auto sync_action_path = entry.path() / "md" / "sync_action";
+                    if (fs::exists(sync_action_path))
+                    {
+                        String sync_action = readLine(sync_action_path.string());
+                        if (sync_action != "idle")
+                        {
+                            resync_warning = PreformattedMessage::create(
+                                "Linux mdraid array {} is currently performing `{}`. Disk I/O performance can be degraded. Check {}",
+                                name, sync_action, sync_action_path.string());
+                        }
+                    }
+
+                    auto array_state_path = entry.path() / "md" / "array_state";
+                    if (fs::exists(array_state_path))
+                    {
+                        static const std::unordered_set<String> normal_states = {"active", "active-idle", "clean", "write-pending", "readonly", "read-auto"};
+                        String array_state = readLine(array_state_path.string());
+                        if (!normal_states.contains(array_state))
+                        {
+                            degraded_warning = PreformattedMessage::create(
+                                "Linux mdraid array {} has state `{}`. Check {}",
+                                name, array_state, array_state_path.string());
+                        }
+                    }
+
                     auto level_path = entry.path() / "md" / "level";
                     auto stripe_cache_path = entry.path() / "md" / "stripe_cache_size";
                     if (fs::exists(level_path) && fs::exists(stripe_cache_path))
@@ -1108,7 +1108,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 }
                 catch (const std::exception &) // NOLINT(bugprone-empty-catch)
                 {
-                    /// One unreadable stripe cache size must not hide the state of the others.
+                    /// One unreadable /sys leaf must not hide the state of the other arrays.
                 }
 
                 if (resync_warning && degraded_warning && stripe_cache_warning)
