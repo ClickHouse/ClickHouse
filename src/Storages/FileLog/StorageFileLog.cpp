@@ -1010,7 +1010,7 @@ Additional virtual columns when `handle_error_mode='stream'`:
 
 Note: `_raw_record` and `_error` virtual columns are filled only in case of exception during parsing, they are always `NULL` when message was parsed successfully.
 
-## Data durability on power loss {#data-durability}
+## Data durability {#data-durability}
 
 The `FileLog` engine records the offset it has consumed for a chunk before the insert that chunk belongs to has been committed, so an interrupted server can leave the recorded offset ahead of the data that reached the target table. On restart each log file resumes from the offset recorded in its metadata directory, so those rows are never re-read: they are lost with no error and `count()` is simply smaller. An ordinary process failure is enough to expose this, and it does not require a power loss, because the offset is recorded in a metadata file that is renamed into place while the target part is still being written.
 

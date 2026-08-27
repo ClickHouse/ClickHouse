@@ -1245,7 +1245,7 @@ CREATE TABLE nats_jet_stream (
 
 JetStream tables give at-least-once delivery: a message is acknowledged only after it has been inserted into the dependent materialized views, so a message whose insert fails or is interrupted stays unacknowledged and is redelivered. Core NATS (without JetStream) has no acknowledgement or replay, so it is at-most-once and an interrupted message is lost.
 
-## Data durability on power loss {#data-durability}
+## Data durability {#data-durability}
 
 This section applies to JetStream only. Core NATS has no acknowledgements and is at-most-once, as described above, so it has no window in which an acknowledged message can be lost.
 
