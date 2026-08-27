@@ -53,6 +53,7 @@ instance = cluster.add_instance(
     },
     clickhouse_path_dir="clickhouse_path",
     cpu_limit=5,
+    stay_alive=True,
 )
 
 
@@ -3979,13 +3980,13 @@ def test_message_queue_disable_insertion(kafka_cluster):
     )
 
     try:
-        # Enable message_queue_disable_insertion via config replacement + reload
+        # Enable message_queue_disable_insertion via config replacement + restart
         instance.replace_in_config(
             "/etc/clickhouse-server/config.d/disable_insertion.xml",
-            "0",
-            "1",
+            "<message_queue_disable_insertion>0</message_queue_disable_insertion>",
+            "<message_queue_disable_insertion>1</message_queue_disable_insertion>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()
 
         assert (
             "true"
@@ -4012,6 +4013,15 @@ def test_message_queue_disable_insertion(kafka_cluster):
         """
         )
 
+        error_patterns = [
+            "Insert queries are prohibited",
+            "Message queue insertion is disabled",
+            "Failed to process data",
+        ]
+        error_counts = {
+            pattern: int(instance.count_in_log(pattern)) for pattern in error_patterns
+        }
+
         # Produce messages while insertion is disabled
         messages = [json.dumps({"key": i, "value": i}) for i in range(10)]
         k.kafka_produce(kafka_cluster, topic_name, messages)
@@ -4022,7 +4032,20 @@ def test_message_queue_disable_insertion(kafka_cluster):
             instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
         )
 
-        assert instance.contains_in_log("Message queue insertion is disabled")
+        for pattern, count in error_counts.items():
+            assert count == int(instance.count_in_log(pattern))
+        assert 0 == int(
+            instance.query(
+                f"SELECT coalesce(sum(length(exceptions.text)), 0) "
+                f"FROM system.kafka_consumers WHERE database = 'test' AND table = '{kafka_table}'"
+            )
+        )
+        assert 0 == int(
+            instance.query(
+                f"SELECT coalesce(sum(num_rebalance_assignments), 0) "
+                f"FROM system.kafka_consumers WHERE database = 'test' AND table = '{kafka_table}'"
+            )
+        )
 
         # Direct INSERT INTO the Kafka table (producer write) must still work
         instance.query(
@@ -4033,10 +4056,10 @@ def test_message_queue_disable_insertion(kafka_cluster):
         # Re-enable insertion
         instance.replace_in_config(
             "/etc/clickhouse-server/config.d/disable_insertion.xml",
-            "1",
-            "0",
+            "<message_queue_disable_insertion>1</message_queue_disable_insertion>",
+            "<message_queue_disable_insertion>0</message_queue_disable_insertion>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()
 
         assert (
             "false"
@@ -4061,10 +4084,10 @@ def test_message_queue_disable_insertion(kafka_cluster):
     finally:
         instance.replace_in_config(
             "/etc/clickhouse-server/config.d/disable_insertion.xml",
-            "1",
-            "0",
+            "<message_queue_disable_insertion>1</message_queue_disable_insertion>",
+            "<message_queue_disable_insertion>0</message_queue_disable_insertion>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()
         instance.query(
             f"""
             DROP TABLE IF EXISTS test.{kafka_table}_mv;
@@ -4072,6 +4095,146 @@ def test_message_queue_disable_insertion(kafka_cluster):
             DROP TABLE IF EXISTS test.{kafka_table};
         """
         )
+
+
+@pytest.mark.parametrize("keeper", [False, True])
+def test_disable_insertion_and_mutation_disables_message_queue_insertion(
+    kafka_cluster, keeper
+):
+    suffix = k.random_string(6)
+    engine = "kafka2" if keeper else "kafka"
+    kafka_table = f"disable_insertion_and_mutation_{engine}_{suffix}"
+    topic_name = f"disable_insertion_and_mutation_{suffix}"
+    keeper_settings = (
+        f", kafka_keeper_path = '/clickhouse/kafka2/{kafka_table}', kafka_replica_name = 'r1'"
+        if keeper
+        else ""
+    )
+
+    try:
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "<disable_insertion_and_mutation>0</disable_insertion_and_mutation>",
+            "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>",
+        )
+        # `disable_insertion_and_mutation` is a startup-only server setting.
+        instance.restart_clickhouse()
+
+        assert (
+            "true"
+            == instance.query(
+                "SELECT getServerSetting('disable_insertion_and_mutation')"
+            ).strip()
+        )
+        assert (
+            "true"
+            == instance.query(
+                "SELECT getServerSetting('message_queue_disable_insertion')"
+            ).strip()
+        )
+
+        instance.query(
+            f"""
+            CREATE TABLE test.{kafka_table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{topic_name}',
+                         kafka_group_name = '{topic_name}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_flush_interval_ms = 1000{keeper_settings};
+            CREATE TABLE test.{kafka_table}_dst (key UInt64, value UInt64)
+                ENGINE = MergeTree()
+                ORDER BY key;
+            CREATE MATERIALIZED VIEW test.{kafka_table}_mv TO test.{kafka_table}_dst AS
+                SELECT * FROM test.{kafka_table};
+            """,
+            settings=(
+                {"allow_experimental_kafka_offsets_storage_in_keeper": 1}
+                if keeper
+                else {}
+            ),
+        )
+
+        if keeper:
+            zk = kafka_cluster.get_kazoo_client("zoo1")
+            assert (
+                zk.exists(f"/clickhouse/kafka2/{kafka_table}/replicas/r1") is None
+            )
+        else:
+            # Disabled streaming storages must remain registered so they can be renamed.
+            instance.query(
+                f"RENAME TABLE test.{kafka_table} TO test.{kafka_table}_renamed"
+            )
+            instance.query(
+                f"RENAME TABLE test.{kafka_table}_renamed TO test.{kafka_table}"
+            )
+
+        error_patterns = [
+            "Insert queries are prohibited",
+            "Message queue insertion is disabled",
+            "Failed to process data",
+        ]
+        error_counts = {
+            pattern: int(instance.count_in_log(pattern)) for pattern in error_patterns
+        }
+
+        messages = [json.dumps({"key": i, "value": i}) for i in range(10)]
+        k.kafka_produce(kafka_cluster, topic_name, messages)
+
+        instance.query(
+            f"INSERT INTO test.{kafka_table} FORMAT JSONEachRow"
+            ' {"key": 999, "value": 999}'
+        )
+
+        time.sleep(10)
+        assert 0 == int(
+            instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
+        )
+        for pattern, count in error_counts.items():
+            assert count == int(instance.count_in_log(pattern))
+        assert 0 == int(
+            instance.query(
+                f"SELECT coalesce(sum(length(exceptions.text)), 0) "
+                f"FROM system.kafka_consumers WHERE database = 'test' AND table = '{kafka_table}'"
+            )
+        )
+        assert 0 == int(
+            instance.query(
+                f"SELECT coalesce(sum(num_rebalance_assignments), 0) "
+                f"FROM system.kafka_consumers WHERE database = 'test' AND table = '{kafka_table}'"
+            )
+        )
+
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>",
+            "<disable_insertion_and_mutation>0</disable_insertion_and_mutation>",
+        )
+        instance.restart_clickhouse()
+
+        assert 11 == int(
+            instance.query_with_retry(
+                f"SELECT count() FROM test.{kafka_table}_dst",
+                check_callback=lambda result: int(result) == 11,
+                retry_count=100,
+            )
+        )
+    finally:
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>",
+            "<disable_insertion_and_mutation>0</disable_insertion_and_mutation>",
+        )
+        instance.restart_clickhouse()
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.{kafka_table}_mv;
+            DROP TABLE IF EXISTS test.{kafka_table}_dst;
+            DROP TABLE IF EXISTS test.{kafka_table};
+            """
+        )
+
+
 def test_kafka2_commit_on_select_semantics(kafka_cluster):
     """Test that kafka_commit_on_select controls whether offsets are committed after direct SELECT."""
 

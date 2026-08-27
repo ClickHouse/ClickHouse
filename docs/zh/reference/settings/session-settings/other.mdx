@@ -16,6 +16,16 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
+<div id="adaptive_aggregator_freeze_threshold">
+  ## adaptive_aggregator_freeze_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16384" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "16384"},{"label": "新增设置，用于指定自适应聚合器（`enable_adaptive_aggregator`）冻结线程本地哈希表时的键数量。"}]}]} />
+
+自适应聚合器冻结线程本地哈希表时的键数量 (参见 `enable_adaptive_aggregator`) 。较小的值可使冻结后的表保持在缓存中，较大的值则可让其吸收更多高频键。值为 0 时，表会在首次有机会时冻结，这会使该算法的行为类似于分片聚合器 (`enable_sharding_aggregator`) ：每个键都根据其哈希进行路由，并由单个所有者聚合；区别仅在于，聚合会延后到合并阶段，而不是在扫描期间在线程之间交换。
+
 <div id="add_http_cors_header">
   ## add_http_cors_header
 </div>
@@ -149,6 +159,16 @@ Cloud 默认值：`1`。
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 在读取时验证校验和。此设置默认启用，并且在生产环境中应始终保持启用。不要期望禁用此设置会带来任何好处。它仅可用于实验和基准测试。该设置仅适用于 MergeTree 家族的表。对于其他表引擎，以及通过网络接收数据时，始终都会验证校验和。
+
+<div id="compression">
+  ## compression
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，可对响应正文应用通用压缩。"}]}]} />
+
+对响应正文应用通用压缩，例如 `compression=gz`。请注意，此设置独立于 `Content-Encoding` (HTTP 压缩) 和旧版 `compress` 参数 (ClickHouse 原生压缩) 。在 URL 路径中指定压缩文件扩展名也可达到相同效果。
+
+这是一个用于调整 HTTP 接口响应的设置：它会在查询执行前被处理 (响应缓冲区会预先设置) ，因此必须通过 HTTP URL 参数、URL 路径中的文件扩展名或用户 profile 提供，不能通过查询内的 `SETTINGS` 子句提供 (在该子句中无效，并且会被拒绝) 。
 
 <div id="connection_pool_max_wait_ms">
   ## connection_pool_max_wait_ms
@@ -558,6 +578,22 @@ ClickHouse 会从该表的过时副本中选择最合适的一个。
 
 最大预取数量。零表示不受限制。如果你想限制预取数量，更推荐使用设置 `filesystem_prefetches_max_memory_usage`
 
+<div id="filter">
+  ## filter
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，用于在查询外层添加 WHERE 子句。"}]}]} />
+
+以包装子查询的方式为查询添加 `WHERE` 子句。多个过滤器会使用 AND 组合。HTTP 接口支持多个 `filter` URL 参数，这些参数会按顺序使用 AND 相互组合，并与此设置的值组合。
+
+这是一项由引擎应用于已解析查询的查询构造设置 (将查询包装为派生表) ，因此可与现有查询组合使用，并适用于所有协议：可通过 HTTP URL 参数、查询内的 `SETTINGS` 子句或用户 profile 提供。
+
+它会影响产生结果的 `SELECT` / `UNION` 查询。对于写入查询 (`INSERT … SELECT`、`CREATE … AS SELECT`) ，仅当源 `SELECT` 在自身的 `SETTINGS` 子句中指定此设置时才会生效；从 profile 或 session 继承的值，或在 `INSERT` / `CREATE` 语句本身中设置的值，不会传播到源 `SELECT`——这与其他所有设置的非传播规则相同。
+
+<Danger>
+  `filter` **不是**访问控制机制，不得用作 [行级安全策略](/zh/concepts/features/security/access-rights#row-policy-management) 或 `additional_table_filters` 设置的替代方案。它只会在包装子查询的外层添加 `WHERE`，因此在应用过滤器前，底层数据仍会被读取和处理——查询在处理过程中仍可能观察到被过滤掉的行 (例如，使用 `throwIf` 通过错误路径泄露信息) 。如需限制用户可访问的行，请使用行级安全或 `additional_table_filters`。
+</Danger>
+
 <div id="final">
   ## final
 </div>
@@ -682,6 +718,14 @@ ORDER BY tuple()
 SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+<div id="format">
+  ## format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，可覆盖查询的输入和输出 FORMAT。"}]}]} />
+
+覆盖查询的输入和输出 `FORMAT`。其优先级高于查询中指定的 format 和文件扩展名。对于各自的方向，更具体的 `input_format` 和 `output_format` 设置优先于通用的 `format` 设置。
 
 <div id="framing_output_format">
   ## framing_output_format
@@ -867,6 +911,14 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 如果顶层结构是 UNION，则会分别为其所有子项独立注入 &#39;ORDER BY rand()&#39;。
 仅对测试和开发有用 (缺少 ORDER BY 是非确定性查询结果的一个来源) 。
 
+<div id="input_format">
+  ## input_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，可覆盖查询的输入格式。"}]}]} />
+
+覆盖查询的输入格式，其优先级高于查询中指定的格式。
+
 <div id="interactive_delay">
   ## interactive_delay
 </div>
@@ -907,14 +959,20 @@ HSTS 的过期时长。0 表示禁用 HSTS。
   ## limit
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="Double" default_value="0" />
 
-设置可从查询结果中获取的最大行数。它会调整由 [LIMIT](/zh/reference/statements/select/limit) 子句设定的值，因此查询中指定的限制不能超过此设置设定的限制。
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "类型从 UInt64 扩展为 Float，以支持负值和小数，并透传给 ClickHouse 原生对负数\/小数 `LIMIT` 的支持。"}]}]} />
+
+设置从查询结果中获取的最大行数。它会调整 [LIMIT](/zh/reference/statements/select/limit) 子句指定的值。该值会透传给 `LIMIT`，并接受 `LIMIT` 支持的所有值，包括负值 (从结果末尾开始计数) 和 `(0, 1)` 范围内的小数 (表示结果的占比) 。
 
 可能的值：
 
-* 0 — 行数不受限制。
-* 正整数。
+* 0 — 不限制行数。
+* 正整数 — 精确的行数。
+* 负整数 — 返回最后 N 行。
+* 开区间 `(0, 1)` 内的实数 — 返回结果中相应比例的数据。
+
+此设置会影响产生结果的 `SELECT` / `UNION` 查询。对于写入查询 (`INSERT … SELECT`、`CREATE … AS SELECT`) ，只有当源 `SELECT` 在其自身的 `SETTINGS` 子句中指定此设置时才会生效；从 profile 或 session 继承的值，或在 `INSERT` / `CREATE` 语句本身设置的值，都不会传播到源 `SELECT`。这与其他所有设置适用的“不传播”规则相同。
 
 <div id="load_marks_asynchronously">
   ## load_marks_asynchronously
@@ -1016,14 +1074,18 @@ Possible values:
   ## offset
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="Double" default_value="0" />
 
-设置查询开始返回行之前要跳过的行数。它会调整由 [OFFSET](/zh/reference/statements/select/offset) 子句设置的偏移量，因此这两个值会相加。
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "类型从 UInt64 扩展为 Float，以支持负值和小数；该值会直接传递给 ClickHouse 原生支持负值和小数的 `OFFSET`。"}]}]} />
+
+设置查询返回行之前要跳过的行数。它会调整由 [OFFSET](/zh/reference/statements/select/offset) 子句设置的偏移量。该值会直接传递给 `OFFSET`，可接受 `OFFSET` 支持的所有值，包括负值和 `(0, 1)` 区间内的小数。
 
 可能的值：
 
 * 0 — 不跳过任何行。
 * 正整数。
+* 负整数。
+* 开区间 `(0, 1)` 内的实数 — 跳过结果中相应比例的行。
 
 **示例**
 
@@ -1051,6 +1113,42 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 │ 109 │
 └─────┘
 ```
+
+此设置会影响产生结果的 `SELECT` / `UNION` 查询。对于写入查询 (`INSERT … SELECT`、`CREATE … AS SELECT`) ，只有当源 `SELECT` 在自身的 `SETTINGS` 子句中指定了该设置时才会生效；从 profile 或会话继承的值，或在 `INSERT` / `CREATE` 语句本身中设置的值，都不会传播到源 `SELECT`——这与其他任何设置的非传播规则相同。
+
+<div id="order">
+  ## order
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，可为查询添加外层 ORDER BY 子句。"}]}]} />
+
+将 `ORDER BY` 子句作为外层子查询添加到查询中。接受任意表达式列表。
+
+这是引擎在已解析的查询上应用的查询构造设置 (将查询包装为派生表) ，因此可与现有查询组合使用，并适用于所有协议：可通过 HTTP URL 参数、查询内的 `SETTINGS` 子句或用户 profile 提供。
+
+它会作用于产生结果的 `SELECT` / `UNION` 查询。对于写入查询 (`INSERT … SELECT`、`CREATE … AS SELECT`) ，只有源 `SELECT` 在自身的 `SETTINGS` 子句中包含该设置时才会生效；从 profile 或 会话 继承的值，或在 `INSERT` / `CREATE` 语句本身中设置的值，不会传播到源 `SELECT`——这与其他所有设置遵循相同的非传播规则。
+
+<div id="output_format">
+  ## output_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，可覆盖查询的输出格式。"}]}]} />
+
+覆盖查询的输出格式。其优先级高于查询中指定的格式、文件扩展名指定的格式或通过 `default_format` 指定的格式。
+
+<div id="page">
+  ## 页码
+</div>
+
+<SettingsInfoBlock type="Double" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "用于分页 HTTP 响应的新设置，等同于 offset = limit * (page - 1)。类型为 Float，因此可容纳负值或小数值（会传递给 SQL `LIMIT`\/`OFFSET`）。"}]}]} />
+
+设置分页结果的页码。等同于 `offset = limit * (page - 1)`。仅当设置了 `limit` 且未设置 `offset` 时才能指定。页码从 1 开始计数。与 `limit` 和 `offset` 一样，支持负值和小数值。
+
+这是引擎应用于已解析查询的查询构造设置 (会将查询包装为派生表) ，因此可与现有查询组合，并适用于所有协议：可通过 HTTP URL 参数、查询内的 `SETTINGS` 子句或用户 profile 提供。
+
+它会影响产生结果的 `SELECT` / `UNION` 查询。对于写入查询 (`INSERT … SELECT`、`CREATE … AS SELECT`) ，仅当源 `SELECT` 在其自身的 `SETTINGS` 子句中包含此设置时才会生效；从 profile 或会话继承的值，或在 `INSERT` / `CREATE` 语句本身中设置的值，都不会传播到源 `SELECT`——这与任何其他设置适用的非传播规则相同。
 
 <div id="paimon_target_snapshot_id">
   ## paimon_target_snapshot_id
@@ -1408,6 +1506,18 @@ FORMAT Null;
 
 为索引启用批量过滤算法。通常它的效果会更好，但我们保留此设置以便进行兼容性控制。
 
+<div id="select">
+  ## select
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，可将查询包装为 `SELECT <expr_list> FROM (<query>)`。"}]}]} />
+
+将查询包装为带有显式 `SELECT` 表达式列表的子查询。非空时，会将产生结果的查询包装为 `SELECT <expr_list> FROM (<query>)`。
+
+这是引擎应用于已解析查询的查询构造设置 (将其包装为派生表) ，因此可与现有查询组合使用，并适用于所有协议：可通过 HTTP URL 参数、查询内的 `SETTINGS` 子句或用户 profile 提供。
+
+它会影响产生结果的 `SELECT` / `UNION` 查询。对于写入查询 (`INSERT … SELECT`、`CREATE … AS SELECT`) ，仅当源 `SELECT` 在其自身的 `SETTINGS` 子句中指定该设置时才会生效；从 profile 或 会话 继承的值，或在 `INSERT` / `CREATE` 语句本身上设置的值，不会传播到源 `SELECT`——这与其他任何设置均适用的不传播规则相同。
+
 <div id="select_sequential_consistency">
   ## select_sequential_consistency
 </div>
@@ -1597,6 +1707,18 @@ TCPHandler 收到查询后休眠的时长
 
 * `basic` — Hadoop snappy 块格式。兼容 Hadoop 读写的文件。支持读取和写入。
 * `framed` — Snappy framing 格式，即 Google 定义的标准流式格式。支持读取和写入。
+
+<div id="sort">
+  ## sort
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，可在查询外层添加简单的 ORDER BY 子句。"}]}]} />
+
+将简单的 `ORDER BY` 子句作为外层子查询添加到查询中。接受以逗号分隔的标识符列表或按位置引用的列 (正整数) ，并可带有可选的 `+` (ASC) 或 `-` (DESC) 前缀。示例：`sort=a,-b` 按 `a` 升序、`b` 降序排序；`sort=1,-2` 按第一列升序、第二列降序排序。不能与 `order` 一起使用。
+
+这是引擎作用于已解析查询的查询构造设置 (将其包装为派生表) ，因此可与现有查询组合使用，并适用于所有协议：可通过 HTTP URL 参数、查询内的 `SETTINGS` 子句或用户 profile 提供。
+
+它会影响产生结果的 `SELECT` / `UNION` 查询。对于写入查询 (`INSERT … SELECT`、`CREATE … AS SELECT`) ，仅当源 `SELECT` 在其自身的 `SETTINGS` 子句中指定该设置时才会生效；从 profile 或会话继承的值，或在 `INSERT` / `CREATE` 语句本身中设置的值，都不会传播到源 `SELECT`——这与其他任何设置适用的非传播规则相同。
 
 <div id="sort_overflow_mode">
   ## sort_overflow_mode

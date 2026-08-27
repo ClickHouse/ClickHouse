@@ -102,7 +102,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Новая настройка, ограничивающая агрегацию не более чем `LIMIT` различными ключами для запросов `SELECT key_expr FROM t GROUP BY key_expr LIMIT n`."}]}]} />
 
-Включает или отключает оптимизацию тривиального запроса `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (без агрегатных функций в проекции, без секций `HAVING`/`ORDER BY`/`LIMIT BY`/window и без модификаторов `GROUP BY`) за счет установки `max_rows_to_group_by = n + offset` и `group_by_overflow_mode = 'any'`. Агрегация прекращается, как только будет получено `n + offset` различных ключей.
+Включает или отключает оптимизацию тривиального запроса `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (без агрегатных или оконных функций, а также `arrayJoin` в проекции, без секций `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/window и без модификаторов `GROUP BY`) за счет установки `max_rows_to_group_by = n + offset` и `group_by_overflow_mode = 'any'`. Агрегация прекращается, как только будет получено `n + offset` различных ключей.
 
 Оптимизация не применяется, если пользователь явно установил для `group_by_overflow_mode` значение, отличное от `any` (чтобы сохранить явно заданное поведение `throw`/`break`), а также если пользователь уже задал более строгое значение `max_rows_to_group_by` (в этом случае оптимизация ничего бы не изменила).
 
