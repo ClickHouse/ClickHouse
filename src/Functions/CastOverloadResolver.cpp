@@ -172,4 +172,9 @@ REGISTER_FUNCTION(CastOverloadResolvers)
     factory.registerFunction("accurateCastOrNull", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurateOrNull, false, {}); }, {});
 }
 
+FunctionOverloadResolverPtr createCastOverloadResolver(ContextPtr context, CastType cast_type, std::optional<CastDiagnostic> diagnostic)
+{
+    return CastOverloadResolverImpl::create(context, cast_type, false, std::move(diagnostic));
+}
+
 }
