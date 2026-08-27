@@ -494,7 +494,7 @@ MutationsInterpreter::MutationsInterpreter(
         std::move(available_columns_),
         std::move(context_), std::move(settings_))
 {
-    if (settings.can_execute && !settings.return_mutated_rows && castStorage<MergeTreeData>(source.getStorage(), StorageResolution::Load).get())
+    if (settings.can_execute && !settings.return_mutated_rows && castStorage<MergeTreeData>(source.getStorage(), StorageResolution::Load))
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

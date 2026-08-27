@@ -2444,7 +2444,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
-        bool is_replicated_storage = castStorage<StorageReplicatedMergeTree>(res, StorageResolution::Load).get() != nullptr;
+        bool is_replicated_storage = castStorage<StorageReplicatedMergeTree>(res, StorageResolution::Load) != nullptr;
         if (!is_replicated_storage && res->storesDataOnDisk() && database && database->getEngineName() == "Replicated")
             throw Exception(ErrorCodes::UNKNOWN_STORAGE,
                             "Only tables with a Replicated engine "

@@ -1449,7 +1449,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
     /// The resolved pointer must not outlive this check. `waitDetachedTableNotInUse` below waits
     /// for the last reference to the detached table to be released.
-    if (!castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Load).get())
+    if (!castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Load))
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
@@ -1623,7 +1623,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
         for (auto it = elem.second->getTablesIterator(getContext()); it->isValid(); it->next())
         {
-            if (castStorage<StorageReplicatedMergeTree>(it->table(), StorageResolution::Peek).get())
+            if (castStorage<StorageReplicatedMergeTree>(it->table(), StorageResolution::Peek))
             {
                 if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_RESTART_REPLICA, elem.first, it->name()))
                 {

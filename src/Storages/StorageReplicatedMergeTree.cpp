@@ -3405,7 +3405,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                 throw Exception(ErrorCodes::UNFINISHED, "Checksums of {} is suddenly changed", part_desc->src_table_part->name);
 
             /// Don't do hardlinks in case of zero-copy at any side (defensive programming)
-            bool source_zero_copy_enabled = (*castStorage<MergeTreeData>(source_table, StorageResolution::Load).get()->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
+            bool source_zero_copy_enabled = (*castStorage<MergeTreeData>(source_table, StorageResolution::Load)->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
             bool our_zero_copy_enabled = (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
 
             IDataPartStorage::ClonePartParams clone_params
