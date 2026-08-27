@@ -91,6 +91,7 @@ FROM prometheusQueryRange(
 ARRAY JOIN time_series AS sample
 ORDER BY sample.1;
 
+-- Wrappers that rebuild a scalar-backed piece must materialize it with the carried `value_data_type`
 -- (`Float64` for `timestamp`), not with the table's own `Float32` sample type.
 SELECT toTypeName(value), value
 FROM prometheusQuery(
@@ -102,6 +103,19 @@ SELECT toTypeName(value), value
 FROM prometheusQuery(
     'promql_timestamp_float32',
     'label_join(timestamp(vector(1)), "dst", "-", "", "")',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
+-- Set operators must not drop the operands' `value_data_type`, otherwise the final cast rounds the timestamp.
+SELECT toTypeName(value), value
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'timestamp(vector(1)) and vector(1)',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
+SELECT toTypeName(value), value
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'timestamp(vector(1)) or vector(0)',
     toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
 
 -- `unless`: the left operand keeps its `Float64` values because the right operand has different labels.
