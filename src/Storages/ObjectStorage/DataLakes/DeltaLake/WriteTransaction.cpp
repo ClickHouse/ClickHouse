@@ -34,7 +34,6 @@ namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
-    extern const int NOT_IMPLEMENTED;
     extern const int INCOMPATIBLE_COLUMNS;
 }
 
@@ -196,31 +195,9 @@ void WriteTransaction::create(const DB::Names & partition_columns, const DB::Nam
         write_path = kernel_helper->getTableLocation();
     }
 
-    auto pos = write_path.find("://");
-    if (pos == std::string::npos)
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::NOT_IMPLEMENTED,
-            "Unexpected path format: {}", write_path);
-    }
-    auto storage_type_str = write_path.substr(0, pos);
-    if (storage_type_str == "s3" || storage_type_str == "gcs")
-    {
-        auto pos_to_bucket = pos + std::strlen("://");
-        auto pos_to_path = write_path.substr(pos_to_bucket).find('/');
-        path_prefix = write_path.substr(pos_to_bucket + pos_to_path + 1);
-    }
-    else if (storage_type_str == "file")
-    {
-        auto pos_to_file = pos + std::strlen("://");
-        path_prefix = write_path.substr(pos_to_file);
-    }
-    else
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}",
-            storage_type_str);
-    }
+    /// Data files are written by ClickHouse itself, not by delta-kernel-rs,
+    /// so the write path has to be translated into an object storage path.
+    path_prefix = kernel_helper->getRelativePath(write_path);
 
     LOG_TEST(
         log, "Write path: {}, data prefix: {} schema: {}",

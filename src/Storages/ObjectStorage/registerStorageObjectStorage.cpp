@@ -2352,7 +2352,7 @@ Delta Lake writes are a Beta feature disabled by default and must be enabled wit
 
 :::note
 Writing using the table engine is supported only through delta kernel.
-Writes to Azure are not yet supported but work for S3 and GCS.
+Writes work for S3, GCS and Azure (from v26.9).
 :::
 
 ### Data cache {#data-cache}

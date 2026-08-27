@@ -3693,6 +3693,128 @@ def test_partitioned_writes(started_cluster):
     )
 
 
+def create_empty_delta_table_on_azure(
+    started_cluster, table_name, schema, partition_by=None
+):
+    """Create an empty Delta table locally and upload it to Azurite."""
+    local_path = f"/{table_name}"
+    empty_arrays = [pa.array([], type=field.type) for field in schema]
+    write_deltalake(
+        f"file://{local_path}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=partition_by or [],
+    )
+    default_upload_directory(started_cluster, "azure", local_path, "")
+
+
+def list_azure_data_files(started_cluster, prefix):
+    return sorted(
+        blob.name
+        for blob in started_cluster.container_client.list_blobs(
+            name_starts_with=prefix
+        )
+        if blob.name.endswith(".parquet")
+    )
+
+
+def test_writes_azure(started_cluster):
+    instance = started_cluster.instances["node1"]
+    instance_disabled_kernel = started_cluster.instances[
+        "node_with_disabled_delta_kernel"
+    ]
+    table_name = randomize_table_name("test_writes_azure")
+
+    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
+    create_empty_delta_table_on_azure(started_cluster, table_name, schema)
+
+    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    container = started_cluster.azure_container_name
+    for node in [instance, instance_disabled_kernel]:
+        node.query(
+            f"""
+            CREATE TABLE {table_name} (id Int32, name String)
+            ENGINE=DeltaLakeAzure('{connection_string}', '{container}', '{table_name}', Parquet)
+            """
+        )
+
+    table_function = (
+        f"deltaLakeAzure('{connection_string}', '{container}', '{table_name}', Parquet)"
+    )
+
+    def check_data(expected):
+        expected_rows = "\n".join(f"{i}\t{i}" for i in range(expected))
+        assert (
+            expected_rows
+            == instance.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
+        )
+        assert (
+            expected_rows
+            == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
+        )
+        assert (
+            expected_rows
+            == instance_disabled_kernel.query(
+                f"SELECT * FROM {table_name} ORDER BY all"
+            ).strip()
+        )
+
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10)"
+    )
+    check_data(10)
+
+    instance.query(
+        f"INSERT INTO TABLE FUNCTION {table_function} SELECT number, toString(number) FROM numbers(10, 10)"
+    )
+    check_data(20)
+
+    # Data files are written next to the delta log, not into some other prefix.
+    data_files = list_azure_data_files(started_cluster, f"{table_name}/")
+    assert len(data_files) == 2, f"Data files: {data_files}"
+    for data_file in data_files:
+        assert "/" not in data_file[len(f"{table_name}/") :], f"File: {data_file}"
+
+
+def test_partitioned_writes_azure(started_cluster):
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_partitioned_writes_azure")
+
+    schema = pa.schema(
+        [
+            ("id", pa.int32(), False),
+            ("name", pa.string(), False),
+            ("comment", pa.string(), False),
+        ]
+    )
+    create_empty_delta_table_on_azure(
+        started_cluster, table_name, schema, partition_by=["id", "comment"]
+    )
+
+    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    container = started_cluster.azure_container_name
+    instance.query(
+        f"""
+        CREATE TABLE {table_name} (id Int32, name String, comment String)
+        ENGINE=DeltaLakeAzure('{connection_string}', '{container}', '{table_name}', Parquet)
+        """
+    )
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number, toString(number), concat('comment-', toString(number % 2)) FROM numbers(10)"
+    )
+
+    expected = "\n".join(f"{i}\t{i}\tcomment-{i % 2}" for i in range(10))
+    assert (
+        expected == instance.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
+    )
+
+    data_files = list_azure_data_files(started_cluster, f"{table_name}/")
+    assert len(data_files) == 10, f"Data files: {data_files}"
+    assert sorted(
+        data_file[: data_file.rindex("/") + 1] for data_file in data_files
+    ) == sorted(f"{table_name}/id={i}/comment=comment-{i % 2}/" for i in range(10))
+
+
 @pytest.mark.parametrize("partitioned", [False, True])
 def test_concurrent_queries(started_cluster, partitioned):
     instance = started_cluster.instances["node1"]
