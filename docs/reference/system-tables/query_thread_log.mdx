@@ -48,19 +48,19 @@ You can use the [log_queries_probability](/reference/settings/session-settings/l
 - `current_database` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Name of the current database.
 - `query` ([String](/reference/data-types/string)) — Query string.
 - `normalized_query_hash` ([UInt64](/reference/data-types/int-uint)) — The hash of normalized query - with wiped constants, etc.
-- `is_initial_query` ([UInt8](/reference/data-types/int-uint)) — Query type. Possible values: 1 — Query was initiated by the client, 0 — Query was initiated by another query for distributed query execution.
+- `is_initial_query` ([UInt8](/reference/data-types/int-uint)) — Whether the query is initial. Possible values: 1 — an initial (top-level) query, 0 — a child query initiated by another query, including queries for distributed execution and internal subqueries.
 - `connection_address` ([IPv6](/reference/data-types/ipv6)) — The client IP address from which the connection was made. When connected through a proxy, this will be the address of the proxy.
 - `connection_port` ([UInt16](/reference/data-types/int-uint)) — The client port from which the connection was made. When connected through a proxy, this will be the port of the proxy.
 - `user` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Name of the user who initiated the current query.
 - `query_id` ([String](/reference/data-types/string)) — ID of the query.
 - `address` ([IPv6](/reference/data-types/ipv6)) — IP address that was used to make the query. When connected through a proxy and `auth_use_forwarded_address` is set, this will be the address of the client instead of the proxy.
 - `port` ([UInt16](/reference/data-types/int-uint)) — The client port that was used to make the query. When connected through a proxy and `auth_use_forwarded_address` is set, this will be the port of the client instead of the proxy.
-- `initial_user` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Name of the user who ran the initial query (for distributed query execution).
-- `initial_query_id` ([String](/reference/data-types/string)) — ID of the initial query (for distributed query execution).
-- `initial_address` ([IPv6](/reference/data-types/ipv6)) — IP address that the parent query was launched from.
-- `initial_port` ([UInt16](/reference/data-types/int-uint)) — The client port that was used to make the parent query.
-- `initial_query_start_time` ([DateTime](/reference/data-types/datetime)) — Start time of the initial query execution.
-- `initial_query_start_time_microseconds` ([DateTime64(6)](/reference/data-types/datetime64)) — Start time of the initial query execution
+- `initial_user` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Name of the user who ran the initial query in the same query chain.
+- `initial_query_id` ([String](/reference/data-types/string)) — ID of the initial query in the same query chain.
+- `initial_address` ([IPv6](/reference/data-types/ipv6)) — IP address from which the initial query in the same query chain was launched.
+- `initial_port` ([UInt16](/reference/data-types/int-uint)) — Client port from which the initial query in the same query chain was launched.
+- `initial_query_start_time` ([DateTime](/reference/data-types/datetime)) — Start time of the initial query in the same query chain.
+- `initial_query_start_time_microseconds` ([DateTime64(6)](/reference/data-types/datetime64)) — Start time of the initial query in the same query chain, with microsecond precision.
 - `authenticated_user` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Name of the user who was authenticated in the session.
 - `interface` ([UInt8](/reference/data-types/int-uint)) — Interface that the query was initiated from. Possible values: 1 — TCP, 2 — HTTP.
 - `is_secure` ([UInt8](/reference/data-types/int-uint)) — The flag which shows whether the connection was secure.

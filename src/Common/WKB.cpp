@@ -3,6 +3,7 @@
 #include <variant>
 #include <Common/Exception.h>
 #include <Common/WKB.h>
+#include <Common/checkStackSize.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -174,6 +175,10 @@ static MultiPolygon<CartesianPoint> readMultiPolygonWKB(ReadBuffer & in_buffer, 
 
 GeometricObject parseWKBFormat(ReadBuffer & in_buffer, UInt32 max_element_count)
 {
+    /// Multi* geometries contain nested geometries, and the nesting is not bounded by the element
+    /// count checks: every level can hold a single element. Guard the recursion against a stack overflow.
+    checkStackSize();
+
     UInt32 limit = effectiveLimit(max_element_count);
 
     char little_endian = 0;
@@ -261,8 +266,15 @@ String WKBPolygonTransform::dumpObject(const Field & geo_object)
     UInt32 geom_type = static_cast<UInt32>(geometry_type);
     writeBinaryEndian<endian_for_dumping>(geom_type, out_buffer);
 
-    UInt32 num_rings = static_cast<UInt32>(polygon.size());
+    // An empty polygon is stored as a single empty outer ring ([[]]). Emit zero rings
+    // so the WKB matches the canonical empty-polygon encoding (010300000000000000).
+    const bool is_empty = polygon.size() == 1 && polygon.front().safeGet<Array>().empty();
+
+    UInt32 num_rings = is_empty ? 0 : static_cast<UInt32>(polygon.size());
     writeBinaryEndian<endian_for_dumping>(num_rings, out_buffer);
+
+    if (is_empty)
+        return result;
 
     for (const auto & field_ring : polygon)
     {
