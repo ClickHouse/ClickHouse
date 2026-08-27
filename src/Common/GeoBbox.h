@@ -565,6 +565,24 @@ inline bool rejectsUnnamedGeometryType(const IDataType & type, const IFunctionBa
     return rejectsAnyGeometryKind(function, arg_index);
 }
 
+/// The geometry kind name a DECLARED argument type stands for, whether it is spelled with a custom
+/// name (`Point`, `Ring`, `LineString`, ...) or structurally (`Tuple(Float64, Float64)`,
+/// `Array(Tuple(Float64, Float64))`, ...). Empty when the type is no geometry at all.
+///
+/// This is the mirror image of the two lookups above: `geoKindNameOfType` answers for a named type
+/// and `structuralGeoKindName` for an unnamed one, and a declared argument may be written either
+/// way. It lets a predicate whose accepted kinds ARE its declared argument types -- an
+/// `is_spatial_predicate` `LANGUAGE WASM` UDF, whose `getReturnTypeImpl` raises
+/// `ILLEGAL_TYPE_OF_ARGUMENT` for anything else -- answer `rejectsColumnGeometryKind` by comparison
+/// instead of leaving it at its default `false`.
+inline std::string declaredGeoKindName(const IDataType & type)
+{
+    auto kind_name = geoKindNameOfType(type);
+    if (!kind_name.empty())
+        return kind_name;
+    return std::string{structuralGeoKindName(type)};
+}
+
 /// Whether `type` resolves its geometry kind only at execution time -- a `Dynamic`, or a `Variant`
 /// (`Geometry` is a `Variant` over the geometry kinds).
 inline bool isDeferredGeometryKindType(const IDataType & type)
