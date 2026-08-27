@@ -178,7 +178,6 @@ The hierarchy of privileges in ClickHouse is shown below:
       - `ALTER CONSTRAINT`
         - `ALTER ADD CONSTRAINT`
         - `ALTER DROP CONSTRAINT`
-        - `ALTER MODIFY CONSTRAINT`
       - `ALTER DELETE`
       - `ALTER FETCH PARTITION`
       - `ALTER FREEZE PARTITION`
@@ -342,7 +341,7 @@ The hierarchy of privileges in ClickHouse is shown below:
 Examples of how this hierarchy is treated:
 
 - The `ALTER` privilege includes all other `ALTER*` privileges.
-- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` and `ALTER MODIFY CONSTRAINT` privileges.
+- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT` and `ALTER DROP CONSTRAINT` privileges.
 
 Privileges are applied at different levels. Knowing of a level suggests syntax available for privilege.
 
@@ -435,7 +434,6 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
   - `ALTER CONSTRAINT`. Level: `GROUP`. Aliases: `CONSTRAINT`
   - `ALTER ADD CONSTRAINT`. Level: `TABLE`. Aliases: `ADD CONSTRAINT`
   - `ALTER DROP CONSTRAINT`. Level: `TABLE`. Aliases: `DROP CONSTRAINT`
-  - `ALTER MODIFY CONSTRAINT`. Level: `TABLE`. Aliases: `MODIFY CONSTRAINT`
   - `ALTER TTL`. Level: `TABLE`. Aliases: `ALTER MODIFY TTL`, `MODIFY TTL`
   - `ALTER MATERIALIZE TTL`. Level: `TABLE`. Aliases: `MATERIALIZE TTL`
   - `ALTER SETTINGS`. Level: `TABLE`. Aliases: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
@@ -451,7 +449,7 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
 Examples of how this hierarchy is treated:
 
 - The `ALTER` privilege includes all other `ALTER*` privileges.
-- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` and `ALTER MODIFY CONSTRAINT` privileges.
+- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT` and `ALTER DROP CONSTRAINT` privileges.
 
 **Notes**
 
@@ -778,12 +776,6 @@ By default, for backward compatibility reasons, creating a table with a specific
 however you can change this behaviour by setting [`table_engines_require_grant` to true](https://github.com/ClickHouse/ClickHouse/blob/df970ed64eaf472de1e7af44c21ec95956607ebb/programs/server/config.xml#L853-L855)
 in config.xml.
 :::
-
-Some table engines with external sources may require `READ`/`WRITE` permissions on the corresponding source. See [Sources](#sources).
-
-For example, for the AzureBlobStorage table engine, following grant may be required.
-
-- `GRANT READ, WRITE ON AZURE TO john`
 
 ### ALL {#all}
 

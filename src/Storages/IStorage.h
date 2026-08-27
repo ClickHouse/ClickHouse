@@ -4,6 +4,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -22,7 +23,6 @@
 
 #include <expected>
 #include <optional>
-#include <list>
 
 
 namespace DB
@@ -42,7 +42,7 @@ using PartitionCommands = std::vector<PartitionCommand>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
+using Processors = std::vector<ProcessorPtr>;
 
 class Pipe;
 class QueryPlan;
@@ -121,13 +121,10 @@ public:
     virtual bool isDictionary() const { return false; }
 
     /// Returns true if the storage supports queries with the SAMPLE section.
-    virtual bool supportsSampling() const;
+    virtual bool supportsSampling() const { return getInMemoryMetadataPtr()->hasSamplingKey(); }
 
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
-
-    /// Returns true if the storage supports `SELECT ... FROM t STREAM` continuous reads.
-    virtual bool supportsStreaming() const { return false; }
 
     /// Returns true if the storage supports insert queries with the PARTITION BY section.
     virtual bool supportsPartitionBy() const { return false; }
@@ -204,15 +201,21 @@ public:
     using IndexSizeByName = std::unordered_map<std::string, IndexSize>;
     virtual IndexSizeByName getSecondaryIndexSizes() const { return {}; }
 
+    /// Get mutable version (snapshot) of storage metadata. Metadata object is
+    /// multiversion, so it can be concurrently changed, but returned copy can be
+    /// used without any locks.
+    virtual StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata.get(); }
+
     /// Get immutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
-    /// Pass query context to enable metadata caching in MergeTree.
-    /// Pass nullptr when no query context is available.
-    virtual StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr /*context*/, bool /*bypass_metadata_cache*/) const
+    virtual StorageMetadataPtr getInMemoryMetadataPtr(bool /*bypass_metadata_cache*/ = false) const // NOLINT
     {
         return metadata.get();
     }
+
+    /// Same as getInMemoryMetadataPtr() but may return nullopt in some specific engines like Alias
+    virtual std::optional<StorageMetadataPtr> tryGetInMemoryMetadataPtr() const { return getInMemoryMetadataPtr(); }
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
@@ -222,9 +225,34 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    void setVirtuals(VirtualColumnsDescription virtuals_)
+    {
+        virtuals.set(std::make_unique<VirtualColumnsDescription>(std::move(virtuals_)));
+    }
+
+    /// Return list of virtual columns (like _part, _table, etc). In the vast
+    /// majority of cases virtual columns are static constant part of Storage
+    /// class and don't depend on Storage object. But sometimes we have fake
+    /// storages, like Merge, which works as proxy for other storages and it's
+    /// virtual columns must contain virtual columns from underlying table.
+    ///
+    /// User can create columns with the same name as virtual column. After that
+    /// virtual column will be overridden and inaccessible.
+    ///
+    /// By default return empty list of columns.
+    VirtualsDescriptionPtr getVirtualsPtr() const { return virtuals.get(); }
+    NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
+    Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
+
+    static const VirtualColumnsDescription & getCommonVirtuals() { return common_virtuals; }
+
+    Names getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
+
+    /// Returns whether the column is virtual - by default all columns are real.
+    /// Initially reserved virtual column name may be shadowed by real column.
+    bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
     virtual void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const;
@@ -285,6 +313,14 @@ private:
 
     /// Multiversion storage metadata. Allows to read/write storage metadata without locks.
     MultiVersionStorageMetadataPtr metadata;
+
+    /// Description of virtual columns. Optional, may be set in constructor.
+    MultiVersionVirtualsDescriptionPtr virtuals;
+
+    /// Description of common virtual columns.
+    static const VirtualColumnsDescription common_virtuals;
+
+    static VirtualColumnsDescription createCommonVirtuals();
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(
@@ -453,10 +489,6 @@ public:
     virtual void drop() {}
 
     virtual void dropInnerTableIfAny(bool /* sync */, ContextPtr /* context */) {}
-
-    /// Return true if the storage supports TRUNCATE operation.
-    /// Storages without their own data (e.g. View) return false.
-    virtual bool supportsTruncate() const { return true; }
 
     /** Clear the table data and leave it empty.
       * Must be called under exclusive lock (lockExclusively).
@@ -650,17 +682,6 @@ public:
     /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
     virtual void checkTableCanBeDetached() const {}
 
-    /// Size-only drop gate used by `CREATE OR REPLACE` to enforce
-    /// `max_table_size_to_drop` before EXCHANGE. Narrower than
-    /// `checkTableCanBeDropped` (no dictionary/view-dependency throws), so it
-    /// can run on any storage engine. NOT a pure dry-run: the `MergeTreeData`
-    /// override reaches `Context::checkCanBeDropped`, which removes the
-    /// `force_drop_table` flag when it authorizes an over-limit drop. Callers
-    /// must invoke it exactly once; a second call after the flag was consumed
-    /// throws TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT.
-    /// Default: no-op (engine has no on-disk data the size guard would care about).
-    virtual void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const {}
-
     /// Returns true if Storage may store some data on disk.
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
@@ -691,18 +712,6 @@ public:
 
     /// Same as above but also take partition predicate into account.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
-
-    /// Aggregated `(num_rows, num_defaults)` for `column_name` across all visible parts,
-    /// taken from per-part `SerializationInfo`. Returns nullopt when the storage cannot
-    /// supply an exact count -- see `Storages/MergeTree/SparsityFilter.h` for the precise
-    /// reliability rules. Default implementation returns nullopt.
-    struct ColumnDefaultnessStats
-    {
-        UInt64 num_rows = 0;
-        UInt64 num_defaults = 0;
-    };
-    virtual std::optional<ColumnDefaultnessStats>
-    getColumnDefaultnessStats(const String & /*column_name*/, ContextPtr) const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)

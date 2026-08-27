@@ -5,6 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Arena.h>
+#include <Common/PODArray.h>
 #include <absl/container/flat_hash_map.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -26,7 +27,7 @@ class DeltaLakeMetadataDeltaKernel;
  * Sink to write partitioned data to DeltaLake.
  * Writes a N data files, a file per partition key, and commits them to DeltaLake metadata.
  */
-class DeltaLakePartitionedSink final : public SinkToStorage, private WithContext
+class DeltaLakePartitionedSink : public SinkToStorage, private WithContext
 {
 public:
     DeltaLakePartitionedSink(

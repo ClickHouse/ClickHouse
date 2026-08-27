@@ -1,5 +1,4 @@
 #include "config.h"
-#include <base/sleep.h>
 #include <Common/CurrentThread.h>
 
 #include <Common/Exception.h>
@@ -12,7 +11,6 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDeduplication.h>
@@ -50,6 +48,11 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
+}
+
 namespace ObjectStorageQueueSetting
 {
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
@@ -62,9 +65,6 @@ namespace ObjectStorageQueueSetting
 namespace FailPoints
 {
     extern const char object_storage_queue_fail_in_the_middle_of_file[];
-    extern const char object_storage_queue_fail_commit_after_success[];
-    extern const char object_storage_queue_cancel_in_generate[];
-    extern const char object_storage_queue_sleep_in_generate[];
 }
 
 namespace ErrorCodes
@@ -164,6 +164,9 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
 bool ObjectStorageQueueSource::FileIterator::isFinished()
 {
+    if (iterator_invalidated)
+        return true;
+
     std::lock_guard lock(mutex);
     LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished.load(), objects_to_retry.size());
     return iterator_finished
@@ -291,7 +294,7 @@ ObjectStorageQueueSource::FileIterator::next()
                 }
 
                 Coordination::Responses responses;
-                Coordination::Error code = {};
+                Coordination::Error code;
                 zk_retry.retryLoop([&]
                 {
                     auto zk_client = metadata->getZooKeeper();
@@ -385,6 +388,9 @@ ObjectStorageQueueSource::FileIterator::next()
 
                 if (num_successful_objects != new_batch.size())
                 {
+                    /// file_metadatas is empty when the keeper tryMulti above failed and
+                    /// cleared it (see the chassert below); only compact it when populated.
+                    const bool compact_file_metadatas = !file_metadatas.empty();
                     size_t batch_i = 0;
                     for (size_t i = 0; i < num_successful_objects; ++i, ++batch_i)
                     {
@@ -400,10 +406,12 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
 
                         new_batch[i] = new_batch[batch_i];
-                        file_metadatas[i] = file_metadatas[batch_i];
+                        if (compact_file_metadatas)
+                            file_metadatas[i] = file_metadatas[batch_i];
                     }
                     new_batch.resize(num_successful_objects);
-                    file_metadatas.resize(num_successful_objects);
+                    if (compact_file_metadatas)
+                        file_metadatas.resize(num_successful_objects);
                 }
 
                 chassert(file_metadatas.empty() || new_batch.size() == file_metadatas.size());
@@ -497,7 +505,15 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (use_buckets_for_processing)
         {
+            refreshExpiringBucketLocks();
+
             std::lock_guard lock(mutex);
+
+            if (iterator_invalidated)
+            {
+                LOG_WARNING(log, "Bucket lock refresh failed, stopping the file iterator");
+                return {};
+            }
             auto result = getNextKeyFromAcquiredBucket(processor);
             object_info = result.object_info;
             file_metadata = result.file_metadata;
@@ -597,6 +613,38 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
     }
 }
 
+void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
+{
+    const size_t ttl_seconds = metadata->getPersistentProcessingNodeTTLSeconds();
+    if (!ttl_seconds)
+        return;
+
+    std::lock_guard lock(mutex);
+
+    /// Already invalidated (possibly by another thread), nothing to refresh.
+    /// Checked under the mutex to never hit the released holder of the lost lock.
+    if (iterator_invalidated)
+        return;
+    for (auto & [processor, holders] : bucket_holders)
+    {
+        for (auto & holder : *holders)
+        {
+            if (holder->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 4)
+            {
+                try
+                {
+                    holder->refresh();
+                }
+                catch (...)
+                {
+                    iterator_invalidated = true;
+                    throw;
+                }
+            }
+        }
+    }
+}
+
 void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
 {
     std::lock_guard lock(mutex);
@@ -622,7 +670,15 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
                 chassert(holder->isFinished());
 
             /// Release bucket lock.
-            holder->release();
+            try
+            {
+                holder->release();
+            }
+            catch (...)
+            {
+                iterator_invalidated = true;
+                throw;
+            }
             ++released_holders;
 
             /// Reset bucket processor in cached state.
@@ -950,8 +1006,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     const StorageID & storage_id_,
     LoggerPtr log_,
     bool commit_once_processed_,
-    bool add_deduplication_info_,
-    bool is_deduplication_v2_)
+    bool add_deduplication_info_)
     : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
     , name(std::move(name_))
@@ -974,7 +1029,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , storage_id(storage_id_)
     , commit_once_processed(commit_once_processed_)
     , add_deduplication_info(add_deduplication_info_)
-    , is_deduplication_v2(is_deduplication_v2_)
+    , insert_deduplication_version(context_->getServerSettings()[ServerSetting::insert_deduplication_version].value)
     , log(log_)
 {
     if (commit_once_processed)
@@ -997,28 +1052,16 @@ Chunk ObjectStorageQueueSource::generate()
     catch (...)
     {
         if (commit_once_processed)
-            commit(false, getCurrentExceptionMessage(true), getCurrentExceptionCode());
+            commit(false, getCurrentExceptionMessage(true));
 
         throw;
     }
 
     if (!chunk && commit_once_processed)
-    {
-        try
-        {
-            commit(true);
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, "Failed to commit data: {}", getCurrentExceptionMessage(false));
-            throw;
-        }
-    }
+        commit(true);
 
     return chunk;
 }
-
-void ObjectStorageQueueSource::onFinish() { parser_shared_resources->finishStream(); }
 
 Chunk ObjectStorageQueueSource::generateImpl()
 {
@@ -1069,22 +1112,20 @@ Chunk ObjectStorageQueueSource::generateImpl()
             }
 
             auto started_file = processed_files.back().metadata;
-            /// Aborting re-reads the file from offset 0 on next start, duplicating
-            /// any rows already inserted. Only safe when dedup will drop those rows,
-            /// or when the table is being dropped (no retry).
-            if (table_is_being_dropped || is_deduplication_v2)
+            if (table_is_being_dropped)
             {
+                /// Something must have been already read.
                 chassert(started_file->getFileStatus()->processed_rows > 0);
+                /// Mark file as Cancelled, such files will not be set as Failed.
                 processed_files.back().state = FileState::Cancelled;
+                /// Throw exception to avoid inserting half processed file to destination table.
                 throw Exception(
                     ErrorCodes::QUERY_WAS_CANCELLED,
-                    "{} (having unfinished file: {})",
-                    table_is_being_dropped ? "Table is being dropped" : "Shutdown was called",
-                    started_file->getPath());
+                    "Table is being dropped (having unfinished file: {})", started_file->getPath());
             }
 
             LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
-                     "Will process the file fully and then shutdown (dedup off).",
+                     "Will process the file fully and then shutdown",
                      started_file->getPath(), started_file->getFileStatus()->processed_rows.load());
         }
 
@@ -1115,7 +1156,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
             const auto context = getContext();
             reader = StorageObjectStorageSource::createReader(
                 processor_id,
-                storage_id,
                 file_iterator,
                 configuration,
                 object_storage,
@@ -1164,28 +1204,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
         const auto & path = file_metadata->getPath();
 
         LOG_TEST(log, "Processing file: {}", path);
-
-        /// Simulates a mid-file cancellation (KILL QUERY, server shutdown
-        /// reaching the executor). Must throw outside the inner try-catch so
-        /// the exception reaches `generate()` rather than being converted to
-        /// `FileState::ErrorOnRead` by the pull-error handler below.
-        if (file_status->processed_rows > 0)
-        {
-            fiu_do_on(FailPoints::object_storage_queue_cancel_in_generate, {
-                processed_files.back().state = FileState::Cancelled;
-                throw Exception(
-                    ErrorCodes::QUERY_WAS_CANCELLED,
-                    "Failpoint-triggered cancellation (having unfinished file: {})", path);
-            });
-
-            /// Park `generateImpl` here long enough for a concurrent server shutdown
-            /// to set `shutdown_called`, so the next loop iteration enters the
-            /// shutdown-handling branch above with the current file in `Processing`
-            /// state. Used by the dedup-off regression test.
-            fiu_do_on(FailPoints::object_storage_queue_sleep_in_generate, {
-                sleepForSeconds(5);
-            });
-        }
 
         Chunk chunk;
         bool result = false;
@@ -1254,7 +1272,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 /// Create unique token per chunk: etag + row offset
                 dedup_token = fmt::format("{}:{}", etag, row_offset);
 
-                auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
+                auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true, insert_deduplication_version);
                 deduplication_info->setUserToken(dedup_token, chunk.getNumRows());
                 chunk.getChunkInfos().add(std::move(deduplication_info));
             }
@@ -1274,9 +1292,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     read_from_format_info.hive_partition_columns_to_read_from_file_path,
-                    path,
-                    format_settings,
-                    getContext());
+                    path);
             }
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -1284,13 +1300,10 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
-                    .storage_id = storage_id,
                     .size = object_metadata->size_bytes,
-                    .last_modified = object_metadata->last_modified,
-                    .etag = &(object_metadata->etag),
+                    .last_modified = object_metadata->last_modified
                 },
-                getContext(),
-                format_settings);
+                getContext());
 
             return chunk;
         }
@@ -1395,14 +1408,9 @@ void ObjectStorageQueueSource::prepareCommitRequests(
 
     /// We do not want to reduce retry count on certain errors,
     /// because their incidence does not depend on the user.
-    /// `QUERY_WAS_CANCELLED` is included because cancellation (shutdown,
-    /// `KILL QUERY`) is never the file's fault — a file should not burn a
-    /// retry just because the server happened to be restarting, and the
-    /// processing node should be reset rather than transitioned to `Failed`.
     const bool reduce_retry_count = !(error_code == ErrorCodes::TOO_MANY_PARTS
                                       || error_code == ErrorCodes::TABLE_IS_BEING_RESTARTED
-                                      || error_code == ErrorCodes::TABLE_IS_READ_ONLY
-                                      || error_code == ErrorCodes::QUERY_WAS_CANCELLED);
+                                      || error_code == ErrorCodes::TABLE_IS_READ_ONLY);
 
     /// Count successfully processed files in a failed batch.
     /// If the batch had multiple files, don't reduce retry counts:
@@ -1517,12 +1525,6 @@ void ObjectStorageQueueSource::preparePartitionProcessedRequests(
     }
 }
 
-void ObjectStorageQueueSource::setUncertainCommit()
-{
-    for (auto & file : processed_files)
-        file.metadata->setUncertainCommit();
-}
-
 void ObjectStorageQueueSource::finalizeCommit(
     bool insert_succeeded,
     UInt64 commit_id,
@@ -1585,14 +1587,6 @@ void ObjectStorageQueueSource::finalizeCommit(
                 }
             }
 
-            /// Files that were reset for retry (processing node removed without creating
-            /// a Failed node) are not a real outcome — they will be picked up again on
-            /// the next iteration. Skip the log entry so they do not show up as Failed
-            /// in `system.s3queue_log`. They will be logged on their next attempt with
-            /// the actual outcome (Processed, or genuinely Failed).
-            if (!insert_succeeded && file_metadata->wasProcessingResetWithoutFailure())
-                continue;
-
             appendLogElement(
                 file_metadata,
                 /* processed */insert_succeeded && file_state == FileState::Processed,
@@ -1611,7 +1605,7 @@ void ObjectStorageQueueSource::finalizeCommit(
         std::rethrow_exception(finalize_exception);
 }
 
-void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message, int error_code)
+void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message)
 {
     /// This method is only used for SELECT query, not for streaming to materialized views.
     /// Which is defined by passing a flag commit_once_processed.
@@ -1627,12 +1621,8 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         successful_objects,
         last_processed_file_per_partition,
         /* created_nodes */ nullptr,
-        exception_message,
-        error_code);
+        exception_message);
     preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
-
-    if (requests.empty() && successful_objects.empty())
-        return;
 
     if (!successful_objects.empty()
         && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
@@ -1652,7 +1642,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
 
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     const auto & settings = getContext()->getSettingsRef();
-    Coordination::Error code = {};
+    Coordination::Error code;
     size_t try_num = 0;
     zk_retry.retryLoop([&]
     {
@@ -1664,20 +1654,10 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         }
         ++try_num;
         code = zk_client->tryMulti(requests, responses);
-        fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
-            if (code == Coordination::Error::ZOK)
-                throw zkutil::KeeperException::fromMessage(
-                    Coordination::Error::ZCONNECTIONLOSS,
-                    "Simulated connection loss after successful commit");
-        });
     });
 
     if (code != Coordination::Error::ZOK)
-    {
-        if (try_num > 1)
-            setUncertainCommit();
         throw zkutil::KeeperMultiException(code, requests, responses);
-    }
 
     const auto commit_id = StorageObjectStorageQueue::generateCommitID();
     const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

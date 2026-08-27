@@ -35,14 +35,11 @@ public:
     }
 
     bool withTies() const { return with_ties; }
-    bool alwaysReadTillEnd() const { return always_read_till_end; }
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
-
-    QueryPlanStepPtr clone() const override;
 
     bool hasCorrelatedExpressions() const override { return false; }
 

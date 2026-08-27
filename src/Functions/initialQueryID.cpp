@@ -2,12 +2,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
-#include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 
 namespace DB
 {
-class FunctionInitialQueryID final : public IFunction
+class FunctionInitialQueryID : public IFunction
 {
     const String initial_query_id;
 
