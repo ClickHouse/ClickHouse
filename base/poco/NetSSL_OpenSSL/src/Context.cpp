@@ -326,10 +326,14 @@ void Context::init(const Params& params)
 			if (!file)
 				file = X509_get_default_cert_file();
 
-			if (poco_file_cert(file))
+			if (poco_file_cert(file) && SSL_CTX_load_verify_locations(_pSSLContext, file, 0))
 			{
+				/// `SSL_CTX_load_verify_locations` (unlike `SSL_CTX_set_default_verify_paths`) fails when
+				/// the file exists but yields no certificates, so an empty or malformed default CA file
+				/// falls through to the directory check and then to the probe / embedded fallback below,
+				/// instead of silently producing an empty trust store.
 				_caPaths.caDefaultFile = file;
-				errCode = SSL_CTX_set_default_verify_paths(_pSSLContext);
+				errCode = 1;
 			}
 			else if (poco_dir_cert(dir) && poco_dir_contains_certs(dir))
 			{

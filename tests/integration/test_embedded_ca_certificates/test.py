@@ -108,3 +108,24 @@ def test_embedded_ca_certificates(started_cluster):
         )
         > 100
     )
+
+    # An existing but empty default CA file must also engage the fallback:
+    # `SSL_CTX_set_default_verify_paths` reports success for it while silently
+    # yielding an empty trust store, so the file only counts as certificates
+    # being present when at least one certificate can actually be loaded from it.
+    # `/etc/ssl/cert.pem` is the default CA file of the bundled OpenSSL
+    # (`OPENSSLDIR` is `/etc/ssl`).
+    node.exec_in_container(
+        ["bash", "-c", "touch /etc/ssl/cert.pem"], privileged=True, user="root"
+    )
+    node.restart_clickhouse()
+
+    assert https_ping() == "Ok.\n"
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM system.certificates WHERE path = '(embedded)'"
+            ).strip()
+        )
+        > 100
+    )
