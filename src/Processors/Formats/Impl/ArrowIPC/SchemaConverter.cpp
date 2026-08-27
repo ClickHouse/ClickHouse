@@ -1140,7 +1140,7 @@ DataTypePtr fieldToCHType(
                 return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             throw Exception(
                 ErrorCodes::UNKNOWN_TYPE,
-                "Native Arrow IPC reader does not support the `null` type here (field '{}')",
+                "Native Arrow IPC reader does not support the `null` type in schema inference (field '{}')",
                 field.name);
         case TypeKind::Interval:
             throw Exception(
