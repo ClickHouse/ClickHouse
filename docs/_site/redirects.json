@@ -3752,7 +3752,7 @@
     "source": "/guides"
   },
   {
-    "destination": "/reference/functions/regular-functions/machine-learning-functions",
+    "destination": "/reference/functions/regular-functions/other-functions",
     "source": "/guides/apply_catboost_model"
   },
   {
@@ -3768,7 +3768,7 @@
     "source": "/guides/developer/alternative-query-languages"
   },
   {
-    "destination": "/reference/functions/regular-functions/machine-learning-functions",
+    "destination": "/reference/functions/regular-functions/other-functions",
     "source": "/guides/developer/apply-catboost-model"
   },
   {
@@ -27836,12 +27836,8 @@
     "source": "/operations/system-tables/metrics"
   },
   {
-    "destination": "/reference/system-tables/overview",
+    "destination": "/reference/system-tables/models",
     "source": "/operations/system-tables/models"
-  },
-  {
-    "destination": "/reference/system-tables/overview",
-    "source": "/reference/system-tables/models"
   },
   {
     "destination": "/reference/system-tables/moves",
