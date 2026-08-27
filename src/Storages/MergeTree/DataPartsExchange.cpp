@@ -827,7 +827,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         auto v = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
         auto s = std::make_shared<DataPartStorageOnDiskFull>(v, part_relative_path, part_dir);
         s->setZeroCopyReplicationEnabled((*data_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
-        s->setFlatProjectionStorageInUse(data.getProjectionStorageFormat() == IDataPartStorage::ProjectionStorageFormat::FLAT);
+        /// Seed from the table's ever-used flag, not the current setting: see MergeTreeDataPartBuilder.
+        s->setFlatProjectionStorageInUse(data.flatProjectionStorageEverUsed());
         s->setProjections({});
         return std::pair{std::move(v), std::move(s)};
     }();

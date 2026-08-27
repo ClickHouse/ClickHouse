@@ -68,9 +68,12 @@ namespace
     }
 }
 
-void fsyncFrozenCloneTree(IDisk & disk, const std::string & clone_dir_path)
+void fsyncFrozenCloneTree(IDisk & disk, const std::string & clone_dir_path, const Strings & sibling_dir_paths)
 {
-    /// Subtree first (children before parents), then the ancestor chain up to the disk root ("").
+    /// Subtrees first (children before parents): the FLAT projection siblings live beside the part dir in the same parent
+    /// directory, so after their subtrees one ancestor chain walk covers the dentries of the part dir and all siblings.
+    for (const auto & sibling_dir_path : sibling_dir_paths)
+        syncDirectoryTree(disk, sibling_dir_path);
     syncDirectoryTree(disk, clone_dir_path);
 
     fs::path dir = fs::path(clone_dir_path).parent_path();
@@ -137,6 +140,15 @@ void DataPartStorageOnDiskBase::seedFrozenCopy(IDataPartStorage & dest_storage) 
     dest_storage.setProjections(std::move(copied));
     dest_storage.setZeroCopyReplicationEnabled(zero_copy_replication_enabled);
     dest_storage.setFlatProjectionStorageInUse(flat_projection_storage_in_use);
+}
+
+Strings DataPartStorageOnDiskBase::frozenFlatSiblingClonePaths(const std::string & to, const std::string & dir_path) const
+{
+    Strings paths;
+    for (const auto & [projection_dir, projection] : getProjections())
+        if (projection.format == ProjectionStorageFormat::FLAT && !projection.is_temp)
+            paths.push_back(fs::path(to) / (dir_path + "." + projection_dir));
+    return paths;
 }
 
 void DataPartStorageOnDiskBase::removeStaleProjectionSiblingAtDestination(
@@ -730,8 +742,10 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
 
     /// Durability graft from master #111426: make the local hardlink clone durable before the caller
     /// commits a covering part (the Backup loop above fsyncs nothing). Local destination, no external txn.
+    /// The copied FLAT projection siblings must be synced too: losing a sibling dentry while the parent
+    /// (whose checksums.txt references the projection) survives would leave a broken frozen part.
     if (params.fsync_part_directory && !params.external_transaction && !dst_disk->isRemote())
-        fsyncFrozenCloneTree(*dst_disk, fs::path(to) / dir_path);
+        fsyncFrozenCloneTree(*dst_disk, fs::path(to) / dir_path, frozenFlatSiblingClonePaths(to, dir_path));
 
     /// The SingleDiskVolume and the storage built by `create` are stored on the frozen part for its whole
     /// lifetime; route them into the dedicated MergeTree arena, like the builder-owned storage path.
@@ -890,8 +904,10 @@ void DataPartStorageOnDiskBase::rename(
 
     /// Nothing has moved yet, so any existing sibling at a destination name is residue of a failed op on a same-named part; overwriting it
     /// would resurrect foreign data (it must be swept even when THIS part owns no projection -- the residue belongs to a prior part at the
-    /// same name). Only a flat table can have such siblings, so the default legacy_nested table skips this whole-parts-root listing. A
-    /// table switched flat->legacy_nested is the one gap: its pre-switch residue is no longer swept here (rare; needs same-name reuse).
+    /// same name). Only a table that used the flat layout can have such siblings, so the default legacy_nested table skips this
+    /// whole-parts-root listing: the flag is seeded from MergeTreeData::flatProjectionStorageEverUsed, which stays true after a
+    /// flat->legacy_nested switch, so pre-switch residue keeps being swept here (residue that outlives a restart is parentless and
+    /// is reaped by clearOrphanProjectionSiblings on startup/attach).
     if (flat_projection_storage_in_use)
     {
         const String dest_prefix = new_part_dir + ".";

@@ -1249,6 +1249,14 @@ public:
     /// truth: read it here wherever a projection directory is created.
     IDataPartStorage::ProjectionStorageFormat getProjectionStorageFormat() const;
 
+    /// Whether this table has used the FLAT projection layout at any point since server start: the setting is (or was)
+    /// FLAT, or a part owning FLAT projections was loaded/adopted. Monotonic per process. Seeds the per-part sibling-scan
+    /// flag (see IDataPartStorage::setFlatProjectionStorageInUse), so a table switched `flat -> legacy_nested` keeps
+    /// sweeping stale `<part>.<name>.proj` residue at rename destinations; residue that outlives a restart is parentless
+    /// and reaped by clearOrphanProjectionSiblings on startup/attach before any new same-named part can go live.
+    bool flatProjectionStorageEverUsed() const;
+    void latchFlatProjectionStorageEverUsed() const { flat_projection_storage_ever_used.store(true, std::memory_order_relaxed); }
+
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
 
     /// Whether the per-part metadata version is stored in the engine's metadata storage instead of
@@ -1664,6 +1672,9 @@ protected:
 
     /// True if at least one part was created/removed with transaction.
     mutable std::atomic_bool transactions_enabled = false;
+
+    /// See flatProjectionStorageEverUsed / latchFlatProjectionStorageEverUsed. Monotonic per process.
+    mutable std::atomic_bool flat_projection_storage_ever_used = false;
 
     std::atomic_bool data_parts_loading_finished = false;
 

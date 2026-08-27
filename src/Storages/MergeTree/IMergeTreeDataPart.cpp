@@ -1541,7 +1541,18 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             for (const auto & [file_name, _] : checksums.files)
                 if (IDataPartStorage::Projection::dirNameType(file_name) == IDataPartStorage::Projection::Status::Live)
                     owned_projection_dirs.push_back(file_name);
-            getDataPartStorage().setProjections(getDataPartStorage().detectProjections({.candidates = owned_projection_dirs}));
+            auto owned_projections = getDataPartStorage().detectProjections({.candidates = owned_projection_dirs});
+
+            /// A loaded FLAT part means the table used the FLAT layout even if the setting was switched back
+            /// to `legacy_nested` before a restart; latch so new parts keep the stale-sibling sweeps enabled.
+            for (const auto & [_, projection] : owned_projections)
+                if (projection.format == IDataPartStorage::ProjectionStorageFormat::FLAT)
+                {
+                    storage.latchFlatProjectionStorageEverUsed();
+                    break;
+                }
+
+            getDataPartStorage().setProjections(std::move(owned_projections));
 
             loadProjections(require_columns_checksums, check_consistency, has_broken_projections, false /* if_not_loaded */);
         }
@@ -2817,7 +2828,12 @@ void IMergeTreeDataPart::adoptOnDiskProjectionsForDetach()
     IDataPartStorage::Projections adopted;
     for (const auto & [projection_dir, projection] : getDataPartStorage().detectProjections())
         if (!projection.is_temp && (!has_manifest || checksums.has(projection_dir)))
+        {
+            /// See loadColumnsChecksumsIndexes: an adopted FLAT projection proves the table used the FLAT layout.
+            if (projection.format == IDataPartStorage::ProjectionStorageFormat::FLAT)
+                storage.latchFlatProjectionStorageEverUsed();
             adopted.emplace(projection_dir, projection);
+        }
     getDataPartStorage().setProjections(std::move(adopted));
 }
 

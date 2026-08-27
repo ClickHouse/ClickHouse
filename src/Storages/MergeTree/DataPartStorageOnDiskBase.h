@@ -223,6 +223,11 @@ protected:
     void removeStaleProjectionSiblingAtDestination(
         const DiskPtr & dst_disk, const std::string & proj_dst, const DiskTransactionPtr & external_transaction) const;
 
+    /// Destination paths of the copied FLAT projection siblings of a freeze/clone into `<to>/<dir_path>`
+    /// (one per owned non-temp FLAT projection). Used to make the copied siblings durable together with
+    /// the part dir (see fsyncFrozenCloneTree).
+    Strings frozenFlatSiblingClonePaths(const std::string & to, const std::string & dir_path) const;
+
     /// Repoint at a moved location; unlike setRelativePath, content is guaranteed unchanged, so caches stay.
     void setPathKeepingCaches(std::string new_root_path, std::string new_part_dir);
 
@@ -351,7 +356,9 @@ private:
 /// immediate parent up to and including the disk root. fsync(dir) persists the entries inside
 /// dir, not dir's own entry in its parent, so the parent chain must be synced too. Shared by
 /// both freeze overrides (Full and Packed). A no-op on remote/object disks
-/// (getDirectorySyncGuard returns nullptr there).
-void fsyncFrozenCloneTree(IDisk & disk, const std::string & clone_dir_path);
+/// (getDirectorySyncGuard returns nullptr there). `sibling_dir_paths` are the copied FLAT
+/// projection sibling directories (`<part>.<name>.proj`); they live beside `clone_dir_path`,
+/// so their subtrees must be synced explicitly (the shared ancestor chain is walked once).
+void fsyncFrozenCloneTree(IDisk & disk, const std::string & clone_dir_path, const Strings & sibling_dir_paths = {});
 
 }

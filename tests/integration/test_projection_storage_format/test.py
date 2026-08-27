@@ -2733,6 +2733,35 @@ def test_fsync_flat_lifecycle():
     assert check_table("t_fsync") == "1"
 
 
+# This test smoke-checks the freeze durability path with flat siblings: with fsync_part_directory
+# enabled, FREEZE on the local hardlink path must sync the copied `<part>.<name>.proj` sibling
+# trees together with the part dir (a crash after FREEZE must not leave a shadow part whose
+# checksums.txt references a lost sibling). The fsync effect itself is not observable from a test;
+# this pins the code path executing over flat siblings without error and producing a complete copy.
+def test_fsync_freeze_copies_sibling():
+    node.query("DROP TABLE IF EXISTS t_fsync_freeze SYNC")
+    node.query("SYSTEM STOP MERGES")
+    node.query(
+        """CREATE TABLE t_fsync_freeze (key UInt64, id UInt64, value String,
+           PROJECTION p (SELECT key, id ORDER BY id))
+           ENGINE = MergeTree ORDER BY key
+           SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
+               fsync_part_directory = 1"""
+    )
+    node.query(
+        "INSERT INTO t_fsync_freeze SELECT number, number * 2, toString(number) FROM numbers(1000)"
+    )
+    node.query("ALTER TABLE t_fsync_freeze FREEZE WITH NAME 'fsyncfr'")
+
+    found = node.exec_in_container(
+        ["bash", "-c", "find /var/lib/clickhouse/shadow/fsyncfr -name '*p.proj' | head -1"],
+        privileged=True,
+        user="root",
+    ).strip()
+    assert found != ""
+    assert check_table("t_fsync_freeze") == "1"
+
+
 # ==============================================================================
 # M. Packed part storage
 # ==============================================================================
@@ -3230,6 +3259,58 @@ def test_reload_downgraded_table_flat_part_cleanup(storage_kind):
     node.query(f"ALTER TABLE t_downgrade DROP PART '{part_name('t_downgrade')}'")
     wait_for(lambda: not path_exists(p))
     assert not path_exists(f"{p}.p.proj")
+
+
+# This test checks that the rename-destination sweep stays enabled after the table is switched
+# `flat -> legacy_nested`: residue of an interrupted pre-switch flat publish at a future live part
+# name must be swept when a new nested part takes that name. Once the parent goes live the sibling
+# is no longer orphaned, so the orphan reaper would never touch it -- the sweep is the last line of
+# defense.
+# Scenario:
+# - 'flat' table with one flat part (all_1_1_0)
+# - ALTER to 'legacy_nested', plant residue at the next live name (all_2_2_0.p.proj)
+# - INSERT -> nested part all_2_2_0; the rename sweep must remove the residue
+def test_residue_swept_after_downgrade():
+    setup_table("t_dg_sweep", "projection_storage_format = 'flat'")
+    node.query(
+        "ALTER TABLE t_dg_sweep MODIFY SETTING projection_storage_format = 'legacy_nested'"
+    )
+    plant_stale_live_sibling(f"{table_path('t_dg_sweep')}/all_2_2_0.p.proj")
+    node.query(
+        "INSERT INTO t_dg_sweep SELECT number, number * 2, toString(number) FROM numbers(1000)"
+    )
+
+    p = f"{table_path('t_dg_sweep')}/all_2_2_0"
+    assert path_exists(p)  # the name collision really happened
+    assert path_exists(f"{p}/p.proj")  # the new part is nested
+    assert not path_exists(f"{p}.p.proj")  # the residue was swept at rename
+    assert check_table("t_dg_sweep") == "1"
+
+
+# Same as test_residue_swept_after_downgrade, but with a restart between the switch and the
+# collision: the table-level ever-used-flat latch is process-local, so after the restart it must be
+# re-derived at part load time from the surviving flat part.
+def test_residue_swept_after_downgrade_and_restart():
+    setup_table("t_dg_sweep_re", "projection_storage_format = 'flat'")
+    node.query(
+        "ALTER TABLE t_dg_sweep_re MODIFY SETTING projection_storage_format = 'legacy_nested'"
+    )
+    node.restart_clickhouse()
+    block_until_tables_loaded("t_dg_sweep_re")
+    node.query("SYSTEM STOP MERGES")  # the restart reset it; keep part names predictable
+
+    # plant only after the restart: a parentless sibling present during startup would be
+    # legitimately reaped by the startup orphan GC before the collision could happen
+    plant_stale_live_sibling(f"{table_path('t_dg_sweep_re')}/all_2_2_0.p.proj")
+    node.query(
+        "INSERT INTO t_dg_sweep_re SELECT number, number * 2, toString(number) FROM numbers(1000)"
+    )
+
+    p = f"{table_path('t_dg_sweep_re')}/all_2_2_0"
+    assert path_exists(p)
+    assert path_exists(f"{p}/p.proj")
+    assert not path_exists(f"{p}.p.proj")
+    assert check_table("t_dg_sweep_re") == "1"
 
 
 # This test checks that restart does not promote an undeclared flat sibling into the part's owned

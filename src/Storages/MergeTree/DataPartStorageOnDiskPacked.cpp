@@ -1061,8 +1061,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
         save_metadata_callback(dst_disk);
 
     /// Durability graft from master #111426: one fsync for the whole subtree (children set false above).
+    /// The FLAT projection siblings frozen above live beside the part dir, so they are synced explicitly.
     if (params.fsync_part_directory && !params.external_transaction && !dst_disk->isRemote())
-        fsyncFrozenCloneTree(*dst_disk, fs::path(to) / dir_path);
+        fsyncFrozenCloneTree(*dst_disk, fs::path(to) / dir_path, frozenFlatSiblingClonePaths(to, dir_path));
 
     seedFrozenCopy(*dest_storage);
 

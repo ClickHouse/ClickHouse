@@ -6512,8 +6512,7 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
                 std::make_shared<SingleDiskVolume>("volume_" + old_dir, disk, 0), full_path, old_dir);
             part_storage->setZeroCopyReplicationEnabled(
                 (*storage.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
-            part_storage->setFlatProjectionStorageInUse(
-                storage.getProjectionStorageFormat() == IDataPartStorage::ProjectionStorageFormat::FLAT);
+            part_storage->setFlatProjectionStorageInUse(storage.flatProjectionStorageEverUsed());
             /// The setting seeds the scan for fresh parts. The discovered layout of an existing part must win, because this operation can
             /// rename a FLAT part after the table was switched back to `legacy_nested`.
             part_storage->setProjections(part_storage->detectProjections({.root_listing = get_root_entries(disk)}));
@@ -6559,8 +6558,7 @@ void MergeTreeData::PartsTemporaryRename::rollBackAll()
                 std::make_shared<SingleDiskVolume>("volume_" + new_dir, disk, 0), full_path, new_dir);
             part_storage->setZeroCopyReplicationEnabled(
                 (*storage.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
-            part_storage->setFlatProjectionStorageInUse(
-                storage.getProjectionStorageFormat() == IDataPartStorage::ProjectionStorageFormat::FLAT);
+            part_storage->setFlatProjectionStorageInUse(storage.flatProjectionStorageEverUsed());
             /// Preserve the existing part's detected FLAT layout rather than overwriting it with the current table setting.
             part_storage->setProjections(part_storage->detectProjections({.root_listing = get_root_entries(disk)}));
             part_storage->rename(full_path, old_dir, storage.log.load(), /*remove_new_dir_if_exists=*/ false, /*fsync_part_dir=*/ false);
@@ -12755,8 +12753,20 @@ MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings
 IDataPartStorage::ProjectionStorageFormat MergeTreeData::getProjectionStorageFormat() const
 {
     if ((*getSettings())[MergeTreeSetting::projection_storage_format] == ProjectionStorageFormat::FLAT)
+    {
+        /// Every operation that can produce FLAT on-disk state consults the format here, so latching at this
+        /// choke point makes the ever-used flag cover all in-process FLAT activity, including activity that
+        /// precedes a `flat -> legacy_nested` switch of the setting.
+        latchFlatProjectionStorageEverUsed();
         return IDataPartStorage::ProjectionStorageFormat::FLAT;
+    }
     return IDataPartStorage::ProjectionStorageFormat::LEGACY_NESTED;
+}
+
+bool MergeTreeData::flatProjectionStorageEverUsed() const
+{
+    return getProjectionStorageFormat() == IDataPartStorage::ProjectionStorageFormat::FLAT
+        || flat_projection_storage_ever_used.load(std::memory_order_relaxed);
 }
 
 StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const

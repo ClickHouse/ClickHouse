@@ -81,7 +81,9 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create part {}, because part storage is not set", name);
 
     part_storage->setZeroCopyReplicationEnabled((*data.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
-    part_storage->setFlatProjectionStorageInUse(data.getProjectionStorageFormat() == IDataPartStorage::ProjectionStorageFormat::FLAT);
+    /// Seed from the table's ever-used flag, not the current setting: after a `flat -> legacy_nested` switch a new part
+    /// must still sweep stale `<part>.<name>.proj` residue of interrupted pre-switch operations at its rename destination.
+    part_storage->setFlatProjectionStorageInUse(data.flatProjectionStorageEverUsed());
 
     /// `CreateFresh` requires the directory to have been reclaimed first, so a path that forgets fails
     /// here instead of writing into stale data. A fresh projection directory is the exception: it is
