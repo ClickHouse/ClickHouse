@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 
 using namespace DB;
 
@@ -32,7 +33,7 @@ String serializePostings(const PostingList & postings)
 PostingsSerialization makeSerialization()
 {
     /// A posting list without the `IsCompressed` flag never consults the codec.
-    return PostingsSerialization(nullptr, MergeTreeTextIndexSerializationVersion::V2_WithPositions);
+    return PostingsSerialization(std::make_unique<PostingListCodecNone>(), MergeTreeTextIndexSerializationVersion::V2_WithPositions);
 }
 
 /// The whole payload is in the buffer, so `deserialize` deserializes it in place.
