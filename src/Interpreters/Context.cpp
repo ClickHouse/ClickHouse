@@ -103,6 +103,7 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Functions/AI/AIQuotaTracker.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
@@ -286,6 +287,10 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
+    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -8514,6 +8519,24 @@ ReverseLookupCache & Context::getReverseLookupCache() const
             ReverseLookupCache::DEFAULT_SIZE_RATIO);
     }
     return *query_context->reverse_lookup_cache;
+}
+
+AIQuotaTrackerPtr Context::getAIQuotaTracker() const
+{
+    auto query_context = getQueryContext();
+
+    const auto & settings_ref = query_context->getSettingsRef();
+
+    std::lock_guard<ContextSharedMutex> lock(query_context->mutex);
+    if (!query_context->ai_quota_tracker)
+    {
+        query_context->ai_quota_tracker = std::make_shared<AIQuotaTracker>(
+            settings_ref[Setting::ai_function_max_input_tokens_per_query],
+            settings_ref[Setting::ai_function_max_output_tokens_per_query],
+            settings_ref[Setting::ai_function_max_api_calls_per_query],
+            settings_ref[Setting::ai_function_throw_on_quota_exceeded]);
+    }
+    return query_context->ai_quota_tracker;
 }
 
 void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)
