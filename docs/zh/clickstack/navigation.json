@@ -152,7 +152,8 @@
       "group": "Guides",
       "pages": [
         {
-          "group": "Ingesting data",
+          "expanded": true,
+          "group": "摄取数据",
           "pages": [
             "zh/clickstack/ingesting-data/index",
             "zh/clickstack/ingesting-data/overview",

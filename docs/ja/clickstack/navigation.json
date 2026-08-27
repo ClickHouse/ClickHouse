@@ -152,7 +152,8 @@
       "group": "Guides",
       "pages": [
         {
-          "group": "Ingesting data",
+          "expanded": true,
+          "group": "データの取り込み",
           "pages": [
             "ja/clickstack/ingesting-data/index",
             "ja/clickstack/ingesting-data/overview",

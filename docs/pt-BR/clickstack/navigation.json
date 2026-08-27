@@ -152,7 +152,8 @@
       "group": "Guides",
       "pages": [
         {
-          "group": "Ingesting data",
+          "expanded": true,
+          "group": "Ingestão de dados",
           "pages": [
             "pt-BR/clickstack/ingesting-data/index",
             "pt-BR/clickstack/ingesting-data/overview",

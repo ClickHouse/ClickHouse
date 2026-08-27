@@ -152,7 +152,8 @@
       "group": "Guides",
       "pages": [
         {
-          "group": "Ingesting data",
+          "expanded": true,
+          "group": "데이터 수집",
           "pages": [
             "ko/clickstack/ingesting-data/index",
             "ko/clickstack/ingesting-data/overview",

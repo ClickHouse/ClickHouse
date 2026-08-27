@@ -152,7 +152,8 @@
       "group": "Guides",
       "pages": [
         {
-          "group": "Ingesting data",
+          "expanded": true,
+          "group": "إدخال البيانات",
           "pages": [
             "ar/clickstack/ingesting-data/index",
             "ar/clickstack/ingesting-data/overview",

@@ -152,7 +152,8 @@
       "group": "Guides",
       "pages": [
         {
-          "group": "Ingesting data",
+          "expanded": true,
+          "group": "Ингестия данных",
           "pages": [
             "ru/clickstack/ingesting-data/index",
             "ru/clickstack/ingesting-data/overview",
