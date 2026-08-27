@@ -61,6 +61,15 @@ ContextPtr makeStreamingContext(ContextPtr context_)
     auto copy = Context::createCopy(context_);
     copy->makeQueryContext();
     copy->setQueryMetadataCache(nullptr);
+
+    /// Read limits must not affect the read round plans.
+    copy->setSetting("max_rows_to_read", Field(0));
+    copy->setSetting("max_bytes_to_read", Field(0));
+    copy->setSetting("max_rows_to_read_leaf", Field(0));
+    copy->setSetting("max_bytes_to_read_leaf", Field(0));
+    copy->setSetting("max_rows_to_sort", Field(0));
+    copy->setSetting("max_bytes_to_sort", Field(0));
+
     return copy;
 }
 
