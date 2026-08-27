@@ -670,6 +670,11 @@ def main():
                 else:
                     booted = True
                     break
+                # Only a boot the server did not survive is retried. While it is
+                # still up, the next attempt would wipe the run directory it is
+                # using, so this fails with `wait_ready`'s diagnostics instead.
+                if CH.proc.poll() is None:
+                    break
                 if boot_attempt + 1 < boot_attempts:
                     print(
                         f"SETUP WARNING: {setup_failure} "
