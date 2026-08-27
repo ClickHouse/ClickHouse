@@ -1064,6 +1064,8 @@ SELECT timeSeriesResetsToGrid(start_ts, end_ts, step_seconds, window_seconds)(ti
     FunctionDocumentation::Description description_timeSeriesMaxToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like max_over_time](https://prometheus.io/docs/prometheus/latest/querying/functions/#aggregation_over_time) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `max_over_time` are considered within the specified time window.
 
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
+
 :::note
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
@@ -1150,6 +1152,8 @@ SELECT timeSeriesMaxToGrid(start_ts, end_ts, step_seconds, window_seconds)(times
     /// timeSeriesMinToGrid documentation
     FunctionDocumentation::Description description_timeSeriesMinToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like min_over_time](https://prometheus.io/docs/prometheus/latest/querying/functions/#aggregation_over_time) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `min_over_time` are considered within the specified time window.
+
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::note
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.

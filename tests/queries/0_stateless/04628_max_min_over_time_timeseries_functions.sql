@@ -50,12 +50,33 @@ SELECT timeSeriesMaxToGrid(1734955380, 1734955680, 15, 300)(toUnixTimestamp(time
 SELECT timeSeriesMinToGridMerge(1734955380, 1734955680, 15, 300)(min_agg) FROM ts_data_agg;
 SELECT timeSeriesMinToGrid(1734955380, 1734955680, 15, 300)(toUnixTimestamp(timestamp), value) FROM ts_raw_data;
 
--- NaN handling: a NaN currently held as the running extremum is unconditionally overwritten by the next
--- sample (even another NaN); once a real number is the extremum, a later NaN is silently ignored.
--- All 4 samples share timestamp 0 (the single grid point) so they land in the same bucket and are folded
--- via the array-arguments path in array order: NaN, NaN, 5, NaN -> 5 for both max and min.
+-- NaN handling: all 4 samples share timestamp 0 (the single grid point) so they land in the same bucket,
+-- where the duplicate-timestamp rule collapses them: a NaN loses to any real value, so timestamp 0 keeps 5
+-- -> 5 for both max and min.
 SELECT timeSeriesMaxToGrid(0, 0, 0, 10)([0, 0, 0, 0]::Array(UInt32), [nan, nan, 5, nan]::Array(Float64));
 SELECT timeSeriesMinToGrid(0, 0, 0, 10)([0, 0, 0, 0]::Array(UInt32), [nan, nan, 5, nan]::Array(Float64));
+
+-- Duplicate timestamps: the `timeSeries*` family rule collapses a timestamp to the greatest value at it
+-- before the over-time extremum is applied, so (0, 1) and (0, 2) yield 2 for min as well. The second pair
+-- checks a displaced extremum: (0, 1) arrives after (1, 3) displaced (0, 5) as the minimum, and timestamp 0
+-- still collapses to 5, so min is 3, not 1.
+SELECT timeSeriesMaxToGrid(0, 0, 0, 10)([0, 0]::Array(UInt32), [1, 2]::Array(Float64));
+SELECT timeSeriesMinToGrid(0, 0, 0, 10)([0, 0]::Array(UInt32), [1, 2]::Array(Float64));
+SELECT timeSeriesMinToGrid(1, 1, 0, 10)([0, 1, 0]::Array(UInt32), [5, 3, 1]::Array(Float64));
+SELECT timeSeriesMaxToGrid(1, 1, 0, 10)([0, 1, 0]::Array(UInt32), [5, 3, 1]::Array(Float64));
+
+-- The same duplicate pair through the scalar-arguments path and through -Merge, where the two samples
+-- live in different partial states.
+CREATE TABLE ts_dup_data(timestamp DateTime64(3,'UTC'), value Float64) ENGINE = MergeTree() ORDER BY timestamp;
+INSERT INTO ts_dup_data VALUES (toDateTime64(0, 3, 'UTC'), 1), (toDateTime64(0, 3, 'UTC'), 2);
+
+SELECT timeSeriesMinToGrid(0, 0, 0, 10)(toUnixTimestamp(timestamp), value) FROM ts_dup_data;
+
+CREATE TABLE ts_dup_agg(k UInt8, min_agg AggregateFunction(timeSeriesMinToGrid(0, 0, 0, 10), UInt32, Float64)) ENGINE AggregatingMergeTree() ORDER BY k;
+INSERT INTO ts_dup_agg SELECT 0, initializeAggregation('timeSeriesMinToGridState(0, 0, 0, 10)', toUnixTimestamp(timestamp), value) FROM ts_dup_data;
+SELECT timeSeriesMinToGridMerge(0, 0, 0, 10)(min_agg) FROM ts_dup_agg;
+DROP TABLE ts_dup_agg;
+DROP TABLE ts_dup_data;
 
 DROP TABLE ts_raw_data;
 DROP TABLE ts_data_agg;

@@ -1,23 +1,18 @@
 #pragma once
 
-#include <bit>
-#include <cmath>
 #include <cstddef>
 #include <optional>
-#include <type_traits>
 
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSlidingSum.h>
+#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
+#include <Common/NaNUtils.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int INCORRECT_DATA;
-}
 
 template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_max_>
 struct AggregateFunctionTimeseriesExtremumOverTimeTraits
@@ -33,37 +28,50 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
         return is_max ? "timeSeriesMaxToGrid" : "timeSeriesMinToGrid";
     }
 
-    /// Per-bucket (and, once combined, per-window) running extremum: the value and the timestamp of whichever
-    /// sample is currently the extremum.
+    using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
+
+    /// Running extremum (max or min): the value and the timestamp of whichever sample folded into it so far
+    /// currently holds it.
     struct Summary
     {
         TimestampType first = 0;   /// timestamp of the sample that is currently the running extremum
         ValueType second = 0;      /// value of the running extremum
         bool has_value = false;
 
-        /// Last tie-break for samples `==` cannot separate at the same timestamp (two NaN payloads,
-        /// or -0.0 against +0.0): raw bits, so the surviving payload does not depend on merge order.
-        static bool hasGreaterBits(ValueType lhs, ValueType rhs)
-        {
-            using Bits = std::conditional_t<sizeof(ValueType) == sizeof(UInt32), UInt32, UInt64>;
-            return std::bit_cast<Bits>(lhs) > std::bit_cast<Bits>(rhs);
-        }
-
-        /// Total order over (value, timestamp, bits): a real beats NaN, among NaNs the latest timestamp wins, among
-        /// IEEE-equal reals the earliest wins - matching a time-ordered PromQL scan and keeping add/merge commutative.
+        /// Order over samples: at the same timestamp the `timeSeries*` duplicate rule applies - the greatest
+        /// value survives, a NaN losing to a real one, values `==` cannot separate decided by raw bits
+        /// (`timeseriesMaxValueForDuplicateTimestamp`) - and across timestamps a real beats NaN, among NaNs
+        /// the latest timestamp wins, among IEEE-equal reals the earliest wins - matching a time-ordered
+        /// PromQL scan and keeping add/merge commutative. A `Summary` is fed from deduplicated buckets with
+        /// disjoint timestamp ranges, so it only ever compares samples at distinct timestamps, where the
+        /// order is total.
         bool shouldReplace(TimestampType timestamp, ValueType value) const
         {
             if (!has_value)
                 return true;
-            if (std::isnan(static_cast<double>(second)))
+            if (timestamp == first)
             {
-                if (!std::isnan(static_cast<double>(value)))
+                if (isNaN(second))
+                {
+                    if (!isNaN(value))
+                        return true;
+                    return timeseriesHasGreaterBits(value, second);
+                }
+                if (isNaN(value))
+                    return false;
+                if (value > second)
                     return true;
-                if (timestamp != first)
-                    return timestamp > first;
-                return hasGreaterBits(value, second);
+                if (value < second)
+                    return false;
+                return timeseriesHasGreaterBits(value, second);
             }
-            if (std::isnan(static_cast<double>(value)))
+            if (isNaN(second))
+            {
+                if (!isNaN(value))
+                    return true;
+                return timestamp > first;
+            }
+            if (isNaN(value))
                 return false;
             if constexpr (is_max)
             {
@@ -77,9 +85,7 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
             }
             if (value != second)
                 return false;
-            if (timestamp != first)
-                return timestamp < first;
-            return hasGreaterBits(value, second);
+            return timestamp < first;
         }
 
         void add(TimestampType timestamp, ValueType value)
@@ -92,14 +98,10 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
             }
         }
 
-        void addMany(const TimestampType * timestamps, const ValueType * values, size_t batch_size)
-        {
-            for (size_t i = 0; i < batch_size; ++i)
-                add(timestamps[i], values[i]);
-        }
-
-        /// Commutative and associative (shouldReplace is a total order), so Two-Stacks' out-of-order combining
-        /// returns bit-for-bit what a time-ordered fold returns, including the surviving NaN payload.
+        /// Commutative and associative over what the aggregator feeds it: the combined buckets cover disjoint
+        /// timestamp ranges, so `shouldReplace` only ever compares distinct timestamps, where it is a total
+        /// order. Two-Stacks' out-of-order combining therefore returns bit-for-bit what a time-ordered fold
+        /// returns, including the surviving NaN payload.
         void merge(const Summary & other)
         {
             if (other.has_value && shouldReplace(other.first, other.second))
@@ -109,35 +111,13 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
                 has_value = true;
             }
         }
-
-        void serialize(WriteBuffer & buf) const
-        {
-            writeBinary(has_value, buf);
-            writeBinaryLittleEndian(first, buf);
-            writeBinaryLittleEndian(second, buf);
-        }
-
-        void deserialize(ReadBuffer & buf)
-        {
-            readBinary(has_value, buf);
-            readBinaryLittleEndian(first, buf);
-            readBinaryLittleEndian(second, buf);
-        }
-
-        template <typename RangeType>
-        void checkTimestampsInRange(const RangeType & range) const
-        {
-            if (has_value && !range.contains(first))
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Cannot deserialize data: timestamp {} is outside its bucket's range",
-                    static_cast<Int64>(first));
-        }
     };
 
-    /// Sliding aggregator: keeps the running combine (max or min) of the per-bucket summaries within the window.
-    /// Unlike last_over_time, the window's extremum is not necessarily held by the most recently added bucket, so
-    /// dropping a stale bucket can require recomputing the extremum from the remaining ones - `Summary` is not
-    /// invertible (it has no `unmerge`), but its `merge` is commutative and associative, so
+    /// Sliding aggregator: preaggregates each bucket's samples into a running extremum, then keeps the running
+    /// combine (max or min) of the per-bucket summaries within the window. Unlike last_over_time, the window's
+    /// extremum is not necessarily held by the most recently added bucket, so dropping a stale bucket can
+    /// require recomputing the extremum from the remaining ones - `Summary` is not invertible (it has no
+    /// `unmerge`), but its `merge` is commutative and associative, so
     /// `AggregateFunctionTimeseriesSlidingSum` handles this correctly via its recompute (or two-stacks) strategy.
     struct Aggregator
     {
@@ -145,10 +125,22 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
 
         explicit Aggregator(size_t stack_size) : sliding_sum(stack_size) {}
 
-        void add(const Summary & summary, TimestampType bucket_end_timestamp)
+        /// Preaggregate the bucket's samples (`forEachSample` visits them in ascending timestamp order with
+        /// duplicates already collapsed to the greatest value at each timestamp) into a per-bucket extremum.
+        void add(const Samples & samples, TimestampType bucket_end_timestamp)
+        {
+            Summary summary;
+            samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
+            {
+                summary.add(timestamp, value);
+            });
+            add(std::move(summary), bucket_end_timestamp);
+        }
+
+        void add(Summary summary, TimestampType bucket_end_timestamp)
         {
             if (summary.has_value)
-                sliding_sum.add(Summary(summary), bucket_end_timestamp);
+                sliding_sum.add(std::move(summary), bucket_end_timestamp);
         }
 
         void removeBefore(TimestampType cut_off)
@@ -165,11 +157,13 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
         }
     };
 
-    /// The bucket stores the running extremum directly - no raw-sample preaggregation is needed since combining
-    /// is commutative/associative regardless of the samples' arrival order.
-    using Bucket = Summary;
+    /// The bucket stores raw samples like the rest of the `timeSeries*` family: `AggregateFunctionTimeseriesSamples`
+    /// applies the duplicate-timestamp rule (collapse to the greatest value at a timestamp) before the extremum,
+    /// and buckets cover disjoint timestamp ranges, so the window's `Summary` sees each timestamp exactly once
+    /// with its canonical value.
+    using Bucket = Samples;
 
-    static constexpr UInt16 FORMAT_VERSION = 1;
+    static constexpr UInt16 FORMAT_VERSION = 2;
 
     /// `getStackSizeForTwoStacks` switches to the two-stack queue once the average number of populated buckets in a
     /// window reaches this value; below it, recomputing the window each grid point is cheaper. The

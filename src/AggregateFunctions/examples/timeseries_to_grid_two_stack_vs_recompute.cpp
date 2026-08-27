@@ -44,8 +44,8 @@ constexpr int REPEATS = 3;
 constexpr size_t WINDOWS[]
     = {2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40};
 
-/// One bucket map per series. The bucket type is per aggregator family: the linear-regression family
-/// stores raw samples, the extremum family stores its own pre-reduced summary.
+/// One bucket map per series. The bucket type is per aggregator family: the linear-regression and extremum
+/// families both store raw samples (`AggregateFunctionTimeseriesSamples`).
 template <typename Bucket>
 using Dataset = std::vector<UnorderedMapWithMemoryTracking<size_t, Bucket>>;  /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
