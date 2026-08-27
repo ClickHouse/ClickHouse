@@ -52,6 +52,14 @@ public:
 
     static bool parseGame(ReadBuffer & in, Game & game)
     {
+        /// Every game after the first begins at a '[' (readMoves stops only at '[' or at the end
+        /// of the input), so the line-start state does not need to survive between games.
+        return PGNParser().parseGameImpl(in, game);
+    }
+
+private:
+    bool parseGameImpl(ReadBuffer & in, Game & game)
+    {
         game = Game();
 
         /// Skip leading whitespace
@@ -118,7 +126,19 @@ public:
         return true;
     }
 
-private:
+    /// The previously consumed byte. It is tracked explicitly to detect the beginning of a line:
+    /// the byte before the current position cannot be read from the buffer itself, because at
+    /// a refill boundary the current position is the very beginning of the buffer. The initial
+    /// value makes the beginning of the input the beginning of a line.
+    char last_consumed = '\n';
+
+    /// Consume one byte, remembering it. Must not be called at the end of the input.
+    void ignoreOne(ReadBuffer & in)
+    {
+        last_consumed = *in.position();
+        in.ignore();
+    }
+
     /// The standard spells an unknown rating as an empty value or a question mark;
     /// such a tag is reported as absent, so that a table `DEFAULT` expression can be applied.
     /// Anything else that is not a number is a malformed file, and it is not silently ignored.
@@ -137,43 +157,35 @@ private:
         return true;
     }
 
-    static void skipLineComment(ReadBuffer & in)
+    void skipLineComment(ReadBuffer & in)
     {
         while (!in.eof() && *in.position() != '\n')
-            in.ignore();
+            ignoreOne(in);
     }
 
-    static void skipBlockComment(ReadBuffer & in)
+    void skipBlockComment(ReadBuffer & in)
     {
-        in.ignore();
+        ignoreOne(in);
         while (!in.eof() && *in.position() != '}')
-            in.ignore();
+            ignoreOne(in);
 
         if (in.eof())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid PGN: unterminated comment");
 
-        in.ignore();
+        ignoreOne(in);
     }
 
     /// The escape mechanism of the standard: a percent sign in the first column of a line
-    /// means that the rest of the line is ignored. The column is determined by looking at
-    /// the previously consumed byte, which is available as long as the current buffer is
-    /// not positioned exactly at a refill boundary.
-    static bool isEscapeLine(ReadBuffer & in)
+    /// means that the rest of the line is ignored.
+    bool isEscapeLine(ReadBuffer & in) const
     {
-        if (in.eof() || *in.position() != '%')
-            return false;
-
-        if (in.count() == 0)
-            return true;
-
-        return in.position() > in.buffer().begin() && *(in.position() - 1) == '\n';
+        return !in.eof() && *in.position() == '%' && last_consumed == '\n';
     }
 
-    static void skipVariation(ReadBuffer & in)
+    void skipVariation(ReadBuffer & in)
     {
         int depth = 1;
-        in.ignore();
+        ignoreOne(in);
 
         while (!in.eof() && depth > 0)
         {
@@ -187,7 +199,7 @@ private:
                     ++depth;
                 else if (*in.position() == ')')
                     --depth;
-                in.ignore();
+                ignoreOne(in);
             }
         }
 
@@ -195,14 +207,14 @@ private:
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid PGN: unterminated variation");
     }
 
-    static void skipWhitespaceAndComments(ReadBuffer & in)
+    void skipWhitespaceAndComments(ReadBuffer & in)
     {
         while (!in.eof())
         {
             char c = *in.position();
             if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
             {
-                in.ignore();
+                ignoreOne(in);
             }
             else if (c == ';')
             {
@@ -226,12 +238,12 @@ private:
         }
     }
 
-    static bool readTag(ReadBuffer & in, String & tag_name, String & tag_value)
+    bool readTag(ReadBuffer & in, String & tag_name, String & tag_value)
     {
         if (in.eof() || *in.position() != '[')
             return false;
 
-        in.ignore(); /// skip [
+        ignoreOne(in); /// skip [
 
         skipWhitespaceAndComments(in);
 
@@ -241,7 +253,7 @@ private:
                && *in.position() != '"' && *in.position() != ']')
         {
             tag_name += *in.position();
-            in.ignore();
+            ignoreOne(in);
         }
 
         skipWhitespaceAndComments(in);
@@ -249,7 +261,7 @@ private:
         if (in.eof() || *in.position() != '"')
             return false;
 
-        in.ignore(); /// skip "
+        ignoreOne(in); /// skip "
 
         /// Read tag value
         tag_value.clear();
@@ -257,30 +269,30 @@ private:
         {
             if (*in.position() == '\\' && !in.eof())
             {
-                in.ignore();
+                ignoreOne(in);
                 if (!in.eof())
                 {
                     tag_value += *in.position();
-                    in.ignore();
+                    ignoreOne(in);
                 }
             }
             else
             {
                 tag_value += *in.position();
-                in.ignore();
+                ignoreOne(in);
             }
         }
 
         if (in.eof() || *in.position() != '"')
             return false;
 
-        in.ignore(); /// skip "
+        ignoreOne(in); /// skip "
 
         skipWhitespaceAndComments(in);
 
         if (!in.eof() && *in.position() == ']')
         {
-            in.ignore(); /// skip ]
+            ignoreOne(in); /// skip ]
             skipWhitespaceAndComments(in);
             return true;
         }
@@ -341,7 +353,7 @@ private:
         moves += move;
     }
 
-    static bool readMoves(ReadBuffer & in, Game & game)
+    bool readMoves(ReadBuffer & in, Game & game)
     {
         game.moves.clear();
 
@@ -362,7 +374,7 @@ private:
             }
             else if (isWhitespace(*in.position()))
             {
-                in.ignore();
+                ignoreOne(in);
             }
             else if (isEscapeLine(in))
             {
@@ -375,7 +387,7 @@ private:
                        && *in.position() != ';')
                 {
                     token += *in.position();
-                    in.ignore();
+                    ignoreOne(in);
                 }
 
                 if (isResultToken(token))
