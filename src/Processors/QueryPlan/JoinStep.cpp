@@ -217,9 +217,26 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     if (join->supportParallelJoin() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
     {
+        /// Parallel join output is squashed so many small probe blocks do not leak downstream.
+        /// Do not squash past `max_joined_block_size_rows` / `max_joined_block_size_bytes`: those
+        /// bounds are why `joined_block_split_single_row` split the result in the first place.
+        size_t squash_rows = min_block_size_rows;
+        size_t squash_bytes = min_block_size_bytes;
+        const auto & table_join = join->getTableJoin();
+        if (const size_t max_joined_rows = table_join.maxJoinedBlockRows())
+        {
+            if (squash_rows == 0 || squash_rows > max_joined_rows)
+                squash_rows = max_joined_rows;
+        }
+        if (const size_t max_joined_bytes = table_join.maxJoinedBlockBytes())
+        {
+            if (squash_bytes == 0 || squash_bytes > max_joined_bytes)
+                squash_bytes = max_joined_bytes;
+        }
+
         joined_pipeline->addSimpleTransform(
-            [&](const SharedHeader & header)
-            { return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes)); });
+            [&, squash_rows, squash_bytes](const SharedHeader & header)
+            { return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(header, squash_rows, squash_bytes)); });
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();
