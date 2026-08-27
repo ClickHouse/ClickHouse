@@ -203,6 +203,26 @@ FROM (
         ON o.orderkey = l.orderkey
 );
 
+-- `DISTINCT` and `ORDER BY` between the join and the read are out of contract: index analysis
+-- cannot reach a filter placed above them, so the pass leaves the predicate on the source side
+SELECT 'distinct target',
+       countIf(explain LIKE '%ilter column:%orderkey = 4242%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM lift_orders WHERE orderkey = 4242) AS o
+    INNER JOIN (SELECT DISTINCT orderkey FROM lift_lineitem) AS l ON o.orderkey = l.orderkey
+);
+
+SELECT 'sorted target',
+       countIf(explain LIKE '%ilter column:%orderkey = 4242%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM lift_orders WHERE orderkey = 4242) AS o
+    INNER JOIN (SELECT * FROM lift_lineitem ORDER BY custkey) AS l ON o.orderkey = l.orderkey
+);
+
 -- Both keys are in the target primary key, but `KeyCondition` cannot use `key = key`, so a
 -- key-vs-key predicate must stay on the source side
 SELECT 'key vs key',

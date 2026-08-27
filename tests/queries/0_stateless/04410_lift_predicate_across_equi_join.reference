@@ -15,5 +15,7 @@ computed target key	1
 computed target key correctness	0
 filtered target prunes	1
 filtered computed target key	1
+distinct target	1
+sorted target	1
 key vs key	1
 key vs key correctness	0
