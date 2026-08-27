@@ -529,6 +529,17 @@ protected:
             return EmplaceResult(inserted, std::move(key));
     }
 
+    /// Whether a key this state hands out keeps its bytes once the row is done with it. Most
+    /// methods point into the block's own columns, which outlive it; the serialized ones say for
+    /// themselves, because a key serialized a row at a time lives only until its holder is let go.
+    bool ALWAYS_INLINE keyOutlivesRow()
+    {
+        if constexpr (requires { static_cast<Derived &>(*this).keyViewsAreBlockStable(); })
+            return static_cast<Derived &>(*this).keyViewsAreBlockStable();
+        else
+            return true;
+    }
+
     template <typename Data, typename Key>
     ALWAYS_INLINE FindResult findKeyImpl(Key key, Data & data)
     {
@@ -545,20 +556,43 @@ protected:
 
         if constexpr (consecutive_keys_optimization)
         {
-            cache.onNewValue(it != nullptr);
-
-            if constexpr (nullable)
-                cache.is_null = false;
-
-            if constexpr (has_mapped)
+            /// The cache outlives the key holder, and a holder that borrowed the arena hands those
+            /// bytes back when it is discarded - the next row of the same size is then serialized
+            /// over them, and a cached view would answer for it. A cell's key stays wherever the
+            /// table keeps it, so a hit is remembered through the cell; a miss has only the row's
+            /// own key to remember, and may be remembered only where that key outlives the row.
+            if (it)
             {
-                cache.value.first = key;
-                if (it)
+                cache.onNewValue(true);
+
+                if constexpr (nullable)
+                    cache.is_null = false;
+
+                if constexpr (has_mapped)
+                {
+                    cache.value.first = it->getKey(it->getValue());
                     cache.value.second = it->getMapped();
+                }
+                else
+                {
+                    cache.value = it->getValue();
+                }
+            }
+            else if (keyOutlivesRow())
+            {
+                cache.onNewValue(false);
+
+                if constexpr (nullable)
+                    cache.is_null = false;
+
+                if constexpr (has_mapped)
+                    cache.value.first = key;
+                else
+                    cache.value = key;
             }
             else
             {
-                cache.value = key;
+                cache.empty = true;
             }
         }
 
