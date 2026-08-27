@@ -2695,17 +2695,6 @@ std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const
     if (!index_read_tasks.empty() || (mutations_snapshot && mutations_snapshot->hasDataMutations()))
         return {};
 
-    /// `column_names_to_read` is what the step projects, which is not what the storage reads.
-    /// `getReadTaskColumns` gives each PREWHERE step and the row-level filter their own input columns,
-    /// and `spreadMarkRangesAmongStreams` appends the sampling expression's columns, none of which have
-    /// to appear among the projected ones. Pricing only the projected columns would under-count the
-    /// read - badly, since PREWHERE tends to filter on exactly the columns the query does not select -
-    /// and an under-count makes the caller reject a read that is in fact large.
-    ///
-    /// The FINAL branch of `spreadMarkRangesAmongStreams` adds the sorting key and the
-    /// sign/version/is_deleted columns on top. It is unreachable from here: this estimate serves the
-    /// automatic parallel replicas gate, and `supportsDataflowStatisticsCollection` already excludes a
-    /// FINAL read from that optimization. The deferred filters are likewise FINAL-only.
     Names column_names = analysis->column_names_to_read.empty() ? all_column_names : analysis->column_names_to_read;
     {
         NameSet present(column_names.begin(), column_names.end());
@@ -2723,21 +2712,9 @@ std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const
         if (analysis->sampling.use_sampling && analysis->sampling.filter_expression)
             add_columns(analysis->sampling.filter_expression->getRequiredColumns().getNames());
 
-        /// Two read shapes append the whole sorting key to what they read, and neither is decided
-        /// before the pipeline is built: `readByLayers` does it for an ordered read, and
-        /// `spreadMarkRangesAmongStreams` does it on the split path that
-        /// `merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability`
-        /// selects at random. Note that the whole key is added, not the prefix the query orders by,
-        /// so a key column the query never mentions still gets read.
-        if (reader_settings.read_in_order
-            || context->getSettingsRef()
-                    [Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability]
-                > 0.0f)
+        if (reader_settings.read_in_order)
             add_columns(storage_snapshot->metadata->getColumnsRequiredForSortingKey());
 
-        /// A part carrying a materialized lightweight delete gets a `_row_exists` filter step of its
-        /// own in `MergeTreeReadPoolBase::createTask`, which the step does not project either. Parts
-        /// without one do not have the column, and a column missing from a part costs nothing here.
         if (reader_settings.apply_deleted_mask)
             add_columns({RowExistsColumn::name});
     }
