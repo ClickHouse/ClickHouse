@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Regression test for the AWS-SDK 301 redirect SSRF: a malicious/compromised
 # S3-compatible endpoint returns 301 Moved Permanently with a Location header (or
-# <Endpoint> XML) pointing at an arbitrary host. Client::getURIFromError must validate
+# <Endpoint> XML) pointing at an arbitrary host. Client::doRequest must validate
 # that target against RemoteHostFilter (like the Poco 307 path already does) instead of
 # blindly following it. Without the fix the s3() query reaches the disallowed host
 # (SSRF to internal services / cloud metadata); with the fix it fails with UNACCEPTABLE_URL.
@@ -59,6 +59,9 @@ def cluster():
         cluster.start()
         logging.info("Cluster started")
 
+        cluster.instances["node"].append_hosts(
+            "redirected", cluster.get_instance_ip("resolver")
+        )
         run_endpoint(cluster)
 
         yield cluster
@@ -70,6 +73,14 @@ def _followed(cluster):
     return cluster.exec_in_container(
         cluster.get_container_id("resolver"),
         ["curl", "-s", "http://resolver:8080/followed"],
+        nothrow=True,
+    )
+
+
+def _initial_requests(cluster, bucket):
+    return cluster.exec_in_container(
+        cluster.get_container_id("resolver"),
+        ["curl", "-s", f"http://resolver:8080/initial_requests/{bucket}"],
         nothrow=True,
     )
 
@@ -104,7 +115,26 @@ def test_failed_301_redirect_is_not_cached(cluster):
     )
     try:
         for _ in range(2):
-            error = node.query_and_get_error(f"SELECT * FROM {table}")
-            assert "Too many redirects" in error
+            error = node.query_and_get_error(
+                f"INSERT INTO {table} SELECT 1 SETTINGS s3_truncate_on_insert=1"
+            )
+            assert "AccessDenied" in error
+        assert _initial_requests(cluster, "cache") == "2"
+    finally:
+        node.query(f"DROP TABLE {table}")
+
+
+def test_head_redirect_is_cached_after_list_access_denied(cluster):
+    node = cluster.instances["node"]
+    table = "s3_head_redirect_cache"
+    node.query(f"DROP TABLE IF EXISTS {table}")
+    node.query(
+        f"CREATE TABLE {table} (x UInt8) "
+        "ENGINE = S3('http://resolver:8080/head/key.csv', NOSIGN, 'CSV')"
+    )
+    try:
+        error = node.query_and_get_error(f"SELECT * FROM {table}")
+        assert "AccessDenied" in error
+        assert node.query(f"SELECT * FROM {table}") == "1\n"
     finally:
         node.query(f"DROP TABLE {table}")

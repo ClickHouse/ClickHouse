@@ -1,10 +1,11 @@
 <clickhouse>
-    <!-- Allow the resolver and normalized service endpoint, but not either request target. -->
+    <!-- Allow the resolver, cache-test redirect target, and normalized service endpoint. -->
     <remote_url_allow_hosts>
         <host>resolver:8080</host>
+        <host>redirected:8080</host>
         <host>s3.resolver:8080</host>
     </remote_url_allow_hosts>
     <!-- Keep retries low so the test fails fast. -->
     <s3_retry_attempts>1</s3_retry_attempts>
-    <s3_max_redirects>0</s3_max_redirects>
+    <s3_max_redirects>1</s3_max_redirects>
 </clickhouse>

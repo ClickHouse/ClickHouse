@@ -1072,6 +1072,13 @@ std::optional<Aws::S3::S3Error> Client::updateURIForBucketForHead(const std::str
     auto result = ListObjectsV2(req);
     if (result.IsSuccess())
         return std::nullopt;
+
+    if (result.GetError().GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
+    {
+        if (auto uri_override = req.getURIOverride())
+            updateURIForBucket(bucket, std::move(*uri_override));
+    }
+
     return result.GetError();
 }
 
