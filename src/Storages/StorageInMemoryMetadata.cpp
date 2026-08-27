@@ -188,6 +188,9 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     /// per query pattern when the pipeline runs under a fresh SQL-security-overridden context (the
     /// `DEFINER`/`NONE` branch starts from the global context, where the hash would otherwise be 0).
     new_context->setNormalizedQueryHash(context->getNormalizedQueryHash());
+    /// The analyze mode must reach every join the report walker can reach, including the joins of
+    /// this view's inner query.
+    new_context->setJoinAnalyzeMode(context->getJoinAnalyzeMode());
 
     if (context->getCurrentTransaction())
         new_context->setCurrentTransaction(context->getCurrentTransaction());
@@ -471,7 +474,10 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
         add_for_rows_ttl(getRowsTTL().expression_columns, required_ttl_columns);
 
     for (const auto & entry : getRowsWhereTTLs())
+    {
         add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
+        add_for_rows_ttl(entry.where_expression_columns, required_ttl_columns);
+    }
 
     for (const auto & entry : getGroupByTTLs())
         add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
@@ -487,8 +493,6 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
 
     for (const auto & entry : getMoveTTLs())
         add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns);
-
-    //TODO what about rows_where_ttl and group_by_ttl ??
 
     for (const auto & column : indices_columns)
         res.emplace(column, ColumnDependency::SKIP_INDEX);

@@ -20,7 +20,6 @@
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
-#include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -32,7 +31,6 @@
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 
-#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
 #include <Parsers/ASTAsterisk.h>
@@ -45,7 +43,7 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
 #include <Storages/MaterializedView/RefreshSet.h>
@@ -62,8 +60,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/DDLTask.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -78,15 +76,14 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/dataTypeToAST.h>
-#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/hasNullable.h>
 
+#include <Databases/DatabaseBackup.h>
 #include <Databases/DatabaseFactory.h>
-#include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/TablesLoader.h>
@@ -100,7 +97,6 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetadataCache.h>
-#include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
@@ -109,8 +105,6 @@
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
-#include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Parsers/QueryParameterVisitor.h>
 
 
 namespace CurrentMetrics
@@ -126,12 +120,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
     extern const SettingsBool compatibility_ignore_auto_increment_in_create_table;
     extern const SettingsBool create_if_not_exists;
@@ -564,6 +556,12 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
         setVersionToAggregateFunctions(column_type, true);
+    else
+        /// Spell the state version the column is going to be written with out in the type, so that
+        /// it gets into the table metadata and the data stays readable when a newer server changes
+        /// the default: an unversioned name in stored metadata denotes the layout from before the
+        /// function became versioned (the ATTACH branch above pins it to 0).
+        pinCurrentStateVersionToAggregateFunctions(column_type);
 
     if (col_decl.null_modifier)
     {
@@ -648,8 +646,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     }
 
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
-    bool sanity_check_compression_codecs = !skip_checks && !context_->getSettingsRef()[Setting::allow_suspicious_codecs];
-    bool allow_experimental_codecs = skip_checks || context_->getSettingsRef()[Setting::allow_experimental_codecs];
+    CodecValidationSettings codec_validation_settings = skip_checks ? CodecValidationSettings::trusted() : CodecValidationSettings(context_->getSettingsRef());
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
@@ -709,8 +706,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         {
             if (col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs);
+            column.codec
+                = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, column.type, codec_validation_settings);
         }
 
         if (auto statistics_desc = col_decl.getStatisticsDesc())
@@ -1017,7 +1014,19 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 is_refreshable_mv /* is_create_parameterized_view */);
         }
 
-        properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
+        auto columns_from_select = as_select_sample->getNamesAndTypesList();
+        if (mode < LoadingStrictnessLevel::ATTACH)
+        {
+            /// A fresh `...State(...)` result type already spells its state version out, but an
+            /// inferred type can also come from an unversioned source (a `CREATE TABLE ... AS SELECT`
+            /// over an old table), so the version is pinned into the inferred types the same way it
+            /// is pinned into explicitly declared ones (see `getColumnType`) for it to reach the
+            /// stored metadata. On ATTACH the types are re-inferred rather than read from legacy
+            /// metadata, so they keep denoting the default version, as before.
+            for (auto & column : columns_from_select)
+                pinCurrentStateVersionToAggregateFunctions(column.type);
+        }
+        properties.columns = ColumnsDescription(std::move(columns_from_select));
         properties.columns_inferred_from_select_query = true;
     }
     else if (create.as_table_function)
@@ -1852,6 +1861,25 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.select && create.isView())
     {
+        /// Query-construction settings (`select` / `filter` / `order` / `sort` / `limit` / `offset` /
+        /// `page`) shape a result and are materialized by wrapping the query as a derived table during
+        /// direct execution. A stored view definition cannot support them equivalently: its columns are
+        /// inferred (below, before any wrapping) so `select` would change the result schema versus the
+        /// stored metadata; the per-`UNION`-arm pass is not applied; and a refreshable materialized view
+        /// refreshes through `InterpreterInsertQuery`, not `executeQuery`. Reject them in a view
+        /// definition rather than shaping inconsistently — put them on the query that reads the view.
+        ///
+        /// Only a fresh, user-initiated CREATE is rejected. `ATTACH` (metadata load on startup,
+        /// upgrade, restore) and secondary replays (Replicated database DDL, ON CLUSTER, restore
+        /// from backup) must keep loading definitions that were stored before this rule existed:
+        /// `limit` and `offset` are pre-existing setting names, so `SETTINGS limit = 10` can
+        /// legitimately occur in old view metadata.
+        if (mode <= LoadingStrictnessLevel::CREATE && hasConstructionSettings(*create.select))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) "
+                "are not supported in a {} definition. Specify them on the query that reads the view instead.",
+                create.is_materialized_view ? "MATERIALIZED VIEW" : (create.is_window_view ? "WINDOW VIEW" : "VIEW"));
+
         // Expand CTE before filling default database
         ApplyWithSubqueryVisitor::visit(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
@@ -2241,6 +2269,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             /// Don't check dependencies during DROP of the view, because we will recreate
             /// it with the same name and all dependencies will remain valid.
             drop_context->setSetting("check_table_dependencies", false);
+            drop_context->setDDLOrOnClusterInternal(true);
             InterpreterDropQuery interpreter(drop_ast, drop_context);
             interpreter.execute();
         }
@@ -2530,6 +2559,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     {
         ContextMutablePtr drop_context = Context::createCopy(current_context);
         drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+        drop_context->setDDLOrOnClusterInternal(true);
         /// Bypass = "the size guard was already enforced upstream; do not re-check or consume `force_drop_table` twice".
         if (bypass_size_guard)
         {
@@ -3412,7 +3442,15 @@ BlockIO InterpreterCreateQuery::execute()
 
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
+        {
+            /// Authorize here: this is the last point that still runs as the real user, and worker legs
+            /// run with no user by default.
+            if (is_create_database && create.storage && create.storage->engine
+                && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
+                DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
+
             return executeQueryOnCluster(create);
+        }
     }
 
     getContext()->checkAccess(getRequiredAccess());
@@ -3606,6 +3644,11 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     }
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
+
+    /// Must precede every side effect below: neither the transaction metadata removal nor the
+    /// metadata rewrite can be rolled back. The other direction takes no Keeper path at all.
+    if (to_replicated)
+        DatabaseOrdinary::checkReplicaPathIsSafe(create, getContext());
 
     /// Ensure the old detached table instance is destroyed before we remove
     /// transaction metadata files. Otherwise the old table's parts still hold

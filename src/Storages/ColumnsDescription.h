@@ -158,6 +158,8 @@ public:
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String(), bool first = false, bool add_subcolumns = true);
+    /// Adds a column at the end if a column with the same name doesn't exist.
+    void addIfNotExists(ColumnDescription column);
     /// `column_name` can be a Nested column name;
     void remove(const String & column_name);
 
@@ -340,6 +342,9 @@ struct DefaultExpressionsInfo
     /// MATERIALIZED). ALIAS (read-time) and EPHEMERAL (a non-stored insert input) are not included.
     NameSet insert_time_default_columns;
 };
+
+/// Restore the Quantized(...) subcolumns on columns parsed from a part's columns.txt.
+void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDescription & metadata);
 
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info);
 

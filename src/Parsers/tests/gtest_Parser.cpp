@@ -280,6 +280,18 @@ TEST(ParserCreateQuery, MaskNATSTableEngineCredentials)
     /// The keys of the named overrides are not secrets and stay visible, as does the collection name.
     EXPECT_NE(masked.find("nats1"), String::npos);
     EXPECT_NE(masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
+
+    /// `NATS` accepts the same credential source in the `SETTINGS` clause. This is formatted
+    /// through `ASTSetQuery`, rather than `FunctionSecretArgumentsFinder`, and must be hidden too.
+    const String settings_query =
+        "CREATE TABLE test_nats_settings (key UInt64) ENGINE = NATS "
+        "SETTINGS nats_credentials = 'plain_settings_user_jwt_and_seed'";
+
+    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
+    const String settings_masked = settings_ast->formatForLogging();
+
+    EXPECT_EQ(settings_masked.find("plain_settings_user_jwt_and_seed"), String::npos);
+    EXPECT_NE(settings_masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
 }
 
 TEST(ParserCreateQuery, MaskNATSTableEngineURLPassword)
@@ -297,6 +309,34 @@ TEST(ParserCreateQuery, MaskNATSTableEngineURLPassword)
 
     EXPECT_EQ(masked.find("plain_password"), String::npos);
     EXPECT_NE(masked.find("nats://plain_user:[HIDDEN]@example.com:4222"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEngineServerListPassword)
+{
+    /// A `nats_server_list` override can carry URI credentials in every list entry. Hide the list
+    /// whole, rather than risk leaking a password from an entry while preserving the host names.
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, "
+        "nats_server_list = 'nats://plain_user:plain_password@example.com:4222,nats://plain_user2:plain_password2@example.org:4222')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_NE(masked.find("nats_server_list = '[HIDDEN]'"), String::npos);
+
+    /// The `SETTINGS` clause follows the same fail-closed masking rule.
+    const String settings_query =
+        "CREATE TABLE test_nats_settings (key UInt64) ENGINE = NATS SETTINGS "
+        "nats_server_list = 'nats://plain_user:plain_settings_password@example.com:4222'";
+
+    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
+    const String settings_masked = settings_ast->formatForLogging();
+
+    EXPECT_EQ(settings_masked.find("plain_settings_password"), String::npos);
+    EXPECT_NE(settings_masked.find("nats_server_list = '[HIDDEN]'"), String::npos);
 }
 
 TEST(ParserCreateQuery, MaskNATSTableEngineNonLiteralArguments)
@@ -659,6 +699,120 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         {
             "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' IDENTIFIED WITH plaintext_password BY 'def123'",
             "throws Only one identified with is permitted"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID UNTIL '2077-01-01' GRANTS (SELECT(id) ON db.tbl, INSERT ON *.*)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID UNTIL '2077\-01\-01' GRANTS \(SELECT\(id\) ON db\.tbl, INSERT ON \*\.\*\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS (SELECT ON db.*), plaintext_password BY 'def123'",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS \(SELECT ON db\.\*\), plaintext_password BY 'def123')"
+        },
+        {
+            "ALTER USER user1 ADD IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS (SELECT ON db.tbl)",
+            R"(ALTER USER user1 ADD IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 NOT IDENTIFIED GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH no_password GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS ()",
+            "throws Syntax error"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS SELECT ON db.table",
+            "throws Syntax error"
+        },
+        {
+            /// An explicit no-privileges clause is preserved (it makes a deny-all token) and does not
+            /// collapse to an unparseable `GRANTS ()`.
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS (USAGE ON *.*)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS \(USAGE ON \*\.\*\))"
+        },
+        {
+            "CREATE USER user1 VALID UNTIL '2025-01-01'",
+            "CREATE USER user1 VALID UNTIL '2025-01-01'"
+        },
+        {
+            /// The `GRANTS` clause of an authentication method is parsed after its deadline clause, and the
+            /// `VALID FOR` interval is parsed as a general expression - which must not swallow the `GRANTS`
+            /// keyword and its parenthesized list as a function call.
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID FOR INTERVAL 1 DAY GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID FOR toIntervalDay\(1\) GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            /// The expected output is matched as a regular expression, so the parentheses and the
+            /// plus sign of the interval functions are escaped below.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\)"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR INTERVAL 3 MONTH",
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR toIntervalMonth\\(3\\)"
+        },
+        {
+            "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR",
+            "ALTER USER user1 VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
+        },
+        {
+            /// The global (user-level) clause must be formatted before the IDENTIFIED list: the parser
+            /// treats VALID UNTIL/VALID FOR as global only while no authentication method has been parsed
+            /// yet, so a clause printed after the list would re-parse as belonging to the last method.
+            /// The round-trip matters for the query text sent to the replicas of an ON CLUSTER DDL query.
+            "CREATE USER user1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'",
+            "CREATE USER user1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'"
+        },
+        {
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'"
+        },
+        {
+            "ALTER USER user1 VALID UNTIL '2025-01-01' ADD IDENTIFIED WITH plaintext_password BY 'abc123'",
+            "ALTER USER user1 VALID UNTIL '2025-01-01' ADD IDENTIFIED WITH plaintext_password BY 'abc123'"
+        },
+        {
+            /// `IN` is a normal operator in expression parsing, so a trailing access-storage clause
+            /// after `VALID FOR` would be greedily consumed as part of the interval expression;
+            /// the parser must instead hand it back to the access-storage clause of the query.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN some_storage",
+            "CREATE USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\)"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR INTERVAL 3 MONTH IN some_storage",
+            "CREATE USER user1 IN some_storage IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR toIntervalMonth\\(3\\)"
+        },
+        {
+            "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR IN some_storage",
+            "ALTER USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
+        },
+        {
+            /// An access storage name can also be written as a string literal.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN 'some_storage'",
+            "CREATE USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\)"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR INTERVAL 3 MONTH IN 'some_storage'",
+            "CREATE USER user1 IN some_storage IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR toIntervalMonth\\(3\\)"
+        },
+        {
+            "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR IN 'some_storage'",
+            "ALTER USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
+        },
+        {
+            /// A compound identifier cannot be an access storage name, so it stays part of the
+            /// interval expression (and is rejected by the interval type check at execution time).
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN db.tbl",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IN \\(db.tbl\\)"
+        },
+        {
+            /// The same holds for a literal that is not a string: it cannot name an access storage.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN 123",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IN \\(123\\)"
         }
 })));
 
@@ -673,6 +827,16 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
         {
             "ATTACH USER user1 IDENTIFIED WITH sha256_hash BY '2CC4880302693485717D34E06046594CFDFE425E3F04AA5A094C4AABAB3CB0BF'",  //for users created in older releases that sha256_password has no salt
             "^$"
+        },
+        {
+            /// `VALID FOR` is a shorthand resolved at query execution time; it must never appear in the
+            /// on-disk (attach) form, so `deserializeAccessEntity` should reject a hand-written definition.
+            "ATTACH USER user1 VALID FOR INTERVAL 1 DAY",
+            "throws VALID FOR is not allowed in ATTACH USER queries"
+        },
+        {
+            "ATTACH USER user1 IDENTIFIED WITH plaintext_password BY 'x' VALID FOR INTERVAL 1 DAY",
+            "throws VALID FOR is not allowed in ATTACH USER queries"
         }
 })));
 

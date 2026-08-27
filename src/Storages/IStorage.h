@@ -139,6 +139,11 @@ public:
     /// Returns true if the storage supports queries with the TTL section.
     virtual bool supportsTTL() const { return false; }
 
+    /// Returns true if the storage supports column statistics. Storages that reject the dedicated
+    /// `ALTER TABLE ... ADD/DROP/MODIFY STATISTICS` commands must also reject the column-declaration
+    /// spelling `ALTER TABLE ... ADD/MODIFY COLUMN c UInt64 STATISTICS(...)`, which is gated on this.
+    virtual bool supportsStatistics() const { return false; }
+
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
@@ -183,6 +188,10 @@ public:
     virtual bool supportsSubcolumns() const { return false; }
     /// Returns true if storage supports optimizations of functions by reading subcolumns.
     virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
+    /// Same, but restricted to tuple element access (`tupleElement(t, 'x')` -> reading `t.x`).
+    /// A storage that cannot serve synthesised subcolumns such as `.null`/`.size0` as standalone
+    /// inputs may enable this while keeping supportsOptimizationToSubcolumns() false.
+    virtual bool supportsOptimizationToTupleElementSubcolumns() const { return supportsOptimizationToSubcolumns(); }
 
     /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
     /// Storage may throw an exception later if some query kind is not fully supported.
@@ -249,6 +258,13 @@ public:
         auto new_metadata = std::make_unique<StorageInMemoryMetadata>(metadata_);
         new_metadata->syncColumnIdsFromMapping();
         metadata.set(std::move(new_metadata));
+    }
+
+    void setInMemoryMetadataComment(const String & comment)
+    {
+        auto updated = std::make_unique<StorageInMemoryMetadata>(*metadata.get());
+        updated->setComment(comment);
+        metadata.set(std::move(updated));
     }
 
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
@@ -435,6 +451,10 @@ private:
     virtual bool parallelizeOutputAfterReading(ContextPtr) const { return !isSystemStorage(); }
 
 public:
+    /// Returns an upper bound on the number of sources created for a read request.
+    /// The default is conservative: a storage may create one source per requested stream.
+    virtual size_t getMaxReadStreams(size_t num_streams, ContextPtr) { return num_streams; }
+
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
     /// Can be called after `shutdown`, but not after `drop`.
