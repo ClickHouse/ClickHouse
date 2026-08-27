@@ -27,9 +27,8 @@ regular `Unit tests (asan_ubsan)` job, which compiles and runs the full suite �
 including the new test — on the PR binary; a regression test that is itself broken
 makes that job red and blocks the PR.  That delegation is per-arm: the counterpart of the
 arm that reproduced is the `Unit tests (<that arm's sanitizer>)` job, so a bug reproduced
-on the `amd_tsan` arm is complemented by `Unit tests (tsan)`.  Delegating it lets this job
-avoid requiring the PR's `UNITTEST_AMD_ASAN_UBSAN` artifact, so it is not gated behind
-`build_amd_asan_ubsan`.
+on the `amd_tsan` arm is complemented by `Unit tests (tsan)`.  Delegating it also lets this
+job avoid a direct dependency on the PR's `UNITTEST_AMD_ASAN_UBSAN` artifact.
 
 See ci/jobs/functional_tests.py:invert_bugfix_validation_status for the analogous
 functional-test logic.
@@ -441,9 +440,9 @@ def configure_before_binary(info, build_type):
     # NOTE: this is a cold build (~1h, ~0% sccache hits). sccache keys bake in the
     # absolute build path (via `-ffile-prefix-map` and preprocessed `# line` markers),
     # and master's cache was populated by builds at `/ClickHouse`, so building the
-    # worktree at `ci/tmp/before_src` misses all of it. This is accepted: the job is off
-    # the critical path (it has no artifact dependency and runs in parallel with the
-    # build matrix). Bind-mounting the worktree onto `/ClickHouse` to recover hits does
+    # worktree at `ci/tmp/before_src` misses all of it. This is accepted: no other job
+    # requires this one's artifacts, so the cold build delays nothing but the final
+    # report. Bind-mounting the worktree onto `/ClickHouse` to recover hits does
     # NOT work — sccache's server compiles in its own mount namespace, not the client's.
     #
     # Reuse the exact flags the build job uses for this build type, but point the source
@@ -967,6 +966,25 @@ def main():
             attributed_to, other_errors, refusal = compile_failure_attribution(
                 compile_result, test_files
             )
+            if attributed_to and len(arms_tried) > 1:
+                # An earlier arm compiled this same overlay, so the failure cannot mean the
+                # test depends on the fix's interface; whatever differs is build-type specific.
+                compile_result.set_status(Result.Status.ERROR)
+                compile_result.set_info(
+                    f"The before-binary compiled the overlaid unit-test changes on "
+                    f"{arms_tried[0]} but not on {build_type}: "
+                    + attributed_to
+                    + ". The difference is specific to this build type, not a dependency on "
+                    "the interface this PR introduces. This is inconclusive — NOT a "
+                    "refutation. " + (compile_result.info or "")
+                )
+                results.append(compile_result)
+                finalize(
+                    results,
+                    f"Bugfix validation inconclusive: the before-binary compiled on "
+                    f"{arms_tried[0]} but failed to COMPILE on {build_type}.",
+                )
+                return
             if attributed_to:
                 compile_result.set_label(Result.Label.XFAIL)
                 compile_result.set_status(Result.Status.XFAIL)
@@ -1014,7 +1032,7 @@ def main():
         before_result = run_gtests(
             BEFORE_BINARY,
             gtest_filter,
-            name=f"Touched unit tests on the before-binary ({build_type}, must fail)",
+            name=f"Touched unit tests on the before-binary ({build_type})",
         )
 
         if before_result.is_error():
