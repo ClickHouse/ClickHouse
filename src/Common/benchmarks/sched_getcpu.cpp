@@ -79,7 +79,7 @@ void BM_sched_getcpu_rseq(benchmark::State & state)
         state.SkipWithError("rseq is not registered by libc or its cpu_id is not initialized");
         return;
     }
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
         benchmark::DoNotOptimize(rseqCurrentCPU());
 }
 BENCHMARK(BM_sched_getcpu_rseq);
