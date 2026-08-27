@@ -21,10 +21,10 @@
       "view",
       "download-pdf",
       {
-        "description": "Setup instructions for docs MCP server",
-        "href": "https://clickhouse.com/docs#claude-code",
+        "description": "Setup instructions for the ClickHouse documentation MCP server",
+        "href": "/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
         "icon": "/images/icons/icon-mcp.svg",
-        "title": "Set up docs MCP server"
+        "title": "Set up the ClickHouse documentation MCP server"
       }
     ]
   },
@@ -114,9 +114,6 @@
               },
               {
                 "$ref": "./products/kubernetes-operator/navigation.json"
-              },
-              {
-                "sourceRef": "ClickHouse/airgap-docs"
               }
             ],
             "tab": "Solutions"
@@ -216,6 +213,9 @@
     },
     {
       "src": "/_site/customizations/tab-nav.js"
+    },
+    {
+      "src": "/_site/customizations/webterminal.js"
     },
     {
       "src": "/_site/customizations/nav-icon-preload.js"

@@ -235,7 +235,7 @@ SELECT gen_name('test', '.sql') as file_name;
    └───────────┘
 ```
 
-**مثال 3:** استخدام الدوال عالية الترتيب مع المتغيرات الحرة
+**مثال 3:** استخدام الدوال عالية الرتبة مع المتغيرات الحرة
 
 تُظهر أمثلة الاستعلامات التالية أن المعرّفات غير المقيّدة تُفسَّر على أنها كيان ضمن أقرب نطاق.
 هنا، لا يكون `extension` مقيّدًا داخل متن دالة لامبدا `gen_name`.
@@ -296,11 +296,26 @@ ORDER BY table_disk_usage DESC
 LIMIT 10;
 ```
 
-**مثال 6:** إعادة استخدام تعبير داخل استعلام فرعي
+**مثال 6:** إعادة استخدام تعبير قياسي شائع مُعرَّف بدالة لامبدا في استعلام فرعي
+
+عرّف التعبير القياسي الشائع على أنه دالة لامبدا بحيث يكون وسيطها مقيّدًا صراحةً:
 
 ```sql
-WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
-SELECT * FROM test1;
+WITH (value) -> value + 1 AS increment
+SELECT increment(first_result) AS second_increment
+FROM
+(
+    SELECT increment(number) AS first_result
+    FROM numbers(3)
+);
+```
+
+```response
+┌─second_increment─┐
+│                2 │
+│                3 │
+│                4 │
+└──────────────────┘
 ```
 
 <div id="recursive-queries">

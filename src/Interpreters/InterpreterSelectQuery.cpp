@@ -34,6 +34,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -81,6 +82,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/ObjectFilterStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -90,6 +92,7 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
@@ -135,6 +138,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
+    extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool async_socket_for_remote;
@@ -180,6 +184,9 @@ namespace Setting
     extern const SettingsBool multiple_joins_try_to_keep_original_names;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool enable_sharding_aggregator;
+    extern const SettingsBool enable_adaptive_aggregator;
+    extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
+    extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_uniq_to_count;
@@ -213,6 +220,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_parallel_single_level_merge;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_lazy_columns_replication;
@@ -241,8 +249,8 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
     extern const int ACCESS_DENIED;
     extern const int UNKNOWN_IDENTIFIER;
-    extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -427,6 +435,7 @@ void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, cons
 void checkAccessRightsForSelect(
     const ContextPtr & context,
     const StorageID & table_id,
+    const StoragePtr & storage,
     const StorageMetadataPtr & table_metadata,
     const TreeRewriterResult & syntax_analyzer_result)
 {
@@ -438,9 +447,12 @@ void checkAccessRightsForSelect(
         /// because `required_columns` will contain the name of a column of minimum size (see TreeRewriterResult::collectUsedColumns())
         /// which is probably not the same column as the column the current user has access to.
         auto access = context->getAccess();
+        const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
         for (const auto & column : table_metadata->getColumns())
         {
-            if (access->isGranted(AccessType::SELECT, table_id.database_name, table_id.table_name, column.name))
+            /// An `Alias` also requires access to the same column of its target table.
+            if (access->isGranted(AccessType::SELECT, table_id.database_name, table_id.table_name, column.name)
+                && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, column.name)))
                 return;
         }
         throw Exception(
@@ -580,6 +592,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
+    /// Only the analyzer can resolve recursive CTEs, and reaching this interpreter means the old analyzer.
+    if (getSelectQuery().recursive_with)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported with the old analyzer. Please use `enable_analyzer=1`");
+
     initSettings();
 
     // Automatic parallel replicas aren't supported in the old analyzer, this code is needed only as a safe guard for
@@ -613,7 +630,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (context->getSettingsRef()[Setting::enable_global_with_statement])
             ApplyWithAliasVisitor::visit(query_ptr);
-        ApplyWithSubqueryVisitor(context).visit(query_ptr);
+        ApplyWithSubqueryVisitor::visit(query_ptr);
     }
 
     query_info.query = query_ptr->clone();
@@ -677,11 +694,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    /// Check support for JOIN for parallel replicas with custom key
-    if (joined_tables.tablesCount() > 1 && !settings[Setting::parallel_replicas_custom_key].value.empty())
+    /// Check support for JOIN for parallel replicas with custom key.
+    /// Dropping the custom key alone would leave the parallel replicas enabled without anything to split the
+    /// data by: the initiator would still send the query to every replica of the shard, and every replica would
+    /// read the whole table. Disable the parallel replicas themselves, as the query is executed without them.
+    if (joined_tables.tablesCount() > 1 && context->canUseParallelReplicasCustomKey())
     {
         LOG_DEBUG(log, "JOINs are not supported with parallel_replicas_custom_key. Query will be executed without using them.");
-        context->setSetting("parallel_replicas_custom_key", String{""});
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
     }
 
     /// Check support for FINAL for parallel replicas
@@ -699,9 +719,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    /// Check support for parallel replicas for non-replicated storage (plain MergeTree)
+    /// Check support for parallel replicas for non-replicated storage (plain MergeTree).
+    /// The setting is about the task based parallel replicas, which read the parts the coordinator assigns to
+    /// them and need the same parts on every replica. The replicas of the offset based parallel replicas read
+    /// what their own filter by the custom key or by the sampling key selects, and that filter is built here as
+    /// well. Disabling the parallel replicas for those would drop the filter, while the initiator has already
+    /// sent the query to every replica of the shard, and every replica would read the whole table.
     bool is_plain_merge_tree = storage && storage->isMergeTree() && !storage->supportsReplication();
-    if (is_plain_merge_tree && settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+    if (is_plain_merge_tree && context->canUseTaskBasedParallelReplicas()
         && !settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
     {
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1)
@@ -783,29 +808,22 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (settings[Setting::parallel_replicas_count] > 1)
         {
-            if (auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *context))
-            {
-                LOG_TRACE(log, "Processing query on a replica using custom_key '{}'", settings[Setting::parallel_replicas_custom_key].value);
+            auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *context);
+            /// `parseCustomKeyForTable` either parses the key or throws, it never returns nothing.
+            chassert(custom_key_ast);
 
-                auto custom_key_metadata = storage->getInMemoryMetadataPtr(context, false);
-                parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
-                    settings[Setting::parallel_replicas_count],
-                    settings[Setting::parallel_replica_offset],
-                    std::move(custom_key_ast),
-                    {settings[Setting::parallel_replicas_mode],
-                     settings[Setting::parallel_replicas_custom_key_range_lower],
-                     settings[Setting::parallel_replicas_custom_key_range_upper]},
-                    custom_key_metadata->columns,
-                    context);
-            }
-            else if (settings[Setting::parallel_replica_offset] > 0)
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Parallel replicas processing with custom_key has been requested "
-                    "(setting 'max_parallel_replicas') but the table does not have custom_key defined for it "
-                    "or it's invalid (settings `parallel_replicas_custom_key`)");
-            }
+            LOG_TRACE(log, "Processing query on a replica using custom_key '{}'", settings[Setting::parallel_replicas_custom_key].value);
+
+            auto custom_key_metadata = storage->getInMemoryMetadataPtr(context, false);
+            parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
+                settings[Setting::parallel_replicas_count],
+                settings[Setting::parallel_replica_offset],
+                std::move(custom_key_ast),
+                {settings[Setting::parallel_replicas_mode],
+                 settings[Setting::parallel_replicas_custom_key_range_lower],
+                 settings[Setting::parallel_replicas_custom_key_range_upper]},
+                custom_key_metadata->columns,
+                context);
         }
         /// We disable prefer_localhost_replica because if one of the replicas is local it will create a single local plan
         /// instead of executing the query with multiple replicas
@@ -869,7 +887,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
-            if (const auto & column_sizes = storage->getColumnSizes(queried_columns); !column_sizes.empty())
+            const auto & column_sizes = storage->getColumnSizes(
+                queried_columns, context->getSettingsRef()[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
+            if (!column_sizes.empty())
             {
                 /// Extract column compressed sizes.
                 std::unordered_map<std::string, UInt64> column_compressed_sizes;
@@ -1099,7 +1119,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// The current user should have the SELECT privilege. If this table_id is for a table
         /// function we don't check access rights here because in this case they have been already
         /// checked in ITableFunction::execute().
-        checkAccessRightsForSelect(context, table_id, metadata_snapshot, *syntax_analyzer_result);
+        checkAccessRightsForSelect(context, table_id, storage, metadata_snapshot, *syntax_analyzer_result);
 
         /// Remove limits for some tables in the `system` database.
         if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
@@ -1635,7 +1655,9 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
 /// The LIMIT/OFFSET expression value can be either UInt64 or Float64, negative or positive.
 static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
-    const auto [column, type] = evaluateConstantExpressionAsColumn(node, context);
+    const auto constant = evaluateConstantExpressionAsColumn(node, context);
+    const auto & column = constant.getColumn();
+    const auto & type = constant.getType();
 
     if (!isNativeNumber(type))
         throw Exception(
@@ -1760,6 +1782,21 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
     }
 
     return false;
+}
+
+/// Whether the final LimitStep is built with `always_read_till_end`, i.e. it must not cancel its
+/// input early. Shared by `executeDistinct` and `executeLimit` so the two cannot drift apart.
+static bool limitAlwaysReadsTillEnd(const ASTSelectQuery & query, const Settings & settings)
+{
+    if (settings[Setting::exact_rows_before_limit])
+        return true;
+
+    /// With WITH TOTALS and no ORDER BY the totals must be accumulated over the whole stream;
+    /// otherwise a WITH TOTALS on any level below would lose its totals if the input were cancelled.
+    if (query.group_by_with_totals)
+        return !query.orderBy();
+
+    return hasWithTotalsInAnySubqueryInFromClause(query);
 }
 
 template <size_t size>
@@ -2419,7 +2456,8 @@ static void executeMergeAggregatedImpl(
             settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]),
         settings[Setting::max_block_size],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
-        settings[Setting::serialize_string_in_memory_with_zero_byte]);
+        settings[Setting::serialize_string_in_memory_with_zero_byte],
+        settings[Setting::enable_packed_string_keys_in_aggregation]);
 
     auto grouping_sets_params = getAggregatorGroupingSetsParams(aggregation_keys_list, keys);
 
@@ -3060,7 +3098,11 @@ static Aggregator::Params getAggregatorParams(
         stats_collecting_params,
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
-        settings[Setting::enable_parallel_single_level_merge]};
+        settings[Setting::enable_parallel_single_level_merge],
+        settings[Setting::enable_packed_string_keys_in_aggregation],
+        settings[Setting::enable_adaptive_aggregator],
+        settings[Setting::adaptive_aggregator_freeze_threshold],
+        settings[Setting::adaptive_aggregator_freeze_threshold_bytes]};
 }
 
 void InterpreterSelectQuery::executeAggregation(
@@ -3314,10 +3356,26 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             /// would produce incomplete data and cause the pipeline to get stuck.
             sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
 
+            /// The sort scatters rows across threads by the hash of the partition columns it is given,
+            /// but `WindowTransform` finds partition boundaries with `compareAt`. For key types where
+            /// the two disagree the scatter would split one logical partition across threads, so such
+            /// windows sort in a single merged stream instead.
+            SortDescription scatter_partition_by = window.partition_by;
+            const auto & sort_input_header = query_plan.getCurrentHeader();
+            for (const auto & partition_column : window.partition_by)
+            {
+                if (QueryPlanOptimizations::keyTypeBreaksHashSharding(
+                        *sort_input_header->getByName(partition_column.column_name).type))
+                {
+                    scatter_partition_by.clear();
+                    break;
+                }
+            }
+
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
                 window.full_sort_description,
-                window.partition_by,
+                scatter_partition_by,
                 0 /* LIMIT */,
                 sort_settings);
             sorting_step->setStepDescription(fmt::format("Sorting for window '{}'", window.window_name), options.max_step_description_length);
@@ -3433,8 +3491,13 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
         ///     the number of distinct rows collected from the head)
         /// (5) LIMIT/OFFSET is not fractional (a fraction of the total row count is only resolved after
         ///     all rows are read, so it cannot bound the number of distinct rows either)
+        /// (6) LIMIT is not WITH TIES (the tie suffix of the last row is unbounded)
+        /// (7) the LIMIT does not read till end: such a LIMIT needs the whole stream, either to count
+        ///     `exact_rows_before_limit` or to accumulate WITH TOTALS, and an early stop makes both short
         /// then you can get no more than limit_length + limit_offset of different rows.
-        if ((!query.orderBy() || !before_order) && !query.limitBy())
+        if ((!query.orderBy() || !before_order) && !query.limitBy()
+            && !query.limit_with_ties
+            && !limitAlwaysReadsTillEnd(query, settings))
         {
             const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
             if (lim_info.limit_length != 0
@@ -3639,13 +3702,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
           *  otherwise TOTALS is counted according to incomplete data.
           */
         const Settings & settings = context->getSettingsRef();
-        bool always_read_till_end = settings[Setting::exact_rows_before_limit];
-
-        if (query.group_by_with_totals && !query.orderBy())
-            always_read_till_end = true;
-
-        if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
-            always_read_till_end = true;
+        bool always_read_till_end = limitAlwaysReadsTillEnd(query, settings);
 
         const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
