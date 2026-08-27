@@ -1,7 +1,7 @@
 -- Regression test: `pointInPolygon`'s constant-kind rejection used to be checked via the
--- position-blind `rejectsConstGeometryKind`, which fails closed for a `Point`/`LineString`/
--- `MultiPoint`/`MultiLineString` constant at ANY argument position -- including `pointInPolygon`'s
--- own first (point) argument, where `Point` is the legitimate, common case. On top of that,
+-- position-blind `rejectsConstGeometryKind`, which fails closed for a `Point` constant at ANY
+-- argument position -- including `pointInPolygon`'s own first (point) argument, where `Point` is
+-- the legitimate, common case. On top of that,
 -- `extractBboxFromFieldValue` treated every `Tuple` constant as opaque, so even a raw, untyped
 -- point literal (e.g. `(0.5, 0.5)`, with no explicit `Point` type to trigger kind rejection at
 -- all) never contributed a bbox either. Together this meant `WHERE pointInPolygon(const_point,

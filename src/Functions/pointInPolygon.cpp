@@ -244,29 +244,32 @@ public:
     /// constant polygon, so bbox pruning must not fail closed for one either.
     bool requiresValidConstGeometry() const override { return validate; }
 
-    /// Every constant argument besides the point itself is a polygon component (shell/hole, or
-    /// one `MultiPolygon` component) and only ever accepts `Ring`/`Polygon`/`MultiPolygon` --
-    /// see the documented argument types above. A `Point`/`LineString`/`MultiPoint`/
-    /// `MultiLineString` argument in any polygon-component position (any position other than the
-    /// first) is rejected by `callOnGeometryDataType`'s dispatch on the argument's actual type,
-    /// so failing bbox-pruning closed there -- rather than silently skipping it -- is always safe
-    /// (only ever forgoes an optimization, never affects query correctness) and keeps this
-    /// predicate consistent with `polygonsIntersectCartesian`/`polygonsWithinCartesian` below.
+    /// Every constant argument besides the point itself is a polygon component (shell/hole, or one
+    /// `MultiPolygon` component). Which kinds are accepted there is decided by `getReturnTypeImpl`
+    /// below, and it looks at the `Array` DEPTH and the innermost `Tuple` only -- never at the
+    /// custom name -- after which `executeImpl` dispatches on that same depth. So the accepted set
+    /// is every kind that is an `Array` of `Tuple(Float64, Float64)` nested one to three deep:
+    /// `Ring`, `Polygon` and `MultiPolygon`, and equally the kinds sharing their representation --
+    /// a `LineString`/`MultiPoint` runs as a `Ring` and a `MultiLineString` as a `Polygon` with
+    /// holes. Listing those as rejected would fail bbox pruning closed for queries the runtime
+    /// accepts, and `rejectsColumnGeometryKindDuringBuild` below would additionally tell the lenient
+    /// `Variant`/`Dynamic` adaptors to collapse them to NULL although no mismatch occurs.
+    ///
+    /// What is left is exactly what has no `Array` depth: a `Point` (a bare `Tuple`) and a
+    /// WKB-encoded `String` payload (reported under the kind name `String`, see `constGeoKindName`
+    /// in `Common/GeoBbox.h`; `parseConstPolygon` never reads WKB). For both,
+    /// `getArrayDepthAndInnermostTuple` raises `ILLEGAL_TYPE_OF_ARGUMENT`, so failing closed there
+    /// is required: deriving a bbox would let pruning drop every granule and answer `0`, hiding an
+    /// exception the query must surface.
+    ///
     /// This is the position-independent fallback that `rejectsColumnGeometryKind` below actually
     /// consults (`GeoBbox.h`'s `extractSpatialPredicateNodeBbox` calls it for both column AND
-    /// constant arguments, see `rejectsColumnGeometryKind`'s own comment); it is never queried
-    /// for the first (point) argument, which that override answers on its own -- only `Point` is
+    /// constant arguments, see `rejectsColumnGeometryKind`'s own comment); it is never queried for
+    /// the first (point) argument, which that override answers on its own -- only `Point` is
     /// accepted there.
-    /// A WKB-encoded `String` payload (reported under the kind name `String`, see
-    /// `constGeoKindName` in `Common/GeoBbox.h`) is one more kind no polygon-component position
-    /// accepts -- `parseConstPolygon` never reads WKB. The first (point) argument rejects it too,
-    /// via `rejectsColumnGeometryKind`'s "only `Point` is accepted there" answer below:
-    /// `getReturnTypeImpl`'s `validate_tuple(0, ...)` raises `ILLEGAL_TYPE_OF_ARGUMENT` for a
-    /// `String` just as it does for an `Array`.
     bool rejectsConstGeometryKind(std::string_view kind_name) const override
     {
-        return kind_name == "Point" || kind_name == "LineString" || kind_name == "MultiLineString"
-            || kind_name == "MultiPoint" || kind_name == "String";
+        return kind_name == "Point" || kind_name == "String";
     }
 
     /// A `Point` (whether a constant or a COLUMN) in the first (point) argument position is

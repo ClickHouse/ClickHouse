@@ -619,7 +619,7 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerValidator("text", textIndexValidator);
 
     registerCreator("spatial_bbox", spatialBboxIndexCreator, Documentation{
-        .description = "Stores the bounding box of a geometry column (Point, Ring, Polygon, or MultiPolygon) for each granule, allowing granules to be skipped when a query's spatial predicate cannot match.",
+        .description = "Stores the bounding box of a geometry column for each granule, allowing granules to be skipped when a query's spatial predicate cannot match. The column must be a single plain column of type `Point`, `Ring`, `Polygon`, `MultiPolygon`, or any column whose innermost element type is `Tuple(Float64, Float64)`. It is used by `pointInPolygon` and other spatial predicates, including WebAssembly user-defined functions declared with the `is_spatial_predicate` setting, and prunes only when the predicate's constant geometry is passed as a single argument.",
         .syntax = "INDEX name column TYPE spatial_bbox GRANULARITY n",
         .related = {}});
     registerValidator("spatial_bbox", spatialBboxIndexValidator);

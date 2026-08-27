@@ -3,10 +3,12 @@
 -- `Field` -- so `extractBboxFromFieldValue` (src/Common/GeoBbox.h) used to misread a `LineString`,
 -- `MultiPoint`, or `MultiLineString` constant, arriving via the `Geometry`/`Variant`-typed
 -- `readWKT(...)`, as a `Ring`/`Polygon` and trust a bbox derived from it, even though none of the
--- builtins that set `isSpatialPredicate()` (`pointInPolygon`, `polygonsIntersectCartesian`,
--- `polygonsWithinCartesian`) accept a `LineString`/`MultiPoint`/`MultiLineString` constant: each
--- unconditionally rejects one with `ILLEGAL_TYPE_OF_ARGUMENT` at evaluation time, using the
--- argument's actual type, not its flattened value. A `Field` alone cannot distinguish these kinds
+-- builtins exercised here (`polygonsIntersectCartesian`, `polygonsWithinCartesian`) accept a
+-- `LineString`/`MultiPoint`/`MultiLineString` constant: each unconditionally rejects one with
+-- `ILLEGAL_TYPE_OF_ARGUMENT` at evaluation time, using the argument's actual type, not its
+-- flattened value. (`pointInPolygon` is the exception among the `isSpatialPredicate()` builtins:
+-- it dispatches on `Array` depth alone and runs on those kinds, so pruning stays on for it -- see
+-- `05049_spatial_bbox_point_in_polygon_ring_alias_pruning`.) A `Field` alone cannot distinguish these kinds
 -- from the ones a predicate does accept, so `extractBboxFromFieldValue` must instead consult the
 -- constant's `Geometry` discriminator before flattening, and treat these kinds as opaque to bbox
 -- extraction, so pruning is disabled for them and the predicate still runs on real data and raises
