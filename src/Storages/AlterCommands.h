@@ -154,6 +154,9 @@ struct AlterCommand
 
     /// For ADD and MODIFY
     ASTPtr codec = nullptr;
+    ColumnCodecDescription declared_codec;
+    CodecPath codec_path;
+    bool remove_subcolumn_codec = false;
 
     /// For MODIFY SETTING or MODIFY COLUMN MODIFY SETTING
     SettingsChanges settings_changes;

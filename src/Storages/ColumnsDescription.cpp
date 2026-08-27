@@ -1,4 +1,5 @@
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ColumnCodecDescription.h>
 
 #include <memory>
 #include <mutex>
@@ -15,6 +16,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/dataTypeToAST.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Compression/CompressionCodecQuantized.h>
@@ -41,6 +43,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserDataType.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
@@ -105,7 +108,7 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
     type = other.type;
     default_desc = other.default_desc;
     comment = other.comment;
-    codec = other.codec ? other.codec->clone() : nullptr;
+    codec = other.codec;
     settings = other.settings;
     ttl = other.ttl ? other.ttl->clone() : nullptr;
     statistics = other.statistics;
@@ -123,7 +126,7 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) ///
     default_desc = std::move(other.default_desc);
     comment = std::move(other.comment);
 
-    codec = other.codec ? other.codec->clone() : nullptr;
+    codec = other.codec.clone();
     other.codec.reset();
 
     settings = std::move(other.settings);
@@ -144,7 +147,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && type->equals(*other.type)
         && default_desc == other.default_desc
         && statistics == other.statistics
-        && ast_to_str(codec) == ast_to_str(other.codec)
+        && codec == other.codec
         && settings == other.settings
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
@@ -167,7 +170,16 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
 
     writeBackQuotedString(name, buf);
     writeChar(' ', buf);
-    writeEscapedString(type->getName(), buf);
+    if (codec.hasSubcolumns())
+    {
+        auto declaration = make_intrusive<ASTColumnDeclaration>();
+        declaration->name = name;
+        declaration->setType(dataTypeToAST(type));
+        applyCodecDescriptionToAST(*declaration, codec);
+        writeEscapedString(declaration->getType()->formatWithSecretsOneLine(), buf);
+    }
+    else
+        writeEscapedString(type->getName(), buf);
 
     if (default_desc.expression)
     {
@@ -185,10 +197,10 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         writeEscapedString(formatASTStateAware(ast, state), buf);
     }
 
-    if (codec)
+    if (codec.hasRoot())
     {
         writeChar('\t', buf);
-        writeEscapedString(formatASTStateAware(*codec, state), buf);
+        writeEscapedString(formatASTStateAware(*codec.getRoot(), state), buf);
     }
 
     if (statistics.hasExplicitStatistics())
@@ -226,7 +238,13 @@ void ColumnDescription::readText(ReadBuffer & buf)
 
     String type_string;
     readEscapedString(type_string, buf);
-    type = DataTypeFactory::instance().get(type_string);
+    ParserDataType type_parser(/* allow_tuple_element_codecs */ true);
+    ASTPtr type_ast = parseQuery(type_parser, type_string, "column type parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    type = DataTypeFactory::instance().get(type_ast);
+
+    ASTColumnDeclaration codec_declaration;
+    codec_declaration.name = name;
+    codec_declaration.setType(type_ast->clone());
 
     if (checkChar('\t', buf))
     {
@@ -249,7 +267,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (auto col_codec = col_ast->getCodec())
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_codec, type, CodecValidationSettings::trusted());
+                codec_declaration.setCodec(col_codec->clone());
 
             if (auto col_ttl = col_ast->getTTL())
                 ttl = col_ttl;
@@ -263,6 +281,8 @@ void ColumnDescription::readText(ReadBuffer & buf)
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");
     }
+
+    codec = codecDescriptionFromAST(codec_declaration, type, CodecValidationSettings::trusted());
 }
 
 ColumnsDescription & ColumnsDescription::operator=(const ColumnsDescription & other)
@@ -388,7 +408,7 @@ namespace
 /// non-shared) type instance, so it does not affect any other column of the same type.
 void attachQuantizeSerializationIfNeeded(ColumnDescription & column)
 {
-    auto params = tryExtractQuantizedCodecParams(column.codec);
+    auto params = tryExtractQuantizedCodecParams(column.codec.getRoot());
     if (!params)
         return;
 
@@ -416,11 +436,11 @@ void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDesc
     {
         /// Same type only: a dropped and re-added column would throw in the helper.
         const auto * column_in_metadata = metadata.tryGet(column.name);
-        if (!column_in_metadata || !column_in_metadata->codec || !column_in_metadata->type->equals(*column.type))
+        if (!column_in_metadata || column_in_metadata->codec.empty() || !column_in_metadata->type->equals(*column.type))
             continue;
 
         /// The customization lands on the shared type instance, i.e. on column.type itself.
-        ColumnDescription column_with_codec(column.name, column.type, column_in_metadata->codec, {});
+        ColumnDescription column_with_codec(column.name, column.type, column_in_metadata->codec.getRoot(), {});
         attachQuantizeSerializationIfNeeded(column_with_codec);
     }
 }
@@ -1018,7 +1038,7 @@ bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
 {
     const auto it = columns.get<1>().find(column_name);
 
-    return it != columns.get<1>().end() && it->codec != nullptr;
+    return it != columns.get<1>().end() && !it->codec.empty();
 }
 
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const

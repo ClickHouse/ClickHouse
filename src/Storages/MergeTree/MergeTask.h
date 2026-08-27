@@ -283,6 +283,7 @@ private:
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
         WrittenOffsetSubstreams written_offset_substreams{};
+        WrittenStreamCodecs written_stream_codecs{};
         PlainMarksByName cached_marks;
         PlainMarksByName cached_index_marks;
 

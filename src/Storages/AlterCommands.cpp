@@ -1,4 +1,5 @@
 #include <Compression/CompressionFactory.h>
+#include <Compression/CompressionCodecQuantized.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
@@ -202,6 +203,12 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             command.codec = ast_col_decl.getCodec();
         }
+        if (command.data_type)
+        {
+            command.declared_codec = codecDescriptionFromAST(ast_col_decl, command.data_type, CodecValidationSettings::trusted());
+            if (!command.declared_codec.empty() && ast_col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
+        }
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
 
@@ -278,6 +285,9 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getCodec())
             command.codec = ast_col_decl.getCodec();
 
+        if (command.data_type)
+            command.declared_codec = codecDescriptionFromAST(ast_col_decl, command.data_type, CodecValidationSettings::trusted());
+
         if (ast_col_decl.getSettings())
             command.settings_changes = ast_col_decl.getSettings()->as<ASTSetQuery &>().changes;
 
@@ -309,6 +319,18 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.first = command_ast->first;
         command.if_exists = command_ast->if_exists;
 
+        return command;
+    }
+    if (command_ast->type == ASTAlterCommand::MODIFY_SUBCOLUMN)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_COLUMN;
+        command.column_name = command_ast->subcolumn_path.front();
+        command.codec_path.assign(command_ast->subcolumn_path.begin() + 1, command_ast->subcolumn_path.end());
+        command.remove_subcolumn_codec = !command_ast->remove_property.empty();
+        if (command_ast->col_decl)
+            command.codec = command_ast->col_decl->as<ASTColumnDeclaration &>().getCodec();
         return command;
     }
     if (command_ast->type == ASTAlterCommand::COMMENT_COLUMN)
@@ -692,7 +714,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, CodecValidationSettings::trusted());
+            column.codec = declared_codec;
+        else if (!declared_codec.empty())
+            column.codec = declared_codec;
 
         column.ttl = ttl;
 
@@ -745,6 +769,29 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             return;
         metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
+            if (!codec_path.empty())
+            {
+                auto resolved_path = resolveCodecPath(column.type, codec_path);
+                auto candidate = column.codec.clone();
+                if (remove_subcolumn_codec)
+                {
+                    if (!candidate.getSubcolumns().contains(resolved_path.path))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No codec is declared for a subcolumn of {}", column_name);
+                    candidate.erase(resolved_path.path);
+                }
+                else
+                {
+                    if (tryExtractQuantizedCodecParams(codec))
+                        throw Exception(
+                            ErrorCodes::NOT_IMPLEMENTED,
+                            "Quantized codec on tuple subcolumns is not supported yet because its custom serialization must be path-aware");
+                    candidate.set(std::move(resolved_path.path), codec);
+                }
+                column.codec = candidate.empty()
+                    ? std::move(candidate)
+                    : validateColumnCodecDescription(candidate, column.type, CodecValidationSettings::trusted());
+                return;
+            }
             if (to_remove == RemoveProperty::DEFAULT
                 || to_remove == RemoveProperty::MATERIALIZED
                 || to_remove == RemoveProperty::ALIAS)
@@ -753,7 +800,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             }
             else if (to_remove == RemoveProperty::CODEC)
             {
-                column.codec.reset();
+                auto candidate = column.codec.clone();
+                candidate.resetRoot();
+                column.codec = candidate.empty()
+                    ? std::move(candidate)
+                    : validateColumnCodecDescription(candidate, column.type, CodecValidationSettings::trusted());
             }
             else if (to_remove == RemoveProperty::COMMENT)
             {
@@ -769,9 +820,15 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             }
             else
             {
-                if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                        codec, data_type ? data_type : column.type, CodecValidationSettings::trusted());
+                if (!declared_codec.empty())
+                {
+                    if (declared_codec.hasRoot())
+                        column.codec.setRoot(declared_codec.getRoot());
+                    for (const auto & [path, codec_ast] : declared_codec.getSubcolumns())
+                        column.codec.set(path, codec_ast);
+                }
+                else if (codec)
+                    column.codec.setRoot(codec);
 
                 if (comment)
                     column.comment = *comment;
@@ -789,6 +846,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
                     metadata.dropImplicitIndicesForColumn(column_name);
                     metadata.addImplicitIndicesForColumn(column, context);
                 }
+
+                if ((codec || !declared_codec.empty() || data_type) && !column.codec.empty())
+                    column.codec = validateColumnCodecDescription(column.codec, column.type, CodecValidationSettings::trusted());
 
                 /// The declared statistics replace the explicit statistics of the column, like the other
                 /// declared properties (implicit statistics from `auto_statistics_types` are re-added by
@@ -2076,18 +2136,17 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     "Cannot add ephemeral column {}: it conflicts with a virtual column of the same name",
                     backQuote(column_name));
 
-            if (command.codec)
+            if (!command.declared_codec.empty())
             {
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    command.codec,
-                    command.data_type,
-                    codec_validation_settings);
+                validateColumnCodecDescription(command.declared_codec, command.data_type, codec_validation_settings);
             }
 
             /// Advance the working snapshot with the exact columns apply() would materialize
             /// (flatten_nested expansion), not a synthetic top-level `n`, so a later command in the
             /// same ALTER that targets a real flattened child (e.g. RENAME COLUMN `n.b`) sees it.
-            for (auto & col : columnsAddedByAlter(all_columns, ColumnDescription(column_name, command.data_type),
+            ColumnDescription added_column(column_name, command.data_type);
+            added_column.codec = command.declared_codec;
+            for (auto & col : columnsAddedByAlter(all_columns, std::move(added_column),
                                                   context, command.if_not_exists, share_nested))
                 all_columns.add(std::move(col));
         }
@@ -2113,6 +2172,37 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     "Cannot modify column {} to ephemeral: it conflicts with a virtual column of the same name",
                     backQuote(column_name));
 
+            std::optional<ResolvedCodecPath> resolved_codec_path;
+            const auto & current_owner = all_columns.get(column_name);
+            const DataTypePtr resulting_type = command.data_type ? command.data_type : current_owner.type;
+            auto resulting_codec = current_owner.codec.clone();
+            if (!command.codec_path.empty())
+            {
+                resolved_codec_path = resolveCodecPath(resulting_type, command.codec_path);
+                if (command.remove_subcolumn_codec && !resulting_codec.getSubcolumns().contains(resolved_codec_path->path))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "No codec is declared for a subcolumn of {}", column_name);
+                if (command.remove_subcolumn_codec)
+                    resulting_codec.erase(resolved_codec_path->path);
+                else
+                    resulting_codec.set(resolved_codec_path->path, command.codec);
+            }
+
+            if (!command.declared_codec.empty())
+            {
+                if (command.declared_codec.hasRoot())
+                    resulting_codec.setRoot(command.declared_codec.getRoot());
+                for (const auto & [path, ast] : command.declared_codec.getSubcolumns())
+                    resulting_codec.set(path, ast);
+            }
+            else if (command.codec && !resolved_codec_path)
+                resulting_codec.setRoot(command.codec);
+
+            if (command.to_remove == AlterCommand::RemoveProperty::CODEC)
+                resulting_codec.resetRoot();
+
+            if (!resulting_codec.empty())
+                resulting_codec = validateColumnCodecDescription(resulting_codec, resulting_type, codec_validation_settings);
+
             if (command.codec)
             {
                 /// `default_kind` is what the parser set: `validate` runs before `prepare`, which back-fills it from the table.
@@ -2120,10 +2210,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized);
                 if (all_columns.hasAlias(column_name) && !becomes_physical)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    command.codec,
-                    command.data_type,
-                    codec_validation_settings);
             }
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
@@ -2190,7 +2276,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         ErrorCodes::BAD_ARGUMENTS,
                         "Column {} doesn't have TTL, cannot remove it",
                         backQuote(column_name));
-                if (command.to_remove == AlterCommand::RemoveProperty::CODEC && column_from_table.codec == nullptr)
+                if (command.to_remove == AlterCommand::RemoveProperty::CODEC && !column_from_table.codec.hasRoot())
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Column {} doesn't have CODEC, cannot remove it",
@@ -2203,6 +2289,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             }
 
             modified_columns.emplace(column_name);
+            all_columns.modify(column_name, [&](ColumnDescription & column)
+            {
+                column.type = resulting_type;
+                column.codec = resulting_codec;
+            });
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {

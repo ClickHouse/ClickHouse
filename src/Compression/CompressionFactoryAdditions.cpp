@@ -23,6 +23,8 @@
 #include <Common/SetWithMemoryTracking.h>
 #include <Core/Settings.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -115,6 +117,56 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
 {
     const bool sanity_check = validation_settings.settings && !(*validation_settings.settings)[Setting::allow_suspicious_codecs];
     return validateCodecAndGetPreprocessedASTImpl(ast, column_type, validation_settings.settings, sanity_check);
+}
+
+void CompressionCodecFactory::validateCodecDeclaration(
+    const ASTPtr & ast, const CodecValidationSettings & validation_settings) const
+{
+    const auto * codec_function = ast ? ast->as<ASTFunction>() : nullptr;
+    if (!codec_function || codec_function->name != "CODEC" || !codec_function->arguments)
+        throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec declaration: {}", ast ? ast->formatForErrorMessage() : "null");
+
+    for (const auto & codec_ast : codec_function->arguments->children)
+    {
+        String family;
+        ASTPtr arguments;
+        if (const auto * identifier = codec_ast->as<ASTIdentifier>())
+            family = identifier->name();
+        else if (const auto * function = codec_ast->as<ASTFunction>())
+        {
+            family = function->name;
+            arguments = function->arguments;
+        }
+        else
+            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec");
+
+        if (Poco::icompare(family, DEFAULT_CODEC_NAME) == 0)
+        {
+            if (arguments)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} codec cannot have arguments", DEFAULT_CODEC_NAME);
+            continue;
+        }
+        auto registered = std::find_if(
+            family_name_with_codec.begin(), family_name_with_codec.end(),
+            [&](const auto & entry) { return Poco::icompare(entry.first, family) == 0; });
+        if (registered == family_name_with_codec.end())
+            throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", family);
+        family = registered->first;
+
+        if (validation_settings.settings)
+        {
+            const String enable_setting_name = fmt::format("enable_{}_codec", Poco::toLower(family));
+            Field enabled;
+            if (validation_settings.settings->tryGet(enable_setting_name, enabled)
+                && !enabled.safeGet<bool>()
+                && !(*validation_settings.settings)[Setting::allow_experimental_codecs])
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Codec {} is experimental and not meant to be used in production. You can enable it with the '{}' setting",
+                    family,
+                    enable_setting_name);
+        }
+    }
 }
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(

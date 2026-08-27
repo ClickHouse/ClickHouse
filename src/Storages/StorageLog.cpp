@@ -590,8 +590,10 @@ CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, Compr
 {
     auto get_codec_or_default = [&default_codec](const auto & column_desc)
     {
-        return column_desc.codec
-            ? CompressionCodecFactory::instance().get(column_desc.codec, column_desc.type, default_codec)
+        if (column_desc.codec.hasSubcolumns())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Storage Log does not support per-subcolumn codecs");
+        return column_desc.codec.hasRoot()
+            ? CompressionCodecFactory::instance().get(column_desc.codec.getRoot(), column_desc.type, default_codec)
             : default_codec;
     };
 

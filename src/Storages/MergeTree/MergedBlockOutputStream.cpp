@@ -43,6 +43,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_,
     WrittenOffsetSubstreams * written_offset_substreams,
+    WrittenStreamCodecs * written_stream_codecs,
     bool try_adaptive_codec)
     : IMergedBlockOutputStream(
           std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
@@ -88,7 +89,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         default_codec,
         writer_settings,
         std::move(index_granularity_ptr),
-        written_offset_substreams);
+        written_offset_substreams,
+        written_stream_codecs);
 }
 
 /// If data is pre-sorted.

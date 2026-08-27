@@ -160,6 +160,12 @@ private:
 /// Parser of Object type argument. For example: JSON(some_parameter=N, some.path SomeType, SKIP skip.path, ...)
 class ObjectArgumentParser : public IParserBase
 {
+public:
+    explicit ObjectArgumentParser(bool allow_tuple_element_codecs_)
+        : allow_tuple_element_codecs(allow_tuple_element_codecs_)
+    {
+    }
+
 private:
     const char * getName() const override { return "JSON data type optional argument"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
@@ -215,7 +221,7 @@ private:
             return true;
         }
 
-        ParserDataType type_parser;
+        ParserDataType type_parser(allow_tuple_element_codecs);
         ASTPtr type;
         if (!type_parser.parse(pos, type, expected))
             return false;
@@ -229,6 +235,8 @@ private:
         node = argument;
         return true;
     }
+
+    bool allow_tuple_element_codecs;
 };
 
 }
@@ -392,6 +400,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         bool has_named_elements = false;
         Strings element_names_tmp;
+        std::vector<ASTPtr> element_codecs;
         bool first_element = true;
 
         while (true)
@@ -408,9 +417,10 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             /// Try to parse: identifier Type (named element)
             /// or just: Type (unnamed element)
             ParserIdentifier identifier_parser;
-            ParserDataType type_parser;
+            ParserDataType type_parser(allow_tuple_element_codecs);
             ASTPtr identifier_node;
             ASTPtr type_node;
+            ASTPtr codec_node;
 
             auto element_pos = pos;
             if (identifier_parser.parse(pos, identifier_node, expected) && type_parser.parse(pos, type_node, expected))
@@ -439,6 +449,14 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     break;
                 }
             }
+
+            if (allow_tuple_element_codecs && ParserKeyword(Keyword::CODEC).ignore(pos, expected))
+            {
+                ParserCodec codec_parser;
+                if (!codec_parser.parse(pos, codec_node, expected))
+                    return false;
+            }
+            element_codecs.push_back(std::move(codec_node));
         }
 
         if (pos->type == TokenType::ClosingRoundBracket && !arguments->children.empty())
@@ -451,6 +469,8 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 tuple_node->element_names = std::move(element_names_tmp);
             }
             arguments->children.shrink_to_fit();
+            element_codecs.shrink_to_fit();
+            tuple_node->element_codecs = std::move(element_codecs);
             node = tuple_node;
             return true;
         }
@@ -501,18 +521,18 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (equalsCaseInsensitive(type_name, "json"))
         {
-            ObjectArgumentParser parser;
+            ObjectArgumentParser parser(allow_tuple_element_codecs);
             parser.parse(pos, arg, expected);
         }
         else if (type_name == "Nested")
         {
-            ParserNameTypePair name_and_type_parser;
+            ParserNameTypePair name_and_type_parser(allow_tuple_element_codecs);
             name_and_type_parser.parse(pos, arg, expected);
         }
         else if (type_name == "Tuple")
         {
-            ParserNameTypePair name_and_type_parser;
-            ParserDataType only_type_parser;
+            ParserNameTypePair name_and_type_parser(allow_tuple_element_codecs);
+            ParserDataType only_type_parser(allow_tuple_element_codecs);
             name_and_type_parser.parse(pos, arg, expected) || only_type_parser.parse(pos, arg, expected);
         }
         else if (type_name == "AggregateFunction" || type_name == "SimpleAggregateFunction")
@@ -543,13 +563,13 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
             else
             {
-                ParserDataType data_type_parser;
+                ParserDataType data_type_parser(allow_tuple_element_codecs);
                 data_type_parser.parse(pos, arg, expected);
             }
         }
         else
         {
-            ParserDataType data_type_parser;
+            ParserDataType data_type_parser(allow_tuple_element_codecs);
             /// Only accept simple literals (numbers, strings, NULL, ...) as
             /// data-type arguments. We deliberately do NOT accept collection
             /// literals like `(1)`, `[1, 2]` or `{a: 1}` here: no real data

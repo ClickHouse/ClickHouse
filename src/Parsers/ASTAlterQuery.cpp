@@ -134,6 +134,19 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
         w.writeString("execute_command_name", execute_command_name);
     if (!remove_property.empty())
         w.writeString("remove_property", remove_property);
+    if (!subcolumn_path.empty())
+    {
+        w.writeKey("subcolumn_path");
+        auto & json_out = w.getOut();
+        json_out << '[';
+        for (size_t i = 0; i < subcolumn_path.size(); ++i)
+        {
+            if (i)
+                json_out << ',';
+            writeJSONString(subcolumn_path[i], json_out, w.getFormatSettings());
+        }
+        json_out << ']';
+    }
 
     w.writeChild("col_decl", col_decl);
     w.writeChild("column", column);
@@ -207,6 +220,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     snapshot_name = r.getString("snapshot_name");
     execute_command_name = r.getString("execute_command_name");
     remove_property = r.getString("remove_property");
+    subcolumn_path = r.readStringArray("subcolumn_path");
 
     /// `order_by`, `sample_by`, `predicate`, `ttl`, `settings_resets`, `execute_args` and similar
     /// are arbitrary expressions/lists with no single parser-produced node type, so they are
@@ -374,6 +388,24 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             if (first && column)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "`MODIFY COLUMN` cannot set both 'first' (FIRST) and 'column' (AFTER) during AST JSON deserialization");
+            break;
+        }
+        case ASTAlterCommand::MODIFY_SUBCOLUMN:
+        {
+            require(col_decl, "col_decl");
+            if (subcolumn_path.size() < 2)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`MODIFY SUBCOLUMN` requires at least two path segments");
+            const auto & declaration = col_decl->as<ASTColumnDeclaration &>();
+            const bool removes_codec = remove_property == "CODEC";
+            const bool sets_codec = declaration.getCodec() != nullptr;
+            if (removes_codec == sets_codec || (!remove_property.empty() && !removes_codec))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`MODIFY SUBCOLUMN` requires exactly one of CODEC(...) or REMOVE CODEC");
+            if (declaration.name != subcolumn_path.front()
+                || declaration.getType() || declaration.getDefaultExpression() || declaration.getComment()
+                || declaration.getStatisticsDesc() || declaration.getTTL() || declaration.getCollation() || declaration.getSettings()
+                || declaration.null_modifier || declaration.default_specifier != ColumnDefaultSpecifier::Empty
+                || declaration.ephemeral_default || declaration.primary_key_specifier)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Malformed column declaration in `MODIFY SUBCOLUMN`");
             break;
         }
         case ASTAlterCommand::MATERIALIZE_COLUMN:
@@ -672,6 +704,23 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
                 ostr << " AFTER ";
                 column->format(ostr, settings, state, frame);
             }
+        }
+    }
+    else if (type == ASTAlterCommand::MODIFY_SUBCOLUMN)
+    {
+        ostr << "MODIFY SUBCOLUMN ";
+        for (size_t i = 0; i < subcolumn_path.size(); ++i)
+        {
+            if (i)
+                ostr << '.';
+            ostr << backQuoteIfNeed(subcolumn_path[i]);
+        }
+        if (!remove_property.empty())
+            ostr << " REMOVE CODEC";
+        else
+        {
+            ostr << ' ';
+            col_decl->as<ASTColumnDeclaration>()->getCodec()->format(ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::MATERIALIZE_COLUMN)

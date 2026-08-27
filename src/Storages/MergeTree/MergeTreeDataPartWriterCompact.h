@@ -55,7 +55,7 @@ private:
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
-    void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) override;
+    void addStreams(const NameAndTypePair & name_and_type, const ColumnCodecDescription & codec_policy) override;
 
     ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
 
@@ -102,6 +102,7 @@ private:
 
     /// Stream for each column's substreams path (look at addStreams).
     std::unordered_map<String, CompressedStreamPtr> compressed_streams;
+    std::unordered_map<String, UInt64> stream_codec_hashes;
 
     /// If marks are uncompressed, the data is written to 'marks_file_hashing' for hash calculation and then to the 'marks_file'.
     std::unique_ptr<WriteBufferFromFileBase> marks_file;

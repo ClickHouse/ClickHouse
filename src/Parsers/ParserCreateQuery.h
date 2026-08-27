@@ -42,9 +42,18 @@ protected:
 template <typename NameParser>
 class IParserNameTypePair : public IParserBase
 {
+public:
+    explicit IParserNameTypePair(bool allow_tuple_element_codecs_ = false)
+        : allow_tuple_element_codecs(allow_tuple_element_codecs_)
+    {
+    }
+
 protected:
     const char * getName() const  override{ return "name and type pair"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+private:
+    bool allow_tuple_element_codecs;
 };
 
 /** The name and type are separated by a space. For example, URL String. */
@@ -54,7 +63,7 @@ template <typename NameParser>
 bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     NameParser name_parser;
-    ParserDataType type_parser;
+    ParserDataType type_parser(allow_tuple_element_codecs);
 
     ASTPtr name;
     ASTPtr type;
@@ -163,7 +172,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_primary_key{Keyword::PRIMARY_KEY};
 
     NameParser name_parser;
-    ParserDataType type_parser;
+    ParserDataType type_parser(/* allow_tuple_element_codecs */ true);
     ParserExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserLiteral literal_parser;

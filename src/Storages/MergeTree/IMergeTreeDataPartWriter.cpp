@@ -155,37 +155,6 @@ SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & colum
     return it->second;
 }
 
-ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    /// The `default_codec` is already resolved by `MergeTreeData::getCompressionCodecForPart`, which
-    /// honors the table-level `default_compression_codec` setting as well as `RECOMPRESS` TTL codecs.
-    /// We must trust it here: re-reading `default_compression_codec` and overriding `default_codec`
-    /// would make a `RECOMPRESS` TTL merge write column streams with the setting's codec while the
-    /// part metadata (`default_compression_codec.txt`) records the TTL codec, so the metadata and the
-    /// actual on-disk data would diverge and recompression would not be applied.
-    ASTPtr default_codec_desc = default_codec->getFullCodecDesc();
-
-    if (const auto * column_desc = metadata_snapshot->columns.tryGet(column_name))
-        return column_desc->codec ? column_desc->codec : default_codec_desc;
-
-    if (const auto * virtual_desc = metadata_snapshot->virtuals.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
-        return virtual_desc->codec ? virtual_desc->codec : default_codec_desc;
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
-}
-
-bool IMergeTreeDataPartWriter::columnUsesDefaultCodec(const String & column_name) const
-{
-    if (const auto * column_desc = metadata_snapshot->columns.tryGet(column_name))
-        return CompressionCodecFactory::isDefaultCodec(column_desc->codec);
-
-    if (const auto * virtual_desc
-        = metadata_snapshot->virtuals.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
-        return CompressionCodecFactory::isDefaultCodec(virtual_desc->codec);
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
-}
-
 /// TODO: structural integer substreams (offsets, null maps) could go adaptive but `isSpecialCompressionAllowed` gates them out. Optimise.
 CompressionCodecPtr IMergeTreeDataPartWriter::maybeAdaptiveDefaultCodec(
     bool column_uses_default_codec, const DataTypePtr & substream_type, CompressionCodecPtr resolved_codec) const
@@ -233,7 +202,8 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
         MergeTreeIndexGranularityPtr computed_index_granularity,
-        WrittenOffsetSubstreams * written_offset_substreams);
+        WrittenOffsetSubstreams * written_offset_substreams,
+        WrittenStreamCodecs * written_stream_codecs);
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         MergeTreeDataPartType part_type,
@@ -251,7 +221,8 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
         MergeTreeIndexGranularityPtr computed_index_granularity,
-        WrittenOffsetSubstreams * written_offset_substreams)
+        WrittenOffsetSubstreams * written_offset_substreams,
+        WrittenStreamCodecs * written_stream_codecs)
 {
     if (part_type == MergeTreeDataPartType::Compact)
         return createMergeTreeDataPartCompactWriter(
@@ -284,7 +255,8 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
             default_codec_,
             writer_settings,
             std::move(computed_index_granularity),
-            written_offset_substreams);
+            written_offset_substreams,
+            written_stream_codecs);
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type: {}", part_type.toString());
 }
 

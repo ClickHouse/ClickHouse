@@ -36,7 +36,8 @@ public:
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
         MergeTreeIndexGranularityPtr index_granularity_,
-        WrittenOffsetSubstreams * written_offset_substreams_);
+        WrittenOffsetSubstreams * written_offset_substreams_,
+        WrittenStreamCodecs * written_stream_codecs_);
 
     void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) override;
 
@@ -94,7 +95,7 @@ private:
 
     void addStreams(
         const NameAndTypePair & name_and_type,
-        const ASTPtr & effective_codec_desc) override;
+        const ColumnCodecDescription & codec_policy) override;
 
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
@@ -128,6 +129,7 @@ private:
 
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
+    std::unordered_map<String, UInt64> stream_codec_hashes;
 
     /// Some long column names may be replaced to hashes.
     /// Below are mapping from original stream name to actual

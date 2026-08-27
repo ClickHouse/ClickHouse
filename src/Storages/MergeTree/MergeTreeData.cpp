@@ -1037,7 +1037,7 @@ void MergeTreeData::checkProperties(
         {
             const auto column = new_metadata.columns.tryGetColumnDescription(
                 GetColumnsOptions(GetColumnsOptions::AllPhysical), name);
-            if (!column || !column->codec)
+            if (!column || column->codec.empty())
                 continue;
 
             /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
@@ -1047,8 +1047,10 @@ void MergeTreeData::checkProperties(
             {
                 if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
                     return;
-                is_lossy = CompressionCodecFactory::instance()
-                               .get(column->codec, substream_path.back().data.type.get())->isLossyCompression();
+                const auto resolved = column->codec.resolve(getCodecPath(substream_path), nullptr);
+                if (resolved.ast)
+                    is_lossy = CompressionCodecFactory::instance()
+                                   .get(resolved.ast, substream_path.back().data.type.get())->isLossyCompression();
             };
             column->type->getDefaultSerialization()->enumerateStreams(callback, column->type);
 
@@ -5280,12 +5282,20 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// parts stay compact) while the metadata claims `Quantize`. Set the codec at CREATE TABLE; to change the codec or
     /// the type on existing data, create a new table with the codec and `INSERT ... SELECT` into it, then swap.
     {
-        auto quantize_signature = [](const ASTPtr & codec) -> String
+        auto quantize_signature = [](const ColumnCodecDescription & codec) -> String
         {
-            const auto params = tryExtractQuantizedCodecParams(codec);
-            if (!params)
-                return {};
-            return fmt::format("{}:{}:{}:{}", params->method, params->dimensions, params->bits, params->m);
+            String result;
+            const auto append = [&](const CodecPath & path, const ASTPtr & ast)
+            {
+                const auto params = tryExtractQuantizedCodecParams(ast);
+                if (!params)
+                    return;
+                result += fmt::format("{}={}:{}:{}:{};", fmt::join(path, "."), params->method, params->dimensions, params->bits, params->m);
+            };
+            append({}, codec.getRoot());
+            for (const auto & [path, ast] : codec.getSubcolumns())
+                append(path, ast);
+            return result;
         };
         for (const auto & command : commands)
         {
@@ -6261,7 +6271,7 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
         const auto & columns = projection ? projection->metadata->getColumns() : table_metadata->getColumns();
         for (const auto & column : columns)
         {
-            const auto params = tryExtractQuantizedCodecParams(column.codec);
+            const auto params = tryExtractQuantizedCodecParams(column.codec.getRoot());
             if (params && params->method == "product")
             {
                 part_type = PartType::Wide;
@@ -12853,6 +12863,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         /*blocks_are_granules_size=*/false,
         /*write_settings=*/{},
         /*written_offset_substreams=*/nullptr,
+        /*written_stream_codecs=*/nullptr,
         /*try_adaptive_codec=*/ false); /// Empty 0-row part (also reached by mutations): no data is written, so the flag has no effect.
 
     bool sync_on_insert = (*settings)[MergeTreeSetting::fsync_after_insert];

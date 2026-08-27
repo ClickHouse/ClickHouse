@@ -59,7 +59,8 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     MergeTreeIndexGranularityPtr index_granularity_,
-    WrittenOffsetSubstreams * written_offset_substreams_)
+    WrittenOffsetSubstreams * written_offset_substreams_,
+    WrittenStreamCodecs * written_stream_codecs_)
     : IMergeTreeDataPartWriter(
         data_part_name_, serializations_, data_part_storage_, index_granularity_info_,
         storage_settings_, columns_list_, metadata_snapshot_, settings_, std::move(index_granularity_))
@@ -69,6 +70,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     , compute_granularity(index_granularity->empty())
     , compress_primary_key(settings.compress_primary_key)
     , written_offset_substreams(written_offset_substreams_)
+    , written_stream_codecs(written_stream_codecs_)
     , execution_stats(skip_indices.size())
     , log(getLogger(logger_name_ + " (DataPartWriter)"))
 {
@@ -693,8 +695,13 @@ void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
 
     for (const auto & column : columns_list)
     {
-        auto compression = getCodecDescOrDefault(column.name, default_codec);
-        addStreams(column, compression);
+        const auto * description = metadata_snapshot->columns.tryGet(column.getNameInStorage());
+        if (!description)
+            description = metadata_snapshot->virtuals.tryGetDescription(
+                column.getNameInStorage(), VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+        if (!description)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column.getNameInStorage());
+        addStreams(column, description->codec);
     }
 
     streams_initialized = true;

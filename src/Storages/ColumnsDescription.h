@@ -6,6 +6,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
+#include <Storages/ColumnCodecDescription.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
@@ -100,7 +101,7 @@ struct ColumnDescription
     DataTypePtr type;
     ColumnDefault default_desc;
     String comment;
-    ASTPtr codec;
+    ColumnCodecDescription codec;
     SettingsChanges settings;
     ASTPtr ttl;
     ColumnStatisticsDescription statistics;

@@ -35,6 +35,7 @@
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -52,6 +53,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/ColumnCodecDescription.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <Storages/WindowView/StorageWindowView.h>
 
@@ -482,10 +484,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->setComment(make_intrusive<ASTLiteral>(Field(column.comment)));
         }
 
-        if (column.codec)
-        {
-            column_declaration->setCodec(column.codec->clone());
-        }
+        applyCodecDescriptionToAST(*column_declaration, column.codec);
 
         if (column.statistics.hasExplicitStatistics())
         {
@@ -702,12 +701,11 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         if (auto comment = col_decl.getComment())
             column.comment = comment->as<ASTLiteral &>().value.safeGet<String>();
 
-        if (auto codec = col_decl.getCodec())
+        column.codec = codecDescriptionFromAST(col_decl, column.type, codec_validation_settings);
+        if (!column.codec.empty())
         {
             if (col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-            column.codec
-                = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, column.type, codec_validation_settings);
         }
 
         if (auto statistics_desc = col_decl.getStatisticsDesc())

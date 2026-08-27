@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -33,6 +34,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_drop_column(Keyword::DROP_COLUMN);
     ParserKeyword s_clear_column(Keyword::CLEAR_COLUMN);
     ParserKeyword s_modify_column(Keyword::MODIFY_COLUMN);
+    ParserKeyword s_modify_subcolumn(Keyword::MODIFY_SUBCOLUMN);
     ParserKeyword s_alter_column(Keyword::ALTER_COLUMN);
     ParserKeyword s_rename_column(Keyword::RENAME_COLUMN);
     ParserKeyword s_comment_column(Keyword::COMMENT_COLUMN);
@@ -160,6 +162,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserSQLSecurity sql_security_p;
     ParserRefreshStrategy refresh_p;
     ParserTTLExpressionList parser_ttl_list;
+    ParserCodec codec_parser;
 
     ASTPtr command_col_decl;
     ASTPtr command_column;
@@ -788,6 +791,36 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         return false;
                     command_snapshot_desc->as<ASTFunction &>().setKind(ASTFunction::Kind::BACKUP_NAME);
                 }
+            }
+            else if (s_modify_subcolumn.ignore(pos, expected))
+            {
+                ASTPtr path_ast;
+                if (!ParserCompoundIdentifier().parse(pos, path_ast, expected))
+                    return false;
+                const auto & identifier = path_ast->as<ASTIdentifier &>();
+                if (identifier.name_parts.size() < 2)
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "MODIFY SUBCOLUMN requires a column and tuple element path");
+
+                auto declaration = make_intrusive<ASTColumnDeclaration>();
+                declaration->name = identifier.name_parts.front();
+                if (s_remove.ignore(pos, expected))
+                {
+                    if (!s_codec.ignore(pos, expected))
+                        return false;
+                    command->remove_property = toStringView(Keyword::CODEC);
+                }
+                else
+                {
+                    if (!s_codec.ignore(pos, expected))
+                        return false;
+                    ASTPtr codec;
+                    if (!codec_parser.parse(pos, codec, expected))
+                        return false;
+                    declaration->setCodec(std::move(codec));
+                }
+                command->type = ASTAlterCommand::MODIFY_SUBCOLUMN;
+                command->subcolumn_path = identifier.name_parts;
+                command_col_decl = declaration;
             }
             else if (bool is_modify = s_modify_column.ignore(pos, expected); is_modify || s_alter_column.ignore(pos, expected))
             {

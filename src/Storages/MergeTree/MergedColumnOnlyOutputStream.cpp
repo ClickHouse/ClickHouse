@@ -17,6 +17,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     size_t part_uncompressed_bytes,
     WrittenOffsetSubstreams * written_offset_substreams,
+    WrittenStreamCodecs * written_stream_codecs,
     bool try_adaptive_codec,
     PackedFilesWriter * external_packed_skip_indices_writer)
     : IMergedBlockOutputStream(
@@ -60,7 +61,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         default_codec,
         writer_settings,
         std::move(index_granularity_ptr),
-        written_offset_substreams);
+        written_offset_substreams,
+        written_stream_codecs);
 }
 
 void MergedColumnOnlyOutputStream::write(const Block & block)

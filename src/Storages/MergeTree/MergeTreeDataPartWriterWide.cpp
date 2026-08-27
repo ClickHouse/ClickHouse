@@ -107,14 +107,15 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     MergeTreeIndexGranularityPtr index_granularity_,
-    WrittenOffsetSubstreams * written_offset_substreams_)
+    WrittenOffsetSubstreams * written_offset_substreams_,
+    WrittenStreamCodecs * written_stream_codecs_)
     : MergeTreeDataPartWriterOnDisk(
             data_part_name_, logger_name_, serializations_,
             data_part_storage_, index_granularity_info_, storage_settings_,
             columns_list_, metadata_snapshot_,
             indices_to_recalc_, marks_file_extension_,
             default_codec_, settings_, std::move(index_granularity_),
-            written_offset_substreams_)
+            written_offset_substreams_, written_stream_codecs_)
 {
     if (settings.save_marks_in_cache)
     {
@@ -139,9 +140,9 @@ ISerialization::EnumerateStreamsSettings MergeTreeDataPartWriterWide::getEnumera
 
 void MergeTreeDataPartWriterWide::addStreams(
     const NameAndTypePair & name_and_type,
-    const ASTPtr & effective_codec_desc)
+    const ColumnCodecDescription & codec_policy)
 {
-    const bool column_uses_default_codec = columnUsesDefaultCodec(name_and_type.getNameInStorage());
+    const ASTPtr default_codec_desc = default_codec->getFullCodecDesc();
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -154,16 +155,37 @@ void MergeTreeDataPartWriterWide::addStreams(
 
         String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
 
+        const auto resolved = codec_policy.resolve(getCodecPathForStream(name_and_type, name_and_type.getTypeInStorage(), substream_path), default_codec_desc);
+        const auto & subtype = substream_path.back().data.type;
+        CompressionCodecPtr compression_codec;
+        if (ISerialization::isSpecialCompressionAllowed(substream_path))
+        {
+            compression_codec = CompressionCodecFactory::instance().get(resolved.ast, subtype.get(), default_codec);
+            compression_codec = maybeAdaptiveDefaultCodec(resolved.uses_part_default, subtype, compression_codec);
+        }
+        else
+            compression_codec = CompressionCodecFactory::instance().get(resolved.ast, nullptr, default_codec, true);
+
         /// Shared offsets for Nested type.
         if (column_streams.contains(stream_name))
+        {
+            if (stream_codec_hashes.at(stream_name) != compression_codec->getHash())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Conflicting codecs resolve to shared stream {}", stream_name);
             return;
+        }
 
         /// Don't write offsets more than one time for Nested type in case elements of nested had been written separately, i.e. via Vertical merge.
         if (written_offset_substreams)
         {
             bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
             if (is_offsets && written_offset_substreams->contains(stream_name))
+            {
+                if (!written_stream_codecs || !written_stream_codecs->contains(stream_name))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing codec identity for previously written shared offset stream {}", stream_name);
+                if (written_stream_codecs->at(stream_name) != compression_codec->getHash())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Conflicting codec for previously written shared offset stream {}", stream_name);
                 return;
+            }
         }
 
         auto it = stream_name_to_full_name.find(stream_name);
@@ -172,18 +194,6 @@ void MergeTreeDataPartWriterWide::addStreams(
                 "Stream with name {} already created (full stream name: {}). Current full stream name: {}."
                 " It is a collision between a filename for one column and a hash of filename for another column or a bug",
                 stream_name, it->second, full_stream_name);
-
-        const auto & subtype = substream_path.back().data.type;
-        CompressionCodecPtr compression_codec;
-
-        /// If we can use special codec then just get it
-        if (ISerialization::isSpecialCompressionAllowed(substream_path))
-        {
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
-            compression_codec = maybeAdaptiveDefaultCodec(column_uses_default_codec, subtype, compression_codec);
-        }
-        else /// otherwise return only generic codecs and don't use info about the` data_type
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
         /// No lossy codec is ever assigned to a structural substream (`Array` offsets, null map, ...): the
         /// only lossy codec, `SZ3`, is non-generic, and structural substreams take the generic-only branch
@@ -229,6 +239,9 @@ void MergeTreeDataPartWriterWide::addStreams(
             marks_compression_codec,
             settings.marks_compress_block_size,
             query_write_settings));
+        stream_codec_hashes.emplace(stream_name, compression_codec->getHash());
+        if (written_stream_codecs && substream_path.back().type == ISerialization::Substream::ArraySizes)
+            written_stream_codecs->insert_or_assign(stream_name, compression_codec->getHash());
 
         if (columns_to_load_marks.contains(name_and_type.name))
             cached_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());

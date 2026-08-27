@@ -1128,6 +1128,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings(),
         &global_ctx->written_offset_substreams,
+        &global_ctx->written_stream_codecs,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression);
 
     global_ctx->rows_written = 0;
@@ -2067,6 +2068,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->to->getIndexGranularity(),
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
         &global_ctx->written_offset_substreams,
+        &global_ctx->written_stream_codecs,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
         global_ctx->to->getSkipIndicesPackedWriter());
 

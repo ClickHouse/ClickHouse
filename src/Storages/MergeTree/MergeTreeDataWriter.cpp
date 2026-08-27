@@ -1028,6 +1028,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         /*blocks_are_granules_size=*/false,
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
+        static_cast<WrittenStreamCodecs *>(nullptr),
         /*try_adaptive_codec=*/ false);
 
     Block permuted_columns_cache;
@@ -1229,6 +1230,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         /*blocks_are_granules_size=*/ false,
         data.getContext()->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
+        static_cast<WrittenStreamCodecs *>(nullptr),
         try_adaptive_codec);
 
     Block permuted_columns_cache;

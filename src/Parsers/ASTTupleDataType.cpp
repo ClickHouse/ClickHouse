@@ -32,6 +32,11 @@ ASTPtr ASTTupleDataType::clone() const
         res->children.emplace_back(arguments->clone());
     }
 
+    res->element_codecs.clear();
+    res->element_codecs.reserve(element_codecs.size());
+    for (const auto & codec : element_codecs)
+        res->element_codecs.push_back(codec ? codec->clone() : nullptr);
+
     /// element_names vector is copied by the copy constructor
     return res;
 }
@@ -47,6 +52,14 @@ void ASTTupleDataType::updateTreeHashImpl(SipHash & hash_state, bool ignore_alia
     {
         hash_state.update(elem_name.size());
         hash_state.update(elem_name);
+    }
+
+    for (const auto & codec : element_codecs)
+    {
+        const bool present = static_cast<bool>(codec);
+        hash_state.update(present);
+        if (codec)
+            codec->updateTreeHash(hash_state, ignore_aliases);
     }
 
     /// Hash child types via arguments
@@ -77,6 +90,11 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
                     ostr << ',';
                 ostr << indent_str;
                 arguments->children[i]->format(ostr, settings, state, frame);
+                if (i < element_codecs.size() && element_codecs[i])
+                {
+                    ostr << ' ';
+                    element_codecs[i]->format(ostr, settings, state, frame);
+                }
             }
         }
         else if (use_multiline && !element_names.empty())
@@ -97,6 +115,11 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 
                 /// Print the type
                 arguments->children[i]->format(ostr, settings, state, frame);
+                if (i < element_codecs.size() && element_codecs[i])
+                {
+                    ostr << ' ';
+                    element_codecs[i]->format(ostr, settings, state, frame);
+                }
             }
         }
         else
@@ -113,6 +136,11 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 
                 /// Print the type
                 arguments->children[i]->format(ostr, settings, state, frame);
+                if (i < element_codecs.size() && element_codecs[i])
+                {
+                    ostr << ' ';
+                    element_codecs[i]->format(ostr, settings, state, frame);
+                }
             }
         }
 
@@ -142,6 +170,13 @@ void ASTTupleDataType::writeJSON(WriteBuffer & out) const
         }
         o << ']';
     }
+
+    if (!element_codecs.empty())
+    {
+        w.writeUInt("element_codec_count", element_codecs.size());
+        for (size_t i = 0; i < element_codecs.size(); ++i)
+            w.writeChild(("element_codec_" + std::to_string(i)).c_str(), element_codecs[i]);
+    }
 }
 
 void ASTTupleDataType::readJSON(const Poco::JSON::Object & json)
@@ -158,6 +193,14 @@ void ASTTupleDataType::readJSON(const Poco::JSON::Object & json)
 
     element_names = r.readStringArray("element_names");
 
+    const size_t element_codec_count = r.getUInt("element_codec_count");
+    element_codecs.reserve(element_codec_count);
+    for (size_t i = 0; i < element_codec_count; ++i)
+    {
+        const String key = "element_codec_" + std::to_string(i);
+        element_codecs.push_back(r.readChild(key.c_str()));
+    }
+
     /// A named tuple names every element (mirrors `DataTypeFactory::createTupleFromAST`); reject a
     /// partial/oversized or empty-named list that the parser could never produce.
     if (!element_names.empty())
@@ -172,6 +215,17 @@ void ASTTupleDataType::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ASTTupleDataType element name must not be empty during AST JSON deserialization");
     }
+    if (!element_codecs.empty() && (!args || element_codecs.size() != args->children.size()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTTupleDataType has {} element codecs but {} element types during AST JSON deserialization",
+            element_codecs.size(), args ? args->children.size() : 0);
+}
+
+void ASTTupleDataType::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
+{
+    for (auto & codec : element_codecs)
+        if (codec)
+            f(nullptr, &codec);
 }
 
 }
