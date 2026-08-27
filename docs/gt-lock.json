@@ -7,37 +7,37 @@
       "versionId": "561bcbda96c0af9ec69d805129d6d1066836ea40b546e1b0eff115d8377128df",
       "translations": {
         "pt-BR": {
-          "updatedAt": "2026-08-27T18:24:14.072Z",
+          "updatedAt": "2026-08-27T21:02:50.969Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-27T18:24:14.516Z",
+          "updatedAt": "2026-08-27T21:02:50.733Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-27T18:24:14.780Z",
-          "fileName": "docs.json"
+          "updatedAt": "2026-08-27T21:02:51.416Z",
+          "fileName": "docs.json",
+          "postProcessHash": "47c29a38b6c5f242671c4d3640510ed78c5ce852555d5f34a3015240471d652f"
         },
         "es": {
-          "updatedAt": "2026-08-27T18:24:15.113Z",
+          "updatedAt": "2026-08-27T21:02:50.618Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-27T18:24:15.385Z",
+          "updatedAt": "2026-08-27T21:02:50.851Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-27T18:24:15.633Z",
+          "updatedAt": "2026-08-27T21:02:51.083Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-27T18:24:15.881Z",
+          "updatedAt": "2026-08-27T21:02:51.190Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-27T18:24:16.181Z",
-          "fileName": "docs.json",
-          "postProcessHash": "c149f6ed2d35cf1b94e0d4d5a87ea100a0f0d7a96392be9849c192115715af3a"
+          "updatedAt": "2026-08-27T21:02:51.311Z",
+          "fileName": "docs.json"
         }
       },
       "fileName": "docs.json"
@@ -9922,51 +9922,50 @@
     },
     {
       "fileId": "79bc6096171f6ddf9f1560f50fe9c990ad9e3ce73761fae0e791354cfb541064",
-      "versionId": "6c6bc60c62502e090dff3eb5d62d6e91c14a6b235fff7256c4f83949106f67b6",
+      "versionId": "38aec940621a6505f5cb665d66952ff99a1cbdade9d088ae2da30e48ad303352",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:05.848Z",
-          "fileName": "es/concepts/core-concepts/glossary.mdx",
-          "postProcessHash": "214bee4dfc977e6ddb10f8db92da11e2985e7dc2b89b9d9da27d28214f9ea0b9"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.848Z",
-          "fileName": "ja/concepts/core-concepts/glossary.mdx",
-          "postProcessHash": "cce0a11d161c6fd040cec35f40f952f5a0ea41a3b0a1f73ea4d6e276b966a776"
+        "zh": {
+          "updatedAt": "2026-08-27T21:02:53.564Z",
+          "fileName": "zh/concepts/core-concepts/glossary.mdx",
+          "postProcessHash": "6d37b7289029f9d9b05485593fcd2898ce4dd73c8b967e3d1ee3ddb1d0bd4b71"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:05.848Z",
+          "updatedAt": "2026-08-27T21:02:53.565Z",
           "fileName": "ko/concepts/core-concepts/glossary.mdx",
-          "postProcessHash": "75c5c4afb9a3773cf280bc9aba092ebde1053d290b1553eb6997cc31ffea7b39"
+          "postProcessHash": "bf8fd2f00699372480755ee8b52ce6119833b26e581e930266fdc15f0d651026"
+        },
+        "ja": {
+          "updatedAt": "2026-08-27T21:02:53.565Z",
+          "fileName": "ja/concepts/core-concepts/glossary.mdx",
+          "postProcessHash": "5032902d3dd1c69b69d924868cd693ebb488bd18e4500d0ef2e687ddcdaeef28"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.848Z",
+          "updatedAt": "2026-08-27T21:02:53.565Z",
           "fileName": "pt-BR/concepts/core-concepts/glossary.mdx",
-          "postProcessHash": "238b78c9853a163c883acee1cbc69b2ed45a89c0f6dba647e75639366437591b"
+          "postProcessHash": "24670a6161b200e5b0325fb10103e340cf2982a02414c79bd7f6363c5249abd4"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:05.848Z",
+          "updatedAt": "2026-08-27T21:02:53.566Z",
           "fileName": "ru/concepts/core-concepts/glossary.mdx",
-          "postProcessHash": "c7bcaa4172430cb7087c734f496183cea58d38d9a2583dd82289ec9acf3e29c7"
+          "postProcessHash": "e7df3af35092049c129ed93df9ce7117668d5ad9d2133c000897eaba3e66d3ca"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:05.848Z",
-          "fileName": "zh/concepts/core-concepts/glossary.mdx",
-          "postProcessHash": "28b49012a0c2b5b74b34f953ec487710f84e7964524b116fbba51be59964617a"
+        "es": {
+          "updatedAt": "2026-08-27T21:02:53.566Z",
+          "fileName": "es/concepts/core-concepts/glossary.mdx",
+          "postProcessHash": "e6b252128081d7434adf742e4a5c3093038c1bded3a27ed2b24c099de0c674bf"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:05.848Z",
+          "updatedAt": "2026-08-27T21:02:53.566Z",
           "fileName": "ar/concepts/core-concepts/glossary.mdx",
-          "postProcessHash": "ed8f7914dfc592ac22519ccbaa3a2fe8a0f222d04c066e708ca22e5a0466119a"
+          "postProcessHash": "966cc2aaa0c00f6466c18e75f519e94be4dfd52d506c9d65f339c18a571db1d2"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:05.848Z",
+          "updatedAt": "2026-08-27T21:02:53.566Z",
           "fileName": "fr/concepts/core-concepts/glossary.mdx",
-          "postProcessHash": "c03dfbdc2e61c920fd84a89558791bc078ce87cea3bd15b48aeac38b243bf9fd"
+          "postProcessHash": "adc509f409743dba3e4f35788fde74926aa98e350bdb06512fdc976c3d42ab47"
         }
       },
-      "fileName": "concepts/core-concepts/glossary.mdx",
-      "staged": false
+      "fileName": "concepts/core-concepts/glossary.mdx"
     },
     {
       "fileId": "84dbe45f2649df9db7e2855e8c0ed44b8d0c87f23e89269b878ec5acd62723f4",
@@ -137069,6 +137068,53 @@
         }
       },
       "fileName": "concepts/features/interfaces/framing-formats.mdx"
+    },
+    {
+      "fileId": "0de08740c4620690193a9af89f1a9094f19f37da12c6a29e3c57a61ff137ba89",
+      "versionId": "74fe5589d68da89558391bd86558ae6b5eccc8c9ed6408b82bf0bc8298bceac3",
+      "translations": {
+        "zh": {
+          "updatedAt": "2026-08-27T21:02:53.560Z",
+          "fileName": "snippets/zh/components/Glossary/Glossary.jsx",
+          "postProcessHash": "f115e7795b7fba9d73653b610178422ab423de46d36e8c01daf050765a067cc5"
+        },
+        "fr": {
+          "updatedAt": "2026-08-27T21:02:53.561Z",
+          "fileName": "snippets/fr/components/Glossary/Glossary.jsx",
+          "postProcessHash": "590d9ce1846663fbad47837e417a4704ef0ffcd2f8782c647726aeac95a4b78d"
+        },
+        "es": {
+          "updatedAt": "2026-08-27T21:02:53.562Z",
+          "fileName": "snippets/es/components/Glossary/Glossary.jsx",
+          "postProcessHash": "3c7d5a19f2cb71c3d7306993207e87c4b196078c7415b2486bee39b4c24036ac"
+        },
+        "ja": {
+          "updatedAt": "2026-08-27T21:02:53.562Z",
+          "fileName": "snippets/ja/components/Glossary/Glossary.jsx",
+          "postProcessHash": "b876d3424f788c0c8a4860dc11bd9e58d02cbf15eacda8e63fbdfa3c65386d46"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-27T21:02:53.563Z",
+          "fileName": "snippets/pt-BR/components/Glossary/Glossary.jsx",
+          "postProcessHash": "bb0da54bd2acd41b50fe4bfbabffe010042c5ad14c12378bf294a6d32a3e1f1d"
+        },
+        "ru": {
+          "updatedAt": "2026-08-27T21:02:53.563Z",
+          "fileName": "snippets/ru/components/Glossary/Glossary.jsx",
+          "postProcessHash": "7014ab08a20c54fc42e96dce6d2fd604fba882084a22e13b89cce089b27da4e2"
+        },
+        "ar": {
+          "updatedAt": "2026-08-27T21:02:53.564Z",
+          "fileName": "snippets/ar/components/Glossary/Glossary.jsx",
+          "postProcessHash": "716f52e67ef1a67a821fd3b056724eb13712768028424cbfb607a6689048e93e"
+        },
+        "ko": {
+          "updatedAt": "2026-08-27T21:02:53.564Z",
+          "fileName": "snippets/ko/components/Glossary/Glossary.jsx",
+          "postProcessHash": "05c23184ad1b8f1d25933a466107a5f4855b88cb1fa74c44923bf44c2235e125"
+        }
+      },
+      "fileName": "snippets/components/Glossary/Glossary.jsx"
     }
   ]
 }

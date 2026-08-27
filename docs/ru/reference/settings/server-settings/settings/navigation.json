@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Настройки сервера",
+  "group": "Server Settings",
   "pages": [
     "ru/reference/settings/server-settings/settings",
     "ru/reference/settings/server-settings/settings/access-control",
