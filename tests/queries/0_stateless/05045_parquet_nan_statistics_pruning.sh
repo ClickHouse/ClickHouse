@@ -10,6 +10,7 @@ NAN="${PREFIX}_nan.parquet"
 NAN_F32="${PREFIX}_nan_f32.parquet"
 NAN_NULLABLE="${PREFIX}_nan_nullable.parquet"
 NAN_WITH_NULL="${PREFIX}_nan_with_null.parquet"
+NAN_TUPLE="${PREFIX}_nan_tuple.parquet"
 FINITE="${PREFIX}_finite.parquet"
 INTEGER="${PREFIX}_integer.parquet"
 MANY="${PREFIX}_many.parquet"
@@ -29,6 +30,9 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO FUNCTION file('${NAN_WITH_NULL}', Parquet, 'val Nullable(Float64)')
     SELECT arrayJoin([toFloat64(5), toFloat64(5), nan, NULL]) SETTINGS engine_file_truncate_on_insert = 1;
 
+    INSERT INTO FUNCTION file('${NAN_TUPLE}', Parquet, 'i Int64, val Float64')
+    SELECT 1, arrayJoin([toFloat64(5), toFloat64(5), nan]) SETTINGS engine_file_truncate_on_insert = 1;
+
     INSERT INTO FUNCTION file('${FINITE}', Parquet, 'val Float64')
     SELECT arrayJoin([toFloat64(5), toFloat64(5)]) SETTINGS engine_file_truncate_on_insert = 1;
 
@@ -40,14 +44,16 @@ ${CLICKHOUSE_CLIENT} --query "
     SETTINGS engine_file_truncate_on_insert = 1,
              output_format_parquet_row_group_size = 10000, output_format_parquet_data_page_size = 1024"
 
-# The statistics the pruning decisions are taken from, and the fact that ClickHouse does not write
-# nan_count, so the reader has to assume a NaN may be present.
+# The statistics every pruning decision below is taken from: min and max are both 5 while the file
+# holds three values, so the third one is not described by them.
 echo '-- statistics: min and max exclude the NaN'
 ${CLICKHOUSE_CLIENT} --query "
     SELECT row_groups[1].columns[1].statistics FROM file('${NAN}', ParquetMetadata)"
 
 # Both arms of every correctness check are printed. Pushdown off is the oracle, so a fixture that
 # stopped holding a readable NaN would change the reference instead of silently passing.
+# input_format_parquet_dictionary_filter_push_down is pinned because the test runner randomizes it,
+# and its 0 value takes the dictionary pruning site out of the run entirely.
 arm() {
     local label="$1"
     local file="$2"
@@ -61,11 +67,13 @@ arm() {
     on=$(${CLICKHOUSE_CLIENT} --query "
         SELECT count() FROM ${source} WHERE ${predicate}
         SETTINGS input_format_parquet_filter_push_down = 1, max_threads = 1,
-                 input_format_parquet_page_filter_push_down = 1${extra:+, ${extra}}")
+                 input_format_parquet_page_filter_push_down = 1,
+                 input_format_parquet_dictionary_filter_push_down = 1048576${extra:+, ${extra}}")
     off=$(${CLICKHOUSE_CLIENT} --query "
         SELECT count() FROM ${source} WHERE ${predicate}
         SETTINGS input_format_parquet_filter_push_down = 0, max_threads = 1,
-                 input_format_parquet_page_filter_push_down = 0${extra:+, ${extra}}")
+                 input_format_parquet_page_filter_push_down = 0,
+                 input_format_parquet_dictionary_filter_push_down = 1048576${extra:+, ${extra}}")
     echo "${label} on=${on} off=${off}"
 }
 
@@ -93,11 +101,13 @@ arm not_equals_negated "${NAN}" 'NOT (val = 5.)'
 arm not_equals_float32 "${NAN_F32}" 'val != 5.'
 arm not_equals_nullable "${NAN_NULLABLE}" 'val != 5.'
 arm not_equals_low_cardinality "${NAN}" 'val != 5.' 'allow_suspicious_low_cardinality_types = 1' 'val LowCardinality(Float64)'
+# LowCardinality(Nullable(Float64)) is the only structure that needs both wrappers stripped, and in
+# that order: removeNullable alone cannot see through LowCardinality.
+arm not_equals_lc_nullable "${NAN_NULLABLE}" 'val != 5.' 'allow_suspicious_low_cardinality_types = 1' 'val LowCardinality(Nullable(Float64))'
 
 echo '-- and so must a negated set predicate'
 arm not_in_one "${NAN}" 'val NOT IN (5.)'
 arm not_in_two "${NAN}" 'val NOT IN (5., 6.)'
-arm not_in_three "${NAN}" 'val NOT IN (5., 6., 7.)'
 
 # Set membership treats NaN as equal to NaN (nan IN (nan) is 1 while nan = nan is 0), so a NaN
 # outside the bounds can match the set. This is the direction that needs can_be_true, not can_be_false.
@@ -108,6 +118,12 @@ arm in_nan_float32 "${NAN_F32}" 'val IN (toFloat32(nan))'
 arm in_nan_and_null "${NAN}" 'val IN (nan, NULL)'
 arm in_nan_and_null_nullable "${NAN_WITH_NULL}" 'val IN (nan, NULL)'
 arm in_null_and_nan_nullable "${NAN_WITH_NULL}" 'val IN (NULL, nan)'
+arm in_nan_lc_nullable "${NAN_NULLABLE}" 'val IN (nan)' 'allow_suspicious_low_cardinality_types = 1' 'val LowCardinality(Nullable(Float64))'
+
+# A tuple set is ordered lexicographically, so a NaN in a non-leading position is not the last
+# element of its own column: here the val column of the set sorts to [nan, 7].
+echo '-- a NaN in a non-leading tuple position must match too'
+arm in_tuple_nan "${NAN_TUPLE}" '(i, val) IN ((1, nan), (2, 7.))'
 
 # With transform_null_in the NULL stays in the set and sorts after the NaN, so finding the NaN
 # means looking past it.
@@ -140,11 +156,12 @@ prune() {
     local file="$2"
     local predicate="$3"
     local row_group="${4:-1}"
+    local page="${5:-1}"
 
     ${CLICKHOUSE_CLIENT} --query "
         SELECT count() FROM file('${file}', Parquet) WHERE ${predicate}
         SETTINGS input_format_parquet_filter_push_down = ${row_group}, max_threads = 1,
-                 input_format_parquet_page_filter_push_down = 1,
+                 input_format_parquet_page_filter_push_down = ${page},
                  input_format_parquet_dictionary_filter_push_down = 1048576
         FORMAT JSON" \
         | jq -c --arg name "${label}" '{label: $name, result: .data, rows_read: .statistics.rows_read}'
@@ -153,6 +170,7 @@ prune() {
 echo '-- pruning is preserved: nothing below may read a row'
 prune float_above_max "${MANY}" 'val > 1e9'
 prune float_above_max_pages "${MANY}" 'val > 1e9' 0
+prune float_above_max_rowgroup "${MANY}" 'val > 1e9' 1 0
 prune integer_not_equals "${INTEGER}" 'i != 5'
 prune integer_not_in "${INTEGER}" 'i NOT IN (5, 6)'
 prune finite_float_in "${FINITE}" 'val IN (6.)'

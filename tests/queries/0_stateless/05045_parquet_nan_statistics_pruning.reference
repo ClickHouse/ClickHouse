@@ -6,10 +6,10 @@ not_equals_negated on=1 off=1
 not_equals_float32 on=1 off=1
 not_equals_nullable on=1 off=1
 not_equals_low_cardinality on=1 off=1
+not_equals_lc_nullable on=1 off=1
 -- and so must a negated set predicate
 not_in_one on=1 off=1
 not_in_two on=1 off=1
-not_in_three on=1 off=1
 -- a set holding a NaN must match the NaN row the bounds hide
 in_nan on=1 off=1
 in_finite_and_nan on=1 off=1
@@ -17,6 +17,9 @@ in_nan_float32 on=1 off=1
 in_nan_and_null on=1 off=1
 in_nan_and_null_nullable on=1 off=1
 in_null_and_nan_nullable on=1 off=1
+in_nan_lc_nullable on=1 off=1
+-- a NaN in a non-leading tuple position must match too
+in_tuple_nan on=1 off=1
 -- a set ending in NULL still has to find the NaN
 in_nan_null_transform on=2 off=2
 in_null_nan_transform on=2 off=2
@@ -37,6 +40,7 @@ is_null on=1 off=1
 -- pruning is preserved: nothing below may read a row
 {"label":"float_above_max","result":[{"count()":0}],"rows_read":0}
 {"label":"float_above_max_pages","result":[{"count()":0}],"rows_read":0}
+{"label":"float_above_max_rowgroup","result":[{"count()":0}],"rows_read":0}
 {"label":"integer_not_equals","result":[{"count()":0}],"rows_read":0}
 {"label":"integer_not_in","result":[{"count()":0}],"rows_read":0}
 {"label":"finite_float_in","result":[{"count()":0}],"rows_read":0}

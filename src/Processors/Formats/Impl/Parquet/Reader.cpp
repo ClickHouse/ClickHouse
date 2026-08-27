@@ -1949,8 +1949,9 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
         bool null_as_default = options.format.null_as_default && !column_info.output_nullable;
         if (column_index.min_values.size() != num_pages || column_index.max_values.size() != num_pages ||
             (column_index.null_pages.size() != num_pages && !column_index.null_pages.empty()) ||
-            (column_index.__isset.null_counts && column_index.null_counts.size() != num_pages))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected number of pages: {} null_pages, {} null_counts, {} min_values, {} max_values, {} pages in offset index", column_index.null_pages.size(), column_index.null_counts.size(), column_index.min_values.size(), column_index.max_values.size(), num_pages);
+            (column_index.__isset.null_counts && column_index.null_counts.size() != num_pages) ||
+            (column_index.__isset.nan_counts && column_index.nan_counts.size() != num_pages))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected number of pages: {} null_pages, {} null_counts, {} nan_counts, {} min_values, {} max_values, {} pages in offset index", column_index.null_pages.size(), column_index.null_counts.size(), column_index.nan_counts.size(), column_index.min_values.size(), column_index.max_values.size(), num_pages);
 
         /// The Range must be in terms of the type that checkInHyperrectangle compares it
         /// against, which may differ from decoded_type - see cast_stats_to_output_type.
@@ -1981,8 +1982,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             {
                 bounds_may_hide_nan[column_info.idx_in_output_block] =
                     typeMayHoldNaN(output_block_type)
-                    && !(column_index.__isset.nan_counts && page_idx < column_index.nan_counts.size()
-                         && column_index.nan_counts[page_idx] == 0);
+                    && !(column_index.__isset.nan_counts && column_index.nan_counts[page_idx] == 0);
 
                 column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
                 column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);

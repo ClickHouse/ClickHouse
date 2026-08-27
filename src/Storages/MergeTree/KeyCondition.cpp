@@ -5657,8 +5657,8 @@ static bool setMayMatchHiddenNaN(const MergeTreeSetIndex & set_index, const std:
         if (key_column >= bounds_may_hide_nan.size() || !bounds_may_hide_nan[key_column])
             continue;
 
-        /// A tuple set is ordered lexicographically, and a function chain can map anything to NaN,
-        /// so neither gives a last-element answer.
+        /// The last-element test below is valid only for a lone column storing the set's own values:
+        /// lexicographic tuple order can place a NaN anywhere, and a chain can map any element to NaN.
         if (mapping.size() != 1 || !mapping[i].functions.empty())
             return true;
 
