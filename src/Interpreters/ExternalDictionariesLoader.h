@@ -33,6 +33,11 @@ public:
 
     QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr context) const;
 
+    /// The same, but resolving an unqualified name against the given database rather than the
+    /// current database of a context. Used when the name has to resolve against the database
+    /// owning the definition, e.g. when the metadata of a table is loaded.
+    QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, const std::string & current_database_name) const;
+
     DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
 
     /// The layout type of the dictionary as written in its definition, e.g. "hashed" or "naive_bayes".

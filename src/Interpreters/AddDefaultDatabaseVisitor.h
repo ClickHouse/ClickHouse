@@ -193,9 +193,12 @@ private:
             {
                 /// A compound identifier is already qualified, and a parameterized name is only
                 /// known when the view is called, so there is nothing to qualify.
+                /// The name is resolved against `database_name` and not against the current database
+                /// of `context`: on the metadata-load paths the context is the loading context, whose
+                /// current database is unrelated to the database owning the definition.
                 if (!identifier->compound() && !identifier->isParam())
                 {
-                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), context);
+                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), database_name);
                     arguments[0] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());
                 }
             }
@@ -204,7 +207,7 @@ private:
                 auto & literal_value = literal->value;
                 if (literal_value.getType() == Field::Types::String)
                 {
-                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), context);
+                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), database_name);
                     literal_value = qualified_dictionary_name.getFullName();
                 }
             }
