@@ -42,13 +42,15 @@ cat > "$session_config" <<EOF
 EOF
 
 # `SYSTEM RECONNECT ZOOKEEPER` closes the session and keeps the handle, so the next access has to
-# replace it: the first table establishes a session, the second one runs into the replacement.
+# replace it: the first table establishes a session, the second one runs into the replacement. The
+# number of replaced sessions is part of the marker, so an arm that never replaced one cannot print
+# the expected line.
 ${CLICKHOUSE_LOCAL} --config-file="$session_config" \
     --path="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_session_d" --query "
     CREATE TABLE km1 (k String, v UInt64) ENGINE = KeeperMap('/km1') PRIMARY KEY k;
     SYSTEM RECONNECT ZOOKEEPER;
     CREATE TABLE km2 (k String, v UInt64) ENGINE = KeeperMap('/km2') PRIMARY KEY k;
-    SELECT 'session replaced';
+    SELECT 'session replaced ' || toString(value) FROM system.metrics WHERE metric = 'ZooKeeperSessionExpired';
 " > "$session_out" 2>/dev/null
 signal_status "$?"
 cat "$session_out"
@@ -67,6 +69,7 @@ EOF
 # Only a transaction that writes reaches the log, and the cleanup runs right after the log picks the
 # new entry up, which `SYSTEM SYNC TRANSACTION LOG` waits for. The database is named explicitly because
 # a transaction needs a table the default database of `clickhouse-local` does not necessarily provide.
+# The insert takes its rows from the query, so standard input is closed rather than left for it to read.
 ${CLICKHOUSE_LOCAL} --config-file="$txn_config" \
     --path="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_txn_d" --query "
     CREATE DATABASE txn ENGINE = Atomic;
@@ -76,7 +79,7 @@ ${CLICKHOUSE_LOCAL} --config-file="$txn_config" \
     COMMIT;
     SYSTEM SYNC TRANSACTION LOG;
     SELECT 'transaction committed';
-" > "$txn_out" 2>/dev/null
+" > "$txn_out" 2>/dev/null < /dev/null
 signal_status "$?"
 cat "$txn_out"
 
