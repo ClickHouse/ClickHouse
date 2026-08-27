@@ -17,7 +17,7 @@ printf '%s\n' "$out" | grep -qF 'The primary key will be serialized in binary as
     || { echo 'Missing titled admonition body'; exit 1; }
 echo 'OK: titled admonition body rendered'
 
-legacy_admonition_re='</?Note(?:[[:space:]][^>]*)?>|:::(note|warning|tip|info|caution|danger|important)'
+legacy_admonition_re='</?Note([[:space:]][^>]*)?>|:::(note|warning|tip|info|caution|danger|important)'
 if printf '%s\n' "$out" | grep -qE "$legacy_admonition_re"; then
     echo 'Raw admonition syntax remains in rendered help'
     exit 1
