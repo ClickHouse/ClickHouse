@@ -419,10 +419,16 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                         auto it = find_in(*table, entry.key);
                         if (!it)
                             continue;
-                        AggregateDataPtr & other = it->getMapped();
-                        if (!other)
+                        AggregateDataPtr & other_slot = it->getMapped();
+                        if (!other_slot)
                             continue;
                         ++consumed_cells;
+                        /// Detach the source state from the table before the destructive merge
+                        /// (the same pattern as `mergeDataImpl`): if a later aggregate's merge
+                        /// throws, the table cell must not be destroyed again by the unwinding -
+                        /// the already-consumed substates would be destroyed a second time.
+                        AggregateDataPtr other = other_slot;
+                        other_slot = nullptr;
                         /// Always the interpreted merge, even when the accumulation was
                         /// JIT-compiled: the compiled and the interpreted code share the
                         /// state layout by contract (spilling and distributed aggregation
@@ -433,7 +439,6 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                         for (size_t f = 0; f < params.aggregates_size; ++f)
                             aggregate_functions[f]->mergeAndDestroyBatch(
                                 &place, &other, 1, offsets_of_aggregate_states[f], *thread_pool, is_cancelled, arena);
-                        other = nullptr;
                     }
 
                     /// The exact merged value of the group.
