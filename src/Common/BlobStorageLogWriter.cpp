@@ -24,6 +24,12 @@ void BlobStorageLogWriter::addEvent(
     const String & error_message,
     BlobStorageLogElement::EvenTime time_now)
 {
+    /// Which connection carried the request we are about to log. Taken here, before anything can
+    /// return early, so that the slot is always emptied: it is filled by every pooled HTTP request,
+    /// including the ones whose event is never logged, and a value left behind would be picked up
+    /// by whatever this thread logs next - attributing an unrelated socket to it.
+    const auto connection = takeCurrentHTTPConnectionInfo();
+
     if (!log)
     {
         LOG_TEST(getLogger("BlobStorageLogWriter"), "No log, skipping {}", remote_path);
@@ -38,12 +44,6 @@ void BlobStorageLogWriter::addEvent(
 
     if (!time_now.time_since_epoch().count())
         time_now = std::chrono::system_clock::now();
-
-    /// Which connection carried the request we are about to log. Taken here, at the single funnel
-    /// for every blob storage event, so no call site has to thread it through. Taking clears it:
-    /// a batched delete does one request and logs several events, and only the first of them
-    /// truthfully belongs to that connection.
-    const auto connection = takeCurrentHTTPConnectionInfo();
 
     log->add([&](BlobStorageLogElement & element)
     {

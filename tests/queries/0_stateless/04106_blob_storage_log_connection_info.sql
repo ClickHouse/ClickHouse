@@ -52,3 +52,14 @@ FROM system.blob_storage_log
 WHERE remote_path LIKE '%04106_data/file_' || currentDatabase() || '.csv'
     AND event_date >= yesterday()
     AND event_time > now() - INTERVAL 5 MINUTE;
+
+-- The point of the feature: a keep-alive socket keeps its identity across the requests it serves.
+-- These three queries run one after another against the same endpoint, so the socket the first one
+-- opened is handed back out to the next, and at least one request must find a connection that has
+-- already sent something. Without this assertion every check above still passes when the pool mints
+-- a fresh connection_id on every borrow - which makes the columns useless for following a socket.
+SELECT max(connection_requests) > 0
+FROM system.blob_storage_log
+WHERE remote_path LIKE '%04106_data/file_' || currentDatabase() || '.csv'
+    AND event_date >= yesterday()
+    AND event_time > now() - INTERVAL 5 MINUTE;

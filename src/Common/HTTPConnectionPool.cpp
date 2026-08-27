@@ -435,6 +435,27 @@ private:
             isExpired = true;
         }
 
+        /// Take over another session's socket, together with everything we know about that socket.
+        ///
+        /// `Poco::Net::HTTPClientSession::assign` moves the socket from one session object to
+        /// another, and the pool does this on both of its reuse paths: when a returning connection
+        /// is preserved for the pool, and when a borrowed one is swapped in on reconnect. The
+        /// fields below describe the socket, not the wrapper around it, so they have to travel with
+        /// it - otherwise every borrow of the same live keep-alive socket would mint a fresh
+        /// `connection_id` and restart `connection_requests` at zero, and grouping by the id would
+        /// stop following the connection it is supposed to identify.
+        void assignFrom(PooledConnection & other)
+        {
+            Session::assign(other);
+
+            connection_id = other.connection_id;
+            established_at = other.established_at;
+            socket_fd = other.socket_fd;
+            socket_inode = other.socket_inode;
+            requests_on_socket = other.requests_on_socket;
+            last_idle_time = other.last_idle_time;
+        }
+
         void reconnect(UInt64 * connect_time) override
         {
             Session::close();
@@ -442,8 +463,8 @@ private:
             if (auto lock = pool.lock())
             {
                 auto timeouts = getTimeouts(*this);
-                auto new_connection = lock->getConnection(timeouts, connect_time);
-                Session::assign(*new_connection);
+                auto new_connection = lock->getPooledConnection(timeouts, connect_time);
+                assignFrom(*new_connection);
                 Session::setKeepAliveRequest(Session::getKeepAliveRequest() + 1);
             }
             else
@@ -792,6 +813,13 @@ public:
     }
 
     IHTTPConnectionPoolForEndpoint::ConnectionPtr getConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time) override
+    {
+        return getPooledConnection(timeouts, connect_time);
+    }
+
+    /// Same as `getConnection`, but keeps the concrete type: `PooledConnection::reconnect` needs it
+    /// in order to inherit the socket's identity from the connection it takes over.
+    ConnectionPtr getPooledConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
     {
         std::vector<ConnectionPtr> expired_connections;
 
@@ -1180,7 +1208,7 @@ private:
         try
         {
             auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
-            connection_to_store->assign(connection);
+            connection_to_store->assignFrom(connection);
             connection_to_store->notifySocketInode();
 
             {
