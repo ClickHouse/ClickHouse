@@ -69,3 +69,18 @@ case15_new_insert
 2	200	0
 case16_enum
 1	100	zero
+case17_json_columns_pre_merge
+1	['event','event','key','key','tenant','tenant']
+2	['key','key','profile','profile','tenant','tenant']
+3	['key','key','metrics','metrics','tenant','tenant']
+case17_json_columns_post_merge
+1	['event','key','tenant']
+2	['key','profile','tenant']
+3	['key','metrics','tenant']
+case17_json_data
+1	1	101		0
+1	2	102		0
+2	1	0	alice	0
+2	2	0	bob	0
+3	1	0		11
+3	2	0		12

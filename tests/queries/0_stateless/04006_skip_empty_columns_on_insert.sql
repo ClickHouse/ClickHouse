@@ -503,3 +503,61 @@ SELECT 'case16_enum';
 SELECT key, a, e FROM t_skip_empty_enum ORDER BY key;
 
 DROP TABLE t_skip_empty_enum;
+
+-- ============================================================================
+-- CASE 17: Partitioned wide table with independent JSON payload columns.
+-- Each partition uses one JSON column while the other JSON columns remain `{}`.
+-- Empty JSON columns must create no physical column before or after partition merges.
+-- ============================================================================
+SET allow_experimental_json_type = 1;
+DROP TABLE IF EXISTS t_skip_empty_partitioned_json;
+
+CREATE TABLE t_skip_empty_partitioned_json
+(
+    tenant UInt8,
+    key UInt64,
+    event JSON,
+    profile JSON,
+    metrics JSON
+)
+ENGINE = MergeTree
+PARTITION BY tenant
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+-- Two parts per partition force a real merge. Only the partition-specific JSON
+-- payload is non-empty; the other two JSON columns should not allocate streams.
+INSERT INTO t_skip_empty_partitioned_json VALUES (1, 1, '{"event_id":101}', '{}', '{}');
+INSERT INTO t_skip_empty_partitioned_json VALUES (1, 2, '{"event_id":102}', '{}', '{}');
+INSERT INTO t_skip_empty_partitioned_json VALUES (2, 1, '{}', '{"name":"alice"}', '{}');
+INSERT INTO t_skip_empty_partitioned_json VALUES (2, 2, '{}', '{"name":"bob"}', '{}');
+INSERT INTO t_skip_empty_partitioned_json VALUES (3, 1, '{}', '{}', '{"cpu":11}');
+INSERT INTO t_skip_empty_partitioned_json VALUES (3, 2, '{}', '{}', '{"cpu":12}');
+
+SELECT 'case17_json_columns_pre_merge';
+SELECT partition_id, arraySort(groupArray(column))
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_skip_empty_partitioned_json' AND active
+GROUP BY partition_id
+ORDER BY partition_id;
+
+OPTIMIZE TABLE t_skip_empty_partitioned_json PARTITION 1 FINAL;
+OPTIMIZE TABLE t_skip_empty_partitioned_json PARTITION 2 FINAL;
+OPTIMIZE TABLE t_skip_empty_partitioned_json PARTITION 3 FINAL;
+
+SELECT 'case17_json_columns_post_merge';
+SELECT partition_id, arraySort(groupArray(column))
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_skip_empty_partitioned_json' AND active
+GROUP BY partition_id
+ORDER BY partition_id;
+
+SELECT 'case17_json_data';
+SELECT tenant, key, event.event_id::UInt64, profile.name::String, metrics.cpu::UInt64
+FROM t_skip_empty_partitioned_json
+ORDER BY tenant, key;
+
+DROP TABLE t_skip_empty_partitioned_json;
