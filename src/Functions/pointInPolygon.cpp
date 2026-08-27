@@ -304,6 +304,29 @@ public:
 
     /// pointInPolygon(point, arg1, arg2, ...) is the only spatial predicate with a documented
     /// convention for combining more than one constant geometry argument -- see below.
+    ///
+    /// It is tempting to drop this whole mechanism by rewriting the variadic forms during query
+    /// planning instead -- `pointInPolygon(geom, shell, hole)` into
+    /// `pointInPolygon(geom, shell) AND NOT pointInPolygon(geom, hole)`, and the `MultiPolygon`
+    /// form into an `OR` of its components. That rewrite is NOT semantics-preserving, on two
+    /// independent counts:
+    ///  - `PolygonUtils.h` decides membership with `bg::covered_by`, so boundary points count as
+    ///    inside. For a point lying exactly on a hole's ring, the assembled polygon answers true
+    ///    (the ring is part of its boundary) while the rewrite answers false (the point is
+    ///    `covered_by` the hole, so `NOT` rejects it). `MultiPolygon` components that touch differ
+    ///    the same way.
+    ///  - `parseConstPolygon` validates the ASSEMBLED polygon with `bg::is_valid` and raises
+    ///    `BAD_ARGUMENTS`. A hole entirely outside its shell is invalid as an assembly although
+    ///    each ring is individually fine, so the rewrite silently drops an exception the query
+    ///    must surface (see 04510, 04841, 04927).
+    /// It would also cost performance: the grid/R-tree index below is built and cached once per
+    /// assembled constant polygon, and the rewrite builds and evaluates one per argument instead.
+    ///
+    /// Note for anyone simplifying this: deriving the BBOX of the variadic forms is trivial on its
+    /// own -- a polygon-with-holes has the bbox of its shell, and a `MultiPolygon` the union of its
+    /// components' -- so everything below exists only to decide whether assembling would fail
+    /// `bg::is_valid` and therefore raise, which pruning must fail closed for. Under
+    /// `validate_polygons = 0` no exception is possible and the whole question collapses.
     bool hasMultiArgConstGeometryBboxConvention() const override { return true; }
 
     /// Combines constant geometry arguments differently depending on the shape of the first
