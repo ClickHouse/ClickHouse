@@ -1018,6 +1018,7 @@ private:
     bool hasNonJoinedRows() const;
     bool recordsRowRefsForStats() const;
 
+    /// Walks every worker's stored blocks. Skip while a parallel fill is still appending.
     void doDebugAsserts() const;
 };
 }

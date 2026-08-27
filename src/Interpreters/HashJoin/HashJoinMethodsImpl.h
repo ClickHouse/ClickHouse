@@ -50,8 +50,13 @@ constexpr bool join_prefetch_supported = KeyGetter::has_cheap_key_calculation
 template <typename Map>
 ALWAYS_INLINE bool shouldUseJoinPrefetch(bool enable_prefetch, const Map * map)
 {
-    return enable_prefetch && map != nullptr
-        && map->getBufferSizeInBytes() > getMinBytesForPrefetchInJoin();
+    if (!enable_prefetch || map == nullptr)
+        return false;
+    /// Two-level maps share buckets across build threads. Summing every bucket's grower
+    /// races with a resize under another slot's lock.
+    if constexpr (requires { Map::numBuckets(); } && Map::numBuckets() > 1)
+        return true;
+    return map->getBufferSizeInBytes() > getMinBytesForPrefetchInJoin();
 }
 
 template <typename Selector>

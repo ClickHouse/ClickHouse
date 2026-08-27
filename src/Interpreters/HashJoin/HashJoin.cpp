@@ -803,6 +803,11 @@ void HashJoin::recomputeBucketBytes()
 void HashJoin::doDebugAsserts() const
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
+    /// Build threads append to per-worker lists with no shared lock. Walking every
+    /// worker here races with those pushes (TSan) and can disagree with the atomics.
+    if (data->workers.size() > 1 && !build_phase_finished)
+        return;
+
     size_t debug_allocated_size = 0;
     size_t debug_nullmaps_allocated_size = 0;
     for (const auto & worker : data->workers)
@@ -3226,6 +3231,9 @@ void HashJoin::onBuildPhaseFinish()
         LOG_DEBUG(log, "Promoting join strictness to RightAny, because all values in the right table are unique");
     }
 
+    /// Inserts are done. Debug accounting may walk every worker's lists.
+    build_phase_finished = true;
+
     /// In case addBlockToJoin is returning early
     /// we take a peak snapshot
     size_t total_bytes = getTotalByteCount();
@@ -3235,8 +3243,6 @@ void HashJoin::onBuildPhaseFinish()
 
     if (matched_rows_stats)
         matched_rows_stats->prepareRightFlagsIfNeeded(data->workers);
-
-    build_phase_finished = true;
     LOG_TRACE(
         log,
         "{}Join data is built, {} and {} rows in hash table",
