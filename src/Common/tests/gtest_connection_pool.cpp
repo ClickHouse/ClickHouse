@@ -1172,3 +1172,43 @@ TEST_F(ConnectionPoolTest, ProxyTunnelDialsTheCallerResolvedAddress)
     ASSERT_TRUE(refused);
 }
 #endif
+
+TEST_F(ConnectionPoolTest, ReconnectWithoutPoolNamesThePeer)
+{
+    /// A borrowed connection outlives its endpoint pool - a dropped cache, or a wiped idle endpoint -
+    /// and then reconnects on its own; that path must name the peer as well, not just the pooled one.
+    constexpr UInt16 dead_port = 9873;
+    const String endpoint = "127.0.0.1:" + std::to_string(dead_port);
+
+    Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new HTTPRequestHandlerFactory(options);
+    Poco::Net::ServerSocket server_socket(Poco::Net::SocketAddress(Poco::Net::IPAddress("127.0.0.1"), dead_port));
+    auto server = std::make_unique<Poco::Net::HTTPServer>(factory, server_socket, new Poco::Net::HTTPServerParams);
+    server->start();
+
+    auto connection = DB::HTTPConnectionPools::instance()
+                          .getPool(DB::HTTPConnectionGroupType::HTTP, Poco::URI("http://" + endpoint), DB::ProxyConfiguration{})
+                          ->getConnection(timeouts, nullptr);
+    ASSERT_TRUE(connection->connected());
+
+    connection->abort(); // further usage requires a reconnect
+
+    /// The connection keeps only a weak pointer to its pool, so dropping the cache expires it.
+    DB::HTTPConnectionPools::instance().dropCache();
+
+    server->stop();
+    server.reset();
+    server_socket.close();
+
+    try
+    {
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
+        connection->sendRequest(request);
+        FAIL() << "Expected the reconnect to be refused";
+    }
+    catch (const Poco::Net::ConnectionRefusedException & e)
+    {
+        const auto text = e.displayText();
+        ASSERT_NE(std::string::npos, text.find(endpoint)) << "Peer address missing: " << text;
+        ASSERT_EQ(text.find(endpoint), text.rfind(endpoint)) << "Peer address repeated: " << text;
+    }
+}

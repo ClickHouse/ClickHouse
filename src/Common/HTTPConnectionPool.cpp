@@ -460,8 +460,10 @@ private:
             }
             else
             {
+                /// The pool is gone (dropped cache, expired endpoint), so this connection dials on
+                /// its own - still through `doConnect`, or the peer would drop out of the error.
                 auto timer = CurrentThread::getProfileEvents().timer(metrics.elapsed_microseconds);
-                Session::reconnect(connect_time);
+                doConnect(connect_time);
                 ProfileEvents::increment(metrics.created);
             }
             notifySocketInode();
