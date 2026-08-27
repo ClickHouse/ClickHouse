@@ -384,8 +384,13 @@ set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-math-errno")
 # only from the earlier `glibc-compatibility` archive and a later contrib reference can otherwise
 # bind to glibc's `@GLIBC_2.29` symbols above the floor. With llvm-libc on they are already pulled
 # from it, so the extra `-u` requests are harmless no-ops.
+#
+# `lgammaf` is pinned for the same reason, but it is never provided by llvm-libc: its only in-tree
+# implementation is `base/glibc-compatibility/musl/lgammaf.c`, and its only reference comes from a
+# contrib (xgboost), so without the `-u` request nothing pulls the archive member and the reference
+# binds to glibc's default version (`@GLIBC_2.23` and newer) above the floor.
 if (GLIBC_COMPATIBILITY)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,logf -Wl,-u,powf -Wl,-u,expf -Wl,-u,exp2f -Wl,-u,log2f -Wl,-u,log -Wl,-u,pow -Wl,-u,exp -Wl,-u,exp2 -Wl,-u,log2")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,logf -Wl,-u,powf -Wl,-u,expf -Wl,-u,exp2f -Wl,-u,log2f -Wl,-u,log -Wl,-u,pow -Wl,-u,exp -Wl,-u,exp2 -Wl,-u,log2 -Wl,-u,lgammaf")
 endif ()
 
 set (DEBUG_INFO_FLAGS "-g")

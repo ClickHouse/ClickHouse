@@ -4,9 +4,7 @@
  *
  * The double-precision `lgamma_r` from `lgamma.c` is evaluated and rounded to float,
  * the same way `lgammal.c` reuses it for `lgammal_r`. Double has enough headroom that
- * the result is correctly rounded: measured against glibc over the whole float range
- * this agrees bit for bit, whereas a port of musl's single-precision kernel loses up
- * to ~1700 ulp at negative arguments, where the reflection formula cancels. */
+ * the result is essentially correctly rounded. */
 
 #include <math.h>
 
@@ -26,9 +24,8 @@ float lgammaf_r(float x, int *signgamp)
 	return (float)lgamma_r((double)x, signgamp);
 }
 
-extern int signgam;
-
 float lgammaf(float x)
 {
-	return lgammaf_r(x, &signgam);
+	int sign = 0;
+	return lgammaf_r(x, &sign);
 }
