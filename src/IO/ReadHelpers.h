@@ -1487,10 +1487,10 @@ bool tryReadDateTimeAsNumber(time_t & x, ReadBuffer & buf, bool saturate_on_over
 void readDateTimeAsRawValue(time_t & x, ReadBuffer & buf, bool saturate_on_overflow = true);
 bool tryReadDateTimeAsRawValue(time_t & x, ReadBuffer & buf, bool saturate_on_overflow = true);
 
-void readDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf);
-bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf);
-void readDateTime64AsRawValue(DateTime64 & x, ReadBuffer & buf);
-bool tryReadDateTime64AsRawValue(DateTime64 & x, ReadBuffer & buf);
+void readDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf, bool saturate_on_overflow = true);
+bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf, bool saturate_on_overflow = true);
+void readDateTime64AsRawValue(DateTime64 & x, UInt32 scale, ReadBuffer & buf, bool saturate_on_overflow = true);
+bool tryReadDateTime64AsRawValue(DateTime64 & x, UInt32 scale, ReadBuffer & buf, bool saturate_on_overflow = true);
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 {

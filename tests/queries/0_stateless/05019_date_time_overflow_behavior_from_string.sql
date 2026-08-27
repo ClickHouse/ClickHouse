@@ -72,3 +72,10 @@ SELECT * FROM format(Values, 'v DateTime', '(4294967296)'); -- { serverError VAL
 SELECT * FROM format(JSONEachRow, 'v DateTime', '{"v":1700000000}');
 SELECT * FROM format(Values, 'v DateTime', '(4294967295)');
 SELECT * FROM format(JSONEachRow, 'v DateTime', '{"v":1703363853.5}');
+
+SELECT 'throw, a DateTime64 numeric token is checked against the calendar range';
+SELECT * FROM format(JSONEachRow, 'v DateTime64(3)', '{"v":253402300800}'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM format(JSONEachRow, 'v DateTime64(3)', '{"v":-99999999999999}'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM format(Values, 'v DateTime64(3)', '(99999999999999)'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM format(JSONEachRow, 'v DateTime64(3)', '{"v":253402300799}');
+SELECT * FROM format(JSONEachRow, 'v DateTime64(3)', '{"v":1700000000}');
