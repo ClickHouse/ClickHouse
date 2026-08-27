@@ -352,6 +352,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \
     PAUSEABLE_ONCE(distinct_transform_pause) \
     PAUSEABLE_ONCE(distinct_transform_lc_pause) \
+    PAUSEABLE_ONCE(distinct_transform_null_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause) \
     PAUSEABLE_ONCE(limit_by_transform_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_after_loop_pause) \

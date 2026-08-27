@@ -477,7 +477,38 @@ void DistinctTransform::transform(Chunk & chunk)
         {
             keep.resize(num_rows);
             for (size_t i = 0; i < num_rows; ++i)
+            {
+                if ((i & 0xFFF) == 0)
+                {
+                    if (i > 0) [[unlikely]]
+                        FailPointInjection::pauseFailPoint("distinct_transform_null_pause");
+                    if (isCancelled() && !isCancelledBySoftTimeout())
+                    {
+                        if (timeoutShouldThrow())
+                            process_list_element->checkTimeLimit(); // throws TIMEOUT_EXCEEDED
+                        chunk.clear();
+                        stopReading();
+                        return;
+                    }
+                    if (isSoftTimeout())
+                    {
+                        /// Break-mode soft timeout: drop the unprocessed tail and stop building the
+                        /// null map for this chunk; the rest of the transform handles the prefix.
+                        std::fill(keep.begin() + i, keep.end(), 0);
+                        break;
+                    }
+                }
                 keep[i] = !(*null_map)[i];
+            }
+        }
+
+        if (isCancelled() && !isCancelledBySoftTimeout())
+        {
+            if (timeoutShouldThrow())
+                process_list_element->checkTimeLimit(); // throws TIMEOUT_EXCEEDED
+            chunk.clear();
+            stopReading();
+            return;
         }
 
         for (const auto * column : column_ptrs)

@@ -22,6 +22,7 @@ def started_cluster():
 
 HASHMAP_FAULT_NAME = "distinct_transform_pause"
 LC_FAULT_NAME = "distinct_transform_lc_pause"
+NULL_FAULT_NAME = "distinct_transform_null_pause"
 
 
 def run_kill_query_failpoint_test(query, fault_name, query_id=None):
@@ -560,6 +561,94 @@ SETTINGS max_block_size=10000, max_threads=1, max_execution_time=5,
     assert "DB::Exception: Timeout exceeded" in query_error[0], (
         f"throw-mode timeout did not raise TIMEOUT_EXCEEDED: {query_error[0]!r}"
     )
+
+    result = node1.query(
+        f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+    )
+    assert int(result.strip()) == 0
+
+
+def test_null_keys_kill_query(started_cluster):
+    """A `KILL QUERY` during the `skip_null_keys` prefilter of a `CreatingSetsStep` set build must
+    stop the transform at the paused row, not after the whole chunk is scanned.
+
+    `CreatingSetsStep` wires a `DistinctTransform` with `skip_null_keys = true` into the set build when
+    the key is `Nullable`/`LowCardinality(Nullable)` and `transform_null_in = 0` (see
+    CreatingSetsStep.cpp). That transform scans the whole chunk in `transform()`'s null-map prefilter
+    before any of the hash-loop polls, so a cancellation arriving there used to wait for a full chunk.
+    The prefilter now polls every 4096 rows; this test pauses it at the failpoint, kills the query, and
+    asserts the kill is honored (the re-armed failpoint must NOT be hit again).
+    """
+    node1.query(
+        "CREATE TABLE IF NOT EXISTS null_keys_mt (k Nullable(UInt64)) "
+        "ENGINE = MergeTree PARTITION BY (CAST(if(k IS NULL, toUInt64(0), k) AS UInt64) % 4) ORDER BY tuple()"
+    )
+    node1.query("TRUNCATE TABLE IF EXISTS null_keys_mt")
+    node1.query(
+        "INSERT INTO null_keys_mt SELECT if(number % 9 = 0, NULL, number % 100) FROM numbers(1000000)"
+    )
+
+    query = """SELECT count() FROM numbers(1000000)
+WHERE number IN (SELECT k FROM null_keys_mt)
+FORMAT Null
+SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1, max_rows_to_read=0"""
+
+    query_id = str(uuid.uuid4())
+
+    node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+
+    thread_error = [None]
+
+    def execute_query():
+        try:
+            _, error = node1.query_and_get_answer_with_error(
+                query,
+                query_id=query_id,
+            )
+            assert "DB::Exception: Query was cancelled" in error
+        except Exception as e:
+            thread_error[0] = e
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fault_name, timeout=60):
+        wait_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE")
+        done, _ = concurrent.futures.wait([wait_future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fault_name} not triggered within {timeout} s"
+        wait_future.result()
+
+    try:
+        ## The null-map prefilter pauses at row 4096 while building the IN set.
+        wait_failpoint(NULL_FAULT_NAME)
+
+        node1.http_query(f"KILL QUERY WHERE query_id='{query_id}'")
+
+        ## Re-arm the one-shot failpoint, then resume the loop. With the fix the loop returns at the
+        ## paused row on `isCancelled()`; without it the loop keeps scanning (it reaches the re-armed
+        ## failpoint at the next boundary, which the second WAIT below observes).
+        node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {NULL_FAULT_NAME}")
+
+        second_pause_future = pool.submit(
+            node1.query,
+            f"SYSTEM WAIT FAILPOINT {NULL_FAULT_NAME} PAUSE",
+        )
+        done, _ = concurrent.futures.wait([second_pause_future], timeout=10)
+        if done:
+            second_pause_future.result()
+            assert False, "loop reached the re-armed failpoint: intra-loop cancellation is broken"
+    finally:
+        node1.query(f"SYSTEM DISABLE FAILPOINT {NULL_FAULT_NAME}")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    query_thread.join(timeout=60)
+    assert not query_thread.is_alive(), "killed query did not terminate within 60 s"
+    if thread_error[0] is not None:
+        raise thread_error[0]
 
     result = node1.query(
         f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
