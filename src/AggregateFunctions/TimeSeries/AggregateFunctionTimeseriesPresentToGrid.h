@@ -110,6 +110,8 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesPresentToGrid, Traits>;
     using Base::Base;
 
+    static constexpr UInt16 FORMAT_VERSION = Traits::FORMAT_VERSION;
+
     typename Traits::Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return {};

@@ -190,6 +190,8 @@ public:
 
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesQuantileToGrid, Traits>;
 
+    static constexpr UInt16 FORMAT_VERSION = Traits::FORMAT_VERSION;
+
     explicit AggregateFunctionTimeseriesQuantileToGrid(const DataTypes & argument_types_, const Array & parameters_,
         TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_, Float64 phi_)
         : Base(argument_types_, parameters_, start_timestamp_, end_timestamp_, step_, window_, timestamp_scale_)
