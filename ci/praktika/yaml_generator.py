@@ -610,8 +610,9 @@ class PullRequestPushYamlGen:
         if "GrypeScan" in self.workflow_config.additional_jobs:
             res += AltinityWorkflowTemplates.ALTINITY_JOBS["GrypeScan"]
             ALL_JOBS += "\n      - GrypeScanServer\n      - GrypeScanKeeper"
-        if "Regression" in self.workflow_config.additional_jobs:
-            res += AltinityWorkflowTemplates.ALTINITY_JOBS["Regression"].replace(
+        if "Regression" in self.workflow_config.additional_jobs or "RegressionPR" in self.workflow_config.additional_jobs:
+            regression_template = AltinityWorkflowTemplates.ALTINITY_JOBS["Regression"] if "Regression" in self.workflow_config.additional_jobs else AltinityWorkflowTemplates.ALTINITY_JOBS["RegressionPR"]
+            res += regression_template.replace(
                 "{REGRESSION_HASH}", AltinityWorkflowTemplates.REGRESSION_HASH
             )
             ALL_JOBS += (

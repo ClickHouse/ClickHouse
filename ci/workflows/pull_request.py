@@ -163,7 +163,7 @@ workflow = Workflow.Config(
         *JobConfigs.toolchain_build_jobs,
         AltinityJobConfigs.source_upload_job,
     ],
-    additional_jobs=["GrypeScan", "Regression", "CIReport"],
+    additional_jobs=["GrypeScan", "RegressionPR", "CIReport"],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
