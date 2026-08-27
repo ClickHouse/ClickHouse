@@ -2549,8 +2549,27 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
                 tryLogCurrentException(log, fmt::format("part {} is broken, try to rename it as broken and ignore", detached_part_info.dir_name));
                 try
                 {
-                    part->renameToDetached("broken", /* ignore_error*/ false);
-                    rename_parts.old_and_new_names.front().old_dir.clear();
+                    /// `part_dir` here is `detached/`-qualified, so the target name is composed locally
+                    /// instead of derived from it. The rename refuses an occupied target instead of
+                    /// removing it, so a directory an earlier quarantine took survives.
+                    auto & rename_info = rename_parts.old_and_new_names.front();
+                    const String broken_dir = "broken_" + detached_part_info.dir_name;
+
+                    for (int try_no = 0; try_no < 10 && !rename_info.old_dir.empty(); ++try_no)
+                    {
+                        const String target = try_no ? broken_dir + DetachedPartInfo::TRY_N_SUFFIX + toString(try_no) : broken_dir;
+                        try
+                        {
+                            part->renameTo(fs::path(DETACHED_DIR_NAME) / target, /* remove_new_dir_if_exists */ false);
+                            rename_info.old_dir.clear();
+                        }
+                        catch (const Exception & e)
+                        {
+                            if (e.code() != ErrorCodes::DIRECTORY_ALREADY_EXISTS || try_no + 1 == 10)
+                                throw;
+                            LOG_WARNING(log, "Directory {} (to detach to) already exists. Will detach to directory with '_tryN' suffix.", target);
+                        }
+                    }
                 }
                 catch (...)
                 {
