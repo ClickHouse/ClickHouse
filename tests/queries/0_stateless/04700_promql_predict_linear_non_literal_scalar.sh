@@ -54,6 +54,16 @@ promql_client -q "predict_linear(up[3m], 60)"
 echo "-- predict_linear(up[3m], scalar(sum(vector(60)))) with a non-literal (SINGLE_SCALAR) t: same result, 40."
 promql_client -q "predict_linear(up[3m], scalar(sum(vector(60))))"
 
+# A `t` derived from time() reaches this helper as a SINGLE_SCALAR whose value has already been
+# materialized through the table's own value column type. On Float64 nothing rounds, so the horizon
+# equals the evaluation instant exactly and must agree with the bare-time() spelling below
+# (on a Float32 TimeSeries table this shape is rejected instead - see test_evaluation.py).
+echo "-- predict_linear(up[3m], scalar(sum(vector(time())))): SINGLE_SCALAR t = evaluation instant, prediction 30 + 1700000000/6."
+promql_client -q "predict_linear(up[3m], scalar(sum(vector(time()))))"
+
+echo "-- predict_linear(up[3m], time()): bare time() t, same horizon, results must match."
+promql_client -q "predict_linear(up[3m], time())"
+
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_data"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_tags"

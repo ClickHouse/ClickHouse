@@ -6,3 +6,7 @@
 [('instance','host1')]	2023-11-14 22:13:20.000	40
 -- predict_linear(up[3m], scalar(sum(vector(60)))) with a non-literal (SINGLE_SCALAR) t: same result, 40.
 [('instance','host1')]	2023-11-14 22:13:20.000	40
+-- predict_linear(up[3m], scalar(sum(vector(time())))): SINGLE_SCALAR t = evaluation instant, prediction 30 + 1700000000/6.
+[('instance','host1')]	2023-11-14 22:13:20.000	283333363.3333333
+-- predict_linear(up[3m], time()): bare time() t, same horizon, results must match.
+[('instance','host1')]	2023-11-14 22:13:20.000	283333363.3333333

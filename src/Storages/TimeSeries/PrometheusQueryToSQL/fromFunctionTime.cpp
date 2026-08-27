@@ -184,6 +184,22 @@ namespace
 SQLQueryPiece makeVaryingScalarPrecisionSafe(
     std::string_view function_name, const Node * argument_node, SQLQueryPiece && argument, ConverterContext & context)
 {
+    /// A single-row scalar subquery (e.g. `scalar(sum(vector(time())))`) has already been materialized through
+    /// the table's own value type by the generic conversion below us (`toVectorGrid`, the one-argument
+    /// aggregation operator), so on a non-Float64 table a time()-derived value is already rounded here.
+    /// Just like the SCALAR_GRID case below, rejecting beats handing back silently wrong numbers.
+    if ((argument.store_method == StoreMethod::SINGLE_SCALAR)
+        && !WhichDataType{context.scalar_data_type}.isFloat64()
+        && containsTimeCall(argument_node))
+    {
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                        "Function '{}' cannot use expression {} as its varying scalar argument on a TimeSeries table "
+                        "whose value type is {}: the evaluation time would be rounded to that type before the "
+                        "function sees it (Float32 resolves only ~128 seconds at current timestamps). "
+                        "Pass time() directly, or use a Float64 value column",
+                        function_name, getPromQLText(argument, context), context.scalar_data_type->getName());
+    }
+
     /// Only a grid of per-evaluation-step values goes through `Array(context.scalar_data_type)`; the constant and
     /// single-row store methods carry a Float64 `scalar_value` or the table's own values, which is what they mean.
     if (argument.store_method != StoreMethod::SCALAR_GRID)

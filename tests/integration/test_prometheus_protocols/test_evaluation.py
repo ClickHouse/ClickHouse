@@ -1859,6 +1859,23 @@ def test_predict_linear_with_time_horizon_on_float32_table():
             "'predict_linear(m[120], scalar(minute(vector(time() + 70))))', 1770582640, 1770582700, 60)"
         )
         assert "the evaluation time would be rounded to that type" in error
+
+        # A time()-derived single-row scalar (`scalar(sum(vector(time())))`, the SINGLE_SCALAR carrier) is
+        # materialized through the table's own value type by the generic translation below makeVaryingScalarPrecisionSafe -
+        # toVectorGrid() and the one-argument aggregation operator build it with context.scalar_data_type - so on
+        # Float32 it resolves to 1770582656 instead of 1770582640 and silently disagrees with the equivalent
+        # bare-time() horizon by 16 seconds. Like the derived grids above, reject it instead of returning wrong numbers.
+        error = node.query_and_get_error(
+            "SELECT * FROM prometheusQueryRange(prometheus_f32_epoch, "
+            "'predict_linear(m[120], scalar(sum(vector(time()))))', 1770582640, 1770582700, 60)"
+        )
+        assert "the evaluation time would be rounded to that type" in error
+
+        error = node.query_and_get_error(
+            "SELECT * FROM prometheusQuery(prometheus_f32_epoch, "
+            "'predict_linear(m[120], scalar(sum(vector(time()))))', 1770582640)"
+        )
+        assert "the evaluation time would be rounded to that type" in error
     finally:
         node.query("DROP TABLE prometheus_f32_epoch SYNC")
 
