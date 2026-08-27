@@ -57,7 +57,7 @@ struct UTF8Decoder
     UInt32 decode(UInt8 byte)
     {
         UInt32 type = TABLE[byte];
-        codepoint = (state != ACCEPT) ? (byte & 0x3fu) | (codepoint << 6) : (0xff >> type) & byte;
+        codepoint = (state != ACCEPT) ? (byte & 0x3fu) | (codepoint << 6) : (0xff >> type) & (byte);
         state = TABLE[256 + state * 16 + type];
         return state;
     }
@@ -244,7 +244,7 @@ size_t convertCodePointToUTF8(int code_point, char * out_bytes, size_t out_lengt
         code_point,
         reinterpret_cast<uint8_t *>(out_bytes),
         static_cast<int>(out_length));
-    chassert(res >= 0);
+    assert(res >= 0);
     return res;
 }
 

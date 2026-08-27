@@ -69,10 +69,10 @@ SerializationPtr DataTypeDateTime64::doGetSerialization(const SerializationInfoS
         if (&effective_tz != &time_zone)
         {
             TimezoneMixin overridden(effective_tz.getTimeZone());
-            return SerializationDateTime64::create(scale, overridden);
+            return std::make_shared<SerializationDateTime64>(scale, overridden);
         }
     }
-    return SerializationDateTime64::create(scale, *this);
+    return std::make_shared<SerializationDateTime64>(scale, *this);
 }
 
 std::string getDateTimeTimezone(const IDataType & data_type)
