@@ -6,6 +6,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -109,6 +110,11 @@ JoinResultPtr JoinSwitcher::joinBlock(Block block)
 bool JoinSwitcher::switchJoin()
 {
     HashJoin * hash_join = assert_cast<HashJoin *>(join.get());
+    LOG_DEBUG(
+        getLogger("JoinSwitcher"),
+        "Memory limit reached with HashJoin ({} bytes, {} rows), switching to PartialMergeJoin",
+        hash_join->getTotalByteCount(),
+        hash_join->getTotalRowCount());
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(true);
 
     /// Destroy old join & create new one.

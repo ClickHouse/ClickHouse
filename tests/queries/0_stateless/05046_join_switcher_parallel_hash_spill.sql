@@ -1,6 +1,7 @@
 -- `join_algorithm = 'auto'` can fill the hash phase in parallel, then drain onto
 -- `MergeJoin` when `max_rows_in_join` trips. Probe after the drain must stay
 -- correct for INNER/LEFT/RIGHT/FULL, including unmatched right rows.
+-- Random settings limits: max_rows_in_join=(50, 50); max_bytes_in_join=(0, 0); max_bytes_before_external_join=(0, 0); max_bytes_ratio_before_external_join=(0, 0)
 
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;
@@ -34,16 +35,32 @@ FROM (
 );
 
 SELECT 'inner';
-SELECT count() FROM t05046_l AS t1 INNER JOIN t05046_r AS t2 ON t1.n = t2.n;
+SELECT count() FROM t05046_l AS t1 INNER JOIN t05046_r AS t2 ON t1.n = t2.n
+SETTINGS max_threads = 8, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'auto', parallel_hash_join_threshold = 1, max_rows_in_join = 50, max_bytes_in_join = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, query_plan_optimize_join_order_randomize = 0, log_comment = '05046_switch';
 
 SELECT 'left';
-SELECT count() FROM t05046_l AS t1 LEFT JOIN t05046_r AS t2 ON t1.n = t2.n;
+SELECT count() FROM t05046_l AS t1 LEFT JOIN t05046_r AS t2 ON t1.n = t2.n
+SETTINGS max_threads = 8, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'auto', parallel_hash_join_threshold = 1, max_rows_in_join = 50, max_bytes_in_join = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, query_plan_optimize_join_order_randomize = 0;
 
 SELECT 'right';
-SELECT count() FROM t05046_l AS t1 RIGHT JOIN t05046_r AS t2 ON t1.n = t2.n;
+SELECT count() FROM t05046_l AS t1 RIGHT JOIN t05046_r AS t2 ON t1.n = t2.n
+SETTINGS max_threads = 8, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'auto', parallel_hash_join_threshold = 1, max_rows_in_join = 50, max_bytes_in_join = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, query_plan_optimize_join_order_randomize = 0;
 
 SELECT 'full';
-SELECT count() FROM t05046_l AS t1 FULL JOIN t05046_r AS t2 ON t1.n = t2.n;
+SELECT count() FROM t05046_l AS t1 FULL JOIN t05046_r AS t2 ON t1.n = t2.n
+SETTINGS max_threads = 8, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'auto', parallel_hash_join_threshold = 1, max_rows_in_join = 50, max_bytes_in_join = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, query_plan_optimize_join_order_randomize = 0;
+
+SYSTEM FLUSH LOGS query_log, text_log;
+SET max_rows_to_read = 0;
+SELECT 'switch';
+SELECT count() > 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND message LIKE '%switching to PartialMergeJoin%'
+      AND query_id IN (
+          SELECT query_id FROM system.query_log
+          WHERE log_comment = '05046_switch' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+      );
 
 DROP TABLE t05046_l;
 DROP TABLE t05046_r;
