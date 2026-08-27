@@ -24,7 +24,8 @@ struct SequenceNumberPosition
 SequenceNumberPosition findSequenceNumber(const std::string & path)
 {
     /// The name of the file ends at the first dot after the last slash.
-    size_t begin = path.find_first_of('.', path.find_last_of('/'));
+    /// When there is no slash (a top-level object key), the whole string is the name: `npos + 1 == 0`.
+    size_t begin = path.find_first_of('.', path.find_last_of('/') + 1);
     if (begin == std::string::npos)
         return {path.size(), path.size(), std::nullopt};
 
