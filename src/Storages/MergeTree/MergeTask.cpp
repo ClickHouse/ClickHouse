@@ -832,7 +832,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         LOG_DEBUG(ctx->log, "Will apply {} patches up to version {}", patch_parts.size(), global_ctx->future_part->part_info.getMutationVersion());
 
         for (const auto & patch : patch_parts)
-            LOG_TRACE(ctx->log, "Applying patch part {} with max data version {}", patch->name, patch->getSourcePartsSet().getMaxDataVersion());
+            LOG_TRACE(ctx->log, "Applying patch part {} with max data version {}", patch->name, patch->getPatchPartIndex().getMaxDataVersion());
 
         auto & mutable_snapshot = const_cast<MergeTreeData::IMutationsSnapshot &>(*mutations_snapshot);
         mutable_snapshot.addPatches(global_ctx->future_part->patch_parts);
@@ -935,8 +935,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     if (global_ctx->new_data_part->info.isPatch())
     {
-        auto set = SourcePartsSetForPatch::merge(global_ctx->future_part->parts);
-        global_ctx->new_data_part->setSourcePartsSet(std::move(set));
+        auto set = PatchPartIndex::merge(global_ctx->future_part->parts);
+        global_ctx->new_data_part->setPatchPartIndex(std::move(set));
     }
 
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());

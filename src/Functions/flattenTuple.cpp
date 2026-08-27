@@ -98,9 +98,9 @@ INSERT INTO tab VALUES ((3, ('c', 4)));
 SELECT flattenTuple(t) FROM tab;
         )",
         R"(
-┌─flattenTuple(t)┐
-│ (3, 'c', 4)    │
-└────────────────┘
+┌─flattenTuple(t)─┐
+│ (3,'c',4)       │
+└─────────────────┘
         )"
     }
     };
