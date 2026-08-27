@@ -76,7 +76,7 @@ void setCurrentQueryMemoryDriftExpected()
 }
 
 
-std::unique_ptr<MemoryTracker> createTrackerForMemoryOutlivingCurrentQuery()
+std::unique_ptr<MemoryTracker> createTrackerForDataTheQueryMayHandOver()
 {
     auto * query_memory_tracker = DB::CurrentThread::getMemoryTracker();
     while (query_memory_tracker && query_memory_tracker->level == VariableContext::Thread)
@@ -84,39 +84,37 @@ std::unique_ptr<MemoryTracker> createTrackerForMemoryOutlivingCurrentQuery()
 
     if (!query_memory_tracker || query_memory_tracker->level != VariableContext::Process)
         return nullptr;
+
+    auto tracker = std::make_unique<MemoryTracker>(
+        query_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false);
+
+    /// Settling against the query on destruction is the point of this tracker, not a leak to report.
+    tracker->setDriftExpected();
+
+    return tracker;
+}
+
+void handOverMemoryToTheUser(MemoryTracker & tracker)
+{
+    auto * query_memory_tracker = DB::CurrentThread::getMemoryTracker();
+    while (query_memory_tracker && query_memory_tracker->level == VariableContext::Thread)
+        query_memory_tracker = query_memory_tracker->getParent();
+
+    if (!query_memory_tracker || query_memory_tracker->level != VariableContext::Process)
+        return;
 
     auto * user_memory_tracker = query_memory_tracker->getParent();
     while (user_memory_tracker && user_memory_tracker->level != VariableContext::User)
         user_memory_tracker = user_memory_tracker->getParent();
 
     if (!user_memory_tracker)
-        return nullptr;
+        return;
 
-    auto tracker = std::make_unique<MemoryTracker>(
-        user_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false);
-
-    /// Settling against the user on destruction is the point of this tracker, not a leak to report.
-    tracker->setDriftExpected();
-
-    return tracker;
-}
-
-void giveMemoryBackToCurrentQuery(MemoryTracker & tracker)
-{
     Int64 size = tracker.get();
-    if (size <= 0)
-        return;
-
-    auto * query_memory_tracker = DB::CurrentThread::getMemoryTracker();
-    while (query_memory_tracker && query_memory_tracker->level == VariableContext::Thread)
-        query_memory_tracker = query_memory_tracker->getParent();
-
-    if (!query_memory_tracker || query_memory_tracker->level != VariableContext::Process)
-        return;
-
-    /// The user is charged either way; this only moves who holds the bytes below them.
-    query_memory_tracker->transferUpTo(VariableContext::User, -size);
-    tracker.transferUpTo(VariableContext::User, size);
+    tracker.setParent(user_memory_tracker);
+    /// The user keeps the charge it always had; only the query is relieved of it from here on.
+    if (size > 0)
+        query_memory_tracker->transferUpTo(VariableContext::User, size);
 }
 
 

@@ -1406,9 +1406,10 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     startInsertQuery(state);
     Squashing squashing(std::make_shared<const Block>(state.input_header), 0, state.query_context->getSettingsRef()[Setting::async_insert_max_data_size]);
 
-    /// The block being assembled here outlives this query once queued; charge it to a tracker of its own from
-    /// the start instead of estimating its size afterwards.
-    auto queued_data_tracker = createTrackerForMemoryOutlivingCurrentQuery();
+    /// The block being assembled here outlives this query once queued, but it sits under the query's own tracker
+    /// while buffering: an exception anywhere in this loop (timeout, disconnect, parse failure) then leaves the
+    /// buffered bytes charged to the query and settles nothing off the user.
+    auto queued_data_tracker = createTrackerForDataTheQueryMayHandOver();
     std::optional<MemoryTrackerSwitcher> switcher;
     if (queued_data_tracker)
         switcher.emplace(queued_data_tracker.get());
@@ -1433,10 +1434,8 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
         if (result_chunk)
         {
             switcher.reset();
-            /// Falls back to the synchronous path: the block never gets queued, so give the bytes back to the query.
-            if (queued_data_tracker)
-                giveMemoryBackToCurrentQuery(*queued_data_tracker);
-
+            /// Falls back to the synchronous path: the block never gets queued, so the tracker just goes out of
+            /// scope here; the bytes stay the query's, since that is where it sat all along.
             auto result = squashing.getHeader()->cloneWithColumns(result_chunk.detachColumns());
             return PushResult
             {

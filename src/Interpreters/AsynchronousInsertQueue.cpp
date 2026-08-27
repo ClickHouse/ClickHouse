@@ -510,7 +510,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 
     /// The bytes read below outlive this query once queued; charge them to a tracker of their own from the
     /// start instead of estimating the size afterwards.
-    auto queued_data_tracker = createTrackerForMemoryOutlivingCurrentQuery();
+    auto queued_data_tracker = createTrackerForDataTheQueryMayHandOver();
 
     StringWithMemoryTracking bytes;
     {
@@ -549,10 +549,8 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 
         if (!read_buf->eof())
         {
-            /// Falls back to the synchronous path: the data never gets queued, so give the bytes back to the query.
-            if (queued_data_tracker)
-                giveMemoryBackToCurrentQuery(*queued_data_tracker);
-
+            /// Falls back to the synchronous path: the data never gets queued, so the tracker just goes out of
+            /// scope here; the bytes stay the query's, since that is where it sat all along.
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
             ConcatReadBuffer::Buffers buffers;
@@ -684,6 +682,12 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
 
             throw;
         }
+
+        /// The entry is queued now, so its data outlives this query; move the charge to the user, who keeps it
+        /// until whichever thread flushes the entry frees it.
+        if (entry->queued_data_tracker)
+            handOverMemoryToTheUser(*entry->queued_data_tracker);
+
         data->size_in_bytes += entry_data_size;
         progress_future = entry->getFuture();
 
