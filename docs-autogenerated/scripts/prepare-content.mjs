@@ -47,6 +47,7 @@ function mintlifyDocsConfig(documents, sourceSiteConfig, navigation) {
   }
 
   const documentById = new Map(documents.map((document) => [document.id, document]));
+  const navigationLabels = new Map();
   function convertNode(node) {
     if (node.type === 'document') {
       const document = documentById.get(node.documentId);
@@ -54,6 +55,13 @@ function mintlifyDocsConfig(documents, sourceSiteConfig, navigation) {
       if (document.route !== node.route) {
         throw new Error(`Navigation route mismatch for ${node.documentId}`);
       }
+      if (typeof node.label !== 'string' || node.label.length === 0) {
+        throw new Error(`Navigation document ${node.documentId} has no label`);
+      }
+      if (navigationLabels.has(node.documentId)) {
+        throw new Error(`Navigation references document ${node.documentId} more than once`);
+      }
+      navigationLabels.set(node.documentId, node.label);
       return pagePathFromRoute(document.route);
     }
     if (node.type !== 'group' || !Array.isArray(node.children)) {
@@ -70,24 +78,27 @@ function mintlifyDocsConfig(documents, sourceSiteConfig, navigation) {
   const groups = navigation.root.children.map(convertNode);
 
   return {
-    $schema: sourceSiteConfig.$schema,
-    name: sourceSiteConfig.name,
-    theme: sourceSiteConfig.theme,
-    appearance: sourceSiteConfig.appearance,
-    background: sourceSiteConfig.background,
-    colors: sourceSiteConfig.colors,
-    fonts: sourceSiteConfig.fonts,
-    logo: sourceSiteConfig.logo,
-    favicon: sourceSiteConfig.favicon,
-    styling: sourceSiteConfig.styling,
-    navigation: {
-      tabs: [
-        {
-          tab: 'Reference',
-          groups,
-        },
-      ],
+    config: {
+      $schema: sourceSiteConfig.$schema,
+      name: sourceSiteConfig.name,
+      theme: sourceSiteConfig.theme,
+      appearance: sourceSiteConfig.appearance,
+      background: sourceSiteConfig.background,
+      colors: sourceSiteConfig.colors,
+      fonts: sourceSiteConfig.fonts,
+      logo: sourceSiteConfig.logo,
+      favicon: sourceSiteConfig.favicon,
+      styling: sourceSiteConfig.styling,
+      navigation: {
+        tabs: [
+          {
+            tab: 'Reference',
+            groups,
+          },
+        ],
+      },
     },
+    navigationLabels,
   };
 }
 
@@ -529,10 +540,11 @@ function prepareMdx(content, sourcePath, routeRewrites = new Map(), componentImp
   ).trim();
 }
 
-function frontmatter(document) {
+function frontmatter(document, sidebarTitle) {
   return [
     '---',
     `title: ${JSON.stringify(document.title)}`,
+    `sidebarTitle: ${JSON.stringify(sidebarTitle)}`,
     `description: ${JSON.stringify(document.description)}`,
     `route: ${JSON.stringify(document.route)}`,
     `stableId: ${JSON.stringify(document.id)}`,
@@ -652,7 +664,7 @@ async function main() {
   await mkdir(path.join(stagingDirectory, 'mintlify/snippets'), { recursive: true });
   const componentImports = new Map();
 
-  const docsConfig = mintlifyDocsConfig(
+  const { config: docsConfig, navigationLabels } = mintlifyDocsConfig(
     documentPayload.documents,
     sourceSiteConfig,
     navigation,
@@ -672,6 +684,11 @@ async function main() {
       `Mintlify navigation contains ${configuredPages.size} pages; expected ${manifest.documentCount}`,
     );
   }
+  if (navigationLabels.size !== manifest.documentCount) {
+    throw new Error(
+      `Reference navigation contains ${navigationLabels.size} labels; expected ${manifest.documentCount}`,
+    );
+  }
 
   for (const document of documentPayload.documents) {
     if (hash(document.content) !== document.contentHash) {
@@ -683,7 +700,7 @@ async function main() {
       'mintlify',
       `${pagePathFromRoute(document.route)}.mdx`,
     );
-    const content = `${frontmatter(document)}\n\n${prepareMdx(document.content, document.sourcePath, routeRewrites, componentImports)}\n`;
+    const content = `${frontmatter(document, navigationLabels.get(document.id))}\n\n${prepareMdx(document.content, document.sourcePath, routeRewrites, componentImports)}\n`;
     await mkdir(path.dirname(destination), { recursive: true });
     await writeFile(destination, content, 'utf8');
   }

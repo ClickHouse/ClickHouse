@@ -31,6 +31,9 @@ export async function getStaticPaths() {
   const titleMap = Object.fromEntries(
     entries.map((entry) => [entry.id, entry.data.title]),
   );
+  const sidebarTitleMap = Object.fromEntries(
+    entries.map((entry) => [entry.id, entry.data.sidebarTitle]),
+  );
   const featureStateByRoute = Object.fromEntries(
     entries
       .filter((entry) => entry.data.featureState)
@@ -38,7 +41,11 @@ export async function getStaticPaths() {
   ) as Record<string, 'beta' | 'experimental'>;
 
   const pages = entries.map((entry) => {
-    const page = resolvePageData(docsConfig as DocsConfig, {
+    const sidebarPage = resolvePageData(docsConfig as DocsConfig, {
+      currentPath: entry.data.route,
+      titleMap: sidebarTitleMap,
+    });
+    const footerPage = resolvePageData(docsConfig as DocsConfig, {
       currentPath: entry.data.route,
       titleMap,
     });
@@ -47,10 +54,10 @@ export async function getStaticPaths() {
       params: { slug: entry.data.route.slice('/docs/reference/'.length) },
       props: {
         entry,
-        sidebarEntries: page.sidebarEntries,
+        sidebarEntries: sidebarPage.sidebarEntries,
         featureStateByRoute,
-        previous: page.footerPages.prev,
-        next: page.footerPages.next,
+        previous: footerPage.footerPages.prev,
+        next: footerPage.footerPages.next,
       },
     };
   });

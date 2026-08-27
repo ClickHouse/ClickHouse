@@ -613,6 +613,18 @@ function navigationGroupMatches(document, group) {
 }
 
 function navigationDocumentLabel(document, group) {
+  if (group.stripDocumentTitlePrefix !== undefined) {
+    if (!document.title.startsWith(group.stripDocumentTitlePrefix)) {
+      throw new Error(
+        `Document ${document.id} title does not start with ${group.stripDocumentTitlePrefix}`,
+      );
+    }
+    const label = document.title.slice(group.stripDocumentTitlePrefix.length);
+    if (!label) {
+      throw new Error(`Document ${document.id} has an empty navigation label`);
+    }
+    return label;
+  }
   return group.useDocumentTitle ? document.title : document.name;
 }
 
@@ -683,6 +695,20 @@ function resolveNavigation(definition, documents) {
     }
     if (group.useDocumentTitle !== undefined && typeof group.useDocumentTitle !== 'boolean') {
       throw new Error(`Invalid useDocumentTitle in reference navigation group ${group.id}`);
+    }
+    if (
+      group.stripDocumentTitlePrefix !== undefined
+      && (
+        typeof group.stripDocumentTitlePrefix !== 'string'
+        || group.stripDocumentTitlePrefix.length === 0
+      )
+    ) {
+      throw new Error(`Invalid stripDocumentTitlePrefix in reference navigation group ${group.id}`);
+    }
+    if (group.useDocumentTitle !== undefined && group.stripDocumentTitlePrefix !== undefined) {
+      throw new Error(
+        `Reference navigation group ${group.id} cannot use both useDocumentTitle and stripDocumentTitlePrefix`,
+      );
     }
     if (group.groupBySourcePage !== undefined && typeof group.groupBySourcePage !== 'boolean') {
       throw new Error(`Invalid groupBySourcePage in reference navigation group ${group.id}`);

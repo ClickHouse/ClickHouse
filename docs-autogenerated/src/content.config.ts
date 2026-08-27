@@ -10,6 +10,7 @@ const reference = defineCollection({
   }),
   schema: z.object({
     title: z.string(),
+    sidebarTitle: z.string(),
     description: z.string(),
     route: z.string(),
     stableId: z.string(),

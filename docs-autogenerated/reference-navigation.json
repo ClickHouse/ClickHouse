@@ -246,7 +246,7 @@
                 "sourcePrefix": "statements/alter/",
                 "titlePrefix": "ALTER TABLE"
               },
-              "useDocumentTitle": true
+              "stripDocumentTitlePrefix": "ALTER TABLE "
             }
           ]
         },

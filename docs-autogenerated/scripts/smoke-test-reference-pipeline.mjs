@@ -161,6 +161,10 @@ async function main() {
     const search = (await readJson(path.join(artifactDirectory, 'search.json'))).records;
     const navigation = await readJson(path.join(artifactDirectory, 'navigation.json'));
     const redirects = (await readJson(path.join(generatedDirectory, 'data/redirects.json'))).redirects;
+    const alterModifyQueryPage = await readFile(
+      path.join(generatedDirectory, 'mintlify/docs/reference/statements/alter/view.mdx'),
+      'utf8',
+    );
     const routes = new Set(documents.map((document) => document.route));
     const searchTitles = new Set(search.map((record) => record.title));
     const redirectMap = new Map(redirects.map(({ from, to }) => [from, to]));
@@ -207,9 +211,18 @@ async function main() {
       '`ALTER` navigation does not start with its overview and `ALTER TABLE` primitive',
     );
     requireValue(
-      alterTableNavigation?.children.some((child) => child.label === 'ALTER TABLE ... COLUMN')
-        && alterTableNavigation.children.some((child) => child.label === 'ALTER TABLE ... CONSTRAINT'),
+      alterTableNavigation?.children.some((child) => child.label === '... COLUMN')
+        && alterTableNavigation.children.some((child) => child.label === '... CONSTRAINT'),
       '`ALTER TABLE` variants are missing from their primitive navigation group',
+    );
+    requireValue(
+      alterModifyQueryPage.includes('title: "ALTER TABLE ... MODIFY QUERY"')
+        && alterModifyQueryPage.includes('sidebarTitle: "... MODIFY QUERY"'),
+      '`ALTER TABLE` sidebar labels are not shortened independently of page titles',
+    );
+    requireValue(
+      searchTitles.has('ALTER TABLE ... MODIFY QUERY'),
+      '`ALTER TABLE ... MODIFY QUERY` lost its fully qualified search title',
     );
     const createNavigation = findNavigationNode(navigation.root, 'reference.statements.create');
     requireValue(

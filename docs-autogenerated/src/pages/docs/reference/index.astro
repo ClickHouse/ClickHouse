@@ -24,7 +24,9 @@ function firstPage(entries: NavEntry[]): string {
 }
 
 const entries = await getCollection('reference');
-const titleMap = Object.fromEntries(entries.map((entry) => [entry.id, entry.data.title]));
+const sidebarTitleMap = Object.fromEntries(
+  entries.map((entry) => [entry.id, entry.data.sidebarTitle]),
+);
 const featureStateByRoute = Object.fromEntries(
   entries
     .filter((entry) => entry.data.featureState)
@@ -32,7 +34,7 @@ const featureStateByRoute = Object.fromEntries(
 ) as Record<string, 'beta' | 'experimental'>;
 const page = resolvePageData(docsConfig as DocsConfig, {
   currentPath: '/docs/reference',
-  titleMap,
+  titleMap: sidebarTitleMap,
 });
 const families = page.sidebarEntries.filter(isNavGroup);
 const document = {
