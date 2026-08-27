@@ -19,6 +19,9 @@ cat "${CUR_DIR}"/wasm/abi_buf_null_data.wasm | ${CLICKHOUSE_CLIENT} --query "INS
 ${CLICKHOUSE_CLIENT} --query "CREATE OR REPLACE FUNCTION returns_null_data_pointer LANGUAGE WASM ABI BUFFERED_V1 FROM 'abi_buf_null_data' ARGUMENTS (UInt32) RETURNS Int32"
 
 # A buffer with a non-zero size must have a non-zero data pointer, the host rejects such a buffer.
+# Check both the error class and the message: the query must fail with `WASM_ERROR`, and it must fail
+# because of the null data pointer, not for some other reason.
+${CLICKHOUSE_CLIENT} --query "SELECT returns_null_data_pointer(0 :: UInt32) -- { serverError WASM_ERROR }"
 ${CLICKHOUSE_CLIENT} --query "SELECT returns_null_data_pointer(0 :: UInt32)" 2>&1 | grep -o -m1 "returned null data pointer with size 42"
 
 ${CLICKHOUSE_CLIENT} << EOF
