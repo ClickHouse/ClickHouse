@@ -423,30 +423,32 @@ def test_cancel_query_with_memory_reservation():
 
 
 def test_memory_eviction_score_evicts_higher_score():
-    """The `memory_eviction_score` query setting decides which running query is evicted first
-    within a workload. Both queries here run in the SAME workload (same precedence), so neither
-    precedence nor size selects the victim — the score does. This exercises the full
-    `Settings` -> `ProcessList` -> `MemoryReservation` plumbing, not just the scheduler internals."""
+    """`memory_eviction_score` decides which query is evicted within a workload, overriding the
+    default largest-reservation-first order. `victim` (small reservation, high score) and `big`
+    (large reservation, default score) both run in the lower-precedence `production` workload; a
+    higher-precedence `vip` query then forces an eviction from `production`. The score makes the
+    *smaller* `victim` the one killed — the largest-first policy alone would have killed `big`
+    instead — so the assertion fails on the old behavior and this covers the
+    `Settings` -> `ProcessList` -> `MemoryReservation` path end to end."""
     node.query(
         """
         create resource memory (memory reservation);
-        create workload all settings max_memory='100Mi';
-        create workload production in all;
+        create workload all settings max_memory='50Mi';
+        create workload production in all settings precedence=2;
+        create workload vip in all settings precedence=-1;
     """
     )
 
-    results = {"victim": None, "grower": None}
-    errors = {"victim": None, "grower": None}
+    results = {"victim": None, "big": None, "vip": None}
+    errors = {"victim": None, "big": None, "vip": None}
 
     def run_victim_query():
+        # Smaller reservation but the higher memory_eviction_score, so it must be the one evicted.
+        # `max_block_size=1` makes the kill observable between processor steps.
         try:
-            # Holds a large reservation and sleeps. It has the higher memory_eviction_score, so
-            # it must be the one evicted once the workload runs out of memory, even though it is
-            # not the query that triggers the eviction. `max_block_size=1` makes the kill
-            # observable between processor steps.
             node.query(
                 "select sleepEachRow(1) from numbers(60) "
-                "settings max_block_size=1, workload='production', reserve_memory='95Mi', memory_eviction_score=100",
+                "settings max_block_size=1, workload='production', reserve_memory='10Mi', memory_eviction_score=100",
                 query_id="test_mes_victim",
             )
             results["victim"] = "success"
@@ -454,43 +456,67 @@ def test_memory_eviction_score_evicts_higher_score():
             errors["victim"] = str(e)
             results["victim"] = "killed"
 
-    def run_grower_query():
+    def run_big_query():
+        # Larger reservation, default score. The largest-first policy alone would evict this one,
+        # but the higher-scored `victim` must be chosen instead, so `big` survives.
         try:
-            # Wait until the victim's reservation is admitted: ProcessList::insert constructs the
-            # MemoryReservation (blocking until admitted) before publishing the query, so presence
-            # in system.processes means its 95Mi is already reserved.
+            node.query(
+                "select sleepEachRow(1) from numbers(60) "
+                "settings max_block_size=1, workload='production', reserve_memory='25Mi', memory_eviction_score=0",
+                query_id="test_mes_big",
+            )
+            results["big"] = "success"
+        except QueryRuntimeException as e:
+            errors["big"] = str(e)
+            results["big"] = "killed"
+
+    def run_vip_query():
+        # Higher precedence. Once both production reservations are admitted (35Mi), its own 20Mi
+        # reservation pushes the workload over its 50Mi limit and forces one eviction from the
+        # lower-precedence production workload; freeing the 10Mi victim is enough to admit it.
+        try:
             while (
-                node.query(
-                    "select count() from system.processes where query_id = 'test_mes_victim'"
-                ).strip()
-                == "0"
+                int(
+                    node.query(
+                        "select count() from system.processes "
+                        "where query_id in ('test_mes_victim', 'test_mes_big')"
+                    ).strip()
+                )
+                < 2
             ):
-                if results["victim"] is not None:
+                # A settled production result means it will never be admitted (refused or finished).
+                if results["victim"] is not None or results["big"] is not None:
                     return
                 time.sleep(0.1)
-            # Same workload, default score (0). Admitted with a tiny reservation, then it grows
-            # past it while building the GROUP BY hash table; once the workload total exceeds
-            # max_memory the eviction fires and picks the higher-scored victim, not this query.
-            # Its own peak stays well under max_memory, so it succeeds after the victim is freed.
             node.query(
-                "select count() from (select number from numbers(1000000) group by number) "
-                "settings workload='production', reserve_memory='1Mi', memory_eviction_score=0",
-                query_id="test_mes_grower",
+                "select count(*) from numbers(1000000) "
+                "settings workload='vip', reserve_memory='20Mi'",
+                query_id="test_mes_vip",
             )
-            results["grower"] = "success"
+            results["vip"] = "success"
         except QueryRuntimeException as e:
-            errors["grower"] = str(e)
-            results["grower"] = "killed"
+            errors["vip"] = str(e)
+            results["vip"] = "killed"
 
-    t1 = threading.Thread(target=run_victim_query)
-    t2 = threading.Thread(target=run_grower_query)
+    threads = [
+        threading.Thread(target=run_victim_query),
+        threading.Thread(target=run_big_query),
+        threading.Thread(target=run_vip_query),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
 
-    t1.start()
-    t2.start()
-    t1.join()
-    t2.join()
-
-    assert results["victim"] == "killed" and results["grower"] == "success", \
-        f"Expected the higher memory_eviction_score query to be evicted and the grower to succeed. " \
-        f"Results: {results}, Errors: {errors}"
+    assert (
+        results["victim"] == "killed"
+        and results["big"] == "success"
+        and results["vip"] == "success"
+    ), (
+        f"Expected the smaller higher-score victim to be evicted while the larger default-score "
+        f"query survived. Results: {results}, Errors: {errors}"
+    )
+    # The eviction must be a memory-reservation kill specifically, not some unrelated failure.
+    assert "MEMORY_RESERVATION_KILLED" in (errors["victim"] or ""), \
+        f"victim should fail with MEMORY_RESERVATION_KILLED, got: {errors['victim']}"
 
