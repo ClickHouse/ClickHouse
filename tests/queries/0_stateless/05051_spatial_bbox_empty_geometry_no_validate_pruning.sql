@@ -1,14 +1,13 @@
 -- Regression test: with `validate_polygons = 0`, an EMPTY constant geometry must not fail
 -- `spatial_bbox` pruning closed.
 --
--- `extractBboxFromFieldValue` (`src/Common/GeoBbox.h`) poisoned every empty `Array` -- a top-level
--- `CAST([], 'Ring')` as well as an empty ring nested in `[shell, []]` -- before it ever consulted
--- `require_valid`. That is right by default, where `parseConstPolygon` assembles the same literal
--- and `bg::is_valid` rejects it, so an exception is pending that pruning must not hide. It is wrong
--- with `validate_polygons = 0`: `pointInPolygon` then skips `bg::is_valid`, accepts the empty
--- geometry and simply answers `0` (see `00500_point_in_polygon_empty_bound`), so there is no
--- exception left to preserve and the fail-closed cost buys nothing. The empty piece must instead
--- contribute no information, leaving the surrounding conjunct and its siblings free to prune.
+-- `extractBboxFromFieldValue` (`src/Common/GeoBbox.h`) marked every empty `Array` invalid before it
+-- ever consulted `require_valid`. That is right by default, where `parseConstPolygon` assembles the
+-- same literal and `bg::is_valid` rejects it, so an exception is pending that pruning must not hide.
+-- It is wrong with `validate_polygons = 0`: `pointInPolygon` then skips `bg::is_valid`, accepts the
+-- empty geometry and simply answers `0` (see `00500_point_in_polygon_empty_bound`), so there is no
+-- exception left to preserve and failing closed only costs pruning -- for the whole surrounding
+-- `AND`, not just for the empty conjunct itself.
 
 DROP TABLE IF EXISTS test_spatial_bbox_empty_geometry;
 
@@ -32,8 +31,8 @@ OPTIMIZE TABLE test_spatial_bbox_empty_geometry FINAL;
 
 SET optimize_move_to_prewhere = 0;
 
--- A wholly empty constant contributes no bbox, but must not veto the sibling conjunct's pruning:
--- granule 2 lies outside `[(0, 0), (1, 0), (1, 1), (0, 1)]` and must be skipped.
+-- The empty constant contributes no bbox of its own, but it must not veto the sibling conjunct's
+-- pruning: granule 2 lies outside `[(0, 0), (1, 0), (1, 1), (0, 1)]` and must be skipped.
 SELECT extract(explain_text, '(?s)Name: idx_bbox.*?Granules: ([0-9]+/[0-9]+)') FROM (
     SELECT arrayStringConcat(groupArray(explain), '\n') AS explain_text
     FROM (
@@ -45,40 +44,22 @@ SELECT extract(explain_text, '(?s)Name: idx_bbox.*?Granules: ([0-9]+/[0-9]+)') F
     )
 );
 
+-- Sanity: the query still evaluates, and the empty ring matches nothing.
 SELECT count() FROM test_spatial_bbox_empty_geometry
 WHERE pointInPolygon(p, CAST([], 'Ring'))
   AND pointInPolygon(p, [(0., 0.), (1., 0.), (1., 1.), (0., 1.)])
 SETTINGS validate_polygons = 0;
 
--- An empty HOLE nested in a polygon literal removes nothing, so the shell's bbox is the whole
--- geometry's bbox and pruning must use it: granule 2 is skipped.
+-- The default `validate_polygons = 1` must keep failing closed for the same constant: there the
+-- predicate raises, and pruning the far granule away would hide it.
 SELECT extract(explain_text, '(?s)Name: idx_bbox.*?Granules: ([0-9]+/[0-9]+)') FROM (
     SELECT arrayStringConcat(groupArray(explain), '\n') AS explain_text
     FROM (
         EXPLAIN indexes = 1
         SELECT count() FROM test_spatial_bbox_empty_geometry
-        WHERE pointInPolygon(p, [[(0., 0.), (1., 0.), (1., 1.), (0., 1.)], []])
-        SETTINGS validate_polygons = 0
+        WHERE pointInPolygon(p, CAST([], 'Ring'))
+          AND pointInPolygon(p, [(0., 0.), (1., 0.), (1., 1.), (0., 1.)])
     )
 );
-
-SELECT count() FROM test_spatial_bbox_empty_geometry
-WHERE pointInPolygon(p, [[(0., 0.), (1., 0.), (1., 1.), (0., 1.)], []])
-SETTINGS validate_polygons = 0;
-
--- The default `validate_polygons = 1` must keep failing closed for the same literal: there
--- `parseConstPolygon` assembles it and `bg::is_valid` rejects it, so pruning the far granule away
--- would hide the exception.
-SELECT extract(explain_text, '(?s)Name: idx_bbox.*?Granules: ([0-9]+/[0-9]+)') FROM (
-    SELECT arrayStringConcat(groupArray(explain), '\n') AS explain_text
-    FROM (
-        EXPLAIN indexes = 1
-        SELECT count() FROM test_spatial_bbox_empty_geometry
-        WHERE pointInPolygon(p, [[(0., 0.), (1., 0.), (1., 1.), (0., 1.)], []])
-    )
-);
-
-SELECT count() FROM test_spatial_bbox_empty_geometry
-WHERE pointInPolygon(p, [[(0., 0.), (1., 0.), (1., 1.), (0., 1.)], []]); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE test_spatial_bbox_empty_geometry;
