@@ -25,6 +25,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "Новая экспериментальная настройка."}]}]} />
 
 Число задач по умолчанию для параллельного чтения в распределённом запросе. Задачи распределяются между репликами.
+Используется распределённым планировщиком на основе правил. Оптимизатор на основе стоимости выбирает степень распараллеливания чтения на основе оценочной стоимости и не использует эту настройку.
 
 <div id="distributed_plan_default_shuffle_join_bucket_count">
   ## distributed_plan_default_shuffle_join_bucket_count
@@ -37,6 +38,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "Новая экспериментальная настройка."}]}]} />
 
 Число бакетов по умолчанию для распределённого shuffle-hash-join.
+Используется распределённым планировщиком на основе правил. Оптимизатор на основе стоимости выбирает степень распараллеливания на основе оценочной стоимости и не использует эту настройку.
 
 <div id="distributed_plan_execute_locally">
   ## distributed_plan_execute_locally
@@ -89,6 +91,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "20000"},{"label": "Новая экспериментальная настройка."}]}]} />
 
 Максимальное количество строк, при котором в распределённом плане запроса используется broadcast JOIN вместо shuffle JOIN.
+Эвристика для распределённого планировщика на основе правил. Когда включён оптимизатор на основе стоимости, выбор между broadcast и shuffle определяется оценочной стоимостью, и эта настройка не влияет на него.
 
 <div id="distributed_plan_optimize_exchanges">
   ## distributed_plan_optimize_exchanges
