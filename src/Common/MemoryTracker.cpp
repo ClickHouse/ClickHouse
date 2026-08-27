@@ -533,7 +533,8 @@ Int64 MemoryTracker::decrementLocalUsage(Int64 size, Int64 * owned_by_the_server
         Int64 current = amount.load(std::memory_order_relaxed);
         do
         {
-            accounted_size = std::clamp<Int64>(current, 0, size);
+            /// A negative size gives bytes back rather than taking them, and there is nothing to saturate then.
+            accounted_size = size < 0 ? size : std::min(size, std::max<Int64>(current, 0));
         }
         while (!amount.compare_exchange_weak(current, current - accounted_size, std::memory_order_relaxed));
 
