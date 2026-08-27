@@ -1012,7 +1012,21 @@ private:
             else
                 total += 256 * row_count + null_map_bytes; // conservative fallback
         }
-        return total;
+        return total + perBatchWireOverhead(arguments);
+    }
+
+    /// Fixed per-batch structural bytes the wire adds on top of the column payload, independent
+    /// of the row count. `ColumnBinary` writes a frame header plus one descriptor per column
+    /// before any data (see ColumnBinaryOutputFormat::precomputeSerializedSize), which the
+    /// per-column estimates above do not model at all: a 1000-column, 1-row `UInt8` block is
+    /// about 1000 bytes of payload but over 40 KB on the wire, so omitting this lets the
+    /// splitter skip a needed split and then fail allocating a batch larger than `input_budget`.
+    /// The other supported formats are row-oriented and carry no such per-batch schema block.
+    size_t perBatchWireOverhead(const ColumnsWithTypeAndName & arguments) const
+    {
+        if (buffered_serialization_format != "ColumnBinary")
+            return 0;
+        return ColumnBinaryWire::FRAME_HEADER_BYTES + arguments.size() * ColumnBinaryWire::COL_DESC_BYTES;
     }
 
     /// Recursively estimate the serialized byte size of a single row of a COL_COMPLEX-shaped
@@ -1390,17 +1404,20 @@ private:
                 + per_row_overhead * input_rows_count;
             if (total_bytes > input_budget)
             {
-                // Preserved ColumnConst arguments are charged once per batch (not per
-                // row) by estimateTotalSerializedSize; calling it with row_count=0 zeroes
-                // out every per-row-scaled term and leaves just that fixed reserved cost.
-                // Every batch this loop produces still has to pay it, so seed running_bytes
-                // with it (and fail up front if it alone can never fit), or a batch of many
-                // tiny rows could still exceed input_budget by the preserved const's size.
+                // Preserved ColumnConst arguments, and the format's own fixed per-batch
+                // overhead (a ColumnBinary frame header plus its descriptor table), are
+                // charged once per batch rather than per row by estimateTotalSerializedSize;
+                // calling it with row_count=0 zeroes out every per-row-scaled term and leaves
+                // just that fixed reserved cost. Every batch this loop produces still has to
+                // pay it, so seed running_bytes with it (and fail up front if it alone can
+                // never fit), or a batch of many tiny rows could still exceed input_budget by
+                // the preserved const's size or by the descriptor table of a wide block.
                 size_t const_reserved_bytes = estimateTotalSerializedSize(arguments, 0, preserve_const) * expansion;
                 if (const_reserved_bytes > input_budget_ceiling)
                     throw Exception(ErrorCodes::WASM_ERROR,
-                        "WASM UDF preserved constant arguments alone require an estimated {} bytes, "
-                        "exceeding the {} byte input budget derived from the module's linear memory",
+                        "WASM UDF preserved constant arguments and per-batch format overhead alone "
+                        "require an estimated {} bytes, exceeding the {} byte input budget derived "
+                        "from the module's linear memory",
                         const_reserved_bytes, input_budget_ceiling);
 
                 // Cumulative per-row pass: flush before the next row would cross the

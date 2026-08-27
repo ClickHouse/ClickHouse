@@ -20,6 +20,16 @@ public:
     String getName() const override { return "ColumnBinary"; }
     Chunk read() override;
 
+    /// A single format object is reused across several independent inputs (an asynchronous
+    /// insert hands the executor one entry's data after another through `setReadBuffer`), and
+    /// the executor resets the parser between them. Without clearing `eof_` here the format
+    /// stays finished after the first entry and silently yields no rows for the rest.
+    void resetParser() override
+    {
+        IInputFormat::resetParser();
+        eof_ = false;
+    }
+
 private:
     /// Validates the descriptor table in `hdr_desc` (which must cover the frame header and all
     /// `num_cols` descriptors) and returns the frame's total size, i.e. the furthest byte any

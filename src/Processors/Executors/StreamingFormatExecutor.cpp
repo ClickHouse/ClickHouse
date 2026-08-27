@@ -59,7 +59,7 @@ void StreamingFormatExecutor::setQueryParameters(const NameToNameMap & parameter
         values_format->setQueryParameters(parameters);
 }
 
-void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const Chunk & chunk)
+void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const Columns & reference_columns)
 {
     if (!try_preallocate)
         return;
@@ -68,7 +68,6 @@ void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const C
 
     if (total_bytes && num_bytes && total_chunks > 1)
     {
-        const auto & reference_columns = chunk.getColumns();
         size_t factor = static_cast<size_t>(std::ceil(static_cast<double>(total_bytes) / static_cast<double>(num_bytes)));
 
         /// assuming that all chunks have the same nature, specifically
@@ -164,17 +163,19 @@ size_t StreamingFormatExecutor::insertChunk(Chunk chunk, size_t num_bytes)
     if (adding_defaults_transform)
         adding_defaults_transform->transform(chunk);
 
-    preallocateResultColumns(num_bytes, chunk);
-
+    // A source column may legitimately be a ColumnConst (e.g. ColumnBinary preserves
+    // constness from the wire). Neither insertRangeFrom nor prepareForSquashing can accept a
+    // ColumnConst source - both assert_cast it to the destination's concrete type - so
+    // normalize before preallocateResultColumns, which feeds these columns to
+    // prepareForSquashing, and not merely before the insertRangeFrom loop below.
     auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = column->convertToFullColumnIfConst();
+
+    preallocateResultColumns(num_bytes, columns);
+
     for (size_t i = 0, s = columns.size(); i < s; ++i)
-    {
-        // A source column may legitimately be a ColumnConst (e.g. ColumnBinary preserves
-        // constness from the wire); insertRangeFrom into a concrete destination column
-        // cannot accept a ColumnConst source, so normalize here regardless of which format
-        // produced the chunk.
-        result_columns[i]->insertRangeFrom(*columns[i]->convertToFullColumnIfConst(), 0, columns[i]->size());
-    }
+        result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
 
     return chunk_rows;
 }

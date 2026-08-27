@@ -1469,6 +1469,19 @@ inline MutableColumnPtr readColumnFromDesc(
             offs_col->getData()[i] = row_off;
         }
 
+        // The loop above only checks that every referenced row exists in its alternative; the
+        // converse - that every decoded sub-column row is actually referenced - is checked here.
+        // Without it a frame declaring a non-empty alternative that no discriminator selects
+        // reaches ColumnVariant::validateState, which reports the mismatch as a LOGICAL_ERROR
+        // rather than as the malformed input it is.
+        for (size_t g = 0; g < alt_types.size(); ++g)
+        {
+            if (sub_present[g] && next_offset[g] != sub_by_global[g].second)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "ColumnBinary: COL_VARIANT alternative {} declares {} rows but only {} are referenced",
+                    g, sub_by_global[g].second, next_offset[g]);
+        }
+
         col = ColumnVariant::create(std::move(discr_col), std::move(offs_col), std::move(variant_cols));
     }
     else if (raw_type == COL_LOWCARD)
