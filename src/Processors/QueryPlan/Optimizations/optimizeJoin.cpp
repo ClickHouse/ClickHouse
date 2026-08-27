@@ -292,14 +292,20 @@ struct RuntimeHashStatisticsContext
     /// needed). We start from `raw_hashes[child]` rather than the previously-xored value in
     /// `cache_keys[child]`, because under reorder the new parent's contribution can differ
     /// from the original tree's parent contribution that was stamped into `cache_keys`.
-    UInt64 deriveCacheKeysForNewJoin(
+    struct DerivedJoinCacheKeys
+    {
+        UInt64 right_key = 0;
+        UInt64 output_key = 0;
+    };
+
+    DerivedJoinCacheKeys deriveCacheKeysForNewJoin(
         const QueryPlan::Node * left_child_node,
         const QueryPlan::Node * right_child_node,
         const QueryPlan::Node & new_node,
         const JoinStepLogical & join_step)
     {
         if (cache_keys.empty())
-            return 0;
+            return {};
 
         UInt64 raw_left = getRawHash(left_child_node);
         UInt64 raw_right = getRawHash(right_child_node);
@@ -321,7 +327,22 @@ struct RuntimeHashStatisticsContext
         raw_hashes[&new_node] = raw_new;
         cache_keys[&new_node] = raw_new;
 
-        return right_key;
+        /// Derive a key for the join output stats that takes the kind, strictness
+        /// and non-equi conditions into account, in addition to the equi conditions
+        /// covered by `calculateJoinStepCacheKeyContribution`.
+        SipHash output_hash;
+        output_hash.update(raw_new);
+        const auto & join_operator = join_step.getJoinOperator();
+        output_hash.update(join_operator.kind);
+        output_hash.update(join_operator.strictness);
+        for (const auto & condition : join_operator.expression)
+        {
+            if (condition.isFunction(JoinConditionOperator::Equals) || condition.isFunction(JoinConditionOperator::NullSafeEquals))
+                continue;
+            condition.getNode()->updateHash(output_hash);
+        }
+
+        return {right_key, output_hash.get64()};
     }
 };
 
@@ -1545,10 +1566,12 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
             auto & new_node = nodes.emplace_back();
 
-            UInt64 right_table_key = query_graph_builder.context->statistics_context
+            auto join_cache_keys = query_graph_builder.context->statistics_context
                 .deriveCacheKeysForNewJoin(left_child_node, right_child_node, new_node, *join_step);
-            if (right_table_key)
-                join_step->setRightHashTableCacheKey(right_table_key);
+            if (join_cache_keys.right_key)
+                join_step->setRightHashTableCacheKey(join_cache_keys.right_key);
+            if (join_cache_keys.output_key)
+                join_step->setJoinOutputCacheKey(join_cache_keys.output_key);
 
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};

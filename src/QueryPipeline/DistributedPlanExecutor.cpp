@@ -976,8 +976,8 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
 class DistributedQueryPlanExecutorLocal final : public DistributedQueryPlanExecutor
 {
 public:
-    DistributedQueryPlanExecutorLocal(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, DistributedQueryCancellationPtr cancellation_)
-        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, makeContextForLocalExecution(context_), std::move(cancellation_))
+    DistributedQueryPlanExecutorLocal(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, DistributedQueryCancellationPtr cancellation_, StageWakeupPtr stage_wakeup_)
+        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, makeContextForLocalExecution(context_), std::move(cancellation_), std::move(stage_wakeup_))
     {
     }
 
@@ -1016,7 +1016,7 @@ protected:
         std::promise<void> task_promise;
         std::future<void> future = task_promise.get_future();
 
-        threads.emplace_back([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, cancellation = this->cancellation]() mutable
+        threads.emplace_back([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, cancellation = this->cancellation, stage_wakeup = this->stage_wakeup]() mutable
         {
             ThreadStatus thread_status;
             /// The task attaches its own query context and thread group inside executeTask (matching
@@ -1031,6 +1031,10 @@ protected:
             {
                 promise.set_exception(std::current_exception());
             }
+
+            /// The task future this promise belongs to is what `waitForStage` looks at, so tell the
+            /// waiter that its answer may have changed.
+            notifyStageWakeup(stage_wakeup);
         });
 
         return future;
@@ -1323,10 +1327,11 @@ public:
         const DistributedQueryPlan & distributed_query_plan_,
         TaskToHostMapPtr task_to_host_map_,
         ContextPtr context_,
-        DistributedQueryCancellationPtr cancellation_)
-        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_), std::move(cancellation_))
+        DistributedQueryCancellationPtr cancellation_,
+        StageWakeupPtr stage_wakeup_)
+        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_), std::move(cancellation_), std::move(stage_wakeup_))
         , task_to_host_map(std::move(task_to_host_map_))
-        , running_tasks(8, context, cancellation, logger)
+        , running_tasks(8, context, cancellation, stage_wakeup, logger)
     {
         /// A null map belongs to an in-process plan, which createDistributedQueryExecutor routes to
         /// the local executor instead.
@@ -1365,11 +1370,12 @@ protected:
     class TaskTracker
     {
     public:
-        TaskTracker(Int64 max_in_flight_requests_, ContextPtr context_, DistributedQueryCancellationPtr cancellation_, LoggerPtr logger_)
+        TaskTracker(Int64 max_in_flight_requests_, ContextPtr context_, DistributedQueryCancellationPtr cancellation_, StageWakeupPtr stage_wakeup_, LoggerPtr logger_)
             : context(std::move(context_))
             , query_status(context->getProcessListElement())
             , max_in_flight_requests(max_in_flight_requests_)
             , cancellation(std::move(cancellation_))
+            , stage_wakeup(std::move(stage_wakeup_))
             , thread_pool(CurrentMetrics::TaskTrackerThreads, CurrentMetrics::TaskTrackerThreadsActive, CurrentMetrics::TaskTrackerThreadsScheduled,
                 max_in_flight_requests, max_in_flight_requests, 2 * max_in_flight_requests)
             , logger(std::move(logger_))
@@ -1629,6 +1635,8 @@ protected:
             {
                 stage->promise_signaled = true;
                 stage->promise.set_value();
+                /// `waitForStage` waits on this promise, so tell the waiter its answer changed.
+                notifyStageWakeup(stage_wakeup);
             }
 
             stage_tasks[stage_name].erase(task_name); // TODO: really need to erase?
@@ -1742,6 +1750,7 @@ protected:
         DequeWithMemoryTracking<StageInfoPtr> stages_to_check TSA_GUARDED_BY(lock);
         UnorderedMapWithMemoryTracking<String, std::shared_future<void>> stage_results TSA_GUARDED_BY(lock);
         DistributedQueryCancellationPtr cancellation;
+        StageWakeupPtr stage_wakeup;
         ThreadPool thread_pool;
         LoggerPtr logger;
     };
@@ -1884,12 +1893,27 @@ void DistributedQueryCancellation::throwIfCancelled() const
 }
 
 
-DistributedQueryPlanExecutor::DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, DistributedQueryCancellationPtr cancellation_)
+void notifyStageWakeup(const StageWakeupPtr & stage_wakeup) noexcept
+{
+    if (!stage_wakeup)
+        return;
+    try
+    {
+        stage_wakeup->notify();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+DistributedQueryPlanExecutor::DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, DistributedQueryCancellationPtr cancellation_, StageWakeupPtr stage_wakeup_)
     : unique_query_id(unique_query_id_)
     , distributed_query_plan(distributed_query_plan_)
     , context(std::move(context_))
     , query_status(context->getProcessListElement())
     , cancellation(std::move(cancellation_))
+    , stage_wakeup(std::move(stage_wakeup_))
     , logger(getLogger("DistributedQueryPlanExecutor"))
 {
 }
@@ -1985,13 +2009,13 @@ void DistributedQueryPlanExecutor::start()
         running_stages.push_back(stage_name);
 }
 
-bool DistributedQueryPlanExecutor::execute()
+bool DistributedQueryPlanExecutor::execute(UInt64 poll_timeout_ms)
 {
     if (running_stages.empty())
         return true;
 
     auto & stage_name = running_stages.front();
-    bool stage_finished = waitForStage(stage_name, 100);
+    bool stage_finished = waitForStage(stage_name, poll_timeout_ms);
     if (stage_finished)
     {
         LOG_DEBUG(logger, "Stage '{}' finished", stage_name);
@@ -2006,7 +2030,8 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
     const DistributedQueryPlan & distributed_query_plan,
     TaskToHostMapPtr task_to_host_map,
     ContextPtr context,
-    DistributedQueryCancellationPtr cancellation)
+    DistributedQueryCancellationPtr cancellation,
+    StageWakeupPtr stage_wakeup)
 {
     /// A null map means the plan was built for in-process execution, so it carries no worker hosts.
     /// Deriving the branch from the map instead of re-reading `distributed_plan_execute_locally` keeps
@@ -2015,10 +2040,10 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
     if (!task_to_host_map)
     {
         ProfileEvents::increment(ProfileEvents::DistributedPlanLocalExecution);
-        executor = std::make_unique<DistributedQueryPlanExecutorLocal>(unique_query_id, distributed_query_plan, context, cancellation);
+        executor = std::make_unique<DistributedQueryPlanExecutorLocal>(unique_query_id, distributed_query_plan, context, cancellation, stage_wakeup);
     }
     else
-        executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, task_to_host_map, context, cancellation);
+        executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, task_to_host_map, context, cancellation, stage_wakeup);
 
     return executor;
 }
