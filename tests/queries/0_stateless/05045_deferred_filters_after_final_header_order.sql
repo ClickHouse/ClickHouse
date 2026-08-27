@@ -11,6 +11,8 @@
 --   * `WITH CUBE` is what puts the aggregation behind a shuffle exchange, so the `WHERE` is evaluated
 --     in the consuming stage. With a plain `GROUP BY` the read and the filter stay in one stage, the
 --     filter takes its header from the pipe, and a wrong declared header cannot be observed at all.
+--     The two `filter_above_exchange` assertions below pin that, so a plan change that fuses the
+--     stages fails here instead of quietly leaving every arm green.
 --   * `s LowCardinality(String)` is the mispaired column: paired with a numeric type it makes the
 --     comparison fail outright instead of silently returning wrong values.
 --   * The predicate must be over `v`, which is listed after `s` in the read set, so the two candidate
@@ -40,6 +42,24 @@ INSERT INTO t_hdr_05045 SELECT number, 2, 'b' FROM numbers(20);
 SELECT '-- fixture is multi-part';
 SELECT count() > 1 AS multi_part FROM system.parts
 WHERE database = currentDatabase() AND table = 't_hdr_05045' AND active
+SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
+
+-- The deferred arms detect a wrong declared header only while the consuming `Filter` is separated
+-- from `ReadFromMergeTree` by an exchange, which is what makes the header cross a stage boundary.
+-- The second statement is the negative control: the same query with a plain `GROUP BY` keeps both in
+-- one stage and prints 0. The explained query re-enables the two settings the surrounding statement
+-- has to switch off, because a distributed plan cannot read from an `EXPLAIN`.
+SELECT minIf(n, explain ILIKE '%Filter%') < maxIf(n, explain ILIKE '%Exchange%')
+   AND maxIf(n, explain ILIKE '%Exchange%') < maxIf(n, explain ILIKE '%ReadFromMergeTree%') AS filter_above_exchange
+FROM (SELECT rowNumberInAllBlocks() AS n, explain FROM (
+    EXPLAIN distributed = 1 SELECT s FROM t_hdr_05045 FINAL PREWHERE v <= 10 WHERE 10 > v GROUP BY ALL WITH CUBE ORDER BY s
+    SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 1, enable_cascades_optimizer = 1, make_distributed_plan = 1))
+SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
+SELECT minIf(n, explain ILIKE '%Filter%') < maxIf(n, explain ILIKE '%Exchange%')
+   AND maxIf(n, explain ILIKE '%Exchange%') < maxIf(n, explain ILIKE '%ReadFromMergeTree%') AS filter_above_exchange
+FROM (SELECT rowNumberInAllBlocks() AS n, explain FROM (
+    EXPLAIN distributed = 1 SELECT s FROM t_hdr_05045 FINAL PREWHERE v <= 10 WHERE 10 > v GROUP BY s ORDER BY s
+    SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 1, enable_cascades_optimizer = 1, make_distributed_plan = 1))
 SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 
 -- FINAL keeps v = 2 for every key, so s = 'b' survives and both predicates hold.
