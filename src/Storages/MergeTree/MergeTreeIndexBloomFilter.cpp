@@ -220,14 +220,31 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_nam
     info.key_field = key_field;
     if (keys_position)
     {
-        info.has_keys_index = true;
-        info.keys_index_position = *keys_position;
+        /// The key is hashed as a value of the key type of the map, while the constant in the query can have
+        /// a different type: e.g. a map with `Enum` keys is indexed by the name of the enum value, which is a
+        /// `String`. Convert the key to the key type of the index; if it is not representable in that type,
+        /// the key cannot be present in the map, but the index cannot be used to prove it either, because
+        /// `arrayElement` returns the default value for a missing key.
+        const auto & index_type = header.getByPosition(*keys_position).type;
+        const auto & key_type = assert_cast<const DataTypeArray &>(*index_type).getNestedType();
+        Field converted_key_field = tryConvertFieldToType(key_field, *key_type, nullptr, {}, /* strict */ true);
+
+        if (!converted_key_field.isNull())
+        {
+            info.key_field = converted_key_field;
+            info.has_keys_index = true;
+            info.keys_index_position = *keys_position;
+        }
     }
     if (values_position)
     {
         info.has_values_index = true;
         info.values_index_position = *values_position;
     }
+
+    if (!info.has_keys_index && !info.has_values_index)
+        return std::nullopt;
+
     return info;
 }
 
