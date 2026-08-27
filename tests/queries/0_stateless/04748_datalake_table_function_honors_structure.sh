@@ -14,18 +14,23 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PAIMON="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_paimon"
 DELTA="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_delta"
 ICE="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_ice"
+NEST="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_nest"
 mkdir -p "${USER_FILES_PATH}"
 cp -r "${CUR_DIR}/data_minio/paimon_no_partition" "${PAIMON}"
 cp -r "${CUR_DIR}/data_delta_lake/struct_column_mapping" "${DELTA}"
+cp -r "${CUR_DIR}/data_minio/iceberg_nested_sort_order" "${NEST}"
 
 CH="${CLICKHOUSE_CLIENT}"
 
-# Runs a group of queries in one client session. An error aborts the rest of the session, so an arm
-# expecting one goes last in its group, and an arm whose output is piped keeps its own client.
+# Runs a group of queries in one client session. An unexpected error aborts the rest of the session,
+# so an arm expecting one either carries a `serverError` hint (which the client consumes, leaving the
+# session alive) or goes last in its group; an arm whose output is piped keeps its own client.
 batch() { ${CH} -n; }
 
 # Emits `<name> <type>` per column, so a DESC arm needs no pipe and can share a session.
 DESCFMT="FORMAT CustomSeparated SETTINGS describe_compact_output = 1, format_custom_escaping_rule = 'Raw', format_custom_field_delimiter = ' ', format_custom_row_before_delimiter = '', format_custom_row_after_delimiter = '\n', format_custom_row_between_delimiter = ''"
+# Same, without the compact projection, so a DESC arm can also show the default clause it reports.
+DESCFULL="FORMAT CustomSeparated SETTINGS describe_compact_output = 0, format_custom_escaping_rule = 'Raw', format_custom_field_delimiter = ' ', format_custom_row_before_delimiter = '', format_custom_row_after_delimiter = '\n', format_custom_row_between_delimiter = ''"
 
 echo "-- paimon: DESC and SELECT report the same declared type"
 batch <<SQL
@@ -69,8 +74,12 @@ SELECT groupArray(renamed_a) FROM ice16;
 SELECT count(), countIf(zzz IS NULL), any(toTypeName(zzz)) FROM icebergLocal('${ICE}16/', 'Parquet', 'zzz Nullable(String)');
 -- A declared column alongside one the file does have, to show the surviving column still carries values.
 SELECT groupArray(renamed_a), count(), countIf(zzz IS NULL) FROM icebergLocal('${ICE}16/', 'Parquet', 'renamed_a Nullable(Int64), zzz Nullable(String)');
--- A declared DEFAULT expression is honored rather than replaced by the bare type default.
-SELECT groupArray(zzz) FROM icebergLocal('${ICE}16/', 'Parquet', 'zzz UInt64 DEFAULT 42');
+-- A declaration carrying a column default is not authoritative for a lake read, so the lake schema
+-- is used and a column only the declaration has is unknown, as it is without this feature.
+SELECT groupArray(zzz) FROM icebergLocal('${ICE}16/', 'Parquet', 'zzz UInt64 DEFAULT 42'); -- { serverError UNKNOWN_IDENTIFIER }
+-- DESC still reports the declaration, default clause included: that is the surface the read no longer
+-- follows, and it is asserted so the divergence is recorded rather than implied.
+DESC icebergLocal('${ICE}16/', 'Parquet', 'zzz UInt64 DEFAULT 42') ${DESCFULL};
 -- A filter on the declared column is evaluated against those defaults, so it must not read as
 -- absent and drop every row. PREWHERE is separate from WHERE here because on this path it is
 -- re-applied after the evolution transform rather than inside the reader.
@@ -114,7 +123,8 @@ SELECT count(), countIf(c IS NULL) FROM ice17;
 SELECT count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'c Nullable(UInt64) DEFAULT 42');
 SELECT groupArray(a), count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Nullable(Int64), c Nullable(UInt64) DEFAULT 42');
 -- A file written after the column was added carries real values, which the same declaration must
--- still return: this is what distinguishes reading the bitmask correctly from ignoring defaults.
+-- still return: an evolution-added column is emitted by the lake's own transform, so its values come
+-- from the file whether or not the declaration also names a default.
 INSERT INTO ice17 SELECT number + 10, number + 500 FROM numbers(2);
 SELECT groupArray(c) FROM (SELECT c FROM icebergLocal('${ICE}17/', 'Parquet', 'c Nullable(UInt64) DEFAULT 42') WHERE c IS NOT NULL ORDER BY c);
 SELECT '-- iceberg: a filtered column declared at another nullability is read after schema evolution';
@@ -124,16 +134,35 @@ SELECT groupArray(a), count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/',
 SELECT groupArray(a), count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Nullable(Int64), c Nullable(UInt64)') PREWHERE a < 3 SETTINGS parallel_replicas_for_cluster_engines = 0;
 -- The declared type matching the file's is the control: it shares this path but needs no conversion.
 SELECT groupArray(a), count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Int64, c Nullable(UInt64)') WHERE a < 3;
-SELECT '-- iceberg: a declared DEFAULT is applied to a table with deleted rows';
--- The reader's missing-value bitmask describes the reader's own rows, and a delete drops rows
--- without carrying it along, so a declared DEFAULT has to be applied before any row-dropping
--- transform. The row count is what makes this arm meaningful: it must reflect the delete.
+SELECT '-- iceberg: a declared DEFAULT is not applied to a table with deleted rows';
+-- A lake decides row-level deletion from its own metadata against the values that reach the filter,
+-- and a column default exists only where one reader's missing-value bitmask does, so the two cannot
+-- both be served on one path. The declaration is left to the lake schema here.
 CREATE TABLE ice18 (a Int64) ENGINE = IcebergLocal('${ICE}18/', 'Parquet');
 INSERT INTO ice18 SELECT number FROM numbers(6);
 DELETE FROM ice18 WHERE a = 2;
--- The delete must be visible here, or the arm below would read an undeleted table and pass either way.
+-- The delete must be visible here, or the arms below would read an undeleted table and pass either way.
 SELECT count() FROM ice18;
-SELECT groupArray(zzz) FROM icebergLocal('${ICE}18/', 'Parquet', 'zzz UInt64 DEFAULT 42');
+SELECT groupArray(zzz) FROM icebergLocal('${ICE}18/', 'Parquet', 'zzz UInt64 DEFAULT 42'); -- { serverError UNKNOWN_IDENTIFIER }
+-- Reading the same deleted table through a declaration of names and types alone is unaffected, so the
+-- arm above fails for the default clause rather than for the delete.
+SELECT groupArray(a) FROM (SELECT a FROM icebergLocal('${ICE}18/', 'Parquet', 'a Nullable(Int64)') ORDER BY a);
+SELECT '-- iceberg: a declaration with a MATERIALIZED column stays rejected';
+-- Nothing is rewritten when a declaration is set aside, so the columns a declaration may not carry at
+-- all are still refused where they always were.
+SELECT count() FROM icebergLocal('${ICE}18/', 'Parquet', 'a Int64, zzz UInt64 MATERIALIZED 1'); -- { serverError BAD_ARGUMENTS }
+SELECT '-- iceberg: a defaulted declaration survives CREATE, DETACH and ATTACH unchanged';
+-- ATTACH re-executes the stored table function, so this is the reachable proxy for a table persisted
+-- by a version that read the declaration differently: it must still load and still read the same.
+CREATE TABLE ice19 AS icebergLocal('${ICE}18/', 'Parquet', 'zzz UInt64 DEFAULT 42');
+SELECT countIf(create_table_query LIKE '%DEFAULT 42%') FROM system.tables WHERE database = currentDatabase() AND name = 'ice19';
+DETACH TABLE ice19;
+ATTACH TABLE ice19;
+SELECT countIf(create_table_query LIKE '%DEFAULT 42%') FROM system.tables WHERE database = currentDatabase() AND name = 'ice19';
+-- The reattached table reads its rows, and reads them through the lake schema: the row count reflects
+-- the delete, and the declared-only column is still unknown.
+SELECT count() FROM ice19;
+SELECT zzz FROM ice19; -- { serverError UNKNOWN_IDENTIFIER }
 SELECT '-- iceberg: a structure-bearing read does not keep the metadata sorting key';
 -- A sorted iceberg table: the metadata sorting key is resolved against the metadata schema, so it
 -- must not survive alongside a user-declared structure. An empty table counts as sorted, which is
@@ -148,6 +177,19 @@ SELECT '-- iceberg: a declared subset that omits a key column does not keep the 
 CREATE TABLE ice15 (id Int64, data String) ENGINE = IcebergLocal('${ICE}15/', 'Parquet') ORDER BY (id, data);
 SELECT countIf(explain LIKE '%PartialSortingTransform%') FROM (EXPLAIN PIPELINE SELECT * FROM icebergLocal('${ICE}15/', 'Parquet') ORDER BY id);
 SELECT countIf(explain LIKE '%PartialSortingTransform%') FROM (EXPLAIN PIPELINE SELECT id FROM icebergLocal('${ICE}15/', 'Parquet', 'id Int64') ORDER BY id);
+SELECT '-- iceberg: a nested sorting key is recognized as present when the declaration keeps its parent';
+-- A sort order may point at a nested field, and the key expression then names the subcolumn (\`t.x\`),
+-- so deciding whether the key still describes the declared columns has to resolve subcolumns and not
+-- just top-level names. The fixture is committed because ClickHouse's own writer records source-id 0
+-- for a nested ORDER BY, which reads back as an empty column name.
+SELECT countIf(explain LIKE '%PartialSortingTransform%') FROM (EXPLAIN PIPELINE SELECT id, t FROM icebergLocal('${NEST}/', 'Parquet', 'id Int64, t Tuple(x Int64)') ORDER BY t.x);
+-- Reading it without a declaration keeps the key too, so the arm above cannot pass because the fixture
+-- is unsorted or unreadable.
+SELECT countIf(explain LIKE '%PartialSortingTransform%') FROM (EXPLAIN PIPELINE SELECT id, t FROM icebergLocal('${NEST}/', 'Parquet') ORDER BY t.x);
+-- Omitting the nested key's parent entirely, and declaring that parent with a nested type the key
+-- cannot be ordered by: both leave the key describing something the read will not emit.
+SELECT countIf(explain LIKE '%PartialSortingTransform%') FROM (EXPLAIN PIPELINE SELECT id FROM icebergLocal('${NEST}/', 'Parquet', 'id Int64') ORDER BY id);
+SELECT countIf(explain LIKE '%PartialSortingTransform%') FROM (EXPLAIN PIPELINE SELECT id, t FROM icebergLocal('${NEST}/', 'Parquet', 'id Int64, t Tuple(x String)') ORDER BY t.x);
 SELECT '-- iceberg cluster: a worker keeps the metadata sorting key when only the initiator injected a structure';
 CREATE TABLE ice14 (id Int64, data String) ENGINE = IcebergS3(s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/') ORDER BY id;
 SQL
@@ -183,21 +225,26 @@ SELECT '-- iceberg cluster: a worker keeps declared columns that the metadata do
 -- the oracle because groupArray skips NULLs.
 INSERT INTO ice14 SELECT number, 'x' FROM numbers(2);
 SELECT count(), countIf(zzz IS NULL), any(toTypeName(zzz)) FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/', format='Parquet', structure='zzz Nullable(String)');
-SELECT '-- iceberg cluster: a worker honors a DEFAULT declared in the structure';
--- A DEFAULT clause survives only as long as the structure reaches the worker as text: the columns
--- the initiator resolves carry names and types alone, so a structure rebuilt from them would read as
--- zzz UInt64 and fill zeros. Summing is the oracle, since a dropped clause still yields two rows.
-SELECT count(), sum(zzz) FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/', format='Parquet', structure='zzz UInt64 DEFAULT 42');
-SELECT '-- iceberg cluster: a DEFAULT declared next to an explicit URL is honored too';
+SELECT '-- iceberg cluster: a DEFAULT declared in the structure is not honored, on either branch';
 -- A named collection and an explicit URL reach different argument-rewriting branches, and only the
--- explicit one rewrites the key-value arguments in place, so both are covered. The non-cluster read
--- is the reference: the two must agree, whichever branch rewrote the arguments.
-SELECT count(), sum(zzz) FROM icebergS3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/', 'test', 'testtest', format='Parquet', structure='zzz UInt64 DEFAULT 42');
-SELECT count(), sum(zzz) FROM icebergS3('http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/', 'test', 'testtest', format='Parquet', structure='zzz UInt64 DEFAULT 42');
-SELECT '-- iceberg cluster: a DEFAULT in a non-literal structure expression is honored';
--- A key-value value may be any constant expression, not just a literal, and it is evaluated before
--- the arguments are rewritten. Reading it as a literal alone would treat it as absent.
-SELECT count(), sum(zzz) FROM icebergS3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/', 'test', 'testtest', format='Parquet', structure=concat('zzz UInt64 DEFAULT ', '42'));
+-- explicit one rewrites the key-value arguments in place, so both are covered, together with the
+-- non-cluster read that is their reference. All three leave a defaulted declaration to the lake
+-- schema, so the column only the declaration has is unknown on the initiator and on the shard alike.
+SELECT count(), sum(zzz) FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/', format='Parquet', structure='zzz UInt64 DEFAULT 42'); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT count(), sum(zzz) FROM icebergS3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/', 'test', 'testtest', format='Parquet', structure='zzz UInt64 DEFAULT 42'); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT count(), sum(zzz) FROM icebergS3('http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/', 'test', 'testtest', format='Parquet', structure='zzz UInt64 DEFAULT 42'); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT '-- iceberg cluster: a structure given as a server-constant expression is dispatched';
+-- A key-value value may be any constant expression, not just a literal, and it is resolved once while
+-- the arguments are rewritten. A function that is deliberately not foldable once a context is
+-- distributed must therefore not be re-resolved during dispatch. The old analyzer is pinned because
+-- only it marks the context distributed before the arguments are rewritten, so it is the mode where a
+-- re-resolution is observable at all; the literal-operand arm beside it is the pair that shows the
+-- outcome is about folding rather than about concat.
+SELECT count(), countIf(zzz IS NULL) FROM icebergS3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/', 'test', 'testtest', format='Parquet', structure=concat('zzz Nullable(String)', left(hostName(), 0))) SETTINGS enable_analyzer = 0;
+SELECT count(), countIf(zzz IS NULL) FROM icebergS3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/', 'test', 'testtest', format='Parquet', structure=concat('zzz Nullable', '(String)')) SETTINGS enable_analyzer = 0;
+-- The same shape on the plain s3 cluster function, which shares that rewriting branch and has its own
+-- long-standing coverage: a structure that is not a literal must keep working there too.
+SELECT count() FROM s3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/**.parquet', 'test', 'testtest', format='Parquet', structure=concat('id Nullable(Int64)', left(hostName(), 0))) SETTINGS enable_analyzer = 0;
 SELECT '-- iceberg cluster: a declared type that reorders the key column is not ordered by the metadata key';
 -- The key describes the metadata schema, so a declared type that reorders the key column makes it
 -- unsound: read-in-order would then emit rows in the underlying numeric order while the user asked
@@ -258,6 +305,14 @@ batch <<SQL
 SELECT toTypeName(c0), c0 FROM deltaLakeLocal('${DELTA}', 'Parquet', 'c0 Nullable(Int64)') ORDER BY c0;
 SELECT '-- control: deltaLake with an explicit schema reload still prefers the metadata schema';
 SELECT DISTINCT toTypeName(c1) FROM deltaLakeLocal('${DELTA}', 'Parquet', 'c1 String') SETTINGS delta_lake_reload_schema_for_consistency = 1;
+SELECT '-- control: a declared DEFAULT is still honored where it always was';
+-- The lake formats whose schema reload is not a user opt-in are the only ones this policy reaches, so
+-- a declared default has to keep working on the others and on plain object storage. Without these two
+-- arms a policy applied to every table function would read as green.
+SELECT count(), sum(zzz) FROM s3('http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/**.parquet', 'test', 'testtest', 'Parquet', 'zzz UInt64 DEFAULT 42');
+-- deltaLake reaches its column mapping with the declared name whether or not a default is attached, so
+-- it answers the same way it always has.
+SELECT groupArray(zzz) FROM deltaLakeLocal('${DELTA}', 'Parquet', 'zzz UInt64 DEFAULT 42'); -- { serverError INCORRECT_DATA }
 DROP TABLE IF EXISTS ice14;
 SQL
-rm -rf "${PAIMON}" "${DELTA}" "${ICE}" "${ICE}7" "${ICE}11" "${ICE}12" "${ICE}13" "${ICE}15" "${ICE}16" "${ICE}17" "${ICE}18"
+rm -rf "${PAIMON}" "${DELTA}" "${NEST}" "${ICE}" "${ICE}7" "${ICE}11" "${ICE}12" "${ICE}13" "${ICE}15" "${ICE}16" "${ICE}17" "${ICE}18"

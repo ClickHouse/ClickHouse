@@ -16,7 +16,7 @@ Code: 53
 [0,1,2]
 3	3	Nullable(String)
 [0,1,2]	3	3
-[42,42,42]
+zzz UInt64 DEFAULT 42   
 3
 3
 [0,1,2]
@@ -31,14 +31,24 @@ Code: 10
 [0,1,2]	3	3
 [0,1,2]	3	3
 [0,1,2]	3	3
--- iceberg: a declared DEFAULT is applied to a table with deleted rows
+-- iceberg: a declared DEFAULT is not applied to a table with deleted rows
 5
-[42,42,42,42,42]
+[0,1,3,4,5]
+-- iceberg: a declaration with a MATERIALIZED column stays rejected
+-- iceberg: a defaulted declaration survives CREATE, DETACH and ATTACH unchanged
+1
+1
+5
 -- iceberg: a structure-bearing read does not keep the metadata sorting key
 0
 1
 -- iceberg: a declared subset that omits a key column does not keep the metadata sorting key
 0
+1
+-- iceberg: a nested sorting key is recognized as present when the declaration keeps its parent
+0
+0
+1
 1
 -- iceberg cluster: a worker keeps the metadata sorting key when only the initiator injected a structure
 1
@@ -46,13 +56,11 @@ Code: 10
 1
 -- iceberg cluster: a worker keeps declared columns that the metadata does not have
 2	2	Nullable(String)
--- iceberg cluster: a worker honors a DEFAULT declared in the structure
-2	84
--- iceberg cluster: a DEFAULT declared next to an explicit URL is honored too
-2	84
-2	84
--- iceberg cluster: a DEFAULT in a non-literal structure expression is honored
-2	84
+-- iceberg cluster: a DEFAULT declared in the structure is not honored, on either branch
+-- iceberg cluster: a structure given as a server-constant expression is dispatched
+2	2
+2	2
+2
 -- iceberg cluster: a declared type that reorders the key column is not ordered by the metadata key
 ['10','2','9']
 [2,9,10]
@@ -78,3 +86,5 @@ Nullable(Int64)	10
 Nullable(Int64)	20
 -- control: deltaLake with an explicit schema reload still prefers the metadata schema
 Tuple(\n    `values` Nullable(String),\n    id Nullable(Int32))
+-- control: a declared DEFAULT is still honored where it always was
+2	84
