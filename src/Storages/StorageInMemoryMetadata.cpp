@@ -20,7 +20,6 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/VirtualColumnsDescription.h>
 
 
@@ -162,16 +161,9 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (!database.empty() && database != new_context->getCurrentDatabase())
         new_context->setCurrentDatabase(database);
 
-    new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
+    new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
     new_context->setProgressCallback(context->getProgressCallback());
     new_context->setProcessListElement(context->getProcessListElement());
-    /// Carry the outer query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas keep bucketing
-    /// per query pattern when the pipeline runs under a fresh SQL-security-overridden context (the
-    /// `DEFINER`/`NONE` branch starts from the global context, where the hash would otherwise be 0).
-    new_context->setNormalizedQueryHash(context->getNormalizedQueryHash());
-    /// The analyze mode must reach every join the report walker can reach, including the joins of
-    /// this view's inner query.
-    new_context->setJoinAnalyzeMode(context->getJoinAnalyzeMode());
 
     if (context->getCurrentTransaction())
         new_context->setCurrentTransaction(context->getCurrentTransaction());
@@ -186,11 +178,6 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
         new_context->setMergeTreeReadTaskCallback(context->getMergeTreeReadTaskCallback());
         new_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
     }
-
-    /// Transport wiring, not invoker identity: a cluster table function inside the view sends its
-    /// read-task request over this callback, and only the initiator can decide whether to serve it.
-    if (context->hasClusterFunctionReadTaskCallback())
-        new_context->setClusterFunctionReadTaskCallback(context->getClusterFunctionReadTaskCallback());
 
     if (sql_security_type == SQLSecurityType::NONE)
     {
@@ -455,10 +442,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
         add_for_rows_ttl(getRowsTTL().expression_columns, required_ttl_columns);
 
     for (const auto & entry : getRowsWhereTTLs())
-    {
         add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
-        add_for_rows_ttl(entry.where_expression_columns, required_ttl_columns);
-    }
 
     for (const auto & entry : getGroupByTTLs())
         add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
@@ -474,6 +458,8 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
 
     for (const auto & entry : getMoveTTLs())
         add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns);
+
+    //TODO what about rows_where_ttl and group_by_ttl ??
 
     for (const auto & column : indices_columns)
         res.emplace(column, ColumnDependency::SKIP_INDEX);
@@ -521,15 +507,6 @@ Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(VirtualsKind kind, Vir
     for (const auto & column : virtuals.getSampleBlock(kind, place).getNamesAndTypesList())
         res.insert({column.type->createColumn(), column.type, column.name});
 
-    return res;
-}
-
-ColumnsDescription StorageInMemoryMetadata::getColumnsWithVirtuals() const
-{
-    ColumnsDescription res = columns;
-    for (const auto & virtual_column : virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All))
-        if (!res.has(virtual_column.name))
-            res.add(virtual_column);
     return res;
 }
 
@@ -951,8 +928,7 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
             bool valid_index = true;
             try
             {
-                static const MergeTreeSettings default_settings;
-                MergeTreeIndexFactory::instance().validate(index, false, default_settings);
+                MergeTreeIndexFactory::instance().validate(index, false);
             }
             catch (const Exception & e)
             {
@@ -996,8 +972,7 @@ void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr con
 
         const auto columns_to_analyze = virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All);
         auto index = createImplicitMinMaxIndexDescription(column_name, columns_to_analyze, escape_index_filenames, context);
-        static const MergeTreeSettings default_settings;
-        MergeTreeIndexFactory::instance().validate(index, false, default_settings);
+        MergeTreeIndexFactory::instance().validate(index, false);
 
         secondary_indices.push_back(std::move(index));
     };
@@ -1017,48 +992,6 @@ void StorageInMemoryMetadata::dropImplicitIndicesForVirtualColumns()
         else
             ++index_it;
     }
-}
-
-std::shared_ptr<StorageInMemoryMetadata> StorageInMemoryMetadata::clone(std::shared_ptr<const StorageInMemoryMetadata> from)
-{
-    auto copy = std::make_shared<StorageInMemoryMetadata>(*from);
-    copy->cloned_from = from;
-    return copy;
-}
-
-StorageMetadataHandle::StorageMetadataHandle(std::shared_ptr<StorageInMemoryMetadata> metadata_)
-    : metadata(std::move(metadata_))
-{
-}
-
-StorageMetadataHandle::StorageMetadataHandle(std::shared_ptr<const StorageInMemoryMetadata> metadata_)
-    : metadata(std::move(metadata_))
-{
-}
-
-const StorageInMemoryMetadata * StorageMetadataHandle::operator->() const &
-{
-    return metadata.get();
-}
-
-const StorageInMemoryMetadata & StorageMetadataHandle::operator*() const &
-{
-    return *metadata;
-}
-
-StorageMetadataHandle::operator StorageMetadataPtr() const &
-{
-    return metadata;
-}
-
-StorageMetadataHandle::operator bool() const
-{
-    return metadata != nullptr;
-}
-
-bool StorageMetadataHandle::operator==(std::nullptr_t) const
-{
-    return metadata == nullptr;
 }
 
 }

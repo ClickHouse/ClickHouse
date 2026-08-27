@@ -4,6 +4,7 @@
 #include <base/types.h>
 #include <base/defines.h>
 
+#include <cassert>
 #include <atomic>
 #include <limits>
 #include <memory>
@@ -16,9 +17,7 @@
 ///    Similar to CLOCK_MONOTONIC, but provides access to a raw hardware-based
 ///    time that is not subject to NTP adjustments or the incremental
 ///    adjustments performed by adjtime(3).
-/// Emscripten defines `CLOCK_MONOTONIC_RAW` but `clock_gettime` returns EINVAL for it, so it
-/// cannot be the default there - see the note on `CLOCK_MONOTONIC_COARSE` in `base/time.h`.
-#if defined(CLOCK_MONOTONIC_RAW) && !defined(OS_WASM)
+#ifdef CLOCK_MONOTONIC_RAW
 static constexpr clockid_t STOPWATCH_DEFAULT_CLOCK = CLOCK_MONOTONIC_RAW;
 #else
 static constexpr clockid_t STOPWATCH_DEFAULT_CLOCK = CLOCK_MONOTONIC;
@@ -26,7 +25,7 @@ static constexpr clockid_t STOPWATCH_DEFAULT_CLOCK = CLOCK_MONOTONIC;
 
 inline UInt64 clock_gettime_ns(clockid_t clock_type = STOPWATCH_DEFAULT_CLOCK)
 {
-    struct timespec ts{};
+    struct timespec ts;
     if (0 != clock_gettime(clock_type, &ts))
         throw std::system_error(std::error_code(errno, std::system_category()));
     return UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
@@ -47,7 +46,7 @@ inline UInt64 clock_gettime_ns_adjusted(UInt64 prev_time, clockid_t clock_type =
         return current_time;
 
     /// Something probably went completely wrong if time stepped back for more than 1 second.
-    chassert(prev_time - current_time <= 1000000000ULL);
+    assert(prev_time - current_time <= 1000000000ULL);
     return prev_time;
 }
 

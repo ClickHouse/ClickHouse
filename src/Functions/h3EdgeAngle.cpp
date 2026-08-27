@@ -25,7 +25,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3EdgeAngle final : public IFunction
+class FunctionH3EdgeAngle : public IFunction
 {
 public:
     static constexpr auto name = "h3EdgeAngle";
@@ -119,8 +119,8 @@ Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3I
             "Get edge angle for resolution 10",
             "SELECT h3EdgeAngle(10) AS edgeAngle",
             R"(
-┌─────────────edgeAngle─┐
-│ 0.0006822586214258879 │
+┌───────h3EdgeAngle(10)─┐
+│ 0.0005927224846720883 │
 └───────────────────────┘
             )"
         }

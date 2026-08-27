@@ -10,9 +10,6 @@
 #include <Common/noexcept_scope.h>
 #include <Common/logger_useful.h>
 #include <Common/LockGuardWithStopWatch.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
-#include <Common/FailPoint.h>
 
 
 namespace CurrentMetrics
@@ -24,11 +21,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
-namespace FailPoints
-{
-    extern const char merge_tree_background_task_marked_for_deletion[];
-}
 
 namespace ErrorCodes
 {
@@ -175,7 +167,7 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     return true;
 }
 
-static void printExceptionWithRespectToAbort(LoggerPtr log, const String & query_id)
+void printExceptionWithRespectToAbort(LoggerPtr log, const String & query_id)
 {
     std::exception_ptr ex = std::current_exception();
 
@@ -233,14 +225,6 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
             }
         }
     }
-
-    /// At this point every active task for this storage is flagged is_currently_deleting, so when
-    /// it resumes it is guaranteed to take the destruction path (cancel + destroy) rather than
-    /// being requeued and finalized normally. A test can synchronize here to be sure a paused
-    /// task will be torn down while still holding its resources (e.g. a zero-copy lock). Pause only
-    /// when this executor actually owns a task being deleted, and outside the mutex.
-    if (!tasks_to_wait.empty())
-        FailPointInjection::pauseFailPoint(FailPoints::merge_tree_background_task_marked_for_deletion);
 
     for (auto & item : tasks_to_cancel)
     {

@@ -1,5 +1,4 @@
 #include <Storages/StorageMergeTreeIndex.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
@@ -20,7 +19,6 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -28,15 +26,9 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool use_streaming_marks_compression;
-}
 
 namespace ErrorCodes
 {
@@ -46,7 +38,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
 }
 
-class MergeTreeIndexSource final : public ISource, WithContext
+class MergeTreeIndexSource : public ISource, WithContext
 {
 public:
     MergeTreeIndexSource(
@@ -73,8 +65,6 @@ protected:
     {
         if (part_index >= data_parts.size())
             return {};
-
-        auto component_guard = Coordination::setCurrentComponent("MergeTreeIndexSource::generate");
 
         const auto & part = data_parts[part_index];
         const auto & index_granularity = part->index_granularity;
@@ -193,8 +183,7 @@ private:
             /*save_marks_in_cache=*/ false,
             local_context->getReadSettings(),
             /*load_marks_threadpool=*/ nullptr,
-            num_columns,
-            local_context->getSettingsRef()[Setting::use_streaming_marks_compression]);
+            num_columns);
     }
 
     ColumnPtr fillMarks(
@@ -301,8 +290,7 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     data_parts = merge_tree->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
-    auto primary_key_metadata = merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    key_sample_block = std::make_shared<const Block>(primary_key_metadata->getPrimaryKey().sample_block);
+    key_sample_block = std::make_shared<const Block>(merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getPrimaryKey().sample_block);
 
     if (with_minmax)
     {

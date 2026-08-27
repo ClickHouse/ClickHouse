@@ -12,7 +12,7 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_LARGE_STRING_SIZE;
 }
 
-class FunctionNaturalSortKey final : public IFunction
+class FunctionNaturalSortKey : public IFunction
 {
 public:
     static constexpr auto name = "naturalSortKey";
@@ -227,16 +227,11 @@ REGISTER_FUNCTION(NaturalSortKey)
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
-        R"(
-CREATE TABLE t (s String) ENGINE = Memory;
-INSERT INTO t VALUES ('a1'), ('a02');
-
-SELECT s FROM t ORDER BY naturalSortKey(s);
-        )",
+        "SELECT s FROM t ORDER BY naturalSortKey(s)",
         R"(
 ┌─s───┐
 │ a1  │
-│ a02 │
+| a02 │
 └─────┘
         )"
     }

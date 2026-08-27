@@ -35,21 +35,6 @@ IProcessor::Status BufferChunksTransform::prepare()
         return Status::Finished;
     }
 
-    /// Do not read ahead while the downstream merge may have deferred this source
-    /// after seeing its virtual row. Resume only when data is actually demanded —
-    /// either right away (the source is not deferred) or when the merge releases
-    /// the deferred source (see `IMergingTransformBase` and `topUpPrefetch`).
-    if (wait_for_demand_after_virtual_row)
-    {
-        if (!output.canPush())
-        {
-            input.setNotNeeded();
-            return Status::PortFull;
-        }
-
-        wait_for_demand_after_virtual_row = false;
-    }
-
     if (output.canPush())
     {
         input.setNeeded();
@@ -62,7 +47,6 @@ IProcessor::Status BufferChunksTransform::prepare()
             if (isVirtualRow(chunk))
             {
                 output.push(std::move(chunk));
-                wait_for_demand_after_virtual_row = true;
                 input.setNotNeeded();
                 return Status::PortFull;
             }
@@ -74,12 +58,11 @@ IProcessor::Status BufferChunksTransform::prepare()
         }
         else if (input.hasData())
         {
-            bool virtual_row = false;
+            bool virtual_row;
             auto chunk = pullChunk(virtual_row);
             output.push(std::move(chunk));
             if (virtual_row)
             {
-                wait_for_demand_after_virtual_row = true;
                 input.setNotNeeded();
                 return Status::PortFull;
             }
@@ -88,7 +71,7 @@ IProcessor::Status BufferChunksTransform::prepare()
 
     if (input.hasData() && (num_buffered_rows < max_rows_to_buffer || num_buffered_bytes < max_bytes_to_buffer))
     {
-        bool virtual_row = false;
+        bool virtual_row;
         auto chunk = pullChunk(virtual_row);
         if (virtual_row)
         {
@@ -96,7 +79,6 @@ IProcessor::Status BufferChunksTransform::prepare()
             input.setNotNeeded();
             return Status::PortFull;
         }
-        compactReplicatedColumns(chunk);
         num_buffered_rows += chunk.getNumRows();
         num_buffered_bytes += chunk.bytes();
         chunks.push(std::move(chunk));

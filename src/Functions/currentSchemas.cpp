@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -17,7 +16,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionCurrentSchemas final : public IFunction
+class FunctionCurrentSchemas : public IFunction
 {
     const String db_name;
 
@@ -76,7 +75,7 @@ Same as function [`currentDatabase`](#currentDatabase) but
 Function `currentSchemas` only exists for compatibility with PostgreSQL.
 Please use `currentDatabase` instead.
 
-Also see the [`SET` statement](/reference/statements/use).
+Also see the [`SET` statement](/sql-reference/statements/use).
     )";
     FunctionDocumentation::Syntax syntax = "currentSchemas(bool)";
     FunctionDocumentation::Arguments arguments = {

@@ -1,5 +1,8 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-replicated-database
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+-- Tag no-replicated-database: `DatabaseReplicated::dropTable` does not drop `TimeSeries` inner tables
+-- synchronously (unlike for `MaterializedView`), so the deferred inner DROPs are rejected with
+-- "It's not initial query. ON CLUSTER is not allowed for Replicated database.".
 
 -- Regression test for the PromQL binary-operator path where ClickHouse query optimization
 -- could push `timeSeriesIdToGroup(id)` ahead of the matching `timeSeriesStoreTags(...)` call,
@@ -31,8 +34,8 @@ CREATE TABLE samples_table
     value Float64
 ) ENGINE = MergeTree() ORDER BY (id, timestamp);
 
-CREATE TABLE prometheus ENGINE = TimeSeries
-SAMPLES samples_table TAGS tags_table;
+CREATE TABLE prometheus (id UInt64) ENGINE = TimeSeries
+DATA samples_table TAGS tags_table;
 
 -- Three metrics: `foo`, `bar`, `baz`.
 INSERT INTO tags_table (id, metric_name, tags, min_time, max_time) VALUES

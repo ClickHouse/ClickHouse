@@ -1,10 +1,9 @@
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
+#include <Common/CurrentThread.h>
+#include <Common/setThreadName.h>
 
 #if USE_PARQUET
 
-#include <Common/CurrentThread.h>
-#include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromVector.h>
@@ -46,7 +45,6 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.compression_level = static_cast<int>(format_settings.parquet.output_compression_level);
     options.output_string_as_string = format_settings.parquet.output_string_as_string;
     options.output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array;
-    options.output_wide_integer_as_decimal = format_settings.parquet.output_wide_integer_as_decimal;
     options.output_datetime_as_uint32 = format_settings.parquet.output_datetime_as_uint32;
     options.output_date_as_uint16 = format_settings.parquet.output_date_as_uint16;
     options.output_enum_as_byte_array = format_settings.parquet.output_enum_as_byte_array;
@@ -62,16 +60,9 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.use_dictionary_encoding = options.max_dictionary_size > 0;
 
     if (format_filter_info_ && format_filter_info_->column_mapper)
-    {
-        /// The mapper outlives this format (and the encoder threads) via format_filter_info.
-        /// It has to be consulted identically here and on the data paths below: the reader takes its
-        /// max definition level from the schema, while the writer takes the level bit width from the
-        /// state the data path builds, so the two would desynchronize.
-        iceberg_optionality.mapper = format_filter_info_->column_mapper.get();
-        schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding(), iceberg_optionality);
-    }
+        schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding());
     else
-        schema = convertSchema(*header_, options, std::nullopt, iceberg_optionality);
+        schema = convertSchema(*header_, options, std::nullopt);
 }
 
 ParquetBlockOutputFormat::~ParquetBlockOutputFormat()
@@ -262,7 +253,7 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
     for (size_t i = 0; i < header.columns(); ++i)
         prepareColumnForWrite(
             chunk.getColumns()[i], header.getByPosition(i).type, header.getByPosition(i).name,
-            options, &columns_to_write, /*out_schema*/ nullptr, /*column_field_ids*/ std::nullopt, iceberg_optionality);
+            options, &columns_to_write);
 
     if (file_state.offset == 0)
     {
@@ -384,7 +375,6 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
             /// otherwise it may deadlock.
             if (!pool->trySchedule(job))
                 break;
-            ++threads_running;
         }
     }
 }
@@ -421,8 +411,7 @@ void ParquetBlockOutputFormat::threadFunction()
 
             std::vector<ColumnChunkWriteState> subcolumns;
             prepareColumnForWrite(
-                std::move(concatenated), task.column_type, task.column_name, options, &subcolumns,
-                /*out_schema*/ nullptr, /*column_field_ids*/ std::nullopt, iceberg_optionality);
+                std::move(concatenated), task.column_type, task.column_name, options, &subcolumns);
 
             lock.lock();
 
@@ -463,7 +452,6 @@ void ParquetBlockOutputFormat::threadFunction()
     }
 }
 
-void registerOutputFormatParquet(FormatFactory & factory);
 void registerOutputFormatParquet(FormatFactory & factory)
 {
     factory.registerOutputFormat(
@@ -487,7 +475,6 @@ void registerOutputFormatParquet(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatParquet(FormatFactory &);
 void registerOutputFormatParquet(FormatFactory &)
 {
 }

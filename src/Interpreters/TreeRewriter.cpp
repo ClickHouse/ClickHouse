@@ -2,9 +2,6 @@
 #include <memory>
 #include <set>
 
-#include <Access/Common/AccessType.h>
-#include <Access/ContextAccess.h>
-
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
@@ -56,7 +53,6 @@
 
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageJoin.h>
 #include <Common/checkStackSize.h>
 #include <Common/CurrentThread.h>
@@ -669,7 +665,6 @@ bool tryJoinOnConst(TableJoin & analyzed_join, const ASTPtr & on_expression, Con
 
     if (auto eval_const_res = tryEvaluateConstCondition(on_expression, context))
     {
-        analyzed_join.setJoinExpressionValue(eval_const_res.value());
         if (eval_const_res.value())
         {
             /// JOIN ON 1 == 1
@@ -706,7 +701,7 @@ void resolveNaturalJoin(ASTTableJoin & table_join, const TablesWithColumns & tab
     for (const auto & col : tables[0].columns)
     {
         /// Skip sub-columns (e.g. name.size) — NATURAL JOIN only matches top-level columns.
-        if (col.name.contains('.'))
+        if (col.name.find('.') != std::string::npos)
             continue;
         if (right_col_names.contains(col.name) && seen.insert(col.name).second)
             using_list->children.push_back(make_intrusive<ASTIdentifier>(col.name));
@@ -729,7 +724,7 @@ void resolveNaturalJoin(ASTTableJoin & table_join, const TablesWithColumns & tab
 void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
                           const TablesWithColumns & tables, const Aliases & aliases, ContextPtr context)
 {
-    chassert(tables.size() >= 2);
+    assert(tables.size() >= 2);
 
     if (table_join.using_expression_list)
     {
@@ -755,16 +750,13 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
                 analyzed_join.addDisjunct();
                 CollectJoinOnKeysVisitor(data).visit(disjunct);
             }
-            chassert(analyzed_join.getClauses().size() == or_func->arguments->children.size());
+            assert(analyzed_join.getClauses().size() == or_func->arguments->children.size());
         }
         else
         {
             analyzed_join.addDisjunct();
             CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
-            /// Not checking non-emptiness: for `ASOF` with a pure inequality the visitor
-            /// records keys into `data` and `asofToJoinKeys` populates the clause later.
-            /// Truly empty clauses are caught by the `any_keys_empty` check below.
-            chassert(analyzed_join.getClauses().size() == 1);
+            assert(analyzed_join.oneDisjunct());
         }
 
         auto check_keys_empty = [] (auto e) { return e.key_names_left.empty(); };
@@ -851,11 +843,7 @@ void expandGroupByAll(ASTSelectQuery * select_query)
 
 void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const TablesWithColumns & tables_with_columns)
 {
-    const auto & order_by = select_query->orderBy();
-    if (!order_by || order_by->children.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ORDER BY ALL flag is set but there is no ORDER BY clause in the query");
-
-    auto * all_elem = order_by->children[0]->as<ASTOrderByElement>();
+    auto * all_elem = select_query->orderBy()->children[0]->as<ASTOrderByElement>();
     if (!all_elem)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not order by asts.");
 
@@ -1138,25 +1126,6 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     {
         optimize_trivial_count = !columns_context.has_array_join;
 
-        const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
-        NamesAndTypesList accessible_columns;
-        if (alias)
-        {
-            /// An `Alias` fallback must read a column granted on both the alias and its target.
-            auto query_context = CurrentThread::tryGetQueryContext();
-            auto access = query_context ? query_context->getAccess() : nullptr;
-            const auto & storage_id = storage->getStorageID();
-            for (const auto & column : source_columns)
-            {
-                if (access
-                    && access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                    && alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name))
-                    accessible_columns.push_back(column);
-            }
-        }
-
-        const auto & columns_for_fallback = alias && !accessible_columns.empty() ? accessible_columns : source_columns;
-
         /// You need to read at least one column to find the number of rows.
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
         /// Because it is the column that is cheapest to read.
@@ -1178,7 +1147,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         if (storage)
         {
             auto column_sizes = storage->getColumnSizes();
-            for (const auto & source_column : columns_for_fallback)
+            for (auto & source_column : source_columns)
             {
                 auto c = column_sizes.find(source_column.name);
                 if (c == column_sizes.end())
@@ -1190,9 +1159,9 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (!columns.empty())
             required.insert(std::min_element(columns.begin(), columns.end())->name);
-        else if (!columns_for_fallback.empty())
+        else if (!source_columns.empty())
             /// If we have no information about columns sizes, choose a column of minimum size of its data type.
-            required.insert(ExpressionActions::getSmallestColumn(columns_for_fallback).name);
+            required.insert(ExpressionActions::getSmallestColumn(source_columns).name);
     }
     else if (is_select && storage_snapshot && !columns_context.has_array_join)
     {
@@ -1461,11 +1430,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             /// back to an ordinary ORDER BY with `all` as a column reference.
             /// Replace the child with a fresh identifier AFTER normalization so that it
             /// refers to the table column named "all", not to any alias.
-            const auto & order_by = select_query->orderBy();
-            if (!order_by || order_by->children.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "ORDER BY ALL flag is set but there is no ORDER BY clause in the query");
-
-            auto * all_elem = order_by->children[0]->as<ASTOrderByElement>();
+            auto * all_elem = select_query->orderBy()->children[0]->as<ASTOrderByElement>();
             all_elem->children[0] = make_intrusive<ASTIdentifier>("all");
             select_query->order_by_all = false;
         }

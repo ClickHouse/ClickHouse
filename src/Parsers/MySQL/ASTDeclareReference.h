@@ -33,11 +33,11 @@ public:
         SET_DEFAULT
     };
 
-    MatchKind kind{};
+    MatchKind kind;
     String reference_table_name;
     ASTPtr reference_expression;
-    ReferenceOption on_delete_option{};
-    ReferenceOption on_update_option{};
+    ReferenceOption on_delete_option;
+    ReferenceOption on_update_option;
 
     ASTPtr clone() const override;
 

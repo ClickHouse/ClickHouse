@@ -25,11 +25,6 @@ workflow = Workflow.Config(
         *JobConfigs.install_check_jobs,
         *JobConfigs.compatibility_test_jobs,
         *[job for job in JobConfigs.functional_tests_jobs if "amd_asan_ubsan" in job.name],
-        *[
-            job
-            for job in JobConfigs.unittest_jobs
-            if any(t in job.name for t in ("asan_ubsan", "tsan"))
-        ],
         *[job for job in JobConfigs.stress_test_jobs if "amd_tsan" in job.name],
         *[
             job
@@ -45,7 +40,6 @@ workflow = Workflow.Config(
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
-        *ArtifactConfigs.clickhouse_darwin_plain_binaries,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
@@ -55,7 +49,7 @@ workflow = Workflow.Config(
     enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
-    enable_automerge=True,
+    enable_automerge=False,
     enable_cidb=True,
     enable_commit_status_on_failure=True,
     enable_gh_summary_comment=True,

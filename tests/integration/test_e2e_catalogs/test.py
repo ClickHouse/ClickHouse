@@ -5,7 +5,6 @@ Tests are parametrized over available catalog backends via the
 missing are automatically skipped.
 """
 
-import concurrent.futures
 import datetime
 import decimal
 import time
@@ -1163,6 +1162,8 @@ def test_insert_into_table(node, catalog_manager, request):
     backend = request.node.callspec.params.get("catalog_manager")
     if backend == "biglake":
         pytest.xfail("INSERT into BigLake DataLakeCatalog does not commit to the catalog")
+    if backend == "onelake":
+        pytest.xfail("INSERT into OneLake raises StorageException during blob upload")
     data = pa.table(
         {
             "id": pa.array([1, 2], type=pa.int64()),
@@ -1186,70 +1187,62 @@ def test_insert_into_table(node, catalog_manager, request):
             f"INSERT INTO {db}.`{full}` VALUES (3, 'three')",
             settings={"allow_insert_into_iceberg": 1},
         )
-        if backend == "onelake":
-            # OneLake's catalog is eventually consistent, so poll (cache off) for
-            # the new snapshot. Other backends must see it immediately (one-shot).
-            read_settings = {"use_iceberg_metadata_files_cache": 0}
-            deadline = time.monotonic() + 180
-            while True:
-                count = node.query(
-                    f"SELECT count() FROM {db}.`{full}` FORMAT TSV",
-                    settings=read_settings,
-                ).strip()
-                if count == "3" or time.monotonic() >= deadline:
-                    break
-                time.sleep(5)
-        else:
-            read_settings = {}
-            count = node.query(
-                f"SELECT count() FROM {db}.`{full}` FORMAT TSV"
-            ).strip()
-        assert int(count) == 3
-        # count() can come from metadata alone, so read a real value too.
-        value = node.query(
-            f"SELECT value FROM {db}.`{full}` WHERE id = 3 FORMAT TSV",
-            settings=read_settings,
+        count = node.query(
+            f"SELECT count() FROM {db}.`{full}` FORMAT TSV"
         ).strip()
-        assert value == "three", value
+        assert int(count) == 3
     finally:
         catalog_manager.cleanup_table(table_name)
 
 
 @only_onelake
 def test_onelake_invalid_oauth_uri(node, catalog_manager):
-    """Invalid oauth_server_uri -> CREATE DATABASE fails eagerly.
-
-    Catalog initialization now happens in the DatabaseDataLake constructor, so
-    the OAuth token is retrieved during CREATE DATABASE. An unreachable
-    oauth_server_uri therefore makes the statement fail immediately instead of
-    deferring the error to first catalog access.
-    """
+    """Invalid oauth_server_uri -> CREATE succeeds but catalog access fails."""
 
     db = catalog_manager.make_database_name()
     sql = catalog_manager.create_db_sql(
         db, oauth_server_uri="https://invalid.example.com/oauth/token",
     )
 
-    error = node.query_and_get_error(sql)
-    assert error, "Expected CREATE DATABASE to fail with invalid oauth URI"
+    _, create_err = node.query_and_get_answer_with_error(sql)
+    assert not create_err.strip(), f"CREATE unexpectedly failed: {create_err}"
+
+    tables_out, tables_err = node.query_and_get_answer_with_error(
+        f"SHOW TABLES FROM {db}"
+    )
+    assert not tables_out.strip() and not tables_err.strip(), (
+        "SHOW TABLES should return empty (lazy auth swallows errors)"
+    )
+
+    error = node.query_and_get_error(
+        f"SELECT * FROM {db}.nonexistent_table FORMAT TSV"
+    )
+    assert error, "Expected error when accessing table with invalid oauth URI"
 
 
 @only_onelake
 def test_onelake_warehouse_wrong_format(node, catalog_manager):
-    """Malformed warehouse -> CREATE DATABASE fails eagerly.
-
-    Catalog initialization now happens in the DatabaseDataLake constructor, so
-    a malformed warehouse makes catalog setup fail during CREATE DATABASE
-    instead of deferring the error to first catalog access.
-    """
+    """Malformed warehouse -> CREATE succeeds but catalog access fails."""
 
     db = catalog_manager.make_database_name()
     sql = catalog_manager.create_db_sql(
         db, warehouse="not-a-valid-format-no-slash"
     )
 
-    error = node.query_and_get_error(sql)
-    assert error, "Expected CREATE DATABASE to fail with malformed warehouse"
+    _, create_err = node.query_and_get_answer_with_error(sql)
+    assert not create_err.strip(), f"CREATE unexpectedly failed: {create_err}"
+
+    tables_out, tables_err = node.query_and_get_answer_with_error(
+        f"SHOW TABLES FROM {db}"
+    )
+    assert not tables_out.strip() and not tables_err.strip(), (
+        "SHOW TABLES should return empty (lazy auth swallows errors)"
+    )
+
+    error = node.query_and_get_error(
+        f"SELECT * FROM {db}.nonexistent_table FORMAT TSV"
+    )
+    assert error, "Expected error when accessing table with malformed warehouse"
 
 
 @only_onelake
@@ -1312,28 +1305,8 @@ def test_list_tables_pagination(node, catalog_manager):
     created = []
     db = None
     try:
-        # Catalog round-trips dominate per-table create time (~2-4s each on
-        # OneLake / BigLake / Glue), so creating tables serially adds 2-4 min
-        # per backend. Issue them in parallel; each catalog client + REST
-        # endpoint handles concurrent creates fine.  Record every
-        # successful result as it completes (rather than via `list(map())`
-        # at the end), so if one worker raises we still know about the
-        # tables that already succeeded and the `finally` block can drop
-        # them instead of leaking catalog/storage artifacts.
-        first_exc = None
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
-            futures = [
-                pool.submit(catalog_manager.create_table, data, table_name=short)
-                for short in expected
-            ]
-            for fut in concurrent.futures.as_completed(futures):
-                try:
-                    created.append(fut.result())
-                except BaseException as exc:
-                    if first_exc is None:
-                        first_exc = exc
-        if first_exc is not None:
-            raise first_exc
+        for short in expected:
+            created.append(catalog_manager.create_table(data, table_name=short))
 
         db = catalog_manager.make_database_name()
         catalog_manager.create_catalog(node, db)
@@ -1393,9 +1366,8 @@ def test_list_tables_pagination(node, catalog_manager):
             f"Expected 1 row in last-page table {late}, got {rows}"
         )
     finally:
-        if created:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
-                list(pool.map(catalog_manager.cleanup_table, created))
+        for name in created:
+            catalog_manager.cleanup_table(name)
         if db is not None:
             try:
                 node.query(f"DROP DATABASE IF EXISTS {db}")

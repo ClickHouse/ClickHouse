@@ -25,8 +25,8 @@ namespace ErrorCodes
   *
   * Non-cryptographic generators:
   *
-  * rand   - values from the range 0 .. 2^32 - 1.
-  * rand64 - values from the range 0 .. 2^64 - 1.
+  * rand   - linear congruential generator 0 .. 2^32 - 1.
+  * rand64 - combines several rand values to get values from the range 0 .. 2^64 - 1.
   *
   * randConstant - service function, produces a constant column with a random value.
   *
@@ -35,23 +35,21 @@ namespace ErrorCodes
   * This means that the timer must be of sufficient resolution to give different values to each columns.
   */
 
+DECLARE_MULTITARGET_CODE(
+
 struct RandImpl
 {
-    /// Fill memory with random data. Up to PADDING_FOR_SIMD - 1 bytes past size may be overwritten,
-    /// so the memory region must be padded by at least that much.
+    /// Fill memory with random data. The memory region must be 15-bytes padded.
     static void execute(char * output, size_t size);
 };
 
-template <typename RandImplType, typename ToType, typename Name>
+) // DECLARE_MULTITARGET_CODE
+
+template <typename RandImpl, typename ToType, typename Name>
 class FunctionRandomImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionRandomImpl<RandImplType, ToType, Name>>();
-    }
 
     String getName() const override
     {
@@ -82,13 +80,39 @@ public:
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
         vec_to.resize(input_rows_count);
-        RandImplType::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
+        RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
 
         return col_to;
     }
 };
 
 template <typename ToType, typename Name>
-using FunctionRandom = FunctionRandomImpl<RandImpl, ToType, Name>;
+class FunctionRandom : public FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>
+{
+public:
+    explicit FunctionRandom(ContextPtr context) : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default,
+            FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>();
+
+    #if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            FunctionRandomImpl<TargetSpecific::x86_64_v3::RandImpl, ToType, Name>>();
+    #endif
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+    }
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionRandom<ToType, Name>>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
+};
 
 }

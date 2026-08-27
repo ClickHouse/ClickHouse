@@ -1,5 +1,4 @@
 #include <future>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <memory>
 
 #include <Columns/ColumnString.h>
@@ -231,7 +230,7 @@ void StorageSystemReplicas::readImpl(
     query_plan.addStep(std::move(reading));
 }
 
-class SystemReplicasSource final : public ISource
+class SystemReplicasSource : public ISource
 {
 public:
     SystemReplicasSource(
@@ -389,7 +388,7 @@ Chunk SystemReplicasSource::generate()
             }
         }
 
-        const TStatus * status = nullptr;
+        const TStatus * status;
         try
         {
             status = &futures[i].get();
@@ -398,8 +397,7 @@ Chunk SystemReplicasSource::generate()
         {
             if (e.code() == ErrorCodes::ABORTED)
             {
-                /// The table has been shut down or dropped, so its row is skipped instead of being reported as an error.
-                LOG_DEBUG(logger, "Cannot get the status of a storage: {}", e.displayText());
+                tryLogCurrentException(logger, "Received the ABORTED error while trying to get the status of a storage, this is likely because it has been shut down");
                 continue;
             }
             throw;
@@ -467,6 +465,3 @@ Chunk SystemReplicasSource::generate()
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemReplicas) }

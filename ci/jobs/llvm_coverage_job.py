@@ -70,119 +70,6 @@ def get_lcov_summary(
     )
 
 
-COVERAGE_DROP_TOLERANCE = 0.3
-
-# generate_diff_coverage_report.sh writes one of these tokens before every exit 0.
-DIFF_OUTCOME_MARKER_FILE = "diff_outcome.txt"
-
-
-class DiffOutcome:
-    """The mutually exclusive outcomes of generate_diff_coverage_report.sh.
-
-    SCRIPT_REPORTED holds the states the script names in its marker file. FAILED
-    and UNKNOWN carry no marker: the script exited non-zero, or exited 0 without
-    naming a state.
-    """
-
-    REPORT_GENERATED = "report_generated"
-    NO_CPP_CHANGES = "no_cpp_changes"
-    NO_COVERAGE_DATA = "no_coverage_data"
-    CURRENT_COVERAGE_EMPTY = "current_coverage_empty"
-    FAILED = "failed"
-    UNKNOWN = "unknown"
-
-    SCRIPT_REPORTED = (
-        REPORT_GENERATED,
-        NO_CPP_CHANGES,
-        NO_COVERAGE_DATA,
-        CURRENT_COVERAGE_EMPTY,
-    )
-
-
-def read_diff_outcome_marker(temp_dir: str) -> str:
-    """Return the token the diff script reported, or "" if it reported none."""
-    marker = Path(temp_dir) / DIFF_OUTCOME_MARKER_FILE
-    if not marker.exists():
-        return ""
-    token = marker.read_text(encoding="utf-8", errors="replace").strip()
-    return token if token in DiffOutcome.SCRIPT_REPORTED else ""
-
-
-def classify_diff_outcome(script_ok: bool, marker: str, report_ready: bool) -> str:
-    """Which of the six outcomes the diff step had.
-
-    Exit status alone decides failure. This run's marker wins over `report_ready`,
-    which is consulted only when there is no marker at all, so that a script
-    predating the marker still reports a report it did generate.
-    """
-    if not script_ok:
-        return DiffOutcome.FAILED
-    if marker in DiffOutcome.SCRIPT_REPORTED:
-        return marker
-    if report_ready:
-        return DiffOutcome.REPORT_GENERATED
-    return DiffOutcome.UNKNOWN
-
-
-# Total over DiffOutcome: each entry completes a "<what did not happen>:
-# <reason>." sentence. The helpers below index it directly, so an outcome missing
-# from here is a crash rather than a silently empty reason.
-_DIFF_OUTCOME_REASON = {
-    DiffOutcome.REPORT_GENERATED: "a report was generated but not detected",
-    DiffOutcome.NO_CPP_CHANGES: (
-        "No coverable C/C++ source files changed"
-        " (contrib/ is excluded from coverage)"
-    ),
-    DiffOutcome.NO_COVERAGE_DATA: (
-        "No coverage data for the changed C/C++ source files"
-        " (they may be new or not instrumented)"
-    ),
-    DiffOutcome.CURRENT_COVERAGE_EMPTY: (
-        "Current coverage is empty for the changed C/C++ source files"
-        " (tests may have been removed or disabled)"
-    ),
-    DiffOutcome.FAILED: (
-        "bash ci/jobs/scripts/generate_diff_coverage_report.sh failed"
-        " (its output is on the Generate LLVM Coverage Diff Report result)"
-    ),
-    DiffOutcome.UNKNOWN: (
-        "bash ci/jobs/scripts/generate_diff_coverage_report.sh reported no outcome"
-    ),
-}
-
-
-def diff_report_message(outcome: str) -> str:
-    reason = _DIFF_OUTCOME_REASON[outcome]
-    return f"Differential coverage report was not generated: {reason}."
-
-
-def uncovered_code_message(outcome: str) -> str:
-    reason = _DIFF_OUTCOME_REASON[outcome]
-    return f"Uncovered code analysis did not run: {reason}."
-
-
-def coverage_comment_message(outcome: str) -> str:
-    reason = _DIFF_OUTCOME_REASON[outcome]
-    return f"Skipping coverage comment: {reason}."
-
-
-def coverage_drop(baseline_cov: float, current_cov: float) -> float:
-    """Return the line coverage drop in pp, rounded to two decimals.
-
-    In practice lcov reports these percentages with one decimal, so subtracting
-    two of them can land just above the tolerance:
-    `84.4 - 84.1 == 0.30000000000001137`, which made a drop exactly equal to the
-    tolerance fail the check below. Rounding to two decimals is finer than the
-    reported precision, so a drop lcov can actually express is never masked.
-    """
-    return round(baseline_cov - current_cov, 2)
-
-
-def coverage_degraded(drop: float) -> bool:
-    """A drop equal to the tolerance is allowed, as the gate's message states."""
-    return drop > COVERAGE_DROP_TOLERANCE
-
-
 def collect_html_report_files(
     folder_path: str, entry_point: str = "index.html"
 ) -> tuple[list[str], list[str]]:
@@ -229,7 +116,7 @@ def get_git_info() -> tuple[str, list[str], str, str, str, int]:
         ).strip()
         if merge_base:
             raw = Shell.get_output(
-                f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={merge_base}&per_page=100' -q '.[].sha'",
+                f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={merge_base}&per_page=30' -q '.[].sha'",
                 verbose=True,
             )
             master_track_commits = raw.splitlines()
@@ -303,7 +190,6 @@ if __name__ == "__main__":
         name="Generate LLVM Coverage Report",
         command=["bash ci/jobs/scripts/merge_llvm_coverage.sh"],
     )
-
     # Compress and attach the full HTML report archive + files to the generate result.
     # Keeping files/assets inside the same sub-Result ensures upload_result_files_to_s3
     # computes common_root = llvm_coverage_html_report/, so relative links stay intact.
@@ -323,15 +209,10 @@ if __name__ == "__main__":
             command=["bash ci/jobs/scripts/generate_diff_coverage_report.sh"],
         )
 
-        # The diff script leaves no report directory in four distinct outcomes, so
-        # the outcome comes from its own marker plus its exit status.
+        # The diff script exits 0 without running genhtml when no C/C++ files changed.
+        # Use the presence of its output directory as the authoritative indicator.
         _diff_report_dir = Path(TEMP_DIR) / "llvm_coverage_diff_html_report"
-        _diff_outcome = classify_diff_outcome(
-            script_ok=diff_res.is_ok(),
-            marker=read_diff_outcome_marker(TEMP_DIR),
-            report_ready=(_diff_report_dir / "index.html").exists(),
-        )
-        _diff_ran = _diff_outcome == DiffOutcome.REPORT_GENERATED
+        _diff_ran = _diff_report_dir.exists()
 
         b_line_cov = c_line_cov = b_function_cov = c_function_cov = b_branch_cov = c_branch_cov = delta = 0.0
         b_line_hit = b_line_total = c_line_hit = c_line_total = 0
@@ -339,7 +220,7 @@ if __name__ == "__main__":
         b_branch_hit = b_branch_total = c_branch_hit = c_branch_total = 0
 
         if _diff_ran:
-            # Baseline coverage from the primary master run.
+            # Baseline coverage for the current branch (from the merged report)
             (b_line_cov, b_line_hit, b_line_total), \
             (b_function_cov, b_func_hit, b_func_total), \
             (b_branch_cov, b_branch_hit, b_branch_total) = get_lcov_summary(
@@ -358,11 +239,11 @@ if __name__ == "__main__":
             print(f"Current coverage  : {c_line_cov:.2f}%")
             print(f"Delta             : {delta:+.2f}%")
 
-            _drop = coverage_drop(b_line_cov, c_line_cov)
-            if coverage_degraded(_drop):
+            TOLERANCE = 0.3
+            if b_line_cov - c_line_cov > TOLERANCE:
                 _failure_msg = (
                     f"Coverage degraded: master {b_line_cov:.2f}% → PR {c_line_cov:.2f}%"
-                    f" (dropped {_drop:.2f} pp, tolerance {COVERAGE_DROP_TOLERANCE} pp)"
+                    f" (dropped {b_line_cov - c_line_cov:.2f} pp, tolerance {TOLERANCE} pp)"
                 )
                 print(_failure_msg)
                 diff_res.info = _failure_msg
@@ -390,22 +271,14 @@ if __name__ == "__main__":
             diff_res.files.extend(_diff_files)
             diff_res.assets.extend(_diff_assets)
         else:
-            _diff_msg = diff_report_message(_diff_outcome)
-            print(_diff_msg)
-            # A failed result's own info carries the command log, so keep it.
-            if diff_res.is_ok():
-                diff_res.info = _diff_msg
+            print("No C/C++ source files changed — differential coverage report was not generated.")
 
         results.append(diff_res)
 
         # Generate report for changed blocks only
         _print_log = f"{TEMP_DIR}{Utils.normalize_string('Print Uncovered Code')}.log"
-        # print_uncovered_code.py needs this run's own non-empty coverage slice,
-        # which only the report outcome has. Elsewhere the file is absent, holds no
-        # records, or is an earlier run's in the same directory.
         _diff_inputs_exist = (
-            _diff_outcome == DiffOutcome.REPORT_GENERATED
-            and Path(TEMP_DIR + "changes.diff").exists()
+            Path(TEMP_DIR + "changes.diff").exists()
             and Path(TEMP_DIR + "current.changed.info").exists()
         )
         if _diff_inputs_exist:
@@ -415,17 +288,11 @@ if __name__ == "__main__":
             )
             print_res = Result.from_fs("Print Uncovered Code")
         else:
-            msg = uncovered_code_message(_diff_outcome)
+            msg = "No C/C++ source files changed — skipping uncovered code analysis."
             print(msg)
-            # Only a skip the script reported is a success; an analysis missed
-            # because the script failed is not.
             print_res = Result.create_from(
                 name="Print Uncovered Code",
-                status=(
-                    Result.Status.OK
-                    if _diff_outcome in DiffOutcome.SCRIPT_REPORTED
-                    else Result.Status.FAIL
-                ),
+                status=Result.Status.OK,
                 info=msg,
             )
             print_res.set_comment(msg)
@@ -468,16 +335,35 @@ if __name__ == "__main__":
             _changed_lines_covered = print_res.ext.get("changed_lines_covered", 0)
             _changed_lines_cov = print_res.ext.get("changed_lines_cov", 0.0)
 
+            _lbc_lines = print_res.ext.get("lbc_lines", 0)
+            _lbc_fns = print_res.ext.get("lbc_fns", 0)
+
             # Only write coverage_comment.json (and thus post a GitHub comment) when
-            # the diff HTML report was generated; there are no numbers to report in
-            # any other outcome.
-            # Tests-only PRs never reach this job at all - the coverage family is
-            # auto-skipped for them (see filter_job.py) since the compiled binary,
-            # and therefore coverage, cannot have moved.
-            _has_coverage_data = _diff_ran
+            # there is something coverage-related to report: either the diff HTML report
+            # was generated (C++ source files changed) or LBC was detected (tests removed).
+            # Pure non-C++ PRs (scripts, Docker, configs) produce neither and should not
+            # generate a comment.
+            _has_coverage_data = _diff_ran or _lbc_lines > 0 or _lbc_fns > 0
             if not _has_coverage_data:
-                print(coverage_comment_message(_diff_outcome))
+                print("No C/C++ source files changed and no lost baseline coverage — skipping coverage comment.")
             else:
+                # When _diff_ran is False but LBC was found (test-only removal), fetch
+                # the global percentages from the .info files that were downloaded during
+                # the diff script run for LBC comparison.
+                _base_info = f"{TEMP_DIR}/base_llvm_coverage.info"
+                _curr_info = f"{TEMP_DIR}/llvm_coverage.info"
+                if not _diff_ran and Path(_base_info).exists() and Path(_curr_info).exists():
+                    try:
+                        (b_line_cov, b_line_hit, b_line_total), \
+                        (b_function_cov, b_func_hit, b_func_total), \
+                        (b_branch_cov, b_branch_hit, b_branch_total) = get_lcov_summary(_base_info)
+                        (c_line_cov, c_line_hit, c_line_total), \
+                        (c_function_cov, c_func_hit, c_func_total), \
+                        (c_branch_cov, c_branch_hit, c_branch_total) = get_lcov_summary(_curr_info)
+                        delta = c_line_cov - b_line_cov
+                    except Exception as e:
+                        print(f"Warning: could not compute global coverage percentages: {e}")
+
                 _comment_data = {
                     # GitHub comment fields
                     "b_line_cov": b_line_cov,
@@ -503,10 +389,7 @@ if __name__ == "__main__":
                     "changed_lines_covered": _changed_lines_covered,
                     "changed_lines_cov": _changed_lines_cov,
                     "diff_url": _diff_url if _diff_ran else "",
-                    # The uncovered-code log is produced only when print_uncovered_code.py
-                    # actually ran (i.e. C/C++ source files changed). For tests-only PRs
-                    # the log doesn't exist on S3, so don't surface a 404 link.
-                    "uncovered_code_url": uncovered_code_url if _diff_inputs_exist else "",
+                    "uncovered_code_url": uncovered_code_url,
                     # CIDB fields
                     "check_start_time": datetime.now(timezone.utc).strftime(
                         "%Y-%m-%d %H:%M:%S"

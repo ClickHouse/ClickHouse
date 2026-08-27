@@ -14,7 +14,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/scope_guard_safe.h>
 
@@ -38,7 +37,7 @@ namespace ErrorCodes
   *
   * arrayReduceInRanges('agg', indices, lengths, arr1, ...)
   */
-class FunctionArrayReduceInRanges final : public IFunction
+class FunctionArrayReduceInRanges : public IFunction
 {
 public:
     static const size_t minimum_step = 64;
@@ -75,12 +74,8 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
     const IAggregateFunction & agg_func = *aggregate_function;
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
 
-    /// A zero-byte arena allocation does not advance the arena, so states of a zero-size aggregate
-    /// function would all share one address.
-    const size_t state_size = std::max<size_t>(agg_func.sizeOfData(), 1);
-
     /// Aggregate functions do not support constant columns. Therefore, we materialize them.
-    VectorWithMemoryTracking<ColumnPtr> materialized_columns;
+    std::vector<ColumnPtr> materialized_columns;
 
     /// Handling ranges
 
@@ -110,7 +105,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 
     const size_t num_arguments_columns = arguments.size() - 2;
 
-    VectorWithMemoryTracking<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
+    std::vector<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
     const ColumnArray::Offsets * offsets = nullptr;
 
     for (size_t i = 0; i < num_arguments_columns; ++i)
@@ -183,7 +178,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
         PODArray<AggregateDataPtr> places(place_total);
         for (size_t j = 0; j < place_total; ++j)
         {
-            places[j] = arena->alignedAlloc(state_size, agg_func.alignOfData());
+            places[j] = arena->alignedAlloc(agg_func.sizeOfData(), agg_func.alignOfData());
             try
             {
                 agg_func.create(places[j]);
@@ -332,7 +327,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 namespace
 {
 
-class FunctionArrayReduceInRangesOverloadResolver final : public IFunctionOverloadResolver, private WithContext
+class FunctionArrayReduceInRangesOverloadResolver : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static constexpr auto name = "arrayReduceInRanges";

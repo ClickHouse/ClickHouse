@@ -5,7 +5,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 set -e
 
 MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT \
@@ -19,8 +18,7 @@ MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT \
     --local_filesystem_read_method pread \
     --min_bytes_to_use_direct_io 0 \
     --compile_expressions 0 \
-    --fsync_metadata 0 \
-    --query_plan_optimize_count_from_text_index 0"
+    --fsync_metadata 0"
 
 $MY_CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS tab;

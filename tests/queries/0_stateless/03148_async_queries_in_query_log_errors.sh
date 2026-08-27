@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# no-parallel because it flushes asynchronous_insert_log and that conflicts with other tests that expect flushes to be done only by themselves
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -55,13 +57,6 @@ function print_flush_query_logs()
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE async_insert_landing (id UInt32) ENGINE = MergeTree ORDER BY id"
 
 query_id="$(random_str 10)"
-# Both flags are load-bearing and close different drain paths, so keep both: with the adaptive
-# timeout on, `pushDataChunk` can auto-schedule the batch immediately, and with it off the deadline
-# thread drains the batch once `async_insert_busy_timeout_max_ms` expires (200 ms by default, 5000 ms
-# under `tests/config/users.d/timeouts.xml` via the `async_insert_busy_timeout_ms` alias) - either way
-# before `SYSTEM FLUSH ASYNC INSERT QUEUE` below, which waits only for the jobs it scheduled itself.
-# Client flags, not `SETTINGS`: the reference asserts the logged statement verbatim.
-${CLICKHOUSE_CLIENT} --async_insert_use_adaptive_busy_timeout=0 --async_insert_busy_timeout_max_ms=300000 \
-    --query_id="${query_id}" -q "INSERT INTO async_insert_landing SETTINGS wait_for_async_insert=0, async_insert=1 values ('Invalid')" 2>/dev/null || true
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE async_insert_landing"
+${CLICKHOUSE_CLIENT} --query_id="${query_id}" -q "INSERT INTO async_insert_landing SETTINGS wait_for_async_insert=0, async_insert=1 values ('Invalid')" 2>/dev/null || true
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
 print_flush_query_logs ${query_id}

@@ -61,7 +61,7 @@ JoiningTransform::~JoiningTransform() = default;
 
 OutputPort & JoiningTransform::getFinishedSignal()
 {
-    chassert(outputs.size() == 2);
+    assert(outputs.size() == 2);
     return outputs.back();
 }
 
@@ -504,8 +504,6 @@ void DelayedJoinedBlocksWorkerTransform::work()
 
     // Add block to the output
     const auto rows = block.rows();
-    /// This port is a first-class member of the join result stream, so these rows belong to the total.
-    ProfileEvents::increment(ProfileEvents::JoinResultRowCount, rows);
     ProfileEvents::increment(ProfileEvents::JoinDelayedJoinedTransformBlockCount);
     ProfileEvents::increment(ProfileEvents::JoinDelayedJoinedTransformRowCount, rows);
     output_chunk.setColumns(block.getColumns(), rows);

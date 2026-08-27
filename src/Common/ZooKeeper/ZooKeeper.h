@@ -3,7 +3,6 @@
 #include <Core/Types.h>
 
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -28,7 +27,6 @@ namespace Poco::Net
 namespace ProfileEvents
 {
     extern const Event CannotRemoveEphemeralNode;
-    extern const Event ZooKeeperWatchTriggeredOther;
 }
 
 namespace CurrentMetrics
@@ -55,6 +53,10 @@ namespace zkutil
 
 /// Preferred size of multi command (in the number of operations)
 constexpr size_t MULTI_BATCH_SIZE = 100;
+
+/// Path "default:/foo" refers to znode "/foo" in the default zookeeper,
+/// path "other:/foo" refers to znode "/foo" in auxiliary zookeeper named "other".
+constexpr std::string_view DEFAULT_ZOOKEEPER_NAME = "default";
 
 struct ShuffleHost;
 
@@ -484,11 +486,7 @@ public:
     /// Wait for the node to disappear or return immediately if it doesn't exist.
     /// If condition is specified, it is used to return early (when condition returns false)
     /// The function returns true if waited and false if waiting was interrupted by condition.
-    /// triggered_event identifies the subsystem owning the watch for profile-event accounting.
-    bool waitForDisappear(
-        const std::string & path,
-        const WaitCondition & condition = {},
-        ProfileEvents::Event triggered_event = ProfileEvents::ZooKeeperWatchTriggeredOther);
+    bool waitForDisappear(const std::string & path, const WaitCondition & condition = {});
 
     /// Checks if a the ephemeral node exists. These nodes are removed automatically by ZK when the session ends
     /// If the node exists and its value is equal to fast_delete_if_equal_value it will remove it
@@ -739,7 +737,7 @@ private:
 
     AtomicStopwatch session_uptime;
 
-    int32_t session_node_version{};
+    int32_t session_node_version;
 
     std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> reconnect_task;
 };
@@ -836,6 +834,12 @@ private:
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
+
+String normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, LoggerPtr log = nullptr);
+
+String extractZooKeeperName(const String & path);
+
+String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log = nullptr);
 
 String getSequentialNodeName(const String & prefix, UInt64 number);
 

@@ -1,14 +1,7 @@
-#include <bit>
-#include <cstring>
 #include <type_traits>
 #include <base/defines.h>
 #include <base/extended_types.h>
 #include <base/itoa.h>
-
-#if defined(__x86_64__)
-#    include <cpuid.h>
-#    include <immintrin.h>
-#endif
 
 namespace
 {
@@ -295,272 +288,8 @@ inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
 }
 }
 
-ALWAYS_INLINE inline void writeEightFixedDigits(char * p, uint32_t z)
-{
-    auto f0 = (UInt64((1ull << 48ull) / 1e6 + 1) * z >> 16) + 1;
-    outTwoDigits(p, static_cast<uint8_t>(f0 >> 32));
-    auto f2 = (f0 & jeaiii::mask32) * 100;
-    outTwoDigits(p + 2, static_cast<uint8_t>(f2 >> 32));
-    auto f4 = (f2 & jeaiii::mask32) * 100;
-    outTwoDigits(p + 4, static_cast<uint8_t>(f4 >> 32));
-    auto f6 = (f4 & jeaiii::mask32) * 100;
-    outTwoDigits(p + 6, static_cast<uint8_t>(f6 >> 32));
-}
-
-char * writeFixedDigitsPortable(char * p, UInt64 value, UInt32 width)
-{
-    UInt32 rest = width;
-
-    while (rest > 8)
-    {
-        writeEightFixedDigits(p + rest - 8, static_cast<uint32_t>(value % 100000000ULL));
-        value /= 100000000ULL;
-        rest -= 8;
-
-        if (value == 0)
-        {
-            memset(p, '0', rest);
-            return p + width;
-        }
-    }
-
-    if (rest == 0)
-        return p;
-
-    if (rest <= 2)
-    {
-        if (rest == 2)
-            outTwoDigits(p, static_cast<uint8_t>(value % 100));
-        else
-            *p = static_cast<char>('0' + value % 10);
-        return p + width;
-    }
-
-    char tail[8];
-    writeEightFixedDigits(tail, static_cast<uint32_t>(value % 100000000ULL));
-
-    switch (rest)
-    {
-        case 8: memcpy(p, tail, 8); break;
-        case 7: memcpy(p, tail + 1, 7); break;
-        case 6: memcpy(p, tail + 2, 6); break;
-        case 5: memcpy(p, tail + 3, 5); break;
-        case 4: memcpy(p, tail + 4, 4); break;
-        default: memcpy(p, tail + 5, 3); break;
-    }
-    return p + width;
-}
-
-#if defined(__x86_64__)
-
-/// Champagne Gareau, J. and Lemire, D., "Converting an Integer to a Decimal String in Under
-/// Two Nanoseconds", Software: Practice and Experience 56(8), 2026, doi:10.1002/spe.70079.
-namespace avx512ifma
-{
-
-#define ITOA_IFMA_TARGET __attribute__((target("avx512f,avx512vl,avx512bw,avx512dq,avx512ifma,avx512vbmi")))
-
-ALWAYS_INLINE inline char * shiftedPointer(char * p, Int32 offset)
-{
-    return reinterpret_cast<char *>(reinterpret_cast<uintptr_t>(p) + static_cast<uintptr_t>(static_cast<intptr_t>(offset)));
-}
-
-ALWAYS_INLINE inline UInt32 digitCount(UInt64 x)
-{
-    static constexpr uint8_t digit_count[65]
-        = {19, 19, 19, 19, 18, 18, 18, 17, 17, 17, 16, 16, 16, 16, 15, 15, 15, 14, 14, 14, 13, 13,
-           13, 13, 12, 12, 12, 11, 11, 11, 10, 10, 10, 10, 9,  9,  9,  8,  8,  8,  7,  7,  7,  7,
-           6,  6,  6,  5,  5,  5,  4,  4,  4,  4,  3,  3,  3,  2,  2,  2,  1,  1,  1,  1,  1};
-    static constexpr UInt64 lower_bound[65]
-        = {9999999999999999999ULL, 9999999999999999999ULL, 9999999999999999999ULL, 9999999999999999999ULL,
-           999999999999999999ULL,  999999999999999999ULL,  999999999999999999ULL,  99999999999999999ULL,
-           99999999999999999ULL,   99999999999999999ULL,   9999999999999999ULL,    9999999999999999ULL,
-           9999999999999999ULL,    9999999999999999ULL,    999999999999999ULL,     999999999999999ULL,
-           999999999999999ULL,     99999999999999ULL,      99999999999999ULL,      99999999999999ULL,
-           9999999999999ULL,       9999999999999ULL,       9999999999999ULL,       9999999999999ULL,
-           999999999999ULL,        999999999999ULL,        999999999999ULL,        99999999999ULL,
-           99999999999ULL,         99999999999ULL,         9999999999ULL,          9999999999ULL,
-           9999999999ULL,          9999999999ULL,          999999999ULL,           999999999ULL,
-           999999999ULL,           99999999ULL,            99999999ULL,            99999999ULL,
-           9999999ULL,             9999999ULL,             9999999ULL,             9999999ULL,
-           999999ULL,              999999ULL,              999999ULL,              99999ULL,
-           99999ULL,               99999ULL,               9999ULL,                9999ULL,
-           9999ULL,                9999ULL,                999ULL,                 999ULL,
-           999ULL,                 99ULL,                  99ULL,                  99ULL,
-           9ULL,                   9ULL,                   9ULL,                   9ULL,
-           0ULL};
-
-    int leading_zeros = std::countl_zero(x);
-    return static_cast<UInt32>(x > lower_bound[leading_zeros]) + digit_count[leading_zeros];
-}
-
-ITOA_IFMA_TARGET ALWAYS_INLINE inline __m512i digitsOfEight(UInt64 n)
-{
-    constexpr UInt64 two_to_52 = 1ULL << 52;
-    const __m512i c = _mm512_setr_epi64(
-        two_to_52 / 100000000,
-        two_to_52 / 10000000,
-        two_to_52 / 1000000,
-        two_to_52 / 100000,
-        two_to_52 / 10000,
-        two_to_52 / 1000,
-        two_to_52 / 100,
-        two_to_52 / 10);
-    const __m512i low = _mm512_madd52lo_epu64(c, _mm512_set1_epi64(static_cast<Int64>(n)), c);
-    return _mm512_madd52hi_epu64(_mm512_set1_epi64('0'), _mm512_set1_epi64(10), low);
-}
-
-ITOA_IFMA_TARGET ALWAYS_INLINE inline __m128i digitsOfSixteen(UInt64 n)
-{
-    const __m512i high = digitsOfEight(n / 100000000);
-    const __m512i low = digitsOfEight(n % 100000000);
-    /// Only the low 16 indexes matter, but the whole vector is spelled out as a constant on purpose:
-    /// widening a 128-bit constant with `_mm512_castsi128_si512` leaves the upper lanes undefined, which makes
-    /// the index a non-constant value in the IR, and MemorySanitizer in clang 21 falsely reports
-    /// use-of-uninitialized-value for `vpermi2b` with a non-constant index. See
-    /// https://github.com/llvm/llvm-project/pull/148785 - the fix is not in clang 21.
-    const __m512i indexes = _mm512_set_epi8(
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0x78, 0x70, 0x68, 0x60, 0x58, 0x50, 0x48, 0x40, 0x38, 0x30, 0x28, 0x20, 0x18, 0x10, 0x08, 0x00);
-    return _mm512_castsi512_si128(_mm512_permutex2var_epi8(high, indexes, low));
-}
-
-/// Writes the last `count` of the eight digits in `digits` at `p`.
-///
-/// MemorySanitizer does not model `_mm512_mask_cvtusepi64_storeu_epi8`: the bytes are written, but their shadow
-/// is left untouched, so under MSan every number formatted here looks uninitialized to whatever reads it next.
-/// Converting in a register and storing with `_mm_mask_storeu_epi8` is modelled correctly and still propagates
-/// the shadow of `digits`, so genuinely uninitialized input is still caught. It needs one extra instruction,
-/// hence it is only used under MSan.
-ITOA_IFMA_TARGET ALWAYS_INLINE inline void storeDigitsOfEight(char * p, UInt32 count, __m512i digits)
-{
-    char * destination = shiftedPointer(p, static_cast<Int32>(count) - 8);
-#if defined(MEMORY_SANITIZER)
-    _mm_mask_storeu_epi8(
-        destination, static_cast<__mmask16>((0xff00u >> count) & 0xffu), _mm512_cvtusepi64_epi8(digits));
-#else
-    _mm512_mask_cvtusepi64_storeu_epi8(destination, static_cast<__mmask8>(0xff00 >> count), digits);
-#endif
-}
-
-ITOA_IFMA_TARGET char * toChars(char * p, UInt64 value)
-{
-    if (value < 100000000ULL)
-    {
-        const __m512i digits_of_eight = digitsOfEight(value);
-        const UInt32 n = digitCount(value);
-        storeDigitsOfEight(p, n, digits_of_eight);
-        return p + n;
-    }
-
-    if (unlikely(value >= 10000000000000000ULL))
-    {
-        const UInt32 n = digitCount(value);
-        const UInt64 quotient = value / 10000;
-        const UInt32 quotient_digits = n - 4;
-        _mm_mask_storeu_epi8(
-            shiftedPointer(p, static_cast<Int32>(quotient_digits) - 16),
-            static_cast<__mmask16>(0xffffu << (16 - quotient_digits)),
-            digitsOfSixteen(quotient));
-        auto remainder = static_cast<uint32_t>(value - quotient * 10000);
-        outTwoDigits(p + quotient_digits, static_cast<uint8_t>(remainder / 100));
-        outTwoDigits(p + quotient_digits + 2, static_cast<uint8_t>(remainder % 100));
-        return p + n;
-    }
-
-    const __m128i digits_of_sixteen = digitsOfSixteen(value);
-    const UInt32 n = digitCount(value);
-    _mm_mask_storeu_epi8(
-        shiftedPointer(p, static_cast<Int32>(n) - 16), static_cast<__mmask16>(0xffffu << (16 - n)), digits_of_sixteen);
-    return p + n;
-}
-
-ITOA_IFMA_TARGET char * fixedDigits(char * p, UInt64 value, UInt32 width)
-{
-    if (width <= 8)
-    {
-        if (unlikely(value >= 100000000ULL))
-            value %= 100000000ULL;
-
-        storeDigitsOfEight(p, width, digitsOfEight(value));
-        return p + width;
-    }
-
-    if (width <= 16)
-    {
-        if (unlikely(value >= 10000000000000000ULL))
-            value %= 10000000000000000ULL;
-
-        _mm_mask_storeu_epi8(
-            shiftedPointer(p, static_cast<Int32>(width) - 16),
-            static_cast<__mmask16>(0xffffu << (16 - width)),
-            digitsOfSixteen(value));
-        return p + width;
-    }
-
-    const UInt64 quotient = value / 10000000000000000ULL;
-    const UInt32 quotient_digits = width - 16;
-    storeDigitsOfEight(p, quotient_digits, digitsOfEight(quotient));
-    _mm_storeu_si128(
-        reinterpret_cast<__m128i *>(p + quotient_digits), digitsOfSixteen(value - quotient * 10000000000000000ULL));
-    return p + width;
-}
-
-#undef ITOA_IFMA_TARGET
-
-}
-
-bool detectAVX512IFMA()
-{
-    UInt32 eax = 0;
-    UInt32 ebx = 0;
-    UInt32 ecx = 0;
-    UInt32 edx = 0;
-
-    if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx))
-        return false;
-
-    if ((ecx & (1u << 27)) == 0)
-        return false;
-
-    UInt32 xcr0_low = 0;
-    UInt32 xcr0_high = 0;
-    __asm__ volatile("xgetbv" : "=a"(xcr0_low), "=d"(xcr0_high) : "c"(0));
-
-    if ((xcr0_low & 0x6u) != 0x6u || ((xcr0_low >> 5) & 0x7u) != 0x7u)
-        return false;
-
-    if (!__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx))
-        return false;
-
-    constexpr UInt32 have_avx512f = 1u << 16;
-    constexpr UInt32 have_avx512dq = 1u << 17;
-    constexpr UInt32 have_avx512ifma = 1u << 21;
-    constexpr UInt32 have_avx512bw = 1u << 30;
-    constexpr UInt32 have_avx512vl = 1u << 31;
-    constexpr UInt32 have_avx512vbmi = 1u << 1;
-
-    return (ebx & (have_avx512f | have_avx512dq | have_avx512ifma | have_avx512bw | have_avx512vl))
-        == (have_avx512f | have_avx512dq | have_avx512ifma | have_avx512bw | have_avx512vl)
-        && (ecx & have_avx512vbmi) != 0;
-}
-
-bool has_avx512_ifma = detectAVX512IFMA();
-
-#endif
-
-ALWAYS_INLINE inline char * writeUInt64Text(UInt64 value, char * p)
-{
-#if defined(__x86_64__)
-    if (has_avx512_ifma)
-        return avx512ifma::toChars(p, value);
-#endif
-    return jeaiii::to_text_from_integer(p, value);
-}
-
 constexpr uint64_t max_multiple_of_hundred_that_fits_in_64_bits = 1'00'00'00'00'00'00'00'00'00ull;
+constexpr int max_multiple_of_hundred_blocks = 9;
 static_assert(max_multiple_of_hundred_that_fits_in_64_bits % 100 == 0);
 
 /// Divide a 128-bit unsigned integer by 10^18 using Barrett reduction.
@@ -611,60 +340,10 @@ ALWAYS_INLINE inline unsigned __int128 divmod_1e18(unsigned __int128 n, uint64_t
     return q;
 }
 
-/// Divide a 256-bit value by 10^18 in place and return the remainder, one limb at a time from the
-/// most significant one down. `wide::integer` divides bit by bit, which is ~70 times slower.
-/// The quotient of every step fits into a limb because the previous remainder is below 10^18.
-ALWAYS_INLINE inline uint64_t divmod_1e18(UInt256 & value)
-{
-    uint64_t remainder = 0;
-    for (unsigned i = 4; i > 0; --i)
-    {
-        unsigned __int128 current
-            = (static_cast<unsigned __int128>(remainder) << 64) | value.items[UInt256::_impl::little(i - 1)];
-        value.items[UInt256::_impl::little(i - 1)]
-            = static_cast<uint64_t>(current / max_multiple_of_hundred_that_fits_in_64_bits);
-        remainder = static_cast<uint64_t>(current % max_multiple_of_hundred_that_fits_in_64_bits);
-    }
-    return remainder;
-}
-
-ALWAYS_INLINE inline char * writeEighteenFixedDigits(char * p, UInt64 value)
-{
-    writeEightFixedDigits(p + 10, static_cast<uint32_t>(value % 100000000ULL));
-    value /= 100000000ULL;
-    writeEightFixedDigits(p + 2, static_cast<uint32_t>(value % 100000000ULL));
-    outTwoDigits(p, static_cast<uint8_t>(value / 100000000ULL));
-    return p + 18;
-}
-
-/// Divides a 256-bit unsigned integer by 10^18, one limb per step. Returns the quotient and stores
-/// the remainder in `remainder`.
-///
-/// Every step is a 128 / 64 division by a constant, which `divmod_1e18` does with multiplications
-/// only. The quotient of a step fits in a limb because the remainder carried in from the previous
-/// step is below 10^18.
-///
-/// This is why the digit blocks are not stripped off with _BitInt(256) division: for that the
-/// compiler emits a generic bignum sequence, while here the divisor is a known constant spanning a
-/// single limb. It also produces the quotient and the remainder at once, so a block costs one
-/// division instead of two.
-ALWAYS_INLINE inline UInt256 divmod_1e18_256(UInt256 x, uint64_t & remainder)
-{
-    UInt256 quotient{};
-    uint64_t r = 0;
-    for (int i = 3; i >= 0; --i)
-    {
-        const unsigned __int128 current = (static_cast<unsigned __int128>(r) << 64) | x.items[UInt256::_impl::little(i)];
-        quotient.items[UInt256::_impl::little(i)] = static_cast<uint64_t>(divmod_1e18(current, r));
-    }
-    remainder = r;
-    return quotient;
-}
-
 /// Extract up to 9 digit pairs from a u64 value into the provided output buffer.
 ALWAYS_INLINE inline void extractDigitPairs(uint64_t remainder, uint8_t * two_values)
 {
-    for (int i = 0; i < 9; ++i)
+    for (int i = 0; i < max_multiple_of_hundred_blocks; ++i)
     {
         two_values[i] = uint8_t(remainder % 100);
         remainder /= 100;
@@ -672,6 +351,17 @@ ALWAYS_INLINE inline void extractDigitPairs(uint64_t remainder, uint8_t * two_va
 }
 
 /// Write `count` digit pairs from `two_values` (in reverse order) to the output buffer.
+template <int count>
+ALWAYS_INLINE inline char * writeDigitPairs(char * p, const uint8_t * two_values)
+{
+    for (int i = count - 1; i >= 0; --i)
+    {
+        outTwoDigits(p, two_values[i]);
+        p += 2;
+    }
+    return p;
+}
+
 ALWAYS_INLINE inline char * writeDigitPairs(char * p, const uint8_t * two_values, int count)
 {
     for (int i = count - 1; i >= 0; --i)
@@ -687,7 +377,7 @@ ALWAYS_INLINE inline char * writeUIntText(UInt128 _x, char * p)
     /// If the highest 64-bit item is empty, we can print just the lowest item as u64.
     /// Even though technically there are more numbers in the range where this isn't true, in real-life data this isn't the case
     if (likely(_x.items[UInt128::_impl::little(1)] == 0))
-        return writeUInt64Text(_x.items[UInt128::_impl::little(0)], p);
+        return jeaiii::to_text_from_integer(p, _x.items[UInt128::_impl::little(0)]);
 
     /// Doing operations using __int128 is faster and we already rely on this feature.
     using T = unsigned __int128;
@@ -697,22 +387,25 @@ ALWAYS_INLINE inline char * writeUIntText(UInt128 _x, char * p)
     /// UInt128 max is ~3.4e38, so at most 2 divisions are needed.
     /// Unrolled: first division always needed (x > uint64 max since high item != 0),
     /// second division only if quotient still exceeds uint64 max.
-    uint64_t low_block = 0;
-    x = divmod_1e18(x, low_block);
+    uint8_t two_values[18] = {0};
+
+    uint64_t r1;
+    x = divmod_1e18(x, r1);
+    extractDigitPairs(r1, two_values);
 
     constexpr T largest_uint64 = std::numeric_limits<uint64_t>::max();
     if (unlikely(x > largest_uint64))
     {
-        uint64_t middle_block = 0;
-        x = divmod_1e18(x, middle_block);
+        uint64_t r2;
+        x = divmod_1e18(x, r2);
+        extractDigitPairs(r2, two_values + max_multiple_of_hundred_blocks);
 
-        char * out = writeUInt64Text(uint64_t(x), p);
-        out = writeEighteenFixedDigits(out, middle_block);
-        return writeEighteenFixedDigits(out, low_block);
+        char * out = jeaiii::to_text_from_integer(p, uint64_t(x));
+        return writeDigitPairs<2 * max_multiple_of_hundred_blocks>(out, two_values);
     }
 
-    char * out = writeUInt64Text(uint64_t(x), p);
-    return writeEighteenFixedDigits(out, low_block);
+    char * out = jeaiii::to_text_from_integer(p, uint64_t(x));
+    return writeDigitPairs<max_multiple_of_hundred_blocks>(out, two_values);
 }
 
 ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
@@ -721,23 +414,47 @@ ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
     if (likely(_x.items[UInt256::_impl::little(3)] == 0 && _x.items[UInt256::_impl::little(2)] == 0))
         return writeUIntText(UInt128{_x.items[UInt256::_impl::little(0)], _x.items[UInt256::_impl::little(1)]}, p);
 
+    /// If available (x86) we transform from our custom class to _BitInt(256) which has better support in the compiler
+    /// and produces better code
+    using T =
+#if defined(__x86_64__)
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wbit-int-extension"
+        unsigned _BitInt(256)
+#    pragma clang diagnostic pop
+#else
+        UInt256
+#endif
+        ;
+
+#if defined(__x86_64__)
+    T x = (T(_x.items[UInt256::_impl::little(3)]) << 192) + (T(_x.items[UInt256::_impl::little(2)]) << 128)
+        + (T(_x.items[UInt256::_impl::little(1)]) << 64) + T(_x.items[UInt256::_impl::little(0)]);
+#else
+    T x = _x;
+#endif
+
     /// Similar to writeUIntText(UInt128) only that in this case we will stop as soon as we reach the largest u128
-    /// and switch to that function.
+    /// and switch to that function
     uint8_t two_values[39] = {0}; // 78 Max characters / 2
     int current_pos = 0;
 
-    UInt256 x = _x;
-    /// The loop condition is `x > std::numeric_limits<UInt128>::max()`, spelled out on the limbs
-    /// to avoid a full 256-bit comparison.
-    while (x.items[UInt256::_impl::little(3)] != 0 || x.items[UInt256::_impl::little(2)] != 0)
+    constexpr T large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
+    constexpr T largest_uint128 = T(std::numeric_limits<uint64_t>::max()) << 64 | T(std::numeric_limits<uint64_t>::max());
+
+    while (x > largest_uint128)
     {
-        uint64_t block = 0;
-        x = divmod_1e18_256(x, block);
-        extractDigitPairs(block, two_values + current_pos);
-        current_pos += 9;
+        uint64_t u64_remainder = uint64_t(x % large_divisor);
+        x /= large_divisor;
+        extractDigitPairs(u64_remainder, two_values + current_pos);
+        current_pos += max_multiple_of_hundred_blocks;
     }
 
+#if defined(__x86_64__)
+    UInt128 pending{uint64_t(x), uint64_t(x >> 64)};
+#else
     UInt128 pending{x.items[UInt256::_impl::little(0)], x.items[UInt256::_impl::little(1)]};
+#endif
 
     char * out = writeUIntText(pending, p);
     return writeDigitPairs(out, two_values, current_pos);
@@ -822,130 +539,18 @@ char * itoa(Int256 i, char * p)
     M(uint8_t) \
     M(UInt16) \
     M(UInt32) \
+    M(UInt64) \
     M(int8_t) \
     M(Int16) \
-    M(Int32)
+    M(Int32) \
+    M(Int64)
 
 FOR_MISSING_INTEGER_TYPES(DEFAULT_ITOA)
 
-/// `long` is not covered by the list above where it is a distinct type.
-#if defined(LONG_IS_A_DISTINCT_TYPE)
+#if defined(OS_DARWIN)
 DEFAULT_ITOA(unsigned long)
 DEFAULT_ITOA(long)
 #endif
 
 #undef FOR_MISSING_INTEGER_TYPES
 #undef DEFAULT_ITOA
-
-char * itoa(UInt64 i, char * p)
-{
-    return writeUInt64Text(i, p);
-}
-
-char * itoa(Int64 i, char * p)
-{
-    if (i < 0)
-        return writeUInt64Text(0 - static_cast<UInt64>(i), writeLeadingMinus(p));
-    return writeUInt64Text(static_cast<UInt64>(i), p);
-}
-
-char * writeFixedDigits(UInt64 value, UInt32 width, char * p)
-{
-    chassert(width <= std::numeric_limits<UInt256>::digits10);
-#if defined(__x86_64__)
-    if (has_avx512_ifma && width >= 1 && width <= 19)
-        return avx512ifma::fixedDigits(p, value, width);
-#endif
-    return writeFixedDigitsPortable(p, value, width);
-}
-
-char * writeFixedDigits(UInt128 value, UInt32 width, char * p)
-{
-    char * const end = p + width;
-
-    if (likely(value.items[UInt128::_impl::little(1)] == 0))
-    {
-        writeFixedDigits(UInt64(value.items[UInt128::_impl::little(0)]), width, p);
-        return end;
-    }
-
-    using T = unsigned __int128;
-    T x = (T(value.items[UInt128::_impl::little(1)]) << 64) + T(value.items[UInt128::_impl::little(0)]);
-
-    while (width > 18)
-    {
-        uint64_t block = 0;
-        x = divmod_1e18(x, block);
-        writeFixedDigits(block, 18, p + width - 18);
-        width -= 18;
-
-        if (x == 0)
-        {
-            memset(p, '0', width);
-            return end;
-        }
-    }
-
-    constexpr T largest_uint64 = std::numeric_limits<uint64_t>::max();
-    if (unlikely(x > largest_uint64))
-        x %= max_multiple_of_hundred_that_fits_in_64_bits;
-
-    writeFixedDigits(uint64_t(x), width, p);
-    return end;
-}
-
-char * writeFixedDigits(UInt256 value, UInt32 width, char * p)
-{
-    char * const end = p + width;
-
-    if (likely(value.items[UInt256::_impl::little(3)] == 0 && value.items[UInt256::_impl::little(2)] == 0))
-    {
-        writeFixedDigits(UInt128{value.items[UInt256::_impl::little(0)], value.items[UInt256::_impl::little(1)]}, width, p);
-        return end;
-    }
-
-    while (width > 18)
-    {
-        uint64_t block = divmod_1e18(value);
-        writeFixedDigits(block, 18, p + width - 18);
-        width -= 18;
-
-        if (value == 0)
-        {
-            memset(p, '0', width);
-            return end;
-        }
-
-        if (value.items[UInt256::_impl::little(3)] == 0 && value.items[UInt256::_impl::little(2)] == 0)
-        {
-            writeFixedDigits(UInt128{value.items[UInt256::_impl::little(0)], value.items[UInt256::_impl::little(1)]}, width, p);
-            return end;
-        }
-    }
-
-    if (unlikely(value > UInt256(std::numeric_limits<uint64_t>::max())))
-    {
-        uint64_t block = divmod_1e18(value);
-        writeFixedDigits(block, width, p);
-        return end;
-    }
-
-    writeFixedDigits(static_cast<uint64_t>(value), width, p);
-    return end;
-}
-
-void setUseAVX512ItoaForTests([[maybe_unused]] bool value)
-{
-#if defined(__x86_64__)
-    has_avx512_ifma = value && detectAVX512IFMA();
-#endif
-}
-
-bool getUseAVX512ItoaForTests()
-{
-#if defined(__x86_64__)
-    return has_avx512_ifma;
-#else
-    return false;
-#endif
-}
