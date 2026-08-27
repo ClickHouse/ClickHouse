@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"allow_parallel_distinct", false, true, "New setting to evaluate the final `DISTINCT` on separate threads by repartitioning its input streams by the hash of the `DISTINCT` columns, instead of merging them into one stream and deduplicating on a single thread."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},
             {"query_plan_fuse_filter_into_array_join", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."},
@@ -96,7 +97,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_distinct_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `DISTINCT` when the partition expression is a deterministic function of the `DISTINCT` columns."},
             {"force_distinct_partitions_independently", false, false, "New setting to force independent per-partition evaluation of `DISTINCT` even when the cost heuristic would skip it."},
             {"max_number_of_partitions_for_independent_distinct", 128, 128, "New setting: maximal number of partitions to apply independent per-partition `DISTINCT`."},
-            {"allow_parallel_distinct", false, true, "New setting to evaluate the final `DISTINCT` on separate threads by repartitioning its input streams by the hash of the `DISTINCT` columns, instead of merging them into one stream and deduplicating on a single thread."},
             {"allow_window_partitions_independently", false, true, "New setting to evaluate window functions per partition independently (skipping the hash scatter) when the partition expression is a deterministic function of the window `PARTITION BY` columns."},
             {"force_window_partitions_independently", false, false, "New setting to force independent per-partition evaluation of window functions even when the cost heuristic would skip it."},
             {"max_number_of_partitions_for_independent_window", 128, 128, "New setting: maximal number of partitions to apply independent per-partition evaluation of window functions."},
