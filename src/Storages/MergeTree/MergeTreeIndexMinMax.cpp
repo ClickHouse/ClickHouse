@@ -5,6 +5,8 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 
 #include <IO/ReadHelpers.h>
@@ -146,8 +148,25 @@ namespace
 /// Both ends of a `minmax` range must bound the granule under the order `KeyCondition` compares with,
 /// in which a `NaN` element is above every number. `IColumn::getExtremes` reports the `min` and `max`
 /// aggregates instead, and those exclude a value that contains a `NaN`.
-void getTotalOrderExtremes(const IColumn & column, size_t start, size_t end, FieldRef & min_value, FieldRef & max_value)
+void getTotalOrderExtremes(const IColumn & column, size_t start, size_t end, Field & min_value, Field & max_value)
 {
+    /// A `Map` value is materialized through its nested array, which refuses more than a million elements.
+    if (const auto * column_map = typeid_cast<const ColumnMap *>(&column))
+    {
+        Field nested_min;
+        Field nested_max;
+        getTotalOrderExtremes(column_map->getNestedColumn(), start, end, nested_min, nested_max);
+
+        const auto & nested_min_value = nested_min.safeGet<Array>();
+        const auto & nested_max_value = nested_max.safeGet<Array>();
+        min_value = Map(nested_min_value.begin(), nested_min_value.end());
+        max_value = Map(nested_max_value.begin(), nested_max_value.end());
+        return;
+    }
+
+    min_value = Array();
+    max_value = Array();
+
     if (start >= end)
         return;
 
@@ -184,7 +203,7 @@ bool needsTotalOrderExtremes(const IDataType & type)
 
         if (!(isArray(node) || isMap(node) || isTuple(node) || node.lowCardinality()
               || node.isValueRepresentedByNumber() || isStringOrFixedString(node)
-              || isUUID(node) || isIPv4(node) || isIPv6(node)))
+              || isUUID(node) || isIPv6(node)))
             tag_stable = false;
     };
 

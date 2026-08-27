@@ -18,6 +18,26 @@ SELECT 'array positive prunes other granule', count() > 0 FROM (
 SELECT 'array negated indexed', count() FROM t_arr WHERE NOT (a <= [3.]);
 SELECT 'array negated no index', count() FROM t_arr WHERE NOT (a <= [3.]) SETTINGS use_skip_indexes = 0;
 
+-- GRANULARITY 2 spans two marks, so the bound is merged across two update() calls. The merge keeps
+-- its own right end when the NaN arrives first and takes the new one when it arrives second.
+DROP TABLE IF EXISTS t_g2_first;
+CREATE TABLE t_g2_first (id UInt64, a Array(Float64), INDEX idx_a a TYPE minmax GRANULARITY 2)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_g2_first VALUES (1, [1.]), (2, [nan]), (3, [3.]), (4, [100.]), (5, [150.]), (6, [200.]);
+
+SELECT 'granularity 2 nan in first mark indexed', count() FROM t_g2_first WHERE a > [500.];
+SELECT 'granularity 2 nan in first mark no index', count() FROM t_g2_first WHERE a > [500.] SETTINGS use_skip_indexes = 0;
+
+DROP TABLE IF EXISTS t_g2_second;
+CREATE TABLE t_g2_second (id UInt64, a Array(Float64), INDEX idx_a a TYPE minmax GRANULARITY 2)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_g2_second VALUES (1, [100.]), (2, [150.]), (3, [200.]), (4, [1.]), (5, [nan]), (6, [3.]);
+
+SELECT 'granularity 2 nan in second mark indexed', count() FROM t_g2_second WHERE a > [500.];
+SELECT 'granularity 2 nan in second mark no index', count() FROM t_g2_second WHERE a > [500.] SETTINGS use_skip_indexes = 0;
+
 DROP TABLE IF EXISTS t_map;
 CREATE TABLE t_map (id UInt64, a Map(String, Float64), INDEX idx_a a TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id
@@ -88,6 +108,8 @@ WHERE a > [(500., 'a', toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'), toLowCard
 SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_arr;
+DROP TABLE t_g2_first;
+DROP TABLE t_g2_second;
 DROP TABLE t_map;
 DROP TABLE t_nullable;
 DROP TABLE t_finite;

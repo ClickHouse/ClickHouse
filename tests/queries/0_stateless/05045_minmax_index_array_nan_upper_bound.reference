@@ -3,6 +3,10 @@ array positive no index	1
 array positive prunes other granule	1
 array negated indexed	4
 array negated no index	4
+granularity 2 nan in first mark indexed	1
+granularity 2 nan in first mark no index	1
+granularity 2 nan in second mark indexed	1
+granularity 2 nan in second mark no index	1
 map positive indexed	1
 map positive no index	1
 nullable element indexed	2
