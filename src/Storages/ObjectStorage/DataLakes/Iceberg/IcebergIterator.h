@@ -51,6 +51,7 @@ private:
     void ensureDeletesReady();
     void decodeDeleteManifests();
     void decodeDataManifests();
+    Iceberg::ManifestIteratorPtr createManifestIterator(const ManifestFileCacheKey & manifest_list_entry) const;
     std::vector<Iceberg::ProcessedManifestFileEntryPtr> decodeManifest(const ManifestFileCacheKey & manifest_list_entry) const;
 
     LoggerPtr logger;

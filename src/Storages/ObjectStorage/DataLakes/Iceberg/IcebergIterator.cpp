@@ -247,7 +247,7 @@ void IcebergIterator::ensureDeletesReady()
         std::rethrow_exception(deletes_exception);
 }
 
-std::vector<Iceberg::ProcessedManifestFileEntryPtr> IcebergIterator::decodeManifest(const ManifestFileCacheKey & manifest_list_entry) const
+Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(const ManifestFileCacheKey & manifest_list_entry) const
 {
     auto manifest_file_cacheable_part = Iceberg::getManifestFile(
         object_storage,
@@ -257,7 +257,7 @@ std::vector<Iceberg::ProcessedManifestFileEntryPtr> IcebergIterator::decodeManif
         manifest_list_entry.manifest_file_path,
         manifest_list_entry.manifest_file_byte_size);
 
-    auto manifest_file_iterator = Iceberg::ManifestFileIterator::create(
+    return Iceberg::ManifestFileIterator::create(
         manifest_file_cacheable_part.deserializer,
         manifest_list_entry.manifest_file_path,
         persistent_components.path_resolver,
@@ -267,6 +267,11 @@ std::vector<Iceberg::ProcessedManifestFileEntryPtr> IcebergIterator::decodeManif
         local_context,
         manifest_filter_dag,
         table_state_snapshot->schema_id);
+}
+
+std::vector<Iceberg::ProcessedManifestFileEntryPtr> IcebergIterator::decodeManifest(const ManifestFileCacheKey & manifest_list_entry) const
+{
+    auto manifest_file_iterator = createManifestIterator(manifest_list_entry);
 
     ManifestEntryBatch batch;
     while (auto entry = manifest_file_iterator->next())
@@ -347,6 +352,24 @@ void IcebergIterator::decodeDataManifests()
 
     /// Cap concurrency: each in-flight manifest holds its decoded contents.
     const size_t max_in_flight = local_context->getSettingsRef()[Setting::iceberg_data_manifest_decode_concurrency];
+
+    if (max_in_flight == 1)
+    {
+        /// Serial mode: decode on this thread and push each entry as it is produced, so the queue's
+        /// backpressure applies within a manifest and no batch of entries is materialized.
+        for (const auto & manifest_list_entry : data_manifests)
+        {
+            if (blocking_queue.isFinished())
+                return;
+            auto manifest_file_iterator = createManifestIterator(manifest_list_entry);
+            while (auto entry = manifest_file_iterator->next())
+            {
+                if (!blocking_queue.push(std::move(entry)))
+                    return;
+            }
+        }
+        return;
+    }
 
     auto decode_runner
         = threadPoolCallbackRunnerUnsafe<ManifestEntryBatch>(getIOThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR);

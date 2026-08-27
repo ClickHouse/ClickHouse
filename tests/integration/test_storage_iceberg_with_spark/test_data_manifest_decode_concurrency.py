@@ -187,6 +187,53 @@ def test_data_and_delete_manifest_decode_concurrency(
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
+def test_data_manifest_decode_large_manifest(started_cluster_iceberg_with_spark):
+    """A single manifest holding three times more entries than the producer queue's
+    capacity (100), so pushes block in the middle of the manifest at every concurrency;
+    the result must not depend on the concurrency."""
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_data_manifest_decode_large_manifest_" + get_uuid_str()
+
+    entry_count = 300
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id bigint) USING iceberg
+        PARTITIONED BY (id)
+        TBLPROPERTIES ('commit.manifest-merge.enabled' = 'false')
+        """
+    )
+    # One commit writes one data file per partition value, producing a single
+    # manifest with `entry_count` entries.
+    spark.sql(f"INSERT INTO {TABLE_NAME} SELECT id FROM range({entry_count})")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        STORAGE_TYPE,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(
+        STORAGE_TYPE, instance, TABLE_NAME, started_cluster_iceberg_with_spark
+    )
+
+    expected = list(range(entry_count))
+    for concurrency in [1, 4]:
+        result = get_array(
+            instance.query(
+                f"SELECT id FROM {TABLE_NAME} ORDER BY id",
+                settings={
+                    "iceberg_data_manifest_decode_concurrency": concurrency,
+                    "use_iceberg_metadata_files_cache": 0,
+                },
+            )
+        )
+        assert (
+            result == expected
+        ), f"wrong result with iceberg_data_manifest_decode_concurrency={concurrency}"
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
 def test_data_manifest_decode_concurrency_subquery_filter(
     started_cluster_iceberg_with_spark,
 ):
