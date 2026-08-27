@@ -471,7 +471,15 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 
 void ContextAccess::calculateAccessRights() const
 {
-    access = std::make_shared<AccessRights>(mixAccessRightsFromUserAndRoles(*user, *roles_info));
+    auto mixed_access = mixAccessRightsFromUserAndRoles(*user, *roles_info);
+
+    /// The GRANTS clause of the authentication method the user logged in with limits the access rights
+    /// of the session to the intersection with the specified elements. Note that the intersection also erases
+    /// all the grant options, because the elements of the GRANTS clause never have them.
+    if (params.authentication_grants)
+        mixed_access.makeIntersection(AccessRights{*params.authentication_grants});
+
+    access = std::make_shared<AccessRights>(std::move(mixed_access));
     access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access, *access_control));
 
     if (trace_log)
@@ -483,6 +491,8 @@ void ContextAccess::calculateAccessRights() const
                 boost::algorithm::join(roles_info->getEnabledRolesNames(), ", "));
         }
         LOG_TRACE(trace_log, "Settings: readonly = {}, allow_ddl = {}, allow_introspection_functions = {}", params.readonly, params.allow_ddl, params.allow_introspection);
+        if (params.authentication_grants)
+            LOG_TRACE(trace_log, "Access rights are limited to the intersection with: {}", params.authentication_grants->toStringWithoutOptions());
         LOG_TRACE(trace_log, "List of all grants: {}", access->toString());
         LOG_TRACE(trace_log, "List of all grants including implicit: {}", access_with_implicit->toString());
     }
@@ -820,8 +830,25 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
         const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl | workload_ddl | resource_ddl | handler_ddl;
         const AccessFlags introspection_flags = AccessType::INTROSPECTION;
+
+        const AccessFlags role_management_flags
+            = AccessType::CREATE_ROLE | AccessType::ALTER_ROLE | AccessType::DROP_ROLE | AccessType::ROLE_ADMIN;
     };
     static const PrecalculatedFlags precalc;
+
+    /// A session with the access rights limited by the GRANTS clause of an authentication method
+    /// is not allowed to administer roles at all, following the fail-close principle: the clause
+    /// cannot express the admin option (see checkAdminOptionImplHelper), and the role DDL
+    /// entrypoints (CREATE ROLE, ALTER ROLE, DROP ROLE, moving roles between access storages)
+    /// are authorized with plain access types, so they must be rejected here as well,
+    /// even if these access types are listed in the clause and granted to the user.
+    if (params.authentication_grants && (flags & precalc.role_management_flags))
+    {
+        return access_denied(ErrorCodes::ACCESS_DENIED,
+            "{}: Not enough privileges. "
+            "The current session is authenticated with a method which limits the access rights with the GRANTS clause, "
+            "and such sessions cannot administer roles");
+    }
 
     if (params.readonly)
     {
@@ -980,6 +1007,18 @@ bool ContextAccess::checkAdminOptionImplHelper(const ContextPtr & context, const
     if (!std::size(role_ids))
         return true;
 
+    /// A session with the access rights limited by the GRANTS clause of an authentication method
+    /// is not allowed to administer roles at all: the clause cannot express the admin option,
+    /// so we follow the fail-close principle here.
+    if (params.authentication_grants)
+    {
+        show_error(ErrorCodes::ACCESS_DENIED,
+                   "Not enough privileges. "
+                   "The current session is authenticated with a method which limits the access rights with the GRANTS clause, "
+                   "and such sessions cannot administer roles");
+        return false;
+    }
+
     if (isGranted(context, AccessType::ROLE_ADMIN))
         return true;
 
@@ -1093,6 +1132,19 @@ void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_id
         else if (auto user_entity = typeid_cast<UserPtr>(entity))
             checkGranteeIsAllowed(id, *user_entity);
     }
+}
+
+void ContextAccess::checkCanAdministerDefaultRoles() const
+{
+    /// A session whose access rights are limited by the GRANTS clause of an authentication method cannot
+    /// administer roles (see the fail-close guard in checkAccessImplHelper). Changing which roles are
+    /// activated by default for a user (SET DEFAULT ROLE / ALTER USER ... DEFAULT ROLE) is role
+    /// administration, but it is authorized with plain ALTER_USER and so is not covered by that guard,
+    /// so it has to be rejected here explicitly.
+    if (params.authentication_grants)
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "The current session is authenticated with a method which limits the access rights with the GRANTS clause, "
+            "and such sessions cannot administer roles");
 }
 
 bool ContextAccess::isGrantedWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
