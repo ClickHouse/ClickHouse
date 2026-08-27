@@ -1,7 +1,9 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -15,6 +17,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Formats/NativeWriter.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/JSON/Object.h>
 #include <Common/Exception.h>
@@ -459,6 +462,37 @@ TEST(SerializationInfoObject, NativeRevisionGate)
     const auto & old_column = std::get<2>(old_result);
     EXPECT_EQ(typeid_cast<const SerializationInfoObject *>(old_info.get()), nullptr);
     EXPECT_FALSE(recursiveHasSparse(old_column));
+}
+
+TEST(SerializationInfoNullable, NativePreservesOuterWrapperKinds)
+{
+    auto type = DataTypeFactory::instance().get("Nullable(JSON(x Nullable(String), max_dynamic_paths=0))");
+    auto mutable_nested = type->createColumn();
+    type->insertDefaultInto(*mutable_nested);
+    ColumnPtr nested = std::move(mutable_nested);
+
+    const auto check_kind = [&](const ColumnPtr & wrapped, ISerialization::Kind kind)
+    {
+        ColumnWithTypeAndName column{wrapped, type, "j"};
+        auto [serialization, info, _] = NativeWriter::getSerializationAndColumn(
+            DBMS_MIN_REVISION_WITH_JSON_TYPED_PATHS_SERIALIZATION, column);
+        const ISerialization::KindStack expected{ISerialization::Kind::DEFAULT, kind};
+        ASSERT_NE(info, nullptr);
+        EXPECT_EQ(info->getKindStack(), expected);
+        EXPECT_EQ(serialization->getKindStack(), expected);
+
+        WriteBufferFromOwnString out;
+        info->serialializeKindStackBinary(out);
+        auto restored = type->createSerializationInfo(info->getSettings());
+        auto serialized = out.str();
+        ReadBufferFromString in(serialized);
+        restored->deserializeFromKindsBinary(in);
+        EXPECT_EQ(restored->getKindStack(), expected);
+        EXPECT_EQ(type->getSerialization(*restored)->getKindStack(), expected);
+    };
+
+    check_kind(ColumnReplicated::create(nested), ISerialization::Kind::REPLICATED);
+    check_kind(ColumnBLOB::create(nested), ISerialization::Kind::DETACHED);
 }
 
 /// Malformed kind tests.

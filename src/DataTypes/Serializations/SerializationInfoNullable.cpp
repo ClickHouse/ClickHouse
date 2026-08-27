@@ -17,7 +17,7 @@ SerializationInfoNullable::SerializationInfoNullable(MutableSerializationInfoPtr
 
 bool SerializationInfoNullable::hasCustomSerialization() const
 {
-    return nested->hasCustomSerialization();
+    return SerializationInfo::hasCustomSerialization() || nested->hasCustomSerialization();
 }
 
 bool SerializationInfoNullable::structureEquals(const SerializationInfo & rhs) const
@@ -58,7 +58,9 @@ void SerializationInfoNullable::replaceData(const SerializationInfo & other)
 
 MutableSerializationInfoPtr SerializationInfoNullable::clone() const
 {
-    return std::make_shared<SerializationInfoNullable>(nested->clone(), settings);
+    auto result = std::make_shared<SerializationInfoNullable>(nested->clone(), settings);
+    result->setKindStack(kind_stack);
+    return result;
 }
 
 MutableSerializationInfoPtr SerializationInfoNullable::createWithType(
@@ -68,17 +70,21 @@ MutableSerializationInfoPtr SerializationInfoNullable::createWithType(
 {
     const auto & old_nullable = assert_cast<const DataTypeNullable &>(old_type);
     const auto & new_nullable = assert_cast<const DataTypeNullable &>(new_type);
-    return std::make_shared<SerializationInfoNullable>(
+    auto result = std::make_shared<SerializationInfoNullable>(
         nested->createWithType(*old_nullable.getNestedType(), *new_nullable.getNestedType(), new_settings), new_settings);
+    result->setKindStack(kind_stack);
+    return result;
 }
 
 void SerializationInfoNullable::serialializeKindStackBinary(WriteBuffer & out) const
 {
+    SerializationInfo::serialializeKindStackBinary(out);
     nested->serialializeKindStackBinary(out);
 }
 
 void SerializationInfoNullable::deserializeFromKindsBinary(ReadBuffer & in)
 {
+    SerializationInfo::deserializeFromKindsBinary(in);
     nested->deserializeFromKindsBinary(in);
     syncData();
 }

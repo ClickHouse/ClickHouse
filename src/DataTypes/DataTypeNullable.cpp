@@ -137,13 +137,14 @@ SerializationPtr DataTypeNullable::getSerialization(const SerializationInfo & in
     if (!nullable_info)
         return IDataType::getSerialization(info, use_type_serialization_settings);
 
-    return SerializationNullable::create(
+    auto serialization = SerializationNullable::create(
         nested_data_type->getSerialization(*nullable_info->getNestedInfo(), use_type_serialization_settings));
+    return wrapSerializationBasedOnKindStack(std::move(serialization), info.getKindStack(), info.getSettings());
 }
 
 MutableSerializationInfoPtr DataTypeNullable::createSerializationInfo(const SerializationInfoSettings & settings) const
 {
-    if (!hasSparseSerializationSubcolumns(settings))
+    if (settings.version < MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS || !hasSparseSerializationSubcolumns(settings))
         return IDataType::createSerializationInfo(settings);
 
     return std::make_shared<SerializationInfoNullable>(nested_data_type->createSerializationInfo(settings), settings);
@@ -151,11 +152,25 @@ MutableSerializationInfoPtr DataTypeNullable::createSerializationInfo(const Seri
 
 SerializationInfoPtr DataTypeNullable::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
 {
-    if (!hasSparseSerializationSubcolumns(settings))
+    if (settings.version < MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS || !hasSparseSerializationSubcolumns(settings))
         return IDataType::getSerializationInfo(column, settings);
 
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
         return getSerializationInfo(column_const->getDataColumn(), settings);
+
+    if (const auto * column_replicated = checkAndGetColumn<ColumnReplicated>(&column))
+    {
+        auto info = const_pointer_cast<SerializationInfo>(getSerializationInfo(*column_replicated->getNestedColumn(), settings));
+        info->appendToKindStack(ISerialization::Kind::REPLICATED);
+        return info;
+    }
+
+    if (const auto * column_blob = checkAndGetColumn<ColumnBLOB>(&column))
+    {
+        auto info = const_pointer_cast<SerializationInfo>(getSerializationInfo(*column_blob->getWrappedColumn(), settings));
+        info->appendToKindStack(ISerialization::Kind::DETACHED);
+        return info;
+    }
 
     const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
     return std::make_shared<SerializationInfoNullable>(
