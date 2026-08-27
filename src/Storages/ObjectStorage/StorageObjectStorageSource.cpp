@@ -1362,24 +1362,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        /// `AddingDefaultsTransform` reads the reader's missing-value bitmask, which describes the
-        /// reader's own columns and rows, so it runs here: every transform below either drops rows
-        /// or changes column positions, and the bitmask is not carried across them.
-        const Block & header_from_reader = builder.getHeader();
-        auto columns_description_for_defaults = read_from_format_info.columns_description;
-        for (const auto & column : columns_description_for_defaults.getAll())
-            if (!header_from_reader.has(column.name))
-                columns_description_for_defaults.remove(column.name);
-
-        if (columns_description_for_defaults.hasDefaults())
-        {
-            builder.addSimpleTransform(
-                [&](const SharedHeader & header)
-                {
-                    return std::make_shared<AddingDefaultsTransform>(header, columns_description_for_defaults, *input_format, context_);
-                });
-        }
-
         if (!identity_partition_columns.empty())
         {
             if (auto dag = buildIdentityPartitionColumnsDag(builder.getHeader(), identity_partition_columns))
@@ -1619,6 +1601,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
                     /*update_row_numbers_info=*/true);
             });
+        }
+
+        if (read_from_format_info.columns_description.hasDefaults())
+        {
+            builder.addSimpleTransform(
+                [&](const SharedHeader & header)
+                {
+                    return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
+                });
         }
 
         source = input_format;
