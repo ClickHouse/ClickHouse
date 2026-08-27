@@ -244,8 +244,26 @@ ManifestFileContent::ManifestFileContent(
             std::nullopt);
         FileContentType content_type = FileContentType::DATA;
         if (manifest_format_version > 1)
-            content_type = FileContentType(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
-        const auto status = ManifestEntryStatus(manifest_file_deserializer.getValueFromRowByName(i, f_status, TypeIndex::Int32).safeGet<UInt64>());
+        {
+            /// The value comes from the file and has to be validated: casting an arbitrary integer to
+            /// the enum and switching over it below would be undefined behaviour.
+            const auto content_type_value
+                = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>();
+            if (content_type_value > UInt64(FileContentType::EQUALITY_DELETE))
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Cannot read Iceberg table: unexpected value {} of 'data_file.content' in a manifest file",
+                    content_type_value);
+            content_type = FileContentType(content_type_value);
+        }
+
+        const auto status_value = manifest_file_deserializer.getValueFromRowByName(i, f_status, TypeIndex::Int32).safeGet<UInt64>();
+        if (status_value > UInt64(ManifestEntryStatus::DELETED))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot read Iceberg table: unexpected value {} of 'status' in a manifest file",
+                status_value);
+        const auto status = ManifestEntryStatus(status_value);
 
 
         if (status == ManifestEntryStatus::DELETED)

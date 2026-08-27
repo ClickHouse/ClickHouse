@@ -463,6 +463,10 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     {
         if (total_values_remaining < num_values)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Trying to read past total number of values in DELTA_BINARY_PACKED encoding");
+        /// Nothing to write. Returning early is important: the output buffer may have zero size,
+        /// and the first-value special case below would write through it.
+        if (num_values == 0)
+            return;
         total_values_remaining -= num_values;
 
         T * out_values = reinterpret_cast<T *>(out_bytes);
