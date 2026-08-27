@@ -574,10 +574,10 @@ int64_t KeeperStorage::getZXID() const
 
 int64_t KeeperStorage::getNextZXIDLocked() const
 {
-    if (uncommitted_transactions.empty())
+    if (uncommitted_batches.empty())
         return zxid + 1;
 
-    return uncommitted_transactions.back().zxid + 1;
+    return uncommitted_batches.back().last_zxid + 1;
 }
 
 int64_t KeeperStorage::getNextZXID() const
@@ -589,30 +589,24 @@ int64_t KeeperStorage::getNextZXID() const
 uint64_t KeeperStorage::getLastUncommittedLogIdx() const
 {
     std::lock_guard lock(transaction_mutex);
-    return uncommitted_transactions.empty() ? 0 : uncommitted_transactions.back().log_idx;
+    return uncommitted_batches.empty() ? 0 : uncommitted_batches.back().log_idx;
 }
 
-bool KeeperStorage::tryMatchPreprocessedBatch(int64_t last_transaction_zxid, size_t transaction_count, const KeeperDigest & digest, int64_t log_idx)
+bool KeeperStorage::tryMatchPreprocessedBatch(int64_t first_transaction_zxid, int64_t last_transaction_zxid, const KeeperDigest & digest, int64_t log_idx)
 {
-    chassert(transaction_count != 0);
-
     std::lock_guard lock(transaction_mutex);
-    if (uncommitted_transactions.size() < transaction_count)
+    if (uncommitted_batches.empty())
         return false;
 
-    const auto & last_transaction = uncommitted_transactions.back();
-    if (last_transaction.zxid != last_transaction_zxid || !checkDigest(digest, last_transaction.nodes_digest))
+    auto & last_batch = uncommitted_batches.back();
+    if (last_batch.first_zxid != first_transaction_zxid || last_batch.last_zxid != last_transaction_zxid
+        || !checkDigest(digest, last_batch.nodes_digest))
         return false;
 
-    /// The transactions were created by the PreAppendLogLeader callback, before the log idx was
+    /// The batch was preprocessed in the PreAppendLogLeader callback, before the log idx was
     /// known; stamp it now.
-    auto it = uncommitted_transactions.end();
-    for (size_t i = 0; i < transaction_count; ++i)
-    {
-        --it;
-        chassert(it->log_idx == 0);
-        it->log_idx = log_idx;
-    }
+    chassert(last_batch.log_idx == 0);
+    last_batch.log_idx = log_idx;
     return true;
 }
 
@@ -827,13 +821,14 @@ bool KeeperStorage::isFinalized() const
 
 void KeeperStorage::rollbackRequest(int64_t rollback_zxid, bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    if (allow_missing && (uncommitted_transactions.empty() || uncommitted_transactions.back().zxid < rollback_zxid))
+    if (allow_missing && (uncommitted_batches.empty() || uncommitted_batches.back().last_zxid < rollback_zxid))
         return;
 
-    if (uncommitted_transactions.empty() || uncommitted_transactions.back().zxid != rollback_zxid)
+    if (uncommitted_batches.empty() || rollback_zxid < uncommitted_batches.back().first_zxid
+        || rollback_zxid > uncommitted_batches.back().last_zxid)
     {
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Trying to rollback invalid ZXID ({}). It should be the last preprocessed.", rollback_zxid);
+            ErrorCodes::LOGICAL_ERROR, "Trying to rollback invalid ZXID ({}). It should be in the last preprocessed batch.", rollback_zxid);
     }
 
     // if an exception occurs during rollback, the best option is to terminate because we can end up in an inconsistent state
@@ -841,7 +836,11 @@ void KeeperStorage::rollbackRequest(int64_t rollback_zxid, bool allow_missing) T
     LockMemoryExceptionInThread blocker{VariableContext::Global};
     try
     {
-        uncommitted_transactions.pop_back();
+        /// A batch's requests are rolled back one by one, in reverse order (see
+        /// KeeperStateMachine::rollbackRequestBatch); pop the batch when its first transaction
+        /// is rolled back.
+        if (rollback_zxid == uncommitted_batches.back().first_zxid)
+            uncommitted_batches.pop_back();
         uncommitted_state.rollback(rollback_zxid);
     }
     catch (...)
@@ -866,7 +865,7 @@ KeeperDigest KeeperStorage::getNodesDigest(bool committed, bool lock_transaction
     if (lock_transaction_mutex)
         transaction_lock.lock();
 
-    if (uncommitted_transactions.empty())
+    if (uncommitted_batches.empty())
     {
         if (lock_transaction_mutex)
             transaction_lock.unlock();
@@ -874,7 +873,7 @@ KeeperDigest KeeperStorage::getNodesDigest(bool committed, bool lock_transaction
         return {KEEPER_CURRENT_DIGEST_VERSION, nodes_digest};
     }
 
-    return uncommitted_transactions.back().nodes_digest;
+    return uncommitted_batches.back().nodes_digest;
 }
 
 /// Allocate new session id with the specified timeouts

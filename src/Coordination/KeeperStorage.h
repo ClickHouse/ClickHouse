@@ -201,15 +201,22 @@ protected:
     /// Expiration queue for session, allows to get dead sessions at some point of time
     SessionExpiryQueue session_expiry_queue;
 
-    struct TransactionInfo
+    /// One preprocessed batch of requests (one Raft log entry).
+    struct UncommittedBatchInfo
     {
-        int64_t zxid{-1};
+        /// Zxids of the batch's first and last transaction-creating requests. Some zxids inside
+        /// the range may be unused, occupied by requests that create no transactions (like
+        /// `SessionID`).
+        int64_t first_zxid{-1};
+        int64_t last_zxid{-1};
+        /// Digest after the batch's last preprocessed request (i.e. after the whole batch once
+        /// preprocessing of the batch is complete).
         KeeperDigest nodes_digest;
-        /// index in storage of the log containing the transaction
+        /// index in storage of the log containing the batch
         int64_t log_idx = 0;
     };
 
-    std::list<TransactionInfo> uncommitted_transactions TSA_GUARDED_BY(transaction_mutex);
+    std::list<UncommittedBatchInfo> uncommitted_batches TSA_GUARDED_BY(transaction_mutex);
 
 public:
     KeeperStagingTransaction staging;
@@ -261,12 +268,11 @@ public:
     /// 0 if no uncommitted requests.
     uint64_t getLastUncommittedLogIdx() const;
 
-    /// If the tail of the uncommitted transaction list is exactly the given batch (the last
-    /// transaction has zxid `last_transaction_zxid` and a matching digest), stamp `log_idx` on
-    /// the batch's `transaction_count` transactions and return true. Used to detect that a log
+    /// If the last uncommitted batch is exactly the given one (same first/last transaction zxids
+    /// and a matching digest), stamp `log_idx` on it and return true. Used to detect that a log
     /// entry's batch was already preprocessed on the leader in the PreAppendLogLeader callback
     /// (before the log idx was known) when it is preprocessed again in pre_commit.
-    bool tryMatchPreprocessedBatch(int64_t last_transaction_zxid, size_t transaction_count, const KeeperDigest & digest, int64_t log_idx);
+    bool tryMatchPreprocessedBatch(int64_t first_transaction_zxid, int64_t last_transaction_zxid, const KeeperDigest & digest, int64_t log_idx);
 
     Coordination::Error commit(DeltaRange deltas);
 

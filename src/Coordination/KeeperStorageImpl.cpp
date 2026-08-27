@@ -1662,25 +1662,27 @@ std::optional<KeeperDigest> KeeperStorageImpl<NS>::preprocessBatch(const KeeperR
 
     /// On the leader preprocessBatch is called twice: in the PreAppendLogLeader callback
     /// (before the entry is written to the changelog and before the log idx is known) and in
-    /// pre_commit. Detect the second call using the uncommitted transaction list, to avoid
+    /// pre_commit. Detect the second call using the uncommitted batch list, to avoid
     /// (incorrectly) running request logic a second time.
     {
-        size_t transaction_count = 0;
+        int64_t first_transaction_zxid = 0;
         int64_t last_transaction_zxid = 0;
         for (size_t i = 0; i < batch.requests.size(); ++i)
         {
             if (!is_non_transactional(batch.requests[i]))
             {
-                ++transaction_count;
+                if (first_transaction_zxid == 0)
+                    first_transaction_zxid = batch.getZxid(i);
                 last_transaction_zxid = batch.getZxid(i);
             }
         }
-        if (transaction_count != 0
-            && tryMatchPreprocessedBatch(last_transaction_zxid, transaction_count, batch.digest, batch.log_idx))
+        if (last_transaction_zxid != 0
+            && tryMatchPreprocessedBatch(first_transaction_zxid, last_transaction_zxid, batch.digest, batch.log_idx))
             return batch.digest;
     }
 
     KeeperDigest digest_after_preprocessing;
+    bool first_transactional_request = true;
     for (size_t i = 0; i < batch.requests.size(); ++i)
     {
         const auto & request_for_session = batch.requests[i];
@@ -1697,7 +1699,9 @@ std::optional<KeeperDigest> KeeperStorageImpl<NS>::preprocessBatch(const KeeperR
             request_for_session.time,
             batch.getZxid(i),
             check_acl,
-            batch.log_idx);
+            batch.log_idx,
+            /*first_in_batch=*/first_transactional_request);
+        first_transactional_request = false;
     }
 
     return digest_after_preprocessing;
@@ -1710,7 +1714,8 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessOneRequest(
     int64_t time,
     int64_t new_last_zxid,
     bool check_acl,
-    int64_t log_idx)
+    int64_t log_idx,
+    bool first_in_batch)
 {
     Stopwatch watch;
     SCOPE_EXIT({
@@ -1737,13 +1742,13 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessOneRequest(
     if (!staging.deltas.empty() || staging.zxid != -1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "State left over from previous transaction");
 
-    TransactionInfo * transaction = nullptr;
+    UncommittedBatchInfo * transaction = nullptr;
     {
         std::lock_guard lock(transaction_mutex);
         int64_t last_zxid = getNextZXIDLocked() - 1;
         auto current_digest = getNodesDigest(false, /*lock_transaction_mutex=*/false);
 
-        if (uncommitted_transactions.empty())
+        if (uncommitted_batches.empty())
         {
             // if we have no uncommitted transactions it means the last zxid is possibly loaded from snapshot
             if (last_zxid != old_snapshot_zxid && new_last_zxid <= last_zxid)
@@ -1766,7 +1771,18 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessOneRequest(
         KeeperDigestVersion version = keeper_context->digestEnabled() ? KEEPER_CURRENT_DIGEST_VERSION : KeeperDigestVersion::NO_DIGEST;
         chassert(staging.digest.version == version);
 
-        transaction = &uncommitted_transactions.emplace_back(TransactionInfo{.zxid = new_last_zxid, .nodes_digest = current_digest, .log_idx = log_idx});
+        if (first_in_batch)
+        {
+            transaction = &uncommitted_batches.emplace_back(UncommittedBatchInfo{
+                .first_zxid = new_last_zxid, .last_zxid = new_last_zxid, .nodes_digest = current_digest, .log_idx = log_idx});
+        }
+        else
+        {
+            chassert(!uncommitted_batches.empty());
+            transaction = &uncommitted_batches.back();
+            chassert(transaction->log_idx == log_idx);
+            transaction->last_zxid = new_last_zxid;
+        }
     }
 
     /// Backpressure: sleep if the nodes storage's background work fell behind. Done here rather
@@ -1796,10 +1812,10 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessOneRequest(
             // a mistake can happen while applying the changes to the uncommitted_state so for now let's just recalculate the digest here also
             //
             // It's ok to assign this without locking transaction_mutex, even though `transaction`
-            // is inside `uncommitted_transactions`. Because it just so happens that no code path
-            // reads nodes_digest from uncommitted_transactions without holding nuraft's main lock_,
+            // is inside `uncommitted_batches`. Because it just so happens that no code path
+            // reads nodes_digest from uncommitted_batches without holding nuraft's main lock_,
             // which we're also holding. (Except for commit callback, which reads
-            // `uncommitted_transactions.front()`, but only after the transaction is committed,
+            // `uncommitted_batches.front()`, but only after the batch is committed,
             // which can't happen before we return from here.)
             transaction->nodes_digest = staging.digest;
         }
@@ -1942,24 +1958,37 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
     int64_t commit_zxid = 0;
+    bool last_in_batch = false;
     uint64_t transaction_digest = 0;
     {
         std::lock_guard lock(transaction_mutex);
         if (new_last_zxid)
         {
-            if (uncommitted_transactions.empty())
+            if (uncommitted_batches.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to commit a ZXID ({}) which was not preprocessed", *new_last_zxid);
 
-            auto & front_transaction = uncommitted_transactions.front();
-            if (front_transaction.zxid != *new_last_zxid)
+            const auto & front_batch = uncommitted_batches.front();
+            if (*new_last_zxid < front_batch.first_zxid || *new_last_zxid > front_batch.last_zxid)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Trying to commit a ZXID {} while the next ZXID to commit is {}",
+                    "Trying to commit a ZXID {} while the next batch to commit covers ZXIDs [{}, {}]",
                     *new_last_zxid,
-                    front_transaction.zxid);
+                    front_batch.first_zxid,
+                    front_batch.last_zxid);
+            /// (Skipping or reordering commits within the batch would additionally trip the
+            ///  delta order chassert below: deltas are committed strictly from the front.)
+            if (*new_last_zxid <= zxid)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Trying to commit a ZXID {} while ZXID {} is already committed",
+                    *new_last_zxid,
+                    zxid);
 
             commit_zxid = *new_last_zxid;
-            transaction_digest = front_transaction.nodes_digest.value;
+            last_in_batch = commit_zxid == front_batch.last_zxid;
+            /// Digest after the whole batch; only becomes the committed digest when the batch's
+            /// last transaction commits.
+            transaction_digest = front_batch.nodes_digest.value;
         }
         else
         {
@@ -2000,7 +2029,7 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
         {
             std::lock_guard lock(storage_mutex);
             commit(deltas_range);
-            if (!keeper_context->digestEnabledOnCommit())
+            if (!keeper_context->digestEnabledOnCommit() && last_in_batch)
                 nodes_digest = transaction_digest;
         }
         {
@@ -2041,7 +2070,7 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
             {
                 std::lock_guard lock(storage_mutex);
                 response = process(concrete_zk_request, *this, deltas_range, session_id);
-                if (!keeper_context->digestEnabledOnCommit())
+                if (!keeper_context->digestEnabledOnCommit() && last_in_batch)
                     nodes_digest = transaction_digest;
             }
 
@@ -2068,8 +2097,8 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
     {
         std::lock_guard lock(transaction_mutex);
 
-        if (new_last_zxid)
-            uncommitted_transactions.pop_front();
+        if (new_last_zxid && last_in_batch)
+            uncommitted_batches.pop_front();
 
         if (commit_zxid < zxid)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to commit smaller ZXID, commit ZXID: {}, current ZXID {}", commit_zxid, zxid);

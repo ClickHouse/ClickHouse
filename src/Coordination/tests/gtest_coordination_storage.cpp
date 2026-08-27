@@ -13,7 +13,8 @@
 TEST_P(CoordinationTest, TestSystemNodeModify)
 {
     using namespace Coordination;
-    int64_t zxid{0};
+    /// Zxid 0 is reserved for "not assigned yet" (see KeeperRequestBatch::first_zxid); real zxids start at 1.
+    int64_t zxid{1};
 
     // On INIT we abort when a system path is modified
     this->keeper_context->setServerState(KeeperContext::Phase::RUNNING);
