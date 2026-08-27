@@ -43,6 +43,6 @@ std::span<const XdbcTypeInfoRow> getXdbcTypeInfoRows();
 const XdbcTypeInfoRow * findXdbcTypeInfo(std::string_view type_name);
 
 arrow::Result<std::shared_ptr<arrow::Schema>>
-addFlightSqlTypeMetadata(std::shared_ptr<arrow::Schema> schema, const ColumnsWithTypeAndName & header);
+addFlightSQLTypeMetadata(std::shared_ptr<arrow::Schema> schema, const ColumnsWithTypeAndName & header);
 
 }

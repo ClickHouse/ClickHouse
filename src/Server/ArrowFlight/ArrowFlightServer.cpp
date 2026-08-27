@@ -4,9 +4,9 @@
 
 #include <Server/ArrowFlight/AuthMiddleware.h>
 #include <Server/ArrowFlight/CallsData.h>
-#include <Server/ArrowFlight/commandSelector.h>
-#include <Server/ArrowFlight/FlightSqlTypeInfo.h>
+#include <Server/ArrowFlight/FlightSQLTypeInfo.h>
 #include <Server/ArrowFlight/PollSession.h>
+#include <Server/ArrowFlight/commandSelector.h>
 
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -1565,8 +1565,7 @@ arrow::Status ArrowFlightServer::DoAction(
                 {
                     chassert(dataset_header);
                     ARROW_ASSIGN_OR_RAISE(
-                        info.dataset_schema,
-                        ArrowFlight::addFlightSqlTypeMetadata(std::move(info.dataset_schema), *dataset_header))
+                        info.dataset_schema, ArrowFlight::addFlightSQLTypeMetadata(std::move(info.dataset_schema), *dataset_header))
                 }
             }
 

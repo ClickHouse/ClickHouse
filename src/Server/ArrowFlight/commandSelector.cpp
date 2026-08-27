@@ -1,5 +1,5 @@
+#include <Server/ArrowFlight/FlightSQLTypeInfo.h>
 #include <Server/ArrowFlight/commandSelector.h>
-#include <Server/ArrowFlight/FlightSqlTypeInfo.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -718,7 +718,7 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
             auto table_schema = CHColumnToArrowColumn::calculateArrowSchema(
                 table_columns, "Arrow", nullptr,
                 {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
-            auto schema_with_metadata = addFlightSqlTypeMetadata(std::move(table_schema), table_columns);
+            auto schema_with_metadata = addFlightSQLTypeMetadata(std::move(table_schema), table_columns);
             if (!schema_with_metadata.ok())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to add Flight SQL type metadata: {}", schema_with_metadata.status().ToString());
             table_schema = std::move(schema_with_metadata).ValueUnsafe();
@@ -749,7 +749,7 @@ static CommandSelectorResult commandStatementQuery(const arrow::flight::protocol
         return arrow::Status::NotImplemented("CommandStatementQuery: transaction_id is not supported");
     if (command.query().empty())
         return arrow::Status::Invalid("CommandStatementQuery: query must not be empty");
-    return SQLSet{command.query(), addFlightSqlTypeMetadata, {}};
+    return SQLSet{command.query(), addFlightSQLTypeMetadata, {}};
 }
 
 static CommandSelectorResult commandStatementUpdate(const arrow::flight::protocol::sql::CommandStatementUpdate & command)
@@ -884,7 +884,7 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
             return arrow::Status::SerializationError("Deserialization of sql::CommandPreparedStatementQuery failed.");
         if (command.prepared_statement_handle().empty())
             return arrow::Status::Invalid("CommandPreparedStatementQuery: prepared_statement_handle must not be empty");
-        return SQLSet{command.prepared_statement_handle(), addFlightSqlTypeMetadata, {}};
+        return SQLSet{command.prepared_statement_handle(), addFlightSQLTypeMetadata, {}};
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandPreparedStatementUpdate>())
     {

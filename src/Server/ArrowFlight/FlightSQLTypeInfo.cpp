@@ -1,6 +1,7 @@
-#include <Server/ArrowFlight/FlightSqlTypeInfo.h>
+#include <Server/ArrowFlight/FlightSQLTypeInfo.h>
 
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -11,6 +12,7 @@
 #include <arrow/array/builder_binary.h>
 #include <arrow/flight/sql/column_metadata.h>
 
+#include <algorithm>
 #include <array>
 #include <string>
 
@@ -44,7 +46,12 @@ constexpr int32_t SQL_SEARCHABLE_FULL = 3;
 
 /// Ordered by `data_type` ascending, then `type_name` (protocol requirement).
 constexpr std::array<XdbcTypeInfoRow, 25> type_info_rows = {{
-    {.type_name = "UUID", .data_type = SQL_GUID, .column_size = 36, .searchable = SQL_SEARCHABLE_BASIC},
+    {.type_name = "UUID",
+     .data_type = SQL_GUID,
+     .column_size = 36,
+     .literal_prefix = "'",
+     .literal_suffix = "'",
+     .searchable = SQL_SEARCHABLE_BASIC},
     {.type_name = "Bool", .data_type = SQL_BIT, .column_size = 1, .searchable = SQL_SEARCHABLE_BASIC},
     {.type_name = "Int8",
      .data_type = SQL_TINYINT,
@@ -75,6 +82,8 @@ constexpr std::array<XdbcTypeInfoRow, 25> type_info_rows = {{
     {.type_name = "FixedString",
      .data_type = SQL_BINARY,
      .column_size = MAX_FIXEDSTRING_SIZE,
+     .literal_prefix = "'",
+     .literal_suffix = "'",
      .create_params = "length",
      .case_sensitive = true,
      .searchable = SQL_SEARCHABLE_FULL},
@@ -153,14 +162,14 @@ constexpr std::array<XdbcTypeInfoRow, 25> type_info_rows = {{
      .num_prec_radix = 2},
     {.type_name = "Enum16",
      .data_type = SQL_VARCHAR,
-     .column_size = MAX_FIXEDSTRING_SIZE,
+     .column_size = arrow::StringBuilder::memory_limit(),
      .literal_prefix = "'",
      .literal_suffix = "'",
      .case_sensitive = true,
      .searchable = SQL_SEARCHABLE_FULL},
     {.type_name = "Enum8",
      .data_type = SQL_VARCHAR,
-     .column_size = MAX_FIXEDSTRING_SIZE,
+     .column_size = arrow::StringBuilder::memory_limit(),
      .literal_prefix = "'",
      .literal_suffix = "'",
      .case_sensitive = true,
@@ -236,6 +245,15 @@ std::string getTypeFamilyName(const DataTypePtr & type)
     return type->getFamilyName();
 }
 
+template <typename EnumType>
+int32_t getEnumMaxNameSize(const EnumType & type)
+{
+    size_t result = 0;
+    for (const auto & [name, _] : type.getValues())
+        result = std::max(result, name.size());
+    return static_cast<int32_t>(result);
+}
+
 }
 
 std::span<const XdbcTypeInfoRow> getXdbcTypeInfoRows()
@@ -259,7 +277,7 @@ const XdbcTypeInfoRow * findXdbcTypeInfo(std::string_view type_name)
 }
 
 arrow::Result<std::shared_ptr<arrow::Schema>>
-addFlightSqlTypeMetadata(std::shared_ptr<arrow::Schema> schema, const ColumnsWithTypeAndName & header)
+addFlightSQLTypeMetadata(std::shared_ptr<arrow::Schema> schema, const ColumnsWithTypeAndName & header)
 {
     if (schema->num_fields() != static_cast<int>(header.size()))
     {
@@ -304,6 +322,14 @@ addFlightSqlTypeMetadata(std::shared_ptr<arrow::Schema> schema, const ColumnsWit
         else if (family_name == "FixedString")
         {
             metadata_builder.Precision(static_cast<int32_t>(assert_cast<const DataTypeFixedString &>(*type).getN()));
+        }
+        else if (family_name == "Enum8")
+        {
+            metadata_builder.Precision(getEnumMaxNameSize(assert_cast<const DataTypeEnum8 &>(*type)));
+        }
+        else if (family_name == "Enum16")
+        {
+            metadata_builder.Precision(getEnumMaxNameSize(assert_cast<const DataTypeEnum16 &>(*type)));
         }
         else if (type_info && usesRegisteredColumnSizeAsPrecision(family_name, *type_info))
         {

@@ -375,10 +375,11 @@ def test_get_xdbc_type_info():
     assert rows["Int32"]["searchable"] == 2
     assert rows["Date"]["searchable"] == 2
 
-    # Enum values use quoted, case-sensitive string literals.
-    for name in ("Enum8", "Enum16"):
+    # String-like values use quoted literals. Enum comparisons are case-sensitive.
+    for name in ("UUID", "FixedString", "Enum8", "Enum16"):
         assert rows[name]["literal_prefix"] == "'"
         assert rows[name]["literal_suffix"] == "'"
+    for name in ("Enum8", "Enum16"):
         assert rows[name]["case_sensitive"] is True
 
     # Optional numeric attributes are NULL for non-numeric types.
@@ -388,10 +389,10 @@ def test_get_xdbc_type_info():
     assert rows["String"]["unsigned_attribute"] is None
     assert rows["String"]["auto_increment"] is None
 
-    for name in ("FixedString", "Enum8", "Enum16"):
-        assert rows[name]["column_size"] == 0xFFFFFF
+    assert rows["FixedString"]["column_size"] == 0xFFFFFF
     # Arrow UTF-8 arrays use signed 32-bit offsets and reserve one value.
-    assert rows["String"]["column_size"] == 2**31 - 2
+    for name in ("Enum8", "Enum16", "String"):
+        assert rows[name]["column_size"] == 2**31 - 2
 
     schema_result = client.get_xdbc_type_info_schema()
     assert schema_result.schema == table.schema
@@ -632,6 +633,8 @@ def test_wrapped_and_parameterized_type_metadata():
         metadata = _field_metadata(schema.field(name))
         assert metadata[FLIGHT_SQL_TYPE_NAME] == type_name
         assert metadata[CLICKHOUSE_TYPE_NAME] == clickhouse_type_name
+
+    assert _field_metadata(schema.field("enum_col"))[FLIGHT_SQL_PRECISION] == b"5"
 
     decimal_metadata = _field_metadata(schema.field("decimal_col"))
     assert decimal_metadata[FLIGHT_SQL_PRECISION] == b"18"
