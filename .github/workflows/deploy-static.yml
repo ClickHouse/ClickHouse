@@ -1,0 +1,69 @@
+name: Deploy static site assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_environment:
+        description: 'The environment to deploy to. "staging" or "production"'
+        required: true
+        default: 'staging'
+      keep_current_bucket:
+        description: >-
+          Deploy onto whichever Blue/Green bucket is currently live, instead of
+          the normal release toggle. This workflow never touches packages, so
+          the other bucket is likely several releases stale - toggling to it
+          would make those stale packages live again. Leave this true unless
+          you specifically want to stage static changes on the inactive side
+          first.
+        required: true
+        type: boolean
+        default: true
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy-static:
+    runs-on: [altinity-style-checker-aarch64, altinity-on-demand]
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      REPO_DNS_NAME: ${{ inputs.release_environment == 'production' && 'builds.altinity.cloud' || 'builds.staging.altinity.cloud' }}
+      REPO_NAME: ${{ inputs.release_environment == 'production' && 'altinity' || 'altinity-staging' }}
+      REPO_SUBTITLE: ${{ inputs.release_environment == 'production' && 'Stable Builds' || 'Staging Builds' }}
+    steps:
+      - name: Validate inputs
+        run: |
+          if [ "${{ inputs.release_environment }}" != "staging" ] && [ "${{ inputs.release_environment }}" != "production" ]; then
+            echo "Error: release_environment must be either 'staging' or 'production'"
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install aws cli
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: arm64
+
+      - name: Install ansible and required collections
+        run: |
+          pip install --user ansible
+          ansible-galaxy collection install amazon.aws community.aws
+
+      - name: Run static deploy playbook
+        run: |
+          echo "Deploying static site assets (installer.sh, landing page, CloudFront routing) to ${{ inputs.release_environment }}..."
+          echo "Keep current bucket (skip Blue/Green toggle): ${{ inputs.keep_current_bucket }}"
+          if ! ansible-playbook -i release/packaging/ansible/inventory/localhost.yml \
+            -e aws_region="$AWS_REGION" \
+            -e repo_dns_name="$REPO_DNS_NAME" \
+            -e repo_name="$REPO_NAME" \
+            -e repo_subtitle="$REPO_SUBTITLE" \
+            -e push_to_active=${{ inputs.keep_current_bucket }} \
+            release/packaging/ansible/deploy-static.yml; then
+            echo "Ansible playbook failed"
+            exit 1
+          fi
