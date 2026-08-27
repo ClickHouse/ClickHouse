@@ -84,10 +84,10 @@ with wasi-sdk 33:
 
 | build | bytes | gzip -9 | brotli -q 11 | zstd --ultra -22 |
 | --- | ---: | ---: | ---: | ---: |
-| everything | 1470461 | 408130 | 297261 | 318255 |
-| `-DENABLE_DCL=OFF` | 1158099 | 329426 | 243383 | 260797 |
-| `-DENABLE_FORMATTING=OFF` | 958934 | 310444 | 238286 | 255856 |
-| both off | 785828 | 252944 | 197066 | 210933 |
+| everything | 1569344 | 424846 | 307133 | 328799 |
+| `-DENABLE_DCL=OFF` | 1247895 | 344880 | 251924 | 269790 |
+| `-DENABLE_FORMATTING=OFF` | 991221 | 319087 | 244720 | 262189 |
+| both off | 815155 | 260483 | 201908 | 216202 |
 
 Brotli is what a browser will actually get, and it is 25% better than gzip here.
 
@@ -112,15 +112,15 @@ Sorted by brotli, which is what a browser negotiates:
 | [`@clickhouse/parser`](https://github.com/ClickHouse/clickhouse-js-parser) 0.3.0 + `zod`, JS | 1128583 | 196944 | 153347 | 161974 |
 | [`libpg-query`](https://github.com/launchql/libpg-query-node) 17.7.4, wasm | 1150984 | 229158 | 168575 | 176785 |
 | — its emscripten glue, on top of that | 58903 | 16679 | 14888 | 15718 |
-| **this, both off** | 785828 | 252944 | 197066 | 210933 |
+| **this, both off** | 815155 | 260483 | 201908 | 216202 |
 | [`sql.js`](https://github.com/sql-js/sql.js) 1.14.1, wasm | 659730 | 322193 | 278641 | 289690 |
-| **this, everything** | 1470461 | 408130 | 297261 | 318255 |
+| **this, everything** | 1569344 | 424846 | 307133 | 328799 |
 | `node-sql-parser` 5.4.0, all 20+ dialects, JS | 2609025 | 504010 | 333174 | 360819 |
 | [`@polyglot-sql/sdk`](https://github.com/tobilg/polyglot) 0.6.2, wasm | 21656938 | 4805067 | 2020675 | 2150089 |
 
 The row to measure against is **`libpg-query`**: the same idea, a production database's own parser
 compiled to WebAssembly rather than reimplemented. With its glue it is 183463 brotli against this
-build's 197066 — the same ballpark, for a grammar of comparable size.
+build's 201908 — the same ballpark, for a grammar of comparable size.
 
 The two JS parsers are smaller, and both are reimplementations. `@clickhouse/parser` is a Peggy
 grammar with Zod schemas for the same dialect, so it can drift from the server, where this cannot;
@@ -226,7 +226,7 @@ the order of drift to expect:
 
 | left out | bytes | gzip -9 |
 | --- | ---: | ---: |
-| DCL (`-DENABLE_DCL=OFF`) | 203596 | 67413 |
+| DCL (`-DENABLE_DCL=OFF`) | 321449 | 79966 |
 | `CREATE TABLE` / `VIEW` / `DATABASE` | 56533 | 16731 |
 | functions, workloads, resources, named collections, indexes | 45644 | 13070 |
 | `ALTER` | 35978 | 7857 |
