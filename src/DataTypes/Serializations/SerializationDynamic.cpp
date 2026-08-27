@@ -714,8 +714,8 @@ void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & os
 void SerializationDynamic::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
     /// Dynamic and Object values nest into each other with nothing but the size of the input bounding
-    /// the depth. Every cycle of that recursion passes through here, the only place where the type of
-    /// a nested value comes from the data, so this check bounds all of it.
+    /// the depth: the type of a nested value comes from the data, decoded here. Object recurses into
+    /// itself directly through its typed paths, so it repeats this check on its own.
     checkStackSize();
 
     auto field_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);

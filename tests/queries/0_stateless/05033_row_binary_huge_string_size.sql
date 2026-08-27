@@ -21,3 +21,14 @@ SELECT * FROM format(RowBinary, 'j JSON(max_dynamic_paths=0)', unhex('0101611503
 -- of the input, on the column path as well as on the `Field` path.
 
 SELECT * FROM format(RowBinary, 'j JSON', unhex(repeat('01016130001010000000', 10000) || '00')); -- { serverError TOO_DEEP_RECURSION }
+
+-- A typed path of a `JSON` type recurses back into the deserialization of `JSON` directly, without
+-- passing through `Dynamic`, and the depth of such a type also comes from the data (the binary
+-- encoding of a `Dynamic` value starts with the encoding of its type), so the recursion has to be
+-- checked on that path as well.
+
+SELECT * FROM format(RowBinary, 'd Dynamic', unhex('30000000010161' || '30000000000000' || '0000' || '010161' || '00'))
+SETTINGS input_format_binary_max_type_complexity = 0;
+
+SELECT * FROM format(RowBinary, 'd Dynamic', unhex(repeat('30000000010161', 10000) || '30000000000000' || repeat('0000', 10000) || repeat('010161', 10000) || '00'))
+SETTINGS input_format_binary_max_type_complexity = 0; -- { serverError TOO_DEEP_RECURSION }

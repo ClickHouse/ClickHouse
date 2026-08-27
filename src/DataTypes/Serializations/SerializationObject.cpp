@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationObject.h>
+#include <Common/checkStackSize.h>
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/DeserializationTask.h>
@@ -1207,6 +1208,11 @@ void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, W
 
 void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// The check in SerializationDynamic::deserializeBinary does not bound this recursion: a typed
+    /// path of a JSON type recurses back into SerializationObject directly, without passing through
+    /// Dynamic, and the nesting depth of the type itself comes from the data.
+    checkStackSize();
+
     Object object;
     size_t number_of_paths = 0;
     readVarUInt(number_of_paths, istr);
@@ -1307,6 +1313,9 @@ void SerializationObject::restoreColumnObject(ColumnObject & column_object, size
 
 void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// See the same check in the Field overload: typed JSON paths recurse here directly.
+    checkStackSize();
+
     updateMaxDynamicPathsLimitIfNeeded(col, settings);
 
     if (settings.binary.read_json_as_string)
