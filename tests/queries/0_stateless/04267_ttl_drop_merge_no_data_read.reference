@@ -21,10 +21,13 @@ TTLDropMerge	0	200
 TTLDropMerge	100	200
 100
 -- Case 8: Regular merge over fully expired parts
-RegularMerge	0	0
+RegularMerge	0	200
 0
 -- Case 9: pending patch part disables the short-circuit
 RegularMerge	0	100
 0
 -- Case 10: STOP TTL MERGES suppresses the short-circuit
+200
+-- Case 11: MODIFY TTL without materialization keeps the rows
+RegularMerge	200	200
 200
