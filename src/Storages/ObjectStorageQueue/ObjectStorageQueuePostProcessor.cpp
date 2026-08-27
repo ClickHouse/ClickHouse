@@ -66,21 +66,17 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FAULT_INJECTED;
     extern const int FILE_ALREADY_EXISTS;
-    extern const int S3_ERROR;
 }
 
 namespace
 {
 
 /// True when a copy made conditional with `If-None-Match: *` was rejected because the destination
-/// already exists. S3 answers `412 PreconditionFailed`, whose S3Exception carries the XML `Message`
-/// ("...pre-conditions you specified did not hold"); other object storages report FILE_ALREADY_EXISTS.
+/// already exists. Every object storage reports that as FILE_ALREADY_EXISTS: the S3 helpers classify
+/// the 412 where the raw error is still available, since S3Exception keeps only the S3Errors code.
 bool isDestinationAlreadyExistsError(const Exception & e)
 {
-    return e.code() == ErrorCodes::FILE_ALREADY_EXISTS
-        || (e.code() == ErrorCodes::S3_ERROR
-            && (e.message().contains("PreconditionFailed")
-                || e.message().contains("pre-conditions you specified did not hold")));
+    return e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
 }
 
 /// Provenance stamped onto the destination as object metadata: which source key (and which content

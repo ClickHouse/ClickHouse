@@ -53,6 +53,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
+    extern const int FILE_ALREADY_EXISTS;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
 }
@@ -77,6 +78,14 @@ namespace
     /// S3 accepts `x-amz-copy-source-range` only if the source object is greater than 5 MB, and answers
     /// InvalidRequest otherwise -- so a range of a smaller source cannot be server-side copied at all.
     constexpr size_t MIN_SOURCE_SIZE_FOR_RANGE_COPY = 5 * 1024 * 1024;
+
+    /// A destination precondition was rejected. S3 has no S3Errors code for 412 and S3Exception keeps
+    /// only that code, so the raw error has to be classified here rather than by the caller.
+    bool isPreconditionFailed(const Aws::S3::S3Error & error)
+    {
+        return error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED
+            || error.GetExceptionName() == "PreconditionFailed";
+    }
 
     /// The `x-amz-tagging` form PutObject/CreateMultipartUpload expect: URL-encoded query parameters.
     String urlEncodeTagSet(const ObjectAttributes & tags)
@@ -298,6 +307,11 @@ namespace
                     continue; /// will retry
                 }
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+                if (!dest_if_none_match.empty() && isPreconditionFailed(outcome.GetError()))
+                    throw Exception(
+                        ErrorCodes::FILE_ALREADY_EXISTS,
+                        "Object already exists, If-None-Match precondition failed. Key: {}, Bucket: {}",
+                        dest_key, dest_bucket);
                 throw S3Exception(
                     outcome.GetError().GetErrorType(),
                     "Message: {}, Key: {}, Bucket: {}, Tags: {}",
@@ -622,6 +636,11 @@ namespace
                     continue; /// will retry
                 }
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+                if (!dest_if_none_match.empty() && isPreconditionFailed(outcome.GetError()))
+                    throw Exception(
+                        ErrorCodes::FILE_ALREADY_EXISTS,
+                        "Object already exists, If-None-Match precondition failed. Key: {}, Bucket: {}",
+                        dest_key, dest_bucket);
                 throw S3Exception(
                     outcome.GetError().GetErrorType(),
                     "Message: {}, Key: {}, Bucket: {}, Object size: {}",
