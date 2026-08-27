@@ -922,3 +922,89 @@ def test_catalog_oids_are_stable(started_cluster):
     cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_db")
     cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_aaa")
     ch.close()
+
+
+def test_catalog_colliding_oids_are_unique_and_stable(started_cluster):
+    """These two names are a real collision of the first hash of the synthesized
+    oids: `sipHash64(name) % 1000000000` is 505994293 for both. Names involved in
+    such a collision take their oid from a second hash of the name in a reserved
+    range, so even they must get distinct oids that do not change when unrelated
+    objects appear."""
+    node = started_cluster.instances["node"]
+    colliding = ["collision_probe_7423", "collision_probe_44603"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    for name in colliding + ["collision_probe_extra"]:
+        cur.execute(f"DROP DATABASE IF EXISTS {name}")
+    for name in colliding:
+        cur.execute(f"CREATE DATABASE {name}")
+        cur.execute(f"CREATE TABLE {colliding[0]}.{name} (id Int32) ENGINE = Memory")
+    ch.close()
+
+    def read_oids():
+        ch = psycopg.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            dbname=colliding[0],
+        )
+        cur = ch.cursor()
+        cur.execute(
+            "SELECT nspname, oid FROM pg_namespace WHERE nspname LIKE 'collision_probe_%' ORDER BY nspname"
+        )
+        namespace_oids = cur.fetchall()
+        cur.execute(
+            "SELECT relname, oid, relnamespace FROM pg_class WHERE relname LIKE 'collision_probe_%' ORDER BY relname"
+        )
+        relation_oids = cur.fetchall()
+        ch.close()
+        return namespace_oids, relation_oids
+
+    namespaces, relations = read_oids()
+    assert [row[0] for row in namespaces] == sorted(colliding)
+    assert [row[0] for row in relations] == sorted(colliding)
+    # The colliding names still get distinct oids, and every oid is unique.
+    all_oids = [int(row[1]) for row in namespaces + relations]
+    assert len(all_oids) == len(set(all_oids))
+    # The join key of the two tables resolves to the right namespace.
+    namespace_oid_of_db = {row[0]: int(row[1]) for row in namespaces}[colliding[0]]
+    assert {int(row[2]) for row in relations} == {namespace_oid_of_db}
+
+    before = read_oids()
+
+    # A lexicographically earlier unrelated database and table must not renumber
+    # the colliding names either.
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("CREATE DATABASE collision_probe_extra")
+    cur.execute(
+        f"CREATE TABLE {colliding[0]}.collision_probe_1 (id Int32) ENGINE = Memory"
+    )
+    ch.close()
+
+    after = read_oids()
+    assert [row for row in after[0] if row[0] in colliding] == list(before[0])
+    assert [row for row in after[1] if row[0] in colliding] == list(before[1])
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    for name in colliding + ["collision_probe_extra"]:
+        cur.execute(f"DROP DATABASE IF EXISTS {name}")
+    ch.close()

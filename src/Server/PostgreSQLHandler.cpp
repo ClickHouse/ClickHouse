@@ -1365,7 +1365,13 @@ SELECT * FROM VALUES(
     /// `pg_namespace` on them, and a single collision would make `\d` list a table under
     /// an unrelated schema or twice. A hash alone does not guarantee that, so the names
     /// whose hash collides with the hash of another visible name - and only they - fall
-    /// back to a position in a reserved range that is disjoint from the hashed one.
+    /// back to a second hash of the name in a reserved range that is disjoint from the
+    /// first one. The second hash is still a property of the name alone, so a collision
+    /// does not make the oid depend on the set of visible objects; only when the second
+    /// hashes of two colliding names collide as well - a double collision - does the name
+    /// fall back to a position in a third, ultimate range, which keeps the uniqueness
+    /// guarantee unconditional at the price of a position-dependent oid for that
+    /// astronomically unlikely case.
     /// The offset 16384 mirrors PostgreSQL, where oids below 16384 are reserved for the
     /// system, so synthesized oids cannot collide with the well-known ones; namespaces
     /// take the even oids and the tables of `pg_class` the odd ones, so the two
@@ -1389,11 +1395,16 @@ SELECT * FROM
 (
     WITH
         (SELECT arraySort(groupArray(name)) FROM system.databases) AS visible_databases,
-        arrayMap(n -> sipHash64(n) % 1000000000, visible_databases) AS database_hashes
+        arrayMap(n -> sipHash64(n) % 1000000000, visible_databases) AS database_hashes,
+        arrayFilter(n -> countEqual(database_hashes, sipHash64(n) % 1000000000) > 1, visible_databases) AS colliding_databases,
+        arrayMap(n -> sipHash64(n, 'oid') % 100000000, colliding_databases) AS database_rehashes
     SELECT
-        toUInt32(if(countEqual(database_hashes, sipHash64(name) % 1000000000) = 1,
+        toUInt32(multiIf(
+            countEqual(database_hashes, sipHash64(name) % 1000000000) = 1,
             16384 + 2 * (sipHash64(name) % 1000000000),
-            2000016384 + 2 * indexOf(visible_databases, name))) AS oid,
+            countEqual(database_rehashes, sipHash64(name, 'oid') % 100000000) = 1,
+            2000016384 + 2 * (sipHash64(name, 'oid') % 100000000),
+            2400016384 + 2 * indexOf(colliding_databases, name))) AS oid,
         name AS nspname
     FROM system.databases
 ))");
@@ -1423,16 +1434,26 @@ SELECT * FROM
     WITH
         (SELECT arraySort(groupArray(name)) FROM system.tables WHERE database = currentDatabase() AND NOT is_temporary) AS visible_tables,
         arrayMap(n -> sipHash64(n) % 1000000000, visible_tables) AS table_hashes,
+        arrayFilter(n -> countEqual(table_hashes, sipHash64(n) % 1000000000) > 1, visible_tables) AS colliding_tables,
+        arrayMap(n -> sipHash64(n, 'oid') % 100000000, colliding_tables) AS table_rehashes,
         (SELECT arraySort(groupArray(name)) FROM system.databases) AS visible_databases,
-        arrayMap(n -> sipHash64(n) % 1000000000, visible_databases) AS database_hashes
+        arrayMap(n -> sipHash64(n) % 1000000000, visible_databases) AS database_hashes,
+        arrayFilter(n -> countEqual(database_hashes, sipHash64(n) % 1000000000) > 1, visible_databases) AS colliding_databases,
+        arrayMap(n -> sipHash64(n, 'oid') % 100000000, colliding_databases) AS database_rehashes
     SELECT
-        toUInt32(if(countEqual(table_hashes, sipHash64(name) % 1000000000) = 1,
+        toUInt32(multiIf(
+            countEqual(table_hashes, sipHash64(name) % 1000000000) = 1,
             16385 + 2 * (sipHash64(name) % 1000000000),
-            2000016385 + 2 * indexOf(visible_tables, name))) AS oid,
+            countEqual(table_rehashes, sipHash64(name, 'oid') % 100000000) = 1,
+            2000016385 + 2 * (sipHash64(name, 'oid') % 100000000),
+            2400016385 + 2 * indexOf(colliding_tables, name))) AS oid,
         name AS relname,
-        toUInt32(if(countEqual(database_hashes, sipHash64(currentDatabase()) % 1000000000) = 1,
+        toUInt32(multiIf(
+            countEqual(database_hashes, sipHash64(currentDatabase()) % 1000000000) = 1,
             16384 + 2 * (sipHash64(currentDatabase()) % 1000000000),
-            2000016384 + 2 * indexOf(visible_databases, currentDatabase()))) AS relnamespace,
+            countEqual(database_rehashes, sipHash64(currentDatabase(), 'oid') % 100000000) = 1,
+            2000016384 + 2 * (sipHash64(currentDatabase(), 'oid') % 100000000),
+            2400016384 + 2 * indexOf(colliding_databases, currentDatabase()))) AS relnamespace,
         toUInt32(10) AS relowner,
         toUInt32(if(endsWith(engine, 'View'), 0, 2)) AS relam,
         multiIf(engine = 'MaterializedView', 'm', endsWith(engine, 'View'), 'v', 'r') AS relkind
