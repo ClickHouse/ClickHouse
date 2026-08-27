@@ -21,7 +21,6 @@
 #include <Storages/StorageFactory.h>
 #include <Common/SettingsChanges.h>
 
-#include <algorithm>
 #include <utility>
 
 namespace DB
@@ -69,60 +68,6 @@ void rejectHTTPOnlyConstructionSettings(const ASTSetQuery & set_query)
         reject(name);
 }
 
-/// `profile` is recognised by its literal name, as `Context::setSetting` does.
-bool hasProfileChange(const SettingsChanges & changes)
-{
-    return std::any_of(changes.begin(), changes.end(), [](const SettingChange & change) { return change.name == "profile"; });
-}
-
-/// Checks the part of a `SET profile = 'p', …` statement that follows the `profile` change against
-/// the constraints that profile installs. The caller has already checked the whole statement against
-/// the constraints in force before it, but a `profile` change replaces the constraint set halfway
-/// through the statement. Without this, one statement overrides the very `CONST`, `MIN`/`MAX` or
-/// `readonly` constraint that the profile it names installs, while the same settings applied as two
-/// separate statements are rejected.
-///
-/// Checking the tail requires the profile to have been applied first, so this runs on a scratch copy
-/// of the context and applies nothing to the real one - the caller applies the statement only once
-/// every check has passed, so a rejected statement leaves the session untouched.
-void checkSettingsConstraintsAfterProfileChange(
-    const ContextPtr & context, const SettingsChanges & changes, const std::vector<String> & default_settings)
-{
-    if (!hasProfileChange(changes))
-        return;
-
-    auto scratch_context = Context::createCopy(context);
-    SettingsChanges pending;
-    bool constraints_replaced = false;
-
-    auto flush_pending = [&]
-    {
-        /// Not checked before the first `profile` change: the caller's check already covers it
-        /// against the same constraints.
-        if (constraints_replaced)
-            scratch_context->checkSettingsConstraints(std::as_const(pending), SettingSource::QUERY);
-        scratch_context->applySettingsChanges(pending);
-        pending.clear();
-    };
-
-    for (const auto & change : changes)
-    {
-        if (change.name != "profile")
-        {
-            pending.push_back(change);
-            continue;
-        }
-        flush_pending();
-        /// `Context::setCurrentProfile` checks the profile's own settings against the constraints in
-        /// force before it is applied.
-        scratch_context->applySettingsChanges(SettingsChanges{change});
-        constraints_replaced = true;
-    }
-    flush_pending();
-
-    scratch_context->checkSettingsConstraintsForSettingsReset(default_settings, SettingSource::QUERY);
-}
-
 }
 
 BlockIO InterpreterSetQuery::execute()
@@ -145,7 +90,6 @@ BlockIO InterpreterSetQuery::execute()
     getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
     /// Checked before anything is applied, so that a violation leaves the whole statement without effect.
     getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
-    checkSettingsConstraintsAfterProfileChange(getContext(), changes, ast.default_settings);
     auto session_context = getContext()->getSessionContext();
     session_context->applySettingsChanges(changes);
     session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
@@ -166,7 +110,6 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     {
         getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
         getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
-        checkSettingsConstraintsAfterProfileChange(getContext(), changes, ast.default_settings);
         rejectHTTPOnlyConstructionSettings(ast);
     }
     getContext()->applySettingsChanges(changes);

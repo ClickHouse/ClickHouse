@@ -301,40 +301,37 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         set_query.changes.removeSetting("limit");
         set_query.changes.removeSetting("offset");
 
-        /// Without this check a `SETTINGS` clause inside a subquery, a CTE, or a view's inner query is
-        /// applied unchecked, which lets a user override a setting an administrator locked with `CONST`,
-        /// `readonly`, `MIN`/`MAX` or a feature tier - for example `additional_table_filters`, which the
-        /// Planner later reads from this very context. A clause on the outer query is checked by
-        /// `InterpreterSetQuery::applySettingsFromQuery`, and the legacy interpreter checks the nested
-        /// form in `InterpreterSelectQuery`, so this was the only settings-application path without it.
-        /// Re-checking a value the outer query already applied costs nothing: the constraint checker
-        /// skips a change that equals the current value.
+        /// Without this a `SETTINGS` clause inside a subquery, a CTE, or a view's inner query is
+        /// applied to the per-node context unchecked, which lets a user override a setting an
+        /// administrator locked with `CONST`, `readonly`, `MIN`/`MAX` or a feature tier - for example
+        /// `additional_table_filters`, which the Planner later reads from this very context.
+        ///
+        /// The nested form is *clamped* rather than rejected: a change that violates a `CONST` or
+        /// `readonly` constraint is dropped, a value outside its `MIN`/`MAX` bounds is clamped into
+        /// them, and the rest of the clause applies. That is how settings crossing into another
+        /// execution context are already treated - a `SQL SECURITY DEFINER` switch
+        /// (`getSQLSecurityOverriddenContext`), a secondary query (`TCPHandler`), a distributed DDL
+        /// replay (`DDLTask`) - and it keeps an existing view whose inner clause violates the reading
+        /// session's constraints readable: the clause loses to the constraint, which is exactly what
+        /// the constraint promises. A clause on the outer query is checked by
+        /// `InterpreterSetQuery::applySettingsFromQuery` before the tree is built and still throws,
+        /// as does the legacy interpreter for the nested form in `InterpreterSelectQuery`.
+        ///
+        /// The clamp works on a copy: the `QueryNode` records the clause as written, so the tree's
+        /// AST round-trip and hash are unchanged, and a node that executes the subquery elsewhere
+        /// clamps it against its own constraints when it builds its own tree. Nothing reads the
+        /// recorded changes back into a context without going through this function.
+        ///
+        /// `SETTINGS name = DEFAULT` (`default_settings`) is not handled here: this path has always
+        /// ignored it, and applying it needs a `default_settings` carrier on `QueryNode` plus
+        /// constraint filtering for resets. Tracked in
+        /// https://github.com/ClickHouse/ClickHouse/issues/115415.
         if (!set_query.changes.empty())
         {
-            updated_context->checkSettingsConstraints(std::as_const(set_query.changes), SettingSource::QUERY);
-            updated_context->applySettingsChanges(set_query.changes);
+            auto checked_changes = set_query.changes;
+            updated_context->clampToSettingsConstraints(checked_changes, SettingSource::QUERY);
+            updated_context->applySettingsChanges(checked_changes);
             settings_changes = set_query.changes;
-        }
-
-        /// `SETTINGS name = DEFAULT` lands in `default_settings` rather than in `changes`, and this path
-        /// ignored it entirely, so the nested form was silently a no-op. Reset it here, and check it
-        /// first with the same `checkResetToDefault` that guards the `SET name = DEFAULT` form: the
-        /// reset installs the compiled-in default, which would otherwise clear a constraint. A reset
-        /// must leave the setting `changed = false`, so it cannot be expressed as an explicit change.
-        ///
-        /// Known limitation: unlike `changes` above, the reset is applied only to this node's context
-        /// and is not recorded on the `QueryNode`, which carries `settings_changes` alone. So the reset
-        /// is invisible to everything that reads a subquery's settings off the query tree rather than
-        /// off its context: `QueryNode::toAST` drops it (a secondary query sent to another shard,
-        /// `EXPLAIN QUERY TREE`), the tree hash does not distinguish it, and the `hasSettingsChanges`
-        /// gates in `Planner::shouldUseQueryCacheForSubquery` and in the table-function execution-context
-        /// switch in `QueryAnalyzer` do not fire for it. That matches the behaviour before this check
-        /// existed, when the clause was dropped outright, and fixing it needs a `default_settings`
-        /// carrier on `QueryNode` plus hashing and serialization support, which is out of scope here.
-        if (!set_query.default_settings.empty())
-        {
-            updated_context->checkSettingsConstraintsForSettingsReset(set_query.default_settings, SettingSource::QUERY);
-            updated_context->resetSettingsToDefaultValue(set_query.default_settings);
         }
     }
 
