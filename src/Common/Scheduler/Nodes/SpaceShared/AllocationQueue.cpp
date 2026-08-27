@@ -278,8 +278,10 @@ void AllocationQueue::approveIncrease()
     }
     else
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
+    chassert(increase->approval_epoch > 0);
     apply(*increase);
     allocation.allocated += increase->size;
+    allocation.last_increase_approval_epoch = increase->approval_epoch;
 
     if (suspended_growth == &allocation)
     {
