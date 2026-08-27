@@ -1,8 +1,8 @@
 -- Tags: no-parallel-replicas
 -- Materializing only the offset produces duplicate (_block_number, _block_offset)
 -- pairs after a merge: the offsets keep the original per-insert values while the
--- block number falls back to a single value for the whole merged part. The
--- duplicates are identical in the metadata and the data stream, so alignment holds.
+-- block number falls back to a single value for the whole merged part. The duplicate
+-- keys must not confuse the alignment of the data stream with the watermark markers.
 
 SET enable_streaming_queries = 1;
 
@@ -19,3 +19,11 @@ OPTIMIZE TABLE t_streaming_duplicate_keys FINAL;
 SELECT _block_number, _block_offset FROM t_streaming_duplicate_keys ORDER BY _block_number, _block_offset;
 
 SELECT sum(value) FROM t_streaming_duplicate_keys STREAM BOUNDED WATERMARK FOR event_time AS event_time;
+
+-- The filter keeps a single row of a duplicate-key run; the time attribute must be its own
+-- event time, not the event time of a dropped twin with the same key.
+SELECT value, _time_attribute FROM t_streaming_duplicate_keys STREAM BOUNDED WATERMARK FOR event_time AS event_time PREWHERE value = 10;
+
+SELECT value, _time_attribute FROM (
+    SELECT value, _time_attribute FROM t_streaming_duplicate_keys STREAM BOUNDED WATERMARK FOR event_time AS event_time WHERE value IN (0, 7, 14)
+) ORDER BY value;
