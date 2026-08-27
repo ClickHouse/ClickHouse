@@ -123,7 +123,7 @@ public:
                     toString(MAX_H3_RES));
         }
 
-        /// H3 polygonToCellsExperimental expects uint32_t flags.
+        /// H3's containment mode is a `uint32_t` flag mask.
         /// Fast path: UInt8 literals (0..3) and UInt32 columns; otherwise cast to Int64 and validate 0..3.
         /// All flag values are validated before geometry conversion.
         auto col_flags_materialized = arguments[2].column->convertToFullColumnIfConst();
@@ -239,7 +239,8 @@ REGISTER_FUNCTION(h3PolygonToCellsWithContainment)
             "Flags: 0=CONTAINMENT_CENTER, 1=CONTAINMENT_FULL, 2=CONTAINMENT_OVERLAPPING, "
             "3=CONTAINMENT_OVERLAPPING_BBOX. The flags argument is passed to the H3 API as UInt32; "
             "use integer literals (0..3) or toUInt32. Other native integer types are converted with an accurate cast. "
-            "Every vertex must be on the sphere: longitude in -180..180 and latitude in -90..90 degrees. See H3 docs.",
+            "Every vertex must be on the sphere: longitude in -180..180 and latitude in -90..90 degrees. "
+            "The order of the returned cells is not guaranteed. See H3 docs.",
         .syntax = "h3PolygonToCellsWithContainment(geometry, resolution, flags)",
         .introduced_in = {26, 6},
         .category = FunctionDocumentation::Category::Geo});

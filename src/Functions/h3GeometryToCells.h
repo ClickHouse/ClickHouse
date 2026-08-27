@@ -11,8 +11,9 @@
 namespace DB
 {
 
-/// Appends the H3 cells covering `multi_polygon` to `dst_data`, one at a time so that `budget` can check for
-/// a timeout or `KILL QUERY` mid-row. `flags` is an H3 containment mode, 0 being CONTAINMENT_CENTER.
+/// Appends the H3 cells covering `multi_polygon` to `dst_data`, charging `budget` for every candidate cell
+/// examined so that it can check for a timeout or `KILL QUERY` mid-row, including while the search rejects
+/// candidates without producing any. `flags` is an H3 containment mode, 0 being CONTAINMENT_CENTER.
 void appendH3Cells(
     const SphericalMultiPolygon & multi_polygon,
     UInt8 resolution,

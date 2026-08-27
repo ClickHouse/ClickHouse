@@ -154,7 +154,7 @@ public:
 REGISTER_FUNCTION(H3PolygonToCells)
 {
     factory.registerFunction<FunctionH3PolygonToCells>(FunctionDocumentation{
-        .description="Returns the hexagons (at specified resolution) contained by the provided geometry, either ring or (multi-)polygon. Every vertex must be on the sphere: longitude in -180..180 and latitude in -90..90 degrees.",
+        .description="Returns the hexagons (at specified resolution) contained by the provided geometry, either ring or (multi-)polygon. Every vertex must be on the sphere: longitude in -180..180 and latitude in -90..90 degrees. The order of the returned cells is not guaranteed.",
         .syntax = "h3PolygonToCells(geometry, resolution)",
         .introduced_in = {25, 11},
         .category = FunctionDocumentation::Category::Geo});
