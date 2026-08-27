@@ -15,11 +15,9 @@ ROW_COUNT = 1000
 # The row index `MySQLOutputFormat::consume` parks on when the failpoint is enabled.
 PAUSE_AT_ROW = 5
 
-# `max_block_size` equal to the row count clamps `numbers` to a single stream, so the whole
-# result reaches the output format as one chunk. That is what the test needs: with one chunk
-# the per-row cancellation check is the only way to leave the row loop early, and the check
-# made once at chunk entry cannot satisfy the test instead.
-SELECT_FROM_NUMBERS = f"""SELECT toString(number), repeat('x', 100) FROM numbers({ROW_COUNT})
+# `max_block_size` equal to the row count clamps `numbers` to one stream, so the whole result
+# arrives as one chunk and only the per-row cancellation check can leave the row loop early.
+SELECT_FROM_NUMBERS = f"""SELECT toString(number), repeat('x', 2000) FROM numbers({ROW_COUNT})
 SETTINGS max_block_size = {ROW_COUNT}"""
 
 cluster = ClickHouseCluster(__file__)

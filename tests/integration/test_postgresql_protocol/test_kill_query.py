@@ -12,11 +12,12 @@ FAULT_NAME = "postgresql_output_format_mid_loop_pause"
 
 ROW_COUNT = 1000
 
-# `max_block_size` equal to the row count clamps `numbers` to a single stream, so the whole
-# result reaches the output format as one chunk. That is what the test needs: with one chunk
-# the per-row cancellation check is the only way to leave the row loop early, and the check
-# made once at chunk entry cannot satisfy the test instead.
-SELECT_FROM_NUMBERS = f"""SELECT toString(number), repeat('x', 100) FROM numbers({ROW_COUNT})
+# The row index `PostgreSQLOutputFormat::consume` parks on when the failpoint is enabled.
+PAUSE_AT_ROW = 5
+
+# `max_block_size` equal to the row count clamps `numbers` to one stream, so the whole result
+# arrives as one chunk and only the per-row cancellation check can leave the row loop early.
+SELECT_FROM_NUMBERS = f"""SELECT toString(number), repeat('x', 2000) FROM numbers({ROW_COUNT})
 SETTINGS max_block_size = {ROW_COUNT}"""
 
 cluster = ClickHouseCluster(__file__)
@@ -113,11 +114,9 @@ def test_kill_query_during_output(started_cluster):
     if thread_error[0] is not None:
         raise thread_error[0]
 
-    # `PostgreSQLHandler::processQuery` lets an exception raised after the first `DataRow`
-    # escape without an `ErrorResponse`, so the client sees a closed connection rather than
-    # the server's message, and `psycopg2` buffers a result set instead of exposing the rows
-    # that arrived. What the driver reports is therefore not asserted; the bytes the query put
-    # on the wire are, below.
+    # The handler sends an `ErrorResponse` and then tears the connection down without a
+    # following `ReadyForQuery`, so `psycopg2` reports the connection loss rather than the
+    # server's message. The message is therefore not asserted; the bytes below are.
     assert client_error[0] is not None, "the client did not observe an error"
 
     result = node.query(
@@ -128,9 +127,10 @@ def test_kill_query_during_output(started_cluster):
     assert int(result.strip()) == 0
 
     node.query("SYSTEM FLUSH LOGS", user="default", password="123")
-    # The rows are buffered and flushed after the loop, so a loop ended by the per-row check
-    # sends nothing. Without that check the whole chunk is written and flushed, which is over
-    # a hundred kilobytes for ROW_COUNT rows.
+    # Counts only bytes flushed while the query context was attached. The rows the loop
+    # buffered reach the wire later, on the handler's `ErrorResponse` flush, once the
+    # `QueryScope` has unwound. The result is deliberately larger than the 1 MiB socket
+    # buffer, so a cancellation observed late in the chunk must cross a flush counted here.
     sent_bytes = node.query(
         "SELECT ProfileEvents['NetworkSendBytes'] FROM system.query_log "
         f"WHERE query_id='{query_id}' AND type = 'ExceptionWhileProcessing'",
@@ -142,7 +142,7 @@ def test_kill_query_during_output(started_cluster):
     cancel_log = node.grep_in_log(query_id)
     assert "QUERY_WAS_CANCELLED" in cancel_log
     # A second line would mean the failpoint parked in a later chunk, so the first one held
-    # at most five rows and the byte count above would be measuring the chunk size rather
-    # than the cancellation.
+    # at most PAUSE_AT_ROW rows and the byte count above would be measuring the chunk size
+    # rather than the cancellation.
     chunks = cancel_log.count("Consume a chunk")
     assert chunks == 1, f"expected a single chunk, got {chunks}"
