@@ -576,6 +576,16 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
     if (maskAzureConnectionString(positional[url_arg_idx]))
         return;
 
+    /// `azureBlobStorage(connection_string|storage_account_url, sas_token)`: the second argument of the
+    /// two-argument signature is a shared access signature, which `AzureStorageParsedArguments::fromAST`
+    /// reads as the credential. `extra_credentials(...)` and `headers(...)` are already out of
+    /// `positional`, so the count here is the one the parser sees.
+    if (positional.size() == url_arg_idx + 2)
+    {
+        markSecretArgument(positional[url_arg_idx + 1]);
+        return;
+    }
+
     /// We should check other arguments first because we don't need to do any replacement in case of
     /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
     /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
@@ -701,7 +711,16 @@ void FunctionSecretArgumentsFinder::findURLSecretArguments(size_t url_offset)
             const auto equals_func = function->arguments->at(i)->getFunction();
             if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
                 || equals_func->arguments->size() != 2)
+            {
+                /// `headers(...)` and `extra_credentials(...)` are already masked above. Anything else
+                /// after the collection name is either rejected by the parser or, with the default
+                /// `allow_named_collection_override_by_default`, silently ignored, and both happen after
+                /// the query is formatted, so a url with a secret in it would stay visible. Fail closed.
+                if (!equals_func
+                    || (equals_func->name() != "headers" && equals_func->name() != "extra_credentials"))
+                    markSecretArgument(i);
                 continue;
+            }
 
             String key;
             if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
@@ -1089,6 +1108,16 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
     if (maskAzureConnectionString(positional[url_arg_idx]))
         return;
 
+    /// `AzureBlobStorage(connection_string|storage_account_url, sas_token)`: the second argument of the
+    /// two-argument signature is a shared access signature, which `AzureStorageParsedArguments::fromAST`
+    /// reads as the credential. `extra_credentials(...)` and `headers(...)` are already out of
+    /// `positional`, so the count here is the one the parser sees.
+    if (positional.size() == url_arg_idx + 2)
+    {
+        markSecretArgument(positional[url_arg_idx + 1]);
+        return;
+    }
+
     /// We should check other arguments first because we don't need to do any replacement in case of
     /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
     size_t count = positional.size();
@@ -1237,6 +1266,12 @@ void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
     else if (engine_name == "Backup")
     {
         findBackupDatabaseSecretArguments();
+    }
+    else if (engine_name == "URL")
+    {
+        /// URL('base_url'): the base url reaches the same backends as the `url` table function, so it
+        /// can carry userinfo credentials and, on the Azure schemes, a shared access signature.
+        findURLSecretArguments(0);
     }
 }
 

@@ -8,6 +8,7 @@
 -- connection string (`SharedAccessSignature=`) was hidden. The remaining parameters (version,
 -- permissions, expiry, resource) grant nothing on their own and stay visible.
 
+SET enable_analyzer = 1;
 SET format_display_secrets_in_show_and_select = 0;
 
 DROP TABLE IF EXISTS t_azure_sas;
@@ -19,7 +20,6 @@ DROP TABLE t_azure_sas;
 
 -- The table function and its cluster variant take the same url argument; run_passes = 0 leaves them
 -- unresolved, so nothing is read.
-SET enable_analyzer = 1;
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('http://localhost:11111/devstoreaccount1/cont?sv=2025-01-05&sig=SEKRIT_SIGNATURE', '', 'data.parquet', 'Parquet');
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage(concat('http://localhost:11111/devstoreaccount1/cont?sig=', 'SEKRIT_SIGNATURE'), '', 'data.parquet', 'Parquet');
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorageCluster('c', 'http://localhost:11111/devstoreaccount1/cont?sv=2025-01-05&sig=SEKRIT_SIGNATURE', '', 'data.parquet', 'Parquet');
@@ -48,8 +48,19 @@ EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('http://localho
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM url('az://account.blob.core.windows.net/cont/data.csv?sp=r&sig=SEKRIT_URL_FUNCTION', 'CSV');
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM url(nc_04909_missing, url = 'azure://account.blob.core.windows.net/cont/data.csv?sp=r&sig=SEKRIT_URL_OVERRIDE');
 
+-- After a named collection the parser rejects a positional argument and ignores an unexpected
+-- function, both after the query is formatted, so both must be hidden whole.
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM url(nc_04909_missing, 'az://account.blob.core.windows.net/cont/data.csv?sp=r&sig=SEKRIT_URL_POSITIONAL');
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM url(nc_04909_missing, concat('az://account.blob.core.windows.net/cont/data.csv?sp=r&sig=', 'SEKRIT_URL_EXPRESSION'));
+
 DROP TABLE IF EXISTS t_url_azure_sas;
 CREATE TABLE t_url_azure_sas (x UInt8)
 ENGINE = URL('abfss://cont@account.dfs.core.windows.net/data.csv?sp=r&sig=SEKRIT_URL_ENGINE', 'CSV');
 SHOW CREATE TABLE t_url_azure_sas;
 DROP TABLE t_url_azure_sas;
+
+-- The URL database engine reaches the same Azure backends through its base url.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = URL('az://account.blob.core.windows.net/cont?sp=r&sig=SEKRIT_URL_DATABASE');
+SELECT engine_full FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String};
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

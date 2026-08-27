@@ -20,9 +20,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 KEY="SEKRITACCOUNTKEYSEKRITACCOUNTKEY"
 SAS_SIGNATURE="SEKRITSASSIGNATURE"
+SAS_TOKEN_SIGNATURE="SEKRITSASTOKENSIGNATURE"
 ENDPOINT="http://127.0.0.1:1/devstoreaccount1"
 CONNECTION_STRING="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=${KEY};BlobEndpoint=${ENDPOINT};"
 SAS_URL="${ENDPOINT}/cont?sv=2025-01-05&sp=rl&sr=c&sig=${SAS_SIGNATURE}"
+SAS_TOKEN="sv=2025-01-05&sp=rl&sr=c&sig=${SAS_TOKEN_SIGNATURE}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_delta_azure_conn"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_delta_azure_key"
@@ -61,12 +63,18 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_iceberg_azure_named (x UInt8)
     ENGINE = IcebergAzure(nc_04908_missing, storage_account_url = '${SAS_URL}')" >/dev/null 2>&1
 
+# The two-argument signature reads its second argument as a shared access signature. The engine
+# rewrites its arguments when the table is created, so the logged query text is what is checked.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE t_iceberg_azure_sas_token (x UInt8)
+    ENGINE = IcebergAzure('${ENDPOINT}/cont/p', '${SAS_TOKEN}')" >/dev/null 2>&1
+
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
-# Every statement this test issued, the two failed CREATEs included, must be logged without the key.
+# Every statement this test issued, the failed CREATEs included, must be logged without the key.
 # count() > 0 keeps an empty row set from passing vacuously.
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT count() > 0, countIf(query LIKE '%${KEY}%' OR query LIKE '%${SAS_SIGNATURE}%')
+    SELECT count() > 0, countIf(query LIKE '%${KEY}%' OR query LIKE '%${SAS_SIGNATURE}%' OR query LIKE '%${SAS_TOKEN_SIGNATURE}%')
     FROM system.query_log
     WHERE current_database = currentDatabase()
       AND type != 'QueryStart'
