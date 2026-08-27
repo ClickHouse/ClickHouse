@@ -258,6 +258,19 @@ std::optional<SubstitutionConversion> classifySubstitutionConversion(const DataT
     return conversion;
 }
 
+/// Whether an equality between columns of these two types may be recorded as an equivalence
+/// (see the recording site for the full reasoning: wrapper-transparent equal bases, or native
+/// numbers with a least supertype — pairs whose comparison semantics are consistent with CAST).
+bool isRecordableEquivalencePair(const DataTypePtr & lhs_type, const DataTypePtr & rhs_type)
+{
+    auto lhs_base = removeNullable(removeLowCardinality(lhs_type));
+    auto rhs_base = removeNullable(removeLowCardinality(rhs_type));
+    bool equal_bases = lhs_base->equals(*rhs_base);
+    bool safe_number_pair = isNativeNumber(lhs_base) && isNativeNumber(rhs_base)
+        && tryGetLeastSupertype(DataTypes{lhs_base, rhs_base}) != nullptr;
+    return equal_bases || safe_number_pair;
+}
+
 /// A renaming of a correlated column to an equivalent column of the decorrelated subplan.
 struct ExpressionRenaming
 {
@@ -307,6 +320,63 @@ void collectIdentifiersUsedOutsideEqualities(
         if (output->type == ActionsDAG::ActionType::PLACEHOLDER)
             result.insert(output->result_name);
     }
+}
+
+/// Traces an arm-local column into one union arm: the caller maps the union output column to the
+/// arm positionally; this function only follows the arm's correlated single-child chain down to
+/// the uncorrelated boundary (the substitution point), translating the name through pure renames.
+/// Returns the boundary column or std::nullopt when the column is computed, dropped, or the chain
+/// contains a step that may change row identity.
+std::optional<ColumnWithType> traceUnionColumnIntoArm(
+    QueryPlan::Node * arm_root,
+    const String & arm_column_name,
+    CorrelatedPlanStepMap & correlated_plan_steps)
+{
+    String name = arm_column_name;
+    QueryPlan::Node * node = arm_root;
+
+    while (correlated_plan_steps[node])
+    {
+        if (auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get()))
+        {
+            const ActionsDAG::Node * output_node = nullptr;
+            for (const auto * output : expression_step->getExpression().getOutputs())
+            {
+                if (output->result_name == name)
+                {
+                    output_node = output;
+                    break;
+                }
+            }
+            if (!output_node)
+                return std::nullopt;
+            while (output_node->type == ActionsDAG::ActionType::ALIAS)
+                output_node = output_node->children.front();
+            /// Anything but a plain input is a computed column.
+            if (output_node->type != ActionsDAG::ActionType::INPUT)
+                return std::nullopt;
+            name = output_node->result_name;
+        }
+        else if (typeid_cast<FilterStep *>(node->step.get()))
+        {
+            /// Names pass through unchanged (the filter only adds/removes its filter column).
+        }
+        else
+        {
+            /// Aggregation, nested union, or anything that may rename or regroup.
+            return std::nullopt;
+        }
+
+        chassert(!node->children.empty());
+        if (node->children.empty())
+            return std::nullopt;
+        node = node->children.front();
+    }
+
+    const auto & boundary_header = node->step->getOutputHeader();
+    if (!boundary_header->has(name))
+        return std::nullopt;
+    return ColumnWithType{name, boundary_header->getByName(name).type};
 }
 
 /// Correlated subquery is represented by implicit dependent join operator.
@@ -624,6 +694,22 @@ QueryPlan decorrelateQueryPlan(
         collectIdentifiersUsedOutsideEqualities(
             expression_step->getExpression(), {}, context.scope_stack.back().identifiers_used_outside_equalities);
 
+        /// Record pure renames as equivalences: an alias output is the same value as its underlying
+        /// input (identical type), and equalities above a renaming step reference the renamed column
+        /// (e.g. a derived table's identifier over a union output). The union-arm seeding below relies
+        /// on these edges to translate such equalities to the union output names.
+        for (const auto * output : expression_step->getExpression().getOutputs())
+        {
+            const auto * source = output;
+            while (source->type == ActionsDAG::ActionType::ALIAS)
+                source = source->children.front();
+            if (source->type != ActionsDAG::ActionType::INPUT || source->result_name == output->result_name)
+                continue;
+            context.scope_stack.back().equivalence_classes.add(
+                ColumnWithType{output->result_name, output->result_type},
+                ColumnWithType{source->result_name, source->result_type});
+        }
+
         auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
 
         auto input_header = decorrelated_query_plan.getCurrentHeader();
@@ -670,12 +756,7 @@ QueryPlan decorrelateQueryPlan(
                 /// bases only from `Bool` members (the custom name is load-bearing). Substitution also
                 /// requires the identifier to have no uses outside the recorded equalities
                 /// (see `identifiers_used_outside_equalities`).
-                auto lhs_base = removeNullable(removeLowCardinality(lhs_type));
-                auto rhs_base = removeNullable(removeLowCardinality(rhs_type));
-                bool equal_bases = lhs_base->equals(*rhs_base);
-                bool safe_number_pair = isNativeNumber(lhs_base) && isNativeNumber(rhs_base)
-                    && tryGetLeastSupertype(DataTypes{lhs_base, rhs_base}) != nullptr;
-                if (!equal_bases && !safe_number_pair)
+                if (!isRecordableEquivalencePair(lhs_type, rhs_type))
                     continue;
 
                 context.scope_stack.back().equivalence_classes.add(
@@ -723,7 +804,8 @@ QueryPlan decorrelateQueryPlan(
         const auto & settings = context.planner_context->getQueryContext()->getSettingsRef();
         auto process_isolated_subplan = [](
             DecorrelationContext & current_context,
-            QueryPlan::Node * subplan_root
+            QueryPlan::Node * subplan_root,
+            const SharedHeader & union_output_header
         ) -> QueryPlan
         {
             /// Fresh equivalence classes: an equality inside one arm must not enable substitution in a
@@ -732,6 +814,54 @@ QueryPlan decorrelateQueryPlan(
             /// substitution in every arm. The copy keeps uses discovered inside one arm local to it.
             DecorrelationScope child_scope;
             child_scope.identifiers_used_outside_equalities = current_context.scope_stack.back().identifiers_used_outside_equalities;
+
+            /// A parent-scope equality on a union output column (e.g. `u.x = o.x` above the union)
+            /// constrains each arm's rows exactly like an arm-local equality would: for the arm's rows the
+            /// union output IS the arm column, and the retained parent conjunct keeps filtering after
+            /// decorrelation. Seed the arm scope with the parent members translated to arm-local names so
+            /// the arm can substitute; the type guard is re-checked against the traced boundary type
+            /// (union type coercion may differ per arm).
+            for (const auto & correlated_column_identifier : current_context.correlated_subquery.correlated_column_identifiers)
+            {
+                auto parent_class = current_context.scope_stack.back().equivalence_classes.getClass(
+                    ColumnWithType{correlated_column_identifier, nullptr});
+                if (!parent_class)
+                    continue;
+
+                DataTypePtr identifier_type;
+                for (const auto & member : *parent_class)
+                {
+                    if (member.name == correlated_column_identifier)
+                    {
+                        identifier_type = member.type;
+                        break;
+                    }
+                }
+                chassert(identifier_type != nullptr);
+                if (!identifier_type)
+                    continue;
+
+                for (const auto & member : *parent_class)
+                {
+                    if (member.name == correlated_column_identifier)
+                        continue;
+                    /// The union aligns arms positionally; arm headers may use different column identifiers.
+                    if (!union_output_header->has(member.name))
+                        continue;
+                    size_t position = union_output_header->getPositionByName(member.name);
+                    const auto & arm_header = subplan_root->step->getOutputHeader();
+                    if (position >= arm_header->columns())
+                        continue;
+                    const auto & arm_column = arm_header->getByPosition(position);
+                    auto traced = traceUnionColumnIntoArm(subplan_root, arm_column.name, current_context.correlated_plan_steps);
+                    if (!traced)
+                        continue;
+                    if (!isRecordableEquivalencePair(traced->type, identifier_type))
+                        continue;
+                    child_scope.equivalence_classes.add(*traced, ColumnWithType{correlated_column_identifier, identifier_type});
+                }
+            }
+
             current_context.scope_stack.push_back(std::move(child_scope));
             auto decorrelated_isolated_plan = decorrelateQueryPlan(current_context, subplan_root);
             current_context.scope_stack.pop_back();
@@ -745,7 +875,7 @@ QueryPlan decorrelateQueryPlan(
         child_plans.reserve(node->children.size());
         for (auto * child : node->children)
         {
-            auto decorrelated_child_plan = process_isolated_subplan(context, child);
+            auto decorrelated_child_plan = process_isolated_subplan(context, child, node->step->getOutputHeader());
             query_plans_headers.push_back(decorrelated_child_plan.getCurrentHeader());
             child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_child_plan)));
         }

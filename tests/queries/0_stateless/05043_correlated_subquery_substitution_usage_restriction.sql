@@ -141,3 +141,38 @@ SELECT format('plan: fallback_arms={}',
               toString(countIf(explain LIKE '%ReadFromCommonBuffer%')))
 FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_39m AS o WHERE EXISTS (SELECT 1 FROM t_inner_39a AS i WHERE i.x = o.x UNION ALL SELECT 1 FROM t_inner_39d AS i WHERE i.x = o.x AND intDiv(1, 2 - o.x) <= 1 UNION ALL SELECT 1 FROM t_inner_39c AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_39m AS o WHERE EXISTS (SELECT 1 FROM t_inner_39a AS i WHERE i.x = o.x UNION ALL SELECT 1 FROM t_inner_39d AS i WHERE i.x = o.x AND intDiv(1, 2 - o.x) <= 1 UNION ALL SELECT 1 FROM t_inner_39c AS i WHERE i.x = o.x) ORDER BY x;
+
+SELECT '-- Case 40: an equality on a union output column recorded above the UNION (u.x = o.x) is translated into each arm (positionally, through pure renames only), so the arms can substitute the correlated column';
+CREATE TABLE t_outer_40 (x Int32, y Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_40a (x Int32, y Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_40b (x Int32, y Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_40c (x Nullable(Int32), y Int32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_40 VALUES (1, 10), (2, 20), (3, 30);
+INSERT INTO t_inner_40a VALUES (1, 10), (5, 20);
+INSERT INTO t_inner_40b VALUES (2, 20), (9, 999);
+INSERT INTO t_inner_40c VALUES (NULL, 30), (3, 30);
+
+-- Both arms substitute — the parent equality reaches them through the rename bridge and the positional mapping.
+SELECT format('plan: fallback_arms={}',
+              toString(countIf(explain LIKE '%ReadFromCommonBuffer%')))
+FROM (EXPLAIN PLAN actions = 1 SELECT x, y FROM t_outer_40 AS o WHERE EXISTS (SELECT 1 FROM (SELECT x FROM t_inner_40a AS t1 WHERE t1.y = o.y UNION ALL SELECT x FROM t_inner_40b AS t2 WHERE t2.y = o.y) AS u WHERE u.x = o.x));
+SELECT x, y FROM t_outer_40 AS o WHERE EXISTS (SELECT 1 FROM (SELECT x FROM t_inner_40a AS t1 WHERE t1.y = o.y UNION ALL SELECT x FROM t_inner_40b AS t2 WHERE t2.y = o.y) AS u WHERE u.x = o.x) ORDER BY x;
+
+-- A computed union column is never traced (pure renames only) — both arms keep the fallback and the results stay correct.
+SELECT format('plan: fallback_arms={}',
+              toString(countIf(explain LIKE '%ReadFromCommonBuffer%')))
+FROM (EXPLAIN PLAN actions = 1 SELECT x, y FROM t_outer_40 AS o WHERE EXISTS (SELECT 1 FROM (SELECT abs(x) AS x FROM t_inner_40a AS t1 WHERE t1.y = o.y UNION ALL SELECT abs(x) AS x FROM t_inner_40b AS t2 WHERE t2.y = o.y) AS u WHERE u.x = o.x));
+SELECT x, y FROM t_outer_40 AS o WHERE EXISTS (SELECT 1 FROM (SELECT abs(x) AS x FROM t_inner_40a AS t1 WHERE t1.y = o.y UNION ALL SELECT abs(x) AS x FROM t_inner_40b AS t2 WHERE t2.y = o.y) AS u WHERE u.x = o.x) ORDER BY x;
+
+-- Union type coercion — the arm whose column goes through the coercion function keeps the fallback (the trace follows pure renames only), the same-type arm substitutes; the inner NULL never matches.
+SELECT format('plan: fallback_arms={}',
+              toString(countIf(explain LIKE '%ReadFromCommonBuffer%')))
+FROM (EXPLAIN PLAN actions = 1 SELECT x, y FROM t_outer_40 AS o WHERE EXISTS (SELECT 1 FROM (SELECT x FROM t_inner_40a AS t1 WHERE t1.y = o.y UNION ALL SELECT x FROM t_inner_40c AS t2 WHERE t2.y = o.y) AS u WHERE u.x = o.x));
+SELECT x, y FROM t_outer_40 AS o WHERE EXISTS (SELECT 1 FROM (SELECT x FROM t_inner_40a AS t1 WHERE t1.y = o.y UNION ALL SELECT x FROM t_inner_40c AS t2 WHERE t2.y = o.y) AS u WHERE u.x = o.x) ORDER BY x;
+
+-- The second arm uses o.y beyond its equality, so only it keeps the fallback; its intDiv canary (inner row (9, 999)
+-- matching no outer row) would throw only if that arm were wrongly substituted — the retained fallback conjunct evaluates on the outer domain, which never hits the zero denominator.
+SELECT format('plan: fallback_arms={}',
+              toString(countIf(explain LIKE '%ReadFromCommonBuffer%')))
+FROM (EXPLAIN PLAN actions = 1 SELECT x, y FROM t_outer_40 AS o WHERE EXISTS (SELECT 1 FROM (SELECT x FROM t_inner_40a AS t1 WHERE t1.y = o.y UNION ALL SELECT x FROM t_inner_40b AS t2 WHERE t2.y = o.y AND intDiv(1, 999 - o.y) <= 1) AS u WHERE u.x = o.x));
+SELECT x, y FROM t_outer_40 AS o WHERE EXISTS (SELECT 1 FROM (SELECT x FROM t_inner_40a AS t1 WHERE t1.y = o.y UNION ALL SELECT x FROM t_inner_40b AS t2 WHERE t2.y = o.y AND intDiv(1, 999 - o.y) <= 1) AS u WHERE u.x = o.x) ORDER BY x;

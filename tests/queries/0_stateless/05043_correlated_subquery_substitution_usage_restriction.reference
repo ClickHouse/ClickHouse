@@ -30,3 +30,16 @@ plan: fallback_arms=0
 plan: fallback_arms=1
 1
 3
+-- Case 40: an equality on a union output column recorded above the UNION (u.x = o.x) is translated into each arm (positionally, through pure renames only), so the arms can substitute the correlated column
+plan: fallback_arms=0
+1	10
+2	20
+plan: fallback_arms=2
+1	10
+2	20
+plan: fallback_arms=1
+1	10
+3	30
+plan: fallback_arms=1
+1	10
+2	20
