@@ -943,6 +943,23 @@ void MergeTreeDeduplicationLog::discardHistoryAfterUnfinishedCompaction()
         return;
     }
 
+    /// The discard below is only safe while nothing survives in memory: it wipes
+    /// `block_id_log_numbers` together with the on-disk files, so a block id an
+    /// in-flight insert has published - the only entries a zero-window phase keeps
+    /// alive in `deduplication_map` - would stay published with no durable record
+    /// and no bookkeeping. Its commit would then be forgotten by the next restart,
+    /// wrongly accepting a retry, and any later rollback, drop, or eviction of the
+    /// entry would look up a log number that no longer exists (compaction, for one,
+    /// requires every map entry to have one). Fail closed: the ALTER that re-enables
+    /// deduplication throws and can be retried once the in-flight inserts have
+    /// reported their outcome. The load path always gets here with an empty map.
+    if (deduplication_map.size() != 0)
+        throw Exception(
+            ErrorCodes::ABORTED,
+            "Cannot discard the deduplication history left by an unfinished compaction while {} block ids published by "
+            "still-uncommitted inserts survive only in memory; retry after the in-flight inserts finish",
+            deduplication_map.size());
+
     LOG_WARNING(
         getLogger("MergeTreeDeduplicationLog"),
         "The previous run left an active unfinished-compaction marker ({}), so the deduplication log files may replay to an "

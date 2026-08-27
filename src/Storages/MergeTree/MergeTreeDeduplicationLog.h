@@ -545,6 +545,9 @@ private:
     /// cleared. Both callers guarantee it: load runs in a fresh process (the set is
     /// process-local), and setDeduplicationWindowSize drains the set through
     /// prepareToWrite before calling this.
+    /// Throws without discarding anything when `deduplication_map` is not empty: the
+    /// discard wipes `block_id_log_numbers`, so a block id published by an in-flight
+    /// insert would survive only in the map, out of sync with every other structure.
     void discardHistoryAfterUnfinishedCompaction();
 
     /// Bring the log back to a writable, consistent state before an operation writes
