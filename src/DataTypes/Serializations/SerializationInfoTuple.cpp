@@ -54,15 +54,33 @@ MutableSerializationInfoPtr SerializationInfoTuple::createWithType(
 
     const auto & old_elements = old_tuple.getElements();
     const auto & new_elements = new_tuple.getElements();
+    const auto & new_names = new_tuple.getElementNames();
     chassert(elems.size() == old_elements.size());
-    chassert(elems.size() == new_elements.size());
 
     MutableSerializationInfos infos;
-    infos.reserve(elems.size());
-    for (size_t i = 0; i < elems.size(); ++i)
-        infos.push_back(elems[i]->createWithType(*old_elements[i], *new_elements[i], new_settings));
+    infos.reserve(new_elements.size());
+    for (size_t i = 0; i < new_elements.size(); ++i)
+    {
+        auto elem_settings = new_settings;
+        if (!new_settings.canUseSparseSerialization(*new_elements[i]))
+            elem_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+        auto info = new_elements[i]->createSerializationInfo(elem_settings);
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), new_tuple.getElementNames(), new_settings);
+        std::optional<size_t> old_position;
+        if (old_elements.size() == new_elements.size())
+            old_position = i;
+        else
+            old_position = old_tuple.tryGetPositionByName(new_names[i]);
+
+        if (old_position && elems[*old_position]->structureEquals(*info))
+            info = elems[*old_position]->createWithType(*old_elements[*old_position], *new_elements[i], elem_settings);
+        else if (!old_position)
+            info->addDefaults(data.num_rows);
+
+        infos.push_back(std::move(info));
+    }
+
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), new_names, new_settings);
 }
 
 }

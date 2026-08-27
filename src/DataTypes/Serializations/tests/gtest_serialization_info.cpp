@@ -290,23 +290,6 @@ TEST(SerializationInfoObject, CreateWithChangedTypedPaths)
     EXPECT_THROW(object_info->getTypedPathInfo("y"), DB::Exception);
 }
 
-TEST(SerializationInfoObject, TupleShapeChangeUsesFreshInfo)
-{
-    auto old_type = DataTypeFactory::instance().get("JSON(t Tuple(a String), max_dynamic_paths=0)");
-    auto new_type = DataTypeFactory::instance().get("JSON(t Tuple(a String, b UInt64), max_dynamic_paths=0)");
-
-    auto settings = defaultSettings();
-    settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
-
-    auto old_info = old_type->createSerializationInfo(settings);
-    old_info->addDefaults(100);
-    auto evolved_info = old_info->createWithType(*old_type, *new_type, settings);
-    auto fresh_info = new_type->createSerializationInfo(settings);
-
-    EXPECT_TRUE(evolved_info->structureEquals(*fresh_info));
-    EXPECT_FALSE(evolved_info->hasCustomSerialization());
-}
-
 TEST(SerializationInfoObject, DoesNotScanDefaultsForOuterColumn)
 {
     auto type = DataTypeFactory::instance().get("JSON(x String, max_dynamic_paths=0)");
