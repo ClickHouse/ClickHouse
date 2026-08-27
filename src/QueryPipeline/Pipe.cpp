@@ -1,6 +1,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/IProcessor.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/LimitTransform.h>

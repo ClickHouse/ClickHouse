@@ -16,6 +16,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/formatReadable.h>
 #include <Storages/MutationCommands.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
