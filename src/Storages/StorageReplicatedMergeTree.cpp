@@ -249,6 +249,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsNonZeroUInt64 clone_replica_zookeeper_create_get_part_batch_size;
+    extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
@@ -8774,8 +8775,7 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
         waitForCommittingOpsToFinish(zookeeper, context_copy->getPartitionIdToMaxBlock(getStorageID().uuid), ops, backoff_ms, sync_timeout);
     }
 
-    auto pipeline = updateLightweightImpl(commands, context_copy);
-    auto patch_metadata = DB::getPatchPartMetadata(pipeline.getHeader(), context_copy);
+    auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
 
     auto sink = std::make_shared<ReplicatedMergeTreeSinkPatch>(
         *this,
@@ -8785,7 +8785,7 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
 
     chassert(!pipeline.completed());
     pipeline.complete(std::move(sink));
-    return pipeline;
+    return std::move(pipeline);
 }
 
 size_t StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
@@ -11460,6 +11460,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     MergeTreePartition partition;
     /// Use a sibling part's metadata when possible so patch parts get patch-part metadata.
     StorageMetadataPtr metadata_snapshot = table_metadata;
+    std::optional<PatchPartIndex> patch_part_index;
     {
         auto lock = readLockParts();
 
@@ -11469,6 +11470,19 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
             const auto & source_part = *parts_in_partition.begin();
             partition = source_part->partition;
             metadata_snapshot = source_part->getMetadataSnapshot();
+
+            if (source_part->info.isPatch())
+                patch_part_index = source_part->getPatchPartIndex().cloneEmpty();
+        }
+        else if (new_part_info.isPatch())
+        {
+            /// Metadata of a patch part (its columns and patch part index) can be taken only from a sibling
+            /// patch part. The partition id stores only a hash of the patch column names, so it cannot be
+            /// used to reconstruct them.
+            LOG_WARNING(log, "Empty part {} is not created instead of lost patch part because there are no active parts "
+                             "in patch partition {}, resolve this manually using DROP/DETACH PARTITION.",
+                        lost_part_name, new_part_info.getPartitionId());
+            return false;
         }
         else if (auto parsed_partition = MergeTreePartition::tryParseValueFromID(
                      new_part_info.getPartitionId(),
@@ -11484,7 +11498,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
         }
     }
 
-    auto [new_data_part, tmp_dir_holder] = createEmptyPart(new_part_info, partition, lost_part_name, metadata_snapshot, NO_TRANSACTION_PTR);
+    auto [new_data_part, tmp_dir_holder] = createEmptyPart(new_part_info, partition, lost_part_name, metadata_snapshot, NO_TRANSACTION_PTR, std::move(patch_part_index));
     new_data_part->setName(lost_part_name);
 
     try
