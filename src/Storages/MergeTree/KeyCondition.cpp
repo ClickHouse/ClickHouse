@@ -5644,11 +5644,50 @@ static void tupleRangeToBoundingBox(const Range & tuple_range, Float64 & x_min, 
     }
 }
 
+/// Whether a set can contain an element equal to NaN, for a column whose bounds hide one.
+/// `ordered_set` is sorted, NaN sorts after every finite value and NULL sorts after NaN,
+/// so for a single-column set this is the last non-NULL element.
+static bool setMayMatchHiddenNaN(const MergeTreeSetIndex & set_index, const std::vector<UInt8> & bounds_may_hide_nan)
+{
+    const auto & mapping = set_index.getIndexesMapping();
+    const auto & columns = set_index.getOrderedSet();
+    for (size_t i = 0; i < mapping.size(); ++i)
+    {
+        const size_t key_column = mapping[i].key_index;
+        if (key_column >= bounds_may_hide_nan.size() || !bounds_may_hide_nan[key_column])
+            continue;
+
+        /// A tuple set is ordered lexicographically, and a function chain can map anything to NaN,
+        /// so neither gives a last-element answer.
+        if (mapping.size() != 1 || !mapping[i].functions.empty())
+            return true;
+
+        const IColumn & column = *columns[i];
+        size_t size = column.size();
+        while (size > 0 && column.isNullAt(size - 1))
+            --size;
+        if (size > 0 && column[size - 1].isNaN())
+            return true;
+    }
+    return false;
+}
+
+static bool anyBoundsMayHideNaN(const std::vector<size_t> & key_columns, const std::vector<UInt8> * bounds_may_hide_nan)
+{
+    if (!bounds_may_hide_nan)
+        return false;
+    return std::any_of(
+        key_columns.begin(),
+        key_columns.end(),
+        [&](size_t c) { return c < bounds_may_hide_nan->size() && (*bounds_may_hide_nan)[c]; });
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
     const ColumnIndexToBloomFilter & column_index_to_column_bf,
-    const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
+    const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn,
+    const std::vector<UInt8> * bounds_may_hide_nan) const
 {
     absl::InlinedVector<BoolMask, 16> rpn_stack;
 
@@ -5719,12 +5758,18 @@ BoolMask KeyCondition::checkInHyperrectangle(
             ///   so no comparison condition can be true.
             /// - If only right bound is NaN: the range extends into NaN territory,
             ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+            /// - If the bounds were computed from non-NaN values only, a NaN row may sit outside them,
+            ///   so containing them is not containing every row.
             if (unlikely(key_range.left.isNaN()))
             {
                 intersects = false;
                 contains = false;
             }
             else if (unlikely(key_range.right.isNaN()))
+            {
+                contains = false;
+            }
+            else if (bounds_may_hide_nan && key_column < bounds_may_hide_nan->size() && (*bounds_may_hide_nan)[key_column])
             {
                 contains = false;
             }
@@ -6028,6 +6073,16 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// Therefore, we must set `can_be_false = true` to be safe.
             if (element.relaxed)
                 rpn_stack.back().can_be_false = true;
+
+            /// A row outside bounds computed from non-NaN values only is not covered by the lookup above:
+            /// it does not have to satisfy the set, and set membership treats NaN as equal to NaN, so it
+            /// may also match a set holding a NaN.
+            if (anyBoundsMayHideNaN(element.key_columns, bounds_may_hide_nan))
+            {
+                rpn_stack.back().can_be_false = true;
+                if (setMayMatchHiddenNaN(*element.set_index, *bounds_may_hide_nan))
+                    rpn_stack.back().can_be_true = true;
+            }
 
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();

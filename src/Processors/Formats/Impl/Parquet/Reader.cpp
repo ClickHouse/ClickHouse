@@ -10,6 +10,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
@@ -300,8 +301,20 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     return file_metadata;
 }
 
-void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle, bool only_spatial_bbox) const
+/// Only float statistics can hide a value from their own min/max: per parquet.thrift, NaN is
+/// excluded from min/max, and a reader must assume NaNs are present unless a nan count says otherwise.
+static bool typeMayHoldNaN(const IDataType & type)
 {
+    return WhichDataType(removeLowCardinalityAndNullable(type.getPtr())).isFloat();
+}
+
+void Reader::getHyperrectangleForRowGroup(
+    const parq::RowGroup * meta,
+    Hyperrectangle & hyperrectangle,
+    std::vector<UInt8> & bounds_may_hide_nan,
+    bool only_spatial_bbox) const
+{
+    bounds_may_hide_nan.assign(hyperrectangle.size(), 0);
     for (const PrimitiveColumnInfo & column_info : primitive_columns)
     {
         if (!column_info.used_by_key_condition)
@@ -338,6 +351,10 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
                     range.right = range.left;
                 continue;
             }
+
+            bounds_may_hide_nan[column_info.idx_in_output_block] =
+                typeMayHoldNaN(output_block_type)
+                && !(column_meta.statistics.__isset.nan_count && column_meta.statistics.nan_count == 0);
 
             if (column_meta.statistics.__isset.min_value)
                 column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
@@ -723,6 +740,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         }
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
+        std::vector<UInt8> bounds_may_hide_nan(extended_sample_block.columns(), 0);
         if ((options.format.parquet.filter_push_down && format_filter_info->key_condition)
             || !spatial_key_conditions.empty())
         {
@@ -730,13 +748,13 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             /// escape hatch for malformed non-spatial stats: spatial pruning builds its own
             /// hyperrectangle from the four bbox primitives only.
             bool only_spatial_bbox = !options.format.parquet.filter_push_down || !format_filter_info->key_condition;
-            getHyperrectangleForRowGroup(meta, hyperrectangle, only_spatial_bbox);
+            getHyperrectangleForRowGroup(meta, hyperrectangle, bounds_may_hide_nan, only_spatial_bbox);
         }
 
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
         {
             if (!format_filter_info->key_condition->checkInHyperrectangle(
-                    hyperrectangle, extended_sample_block_data_types).can_be_true)
+                    hyperrectangle, extended_sample_block_data_types, {}, nullptr, &bounds_may_hide_nan).can_be_true)
                 continue;
         }
 
@@ -753,7 +771,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             {
                 if (!spatialBboxStatsHaveNoNulls(*meta, sci))
                     continue;
-                if (!spatial_key_conditions[sci]->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true)
+                if (!spatial_key_conditions[sci]->checkInHyperrectangle(
+                        hyperrectangle, extended_sample_block_data_types, {}, nullptr, &bounds_may_hide_nan).can_be_true)
                 {
                     prune_by_spatial = true;
                     break;
@@ -776,6 +795,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         row_group.start_global_row_idx = total_rows - size_t(meta->num_rows);
         row_group.columns.resize(primitive_columns.size());
         row_group.hyperrectangle = std::move(hyperrectangle);
+        row_group.bounds_may_hide_nan = std::move(bounds_may_hide_nan);
 
         for (size_t column_idx = 0; column_idx < primitive_columns.size(); ++column_idx)
         {
@@ -1909,7 +1929,8 @@ bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryR
     /// `y = 1337` is ruled out by the filter.
     /// (I'm guessing this hardly ever comes up in practice, but it was easy enough to support.)
     return bloom_filter_condition->checkInHyperrectangle(
-        row_group.hyperrectangle, extended_sample_block_data_types, filter_map).can_be_true;
+        row_group.hyperrectangle, extended_sample_block_data_types, filter_map, nullptr,
+        &row_group.bounds_may_hide_nan).can_be_true;
 }
 
 void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group)
@@ -1936,12 +1957,14 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
         const IDataType & output_block_type = *extended_sample_block_data_types.at(column_info.idx_in_output_block);
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
+        std::vector<UInt8> bounds_may_hide_nan(extended_sample_block.columns(), 0);
         size_t prev_row_idx = 0; // start of the latest range of rows that pass filter
         size_t pruned_pages = 0;
         for (size_t page_idx = 0; page_idx < num_pages; ++page_idx)
         {
             Range & range = hyperrectangle[column_info.idx_in_output_block];
             range = Range::createWholeUniverse();
+            bounds_may_hide_nan[column_info.idx_in_output_block] = 0;
 
             bool always_null = !column_index.null_pages.empty() && column_index.null_pages[page_idx];
             bool can_be_null = !column_index.__isset.null_counts || column_index.null_counts[page_idx] != 0;
@@ -1956,6 +1979,11 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             }
             else
             {
+                bounds_may_hide_nan[column_info.idx_in_output_block] =
+                    typeMayHoldNaN(output_block_type)
+                    && !(column_index.__isset.nan_counts && page_idx < column_index.nan_counts.size()
+                         && column_index.nan_counts[page_idx] == 0);
+
                 column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
                 column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
 
@@ -1982,7 +2010,8 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                         && (can_be_null || always_null
                             || !spatialBboxStatsHaveNoNulls(*row_group.meta, c.spatial_key_condition_idx)))
                         return true;
-                    return c.condition->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
+                    return c.condition->checkInHyperrectangle(
+                        hyperrectangle, extended_sample_block_data_types, {}, nullptr, &bounds_may_hide_nan).can_be_true;
                 });
 
             if (!passes_filter)

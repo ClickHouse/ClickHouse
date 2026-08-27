@@ -475,6 +475,8 @@ struct Reader
         std::vector<ColumnChunk> columns;
 
         Hyperrectangle hyperrectangle; // min/max for each column; parallel to extended_sample_block
+        /// Which entries of `hyperrectangle` came from statistics that exclude NaN; parallel to it.
+        std::vector<UInt8> bounds_may_hide_nan;
 
         std::deque<RowSubgroup> subgroups;
 
@@ -644,7 +646,11 @@ private:
     /// headers (and their transitive includes) into every translation unit that includes Reader.h.
     struct DictionaryLookup;
 
-    void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle, bool only_spatial_bbox = false) const;
+    void getHyperrectangleForRowGroup(
+        const parq::RowGroup * meta,
+        Hyperrectangle & hyperrectangle,
+        std::vector<UInt8> & bounds_may_hide_nan,
+        bool only_spatial_bbox = false) const;
     /// Whether all four `covering.bbox` columns of `spatial_key_conditions[spatial_key_condition_idx]`
     /// report a known `null_count` of zero in this row group. Spatial pruning (both row-group and
     /// page level) is only allowed then: a NULL in any bbox column means the row's spatial extent is

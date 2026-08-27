@@ -130,11 +130,15 @@ public:
     using UpdatePartialDisjunctionResultFn = std::function<void (size_t position, bool result, bool is_unknown)>;
 
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
+    /// `bounds_may_hide_nan`, indexed by key column position, marks columns whose bounds were computed from
+    /// non-NaN values only, so containing those bounds does not mean containing every row. A shorter or null
+    /// mask leaves the remaining columns unmarked.
     BoolMask checkInHyperrectangle(
         const Hyperrectangle & hyperrectangle,
         const DataTypes & data_types,
         const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
-        const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
+        const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr,
+        const std::vector<UInt8> * bounds_may_hide_nan = nullptr) const;
 
     /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
     /// `key_col_to_sparse_pos` maps key index to position in `sparse_hyperrectangle`, or -1 if not tracked.
