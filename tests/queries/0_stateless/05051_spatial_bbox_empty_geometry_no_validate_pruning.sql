@@ -51,15 +51,11 @@ WHERE pointInPolygon(p, CAST([], 'Ring'))
 SETTINGS validate_polygons = 0;
 
 -- The default `validate_polygons = 1` must keep failing closed for the same constant: there the
--- predicate raises, and pruning the far granule away would hide it.
-SELECT extract(explain_text, '(?s)Name: idx_bbox.*?Granules: ([0-9]+/[0-9]+)') FROM (
-    SELECT arrayStringConcat(groupArray(explain), '\n') AS explain_text
-    FROM (
-        EXPLAIN indexes = 1
-        SELECT count() FROM test_spatial_bbox_empty_geometry
-        WHERE pointInPolygon(p, CAST([], 'Ring'))
-          AND pointInPolygon(p, [(0., 0.), (1., 0.), (1., 1.), (0., 1.)])
-    )
-);
+-- predicate raises, and pruning the far granule away would turn that exception into a silent `0`.
+-- Asserting the exception is the direct statement of the fail-closed property -- an `EXPLAIN` cannot
+-- be used here, because the constant is parsed and rejected while the plan's header is computed.
+SELECT count() FROM test_spatial_bbox_empty_geometry
+WHERE pointInPolygon(p, CAST([], 'Ring'))
+  AND pointInPolygon(p, [(0., 0.), (1., 0.), (1., 1.), (0., 1.)]); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE test_spatial_bbox_empty_geometry;
