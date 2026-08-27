@@ -43,6 +43,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"use_columns_cache", false, false, "New experimental setting to enable columns cache for MergeTree tables, disabled by default."},
+            {"enable_reads_from_columns_cache", true, true, "New setting to control reading from columns cache"},
+            {"enable_writes_to_columns_cache", true, true, "New setting to control writing to columns cache"},
+            {"columns_cache_max_estimated_compressed_bytes_to_write_to_cache", 0, 0, "New setting: cap on the estimated compressed bytes a query reads to permit columns cache writes (0 = half of columns_cache_size)."},
+            {"columns_cache_max_bytes_to_write_to_cache", 0, 0, "New setting: soft per-query threshold on bytes written to the columns cache; advisory, may be exceeded by up to one cache entry (0 = half of columns_cache_size)."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},
             {"query_plan_fuse_filter_into_array_join", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."},
@@ -118,11 +123,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_allow_insecure_endpoint", true, false, "AI functions now reject insecure (http) endpoints to remote hosts by default."},
             {"ai_function_max_api_calls_per_query", 0, 1000, "Bound outbound AI function HTTP calls per query by default (previously 0 - unlimited)."},
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
-            {"use_columns_cache", false, false, "New experimental setting to enable columns cache for MergeTree tables, disabled by default."},
-            {"enable_reads_from_columns_cache", true, true, "New setting to control reading from columns cache"},
-            {"enable_writes_to_columns_cache", true, true, "New setting to control writing to columns cache"},
-            {"columns_cache_max_estimated_compressed_bytes_to_write_to_cache", 0, 0, "New setting: cap on the estimated compressed bytes a query reads to permit columns cache writes (0 = half of columns_cache_size)."},
-            {"columns_cache_max_bytes_to_write_to_cache", 0, 0, "New setting: soft per-query threshold on bytes written to the columns cache; advisory, may be exceeded by up to one cache entry (0 = half of columns_cache_size)."},
             {"read_in_order_use_virtual_row", false, true, "Enable the virtual row optimization by default. When reading in order of the primary key over many parts, it lets `MergingSortedTransform` reprioritize sources using primary key values from the sparse index, so parts that are not relevant for the query are not read, plus a bounded read-ahead window of at most `max_threads` parts that keeps reads parallel. This significantly reduces peak memory consumption (see https://github.com/ClickHouse/ClickHouse/issues/52624)."},
             {"page", 0., 0., "New setting for paginated HTTP responses, equivalent to offset = limit * (page - 1). Float so it can hold negative or fractional values (passed through to SQL `LIMIT`/`OFFSET`)."},
             {"limit", 0., 0., "Type widened from UInt64 to Float to support negative and fractional values, passed through to ClickHouse's native negative/fractional `LIMIT` support."},
