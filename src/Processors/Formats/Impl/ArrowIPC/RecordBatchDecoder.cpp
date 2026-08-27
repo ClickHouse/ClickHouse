@@ -1051,7 +1051,7 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
         }
 
         ColumnPtr child_column = decodeField(child);
-        DataTypePtr child_type = fieldToCHType(child, settings, /*make_nullable=*/false);
+        DataTypePtr child_type = fieldToCHType(child, settings, /*make_nullable=*/false, /*allow_null_type=*/true);
         /// Variant elements cannot be Nullable; remember the null map, then drop the nullability.
         const NullMap * child_null_map = nullptr;
         if (child_column->isNullable())

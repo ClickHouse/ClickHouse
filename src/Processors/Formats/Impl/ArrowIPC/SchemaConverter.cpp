@@ -1128,7 +1128,7 @@ DataTypePtr fieldToCHType(
             {
                 if (child.type.kind == TypeKind::Null)
                     continue;
-                variants.push_back(removeNullable(fieldToCHType(child, settings, /*make_nullable=*/false)));
+                variants.push_back(removeNullable(fieldToCHType(child, settings, /*make_nullable=*/false, allow_null_type)));
             }
             result = std::make_shared<DataTypeVariant>(variants);
             break;

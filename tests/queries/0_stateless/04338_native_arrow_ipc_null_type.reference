@@ -30,3 +30,9 @@ nd	Nullable(Nothing)
 1	\N
 2	\N
 3	\N
+a union child carrying a nested null type reads too
+n	Nullable(Int64)					
+u	Variant(Array(Nullable(Nothing)), Int32)					
+1	1
+2	[NULL,NULL]
+3	3

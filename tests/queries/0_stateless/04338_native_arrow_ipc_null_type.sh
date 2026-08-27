@@ -44,6 +44,16 @@ dict_null = pa.table({
 with pa.OSFile('${FILE_PREFIX}.dict.arrow', 'wb') as sink:
     with pa.ipc.new_file(sink, dict_null.schema) as writer:
         writer.write_table(dict_null)
+union_null = pa.table({
+    'n': pa.array([1, 2, 3], type=pa.int64()),
+    'u': pa.UnionArray.from_sparse(
+        pa.array([0, 1, 0], type=pa.int8()),
+        [pa.array([1, None, 3], type=pa.int32()),
+         pa.array([None, [None, None], None], type=pa.list_(pa.null()))]),
+})
+with pa.OSFile('${FILE_PREFIX}.union.arrow', 'wb') as sink:
+    with pa.ipc.new_file(sink, union_null.schema) as writer:
+        writer.write_table(union_null)
 "
 
 echo 'file, explicit structure'
@@ -72,4 +82,8 @@ echo 'a dictionary-encoded null-typed column materializes as all-null'
 ${CLICKHOUSE_LOCAL} -q "DESC file('${FILE_PREFIX}.dict.arrow', 'Arrow')"
 ${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${FILE_PREFIX}.dict.arrow', 'Arrow') ORDER BY n"
 
-rm -f "${FILE_PREFIX}.arrow" "${FILE_PREFIX}.arrows" "${FILE_PREFIX}.trivial.arrow" "${FILE_PREFIX}.nested.arrow" "${FILE_PREFIX}.dict.arrow"
+echo 'a union child carrying a nested null type reads too'
+${CLICKHOUSE_LOCAL} -q "DESC file('${FILE_PREFIX}.union.arrow', 'Arrow')"
+${CLICKHOUSE_LOCAL} -q "SELECT n, u FROM file('${FILE_PREFIX}.union.arrow', 'Arrow') ORDER BY n"
+
+rm -f "${FILE_PREFIX}.arrow" "${FILE_PREFIX}.arrows" "${FILE_PREFIX}.trivial.arrow" "${FILE_PREFIX}.nested.arrow" "${FILE_PREFIX}.dict.arrow" "${FILE_PREFIX}.union.arrow"
