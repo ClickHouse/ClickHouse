@@ -10,7 +10,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Column `b`'s dictionary values get their string offsets corrupted, so decoding that dictionary throws;
 # reading only `a` must still succeed (the dictionary of `b` is unreachable and skipped).
 
-DATA_FILE="${CLICKHOUSE_TMP}/04344_pruned_dict"
+DATA_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+trap 'rm -f "${DATA_FILE}.Arrow" "${DATA_FILE}.ArrowStream"' EXIT
 
 python3 - "$DATA_FILE" <<'PY'
 import sys

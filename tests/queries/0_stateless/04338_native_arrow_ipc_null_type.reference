@@ -15,3 +15,12 @@ select * with the inferred schema
 \N	3
 a file whose only column is null-typed reads too
 \N	4
+the null-typed column stays Nullable(Nothing) even with make_columns_nullable = 0
+x	Nullable(Nothing)					
+n	Int64					
+a nested null-typed field stays Nullable(Nothing) too
+n	Int64					
+ln	Array(Nullable(Nothing))					
+1	[NULL]
+2	[NULL,NULL]
+3	[]

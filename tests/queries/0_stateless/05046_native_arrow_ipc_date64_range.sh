@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 DATA_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
-trap 'rm -f "${DATA_FILE}.in_range.Arrow" "${DATA_FILE}.in_range.ArrowStream" "${DATA_FILE}.out_of_range.Arrow"' EXIT
+trap 'rm -f "${DATA_FILE}.in_range.Arrow" "${DATA_FILE}.in_range.ArrowStream" "${DATA_FILE}.out_of_range.Arrow" "${DATA_FILE}.subsecond.Arrow"' EXIT
 
 python3 - "$DATA_FILE" <<'PY'
 import sys
@@ -35,6 +35,11 @@ out_of_range = pa.table({
 with pa.OSFile(f"{base}.out_of_range.Arrow", "wb") as sink:
     with pa.ipc.new_file(sink, out_of_range.schema) as writer:
         writer.write_table(out_of_range)
+# -1 ms = 1969-12-31 23:59:59.999: before the epoch, must not floor into second 0.
+subsecond = pa.table({'d': pa.array([-1], type=pa.int64()).cast(pa.date64())})
+with pa.OSFile(f"{base}.subsecond.Arrow", "wb") as sink:
+    with pa.ipc.new_file(sink, subsecond.schema) as writer:
+        writer.write_table(subsecond)
 PY
 
 for FMT in Arrow ArrowStream
@@ -51,3 +56,7 @@ echo "--- out-of-range date64 clamps with date_time_overflow_behavior = saturate
 ${CLICKHOUSE_LOCAL} -q "
     SELECT k, d FROM file('${DATA_FILE}.out_of_range.Arrow', 'Arrow') ORDER BY k
     SETTINGS session_timezone = 'UTC', date_time_overflow_behavior = 'saturate'"
+
+echo "--- -1 ms is before the epoch and throws too ---"
+${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${DATA_FILE}.subsecond.Arrow', 'Arrow') FORMAT Null" 2>&1 \
+    | grep -oF 'is out of the allowed DateTime range' | head -1

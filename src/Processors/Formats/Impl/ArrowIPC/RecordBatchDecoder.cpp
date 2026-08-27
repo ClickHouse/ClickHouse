@@ -493,7 +493,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 const bool saturate = settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate;
                 for (size_t i = 0; i < rows; ++i)
                 {
-                    Int64 seconds = src[i] / 1000;
+                    /// Floor division: a value in (-1000, 0) ms is before the epoch, not second 0.
+                    Int64 seconds = src[i] >= 0 ? src[i] / 1000 : (src[i] - 999) / 1000;
                     if (seconds < 0 || seconds > max_seconds)
                     {
                         if (saturate)
@@ -501,7 +502,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                         else
                             throw Exception(
                                 ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                                "Arrow IPC date64 value {} ms is out of the allowed DateTime range", src[i]);
+                                "Arrow IPC date64 value {} ms is out of the allowed DateTime range [0, {}]",
+                                src[i], max_seconds * 1000);
                     }
                     data[i] = static_cast<UInt32>(seconds);
                 }

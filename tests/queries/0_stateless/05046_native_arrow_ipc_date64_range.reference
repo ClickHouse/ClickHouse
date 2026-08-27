@@ -12,3 +12,5 @@ is out of the allowed DateTime range
 1	1970-01-01 00:00:00
 2	2001-02-03 00:00:00
 3	2106-02-07 06:28:15
+--- -1 ms is before the epoch and throws too ---
+is out of the allowed DateTime range

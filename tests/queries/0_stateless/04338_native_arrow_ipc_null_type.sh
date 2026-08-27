@@ -30,6 +30,13 @@ trivial = pa.table({'only': pa.array([None] * 4, type=pa.null())})
 with pa.OSFile('${FILE_PREFIX}.trivial.arrow', 'wb') as sink:
     with pa.ipc.new_file(sink, trivial.schema) as writer:
         writer.write_table(trivial)
+nested = pa.table({
+    'n': pa.array([1, 2, 3], type=pa.int64()),
+    'ln': pa.array([[None], [None, None], []], type=pa.list_(pa.null())),
+})
+with pa.OSFile('${FILE_PREFIX}.nested.arrow', 'wb') as sink:
+    with pa.ipc.new_file(sink, nested.schema) as writer:
+        writer.write_table(nested)
 "
 
 echo 'file, explicit structure'
@@ -47,4 +54,11 @@ ${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${FILE_PREFIX}.arrow', 'Arrow') ORDE
 echo 'a file whose only column is null-typed reads too'
 ${CLICKHOUSE_LOCAL} -q "SELECT *, count() OVER () FROM file('${FILE_PREFIX}.trivial.arrow', 'Arrow') LIMIT 1"
 
-rm -f "${FILE_PREFIX}.arrow" "${FILE_PREFIX}.arrows" "${FILE_PREFIX}.trivial.arrow"
+echo 'the null-typed column stays Nullable(Nothing) even with make_columns_nullable = 0'
+${CLICKHOUSE_LOCAL} -q "DESC file('${FILE_PREFIX}.arrow', 'Arrow') SETTINGS schema_inference_make_columns_nullable = 0"
+
+echo 'a nested null-typed field stays Nullable(Nothing) too'
+${CLICKHOUSE_LOCAL} -q "DESC file('${FILE_PREFIX}.nested.arrow', 'Arrow') SETTINGS schema_inference_make_columns_nullable = 0"
+${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${FILE_PREFIX}.nested.arrow', 'Arrow') ORDER BY n SETTINGS schema_inference_make_columns_nullable = 0"
+
+rm -f "${FILE_PREFIX}.arrow" "${FILE_PREFIX}.arrows" "${FILE_PREFIX}.trivial.arrow" "${FILE_PREFIX}.nested.arrow"

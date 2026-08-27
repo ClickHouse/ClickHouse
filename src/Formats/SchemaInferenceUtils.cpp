@@ -1765,7 +1765,13 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
     WhichDataType which(type);
 
     if (which.isNullable())
+    {
+        /// Keep Nullable(Nothing) even when removing nullability: a bare Nothing column (e.g. an Arrow
+        /// null-typed field with schema_inference_make_columns_nullable = 0) is unusable.
+        if (!make_nullable && isNothing(removeNullable(type)))
+            return type;
         return make_nullable ? type : removeNullable(type);
+    }
 
     /// Leave named compound types unchanged.
     /// E.g. don't turn `Point` into `Tuple(Nullable(Float64), Nullable(Float64))`.
