@@ -31,7 +31,7 @@ namespace
 // used by `H3kRing` function. For small enough search area simple flat approximation can be used,
 // i.e. the smallest `k` that satisfies relation `3 k^2 - 3 k + 1 >= (radius / e)^2` should be
 // chosen
-class FunctionH3EdgeLengthM final : public IFunction
+class FunctionH3EdgeLengthM : public IFunction
 {
 public:
     static constexpr auto name = "h3EdgeLengthM";
@@ -87,8 +87,7 @@ public:
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
                     toString(resolution), getName(), MAX_H3_RES);
 
-            double res = 0;
-            getHexagonEdgeLengthAvgM(resolution, &res);
+            Float64 res = getHexagonEdgeLengthAvgM(resolution);
 
             dst_data[row] = res;
         }

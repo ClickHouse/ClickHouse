@@ -25,7 +25,6 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageValues.h>
-#include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
 {
@@ -289,14 +288,13 @@ void JoinedTables::makeFakeTable(StoragePtr storage, const StorageMetadataPtr & 
 {
     if (storage)
     {
-        const ColumnsDescription & storage_columns = metadata_snapshot->columns;
-        const VirtualColumnsDescription & virtual_columns = metadata_snapshot->virtuals;
+        const ColumnsDescription & storage_columns = metadata_snapshot->getColumns();
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, storage_columns.getOrdinary());
 
         auto & table = tables_with_columns.back();
         table.addHiddenColumns(storage_columns.getMaterialized());
         table.addHiddenColumns(storage_columns.getAliases());
-        table.addHiddenColumns(virtual_columns.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList());
+        table.addHiddenColumns(storage->getVirtualsList());
     }
     else
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, source_header.getNamesAndTypesList());
@@ -333,8 +331,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     const auto & settings = context->getSettingsRef();
     MultiEnum<JoinAlgorithm> join_algorithm = settings[Setting::join_algorithm];
     bool try_use_direct_join = join_algorithm.isSet(JoinAlgorithm::DIRECT) || join_algorithm.isSet(JoinAlgorithm::DEFAULT);
-    auto table_join = std::make_shared<TableJoin>(
-        settings, context->getJoinAnalyzeMode(), context->getGlobalTemporaryVolume(), context->getTempDataOnDisk());
+    auto table_join = std::make_shared<TableJoin>(settings, context->getGlobalTemporaryVolume(), context->getTempDataOnDisk());
 
     const ASTTablesInSelectQueryElement * ast_join = select_query_.join();
     const auto & table_to_join = ast_join->table_expression->as<ASTTableExpression &>();

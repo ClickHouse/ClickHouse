@@ -1,1 +1,5 @@
-CREATE TABLE t\n(\n    `x` varchar(255) NOT NULL COLLATE binary\n)\nENGINE = Memory
+CREATE TABLE t
+(
+    `x` varchar(255) NOT NULL COLLATE binary
+)
+ENGINE = Memory

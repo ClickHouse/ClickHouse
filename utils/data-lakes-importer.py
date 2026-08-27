@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
+import os
 import sys
 
 import pyspark
-from delta import configure_spark_with_delta_pip
+from delta import *  # pip install delta-spark
 
 # Usage example:
 # ./data-lakes-importer.py iceberg data.parquet result_path

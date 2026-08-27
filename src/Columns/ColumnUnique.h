@@ -7,6 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnConst.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NumberTraits.h>
@@ -171,17 +172,13 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getIndicesOfNonDefaultRows' not implemented for ColumnUnique");
     }
 
-    std::span<const UInt64> tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }
+    const UInt64 * tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }
 
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
 
     /// This is strange. Please remove this method as soon as possible.
     std::optional<UInt64> getOrFindValueIndex(std::string_view value) const override
     {
-        /// The reserved prefix slots are not in the reverse index, so match the default value here.
-        if (auto index = getNestedTypeDefaultValueIndex(); getRawColumnPtr()->getDataAt(index) == value)
-            return index;
-
         if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
             return res;
 
@@ -208,7 +205,7 @@ private:
     class IncrementalHash
     {
     private:
-        UInt128 hash{};
+        UInt128 hash;
         std::atomic<size_t> num_added_rows;
 
         std::mutex mutex;
@@ -533,7 +530,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer 
 {
     if (is_nullable)
     {
-        UInt8 val = 0;
+        UInt8 val;
         readBinaryLittleEndian<UInt8>(val, in);
 
         if (val)
@@ -553,7 +550,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer 
 
     /// String
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
-    size_t string_size = 0;
+    size_t string_size;
     readBinaryLittleEndian<size_t>(string_size, in);
     if (in.available() < string_size)
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize string value in ColumnUnique.");
@@ -568,7 +565,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValue
 {
     if (is_nullable)
     {
-        UInt8 val = 0;
+        UInt8 val;
         readBinaryLittleEndian<UInt8>(val, in);
 
         if (val)
@@ -590,7 +587,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValue
 
     /// String
     /// For compatibility, serialized string value contains zero byte at the end, we just ignore this byte.
-    size_t string_size_with_zero_byte = 0;
+    size_t string_size_with_zero_byte;
     readBinaryLittleEndian<size_t>(string_size_with_zero_byte, in);
     if (in.available() < string_size_with_zero_byte)
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize string value in ColumnUnique.");
@@ -640,7 +637,7 @@ static void checkIndexes(const ColumnVector<IndexType> & indexes, size_t max_dic
     {
         if (data[i] >= max_dictionary_size)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found index {} at position {} which is greater or equal "
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found index {} at position {} which is grated or equal "
                             "than dictionary size {}", toString(data[i]), toString(i), toString(max_dictionary_size));
         }
     }
@@ -657,7 +654,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     ReverseIndex<UInt64, ColumnType> * secondary_index,
     size_t max_dictionary_size)
 {
-    const ColumnType * src_column = nullptr;
+    const ColumnType * src_column;
     const NullMap * null_map = nullptr;
     auto & positions = positions_column->getData();
 
@@ -731,34 +728,6 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         else
         {
             auto ref = src_column->getDataAt(row);
-
-            // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
-            if constexpr (is_float_vector_v<ColumnType>)
-            {
-                auto value = unalignedLoad<typename ColumnType::ValueType>(ref.data());
-                if (isNaN(value))
-                {
-                    auto nan = NaNOrZero<typename ColumnType::ValueType>();
-                    auto nan_ref = std::string_view(reinterpret_cast<const char *>(&nan), sizeof(nan));
-                    MutableColumnPtr res = nullptr;
-
-                    if (secondary_index && next_position >= max_dictionary_size)
-                    {
-                        auto insertion_point = reverse_index.getInsertionPoint(nan_ref);
-                        if (insertion_point == reverse_index.lastInsertionPoint())
-                            res = insert_key(nan_ref, *secondary_index);
-                        else
-                            positions[num_added_rows] = static_cast<IndexType>(insertion_point);
-                    }
-                    else
-                        res = insert_key(nan_ref, reverse_index);
-
-                    if (res)
-                        return res;
-                    continue;
-                }
-            }
-
             MutableColumnPtr res = nullptr;
 
             if (secondary_index && next_position >= max_dictionary_size)

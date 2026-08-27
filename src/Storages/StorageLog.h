@@ -5,8 +5,7 @@
 
 #include <Disks/IDisk.h>
 #include <Processors/QueryPlan/ISourceStep.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
-#include <Storages/VirtualColumnsDescription.h>
+#include <Storages/IStorage.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
 #include <Core/NamesAndTypes.h>
@@ -24,7 +23,7 @@ using BackupPtr = std::shared_ptr<const IBackup>;
   * Also implements TinyLog - a table engine that is suitable for small chunks of the log.
   * It differs from Log in the absence of mark files.
   */
-class StorageLog final : public StorageWithCommonVirtualColumns, public WithMutableContext
+class StorageLog final : public IStorage, public WithMutableContext
 {
     friend class LogSource;
     friend class LogSink;
@@ -56,7 +55,7 @@ public:
         size_t num_streams
     );
 
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -88,8 +87,6 @@ public:
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
-    static VirtualColumnsDescription createVirtuals();
-
 private:
     using ReadLock = std::shared_lock<std::shared_timed_mutex>;
     using WriteLock = std::unique_lock<std::shared_timed_mutex>;
@@ -105,10 +102,6 @@ private:
 
     /// Saves the marks file.
     void saveMarks(const WriteLock &);
-
-    /// Saves the marks file and the file sizes as one unit: either both are committed, or neither is
-    /// and the number of saved marks is left describing the marks file as it stands.
-    void saveMarksAndFileSizes(const WriteLock &);
 
     /// Removes all unsaved marks.
     void removeUnsavedMarks(const WriteLock &);
@@ -138,7 +131,7 @@ private:
     /// Column data
     struct DataFile
     {
-        size_t index{};
+        size_t index;
         String name;
         String path;
         Marks marks;
