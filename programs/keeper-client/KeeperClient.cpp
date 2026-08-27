@@ -802,10 +802,14 @@ void KeeperClient::connectToKeeper()
                 passphrase_handler = new Poco::Net::KeyConsoleHandler(/*server=*/false);
             else if (passphrase_handler_name == "KeyFileHandler")
                 passphrase_handler = new ConfigPassphraseHandler(loaded_config);
+            else if (Poco::Net::SSLManager::instance().privateKeyFactoryMgr().hasFactory(passphrase_handler_name))
+                passphrase_handler = Poco::Net::SSLManager::instance()
+                                         .privateKeyFactoryMgr()
+                                         .getFactory(passphrase_handler_name)
+                                         ->create(/*server=*/false);
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Unsupported privateKeyPassphraseHandler.name '{}': "
-                    "keeper-client supports 'KeyFileHandler' and 'KeyConsoleHandler'",
+                    "Unknown openSSL.client.privateKeyPassphraseHandler.name '{}'",
                     passphrase_handler_name);
 
             auto context = Poco::Net::Context::Ptr(new Poco::Net::Context(
@@ -820,7 +824,10 @@ void KeeperClient::connectToKeeper()
             ));
 
             Poco::Net::SSLManager::InvalidCertificateHandlerPtr certificate_handler;
-            if (verification_mode == Poco::Net::Context::VERIFY_NONE)
+            const String cert_handler_name = loaded_config.getString(
+                "openSSL.client.invalidCertificateHandler.name", "RejectCertificateHandler");
+            if (verification_mode == Poco::Net::Context::VERIFY_NONE
+                || cert_handler_name == "AcceptCertificateHandler")
                 certificate_handler = new Poco::Net::AcceptCertificateHandler(false);
             else
                 certificate_handler = new Poco::Net::RejectCertificateHandler(false);
