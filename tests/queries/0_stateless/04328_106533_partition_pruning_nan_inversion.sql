@@ -48,6 +48,9 @@ DROP TABLE t_106533_float;
 -- Decimal cannot be NaN, so the inverse rewrite must still apply. The count is the same either way,
 -- so the rendered condition is what pins it: a guard over-broad enough to block the fold for every
 -- numeric type would leave pruning correct and only grow the plans.
+-- Both count shortcuts have to stay off in the EXPLAIN. The filter covers the whole partition key, so
+-- either one answers the count from partition metadata, and a plan with no read step renders no
+-- Indexes section for the condition to appear in.
 
 DROP TABLE IF EXISTS t_106533_dec;
 
@@ -56,7 +59,8 @@ INSERT INTO t_106533_dec VALUES (1.0), (10.0), (100.0);
 
 SELECT count() FROM t_106533_dec WHERE NOT (d > 5) SETTINGS optimize_use_projections = 0;
 SELECT countIf(explain LIKE '%Condition: (d in (-Inf%')
-FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_dec WHERE NOT (d > 5) SETTINGS optimize_use_projections = 0);
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_dec WHERE NOT (d > 5)
+      SETTINGS optimize_use_projections = 0, optimize_trivial_count_query = 0);
 
 DROP TABLE t_106533_dec;
 
