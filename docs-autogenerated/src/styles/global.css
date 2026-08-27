@@ -1341,6 +1341,11 @@ a.version-option:hover,
   background-color: rgb(255 255 255 / 60%) !important;
 }
 
+:root[data-theme='dark'] .prose [data-callout-type='warning'] [data-component-part='callout-content'] code:not(pre code) {
+  color: inherit !important;
+  background-color: rgb(255 255 255 / 5%) !important;
+}
+
 .prose code:not(pre code),
 .document code:not(pre code) {
   padding: 2px 8px;
