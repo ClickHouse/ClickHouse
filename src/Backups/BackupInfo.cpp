@@ -375,12 +375,12 @@ void BackupInfo::copyS3CredentialsTo(BackupInfo & dest) const
             "role_arn, got {}",
             toStringForLogging());
 
-    /// Replaced, not merged: a destination keeping part of its own authentication next to the copied one
-    /// would authenticate as neither identity. It also keeps the copy total, which
-    /// `BackupImpl::writeBackupMetadata` relies on to decide whether the marker can replace the credentials.
-    if (dest.args.size() > 1)
-        dest.args.resize(1);
-    dest.function_arg = nullptr;
+    /// Each kind the source names overwrites the same kind on the destination; a kind it does not name is
+    /// left alone, so lending credentials never takes authentication away. A destination clause naming no
+    /// role is the exception: it assumes nothing, and keeping it would leave the locator unreconstructable
+    /// from its stripped form, which is what `writeBackupMetadata` compares before emitting the marker.
+    if (!hasRoleToAssume(dest.function_arg))
+        dest.function_arg = nullptr;
 
     if (has_key_pair)
     {

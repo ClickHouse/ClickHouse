@@ -383,25 +383,68 @@ TEST(BackupInfo, CopyS3CredentialsToCarriesExtraCredentials)
         "S3('https://s3.example.com/base', extra_credentials(equals(role_arn, 'ROLEARN'), equals(external_id, 'EXTERNALID')))");
 }
 
-TEST(BackupInfo, CopyS3CredentialsToReplacesExtraCredentialsWithKeyPair)
+TEST(BackupInfo, CopyS3CredentialsToKeepsDestinationRoleBesideTheCopiedKeyPair)
 {
-    /// Keeping its own role next to the copied key pair would authenticate as neither identity.
+    /// The setting repairs a base backup locator that cannot authenticate on its own, so a role the
+    /// destination names has to survive: it is opened as the copied key pair assuming that role, the
+    /// composition `getCredentialsProvider` builds, and what a key pair copied onto it always did.
     auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')");
     auto dest = BackupInfo::fromString("S3('https://s3.example.com/base', extra_credentials(role_arn = 'OTHERROLE'))");
 
     source.copyS3CredentialsTo(dest);
 
-    EXPECT_EQ(dest.toString(), "S3('https://s3.example.com/base', 'KEYID', 'KEYSECRET')");
+    EXPECT_EQ(
+        dest.toString(),
+        "S3('https://s3.example.com/base', 'KEYID', 'KEYSECRET', extra_credentials(equals(role_arn, 'OTHERROLE')))");
 }
 
-TEST(BackupInfo, CopyS3CredentialsToReplacesKeyPairWithExtraCredentials)
+TEST(BackupInfo, CopyS3CredentialsToOverwritesTheDestinationRoleWithTheCopiedOne)
+{
+    /// Same kind, so the source wins: the destination cannot assume two roles.
+    auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', extra_credentials(role_arn = 'ROLEARN'))");
+    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base', extra_credentials(role_arn = 'OTHERROLE'))");
+
+    source.copyS3CredentialsTo(dest);
+
+    EXPECT_EQ(dest.toString(), "S3('https://s3.example.com/base', extra_credentials(equals(role_arn, 'ROLEARN')))");
+}
+
+TEST(BackupInfo, CopyS3CredentialsToKeepsDestinationKeyPairBesideTheCopiedRole)
 {
     auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', extra_credentials(role_arn = 'ROLEARN'))");
     auto dest = BackupInfo::fromString("S3('https://s3.example.com/base', 'OTHERKEYID', 'OTHERKEYSECRET')");
 
     source.copyS3CredentialsTo(dest);
 
-    EXPECT_EQ(dest.toString(), "S3('https://s3.example.com/base', extra_credentials(equals(role_arn, 'ROLEARN')))");
+    EXPECT_EQ(
+        dest.toString(),
+        "S3('https://s3.example.com/base', 'OTHERKEYID', 'OTHERKEYSECRET', extra_credentials(equals(role_arn, 'ROLEARN')))");
+}
+
+TEST(BackupInfo, CopyS3CredentialsToDropsADestinationClauseNamingNoRole)
+{
+    /// `external_id` without a `role_arn` assumes nothing, so it is not authentication to preserve.
+    /// Keeping it would also leave the locator unreconstructable from the stripped form, costing the
+    /// `<base_backup_copy_s3_credentials_from_backup>` marker for no gain.
+    auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')");
+    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base', extra_credentials(external_id = 'EXTERNALID'))");
+
+    source.copyS3CredentialsTo(dest);
+
+    EXPECT_EQ(dest.toString(), "S3('https://s3.example.com/base', 'KEYID', 'KEYSECRET')");
+}
+
+TEST(BackupInfo, CopyS3CredentialsToLeavesAnEmptyDestinationCarryingOnlyTheCopiedCredentials)
+{
+    /// The shape every locator written with the `<base_backup_copy_s3_credentials_from_backup>` marker
+    /// has, since stripping is what produced it. Nothing is there to keep, so copying reconstructs it
+    /// exactly -- which is what `BackupImpl::writeBackupMetadata` compares before emitting the marker.
+    auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')");
+    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base')");
+
+    source.copyS3CredentialsTo(dest);
+
+    EXPECT_EQ(dest.toString(), "S3('https://s3.example.com/base', 'KEYID', 'KEYSECRET')");
 }
 
 TEST(BackupInfo, CopyS3CredentialsToRejectsSourceWithoutCredentials)
