@@ -152,6 +152,8 @@ void DistinctTransform::buildFilter(
                 /// `cancel_reason` `UNDEFINED` and must still preserve the prefix.
                 if (isCancelled() && !isCancelledBySoftTimeout())
                 {
+                    if (timeoutShouldThrow())
+                        process_list_element->checkTimeLimit(); // throws TIMEOUT_EXCEEDED
                     std::fill(filter.begin() + i, filter.end(), 0);
                     return;
                 }
@@ -184,6 +186,8 @@ void DistinctTransform::buildFilter(
                     FailPointInjection::pauseFailPoint("distinct_transform_pause");
                 if (isCancelled() && !isCancelledBySoftTimeout())
                 {
+                    if (timeoutShouldThrow())
+                        process_list_element->checkTimeLimit(); // throws TIMEOUT_EXCEEDED
                     std::fill(filter.begin() + i, filter.end(), 0);
                     return;
                 }
@@ -264,7 +268,7 @@ LowCardinalityMaskResult DistinctTransform::buildLowCardinalityMask(const Column
                 {
                     if (row > 0) [[unlikely]]
                         FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
-                    if (isCancelled() || isSoftTimeout())
+                    if (isSoftTimeout() || isCancelled())
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
@@ -280,7 +284,7 @@ LowCardinalityMaskResult DistinctTransform::buildLowCardinalityMask(const Column
                 {
                     if (row > 0) [[unlikely]]
                         FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
-                    if (isCancelled() || isSoftTimeout())
+                    if (isSoftTimeout() || isCancelled())
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
@@ -296,7 +300,7 @@ LowCardinalityMaskResult DistinctTransform::buildLowCardinalityMask(const Column
                 {
                     if (row > 0) [[unlikely]]
                         FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
-                    if (isCancelled() || isSoftTimeout())
+                    if (isSoftTimeout() || isCancelled())
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
@@ -312,7 +316,7 @@ LowCardinalityMaskResult DistinctTransform::buildLowCardinalityMask(const Column
                 {
                     if (row > 0) [[unlikely]]
                         FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
-                    if (isCancelled() || isSoftTimeout())
+                    if (isSoftTimeout() || isCancelled())
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
@@ -359,6 +363,15 @@ bool DistinctTransform::isCancelledBySoftTimeout() const
     if (!process_list_element)
         return false;
 
+    /// The executor poll loop (`PullingAsyncPipelineExecutor::pull`) calls `checkTimeLimitSoft` on
+    /// every poll regardless of `timeout_overflow_mode`, and `checkTimeLimitSoft` always uses
+    /// `OverflowMode::BREAK`. So a `timeout_overflow_mode = 'throw'` query is also cancelled with a
+    /// break-style `CancelledByTimeout` (cancel_reason stays `UNDEFINED`). For such a query the
+    /// timeout must raise `TIMEOUT_EXCEEDED` (handled by `timeoutShouldThrow`), not preserve a prefix,
+    /// so only the BREAK mode is treated as a soft prefix-preserving timeout here.
+    if (process_list_element->getOverflowMode() != OverflowMode::BREAK)
+        return false;
+
     /// User-facing hard cancellations (KILL QUERY, Ctrl+C) always set a cancel reason; they win
     /// over any previously latched soft timeout, so the chunk must be dropped rather than kept.
     if (process_list_element->getCancelReason() != DB::CancelReason::UNDEFINED)
@@ -377,6 +390,18 @@ bool DistinctTransform::isCancelledBySoftTimeout() const
     return time_limit_exceeded;
 }
 
+bool DistinctTransform::timeoutShouldThrow() const
+{
+    if (!process_list_element)
+        return false;
+
+    /// A timeout observed via the executor poll loop (or `checkTimeLimit`) leaves the cancel reason
+    /// `UNDEFINED`, while a `KILL QUERY` sets a real cancel reason. Only a timeout in THROW mode must
+    /// surface as `TIMEOUT_EXCEEDED`; a KILL is reported by the pipeline on its own.
+    return process_list_element->getCancelReason() == DB::CancelReason::UNDEFINED
+        && process_list_element->getOverflowMode() == OverflowMode::THROW;
+}
+
 void DistinctTransform::transform(Chunk & chunk)
 {
     if (unlikely(!chunk.hasRows()))
@@ -384,6 +409,8 @@ void DistinctTransform::transform(Chunk & chunk)
 
     if (isCancelled())
     {
+        if (timeoutShouldThrow())
+            process_list_element->checkTimeLimit(); // throws TIMEOUT_EXCEEDED
         chunk.clear();
         stopReading();
         return;
@@ -523,6 +550,8 @@ void DistinctTransform::transform(Chunk & chunk)
 
     if (isCancelled() && !isCancelledBySoftTimeout())
     {
+        if (timeoutShouldThrow())
+            process_list_element->checkTimeLimit(); // throws TIMEOUT_EXCEEDED
         chunk.clear();
         stopReading();
         return;

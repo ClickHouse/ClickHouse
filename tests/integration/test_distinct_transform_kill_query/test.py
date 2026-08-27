@@ -475,3 +475,93 @@ SETTINGS max_block_size=10000, max_threads=1, max_execution_time=5,
         f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
     )
     assert int(result.strip()) == 0
+
+
+def test_lc_soft_timeout_executor_throw(started_cluster):
+    """A 'throw' mode `max_execution_time` observed by the executor poll loop must raise
+    TIMEOUT_EXCEEDED, not preserve a break-style prefix.
+
+    Same setup as `test_lc_soft_timeout_executor_cancel` but with `timeout_overflow_mode='throw'`.
+    `PullingAsyncPipelineExecutor::pull()` polls `checkTimeLimitSoft()` on every poll regardless of
+    `timeout_overflow_mode`, and `QueryStatus::checkTimeLimitSoft()` always uses `OverflowMode::BREAK`,
+    so the pipeline is cancelled with `CancelledByTimeout` (`cancel_reason` stays `UNDEFINED`) even in
+    throw mode. With the fix `isCancelledBySoftTimeout()` is gated on the query timeout mode and returns
+    false for throw mode, so `buildFilter` (and the LC scan) reach `timeoutShouldThrow()` and raise
+    `TIMEOUT_EXCEEDED` via `checkTimeLimit()`. The old code treated the executor-side cancel as a soft
+    break timeout and silently preserved/returned a partial prefix instead of erroring.
+    """
+    node1.query("CREATE TABLE IF NOT EXISTS lc_test (key LowCardinality(String)) ENGINE = Memory")
+    node1.query("TRUNCATE TABLE IF EXISTS lc_test")
+    node1.query("INSERT INTO lc_test SELECT toString(number % 1000) FROM numbers(10000)")
+
+    query = """SELECT DISTINCT key FROM lc_test
+FORMAT Null
+SETTINGS max_block_size=10000, max_threads=1, max_execution_time=5,
+    timeout_overflow_mode='throw', max_rows_to_read=0"""
+
+    query_id = str(uuid.uuid4())
+
+    node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
+
+    thread_error = [None]
+    query_error = [None]
+
+    def execute_query():
+        try:
+            _, error = node1.query_and_get_answer_with_error(
+                query,
+                ## Deliberately no `interactive_delay` override, so the TCPHandler pull loop's
+                ## `checkTimeLimitSoft()` polling stays enabled and cancels the pipeline by timeout
+                ## while the transform is held at the failpoint.
+                query_id=query_id,
+            )
+            query_error[0] = error
+        except Exception as e:
+            thread_error[0] = e
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fault_name, timeout=60):
+        wait_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE")
+        done, _ = concurrent.futures.wait([wait_future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fault_name} not triggered within {timeout} s"
+        wait_future.result()
+
+    try:
+        ## The LC scan pauses at row 4096 with rows [0, 4096) already committed.
+        wait_failpoint(LC_FAULT_NAME)
+
+        ## Hold past max_execution_time so the deadline expires mid-hold. With the default
+        ## interactive_delay the pull loop observes it via checkTimeLimitSoft() and cancels the
+        ## pipeline with CancelledByTimeout (`cancel_reason` stays UNDEFINED), then blocks the
+        ## pipeline thread at the failpoint until we notify it.
+        time.sleep(30)
+
+        ## Do NOT arm the hashmap failpoint: in throw mode `buildFilter` must throw at the
+        ## `isCancelled()` check (`timeoutShouldThrow` -> `checkTimeLimit()`) before it could pause
+        ## there, so the query fails with TIMEOUT_EXCEEDED rather than pausing or returning a partial
+        ## result. Without the fix the executor-side cancel is wrongly treated as a soft break timeout
+        ## and the query returns a partial prefix without error.
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {LC_FAULT_NAME}")
+    finally:
+        node1.query(f"SYSTEM DISABLE FAILPOINT {LC_FAULT_NAME}")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    query_thread.join(timeout=60)
+    assert not query_thread.is_alive(), "query did not terminate after the throw-mode timeout"
+    if thread_error[0] is not None:
+        raise thread_error[0]
+
+    ## In throw mode the timeout must surface as TIMEOUT_EXCEEDED to the client.
+    assert "DB::Exception: Timeout exceeded" in query_error[0], (
+        f"throw-mode timeout did not raise TIMEOUT_EXCEEDED: {query_error[0]!r}"
+    )
+
+    result = node1.query(
+        f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+    )
+    assert int(result.strip()) == 0

@@ -209,6 +209,12 @@ private:
     /// must be treated as a soft timeout, so the already-committed chunk prefix is preserved instead
     /// of being cleared like a real user cancellation. Uses `checkTimeLimitSoft`, so it never throws.
     bool isCancelledBySoftTimeout() const;
+
+    /// True when the cancellation observed here is a timeout (no user-facing cancel reason) and the
+    /// query's `timeout_overflow_mode` is `THROW`, so the current chunk must raise `TIMEOUT_EXCEEDED`
+    /// instead of being dropped or partially preserved. A hard `KILL QUERY` (non-`UNDEFINED` cancel
+    /// reason) is deliberately excluded: the kill error is delivered by the pipeline, not by us.
+    bool timeoutShouldThrow() const;
 };
 
 }
