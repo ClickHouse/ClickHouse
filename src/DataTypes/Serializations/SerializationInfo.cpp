@@ -43,10 +43,6 @@ constexpr auto KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES =
 constexpr auto KEY_MISSING_COLUMNS = "missing_columns";
 constexpr auto KEY_MISSING_COL_NAME = "name";
 constexpr auto KEY_MISSING_COL_TYPE = "type";
-constexpr auto KEY_MISSING_COL_DEFAULT = "default";
-constexpr auto KEY_MISSING_COL_EXPRESSION = "expression";
-constexpr auto VALUE_TYPE_DEFAULT = "type_default";
-constexpr auto VALUE_EXPRESSION = "expression";
 
 void writeJSONKey(std::string_view key, WriteBuffer & out)
 {
@@ -563,17 +559,6 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
             writeJSONKeyValue(KEY_MISSING_COL_NAME, mc.name, out);
             writeChar(',', out);
             writeJSONKeyValue(KEY_MISSING_COL_TYPE, mc.type_name, out);
-            writeChar(',', out);
-            if (mc.default_kind == MissingColumnInfo::DefaultKind::TypeDefault)
-            {
-                writeJSONKeyValue(KEY_MISSING_COL_DEFAULT, std::string_view(VALUE_TYPE_DEFAULT), out);
-            }
-            else
-            {
-                writeJSONKeyValue(KEY_MISSING_COL_DEFAULT, std::string_view(VALUE_EXPRESSION), out);
-                writeChar(',', out);
-                writeJSONKeyValue(KEY_MISSING_COL_EXPRESSION, mc.expression, out);
-            }
             writeChar('}', out);
         }
         writeChar(']', out);
@@ -734,24 +719,6 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
             MissingColumnInfo mc;
             mc.name = elem_object->getValue<String>(KEY_MISSING_COL_NAME);
             mc.type_name = elem_object->getValue<String>(KEY_MISSING_COL_TYPE);
-            auto default_str = elem_object->getValue<String>(KEY_MISSING_COL_DEFAULT);
-            if (default_str == VALUE_EXPRESSION)
-            {
-                /// Expression markers are not supported yet; reject them explicitly.
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "missing_columns entry for '{}' has default='expression' which is not yet supported",
-                    mc.name);
-            }
-            else if (default_str == VALUE_TYPE_DEFAULT)
-            {
-                mc.default_kind = MissingColumnInfo::DefaultKind::TypeDefault;
-            }
-            else
-            {
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "missing_columns entry for '{}' has unknown default kind '{}'",
-                    mc.name, default_str);
-            }
             missing_columns.push_back(std::move(mc));
         }
         infos.setMissingColumns(std::move(missing_columns));

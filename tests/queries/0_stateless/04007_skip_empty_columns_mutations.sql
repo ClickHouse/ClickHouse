@@ -593,3 +593,42 @@ SELECT 'case46_type_default';
 SELECT * FROM t_skip_empty_case46 ORDER BY key;
 
 DROP TABLE t_skip_empty_case46;
+
+
+-- CASE 55: Parts on opposite sides of a type mutation cannot merge.
+-- The old marker means UInt64(0); the post-ALTER marker means Nullable(NULL).
+-- Merge selection keeps them apart until the old part applies READ_COLUMN.
+
+DROP TABLE IF EXISTS t_skip_empty_case55;
+
+CREATE TABLE t_skip_empty_case55
+(
+    key UInt64,
+    a UInt64,
+    b UInt64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+SYSTEM STOP MERGES t_skip_empty_case55;
+INSERT INTO t_skip_empty_case55 VALUES (1, 100, 0);
+ALTER TABLE t_skip_empty_case55 MODIFY COLUMN b Nullable(UInt64) SETTINGS alter_sync = 0;
+INSERT INTO t_skip_empty_case55 VALUES (2, 200, NULL);
+
+SELECT 'case55_pending';
+SELECT key, a, b FROM t_skip_empty_case55 ORDER BY key;
+
+SYSTEM START MERGES t_skip_empty_case55;
+-- Waiting for a later mutation also waits for the preceding type mutation.
+ALTER TABLE t_skip_empty_case55 UPDATE a = a WHERE 0 SETTINGS mutations_sync = 2;
+OPTIMIZE TABLE t_skip_empty_case55 FINAL;
+
+SELECT 'case55_merged';
+SELECT key, a, b FROM t_skip_empty_case55 ORDER BY key;
+
+DROP TABLE t_skip_empty_case55;

@@ -756,7 +756,6 @@ static void skipEmptyColumnsOnInsert(
         SerializationInfoByName::MissingColumnInfo info;
         info.name = name;
         info.type_name = block.getByName(name).type->getName();
-        info.default_kind = SerializationInfoByName::MissingColumnInfo::DefaultKind::TypeDefault;
         mc.push_back(std::move(info));
     }
     infos.setMissingColumns(std::move(mc));

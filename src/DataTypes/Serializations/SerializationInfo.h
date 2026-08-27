@@ -142,19 +142,12 @@ public:
 
     bool needsPersistence() const;
 
-    /// Describes a column that is absent from the part's data files but whose
-    /// read-time semantics are frozen at write time.
+    /// Describes a column that is absent from the part's data files and whose
+    /// values are the recorded type's default.
     struct MissingColumnInfo
     {
         String name;
         String type_name; /// type whose default was frozen when the part was written
-        enum class DefaultKind : uint8_t
-        {
-            TypeDefault,  /// fill with the type's zero value (0, "", NULL)
-            Expression,   /// evaluate the frozen `expression`
-        };
-        DefaultKind default_kind = DefaultKind::TypeDefault;
-        String expression; /// non-empty only when default_kind == Expression
 
         bool operator<(const MissingColumnInfo & rhs) const { return name < rhs.name; }
         bool operator==(const MissingColumnInfo & rhs) const { return name == rhs.name && type_name == rhs.type_name; }

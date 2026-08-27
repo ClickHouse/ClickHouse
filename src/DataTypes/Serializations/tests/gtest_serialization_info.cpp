@@ -246,8 +246,6 @@ TEST(SerializationInfoByNameJSON, MissingColumnsDoNotDowngradeConfiguredVersion)
     infos.setMissingColumns({{
         .name = "value",
         .type_name = "UInt64",
-        .default_kind = SerializationInfoByName::MissingColumnInfo::DefaultKind::TypeDefault,
-        .expression = {},
     }});
 
     WriteBufferFromOwnString out;
@@ -262,7 +260,7 @@ TEST(SerializationInfoByNameJSON, MissingColumnsDoNotDowngradeConfiguredVersion)
 
 TEST(SerializationInfoByNameJSON, RejectsMissingColumnsBeforeTheirFormatVersion)
 {
-    constexpr auto * json = R"({"columns":[],"missing_columns":[{"name":"value","type":"UInt64","default":"type_default"}],"version":1})";
+    constexpr auto * json = R"({"columns":[],"missing_columns":[{"name":"value","type":"UInt64"}],"version":1})";
     EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
 }
 
