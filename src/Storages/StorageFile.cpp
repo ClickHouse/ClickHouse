@@ -3078,14 +3078,22 @@ SinkToStoragePtr StorageFile::write(
     StorageFileSink::GetNextPathCallback get_next_path;
     if (split_on_write_by_size_bytes && !use_table_fd && !paths.empty())
     {
+        /// A truncating insert overwrites the table: the split files of the previous inserts are forgotten,
+        /// and the numbering starts over, overwriting them one by one.
+        if (context->getSettingsRef()[Setting::engine_file_truncate_on_insert])
+            paths.resize(1);
+
+        /// The numbering is derived per insert from the name of the file this insert starts with:
+        /// the next files continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...).
         get_next_path = [storage = std::static_pointer_cast<StorageFile>(shared_from_this()),
-                         first_path = paths.front(),
-                         sequence_number = getStartSequenceNumber(paths.front(), paths.size()),
+                         first_path = path,
+                         sequence_number = getStartSequenceNumber(path, 1),
                          truncate_on_insert = context->getSettingsRef()[Setting::engine_file_truncate_on_insert].value,
                          allow_create_multiple_files = context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files].value]() mutable -> String
         {
             String new_path = getNextPathForSplittingBySize(first_path, sequence_number, truncate_on_insert, allow_create_multiple_files);
-            storage->paths.push_back(new_path);
+            if (std::find(storage->paths.begin(), storage->paths.end(), new_path) == storage->paths.end())
+                storage->paths.push_back(new_path);
             return new_path;
         };
     }
