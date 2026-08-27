@@ -205,11 +205,14 @@ namespace
 
         for (const auto & child : func->arguments->children)
         {
+            /// A key or a value written as an expression is resolved only when the locator is opened, and
+            /// there is no context here to resolve it with. `collectCredentials` accepts both, so such a
+            /// clause may well name the role; assume it does rather than refuse to lend what opens fine.
             auto key = getKeyValueArgName(child);
-            if (!key || *key != "role_arn")
+            if (!key)
+                return true;
+            if (*key != "role_arn")
                 continue;
-            /// A value written as an expression is resolved only when the locator is opened, and there is
-            /// no context here to resolve it with; it names a role the same way a literal does.
             auto value = getKeyValueArgStringValue(child);
             return !value || !value->empty();
         }

@@ -421,6 +421,23 @@ TEST(BackupInfo, CopyS3CredentialsToKeepsDestinationKeyPairBesideTheCopiedRole)
         "S3('https://s3.example.com/base', 'OTHERKEYID', 'OTHERKEYSECRET', extra_credentials(equals(role_arn, 'ROLEARN')))");
 }
 
+TEST(BackupInfo, CopyS3CredentialsToLendsAClauseWhoseKeyIsAnExpression)
+{
+    /// `collectCredentials` resolves the key when the locator is opened, so this names a role and
+    /// `withoutSecretExtraCredentials` keeps it in the metadata. Refusing to lend it here would cost that
+    /// spelling both the setting and the marker -- the multi-hop failure this all exists to fix.
+    auto source
+        = BackupInfo::fromString("S3('https://s3.example.com/backup', extra_credentials(concat('role_', 'arn') = 'arn::role'))");
+    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base')");
+
+    EXPECT_TRUE(source.canCopyS3CredentialsTo(dest));
+    source.copyS3CredentialsTo(dest);
+
+    EXPECT_EQ(
+        dest.toString(),
+        "S3('https://s3.example.com/base', extra_credentials(equals(concat('role_', 'arn'), 'arn::role')))");
+}
+
 TEST(BackupInfo, CopyS3CredentialsToDropsADestinationClauseNamingNoRole)
 {
     /// `external_id` without a `role_arn` assumes nothing, so it is not authentication to preserve.
