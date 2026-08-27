@@ -804,6 +804,72 @@ def test_move_after_processing_preserves_source_tags(started_cluster):
     assert dict(moved_tags) == {"classification": "sensitive", "team": "data platform"}
 
 
+def test_move_after_processing_preserve_tags_requests_tags_explicitly(started_cluster):
+    """HeadObject reports TagCount only when the credentials are allowed to read tags at all, so
+    deferring GetObjectTagging until a nonzero TagCount lets least-privilege credentials slip a
+    tagged source through the guarded move as an untagged one: the destination loses its tags and
+    the source is deleted, instead of failing closed as `after_processing_move_preserve_tags = 1`
+    promises. Enabling preservation has to request the tag set explicitly regardless of the
+    reported TagCount - observable on an untagged source, where a TagCount shortcut skips it."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_tags_explicit_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    file_name = "a.csv"
+    processed_prefix = f"{token}_tags_prefix"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    bucket = started_cluster.minio_bucket
+
+    def get_object_tagging_events():
+        node.query("SYSTEM FLUSH LOGS")
+        return int(
+            node.query(
+                "SELECT value FROM system.events "
+                "WHERE event = 'S3GetObjectTagging' "
+                "SETTINGS system_events_show_zero_values = 1"
+            )
+        )
+
+    put_s3_file_content(started_cluster, f"{files_path}/{file_name}", b"1,2,3\n")
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        engine_name="S3Queue",
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+
+    # Nothing claims the file before the MV starts reading, so the baseline is exact.
+    events_before = get_object_tagging_events()
+
+    create_mv(node, table_name, dst_table_name)
+
+    for _ in range(1000):
+        if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1:
+            break
+        time.sleep(0.1)
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1
+
+    # The guarded copy fetched the source tag set even though the object carries none.
+    assert get_object_tagging_events() > events_before
+
+    for _ in range(100):
+        if (
+            count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+            and count_minio_objects(started_cluster, bucket, files_path) == 0
+        ):
+            break
+        time.sleep(0.1)
+    assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+    assert count_minio_objects(started_cluster, bucket, files_path) == 0
+
+
 def test_move_after_processing_preserve_tags_disabled(started_cluster):
     """Restating tags needs permission to read them, which the pre-guard CopyObject path never
     required. `after_processing_move_preserve_tags = 0` is the explicit opt-out: the move keeps
