@@ -32,7 +32,7 @@ mkdir -p "${TABLE_PATH}"
 #   INSERT INTO dec_min SELECT 1, decimal(42.42);
 #
 # repacked here without the Spark checksum files.
-python3 "$CUR_DIR/04907_iceberg_decimal_bounds_overflow.py" "${TABLE_PATH}"
+python3 "$CUR_DIR/04907_iceberg_decimal_bounds_overflow.python" "${TABLE_PATH}"
 
 # Any filter makes the manifest bounds be parsed; it does not have to touch the decimal column.
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM icebergLocal('${TABLE_PATH}') WHERE id > 0"
