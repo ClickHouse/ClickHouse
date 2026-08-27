@@ -310,7 +310,6 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
 {
     BlockIO res;
     const auto & settings = context->getSettingsRef();
-    auto lock_share = [&] { return table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]); };
 
     /// Each segment takes its own locks, a multi-segment ALTER is not atomic against concurrent DDL.
     for (auto & segment : segments)
@@ -321,7 +320,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             DDLGuardPtr ddl_guard;
             if (!no_ddl_lock)
                 ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(table, settings[Setting::lock_acquire_timeout]);
-            auto share_lock = lock_share();
+            auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
             /// Drop the query-scoped metadata cache, which may hold a snapshot pinned before this
             /// lock. The reads below (validate/prepare/checkAlterIsPossible and the storage's alter)
@@ -346,7 +345,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         {
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
-                auto share_lock = lock_share();
+                auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
                 auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 table->checkMutationIsPossible(*mutation_commands, settings);
                 /// Replicated-storage non-determinism check must always run, even when
@@ -365,7 +364,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         }
         else if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))
         {
-            auto share_lock = lock_share();
+            auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             table->checkAlterPartitionIsPossible(*partition_commands, metadata_snapshot, settings, context);
             auto partition_commands_pipe = table->alterPartition(metadata_snapshot, *partition_commands, context);
@@ -374,7 +373,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         }
         else if (auto * execute_commands = std::get_if<ExecuteCommands>(&segment))
         {
-            auto share_lock = lock_share();
+            auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             for (const auto * execute_command : *execute_commands)
             {
                 ASTPtr args_ast = execute_command->execute_args ? execute_command->execute_args->ptr() : nullptr;
@@ -480,13 +479,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 #endif
 
-    /// Re-resolve by name under a DDLGuard, like RENAME/EXCHANGE/DROP do, so a concurrent EXCHANGE
-    /// cannot move the table away in between. Temporary tables are session-local and need no guard.
+    /// Re-resolve by name: the resolution above pins a UUID, and a concurrent EXCHANGE can move it
+    /// to another name, making the UUID lookup return nothing. Temporary tables cannot be renamed.
     if (table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-    {
-        auto resolve_guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         table = database->tryGetTable(table_id.table_name, getContext());
-    }
 
     if (!table)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Could not find table: {}", table_id.table_name);
