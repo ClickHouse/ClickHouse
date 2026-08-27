@@ -109,6 +109,8 @@ static bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     /// rejects an ordinary shipped fragment - `isSerializable` is unconditionally true for this step -
     /// so the read has to be kept local here, as for Top-K above.
     if (!read.getIndexReadTasks().empty())
+        return false;
+
     /// The pinned block-number boundary is not serialized: a follower rebuilds the read with
     /// max_block_numbers_to_read = nullptr and would read past the initiator's snapshot boundary.
     if (read.hasPinnedBlockNumbers())
