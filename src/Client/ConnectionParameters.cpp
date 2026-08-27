@@ -159,19 +159,41 @@ SSHKey getSSHKey(const String & host, const String & user, UInt16 port, const St
         return loadPrivateKey(filename, passphrase);
     }
 
-    /// A key held by the ssh-agent is preferred: it does not need a passphrase.
+    /// The configured identities are tried in order: the first available one is used.
+    /// For each identity, its copy held by the ssh-agent is preferred: it does not need a passphrase.
     /// But if the passphrase is specified, the user obviously wants the key file to be used.
-    if (!passphrase.has_value())
+    std::vector<SSHAgent::Identity> agent_identities;
+    if (!passphrase.has_value() && SSHAgent::isAvailable(agent_socket_path))
     {
-        if (auto identity = findIdentityInSSHAgent(configuration.identity_files, agent_socket_path))
+        try
         {
-            fmt::print(stderr, "Using the SSH key '{}' from the ssh-agent.\n", identity->comment);
-            return SSHKeyFactory::makeKeyFromSSHAgent(identity->key_blob, agent_socket_path);
+            agent_identities = SSHAgent::listIdentities(agent_socket_path);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::SSH_AGENT_ERROR)
+                throw;
         }
     }
 
     for (const String & identity_file : configuration.identity_files)
     {
+        if (!agent_identities.empty())
+        {
+            String key_blob = readPublicKeyBlob(identity_file);
+            if (!key_blob.empty())
+            {
+                for (const SSHAgent::Identity & identity : agent_identities)
+                {
+                    if (identity.key_blob == key_blob)
+                    {
+                        fmt::print(stderr, "Using the SSH key '{}' from the ssh-agent.\n", identity.comment);
+                        return SSHKeyFactory::makeKeyFromSSHAgent(identity.key_blob, agent_socket_path);
+                    }
+                }
+            }
+        }
+
         if (!fs::is_regular_file(identity_file))
             continue;
 
@@ -179,25 +201,12 @@ SSHKey getSSHKey(const String & host, const String & user, UInt16 port, const St
         return loadPrivateKey(identity_file, passphrase);
     }
 
-    /// There are no identity files, but the agent may still hold a key that the server knows about.
+    /// None of the configured identities is available, but the agent may still hold a key that the server knows about.
     /// `IdentitiesOnly yes` forbids exactly this: only the configured identities may be used.
-    if (!passphrase.has_value() && !configuration.identities_only && SSHAgent::isAvailable(agent_socket_path))
+    if (!configuration.identities_only && !agent_identities.empty())
     {
-        std::vector<SSHAgent::Identity> identities;
-        try
-        {
-            identities = SSHAgent::listIdentities(agent_socket_path);
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() != ErrorCodes::SSH_AGENT_ERROR)
-                throw;
-        }
-        if (!identities.empty())
-        {
-            fmt::print(stderr, "Using the SSH key '{}' from the ssh-agent.\n", identities.front().comment);
-            return SSHKeyFactory::makeKeyFromSSHAgent(identities.front().key_blob, agent_socket_path);
-        }
+        fmt::print(stderr, "Using the SSH key '{}' from the ssh-agent.\n", agent_identities.front().comment);
+        return SSHKeyFactory::makeKeyFromSSHAgent(agent_identities.front().key_blob, agent_socket_path);
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS,

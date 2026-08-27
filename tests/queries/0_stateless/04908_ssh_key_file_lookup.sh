@@ -76,6 +76,23 @@ echo 'ssh-ed25519 this-is-not-base64!' > "${SSH_HOME}/.ssh/id_ed25519.pub"
 run_client
 mv "${SSH_HOME}/.ssh/id_ed25519.pub.saved" "${SSH_HOME}/.ssh/id_ed25519.pub"
 
+# Both keys exist locally, but only the ed25519 key is in the ssh-agent.
+echo '--- The first configured identity wins even when only a later one is in the ssh-agent'
+cat > "${SSH_HOME}/.ssh/config" <<'EOF'
+IdentityFile ~/.ssh/id_rsa
+IdentityFile ~/.ssh/id_ed25519
+EOF
+run_client
+rm "${SSH_HOME}/.ssh/config"
+
+echo '--- The agent-held copy of the first configured identity is preferred over its file'
+cat > "${SSH_HOME}/.ssh/config" <<'EOF'
+IdentityFile ~/.ssh/id_ed25519
+IdentityFile ~/.ssh/id_rsa
+EOF
+run_client
+rm "${SSH_HOME}/.ssh/config"
+
 echo '--- The ed25519 key in the ssh-agent'
 # Only the agent has the private key now, but the public key file still tells which one it is.
 rm "${SSH_HOME}/.ssh/id_ed25519"

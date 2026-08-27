@@ -14,6 +14,12 @@ Using the SSH key from $HOME/keys/work_id.
 --- A malformed public key file does not prevent the private key from being used
 Using the SSH key from $HOME/.ssh/id_ed25519.
 1
+--- The first configured identity wins even when only a later one is in the ssh-agent
+Using the SSH key from $HOME/.ssh/id_rsa.
+1
+--- The agent-held copy of the first configured identity is preferred over its file
+Using the SSH key 'the ed25519 key' from the ssh-agent.
+1
 --- The ed25519 key in the ssh-agent
 Using the SSH key 'the ed25519 key' from the ssh-agent.
 1

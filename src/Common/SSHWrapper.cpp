@@ -7,6 +7,7 @@
 #    include <Poco/SHA1Engine.h>
 #    include <base/scope_guard.h>
 
+#    include <algorithm>
 #    include <cstdlib>
 #    include <cctype>
 #    include <cstring>
@@ -436,6 +437,19 @@ SSHClientConfiguration getSSHClientConfiguration(const String & host, const Stri
 
     /// The names of the config files are passed explicitly, because libssh takes the home directory
     /// from the passwd database, while the rest of the client honors the `HOME` environment variable.
+    /// libssh prepends each `IdentityFile` of the config to the list of the built-in default identities
+    /// (`~/.ssh/id_ed25519` and so on), so the configured identities come out in the reverse order.
+    /// Count the defaults up front to restore the order of the configured identities afterwards.
+    size_t default_identity_count = 0;
+    {
+        char * pattern = nullptr;
+        while (ssh_options_get(session, SSH_OPTIONS_NEXT_IDENTITY, &pattern) == SSH_OK)
+        {
+            std::unique_ptr<char, SSHStringDeleter> pattern_ptr(pattern);
+            ++default_identity_count;
+        }
+    }
+
     String home_directory = getHomeDirectory();
     for (const String & config_file : {home_directory + "/.ssh/config", String(GLOBAL_SSH_CONFIG_FILE)})
         if (ssh_options_parse_config(session, config_file.c_str()) != SSH_OK)
@@ -462,15 +476,23 @@ SSHClientConfiguration getSSHClientConfiguration(const String & host, const Stri
 
     SSHClientConfiguration result;
 
-    /// The identities from the config come first, the built-in default ones (`~/.ssh/id_ed25519` and so on) last.
+    /// The identities from the config come first, in the order they are written in the config,
+    /// the built-in default ones (`~/.ssh/id_ed25519` and so on) last.
     /// They are not expanded by libssh, because that would also resolve the home directory from the passwd database.
+    std::vector<String> identity_patterns;
     char * pattern = nullptr;
     while (ssh_options_get(session, SSH_OPTIONS_NEXT_IDENTITY, &pattern) == SSH_OK)
     {
         std::unique_ptr<char, SSHStringDeleter> pattern_ptr(pattern);
+        identity_patterns.emplace_back(pattern_ptr.get());
+    }
+    chassert(identity_patterns.size() >= default_identity_count);
+    std::reverse(identity_patterns.begin(), identity_patterns.end() - default_identity_count);
+    for (const String & identity_pattern : identity_patterns)
+    {
         /// `ssh` also substitutes `${...}` environment variables in `IdentityFile`.
         /// An entry referencing an unset variable names no file, so it is skipped, and the other identities still apply.
-        auto expanded_pattern = expandSSHConfigEnvironmentVariables(pattern_ptr.get());
+        auto expanded_pattern = expandSSHConfigEnvironmentVariables(identity_pattern);
         if (!expanded_pattern)
             continue;
         result.identity_files.push_back(expandTokens(*expanded_pattern, tokens));
