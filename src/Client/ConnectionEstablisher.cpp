@@ -294,7 +294,7 @@ bool ConnectionEstablisherAsync::checkTimeout()
         if (haveMoreAddressesToConnect())
         {
             /// There are more addresses to try. Set a flag on the Connection so that
-            /// when the fiber resumes, it will throw a timeout exception and the
+            /// when the coroutine resumes, it will throw a timeout exception and the
             /// Connection::connect() loop can try the next address.
             if (!result.entry.isNull())
                 result.entry->setAddressConnectTimeoutExpired();
@@ -305,7 +305,7 @@ bool ConnectionEstablisherAsync::checkTimeout()
                 epoll.remove(socket_fd);
                 socket_fd = -1;
             }
-            /// Return true to resume the fiber, which will throw the timeout exception.
+            /// Return true to resume the coroutine, which will throw the timeout exception.
             return true;
         }
 

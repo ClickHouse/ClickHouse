@@ -287,7 +287,8 @@ private:
     bool receivePacketsExpectQuery(std::shared_ptr<QueryState> & state);
     bool receivePacketsExpectData(QueryState & state) TSA_REQUIRES(callback_mutex);
     bool receivePacketsExpectDataConcurrentWithExecutor(QueryState & state);
-    void receivePacketsExpectCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
+    /// `force` skips the interactive-delay rate limit, for callers that must know right now.
+    void receivePacketsExpectCancel(QueryState & state, bool force = false) TSA_REQUIRES(callback_mutex);
 
     ClusterFunctionReadTaskResponsePtr receiveClusterFunctionReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
