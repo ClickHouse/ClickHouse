@@ -29,9 +29,7 @@ makes that job red and blocks the PR.  That delegation is per-arm: the counterpa
 arm that reproduced is the `Unit tests (<that arm's sanitizer>)` job, so a bug reproduced
 on the `amd_tsan` arm is complemented by `Unit tests (tsan)`.  Delegating it lets this job
 avoid requiring the PR's `UNITTEST_AMD_ASAN_UBSAN` artifact, so it is not gated behind
-`build_amd_asan_ubsan` and builds the "before" binary in parallel with the build matrix (it
-starts as early as the functional/integration validators, which only need `config_workflow`
-+ dockers).
+`build_amd_asan_ubsan`.
 
 See ci/jobs/functional_tests.py:invert_bugfix_validation_status for the analogous
 functional-test logic.
