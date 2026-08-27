@@ -69,6 +69,10 @@ private:
 
     DataLake::ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
 
+    /// Throw if the catalog `warehouse` has no schema `schema_name` (or the catalog itself does not exist), so
+    /// a misconfigured namespace stays an error instead of being reported as an absent table by `existsTable`.
+    void checkNamespaceExists(const std::string & schema_name) const;
+
     CatalogTables getTablesForSchema(const std::string & schema, size_t limit = 0) const;
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     void getCredentials(const String & table_id, TableMetadata & metadata) const;

@@ -786,15 +786,12 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
 
     /// Register with the catalog whenever one is present: an attach to an existing `_delta_log` must be registered even with writes off, and a fresh CREATE that needs writes is already rejected in `createTable`.
     const bool register_with_catalog = catalog != nullptr;
-    if (register_with_catalog && catalog->getCatalogType() != DatabaseDataLakeCatalogType::UNITY)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "CREATE TABLE with ENGINE = DeltaLake is only supported in a Unity catalog database");
 
-    /// Decide everything the setting governs before touching storage. Without a catalog, keep the
-    /// pre-feature behaviour: return silently, so a plain `CREATE TABLE ... ENGINE = DeltaLake(...)` stays
-    /// lazy and adds no round trip. With a catalog the CREATE cannot do anything useful while the feature is
-    /// off (the registration is the whole point), so fail instead of reporting success with no catalog entry.
+    /// Decide everything the setting governs before touching storage or rejecting the catalog type, so that
+    /// with the feature off 26.9 reproduces the pre-feature behaviour. Without a catalog, return silently, so a
+    /// plain `CREATE TABLE ... ENGINE = DeltaLake(...)` stays lazy and adds no round trip. With a catalog the
+    /// CREATE cannot do anything useful while the feature is off (the registration is the whole point), so fail
+    /// instead of reporting success with no catalog entry.
     if (!local_context->getSettingsRef()[Setting::allow_delta_lake_create_table])
     {
         if (!register_with_catalog)
@@ -805,6 +802,11 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
             "Creating a new DeltaLake table or registering an existing one into a catalog with CREATE TABLE "
             "is experimental; set allow_delta_lake_create_table = 1 to enable it");
     }
+
+    if (register_with_catalog && catalog->getCatalogType() != DatabaseDataLakeCatalogType::UNITY)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "CREATE TABLE with ENGINE = DeltaLake is only supported in a Unity catalog database");
 
     const bool delta_log_exists = deltaLogExists(*object_storage, configuration_ptr->getRawPath().path);
 

@@ -8945,7 +8945,7 @@ Trigger processor to spill data into external storage adpatively. grace join is 
 Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
 )", BETA, allow_experimental_delta_kernel_rs) \
     DECLARE(Bool, allow_delta_lake_create_table, false, R"(
-Allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog. Creating a partitioned table (`PARTITION BY`) is not supported yet.
+Allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog. Creating a partitioned table (`PARTITION BY`) is not supported yet. In a `DataLakeCatalog` database the table is registered with its Delta schema, so declared ClickHouse types that map to a wider Delta type (e.g. `UInt8` -> `short`, `FixedString(N)` -> `string`) are read back as the Delta-mapped type rather than the declared one.
 )", EXPERIMENTAL) \
     DECLARE_WITH_ALIAS(Bool, allow_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.

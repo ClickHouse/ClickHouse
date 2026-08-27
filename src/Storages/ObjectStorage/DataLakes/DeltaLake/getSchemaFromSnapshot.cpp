@@ -3,7 +3,7 @@
 #if USE_DELTA_KERNEL_RS
 #include <DataTypes/DataTypeFactory.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaTypeMapping.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
 
@@ -800,8 +800,11 @@ void deltaVisitFloat(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, c
 void deltaVisitDouble(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "double"); }
 void deltaVisitString(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap * metadata)
 {
-    if (fieldIsCharVarchar(metadata))
-        static_cast<DeltaJSONSchemaVisitor *>(d)->has_char_varchar = true;
+    deltaVisitGuarded(d, [&](DeltaJSONSchemaVisitor & v)
+    {
+        if (fieldIsCharVarchar(metadata))
+            v.has_char_varchar = true;
+    });
     deltaPushPrimitive(d, s, n, nu, "string");
 }
 void deltaVisitBinary(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "binary"); }
@@ -893,7 +896,7 @@ uintptr_t visitFieldFromClickHouseType(
         return KernelUtils::unwrapResult(result, label);
     };
 
-    /// Nested types recurse to register children; leaf types are classified (and rejected if not round-tripping) via `DeltaLakeMetadata::classifyDeltaPrimitive`.
+    /// Nested types recurse to register children; leaf types are classified (and rejected if not round-tripping) via `classifyDeltaPrimitive`.
     switch (type->getTypeId())
     {
         case DB::TypeIndex::Array:
@@ -930,7 +933,7 @@ uintptr_t visitFieldFromClickHouseType(
             break;
     }
 
-    switch (DB::DeltaLakeMetadata::classifyDeltaPrimitive(type))
+    switch (DB::classifyDeltaPrimitive(type))
     {
         case DB::DeltaPrimitiveType::Boolean:
             return unwrap(ffi::visit_field_boolean(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_boolean");
@@ -1025,7 +1028,7 @@ static void validateClickHouseTypeForDeltaCreate(const DB::DataTypePtr & full_ty
         }
         default:
             /// Throws `NOT_IMPLEMENTED` for any leaf type that cannot round-trip through Delta metadata.
-            DB::DeltaLakeMetadata::classifyDeltaPrimitive(type);
+            DB::classifyDeltaPrimitive(type);
             return;
     }
 }

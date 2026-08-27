@@ -434,7 +434,7 @@ void UnityCatalog::createTable(
         throw DB::Exception(
             DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
             "Failed to create table {}.{} in Unity catalog: {}",
-            namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ true));
+            namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
     }
 }
 
@@ -452,27 +452,40 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
     }
     catch (const DB::HTTPException & e)
     {
-        /// Unity answers 404 for a missing table, so report "does not exist" rather than failing the query.
-        /// Caveat: the OSS server maps CATALOG_NOT_FOUND / SCHEMA_NOT_FOUND / TABLE_NOT_FOUND all to 404
-        /// (io.unitycatalog.server.exception.ErrorCode), and the response body's `error_code` is not
-        /// structurally available on HTTPException, so a wrong `warehouse` or namespace is indistinguishable
-        /// from an absent table here. Log it so a misconfigured catalog stays traceable. Every other status
-        /// (401, 403, expired token, 5xx) keeps propagating, matching `RestCatalog::existsTable`
-        /// (see gtest_rest_catalog.cpp:399-444).
-        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
-        {
-            LOG_DEBUG(
-                log,
-                "Unity returned 404 for {}.{}.{}; reporting the table as absent "
-                "(note: a missing catalog or schema is also reported as 404)",
-                warehouse, schema_name, table_name);
-            return false;
-        }
-        throw;
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+            throw;
+
+        /// Unity answers 404 for a missing table, but the OSS server also maps CATALOG_NOT_FOUND and
+        /// SCHEMA_NOT_FOUND to 404 (io.unitycatalog.server.exception.ErrorCode), and the response body's
+        /// `error_code` is not available on HTTPException, so a 404 alone cannot tell an absent table from a
+        /// misconfigured `warehouse`/namespace. Probe the schema to disambiguate: if it exists the table is
+        /// genuinely absent, otherwise the catalog or schema is misconfigured -- which must stay an error
+        /// rather than masquerade as an empty database (it backs `EXISTS TABLE`, `DROP ... IF EXISTS` and the
+        /// pre-CREATE existence check). Every other status (401, 403, expired token, 5xx) keeps propagating.
+        checkNamespaceExists(schema_name);
+        LOG_DEBUG(log, "Unity table {}.{}.{} does not exist", warehouse, schema_name, table_name);
+        return false;
     }
     catch (DB::Exception & e)
     {
         e.addMessage("while parsing JSON: " + json_str);
+        throw;
+    }
+}
+
+void UnityCatalog::checkNamespaceExists(const std::string & schema_name) const
+{
+    try
+    {
+        getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / (warehouse + "." + schema_name));
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "DeltaLake catalog `{}` has no schema `{}` (or the catalog itself does not exist)",
+                warehouse, schema_name);
         throw;
     }
 }

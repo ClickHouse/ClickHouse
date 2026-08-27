@@ -2,7 +2,7 @@
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaTypeMapping.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Databases/DataLake/Common.h>
@@ -89,7 +89,7 @@ Poco::Dynamic::Var deltaTypeToJSON(const DataTypePtr & full_type)
             break;
     }
 
-    switch (DeltaLakeMetadata::classifyDeltaPrimitive(type))
+    switch (classifyDeltaPrimitive(type))
     {
         case DeltaPrimitiveType::Boolean:   return String("boolean");
         case DeltaPrimitiveType::Byte:      return String("byte");

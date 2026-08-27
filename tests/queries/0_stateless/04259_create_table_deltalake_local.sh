@@ -55,7 +55,7 @@ if $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 0;
 SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_nokernel (id Int32) ENGINE = DeltaLakeLocal('${TABLE_PATH_NOKERNEL}', Parquet);
-" 2>&1 | grep -q "requires allow_experimental_delta_kernel_rs"; then echo "fresh create without kernel rejected"; else echo "fresh create without kernel NOT rejected"; fi
+" 2>&1 | grep -q "requires allow_delta_kernel_rs"; then echo "fresh create without kernel rejected"; else echo "fresh create without kernel NOT rejected"; fi
 
 # With the kernel enabled but writes off there is still no writer for a fresh CREATE, so a location with
 # no `_delta_log` must fail rather than silently reporting success while writing no initial commit.
