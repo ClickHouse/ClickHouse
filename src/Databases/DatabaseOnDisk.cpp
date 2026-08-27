@@ -107,6 +107,25 @@ std::pair<String, StoragePtr> createTableFromAST(
     if (ast_create_query.select && ast_create_query.isView())
         ApplyWithSubqueryVisitor::visit(*ast_create_query.select);
 
+    /// Metadata written before the table names were qualified at CREATE time — in particular the
+    /// names introduced by SQL UDF expansion into a view SELECT, a column DEFAULT expression or a
+    /// constraint — can contain unqualified names. They have to resolve against the database owning
+    /// the table — the same choice as the loading-dependency graph makes in
+    /// `TablesLoader::buildDependencyGraph` — and not against the current database of the loading
+    /// context, which is unrelated to this table: the analysis of the constraints below executes
+    /// their scalar subqueries, and the view SELECT and the column defaults are kept in the metadata
+    /// of the storage and are later resolved under the context of the reading or inserting query.
+    /// The dictionary definitions are left alone: the nested `QUERY` of their source deliberately
+    /// resolves against the default database of the server (see `DDLDependencyVisitor`).
+    if (!ast_create_query.is_dictionary)
+    {
+        AddDefaultDatabaseVisitor visitor(context, database_name);
+        if (ast_create_query.select && ast_create_query.isView())
+            visitor.visitTableExpressions(*ast_create_query.select);
+        if (ast_create_query.columns_list)
+            visitor.visitTableExpressions(*ast_create_query.columns_list);
+    }
+
     if (ast_create_query.as_table_function)
     {
         const auto & factory = TableFunctionFactory::instance();
@@ -153,19 +172,6 @@ std::pair<String, StoragePtr> createTableFromAST(
         else
         {
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
-
-            if (ast_create_query.columns_list->constraints)
-            {
-                /// Metadata written before the table names of the constraint expressions were
-                /// qualified at CREATE time can contain unqualified names, and the analysis of the
-                /// constraints below executes their scalar subqueries. Such names have to resolve
-                /// against the database owning the table — the same choice as the loading-dependency
-                /// graph makes in `TablesLoader::buildDependencyGraph` — and not against the current
-                /// database of the loading context, which is unrelated to this table.
-                AddDefaultDatabaseVisitor visitor(context, database_name);
-                visitor.visitTableExpressions(*ast_create_query.columns_list->constraints);
-            }
-
             constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints, columns, context);
         }
     }
