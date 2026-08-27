@@ -1,0 +1,8 @@
+<clickhouse>
+    <openSSL>
+        <client>
+            <verificationMode>relaxed</verificationMode>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+        </client>
+    </openSSL>
+</clickhouse>
