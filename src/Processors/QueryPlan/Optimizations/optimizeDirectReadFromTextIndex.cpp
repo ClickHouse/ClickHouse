@@ -1,4 +1,5 @@
 #include <Access/ContextAccess.h>
+#include <Analyzer/Utils.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
@@ -341,7 +342,10 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
         case ActionsDAG::ActionType::COLUMN:
             if (!node.column || typeid_cast<const ColumnSet *>(&node.column->getDataColumn()))
                 return nullptr;
-            return make_intrusive<ASTLiteral>((*node.column)[0]);
+            return makeASTFunction(
+                "_CAST",
+                columnConstantToExactLiteralAST(node.column, 0, node.result_type),
+                make_intrusive<ASTLiteral>(node.result_type->getName()));
 
         case ActionsDAG::ActionType::ALIAS:
             return node.children.empty() ? nullptr : convertNodeToAST(*node.children[0], captured);
