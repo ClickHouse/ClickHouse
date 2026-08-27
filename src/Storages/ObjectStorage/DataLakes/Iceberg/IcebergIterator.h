@@ -52,7 +52,7 @@ private:
     void decodeDeleteManifests();
     void decodeDataManifests();
     Iceberg::ManifestIteratorPtr createManifestIterator(const ManifestFileCacheKey & manifest_list_entry) const;
-    std::vector<Iceberg::ProcessedManifestFileEntryPtr> decodeManifest(const ManifestFileCacheKey & manifest_list_entry) const;
+    std::vector<Iceberg::ProcessedManifestFileEntryPtr> decodeManifest(const ManifestFileCacheKey & manifest_list_entry, bool abort_when_queue_finished) const;
 
     LoggerPtr logger;
     ObjectStoragePtr object_storage;
