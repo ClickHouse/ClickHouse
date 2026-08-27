@@ -179,6 +179,21 @@ def test_four_letter_ruok_accept_invalid_certificate(started_cluster):
     assert data.strip() == "imok"
 
 
+def test_secure_scheme_in_host_triggers_tls(started_cluster):
+    """secure://host without --secure initialises the SSL context via any_host_secure and routes ruok over TLS."""
+    data = node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"clickhouse keeper-client"
+            f" --host secure://localhost --port {SECURE_PORT}"
+            f" -c {CONFIG_SSL_WITH_CA} -q \"ruok\"",
+        ],
+        privileged=True,
+    )
+    assert data.strip() == "imok"
+
+
 # Group D — Client certificate authentication (mTLS)
 #
 # Keeper is configured with verificationMode=strict so it demands a client cert.
