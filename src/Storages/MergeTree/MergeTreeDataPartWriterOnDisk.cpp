@@ -219,6 +219,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 cached_index_marks.emplace(on_disk_stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
         }
 
+        skip_index->serializePartMetadata(index_streams);
         skip_indices_aggregators.push_back(skip_index->createIndexAggregator());
         skip_index_accumulated_marks.push_back(0);
     }

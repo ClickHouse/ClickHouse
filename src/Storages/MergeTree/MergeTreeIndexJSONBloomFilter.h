@@ -9,6 +9,40 @@ namespace DB
 class RPNBuilderTreeNode;
 class JSONBloomPathMatcher;
 
+struct MergeTreeIndexJSONBloomFilterPartMetadata final : IMergeTreeIndexPartMetadata
+{
+    MergeTreeIndexJSONBloomFilterPartMetadata(
+        size_t bits_per_row_,
+        size_t hash_functions_,
+        std::shared_ptr<const JSONBloomPathMatcher> path_matcher_)
+        : bits_per_row(bits_per_row_)
+        , hash_functions(hash_functions_)
+        , path_matcher(std::move(path_matcher_))
+    {
+    }
+
+    size_t bits_per_row;
+    size_t hash_functions;
+    std::shared_ptr<const JSONBloomPathMatcher> path_matcher;
+};
+
+class MergeTreeIndexGranuleJSONBloomFilter final : public MergeTreeIndexGranuleBloomFilter
+{
+public:
+    MergeTreeIndexGranuleJSONBloomFilter(
+        size_t bits_per_row_,
+        size_t hash_functions_,
+        std::shared_ptr<const JSONBloomPathMatcher> path_matcher_);
+
+    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    size_t getHashFunctions() const { return hash_functions; }
+    const JSONBloomPathMatcher & getPathMatcher() const { return *path_matcher; }
+
+private:
+    size_t hash_functions;
+    std::shared_ptr<const JSONBloomPathMatcher> path_matcher;
+};
+
 class MergeTreeIndexAggregatorJSONBloomFilter final : public IMergeTreeIndexAggregator
 {
 public:
@@ -40,7 +74,6 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context,
         const Block & header_,
-        size_t hash_functions_,
         std::shared_ptr<const JSONBloomPathMatcher> path_matcher_);
 
     bool alwaysUnknownOrTrue() const override;
@@ -67,6 +100,7 @@ private:
         explicit RPNElement(Function function_ = FUNCTION_UNKNOWN) : function(function_) {}
 
         Function function;
+        String path;
         std::vector<UInt64> hashes;
         std::vector<std::vector<UInt64>> alternatives;
     };
@@ -74,7 +108,6 @@ private:
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
     const Block & header;
-    size_t hash_functions;
     std::shared_ptr<const JSONBloomPathMatcher> path_matcher;
     const FormatSettings comparison_format_settings;
     std::vector<RPNElement> rpn;
@@ -91,8 +124,17 @@ public:
         std::shared_ptr<const JSONBloomPathMatcher> path_matcher_);
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
+    MergeTreeIndexGranulePtr createIndexGranule(const MergeTreeIndexPartMetadataPtr & part_metadata) const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
+    MergeTreeIndexSubstreams getSubstreams() const override;
+    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
+    MergeTreeIndexSubstreams getAllSubstreamsInPart(
+        const MergeTreeDataPartChecksums & checksums,
+        const std::string & relative_path_prefix,
+        const IDataPartStorage * storage) const override;
+    void serializePartMetadata(MergeTreeIndexOutputStreams & streams) const override;
+    MergeTreeIndexPartMetadataPtr deserializePartMetadata(MergeTreeIndexInputStreams & streams) const override;
 
 private:
     size_t bits_per_row;

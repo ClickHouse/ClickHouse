@@ -36,9 +36,11 @@
 #include <Interpreters/misc.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <iterator>
 #include <list>
 #include <ranges>
 #include <xxhash.h>
@@ -53,6 +55,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
     extern const int INCORRECT_DATA;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int LOGICAL_ERROR;
@@ -69,19 +72,26 @@ public:
 
     bool shouldIndex(std::string_view path) const;
     bool shouldVisit(std::string_view path) const;
+    const std::vector<String> & getIncludePaths() const { return include_paths; }
+    const std::vector<String> & getIncludePathRegexps() const { return include_path_regexps; }
+    const std::vector<String> & getSkipPaths() const { return skip_paths; }
+    const std::vector<String> & getSkipPathRegexps() const { return skip_path_regexps; }
 
 private:
     using Regexps = std::list<re2::RE2>;
 
     bool hasIncludeFilter() const { return !include_paths.empty() || !include_regexps.empty(); }
     static std::vector<String> normalizePaths(std::vector<String> paths);
+    static std::vector<String> normalizeStrings(std::vector<String> values);
     static bool matchesAnyPathOrSubtree(std::string_view path, const std::vector<String> & paths);
     static bool matchesAnyAncestor(std::string_view path, const std::vector<String> & paths);
     static bool matchesAnyRegexp(std::string_view path, const Regexps & regexps);
     static void compileRegexps(const std::vector<String> & regexp_strings, Regexps & regexps);
 
     std::vector<String> include_paths;
+    std::vector<String> include_path_regexps;
     std::vector<String> skip_paths;
+    std::vector<String> skip_path_regexps;
     Regexps include_regexps;
     Regexps skip_regexps;
 };
@@ -92,10 +102,12 @@ JSONBloomPathMatcher::JSONBloomPathMatcher(
     std::vector<String> skip_paths_,
     const std::vector<String> & skip_path_regexps_)
     : include_paths(normalizePaths(std::move(include_paths_)))
+    , include_path_regexps(normalizeStrings(include_path_regexps_))
     , skip_paths(normalizePaths(std::move(skip_paths_)))
+    , skip_path_regexps(normalizeStrings(skip_path_regexps_))
 {
-    compileRegexps(include_path_regexps_, include_regexps);
-    compileRegexps(skip_path_regexps_, skip_regexps);
+    compileRegexps(include_path_regexps, include_regexps);
+    compileRegexps(skip_path_regexps, skip_regexps);
 }
 
 std::vector<String> JSONBloomPathMatcher::normalizePaths(std::vector<String> paths)
@@ -111,6 +123,13 @@ std::vector<String> JSONBloomPathMatcher::normalizePaths(std::vector<String> pat
             result.emplace_back(std::move(path));
     }
     return result;
+}
+
+std::vector<String> JSONBloomPathMatcher::normalizeStrings(std::vector<String> values)
+{
+    std::sort(values.begin(), values.end());
+    values.erase(std::unique(values.begin(), values.end()), values.end());
+    return values;
 }
 
 bool JSONBloomPathMatcher::matchesAnyPathOrSubtree(std::string_view path, const std::vector<String> & paths)
@@ -1288,6 +1307,23 @@ std::vector<UInt64> makeArrayElementProbes(
 
 }
 
+MergeTreeIndexGranuleJSONBloomFilter::MergeTreeIndexGranuleJSONBloomFilter(
+    size_t bits_per_row_,
+    size_t hash_functions_,
+    std::shared_ptr<const JSONBloomPathMatcher> path_matcher_)
+    : MergeTreeIndexGranuleBloomFilter(bits_per_row_, hash_functions_, 1)
+    , hash_functions(hash_functions_)
+    , path_matcher(std::move(path_matcher_))
+{
+}
+
+void MergeTreeIndexGranuleJSONBloomFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+{
+    if (version != 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown `jsonbf_v1` index version {}", version);
+    MergeTreeIndexGranuleBloomFilter::deserializeBinary(istr, 1);
+}
+
 MergeTreeIndexAggregatorJSONBloomFilter::MergeTreeIndexAggregatorJSONBloomFilter(
     size_t bits_per_row_,
     size_t hash_functions_,
@@ -1341,10 +1377,8 @@ MergeTreeIndexConditionJSONBloomFilter::MergeTreeIndexConditionJSONBloomFilter(
     const ActionsDAG::Node * predicate,
     ContextPtr context,
     const Block & header_,
-    size_t hash_functions_,
     std::shared_ptr<const JSONBloomPathMatcher> path_matcher_)
     : header(header_)
-    , hash_functions(hash_functions_)
     , path_matcher(std::move(path_matcher_))
     , comparison_format_settings(getJSONComparisonFormatSettings(context))
 {
@@ -1372,15 +1406,18 @@ bool MergeTreeIndexConditionJSONBloomFilter::mayBeTrueOnGranule(
     MergeTreeIndexGranulePtr granule,
     const UpdatePartialDisjunctionResultFn & update_partial_result_disjunction_fn) const
 {
-    const auto * bloom_granule = typeid_cast<const MergeTreeIndexGranuleBloomFilter *>(granule.get());
+    const auto * bloom_granule = typeid_cast<const MergeTreeIndexGranuleJSONBloomFilter *>(granule.get());
     if (!bloom_granule || bloom_granule->getFilters().size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`jsonbf_v1` received an incompatible granule");
 
     const auto & filter = bloom_granule->getFilters().front();
+    const auto & part_path_matcher = bloom_granule->getPathMatcher();
+    const size_t part_hash_functions = bloom_granule->getHashFunctions();
     std::vector<BoolMask> stack;
     size_t element_index = 0;
     for (const auto & element : rpn)
     {
+        bool element_is_unknown = element.function == RPNElement::FUNCTION_UNKNOWN;
         switch (element.function)
         {
             case RPNElement::FUNCTION_UNKNOWN:
@@ -1388,14 +1425,26 @@ bool MergeTreeIndexConditionJSONBloomFilter::mayBeTrueOnGranule(
                 break;
             case RPNElement::FUNCTION_ANY:
             {
+                if (!part_path_matcher.shouldIndex(element.path))
+                {
+                    element_is_unknown = true;
+                    stack.emplace_back(true, true);
+                    break;
+                }
                 const bool matches = std::ranges::any_of(element.hashes, [&](UInt64 hash)
                 {
-                    return hashMatchesFilter(filter, hash, hash_functions);
+                    return hashMatchesFilter(filter, hash, part_hash_functions);
                 });
                 stack.emplace_back(matches, true);
                 break;
             }
             case RPNElement::FUNCTION_ALL:
+                if (!part_path_matcher.shouldIndex(element.path))
+                {
+                    element_is_unknown = true;
+                    stack.emplace_back(true, true);
+                    break;
+                }
                 if (!element.alternatives.empty())
                 {
                     stack.emplace_back(
@@ -1403,7 +1452,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::mayBeTrueOnGranule(
                         {
                             return !alternative.empty() && std::ranges::any_of(alternative, [&](UInt64 hash)
                             {
-                                return hashMatchesFilter(filter, hash, hash_functions);
+                                return hashMatchesFilter(filter, hash, part_hash_functions);
                             });
                         }),
                         true);
@@ -1414,7 +1463,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::mayBeTrueOnGranule(
                         !element.hashes.empty()
                             && std::ranges::all_of(element.hashes, [&](UInt64 hash)
                             {
-                                return hashMatchesFilter(filter, hash, hash_functions);
+                                return hashMatchesFilter(filter, hash, part_hash_functions);
                             }),
                         true);
                 }
@@ -1449,7 +1498,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::mayBeTrueOnGranule(
             update_partial_result_disjunction_fn(
                 element_index,
                 stack.back().can_be_true,
-                element.function == RPNElement::FUNCTION_UNKNOWN);
+                element_is_unknown);
             ++element_index;
         }
     }
@@ -1494,6 +1543,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
         auto path = tryMatchJSONPath(key_node, header);
         if (!path || !path_matcher->shouldIndex(path->logical_path) || path->cast_type || isDynamic(removeJSONBloomWrappers(path->type)))
             return false;
+        out.path = path->logical_path;
 
         auto future_set = function.getArgumentAt(1).tryGetPreparedSet();
         if (!future_set)
@@ -1540,6 +1590,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
     auto path = tryMatchJSONPath(*key_node, header);
     if (!path || !path_matcher->shouldIndex(path->logical_path))
         return false;
+    out.path = path->logical_path;
 
     if (function_name == "equals")
     {
@@ -1636,7 +1687,19 @@ MergeTreeIndexJSONBloomFilter::MergeTreeIndexJSONBloomFilter(
 
 MergeTreeIndexGranulePtr MergeTreeIndexJSONBloomFilter::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, 1);
+    return std::make_shared<MergeTreeIndexGranuleJSONBloomFilter>(bits_per_row, hash_functions, path_matcher);
+}
+
+MergeTreeIndexGranulePtr MergeTreeIndexJSONBloomFilter::createIndexGranule(
+    const MergeTreeIndexPartMetadataPtr & part_metadata) const
+{
+    const auto metadata = std::dynamic_pointer_cast<const MergeTreeIndexJSONBloomFilterPartMetadata>(part_metadata);
+    if (!metadata)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing `jsonbf_v1` part metadata");
+    return std::make_shared<MergeTreeIndexGranuleJSONBloomFilter>(
+        metadata->bits_per_row,
+        metadata->hash_functions,
+        metadata->path_matcher);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexJSONBloomFilter::createIndexAggregator() const
@@ -1649,7 +1712,100 @@ MergeTreeIndexConditionPtr MergeTreeIndexJSONBloomFilter::createIndexCondition(
     const ActionsDAG::Node * predicate,
     ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionJSONBloomFilter>(predicate, context, index.sample_block, hash_functions, path_matcher);
+    return std::make_shared<MergeTreeIndexConditionJSONBloomFilter>(predicate, context, index.sample_block, path_matcher);
+}
+
+namespace
+{
+
+constexpr UInt64 JSON_BLOOM_PART_METADATA_VERSION = 1;
+
+void writeStrings(const std::vector<String> & values, WriteBuffer & out)
+{
+    writeVarUInt(values.size(), out);
+    for (const auto & value : values)
+        writeStringBinary(value, out);
+}
+
+std::vector<String> readStrings(ReadBuffer & in)
+{
+    UInt64 size = 0;
+    readVarUInt(size, in);
+    std::vector<String> values(size);
+    for (auto & value : values)
+        readStringBinary(value, in);
+    return values;
+}
+
+}
+
+MergeTreeIndexSubstreams MergeTreeIndexJSONBloomFilter::getSubstreams() const
+{
+    return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}};
+}
+
+MergeTreeIndexFormat MergeTreeIndexJSONBloomFilter::getPhysicalFormat(
+    const IMergeTreeDataPart & part,
+    const std::string & relative_path_prefix) const
+{
+    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx2", &part.getDataPartStorage()))
+        return {2, getSubstreams()};
+    return {0, {}};
+}
+
+MergeTreeIndexSubstreams MergeTreeIndexJSONBloomFilter::getAllSubstreamsInPart(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & relative_path_prefix,
+    const IDataPartStorage * storage) const
+{
+    MergeTreeIndexSubstreams result;
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
+        result.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx2"});
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
+        result.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx"});
+    return result;
+}
+
+void MergeTreeIndexJSONBloomFilter::serializePartMetadata(MergeTreeIndexOutputStreams & streams) const
+{
+    auto & out = streams.at(MergeTreeIndexSubstream::Type::Regular)->compressed_hashing;
+    writeVarUInt(JSON_BLOOM_PART_METADATA_VERSION, out);
+    writeVarUInt(bits_per_row, out);
+    writeVarUInt(hash_functions, out);
+    writeStrings(path_matcher->getIncludePaths(), out);
+    writeStrings(path_matcher->getIncludePathRegexps(), out);
+    writeStrings(path_matcher->getSkipPaths(), out);
+    writeStrings(path_matcher->getSkipPathRegexps(), out);
+}
+
+MergeTreeIndexPartMetadataPtr MergeTreeIndexJSONBloomFilter::deserializePartMetadata(
+    MergeTreeIndexInputStreams & streams) const
+{
+    auto & in = *streams.at(MergeTreeIndexSubstream::Type::Regular)->getDataBuffer();
+    UInt64 metadata_version = 0;
+    UInt64 part_bits_per_row = 0;
+    UInt64 part_hash_functions = 0;
+    readVarUInt(metadata_version, in);
+    readVarUInt(part_bits_per_row, in);
+    readVarUInt(part_hash_functions, in);
+    if (metadata_version != JSON_BLOOM_PART_METADATA_VERSION
+        || part_bits_per_row == 0
+        || part_hash_functions == 0
+        || part_hash_functions > std::size(BloomFilterHash::bf_hash_seed))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid `jsonbf_v1` part metadata");
+
+    auto include_paths = readStrings(in);
+    auto include_path_regexps = readStrings(in);
+    auto skip_paths = readStrings(in);
+    auto skip_path_regexps = readStrings(in);
+    return std::make_shared<MergeTreeIndexJSONBloomFilterPartMetadata>(
+        part_bits_per_row,
+        part_hash_functions,
+        std::make_shared<JSONBloomPathMatcher>(
+            std::move(include_paths),
+            include_path_regexps,
+            std::move(skip_paths),
+            skip_path_regexps));
 }
 
 namespace

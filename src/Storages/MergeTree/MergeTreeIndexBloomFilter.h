@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class MergeTreeIndexGranuleBloomFilter final : public IMergeTreeIndexGranule
+class MergeTreeIndexGranuleBloomFilter : public IMergeTreeIndexGranule
 {
 public:
     MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_);

@@ -126,6 +126,13 @@ struct IMergeTreeIndexGranule
 using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
 using MergeTreeIndexGranules = std::vector<MergeTreeIndexGranulePtr>;
 
+struct IMergeTreeIndexPartMetadata
+{
+    virtual ~IMergeTreeIndexPartMetadata() = default;
+};
+
+using MergeTreeIndexPartMetadataPtr = std::shared_ptr<const IMergeTreeIndexPartMetadata>;
+
 
 /// Stores many granules at once in a more optimal form, allowing bulk filtering.
 struct IMergeTreeIndexBulkGranules
@@ -310,6 +317,15 @@ struct IMergeTreeIndex
         const IDataPartStorage * storage) const;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
+
+    /// Optional metadata stored once at the beginning of an index's regular data stream.
+    /// Marks point after this prefix, so granule serialization is unchanged.
+    virtual void serializePartMetadata(MergeTreeIndexOutputStreams &) const {}
+    virtual MergeTreeIndexPartMetadataPtr deserializePartMetadata(MergeTreeIndexInputStreams &) const { return {}; }
+    virtual MergeTreeIndexGranulePtr createIndexGranule(const MergeTreeIndexPartMetadataPtr &) const
+    {
+        return createIndexGranule();
+    }
 
     /// A more optimal filtering method
     virtual bool supportsBulkFiltering() const { return false; }
