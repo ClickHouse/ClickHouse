@@ -145,6 +145,9 @@ public:
         const auto & end_timestamp_column = *arguments[1].column;
         const auto & step_column = *arguments[2].column;
 
+        /// Only a UInt64 step can exceed the range of Int64 (the timestamp types are narrower).
+        bool step_is_uint64 = isUInt64(step_type);
+
         const IColumn * values_column = nullptr;
         bool values_are_nullable = false;
 
@@ -159,19 +162,19 @@ public:
 
         if (isDateTime64(result_timestamp_type))
         {
-            return doExecute<DateTime64, Decimal64>(start_timestamp_column, start_timestamp_multiplier,
-                                                    end_timestamp_column, end_timestamp_multiplier,
-                                                    step_column, step_multiplier,
-                                                    values_column, values_are_nullable,
-                                                    result_type, input_rows_count);
+            return doExecute<DateTime64>(start_timestamp_column, start_timestamp_multiplier,
+                                         end_timestamp_column, end_timestamp_multiplier,
+                                         step_column, step_multiplier, step_is_uint64,
+                                         values_column, values_are_nullable,
+                                         result_type, input_rows_count);
         }
         else if (isDateTime(result_timestamp_type) || isUInt32(result_timestamp_type))
         {
-            return doExecute<UInt32, Int32>(start_timestamp_column, start_timestamp_multiplier,
-                                            end_timestamp_column, end_timestamp_multiplier,
-                                            step_column, step_multiplier,
-                                            values_column, values_are_nullable,
-                                            result_type, input_rows_count);
+            return doExecute<UInt32>(start_timestamp_column, start_timestamp_multiplier,
+                                     end_timestamp_column, end_timestamp_multiplier,
+                                     step_column, step_multiplier, step_is_uint64,
+                                     values_column, values_are_nullable,
+                                     result_type, input_rows_count);
         }
         else
         {
@@ -181,10 +184,10 @@ public:
         }
     }
 
-    template <typename TimestampType, typename IntervalType>
+    template <typename TimestampType>
     static ColumnPtr doExecute(const IColumn & start_timestamp_column, Int64 start_timestamp_multiplier,
                                const IColumn & end_timestamp_column, Int64 end_timestamp_multiplier,
-                               const IColumn & step_column, Int64 step_multiplier,
+                               const IColumn & step_column, Int64 step_multiplier, bool step_is_uint64,
                                const IColumn * values_column, bool values_are_nullable,
                                const DataTypePtr & result_type,
                                size_t num_rows)
@@ -201,11 +204,11 @@ public:
                 auto full_column = values_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
                 if (full_column.get() != values_column)
                 {
-                    return doExecute<TimestampType, IntervalType>(start_timestamp_column, start_timestamp_multiplier,
-                                                                end_timestamp_column, end_timestamp_multiplier,
-                                                                step_column, step_multiplier,
-                                                                full_column.get(), values_are_nullable,
-                                                                result_type, num_rows);
+                    return doExecute<TimestampType>(start_timestamp_column, start_timestamp_multiplier,
+                                                    end_timestamp_column, end_timestamp_multiplier,
+                                                    step_column, step_multiplier, step_is_uint64,
+                                                    full_column.get(), values_are_nullable,
+                                                    result_type, num_rows);
                 }
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                                 "Illegal column {} of argument #{} of function {}, it must be {}",
@@ -248,30 +251,52 @@ public:
 
         for (size_t i = 0; i != num_rows; ++i)
         {
-            Int64 start_timestamp_raw = 0;
-            if (common::mulOverflow(start_timestamp_column.get64(i), start_timestamp_multiplier, start_timestamp_raw))
+            /// Timestamps are calculated in Int64: they can be negative (before 1970).
+            Int64 start_timestamp = 0;
+            if (common::mulOverflow(start_timestamp_column.getInt(i), start_timestamp_multiplier, start_timestamp))
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
-            auto start_timestamp = static_cast<TimestampType>(start_timestamp_raw);
 
-            Int64 end_timestamp_raw = 0;
-            if (common::mulOverflow(end_timestamp_column.get64(i), end_timestamp_multiplier, end_timestamp_raw))
+            Int64 end_timestamp = 0;
+            if (common::mulOverflow(end_timestamp_column.getInt(i), end_timestamp_multiplier, end_timestamp))
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
-            auto end_timestamp = static_cast<TimestampType>(end_timestamp_raw);
 
-            Int64 step_raw = 0;
-            if (common::mulOverflow(step_column.getInt(i), step_multiplier, step_raw))
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
-            auto step = static_cast<IntervalType>(step_raw);
+            /// The step is calculated in UInt64: a UInt64 step can be greater than the maximum of Int64.
+            /// A negative step is replaced with zero here and rejected below like a zero step.
+            UInt64 step = 0;
+            if (step_is_uint64)
+            {
+                step = step_column.getUInt(i);
+            }
+            else
+            {
+                Int64 step_value = step_column.getInt(i);
+                step = (step_value > 0) ? static_cast<UInt64>(step_value) : 0;
+            }
+
+            /// A positive step which overflows UInt64 after rescaling to the result scale is greater
+            /// than any possible duration (the duration always fits in UInt64), so in that case
+            /// the grid consists of the start timestamp only.
+            bool step_is_greater_than_any_duration =
+                common::mulOverflow(step, static_cast<UInt64>(step_multiplier), step);
 
             if (end_timestamp < start_timestamp)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "End timestamp is less than start timestamp");
 
             size_t num_steps = 1;
-            if (start_timestamp != end_timestamp)
+            if (start_timestamp != end_timestamp && !step_is_greater_than_any_duration)
             {
-                if (step <= static_cast<IntervalType>(0))
+                if (step == 0)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Step should be greater than zero");
-                num_steps = (end_timestamp - start_timestamp) / step + 1;
+
+                /// The duration can be greater than the maximum of Int64, but it always fits in UInt64
+                /// because `end_timestamp >= start_timestamp`.
+                UInt64 duration = static_cast<UInt64>(end_timestamp) - static_cast<UInt64>(start_timestamp);
+
+                UInt64 num_points = 0;
+                if (common::addOverflow(duration / step, static_cast<UInt64>(1), num_points))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
+
+                num_steps = static_cast<size_t>(num_points);
             }
 
             size_t values_base_offset = 0;
@@ -292,7 +317,9 @@ public:
                     if (null_map && (*null_map)[offset])
                         continue;
                 }
-                TimestampType timestamp = static_cast<TimestampType>(start_timestamp + j * step);
+                /// `j * step` can be greater than the maximum of Int64 when the duration is,
+                /// but the sum is between `start_timestamp` and `end_timestamp`, so it fits in Int64.
+                TimestampType timestamp = static_cast<TimestampType>(static_cast<Int64>(static_cast<UInt64>(start_timestamp) + j * step));
                 res_timestamps->insert(timestamp);
                 if constexpr (with_values)
                     res_values->insertFrom(*values, offset);
@@ -330,9 +357,9 @@ Function `timeSeriesRange()` is similar to function [range](/reference/functions
 SELECT timeSeriesRange('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:00'::DateTime64(3), 30)
         )",
         R"(
-┌────────────────────────────────────result─────────────────────────────────────────┐
-│ ['2025-06-01 00:00:00.000', '2025-06-01 00:00:30.000', '2025-06-01 00:01:00.000'] │
-└───────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesRange(CAST('2025-06-01 00:00:00', 'DateTime64(3)'), CAST('2025-06-01 00:01:00', 'DateTime64(3)'), 30)─┐
+│ ['2025-06-01 00:00:00.000','2025-06-01 00:00:30.000','2025-06-01 00:01:00.000']                                 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -370,7 +397,7 @@ For example, for `[value1, NULL, x2]` the function returns `[(start_timestamp, x
 SELECT timeSeriesFromGrid('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:30.000'::DateTime64(3), 30, [10, 20, NULL, 30]) AS result;
         )",
         R"(
-┌─────────────────────────────────────────────result─────────────────────────────────────────────┐
+┌─result─────────────────────────────────────────────────────────────────────────────────────────┐
 │ [('2025-06-01 00:00:00.000',10),('2025-06-01 00:00:30.000',20),('2025-06-01 00:01:30.000',30)] │
 └────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"

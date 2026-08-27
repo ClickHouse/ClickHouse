@@ -290,7 +290,7 @@ ALTER TABLE uk.uk_price_paid_with_projections
 SETTINGS mutations_sync = 1
 ```
 
-[`mutations_sync`](/ko/reference/settings/session-settings#mutations_sync) 설정은
+[`mutations_sync`](/ko/reference/settings/session-settings/mutations#mutations_sync) 설정은
 동기식 실행을 강제하는 데 사용됩니다.
 
 PROJECTION `prj_gby_county`를 생성하고 데이터를 채웁니다. 이 PROJECTION은
@@ -433,10 +433,10 @@ INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
 ```
 
 <div id="build-projection">
-  #### Projection 만들기
+  #### PROJECTION 만들기
 </div>
 
-`toYear(date)`, `district`, `town`을 기준으로 집계 Projection을 생성하겠습니다:
+`toYear(date)`, `district`, `town`을 기준으로 집계 PROJECTION을 생성하겠습니다:
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
@@ -464,7 +464,7 @@ ALTER TABLE uk.uk_price_paid_with_projections_v2
 SETTINGS mutations_sync = 1
 ```
 
-다음 쿼리는 프로젝션 사용 여부에 따른 성능 차이를 보여줍니다. 프로젝션 사용을 비활성화하려면 기본적으로 활성화된 설정 [`optimize_use_projections`](/ko/reference/settings/session-settings#optimize_use_projections)을 비활성화하십시오.
+다음 쿼리는 프로젝션 사용 여부에 따른 성능 차이를 보여줍니다. 프로젝션 사용을 비활성화하려면 기본적으로 활성화된 설정 [`optimize_use_projections`](/ko/reference/settings/session-settings/optimize-use#optimize_use_projections)을 비활성화하십시오.
 
 <div id="average-price-projections">
   #### 쿼리 1. 연도별 평균 가격

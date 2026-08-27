@@ -156,8 +156,9 @@ def test_only_a_coverage_build_skips_the_render(
 def _derive_flags(parameter):
     """Run `main`'s real option-parsing loop on a job parameter string.
 
-    The loop is located structurally rather than by line number, and the two
-    option dictionaries come from the module so they cannot drift from a copy.
+    The loop is located structurally rather than by line number, and the
+    module-level option constants it reads are taken from the module itself, so
+    they cannot drift from a copy.
     """
     job_tree = ast.parse(Path(job_module.__file__).read_text())
     main = next(
@@ -189,6 +190,7 @@ def _derive_flags(parameter):
     ns = {
         "OPTIONS_TO_INSTALL_ARGUMENTS": job_module.OPTIONS_TO_INSTALL_ARGUMENTS,
         "OPTIONS_TO_TEST_RUNNER_ARGUMENTS": job_module.OPTIONS_TO_TEST_RUNNER_ARGUMENTS,
+        "SELECTED_TESTS_OPTION": job_module.SELECTED_TESTS_OPTION,
         "config_installs_args": "",
         "runner_options": "",
         "batch_num": 0,

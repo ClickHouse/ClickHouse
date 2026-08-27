@@ -1,0 +1,45 @@
+---
+description: 'PuffinMetadataフォーマットのリファレンス'
+keywords: ['PuffinMetadata']
+slug: /interfaces/formats/PuffinMetadata
+title: 'PuffinMetadata'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) ファイルのフッターメタデータを読み取るための特別な入力フォーマットです。
+フッターの `BlobMetadata` リスト内のブロブエントリごとに1行を出力します。
+
+サポートされるブロブタイプは `deletion-vector-v1` のみです。ほかのブロブタイプ (例: `apache-datasketches-theta-v1`) を含むファイルは拒否されます。
+
+固定の出力カラム:
+
+* `blob_type` (`String`) - ブロブタイプ (例: `deletion-vector-v1`) 
+* `snapshot_id` (`Int64`) - ブロブのスナップショットID
+* `sequence_number` (`Int64`) - ブロブのシーケンス番号
+* `fields` (`Array(Int32)`) - ブロブが適用されるフィールドIDのリスト
+* `offset` (`Int64`) - ファイル内のブロブペイロードのオフセット
+* `length` (`Int64`) - ブロブペイロードの長さ (バイト単位) 
+* `compression_codec` (`String`) - 存在する場合、ブロブペイロードの圧縮コーデック
+* `properties` (`Map(String, String)`) - ブロブ固有のプロパティ
+
+フッター内の任意の最上位 `FileMetadata.properties` (例: `created-by`) は、存在する場合は型チェックされますが、カラムとしては返されません。キーが存在する場合、文字列値を持つJSONオブジェクトである必要があります (null は拒否されます) 。
+
+LZ4 圧縮および非圧縮のPuffinフッターがサポートされています。フッターペイロードのサイズ (および宣言されたLZ4コンテンツサイズ) は、該当する場合は圧縮率と絶対上限によって制限されます。大きすぎるフッターは、割り当て前に拒否されます。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+フッターのブロブを確認します。
+
+```sql
+SELECT blob_type, snapshot_id, sequence_number, offset, length, compression_codec,
+       mapKeys(properties), mapValues(properties)
+FROM file(deletes.puffin, PuffinMetadata);
+```
+
+`deletion-vector-v1` ブロブのペイロードを読み取るには、`Puffin` フォーマットと組み合わせます。
