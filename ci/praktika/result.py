@@ -1211,6 +1211,7 @@ class ResultInfo:
     OPEN_ISSUES_CHECK_ERROR = "Failed to check open issues"
 
     NOT_FINALIZED = "Job failed to produce Result due to a script error or CI runner issue"
+    JOB_DID_NOT_FINISH = "Job did not finish, GitHub reported"
 
     S3_ERROR = "S3 call failure"
 

@@ -1090,11 +1090,13 @@ def _finish_workflow(workflow, job_name):
             normalized_name = Utils.normalize_string(result.name)
             gh_job = workflow_job_data.get(normalized_name, {})
             gh_job_result = (gh_job.get("result") or "").lower()
-            if gh_job_result in ("cancelled", "canceled"):
+            # `abandoned` is GitHub's undocumented verdict for a job it queued and never assigned a runner.
+            if gh_job_result in ("cancelled", "canceled", "abandoned"):
                 print(
                     f"NOTE: not finished job [{result.name}] in the workflow but GitHub status is [{gh_job_result}] - set status to dropped"
                 )
                 result.status = Result.Status.DROPPED
+                result.add_note(f"{ResultInfo.JOB_DID_NOT_FINISH} [{gh_job_result}]")
                 workflow_result.dump()
                 workflow_result.ext["is_cancelled"] = True
                 update_final_report = True
@@ -1110,7 +1112,8 @@ def _finish_workflow(workflow, job_name):
                 continue
             else:
                 print(
-                    f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
+                    f"ERROR: not finished job [{result.name}] in the workflow, "
+                    f"GitHub verdict [{gh_job_result or 'none'}] - set status to error"
                 )
                 result.status = Result.Status.ERROR
                 result.add_error(ResultInfo.NOT_FINALIZED)
