@@ -5,6 +5,7 @@ in
 Name: values_idx
 Name: paths_idx
 is not null
+1
 [1]
 mixed
 Name: values_idx

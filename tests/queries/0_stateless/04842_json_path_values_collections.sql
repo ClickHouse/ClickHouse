@@ -155,10 +155,9 @@ FROM
 )
 WHERE explain LIKE '%mode: Any%';
 
-SELECT toTypeName(data.lc IN ('alpha', 'gamma')), arraySort(groupArray(id))
+SELECT any(toTypeName(data.lc IN ('alpha', 'gamma'))), arraySort(groupArray(id))
 FROM json_index_tokens_in
 WHERE data.lc IN ('alpha', 'gamma')
-GROUP BY 1
 SETTINGS force_data_skipping_indices = 'json_tokens';
 
 DROP TABLE json_index_tokens_in;

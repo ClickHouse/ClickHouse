@@ -123,6 +123,7 @@ CREATE TABLE json_stream_vertical
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 1,
     min_bytes_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0,
     enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1;
