@@ -236,8 +236,6 @@ def main():
     if args.release_type == "patch" and not args.skip_docker:
 
         def docker_login():
-            if args.dry_run:
-                return
             Shell.check(
                 f"docker login --username {shlex.quote(_DOCKERHUB_USERNAME)}"
                 f" --password-stdin",
