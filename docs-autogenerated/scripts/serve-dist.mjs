@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const projectDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const distributionDirectory = path.join(projectDirectory, 'dist');
+const snapshotsDirectory = path.join(projectDirectory, '.snapshots');
 
 function option(name, fallback) {
   const index = process.argv.indexOf(name);
@@ -34,16 +35,48 @@ const contentTypes = new Map([
   ['.woff2', 'font/woff2'],
 ]);
 
-function requestCandidates(requestUrl) {
+async function snapshotRoots() {
+  let entries;
+  try {
+    entries = await readdir(snapshotsDirectory, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === 'ENOENT') return [];
+    throw error;
+  }
+  return entries
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+    .map((entry) => ({
+      version: entry.name,
+      directory: path.join(snapshotsDirectory, entry.name),
+    }));
+}
+
+function candidatesWithin(root, relativePath) {
+  if (!relativePath) return [path.join(root, 'index.html')];
+  const resolved = path.resolve(root, relativePath);
+  if (!resolved.startsWith(`${root}${path.sep}`)) return [];
+  if (path.extname(relativePath)) return [resolved];
+  return [path.join(resolved, 'index.html'), resolved];
+}
+
+async function requestCandidates(requestUrl) {
   const pathname = decodeURIComponent(new URL(requestUrl, `http://${host}:${port}`).pathname);
   const relativePath = pathname.replace(/^\/+/, '');
   if (relativePath.split('/').includes('..')) return [];
-  if (!relativePath) return [path.join(distributionDirectory, 'index.html')];
 
-  const resolved = path.resolve(distributionDirectory, relativePath);
-  if (!resolved.startsWith(`${distributionDirectory}${path.sep}`)) return [];
-  if (path.extname(relativePath)) return [resolved];
-  return [path.join(resolved, 'index.html'), resolved];
+  const snapshots = await snapshotRoots();
+  const requestedVersion = relativePath.match(
+    /^docs\/reference\/versions\/([^/]+)(?:\/|$)/,
+  )?.[1];
+  const orderedRoots = requestedVersion
+    ? [
+      ...snapshots
+        .filter(({ version }) => version === requestedVersion)
+        .map(({ directory }) => directory),
+      distributionDirectory,
+    ]
+    : [distributionDirectory, ...snapshots.map(({ directory }) => directory)];
+  return orderedRoots.flatMap((root) => candidatesWithin(root, relativePath));
 }
 
 async function firstReadableFile(candidates) {
@@ -65,7 +98,7 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    const file = await firstReadableFile(requestCandidates(request.url ?? '/'));
+    const file = await firstReadableFile(await requestCandidates(request.url ?? '/'));
     if (!file) {
       response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       response.end('Not found\n');
@@ -84,5 +117,5 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`Serving ${distributionDirectory} at http://${host}:${port}`);
+  console.log(`Serving latest plus immutable version snapshots at http://${host}:${port}`);
 });

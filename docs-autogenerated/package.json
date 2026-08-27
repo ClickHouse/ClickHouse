@@ -4,14 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "export": "node scripts/export-reference-docs.mjs && node scripts/create-test-reference-bundle.mjs",
+    "export": "node scripts/export-reference-docs.mjs",
     "prepare:content": "node scripts/prepare-content.mjs --artifact .artifacts/latest --artifacts .artifacts",
     "prepare:site": "npm run export && npm run prepare:content",
     "test": "node scripts/smoke-test-reference-pipeline.mjs",
     "predev": "npm run prepare:site",
     "dev": "astro dev",
     "prebuild": "npm run export",
-    "build": "node scripts/build-reference-site.mjs",
+    "build": "node scripts/build-reference-site.mjs --artifact .artifacts/latest --artifacts .artifacts --output dist",
+    "build:bundle": "node scripts/build-reference-site.mjs",
+    "snapshot:version": "node scripts/snapshot-reference-release.mjs",
+    "snapshot:test": "node scripts/snapshot-reference-release.mjs 26.8 --test-fixture",
     "preview": "node scripts/serve-dist.mjs"
   },
   "dependencies": {

@@ -26,6 +26,21 @@ function run(script, argumentsList) {
   });
 }
 
+function requireFailure(script, argumentsList, expectedMessage) {
+  try {
+    execFileSync(process.execPath, [path.join(scriptDirectory, script), ...argumentsList], {
+      cwd: projectDirectory,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+  } catch (error) {
+    const output = `${error?.stdout ?? ''}${error?.stderr ?? ''}`;
+    requireValue(output.includes(expectedMessage), `Unexpected failure from ${script}: ${output}`);
+    return;
+  }
+  throw new Error(`${script} unexpectedly succeeded`);
+}
+
 function requireValue(condition, message) {
   if (!condition) throw new Error(message);
 }
@@ -172,11 +187,18 @@ async function main() {
 
   try {
     run('export-reference-docs.mjs', ['--output', artifactDirectory]);
-    run('create-test-reference-bundle.mjs', [
+    const snapshotArguments = [
+      '26.8',
       '--source', artifactDirectory,
       '--output', testArtifactDirectory,
-      '--channel', '26.8',
-    ]);
+      '--test-fixture',
+    ];
+    run('snapshot-reference-bundle.mjs', snapshotArguments);
+    requireFailure(
+      'snapshot-reference-bundle.mjs',
+      snapshotArguments,
+      'Reference bundle 26.8 already exists and is immutable',
+    );
     run('prepare-content.mjs', [
       '--artifacts', artifactsDirectory,
       '--artifact', artifactDirectory,
@@ -218,6 +240,7 @@ async function main() {
       path.join(generatedDirectory, 'mintlify/docs/reference/statements/select.mdx'),
       'utf8',
     );
+    const latestManifest = await readJson(path.join(artifactDirectory, 'manifest.json'));
     const testManifest = await readJson(path.join(testArtifactDirectory, 'manifest.json'));
     const versionedVersions = await readJson(
       path.join(versionedGeneratedDirectory, 'data/versions.json'),
@@ -267,8 +290,8 @@ async function main() {
     requireValue(
       testManifest.channel === '26.8'
         && testManifest.testFixture === true
-        && testManifest.bundleHash
-          === (await readJson(path.join(artifactDirectory, 'manifest.json'))).bundleHash,
+        && testManifest.snapshotOf === latestManifest.sourceRevision
+        && testManifest.bundleHash === latestManifest.bundleHash,
       'The second bundle is not an explicit duplicate test fixture',
     );
     requireValue(

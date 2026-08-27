@@ -1,6 +1,7 @@
 .artifacts/
 .astro/
 .mintlify/
+.snapshots/
 dist/
 node_modules/
 src/generated/
