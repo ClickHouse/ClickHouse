@@ -66,6 +66,11 @@ INSERT INTO t_bool_narrowing SELECT number + 300 FROM numbers(8);
 INSERT INTO t_bool_narrowing SELECT 0 FROM numbers(4);
 
 SELECT count() FROM t_bool_narrowing WHERE f = true;
+
+-- Automatic `basic` statistics are on by default and would prune the all-zero part before the index
+-- does, so the assertion below would report the statistics pruner's line instead of `i_f`'s.
+SET use_statistics_for_part_pruning = 0;
+
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT sum(w) FROM t_bool_narrowing WHERE f = true) WHERE explain ILIKE '%Granules: 4/5%';
 
 CREATE TABLE t_bool_same_size (u UInt8, f Bool ALIAS u, INDEX i_f (u) TYPE minmax GRANULARITY 1)
