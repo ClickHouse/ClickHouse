@@ -2735,6 +2735,9 @@ Try using an index if there is a subquery or a table expression on the right sid
     DECLARE(UInt64, use_index_for_in_with_subqueries_max_values, 0, R"(
 The maximum size of the set in the right-hand side of the IN operator to use table index for filtering. It allows to avoid performance degradation and higher memory usage due to the preparation of additional data structures for large queries. Zero means no limit.
 )", 0) \
+    DECLARE(UInt64, statistics_max_set_size_for_exact_selectivity_estimation, 10000, R"(
+The maximum size of the set in the right-hand side of the `IN` operator for which the selectivity estimator derives the exact ranges covered by the set. Deriving them costs a `Field` per element, a sort, and one statistics probe per element, which for a large set dominates query planning. Above this limit the estimator instead derives the selectivity from the size of the set and its bounding range, which is a single linear pass over the set without the sort or the per-element statistics probes. Zero means no limit.
+)", 0) \
     DECLARE(Bool, analyze_index_with_space_filling_curves, true, R"(
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
 )", 0) \
