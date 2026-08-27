@@ -20,6 +20,7 @@
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/AcceptCertificateHandler.h>
 #include <Poco/Net/RejectCertificateHandler.h>
+#include <Poco/Net/PrivateKeyPassphraseHandler.h>
 #include <Poco/Net/Utility.h>
 #endif
 
@@ -92,6 +93,39 @@ String stripSecureScheme(const String & host)
 {
     return isSecureHost(host) ? host.substr(SECURE_SCHEME.size()) : host;
 }
+
+#if USE_SSL
+/// Supplies the private-key passphrase from the
+/// <openSSL><client><privateKeyPassphraseHandler><options><password> config key.
+///
+/// `Poco::Net::Context` fires `SSL_CTX_use_PrivateKey_file` synchronously inside
+/// its constructor. The `PrivateKeyPassphraseHandler` base-class constructor
+/// subscribes to `SSLManager::PrivateKeyPassphraseRequired`, so constructing
+/// this object before `Poco::Net::Context` ensures the event has a live
+/// subscriber when the encrypted key is loaded. For unencrypted keys the
+/// callback is never fired and this class has no effect.
+/// Only the password-in-config layout is supported
+/// (`privateKeyPassphraseHandler.name = KeyFileHandler` with
+/// `privateKeyPassphraseHandler.options.password` set); interactive handlers
+/// such as `KeyConsoleHandler` are not wired and will receive an empty passphrase.
+class ConfigPassphraseHandler final : public Poco::Net::PrivateKeyPassphraseHandler
+{
+public:
+    explicit ConfigPassphraseHandler(const Poco::Util::AbstractConfiguration & config_)
+        : Poco::Net::PrivateKeyPassphraseHandler(/*server=*/false)
+        , passphrase(config_.getString(
+              "openSSL.client.privateKeyPassphraseHandler.options.password", ""))
+    {}
+
+    void onPrivateKeyRequested(const void *, std::string & key) override
+    {
+        key = passphrase;
+    }
+
+private:
+    String passphrase;
+};
+#endif
 
 }
 
@@ -704,55 +738,69 @@ void KeeperClient::connectToKeeper()
     }
 
 #if USE_SSL
-    /// Also treat hosts that already carry the `secure://` scheme as requesting a secure
-    /// connection, e.g. when the user passes `--host secure://node1` directly without
-    /// the separate `--secure` flag. ZooKeeperImpl::connect uses the same scheme-prefix
-    /// convention as the canonical indicator for TLS.
-    bool any_host_secure = std::any_of(
-        new_zk_args.hosts.begin(), new_zk_args.hosts.end(),
-        [](const String & h) { return isSecureHost(h); });
-
-    /// Initialize the SSL client context when a secure connection is requested, or when TLS
-    /// options are explicitly provided. Without this, a SecureStreamSocket falls back to the
-    /// default (empty) context and verification against a self-signed CA fails.
-    if (secure || any_host_secure || config().has("tls-cert-file") || config().has("tls-key-file")
-        || config().has("tls-ca-file") || config().has("accept-invalid-certificate"))
+    if (!ssl_context_initialized)
     {
-        const auto & loaded_config = *clickhouse_config.configuration;
+        /// Also treat hosts that already carry the `secure://` scheme as requesting a secure
+        /// connection, e.g. when the user passes `--host secure://node1` directly without
+        /// the separate `--secure` flag. ZooKeeperImpl::connect uses the same scheme-prefix
+        /// convention as the canonical indicator for TLS.
+        bool any_host_secure = std::any_of(
+            new_zk_args.hosts.begin(), new_zk_args.hosts.end(),
+            [](const String & h) { return isSecureHost(h); });
 
-        /// Explicit --tls-* command line options take precedence; otherwise fall back to the
-        /// <openSSL><client> section of the config file (the same keys clickhouse-server uses).
-        String tls_key_file = config().getString("tls-key-file", loaded_config.getString("openSSL.client.privateKeyFile", ""));
-        String tls_cert_file = config().getString("tls-cert-file", loaded_config.getString("openSSL.client.certificateFile", tls_key_file));
-        String tls_ca_file = config().getString("tls-ca-file", loaded_config.getString("openSSL.client.caConfig", ""));
+        /// Initialize the SSL client context when a secure connection is requested, or when TLS
+        /// options are explicitly provided. Without this, a SecureStreamSocket falls back to the
+        /// default (empty) context and verification against a self-signed CA fails.
+        if (secure || any_host_secure || config().has("tls-cert-file") || config().has("tls-key-file")
+            || config().has("tls-ca-file") || config().has("accept-invalid-certificate"))
+        {
+            const auto & loaded_config = *clickhouse_config.configuration;
 
-        Poco::Net::Context::VerificationMode verification_mode = Poco::Net::Context::VERIFY_RELAXED;
-        if (loaded_config.has("openSSL.client.verificationMode"))
-            verification_mode = Poco::Net::Utility::convertVerificationMode(loaded_config.getString("openSSL.client.verificationMode"));
+            /// Explicit --tls-* command line options take precedence; otherwise fall back to the
+            /// <openSSL><client> section of the config file (the same keys clickhouse-server uses).
+            String tls_key_file = config().getString("tls-key-file", loaded_config.getString("openSSL.client.privateKeyFile", ""));
+            String tls_cert_file = config().getString("tls-cert-file", loaded_config.getString("openSSL.client.certificateFile", tls_key_file));
+            String tls_ca_file = config().getString("tls-ca-file", loaded_config.getString("openSSL.client.caConfig", ""));
 
-        if (config().has("accept-invalid-certificate"))
-            verification_mode = Poco::Net::Context::VERIFY_NONE;
+            Poco::Net::Context::VerificationMode verification_mode = Poco::Net::Context::VERIFY_RELAXED;
+            if (loaded_config.has("openSSL.client.verificationMode"))
+                verification_mode = Poco::Net::Utility::convertVerificationMode(loaded_config.getString("openSSL.client.verificationMode"));
 
-        bool load_default_ca_file = loaded_config.getBool("openSSL.client.loadDefaultCAFile", true);
+            if (config().has("accept-invalid-certificate"))
+                verification_mode = Poco::Net::Context::VERIFY_NONE;
 
-        auto context = Poco::Net::Context::Ptr(new Poco::Net::Context(
-            Poco::Net::Context::TLSV1_2_CLIENT_USE,
-            tls_key_file,
-            tls_cert_file,
-            tls_ca_file,
-            verification_mode,
-            9,
-            load_default_ca_file,
-            "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH"
-        ));
+            bool load_default_ca_file = loaded_config.getBool("openSSL.client.loadDefaultCAFile", true);
 
-        Poco::Net::SSLManager::InvalidCertificateHandlerPtr certificate_handler;
-        if (verification_mode == Poco::Net::Context::VERIFY_NONE)
-            certificate_handler = new Poco::Net::AcceptCertificateHandler(false);
-        else
-            certificate_handler = new Poco::Net::RejectCertificateHandler(false);
+            /// Construct the passphrase handler BEFORE `Poco::Net::Context`.
+            /// Its base-class constructor subscribes to
+            /// `SSLManager::PrivateKeyPassphraseRequired`. If `tls_key_file` is
+            /// passphrase-protected, OpenSSL fires that event synchronously inside
+            /// the `Context` constructor (`SSL_CTX_use_PrivateKey_file`). Without a
+            /// subscribed handler at that point the passphrase arrives as `""` and
+            /// key loading fails with `"bad decrypt"`.
+            Poco::Net::SSLManager::PrivateKeyPassphraseHandlerPtr passphrase_handler(
+                new ConfigPassphraseHandler(loaded_config));
 
-        Poco::Net::SSLManager::instance().initializeClient(nullptr, certificate_handler, context);
+            auto context = Poco::Net::Context::Ptr(new Poco::Net::Context(
+                Poco::Net::Context::TLSV1_2_CLIENT_USE,
+                tls_key_file,
+                tls_cert_file,
+                tls_ca_file,
+                verification_mode,
+                9,
+                load_default_ca_file,
+                "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH"
+            ));
+
+            Poco::Net::SSLManager::InvalidCertificateHandlerPtr certificate_handler;
+            if (verification_mode == Poco::Net::Context::VERIFY_NONE)
+                certificate_handler = new Poco::Net::AcceptCertificateHandler(false);
+            else
+                certificate_handler = new Poco::Net::RejectCertificateHandler(false);
+
+            Poco::Net::SSLManager::instance().initializeClient(passphrase_handler, certificate_handler, context);
+            ssl_context_initialized = true;
+        }
     }
 #endif
 

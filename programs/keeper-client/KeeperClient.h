@@ -35,6 +35,8 @@ protected:
 
     zkutil::ZooKeeperArgs zk_args;
 
+    bool ssl_context_initialized = false;
+
     String history_file;
     UInt32 history_max_entries = 0; /// Maximum number of entries in the history file.
 
