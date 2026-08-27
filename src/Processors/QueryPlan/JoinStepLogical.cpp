@@ -745,10 +745,9 @@ struct JoinPlanningContext
 static bool canNarrowLeftKeyToStorageKey(const DataTypePtr & left_type, const DataTypePtr & right_type, const DataTypePtr & common_type)
 {
     /// Decline only when the LEFT key is the nullable one and the bare types already match: the storage-join
-    /// branch below leaves the storage key un-cast for that pair, so it has a working plan today and rewriting
-    /// it would change the plan of every such existing join (it regressed 03786_storage_join_type_conversion).
-    /// A nullable STORAGE key is the opposite case: that branch does not fire for it, the storage key still gets
-    /// a `_CAST` and is still refused, so narrowing the left key is what makes it work. The asymmetry is deliberate.
+    /// branch below leaves the storage key un-cast for that pair, so such a join already has a working plan and
+    /// must keep it. A nullable STORAGE key is the opposite case: that branch does not fire for it, the storage
+    /// key still gets a `_CAST` and is still refused, so narrowing the left key is what makes it work.
     if (right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
         return false;
 
@@ -821,10 +820,9 @@ static void predicateOperandsToCommonType(
 
     /// A `StorageJoin`'s hash table is keyed on the declared storage key type and cannot be rebuilt at query time,
     /// so widening the right key to the common type would produce a key expression the storage cannot look up
-    /// (INCOMPATIBLE_TYPE_OF_JOIN). When the storage key is narrower, carry the conversion on the left key instead
-    /// and leave the right key as the bare storage column. The conversion is `accurateCastOrNull`, so the left key
-    /// becomes `Nullable` even when the storage key is not: that NULL marks a left value outside the storage key
-    /// domain and never matches, and the join tolerates the difference up to `typesEqualUpToNullability`.
+    /// (INCOMPATIBLE_TYPE_OF_JOIN). The conversion is `accurateCastOrNull`, so the left key becomes `Nullable`
+    /// even when the storage key is not: that NULL marks a left value outside the storage key domain and never
+    /// matches, and the join tolerates the difference up to `typesEqualUpToNullability`.
     if (planning_context.is_frozen_storage_join && canNarrowLeftKeyToStorageKey(left_type, right_type, common_type))
     {
         auto target_type = removeNullable(right_type);
@@ -1812,11 +1810,13 @@ static QueryPlanNode buildPhysicalJoinImpl(
         /// common-type promotion). For a LEFT/FULL join these must be emitted as Nullable so an
         /// unmatched-left row fills NULL; the raw right key of a `JOIN ... ON` is not corrected here
         /// and must keep its storage type. See TableJoin::getRequiredRightKeys.
+        /// A key corrected by a plain cast to a non-Nullable type cannot carry the promotion's NULLs.
         NameSet using_promoted_right_keys;
         for (const auto * action : actions_after_join)
         {
             JoinActionRef action_ref(action, expression_actions);
-            if (action->type != ActionsDAG::ActionType::INPUT && action_ref.fromRight())
+            if (action->type != ActionsDAG::ActionType::INPUT && action_ref.fromRight()
+                && isNullableOrLowCardinalityNullable(action_ref.getType()))
                 using_promoted_right_keys.insert(action->result_name);
         }
         table_join->setUsingPromotedRightKeys(std::move(using_promoted_right_keys));
