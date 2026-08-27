@@ -3531,8 +3531,11 @@ void QueryFuzzer::callTableAsParameterizedView(ASTTableExpression & table)
     if (!table.database_and_table_name || table.table_function || fuzz_rand() % 100 != 0)
         return;
 
+    /// Only single-part names: a dotted name would need ASTFunction's is_compound_name to reach
+    /// database splitting in Context::executeTableFunction, and that flag does not survive the
+    /// formatter (it prints `db.tbl`(...) backquoted), so the compound form is not round-trippable.
     const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
-    if (!identifier || identifier->isParam())
+    if (!identifier || identifier->isParam() || identifier->compound())
         return;
     const String table_name = identifier->name();
     if (table_name.empty())

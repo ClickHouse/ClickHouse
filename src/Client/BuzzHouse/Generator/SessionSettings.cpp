@@ -2283,7 +2283,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     const auto readerExecutorSizeRange = [](RandomGenerator & rg, FuzzConfig &)
     {
         return std::to_string(
-            rg.thresholdGenerator<uint64_t>(0.2, 0.2, MIN_READER_EXECUTOR_SIZE, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024)));
+            rg.thresholdGenerator<uint64_t>(0.2, 0.2, DB::MIN_READER_EXECUTOR_SIZE, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024)));
     };
     for (const auto & entry : reader_executor_sizes)
     {
