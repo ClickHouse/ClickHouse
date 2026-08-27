@@ -1,6 +1,5 @@
 #pragma once
 
-#include <IO/ChainedBuffers.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <Common/VectorWithMemoryTracking.h>
@@ -8,25 +7,18 @@
 namespace DB
 {
 
-/// Maps FILE offsets (the executor's physical, header-inclusive space) to (object,
-/// offset-within-object). A "file" is the concatenation of its stored objects. Encryption is
-/// invisible here. The payload/header split (logical vs physical) is the executor's business, above
-/// this map.
+/// Maps logical file offsets to (object, offset-within-object).
+/// Used to abstract many storage objects behind a single logical file.
 class OffsetMap
 {
 public:
-    struct ObjectRange
-    {
-        StoredObject object;
-        size_t object_offset = 0;
-        size_t size = 0;
-    };
-
-    /// Objects are concatenated in their input order to form the file.
+    /// Objects are concatenated in their input order to form the logical file.
     void build(const StoredObjects & objects);
 
-    /// A single file range may span multiple objects.
-    VectorWithMemoryTracking<ObjectRange> map(ByteRange file_range) const;
+    /// Find the object containing `logical_offset`, or nullptr if it is at or past
+    /// `totalSize`. When given, `object_logical_start_offset` returns that object's start
+    /// offset in the logical file.
+    const StoredObject * findObjectAt(size_t logical_offset, size_t * object_logical_start_offset = nullptr) const;
 
     size_t totalSize() const { return total_size; }
 
@@ -36,8 +28,7 @@ private:
     struct Segment
     {
         StoredObject object;
-        size_t object_offset = 0;
-        size_t file_offset = 0;
+        size_t logical_offset = 0;
         size_t size = 0;
     };
 

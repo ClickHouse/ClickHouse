@@ -42,17 +42,6 @@ private:
     size_t num_buffered_rows = 0;
     size_t num_buffered_bytes = 0;
     size_t num_processed_rows = 0;
-
-    /// After a virtual row was delivered downstream, the merge may defer this source
-    /// (leave the port NotNeeded) until the merge reaches the key from the virtual row.
-    /// While that is the case, do not read ahead into the buffer, otherwise buffering
-    /// would defeat the deferral and every source would read speculatively regardless
-    /// of `virtual_row_prefetch_window`. Without this flag the invariant only holds by
-    /// an executor subtlety: the merge consumes the virtual row with `pull(true)`, which
-    /// skips `updateVersion`, so nothing re-schedules this transform and the final
-    /// `input.setNeeded()` of `prepare` is never reached. This flag makes the invariant
-    /// explicit instead of relying on the wake-up pattern of the downstream processor.
-    bool wait_for_demand_after_virtual_row = false;
 };
 
 }

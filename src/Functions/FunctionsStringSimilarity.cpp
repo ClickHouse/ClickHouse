@@ -176,7 +176,7 @@ struct NgramDistanceImpl
                         res &= ~(1u << (5 + 2 * CHAR_BIT));
                         [[fallthrough]];
                     case 2:
-                        res &= ~1u;
+                        res &= ~(1u);
                         res &= ~(1u << (5 + CHAR_BIT));
                         [[fallthrough]];
                     default:
@@ -649,7 +649,7 @@ The smaller the returned value, the more similar the strings are.
         "UTF-8 3-gram distance",
         "SELECT ngramDistanceUTF8('abcde','cde')",
         R"(
-┌─ngramDistanceUTF8('abcde', 'cde')─┐
+┌─ngramDistanceUTF8('abcde','cde')─┐
 │                               0.5 │
 └───────────────────────────────────┘
         )"
@@ -702,7 +702,7 @@ Checks if the 4-gram distance between two strings is less than or equal to a giv
         "Case-insensitive search using 4-grams",
         "SELECT ngramSearchCaseInsensitive('Hello World','hello')",
         R"(
-┌─ngramSearchCaseInsensitive('Hello World', 'hello')─┐
+┌─ngramSearchCaseInsensitive('Hello World','hello')─┐
 │                                                  1 │
 └────────────────────────────────────────────────────┘
         )"

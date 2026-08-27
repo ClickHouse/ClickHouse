@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <config.h>
 
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -202,12 +201,10 @@ struct MultiBlockTestData
 /// Build a multi-segment TokenPostingsInfo and data buffer for testing.
 ///
 /// @param blocks  Vector of sorted doc ID vectors, one per segment.
-///                Each segment is encoded independently using SegmentedPostingListCodec.
+///                Each segment is encoded independently using PostingListCodecBitpackingImpl.
 ///
 /// Returns a MultiBlockTestData with the binary buffer, TokenPostingsInfo, and flattened doc list.
-MultiBlockTestData makeMultiBlockData(
-    const std::vector<std::vector<uint32_t>> & blocks,
-    IPostingListCodec::Type block_codec_type = IPostingListCodec::Type::Bitpacking)
+MultiBlockTestData makeMultiBlockData(const std::vector<std::vector<uint32_t>> & blocks)
 {
     MultiBlockTestData result;
     auto & info = result.info;
@@ -229,7 +226,7 @@ MultiBlockTestData makeMultiBlockData(
     for (const auto & block_docs : blocks)
     {
         /// Use a segment size large enough to hold all docs in one segment.
-        SegmentedPostingListCodec codec(block_docs.size() + BLOCK_SIZE, block_codec_type);
+        PostingListCodecBitpackingImpl codec(block_docs.size() + BLOCK_SIZE);
         for (auto doc : block_docs)
             codec.insert(doc);
         codec.encode(out, info);
@@ -1015,7 +1012,7 @@ TEST(PostingListCursorTest, BruteForceIntersectThree)
 
 TEST(PostingListCursorTest, BruteForceVsLeapfrogConsistency)
 {
-    std::mt19937 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(42); // NOLINT(cert-msc32-c,cert-msc51-cpp)
     std::uniform_int_distribution<uint32_t> dist(0, 999);
 
     for (int trial = 0; trial < 10; ++trial)
@@ -1241,7 +1238,7 @@ TEST(PostingListCursorTest, UnionZeroCursors)
 
 TEST(PostingListCursorTest, StressRandomIntersectTwo)
 {
-    std::mt19937 rng(12345); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(12345); // NOLINT(cert-msc32-c,cert-msc51-cpp)
 
     for (int trial = 0; trial < 20; ++trial)
     {
@@ -1275,7 +1272,7 @@ TEST(PostingListCursorTest, StressRandomIntersectTwo)
 
 TEST(PostingListCursorTest, StressRandomIntersectFour)
 {
-    std::mt19937 rng(54321); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(54321); // NOLINT(cert-msc32-c,cert-msc51-cpp)
 
     for (int trial = 0; trial < 10; ++trial)
     {
@@ -1315,7 +1312,7 @@ TEST(PostingListCursorTest, StressRandomIntersectFour)
 
 TEST(PostingListCursorTest, StressRandomUnion)
 {
-    std::mt19937 rng(99999); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(99999); // NOLINT(cert-msc32-c,cert-msc51-cpp)
 
     for (int trial = 0; trial < 10; ++trial)
     {
@@ -3105,7 +3102,7 @@ TEST(PostingListCursorTest, ArithmeticMixedNonArithThenArith)
 
     /// Block 0: 128 docs with variable gaps (non-constant delta).
     uint32_t prev = 0;
-    std::mt19937 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(42); // NOLINT(cert-msc32-c,cert-msc51-cpp)
     for (int i = 0; i < 128; ++i)
     {
         prev += 1 + (rng() % 5);  // gap 1-5 (variable → non-constant delta)
@@ -3133,7 +3130,7 @@ TEST(PostingListCursorTest, ArithmeticSeekFromNonArithToArith)
     docs.push_back(0);
 
     uint32_t prev = 0;
-    std::mt19937 rng(123); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(123); // NOLINT(cert-msc32-c,cert-msc51-cpp)
     for (int i = 0; i < 128; ++i)
     {
         prev += 1 + (rng() % 10);
@@ -3635,8 +3632,8 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
     EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexSerializationVersion::V1_WithCodec);
     EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::Bitpacking);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
-    EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "alpha");
-    EXPECT_EQ(sparse_index_data.sparse_index.getOffsetInFile(0), 42u);
+    EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "alpha");
+    EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 42u);
 }
 
 TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
@@ -3659,8 +3656,8 @@ TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
     EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexSerializationVersion::V0_Initial);
     EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::None);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
-    EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "beta");
-    EXPECT_EQ(sparse_index_data.sparse_index.getOffsetInFile(0), 7u);
+    EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "beta");
+    EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 7u);
 }
 
 TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
@@ -3700,7 +3697,7 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
     EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexSerializationVersion::V0_Initial);
     EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::None);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
-    EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "gamma");
+    EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "gamma");
     EXPECT_EQ(sparse_index_data.sparse_index.getOffsetInFile(0), 13u);
 
     ReadBufferFromString in_with_positions(out_with_positions.str());
