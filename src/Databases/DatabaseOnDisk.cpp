@@ -570,6 +570,23 @@ void DatabaseOnDisk::renameTable(
     {
         try
         {
+            /// `createTable` can throw after it has already attached the table to the destination
+            /// database: `DatabaseOnDisk::commitCreateTable` attaches before committing the
+            /// metadata file, and `removeDetachedPermanentlyFlag` runs after the commit. Tear the
+            /// destination state down first, otherwise the same table would stay attached under
+            /// both names.
+            if (to_database.tryGetTable(to_table_name, local_context) == table)
+            {
+                to_database.detachTable(local_context, to_table_name);
+                if (from_ordinary_to_atomic)
+                {
+                    auto & to_atomic = dynamic_cast<DatabaseAtomic &>(to_database);
+                    if (table->storesDataOnDisk())
+                        to_atomic.tryRemoveSymlink(to_table_name);
+                    to_atomic.setDetachedTableNotInUseForce(attach_query->as<ASTCreateQuery &>().uuid);
+                }
+                to_database.getDisk()->removeFileIfExists(to_database.getObjectMetadataPath(to_table_name));
+            }
             table->rename(table_data_relative_path, original_table_id);
             if (from_ordinary_to_atomic)
                 DatabaseCatalog::instance().removeUUIDMappingFinally(attach_query->as<ASTCreateQuery &>().uuid);
