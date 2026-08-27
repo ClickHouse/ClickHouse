@@ -599,11 +599,8 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
         }
     };
 
-    /// A part attached from detached/ (or restored from backup) has unknown
-    /// provenance: for a non-Ordinary engine a level > 0 does not guarantee
-    /// unique/collapsed ORDER BY keys, yet FINAL and the PartsSplitter optimization
-    /// treat a lone level > 0 part as already merged and skip the row-collapsing
-    /// transform. Reset to 0 so the destination re-merges it. See issue #109674.
+    /// A part adopted from detached/ may have been merged under other semantics, so a non-zero
+    /// level would wrongly mark its ORDER BY keys as collapsed and let FINAL skip collapsing them.
     part->info.level = 0;
     part->info.mutation = 0;
     part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);

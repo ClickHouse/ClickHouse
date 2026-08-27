@@ -3178,12 +3178,8 @@ std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartNameAnd
     part->info.max_block = block_holder->block.number;
     part->info.mutation = 0;
 
-    /// A part attached from detached/ has unknown provenance: for a non-Ordinary
-    /// engine a level > 0 does not guarantee unique/collapsed ORDER BY keys (the
-    /// part may have been merged elsewhere, e.g. under plain MergeTree semantics),
-    /// but FINAL and the PartsSplitter optimization treat a lone level > 0 part as
-    /// already merged and skip the row-collapsing transform. Reset to 0 so the
-    /// destination re-merges it under its own semantics. See issue #109674.
+    /// A part adopted from detached/ may have been merged under other semantics, so a non-zero
+    /// level would wrongly mark its ORDER BY keys as collapsed and let FINAL skip collapsing them.
     part->info.level = 0;
     part->setName(part->getNewName(part->info));
 
