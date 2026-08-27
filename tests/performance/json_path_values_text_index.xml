@@ -13,12 +13,13 @@
         <enable_json_type>1</enable_json_type>
         <use_text_index_like_evaluation_by_dictionary_scan>1</use_text_index_like_evaluation_by_dictionary_scan>
         <text_index_like_min_pattern_length>3</text_index_like_min_pattern_length>
+        <query_plan_optimize_count_from_text_index>0</query_plan_optimize_count_from_text_index>
         <use_query_condition_cache>0</use_query_condition_cache>
         <max_threads>1</max_threads>
         <max_threads_for_indexes>1</max_threads_for_indexes>
     </settings>
 
-    <create_query>
+    <create_query do_not_check_in_pr="114613">
         CREATE TABLE json_path_values_text_index
         (
             id UInt64,
