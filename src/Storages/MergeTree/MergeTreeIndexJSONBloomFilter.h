@@ -33,6 +33,11 @@ public:
         size_t bits_per_row_,
         size_t hash_functions_,
         std::shared_ptr<const JSONBloomPathMatcher> path_matcher_);
+    MergeTreeIndexGranuleJSONBloomFilter(
+        size_t bits_per_row_,
+        size_t hash_functions_,
+        const std::vector<HashSet<UInt64>> & column_hashes_,
+        std::shared_ptr<const JSONBloomPathMatcher> path_matcher_);
 
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
     size_t getHashFunctions() const { return hash_functions; }

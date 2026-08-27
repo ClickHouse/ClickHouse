@@ -113,7 +113,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
 
     /// fail closed, a newly registered index type is rejected until someone checks it
     static constexpr std::string_view supported_types[]
-        {"bloom_filter", "minmax", "ngrambf_v1", "set", "sparse_grams", "tokenbf_v1"};
+        {"bloom_filter", "jsonbf_v1", "minmax", "ngrambf_v1", "set", "sparse_grams", "tokenbf_v1"};
     if (!std::ranges::contains(supported_types, index_desc.type))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,

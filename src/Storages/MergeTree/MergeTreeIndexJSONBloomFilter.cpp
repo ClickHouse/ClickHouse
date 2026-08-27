@@ -1317,6 +1317,17 @@ MergeTreeIndexGranuleJSONBloomFilter::MergeTreeIndexGranuleJSONBloomFilter(
 {
 }
 
+MergeTreeIndexGranuleJSONBloomFilter::MergeTreeIndexGranuleJSONBloomFilter(
+    size_t bits_per_row_,
+    size_t hash_functions_,
+    const std::vector<HashSet<UInt64>> & column_hashes_,
+    std::shared_ptr<const JSONBloomPathMatcher> path_matcher_)
+    : MergeTreeIndexGranuleBloomFilter(bits_per_row_, hash_functions_, column_hashes_)
+    , hash_functions(hash_functions_)
+    , path_matcher(std::move(path_matcher_))
+{
+}
+
 void MergeTreeIndexGranuleJSONBloomFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     if (version != 2)
@@ -1342,7 +1353,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorJSONBloomFilter::getGranuleAndR
 {
     std::vector<HashSet<UInt64>> column_hashes;
     column_hashes.emplace_back(std::move(hashes));
-    auto granule = std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, column_hashes);
+    auto granule = std::make_shared<MergeTreeIndexGranuleJSONBloomFilter>(bits_per_row, hash_functions, column_hashes, path_matcher);
     hashes = HashSet<UInt64>{};
     total_rows = 0;
     return granule;
