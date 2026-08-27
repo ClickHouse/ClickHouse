@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnTuple.h>
@@ -973,6 +974,14 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
     if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
         return ColumnReplicated::create(recursiveRemoveSparse(column_replicated->getNestedColumn()), column_replicated->getIndexesColumn());
 
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+    {
+        auto full_nested_column = recursiveRemoveSparse(column_nullable->getNestedColumnPtr());
+        if (full_nested_column.get() == column_nullable->getNestedColumnPtr().get())
+            return column;
+        return ColumnNullable::create(std::move(full_nested_column), column_nullable->getNullMapColumnPtr());
+    }
+
     if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
     {
         auto columns = column_tuple->getColumns();
@@ -1026,6 +1035,9 @@ bool recursiveHasSparse(const ColumnPtr & column)
 
     if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
         return recursiveHasSparse(column_replicated->getNestedColumn());
+
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+        return recursiveHasSparse(column_nullable->getNestedColumnPtr());
 
     if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
     {

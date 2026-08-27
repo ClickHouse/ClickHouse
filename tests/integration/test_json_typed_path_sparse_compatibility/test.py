@@ -111,6 +111,13 @@ def test_native_protocol_downgrade(started_cluster):
             "'JSON(x Nullable(String), max_dynamic_paths = 0)'))",
             "j.o.x",
         ),
+        (
+            "nullable_json",
+            "Nullable(JSON(x Nullable(String), max_dynamic_paths = 0))",
+            "CAST(multiIf(number = 0, '{\\\"x\\\":\\\"rare\\\"}', number = 1, NULL, '{}'), "
+            "'Nullable(JSON(x Nullable(String), max_dynamic_paths = 0))')",
+            "j.x",
+        ),
     ],
 )
 def test_recursive_native_protocol_downgrade(
