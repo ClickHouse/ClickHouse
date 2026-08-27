@@ -58,6 +58,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int OPENSSL_ERROR;
+    extern const int UNKNOWN_PACKET_FROM_CLIENT;
 }
 
 PostgreSQLHandler::PostgreSQLHandler(
@@ -389,9 +390,18 @@ void PostgreSQLHandler::cancelRequest()
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
 {
+    /// The declared size is read from the wire before any authentication, and the message is read
+    /// into memory in full, so it has to be bounded. PostgreSQL uses the same limit.
+    static constexpr Int32 max_startup_message_size = 10000;
+
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> message;
     try
     {
+        if (payload_size < 8 || payload_size > max_startup_message_size)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                "Startup message declares a size of {} bytes, while it must be between 8 and {} bytes",
+                payload_size, max_startup_message_size);
+
         message = message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::StartupMessage>(payload_size - 8);
     }
     catch (const Exception &)

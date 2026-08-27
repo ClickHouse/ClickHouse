@@ -643,8 +643,13 @@ bool decompress(
     size_t dest_size,
     PerformanceStatistics & statistics [[maybe_unused]])
 {
-    if (source_size == 0 || dest_size == 0)
+    if (dest_size == 0)
         return true;
+
+    /// There is nothing to decompress from, but the caller expects `dest_size` bytes to be written,
+    /// and would otherwise hand out the previous contents of the destination buffer.
+    if (source_size == 0)
+        return false;
 
     /// Don't run timer if the block is too small.
     if (dest_size >= 32768)
