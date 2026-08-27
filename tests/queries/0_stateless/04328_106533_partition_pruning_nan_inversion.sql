@@ -31,10 +31,13 @@ DROP TABLE t_106533;
 
 -- Float column: a non-constant Float operand can be NaN, so the inversion must be skipped.
 -- Insert a NaN row alongside finite values; `not(f > 5)` must keep NaN, while `f <= 5` drops it.
+-- Granularity 2 isolates the NaN in the granule the folded range excludes. With one granule the
+-- row filter alone produces these counts, so neither arm could detect the rewrite being applied.
 
 DROP TABLE IF EXISTS t_106533_float;
 
-CREATE TABLE t_106533_float (f Float64) ENGINE = MergeTree() ORDER BY f;
+CREATE TABLE t_106533_float (f Float64) ENGINE = MergeTree() ORDER BY f
+SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 INSERT INTO t_106533_float VALUES (1.0), (2.5), (10.0), (cast(0/0 AS Float64));
 
 SELECT count() FROM t_106533_float WHERE NOT (f > 5);
@@ -42,8 +45,9 @@ SELECT count() FROM t_106533_float WHERE f <= 5;
 
 DROP TABLE t_106533_float;
 
--- Decimal cannot be NaN, so the inverse rewrite must still apply. Confirm via a count that
--- only differs from the unindexed scan if the index analysis is sound.
+-- Decimal cannot be NaN, so the inverse rewrite must still apply. The count is the same either way,
+-- so the rendered condition is what pins it: a guard over-broad enough to block the fold for every
+-- numeric type would leave pruning correct and only grow the plans.
 
 DROP TABLE IF EXISTS t_106533_dec;
 
@@ -51,6 +55,8 @@ CREATE TABLE t_106533_dec (d Decimal(10, 2)) ENGINE = MergeTree() ORDER BY d PAR
 INSERT INTO t_106533_dec VALUES (1.0), (10.0), (100.0);
 
 SELECT count() FROM t_106533_dec WHERE NOT (d > 5) SETTINGS optimize_use_projections = 0;
+SELECT countIf(explain LIKE '%Condition: (d in (-Inf%')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_dec WHERE NOT (d > 5) SETTINGS optimize_use_projections = 0);
 
 DROP TABLE t_106533_dec;
 
@@ -76,10 +82,14 @@ SELECT count() FROM t_106533_partlevel WHERE val > 500 SETTINGS use_skip_indexes
 SELECT countIf(explain LIKE '%Parts: 0/1%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_partlevel WHERE val > 500);
 
 -- The part-level bound is also read as a semantic extremum: _minmax_count_projection answers
--- min()/max() straight out of it without reading any data.
+-- min()/max() straight out of it without reading any data. The pair answers the same when the
+-- projection is not selected at all, so assert the optimized arm really goes through it.
 SELECT max(val), min(val) FROM t_106533_partlevel
 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SELECT max(val), min(val) FROM t_106533_partlevel SETTINGS optimize_use_implicit_projections = 0;
+SELECT countIf(explain LIKE '%_minmax_count_projection%')
+FROM (EXPLAIN SELECT max(val), min(val) FROM t_106533_partlevel
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1);
 
 DROP TABLE t_106533_partlevel;
 
