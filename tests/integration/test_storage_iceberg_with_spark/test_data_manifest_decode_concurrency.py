@@ -187,6 +187,49 @@ def test_data_and_delete_manifest_decode_concurrency(
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
+def test_data_manifest_decode_concurrency_subquery_filter(
+    started_cluster_iceberg_with_spark,
+):
+    """`part IN (SELECT ...)` is backed by `FutureSetFromSubquery`, which the concurrent
+    decode tasks build lazily through the shared filter DAG; the result must not depend
+    on the concurrency. (Literal tuple `IN` goes through `FutureSetFromTuple` instead
+    and is covered above.)"""
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_data_manifest_decode_concurrency_subquery_" + get_uuid_str()
+
+    write_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+    create_iceberg_table(
+        STORAGE_TYPE, instance, TABLE_NAME, started_cluster_iceberg_with_spark
+    )
+
+    # The subquery yields parts {1, 3, 5}.
+    filtered_parts = [1, 3, 5]
+    expected = sorted(
+        row_id
+        for row_id in range(ROW_COUNT)
+        if row_id // ROWS_PER_INSERT in filtered_parts
+    )
+    for concurrency in [1, 4, 16]:
+        for _ in range(2):
+            result = get_array(
+                instance.query(
+                    f"SELECT id FROM {TABLE_NAME} "
+                    "WHERE part IN (SELECT toInt32(number * 2 + 1) FROM numbers(3)) "
+                    "ORDER BY id",
+                    settings={
+                        "iceberg_data_manifest_decode_concurrency": concurrency,
+                        "use_iceberg_metadata_files_cache": 0,
+                    },
+                )
+            )
+            assert result == expected, (
+                f"wrong subquery-filtered result with "
+                f"iceberg_data_manifest_decode_concurrency={concurrency}"
+            )
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
 def test_data_manifest_decode_concurrency_bounds_reads(
     started_cluster_iceberg_with_spark,
 ):
