@@ -19,6 +19,11 @@ struct FixedHashMapCell
     FixedHashMapCell() {} /// NOLINT
     FixedHashMapCell(const Key &, const State &) : full(true) {}
     FixedHashMapCell(const value_type & value_, const State &) : full(true), mapped(value_.second) {}
+    FixedHashMapCell(const FixedHashMapCell & other, const State &)
+        : full(other.full)
+        , mapped(other.mapped)
+    {
+    }
 
     const VoidKey getKey() const { return {}; } /// NOLINT
     Mapped & getMapped() { return mapped; }
@@ -26,6 +31,19 @@ struct FixedHashMapCell
 
     bool isZero(const State &) const { return !full; }
     void setZero() { full = false; }
+
+    void write(DB::WriteBuffer & wb) const { DB::writeBinary(mapped, wb); }
+    void writeText(DB::WriteBuffer & wb) const { DB::writeDoubleQuoted(mapped, wb); }
+    void read(DB::ReadBuffer & rb)
+    {
+        full = true;
+        DB::readBinary(mapped, rb);
+    }
+    void readText(DB::ReadBuffer & rb)
+    {
+        full = true;
+        DB::readDoubleQuoted(mapped, rb);
+    }
 
     /// Similar to FixedHashSetCell except that we need to contain a pointer to the Mapped field.
     ///  Note that we have to assemble a continuous layout for the value_type on each call of getValue().

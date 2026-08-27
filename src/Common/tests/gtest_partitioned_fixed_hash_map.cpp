@@ -2,8 +2,12 @@
 
 #include <Common/HashTable/PartitionedFixedHashMap.h>
 
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+
 #include <bit>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <unordered_set>
 #include <vector>
@@ -65,6 +69,25 @@ void forSerialAndParallelBits(Fn && fn)
 {
     fn.template operator()<0>();
     fn.template operator()<8>();
+}
+
+template <typename Map>
+std::string serializeMap(const Map & map)
+{
+    DB::WriteBufferFromOwnString wb;
+    map.write(wb);
+    return wb.str();
+}
+
+template <typename Map>
+Map roundTripMap(const Map & src)
+{
+    const auto bytes = serializeMap(src);
+    Map dst;
+    DB::ReadBufferFromString rb(bytes);
+    dst.read(rb);
+    EXPECT_TRUE(rb.eof()) << "serialized more than serializedPartitionCount() partitions";
+    return dst;
 }
 }
 
@@ -344,6 +367,40 @@ TEST(PartitionedFixedHashMap, WriteReadsTheFlatTableOnce)
     ASSERT_EQ(Parallel::serializedPartitionCount(), 1u);
     ASSERT_EQ(Serial::numBuckets(), 1u);
     ASSERT_EQ(Parallel::numBuckets(), 256u);
+
+    Serial serial;
+    Parallel parallel;
+    const std::vector<UInt16> keys = {0, 10, 20, 40, 65535};
+    for (auto key : keys)
+    {
+        insertKeyValue(serial, key, key * 3);
+        insertKeyValue(parallel, key, key * 3);
+    }
+
+    const auto serial_bytes = serializeMap(serial);
+    const auto parallel_bytes = serializeMap(parallel);
+    ASSERT_EQ(serial_bytes, parallel_bytes);
+
+    auto check_copy = [&](auto & src, auto & copy)
+    {
+        ASSERT_EQ(copy.size(), src.size());
+        ASSERT_EQ(offsetsByIteration(copy), offsetsByIteration(src));
+        for (auto key : keys)
+        {
+            const auto * from = src.find(key);
+            const auto * to = copy.find(key);
+            ASSERT_NE(from, nullptr) << "key " << key;
+            ASSERT_NE(to, nullptr) << "key " << key;
+            ASSERT_EQ(to->getMapped(), from->getMapped()) << "key " << key;
+            ASSERT_EQ(copy.offsetInternal(to), src.offsetInternal(from)) << "key " << key;
+        }
+    };
+
+    auto serial_copy = roundTripMap(serial);
+    auto parallel_copy = roundTripMap(parallel);
+    check_copy(serial, serial_copy);
+    check_copy(parallel, parallel_copy);
+    check_copy(serial_copy, parallel_copy);
 }
 
 
