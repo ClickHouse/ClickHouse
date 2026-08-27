@@ -66,6 +66,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -2721,6 +2722,24 @@ std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const
             add_columns(query_info.row_level_filter->actions.getRequiredColumnsNames());
         if (analysis->sampling.use_sampling && analysis->sampling.filter_expression)
             add_columns(analysis->sampling.filter_expression->getRequiredColumns().getNames());
+
+        /// Two read shapes append the whole sorting key to what they read, and neither is decided
+        /// before the pipeline is built: `readByLayers` does it for an ordered read, and
+        /// `spreadMarkRangesAmongStreams` does it on the split path that
+        /// `merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability`
+        /// selects at random. Note that the whole key is added, not the prefix the query orders by,
+        /// so a key column the query never mentions still gets read.
+        if (reader_settings.read_in_order
+            || context->getSettingsRef()
+                    [Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability]
+                > 0.0f)
+            add_columns(storage_snapshot->metadata->getColumnsRequiredForSortingKey());
+
+        /// A part carrying a materialized lightweight delete gets a `_row_exists` filter step of its
+        /// own in `MergeTreeReadPoolBase::createTask`, which the step does not project either. Parts
+        /// without one do not have the column, and a column missing from a part costs nothing here.
+        if (reader_settings.apply_deleted_mask)
+            add_columns({RowExistsColumn::name});
     }
 
     if (const auto estimate = estimateReadBytes(

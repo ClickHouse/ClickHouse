@@ -1,0 +1,1 @@
+{"columns":[{"kind":"Default","name":"id","num_defaults":1,"num_rows":100},{"kind":"Default","name":"update_ts","num_defaults":0,"num_rows":100},{"kind":"Default","name":"value","num_defaults":0,"num_rows":100}],"propagate_types_serialization_versions_to_nested_types":true,"types_serialization_versions":{"string":1},"version":1}

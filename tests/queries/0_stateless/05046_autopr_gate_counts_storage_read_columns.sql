@@ -26,6 +26,20 @@ SET optimize_move_to_prewhere=1;
 -- are collected. Sizing this read by `small` alone would give 8 KB per replica and reject it.
 SELECT count() FROM t_prewhere PREWHERE bignum > 0 GROUP BY small FORMAT Null SETTINGS log_comment='05046_gate_prewhere';
 
+DROP TABLE IF EXISTS t_ordered;
+
+-- The whole sorting key is read when the read is ordered, not just the prefix the query orders by,
+-- so `bigkey` is read even though the query neither projects it nor orders by it. It is stored
+-- uncompressed so that its size does not depend on the server's compression settings.
+CREATE TABLE t_ordered(k1 UInt32, bigkey UInt64 CODEC(NONE), small UInt8) ENGINE = MergeTree ORDER BY (k1, bigkey)
+    SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
+
+INSERT INTO t_ordered SELECT number % 1000, number * 7, number % 251 FROM numbers(3e6);
+
+-- Sizing this read by the projected `small` and the ordered-by `k1` alone would give 38 KB per
+-- replica and reject it; with the sorting key included it is 8 MB per replica.
+SELECT small FROM t_ordered ORDER BY k1 LIMIT 10 FORMAT Null SETTINGS log_comment='05046_gate_ordered', optimize_read_in_order=1;
+
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
@@ -37,3 +51,4 @@ ORDER BY log_comment
 FORMAT TSVWithNames;
 
 DROP TABLE t_prewhere;
+DROP TABLE t_ordered;
