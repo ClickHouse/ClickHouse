@@ -14,12 +14,14 @@ alone (every compiler error is inside them, or every translation unit that faile
 compile is one of them), the changed test code depends on the interface the fix
 introduces (the typical case is a call site adapted to a changed function signature);
 the unit side then has nothing it can judge at runtime, the PR author cannot avoid the
-adaptation, and the job reports the build failure as expected (XFAIL, nothing to
-validate) instead of staying red forever. Any other build failure is an infrastructure
-or attribution problem and stays an ERROR (inconclusive). The "before" binary is built and
-judged once per build type in `BEFORE_BUILD_TYPES`: a build type on which every touched
-test passes cannot observe a failure mode specific to another one, so a clean arm escalates
-to the next build type and only the last one refutes.
+adaptation, and on the first build type the job reports the build failure as expected
+(XFAIL, nothing to validate) instead of staying red forever. Any other build failure is an
+infrastructure or attribution problem and stays an ERROR (inconclusive). The "before" binary
+is built and judged once per build type in `BEFORE_BUILD_TYPES`: a build type on which every
+touched test passes cannot observe a failure mode specific to another one, so a clean arm
+escalates to the next build type and only the last one refutes. On a later build type an
+earlier arm already compiled the same overlay, so an attributed compile failure there is
+ambiguous and stays an ERROR too.
 
 Like the functional/integration validators, this job only checks the "before" side.
 The complementary "the touched tests PASS on the PR binary" side is delegated to the
@@ -950,8 +952,10 @@ def main():
         #    that failed to compile being an overlaid test file (compile_failure_attribution)
         #    → the changed test code depends on the fix's interface (typically a call site
         #    adapted to a changed signature). The PR author cannot avoid that adaptation and
-        #    the unit side has nothing left to judge, so report the step as an expected
-        #    failure (XFAIL) with nothing to validate — NOT as a reproduction. When the PR
+        #    the unit side has nothing left to judge, so on the first build type report the
+        #    step as an expected failure (XFAIL) with nothing to validate — NOT as a
+        #    reproduction; on a later one an earlier arm already compiled this overlay, so
+        #    the same attribution is ambiguous and stays an ERROR. When the PR
         #    also carries functional/integration tests, new_tests_check.py still demands a
         #    real validation from those jobs; for a unit-only PR the merge gate already
         #    treats inconclusive as non-blocking, so this changes report truthfulness, not
