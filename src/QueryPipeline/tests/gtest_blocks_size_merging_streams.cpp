@@ -5,8 +5,10 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <QueryPipeline/Pipe.h>
+#include <Processors/IProcessor.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Port.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 using namespace DB;
@@ -175,4 +177,105 @@ TEST(MergingSortedTest, MoreInterestingBlockSizes)
     EXPECT_EQ(block3.rows(), (1000 + 1500 + 1400) / 3);
 
     EXPECT_EQ(block1.rows() + block2.rows() + block3.rows(), 1000 + 1500 + 1400);
+}
+
+
+namespace
+{
+
+/// Yields one block of data, then pushes a chunk carrying the header columns and no rows and
+/// finishes its output port in the same `prepare()` -- the shape `ISource::prepare` produces when
+/// the source is cancelled right after a push.
+class RowlessTailSource : public IProcessor
+{
+public:
+    explicit RowlessTailSource(const Block & data_)
+        : IProcessor({}, {std::make_shared<const Block>(data_.cloneEmpty())})
+        , output(outputs.front())
+        , data(data_)
+    {
+    }
+
+    String getName() const override { return "RowlessTailSource"; }
+
+    Status prepare() override
+    {
+        if (finished || output.isFinished())
+            return Status::Finished;
+
+        if (!output.canPush())
+            return Status::PortFull;
+
+        if (!pushed_data)
+        {
+            pushed_data = true;
+            output.push(Chunk(data.getColumns(), data.rows()));
+            return Status::PortFull;
+        }
+
+        output.push(Chunk(output.getHeader().cloneEmpty().getColumns(), 0));
+        output.finish();
+        finished = true;
+        return Status::Finished;
+    }
+
+private:
+    OutputPort & output;
+    Block data;
+    bool pushed_data = false;
+    bool finished = false;
+};
+
+}
+
+/// A chunk with no rows is not data for a merge: a cursor over it has no row to read. Here the
+/// rowless chunk is the last chunk of the last live source, so it reaches the merge with an empty
+/// queue.
+TEST(MergingSortedTest, RowlessChunkFromFinishedInput)
+{
+    std::vector<std::string> key_columns{"K1"};
+    auto sort_description = getSortDescription(key_columns);
+
+    size_t start = 0;
+    auto first = getBlockWithSize(key_columns, 4, 1, start);
+    start = 100;
+    auto second = getBlockWithSize(key_columns, 4, 1, start);
+
+    Pipes pipes;
+    BlocksList blocks;
+    blocks.push_back(first);
+    pipes.emplace_back(std::make_shared<BlocksListSource>(std::move(blocks)));
+    pipes.emplace_back(std::make_shared<RowlessTailSource>(second));
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+
+    EXPECT_EQ(pipe.numOutputPorts(), 2);
+
+    pipe.addTransform(std::make_shared<MergingSortedTransform>(
+        pipe.getSharedHeader(),
+        pipe.numOutputPorts(),
+        sort_description,
+        /*max_block_size_rows=*/ 8192,
+        /*max_block_size_bytes=*/ 0,
+        /*max_dynamic_subcolumns=*/ std::nullopt,
+        SortingQueueStrategy::Batch,
+        /*limit=*/ 0,
+        /*always_read_till_end=*/ false,
+        /*out_row_sources_buf=*/ nullptr,
+        /*filter_column_name=*/ std::nullopt,
+        /*use_average_block_sizes=*/ false));
+
+    QueryPipeline pipeline(std::move(pipe));
+    PullingPipelineExecutor executor(pipeline);
+
+    std::vector<UInt64> keys;
+    Block block;
+    while (executor.pull(block))
+    {
+        const auto & column = *block.getByName("K1").column;
+        for (size_t i = 0; i < column.size(); ++i)
+            keys.push_back(column.getUInt(i));
+    }
+
+    /// The rowless chunk must not displace the real data of the source that pushed it.
+    EXPECT_EQ(keys, (std::vector<UInt64>{0, 1, 2, 3, 100, 101, 102, 103}));
 }

@@ -255,13 +255,19 @@ IProcessor::Status IMergingTransformBase::prepare()
             {
                 input.setNeeded();
             }
-            if (!input_chunk.hasRows() && !virtual_row && !input.isFinished())
+            if (!input_chunk.hasRows() && !virtual_row)
             {
-                input.setNeeded();
-                return Status::NeedData;
-            }
+                if (!input.isFinished())
+                {
+                    input.setNeeded();
+                    return Status::NeedData;
+                }
 
-            state.has_input = true;
+                /// A chunk with no rows is not data for the merge: a cursor over it has no row to read.
+                state.no_data = true;
+            }
+            else
+                state.has_input = true;
         }
         else
         {
