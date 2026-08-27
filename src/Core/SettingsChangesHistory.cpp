@@ -43,6 +43,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"allow_experimental_logsql_dialect", false, false, "New setting to enable the LogsQL dialect (the log query language of VictoriaLogs)."},
+            {"logsql_database", "", "", "New setting to specify the database with the logs table used by the 'logsql' dialect."},
+            {"logsql_table", "", "", "New setting to specify the logs table used by the 'logsql' dialect."},
+            {"logsql_time_column", "_time", "_time", "New setting to specify the column referred to by the `_time` field in the 'logsql' dialect."},
+            {"logsql_message_column", "_msg", "_msg", "New setting to specify the column referred to by the `_msg` field in the 'logsql' dialect."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},
             {"query_plan_fuse_filter_into_array_join", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."},
@@ -62,11 +67,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
-            {"allow_experimental_logsql_dialect", false, false, "New setting to enable the LogsQL dialect (the log query language of VictoriaLogs)."},
-            {"logsql_database", "", "", "New setting to specify the database with the logs table used by the 'logsql' dialect."},
-            {"logsql_table", "", "", "New setting to specify the logs table used by the 'logsql' dialect."},
-            {"logsql_time_column", "_time", "_time", "New setting to specify the column referred to by the `_time` field in the 'logsql' dialect."},
-            {"logsql_message_column", "_msg", "_msg", "New setting to specify the column referred to by the `_msg` field in the 'logsql' dialect."},
             {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
             {"group_by_top_k_optimization_observation_rows", 65536, 65536, "New experimental setting: rows each aggregation stream observes before declaring a full top-K heap that never rejected anything pure overhead and freezing it."},
             {"time_series_prefer_recent_samples_table", true, true, "New setting to read from the recent samples table of a TimeSeries table when the requested time range fits in its TTL window."},
