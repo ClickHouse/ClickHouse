@@ -44,10 +44,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.9",
         {
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
+            {"optimize_push_subcolumns_into_subqueries", false, true, "New setting to read only the requested subcolumns of columns exported by subqueries and CTEs instead of the whole columns."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
-            {"optimize_push_subcolumns_into_subqueries", false, true, "New setting to read only the requested subcolumns of columns exported by subqueries and CTEs instead of the whole columns."},
             {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
             {"group_by_top_k_optimization_observation_rows", 65536, 65536, "New experimental setting: rows each aggregation stream observes before declaring a full top-K heap that never rejected anything pure overhead and freezing it."},
             {"time_series_prefer_recent_samples_table", true, true, "New setting to read from the recent samples table of a TimeSeries table when the requested time range fits in its TTL window."},
