@@ -1,0 +1,88 @@
+<test>
+    <!-- Top-K aggregation: `GROUP BY ... [ORDER BY ...] LIMIT N` queries where a
+         bounded structure maintained during aggregation can skip groups that
+         cannot reach the result.
+
+         Section 1 - ORDER BY an aggregate (min/max): exercises the
+         `TopKAggregation` optimization when enabled.
+         Section 2 - ORDER BY the GROUP BY keys (full match, prefix, or no
+         ORDER BY): exercises `enable_group_by_top_k_optimization`.  Until the
+         setting exists in the master binary used as the comparison baseline it
+         cannot be enabled here, so these queries guard the default
+         (optimization-off) aggregation path against regressions.
+
+    <settings>
+        <enable_group_by_top_k_optimization>1</enable_group_by_top_k_optimization>
+    </settings> -->
+
+    <!-- ============ Section 1: ORDER BY aggregate ============ -->
+
+    <!-- max(EventTime) DESC, ~130K groups (CounterID) -->
+    <query>SELECT CounterID, max(EventTime) AS m FROM hits_100m_single GROUP BY CounterID ORDER BY m DESC LIMIT 10 FORMAT Null</query>
+
+    <!-- min(EventTime) ASC, ~100K synthetic groups -->
+    <query>SELECT intHash32(UserID) % 100000 AS k, min(EventTime) AS m FROM hits_100m_single GROUP BY k ORDER BY m ASC LIMIT 10 FORMAT Null</query>
+
+    <!-- max(EventTime) DESC, larger LIMIT -->
+    <query>SELECT CounterID, max(EventTime) AS m FROM hits_100m_single GROUP BY CounterID ORDER BY m DESC LIMIT 100 FORMAT Null</query>
+
+    <!-- max(CounterID) DESC with CounterID as the first sorting key column -->
+    <query>SELECT RegionID, max(CounterID) AS m FROM hits_100m_single GROUP BY RegionID ORDER BY m DESC LIMIT 10 FORMAT Null</query>
+
+    <!-- ============ Section 2: ORDER BY the GROUP BY keys ============ -->
+
+    <!-- High cardinality: WatchID (~100M unique values out of 100M rows) -->
+    <query>SELECT WatchID, count() FROM hits_100m_single GROUP BY WatchID ORDER BY WatchID ASC LIMIT 10 FORMAT Null</query>
+
+    <!-- High cardinality: UserID (~17M unique values) -->
+    <query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID ORDER BY UserID ASC LIMIT 10 FORMAT Null</query>
+    <query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID ORDER BY UserID ASC LIMIT 1000 FORMAT Null</query>
+
+    <!-- High cardinality string: URL (~10M unique values) -->
+    <query>SELECT URL, count() FROM hits_100m_single GROUP BY URL ORDER BY URL ASC LIMIT 10 FORMAT Null</query>
+
+    <!-- Medium cardinality: RegionID (~10K unique values) -->
+    <query>SELECT RegionID, count() FROM hits_100m_single GROUP BY RegionID ORDER BY RegionID ASC LIMIT 10 FORMAT Null</query>
+
+    <!-- Synthetic high cardinality with numbers_mt() -->
+    <query>SELECT number, count() FROM numbers_mt(50000000) GROUP BY number ORDER BY number ASC LIMIT 100 FORMAT Null</query>
+
+    <!-- DESC ordering -->
+    <query>SELECT WatchID, count() FROM hits_100m_single GROUP BY WatchID ORDER BY WatchID DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID ORDER BY UserID DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT URL, count() FROM hits_100m_single GROUP BY URL ORDER BY URL DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT RegionID, count() FROM hits_100m_single GROUP BY RegionID ORDER BY RegionID DESC LIMIT 10 FORMAT Null</query>
+
+    <!-- Composite keys: 2-column GROUP BY with high cardinality (~18M unique pairs) -->
+    <query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID, RegionID ASC LIMIT 10 FORMAT Null</query>
+    <query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID, RegionID ASC LIMIT 1000 FORMAT Null</query>
+
+    <!-- Composite keys: 3-column GROUP BY -->
+    <query>SELECT UserID, RegionID, CounterID, count() FROM hits_100m_single GROUP BY UserID, RegionID, CounterID ORDER BY UserID, RegionID, CounterID ASC LIMIT 10 FORMAT Null</query>
+
+    <!-- Composite keys: medium cardinality (~630K unique pairs) -->
+    <query>SELECT RegionID, CounterID, count() FROM hits_100m_single GROUP BY RegionID, CounterID ORDER BY RegionID, CounterID ASC LIMIT 10 FORMAT Null</query>
+
+    <!-- Composite keys DESC: both columns descending -->
+    <query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID DESC, RegionID DESC LIMIT 10 FORMAT Null</query>
+
+    <!-- Composite keys mixed directions -->
+    <query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID ASC, RegionID DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID DESC, RegionID ASC LIMIT 10 FORMAT Null</query>
+
+    <!-- Prefix ORDER BY: ORDER BY is a leading prefix of GROUP BY keys.
+         The heap tracks only the prefix columns, keeping all groups where
+         the prefix matches the boundary. -->
+    <query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID ASC LIMIT 10 FORMAT Null</query>
+    <query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID ASC LIMIT 1000 FORMAT Null</query>
+    <query>SELECT UserID, RegionID, CounterID, count() FROM hits_100m_single GROUP BY UserID, RegionID, CounterID ORDER BY UserID ASC LIMIT 10 FORMAT Null</query>
+    <query>SELECT UserID, RegionID, CounterID, count() FROM hits_100m_single GROUP BY UserID, RegionID, CounterID ORDER BY UserID, RegionID ASC LIMIT 10 FORMAT Null</query>
+    <query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID DESC LIMIT 10 FORMAT Null</query>
+
+    <!-- No ORDER BY: `GROUP BY ... LIMIT` without ORDER BY.
+         The heap tracks all GROUP BY keys; any N groups are a valid result. -->
+    <query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID LIMIT 10 FORMAT Null</query>
+    <query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID LIMIT 10 FORMAT Null</query>
+    <query>SELECT UserID, RegionID, CounterID, count() FROM hits_100m_single GROUP BY UserID, RegionID, CounterID LIMIT 10 FORMAT Null</query>
+    <query>SELECT URL, count() FROM hits_100m_single GROUP BY URL LIMIT 10 FORMAT Null</query>
+</test>
