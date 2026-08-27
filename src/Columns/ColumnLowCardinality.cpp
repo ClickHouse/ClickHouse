@@ -242,10 +242,16 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     /// an empty column to avoid rebuilding it and keep its indexes unchanged through generic range insertions.
     /// A private source dictionary can still be mutated in place, while an incompatible dictionary must be
     /// rebuilt to perform conversions such as nullable promotion.
+    /// Shared floating-point dictionaries reconstructed from `MergeTree` on-disk dictionary streams can contain
+    /// separate entries for `-0.0` and `0.0`, or multiple `NaN` payloads. The on-disk reader can install such a
+    /// dictionary directly, while `insertRangeFrom` into a different dictionary has historically canonicalized
+    /// these representations through `ColumnUnique`. Sharing here would bypass that boundary and change the
+    /// existing insertion behavior.
     if (
         empty()
         && low_cardinality_src->isSharedDictionary()
         && getDictionary().nestedColumnIsNullable() == low_cardinality_src->getDictionary().nestedColumnIsNullable()
+        && !WhichDataType(low_cardinality_src->getDictionary().getNestedNotNullableColumn()->getDataType()).isFloat()
         && getDictionary().structureEquals(low_cardinality_src->getDictionary()))
         setSharedDictionary(low_cardinality_src->getDictionaryPtr());
 
