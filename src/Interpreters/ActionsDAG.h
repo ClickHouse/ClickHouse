@@ -120,7 +120,7 @@ public:
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
         UInt64 getHash() const;
-        void updateHash(SipHash & hash_state) const;
+        void updateHash(SipHash & hash_state, bool build_independent = false) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -545,7 +545,10 @@ public:
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
     UInt64 getHash() const;
-    void updateHash(SipHash & hash_state) const;
+    /// `build_independent` leaves out anything that differs between two builds of the same query -
+    /// column names and prepared-set values - so the result identifies what the DAG computes rather
+    /// than how this particular plan named it. See `Node::updateHash`.
+    void updateHash(SipHash & hash_state, bool build_independent = false) const;
 
     friend class QueryPlanOptimizations::TextIndexDAGReplacer;
 
