@@ -10,6 +10,16 @@ doc_type: 'guide'
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
+import ConfigurableBackupsCLI from "/snippets/cloud/backups/_configurable_backups_cli.mdx";
+
+<Visibility for="agents">
+
+<ConfigurableBackupsCLI />
+
+</Visibility>
+
+<Visibility for="humans">
+<View title="Cloud UI">
 
 <ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True"/>
 
@@ -28,3 +38,14 @@ Start time and frequency are mutually exclusive. Start time takes precedence.
 <Note>
 Changing the backup schedule can cause higher monthly charges for storage as some of the backups might not be covered in the default backups for the service. See ["Understanding backup cost"](/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
 </Note>
+
+</View>
+
+<View title="CLI">
+
+You can follow this path yourself, script it, or hand it to an AI agent. Switch to the **Cloud UI** view for the console version.
+
+<ConfigurableBackupsCLI />
+
+</View>
+</Visibility>

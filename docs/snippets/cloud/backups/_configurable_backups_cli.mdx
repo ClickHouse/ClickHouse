@@ -1,0 +1,103 @@
+This page covers reading and changing the backup schedule of a ClickHouse Cloud service from the command line with the [ClickHouse CLI](/products/cloud/features/cli) (`clickhousectl`). Commands are non-interactive; `clickhousectl` emits JSON with `--json`.
+
+Configurable backups are available in the Scale and Enterprise plans.
+
+## Prerequisites {#prerequisites}
+
+Install the ClickHouse CLI:
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+You also need `jq`.
+
+Changing the backup configuration is a write operation and requires [API key authentication](/products/cloud/features/admin-features/api/openapi); OAuth login is read-only:
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+Alternatively, set the `CLICKHOUSE_CLOUD_API_KEY` and `CLICKHOUSE_CLOUD_API_SECRET` environment variables. Verify with `clickhousectl cloud auth status`; expect an entry with scope `read/write`.
+
+## Find the service ID {#find-the-service-id}
+
+The backup configuration is set per service. Look up the ID of the service by name:
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json \
+  | jq -r '.[] | select(.name=="<service-name>") | .id')
+```
+
+## Read the current backup configuration {#read-the-current-backup-configuration}
+
+```bash
+clickhousectl cloud service backup-config get "$CH_ID" --json
+```
+
+A service that still uses the default schedule reports:
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 24.0
+}
+```
+
+`backupStartTime` only appears in the output once a start time has been set.
+
+## Change retention and frequency {#change-retention-and-frequency}
+
+`backup-config update` takes the same settings as the console form — retention (`--backup-retention-period-hours`), frequency (`--backup-period-hours`), and start time (`--backup-start-time`) — and prints the resulting configuration. Flags you omit keep their current values:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --backup-period-hours 12 \
+  --backup-retention-period-hours 48 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+The change takes effect immediately; read the configuration back to confirm:
+
+```bash
+clickhousectl cloud service backup-config get "$CH_ID" --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+## Set a backup start time {#set-a-backup-start-time}
+
+`--backup-start-time` takes a daily start time in UTC (`HH:MM`). Start time and frequency are mutually exclusive; start time takes precedence, and the API only accepts a `--backup-period-hours` of `24` or `48` in combination with it:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --backup-start-time 02:00 \
+  --backup-period-hours 24 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 48.0,
+  "backupStartTime": "02:00"
+}
+```
+
+Passing a start time while the period is any other value fails with `customBackupPeriod must be 24 or 48 hours when customBackupStartTime is set` — the same restriction then applies to later period changes. Once set, the start time cannot be removed through the CLI or API, only changed to a different time.
+
+<Note>
+Changing the backup schedule can cause higher monthly charges for storage as some of the backups might not be covered in the default backups for the service. See ["Understanding backup cost"](/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
+</Note>
