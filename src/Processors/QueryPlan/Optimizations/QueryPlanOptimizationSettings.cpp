@@ -178,6 +178,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     aggregation_bucket_top_k = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_aggregation_bucket_top_k];
     aggregation_top_k_threshold_merge
         = from[Setting::query_plan_enable_optimizations] && from[Setting::enable_aggregation_top_k_threshold_merge];
+    aggregation_top_k = aggregation_bucket_top_k || aggregation_top_k_threshold_merge;
     split_filter = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_split_filter];
     merge_expressions = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_expressions];
     merge_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filters];

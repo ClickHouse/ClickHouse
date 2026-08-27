@@ -68,6 +68,10 @@ struct Optimization
         UInt64 top_k_optimization_observation_rows{};
         /// Mirrors `QueryPlanOptimizationSettings::aggregation_top_k_threshold_merge`.
         bool aggregation_top_k_threshold_merge{};
+        /// Mirrors `QueryPlanOptimizationSettings::aggregation_bucket_top_k`. The
+        /// `aggregationBucketTopK` pass serves two optimizations and is registered under
+        /// their disjunction, so each branch checks its own flag.
+        bool aggregation_bucket_top_k{};
         bool is_explain{};
 
         size_t max_block_size{};
@@ -239,7 +243,7 @@ inline const auto & getOptimizations()
          &QueryPlanOptimizationSettings::short_circuit_constant_false_join},
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
-        {tryPushBucketTopKIntoAggregation, "aggregationBucketTopK", &QueryPlanOptimizationSettings::aggregation_bucket_top_k},
+        {tryPushBucketTopKIntoAggregation, "aggregationBucketTopK", &QueryPlanOptimizationSettings::aggregation_top_k},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::merge_expressions},
         {tryMergeFilters, "mergeFilters", &QueryPlanOptimizationSettings::merge_filters},

@@ -124,6 +124,7 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         /// count's conversion-stage selection below (a plain scan there beats the value-peeking
         /// walk) and stands down in a few other cases (single-level tables, dataflow statistics
         /// collection).
+        bool threshold_top_k_enabled = false;
         if (settings.aggregation_top_k_threshold_merge && !description.front().collator)
         {
             const auto bound = aggregate.function->getMergedValueBound();
@@ -135,12 +136,27 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
             const bool bound_serves_direction = bound == MergedValueBound::Maximum || bound == MergedValueBound::Minimum
                 || (bound == MergedValueBound::Subadditive && !ascending);
             if (bound_serves_direction && isThresholdTopKValueType(bound, aggregate.function->getResultType()))
+            {
                 aggregating->enableThresholdTopK(
                     Aggregator::Params::ThresholdTopKParams{
                         .k = n, .ascending = ascending, .aggregate_index = i, .bound = bound});
+                threshold_top_k_enabled = true;
+            }
         }
 
+        if (!settings.aggregation_bucket_top_k)
+            return 0;
+
         if (aggregate.function->getName() != "count" || !aggregate.argument_names.empty() || !aggregate.parameters.empty())
+            return 0;
+
+        /// The conversion-stage selection by the count (`bucket_top_k`) and the threshold merge
+        /// are mutually exclusive at run time (the merge yields when `bucket_top_k` is set). For
+        /// the lone count the selection wins: a plain scan of the merged bucket beats the
+        /// value-peeking walk. But when other aggregates ride along, the threshold merge is the
+        /// better deal - it also skips merging the losers' other states - so the selection steps
+        /// aside for it (and still serves the shapes the merge does not, e.g. the ascending order).
+        if (threshold_top_k_enabled && params.aggregates.size() > 1)
             return 0;
 
         aggregating->enableBucketTopK(n, ascending, i);
