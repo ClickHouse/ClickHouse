@@ -72,10 +72,10 @@ SET join_use_nulls = 1;
 
 SELECT '-- key8 uint8 inner serial';
 SELECT l.k, l.v, r.v FROM t_u8_l AS l INNER JOIN t_u8_r AS r ON l.k = r.k ORDER BY l.k, l.v, r.v
-SETTINGS parallel_hash_join_threshold = 1000000000;
+SETTINGS parallel_hash_join_threshold = 1000000000, log_comment = '04891_key8_serial';
 SELECT '-- key8 uint8 inner parallel';
 SELECT l.k, l.v, r.v FROM t_u8_l AS l INNER JOIN t_u8_r AS r ON l.k = r.k ORDER BY l.k, l.v, r.v
-SETTINGS parallel_hash_join_threshold = 0;
+SETTINGS parallel_hash_join_threshold = 0, log_comment = '04891_key8_parallel';
 
 SELECT '-- key8 uint8 right serial';
 SELECT r.k, l.v, r.v FROM t_u8_l AS l RIGHT JOIN t_u8_r AS r ON l.k = r.k ORDER BY r.k, l.v, r.v
@@ -114,10 +114,10 @@ SETTINGS parallel_hash_join_threshold = 0;
 
 SELECT '-- key16 uint16 inner serial';
 SELECT l.k, l.v, r.v FROM t_u16_l AS l INNER JOIN t_u16_r AS r ON l.k = r.k ORDER BY l.k, l.v, r.v
-SETTINGS parallel_hash_join_threshold = 1000000000;
+SETTINGS parallel_hash_join_threshold = 1000000000, log_comment = '04891_key16_serial';
 SELECT '-- key16 uint16 inner parallel';
 SELECT l.k, l.v, r.v FROM t_u16_l AS l INNER JOIN t_u16_r AS r ON l.k = r.k ORDER BY l.k, l.v, r.v
-SETTINGS parallel_hash_join_threshold = 0;
+SETTINGS parallel_hash_join_threshold = 0, log_comment = '04891_key16_parallel';
 
 SELECT '-- key16 int16 inner serial';
 SELECT l.k, l.v, r.v FROM t_i16_l AS l INNER JOIN t_i16_r AS r ON l.k = r.k ORDER BY l.k, l.v, r.v
@@ -153,7 +153,9 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
           SELECT query_id FROM system.query_log
           WHERE log_comment = '04891_range_u32' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
       )
-      AND message LIKE '%Converted join hash map to fixed hash map%';
+      AND message LIKE '%Converted join hash map to fixed hash map%'
+      AND message LIKE '%type: range%'
+      AND message NOT LIKE '%two_level%';
 
 SELECT '-- range uint32 inner conversion on vs off';
 SELECT
@@ -211,7 +213,9 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
           SELECT query_id FROM system.query_log
           WHERE log_comment = '04891_range_i32' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
       )
-      AND message LIKE '%Converted join hash map to fixed hash map%';
+      AND message LIKE '%Converted join hash map to fixed hash map%'
+      AND message LIKE '%type: range%'
+      AND message NOT LIKE '%two_level%';
 
 SELECT '-- range int32 inner conversion on vs off';
 SELECT
@@ -237,15 +241,85 @@ SELECT
 
 SELECT '-- shared rf key8 serial';
 SELECT 'rf0', count() FROM t_rf_l AS l INNER JOIN t_rf_r AS r ON l.k = r.k
-SETTINGS parallel_hash_join_threshold = 1000000000, join_runtime_filter_from_fixed_hash_table = 0;
+SETTINGS parallel_hash_join_threshold = 1000000000, join_runtime_filter_from_fixed_hash_table = 0, log_comment = '04891_rf_serial_off';
 SELECT 'rf1', count() FROM t_rf_l AS l INNER JOIN t_rf_r AS r ON l.k = r.k
-SETTINGS parallel_hash_join_threshold = 1000000000, join_runtime_filter_from_fixed_hash_table = 1;
+SETTINGS parallel_hash_join_threshold = 1000000000, join_runtime_filter_from_fixed_hash_table = 1, log_comment = '04891_rf_serial_on';
 
 SELECT '-- shared rf key8 parallel';
 SELECT 'rf0', count() FROM t_rf_l AS l INNER JOIN t_rf_r AS r ON l.k = r.k
-SETTINGS parallel_hash_join_threshold = 0, join_runtime_filter_from_fixed_hash_table = 0;
+SETTINGS parallel_hash_join_threshold = 0, join_runtime_filter_from_fixed_hash_table = 0, log_comment = '04891_rf_parallel_off';
 SELECT 'rf1', count() FROM t_rf_l AS l INNER JOIN t_rf_r AS r ON l.k = r.k
-SETTINGS parallel_hash_join_threshold = 0, join_runtime_filter_from_fixed_hash_table = 1;
+SETTINGS parallel_hash_join_threshold = 0, join_runtime_filter_from_fixed_hash_table = 1, log_comment = '04891_rf_parallel_on';
+
+SYSTEM FLUSH LOGS query_log, text_log;
+
+SELECT '-- hash table layouts';
+SELECT 'key8_serial', count() > 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND message LIKE '%Join hash table type: key8%' AND message NOT LIKE '%two_level_key8%'
+      AND query_id IN (
+          SELECT query_id FROM system.query_log
+          WHERE log_comment = '04891_key8_serial' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+      );
+SELECT 'key8_parallel', count() > 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND message LIKE '%Join hash table type: two_level_key8%'
+      AND query_id IN (
+          SELECT query_id FROM system.query_log
+          WHERE log_comment = '04891_key8_parallel' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+      );
+SELECT 'key16_serial', count() > 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND message LIKE '%Join hash table type: key16%' AND message NOT LIKE '%two_level_key16%'
+      AND query_id IN (
+          SELECT query_id FROM system.query_log
+          WHERE log_comment = '04891_key16_serial' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+      );
+SELECT 'key16_parallel', count() > 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND message LIKE '%Join hash table type: two_level_key16%'
+      AND query_id IN (
+          SELECT query_id FROM system.query_log
+          WHERE log_comment = '04891_key16_parallel' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+      );
+
+SELECT '-- shared rf published';
+SELECT 'serial_on', count() > 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND message LIKE '%Published shared fixed-hash-table runtime filter%'
+      AND query_id IN (
+          SELECT query_id FROM system.query_log
+          WHERE log_comment = '04891_rf_serial_on' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+      );
+SELECT 'parallel_on', count() > 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND message LIKE '%Published shared fixed-hash-table runtime filter%'
+      AND query_id IN (
+          SELECT query_id FROM system.query_log
+          WHERE log_comment = '04891_rf_parallel_on' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+      );
+SELECT 'serial_off', count() = 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND message LIKE '%Published shared fixed-hash-table runtime filter%'
+      AND query_id IN (
+          SELECT query_id FROM system.query_log
+          WHERE log_comment = '04891_rf_serial_off' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+      );
+SELECT 'parallel_off', count() = 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND message LIKE '%Published shared fixed-hash-table runtime filter%'
+      AND query_id IN (
+          SELECT query_id FROM system.query_log
+          WHERE log_comment = '04891_rf_parallel_off' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+      );
 
 DROP TABLE t_u8_l;
 DROP TABLE t_u8_r;

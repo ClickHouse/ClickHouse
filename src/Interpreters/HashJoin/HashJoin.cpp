@@ -549,12 +549,13 @@ HashJoin::HashJoin(
 
     data->type = use_parallel_layout ? toTwoLevelType(*selected_join_method) : *selected_join_method;
 
+    LOG_TRACE(log, "{}Join hash table type: {}", instance_log_id, typeName(data->type));
     LOG_TEST(
         log,
         "{}Keys: {}, datatype: {}, kind: {}, strictness: {}, right header: {}",
         instance_log_id,
         TableJoin::formatClauses(table_join->getClauses(), true),
-        data->type,
+        typeName(data->type),
         kind,
         strictness,
         right_sample_block.dumpStructure());
@@ -2775,7 +2776,13 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps, SourcePtr & sou
             source_ptr);
 
     if (result)
-        LOG_DEBUG(log, "{}Converted join hash map to fixed hash map (range: {}, keys: {})", instance_log_id, range, key_count);
+        LOG_DEBUG(
+            log,
+            "{}Converted join hash map to fixed hash map (range: {}, keys: {}, type: {})",
+            instance_log_id,
+            range,
+            key_count,
+            typeName(data->type));
 }
 
 bool HashJoin::canConvertToFixedHashMap() const

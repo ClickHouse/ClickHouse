@@ -131,3 +131,13 @@ rf1	2500
 -- shared rf key8 parallel
 rf0	2500
 rf1	2500
+-- hash table layouts
+key8_serial	1
+key8_parallel	1
+key16_serial	1
+key16_parallel	1
+-- shared rf published
+serial_on	1
+parallel_on	1
+serial_off	1
+parallel_off	1

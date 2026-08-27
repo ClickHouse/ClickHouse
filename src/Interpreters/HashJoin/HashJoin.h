@@ -467,6 +467,18 @@ public:
         }
     }
 
+    static const char * typeName(Type type)
+    {
+        switch (type)
+        {
+#define M(NAME) \
+    case Type::NAME: return #NAME;
+            APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
+        }
+        return "";
+    }
+
     /** Different data structures, that are used to perform JOIN.
       */
     template <typename Mapped>
