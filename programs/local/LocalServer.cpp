@@ -63,6 +63,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
+#include <Parsers/registerStatements.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
@@ -118,6 +119,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_introspection_functions;
+    extern const SettingsString default_format;
     extern const SettingsSeconds http_receive_timeout;
     extern const SettingsSeconds http_send_timeout;
     extern const SettingsBool implicit_select;
@@ -1204,6 +1206,7 @@ try
     }
 
     registerInterpreters();
+    registerStatements();
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
@@ -1678,6 +1681,8 @@ void LocalServer::processConfig()
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(getClientConfiguration());
 
+    seedListenerDefaultFormat();
+
     /// Command-line parameters can override settings from the default profile.
     ///
     /// They must land on the *global* context, not only on `client_context`: `LocalConnection`
@@ -1947,17 +1952,38 @@ void LocalServer::makeFormatOptionsPrivateToTheClient()
     /// overrides: a remote client asking for `?default_format=JSON` would still be answered in the
     /// local CLI's format. So keep them on `client_context` only. The local display default is still
     /// offered to those sessions, but only through the weaker `default_format` fallback that
-    /// `applyCmdOptions` sets.
+    /// `seedListenerDefaultFormat` sets.
     ///
     /// Only the values this client itself chose are cleared; a `format` inherited from a profile is
     /// left alone, because there it is a deliberate server-side default.
     for (std::string_view name : {"format", "input_format", "output_format"})
         if (cmd_settings->isChanged(name))
             global_context->setSetting(name, String{});
+
+    /// The inverse holds for the `default_format` setting: `seedListenerDefaultFormat` seeds it on
+    /// `global_context` as the fallback format of the sessions of the embedded protocol listeners,
+    /// where it must match a real `clickhouse-server` (`TabSeparated`). `client_context` inherited
+    /// the seed when it was copied from `global_context`, but this client renders results from its
+    /// own `ClientBase::default_output_format` (`PrettyCompact` on a terminal), and a non-empty
+    /// `default_format` setting overrides that display default in the per-query format resolution.
+    /// Reset the seed back to the default (an empty value with the `changed` flag clear - the
+    /// session must not look like the user chose this format, e.g. in `system.settings`), or
+    /// interactive `clickhouse-local` prints `TSV` instead of `PrettyCompact`. A later
+    /// `SET default_format = ...` (or an in-query `SETTINGS` clause) lands on `client_context`
+    /// and keeps working.
+    ///
+    /// Only the synthetic seed is reset, and whether it exists at all is decided by provenance, not
+    /// by the value: `seedListenerDefaultFormat` seeds nothing when the command line or the default
+    /// profile already provided a `default_format`. Such a value is a deliberate user default and
+    /// keeps its role in the per-query format resolution - even when it happens to be the same
+    /// format the seed would have used - mirroring how the `database` and `format` settings preserve
+    /// profile-provided values above.
+    if (listener_default_format_is_seeded)
+        client_context->resetSettingsToDefaultValue({"default_format"});
 }
 
 
-void LocalServer::applyCmdOptions(ContextMutablePtr context)
+void LocalServer::seedListenerDefaultFormat()
 {
     /// Set the local display default as the first-class `default_format` *setting*, not the legacy
     /// `Context::default_format` field. `Context::getDefaultFormat` consults the legacy field before
@@ -1976,8 +2002,22 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
     /// (for example, the version query used during the connection handshake). The interactive
     /// terminal default is only for rendering query results and is applied separately via
     /// `ClientBase::default_output_format`.
-    context->setSetting("default_format", getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", "TSV")));
+    ///
+    /// The seed is only a fallback for the embedded listeners, so it must not shadow a real user
+    /// default: it is applied after `setDefaultProfiles` and only when neither the command line nor
+    /// the default profile has set `default_format` already. That way the provenance of the value is
+    /// known without comparing it to anything - see `makeFormatOptionsPrivateToTheClient`, which
+    /// takes the seed (and only the seed) back out of `client_context`.
+    if (global_context->getSettingsRef()[Setting::default_format].changed)
+        return;
 
+    global_context->setSetting("default_format", getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", "TSV")));
+    listener_default_format_is_seeded = true;
+}
+
+
+void LocalServer::applyCmdOptions(ContextMutablePtr context)
+{
     /// This runs before `setDefaultProfiles`, which snapshots the context for the separate Buffer-table
     /// context, so the command-line settings have to be in place already. They are applied a second
     /// time after the profiles are loaded, where they get to override them.
