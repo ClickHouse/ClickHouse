@@ -7,9 +7,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # A handler query is the server's own stored text and is parsed without the parse limits of the invoking
-# request. An `ON CLUSTER` query it issues is executed from the DDL queue on every host: the entry holds the
-# initiator's AST formatted back to SQL, and it must be parsed there without limits too, or the handler
-# becomes uninvokable as soon as the request names a low `max_parser_depth`.
+# request. An `ON CLUSTER` query it issues is executed from the DDL queue on every host: the entry carries
+# the initiator's lifted `max_parser_depth` / `max_parser_backtracks` (zeroed on the query context, so they
+# travel with the entry settings), and every host parses the entry text under them, clamped to its own
+# constraints - or the handler becomes uninvokable as soon as the request names a low `max_parser_depth`.
 # `04897_handler_request_parser_limits` covers the local, background and remote fan-out paths.
 
 BASE="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}"
