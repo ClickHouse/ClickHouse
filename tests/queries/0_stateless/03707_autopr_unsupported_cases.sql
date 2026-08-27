@@ -38,10 +38,13 @@ SETTINGS log_comment='unsupported_union_all';
 SELECT * FROM t LIMIT 1 FORMAT Null
 SETTINGS log_comment='unsupported_limit';
 
--- `min` over the primary key is answered from the index, so the plan reads no data at all:
--- "Unsupported steps: ReadFromPreparedSource".
+-- `min` over the primary key is answered by the implicit `minmax_count` projection, so the plan
+-- reads no data at all: "Unsupported steps: ReadFromPreparedSource". The projection settings are
+-- pinned because the test runner randomizes them, and with the projection off the very same query
+-- reads the column and is supported.
 SELECT min(a) FROM tt FORMAT Null
-SETTINGS optimize_aggregation_in_order=0, log_comment='unsupported_min_answered_from_index';
+SETTINGS optimize_aggregation_in_order=0, optimize_use_projections=1, optimize_use_implicit_projections=1,
+    log_comment='unsupported_min_answered_from_projection';
 
 -- Supported shapes, so that a change which stops the optimization from running everywhere fails
 -- this test instead of making every case above trivially pass. The join is here because the shape
