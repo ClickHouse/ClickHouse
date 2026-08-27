@@ -5199,7 +5199,10 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
         /// on the given range, the Field values are guaranteed to be unchanged.
         /// We can skip the expensive function application that creates columns and executes the function.
         /// The monotonicity check already verified that the values fit in the target type.
-        bool skip_apply = functionIsIntegerCastPreservingFieldRepresentation(func, current_type, result_type);
+        /// A bound referencing a column in the index block is advanced by the application itself:
+        /// skipping would leave it on the previous column while `current_type` moves on.
+        bool skip_apply = key_range.left.isExplicit() && key_range.right.isExplicit()
+            && functionIsIntegerCastPreservingFieldRepresentation(func, current_type, result_type);
 
         if (!skip_apply)
         {
