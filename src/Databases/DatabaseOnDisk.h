@@ -94,6 +94,7 @@ public:
 
     /// Throws `TOO_MANY_TABLES` if adding one more table would exceed the `max_tables` limit.
     void checkTablesLimit() const;
+    void checkTablesLimitUnlocked() const TSA_REQUIRES(mutex);
 
     /// Supports `ALTER DATABASE ... MODIFY SETTING max_tables = ...` for Atomic and Ordinary
     /// databases. Other engines derived from this class reject the query.

@@ -482,8 +482,19 @@ void DatabaseOnDisk::renameTable(
     createDirectories();
     waitDatabaseStarted();
 
+    auto table_data_relative_path = getTableDataPath(table_name);
+    TableExclusiveLockHolder table_lock;
+    String table_metadata_path;
+    ASTPtr attach_query;
+    /// NOTE: the table can be concurrently dropped, and getTable will throw UNKNOWN_TABLE.
+    StoragePtr table = getTable(table_name, local_context);
+    if (dictionary && !table->isDictionary())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
+
     /// Do this before detaching the source table and moving its data. `createTable` checks the
     /// limit too, but at that point a failed cross-database rename cannot be rolled back safely.
+    /// However, keep the check after the source table is resolved and validated, so that a full
+    /// destination does not mask `UNKNOWN_TABLE` and other source-side errors.
     if (this != &to_database)
     {
         if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
@@ -494,15 +505,6 @@ void DatabaseOnDisk::renameTable(
             target_db->checkTablesLimit();
         }
     }
-
-    auto table_data_relative_path = getTableDataPath(table_name);
-    TableExclusiveLockHolder table_lock;
-    String table_metadata_path;
-    ASTPtr attach_query;
-    /// NOTE: the table can be concurrently dropped, and getTable will throw UNKNOWN_TABLE.
-    StoragePtr table = getTable(table_name, local_context);
-    if (dictionary && !table->isDictionary())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
 
     table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
@@ -997,22 +999,25 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
 
 void DatabaseOnDisk::checkTablesLimit() const
 {
+    std::lock_guard lock(mutex);
+    checkTablesLimitUnlocked();
+}
+
+void DatabaseOnDisk::checkTablesLimitUnlocked() const
+{
     const UInt64 limit = max_tables.load(std::memory_order_relaxed);
     if (limit == 0)
         return;
 
-    size_t current_tables = 0;
-    {
-        std::lock_guard lock(mutex);
-        current_tables = tables.size();
-    }
+    size_t current_tables = tables.size();
 
     /// NOTE: The check is best-effort.
+    /// NOTE: `getDatabaseName` would take `mutex` again and deadlock, so read the name directly.
     if (current_tables >= limit)
         throw Exception(
             ErrorCodes::TOO_MANY_TABLES,
             "Too many tables in database {}. The limit (database setting `max_tables`) is set to {}, the current number is {}",
-            backQuote(getDatabaseName()), limit, current_tables);
+            backQuote(database_name), limit, current_tables);
 }
 
 void DatabaseOnDisk::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)

@@ -273,8 +273,6 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     {
         other_db.createDirectories();
         other_db.waitDatabaseStarted();
-        if (!exchange)
-            other_db.checkTablesLimit();
     }
 
     String old_metadata_path = getObjectMetadataPath(table_name);
@@ -364,6 +362,12 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         other_table->checkTableCanBeRenamed(other_table_new_id);
         assert_can_move_mat_view(other_table);
     }
+
+    /// Check the destination `max_tables` quota only after the source table has been resolved
+    /// and validated, so that a full destination does not mask `UNKNOWN_TABLE` and other
+    /// source-side errors. An exchange does not change the number of tables.
+    if (!inside_database && !exchange)
+        other_db.checkTablesLimitUnlocked();
 
     /// Table renaming actually begins here
     auto txn = local_context->getZooKeeperMetadataTransaction();
