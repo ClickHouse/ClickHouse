@@ -757,7 +757,12 @@ void KeeperClient::connectToKeeper()
             const auto & loaded_config = *clickhouse_config.configuration;
 
             /// Explicit --tls-* command line options take precedence; otherwise fall back to the
-            /// <openSSL><client> section of the config file (the same keys clickhouse-server uses).
+            /// <openSSL><client> section of the config file. Keys read: `privateKeyFile`,
+            /// `certificateFile`, `caConfig`, `verificationMode`, `loadDefaultCAFile`, and
+            /// `privateKeyPassphraseHandler.name`. Other keys (`cipherList`, `disableProtocols`,
+            /// `verificationDepth`, etc.) are not forwarded — Poco's built-in defaults apply,
+            /// which match what ClickHouse server uses in practice. Full SSLManager delegation
+            /// is a follow-up.
             String tls_key_file = config().getString("tls-key-file", loaded_config.getString("openSSL.client.privateKeyFile", ""));
             String tls_cert_file = config().getString("tls-cert-file", loaded_config.getString("openSSL.client.certificateFile", tls_key_file));
             String tls_ca_file = config().getString("tls-ca-file", loaded_config.getString("openSSL.client.caConfig", ""));
