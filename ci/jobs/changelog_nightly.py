@@ -35,6 +35,7 @@ entries stay visible in the PR and are picked up by the next run) and fails
 the job. If a human closed the PR without merging, the branch is left alone.
 """
 
+import json
 import os
 import re
 import shlex
@@ -333,22 +334,57 @@ def raw_strict_prs_and_reverts(text):
 
 def resolve_reverted_originals(revert_prs):
     """Map revert PRs to the PRs they revert, via the `Reverts owner/repo#N`
-    line GitHub puts into revert PR bodies. Returns (originals, unresolved):
-    unresolved reverts (a manual revert without the marker, or a failed
-    lookup) grant no deletion credit — the caller fails closed on any
-    disappearance they cannot bind to a resolved original."""
-    originals = set()
+    line GitHub puts into revert PR bodies, and reduce revert-of-revert chains
+    to their net effect: a revert that is itself reverted by a later revert in
+    the same range grants no deletion credit for its target, because the
+    target ships in the release (`#109946` ← `#114911` ← `#114912`: the fix
+    `#109946` stays, only the entry for the cancelled revert `#114911` may
+    go). Returns (originals, unresolved): unresolved reverts (a manual revert
+    without the marker, or a failed lookup) grant no deletion credit — the
+    caller fails closed on any disappearance it cannot bind to a resolved,
+    uncancelled revert."""
+    targets = {}
+    titles = {}
+    for pr in revert_prs:
+        out = Shell.get_output(
+            f"gh pr view {pr} --repo {shlex.quote(Info().repo_name)} "
+            "--json title,body"
+        )
+        data = json.loads(out) if out else {}
+        titles[pr] = data.get("title", "")
+        found = re.findall(r"(?i)reverts\s+[\w.-]+/[\w.-]+#(\d+)", data.get("body", ""))
+        if found:
+            targets[pr] = set(found)
+    # A revert of a revert made with the web UI carries no `Reverts ...#N`
+    # marker in its body (the button restores the change, GitHub words the
+    # body differently), but its title nests the reverted title: the target
+    # of `Revert "Revert "X""` is the earlier revert in the range titled
+    # `Revert "X"`.
     unresolved = []
     for pr in revert_prs:
-        body = Shell.get_output(
-            f"gh pr view {pr} --repo {shlex.quote(Info().repo_name)} "
-            "--json body --jq .body"
+        if pr in targets:
+            continue
+        nested = re.match(r'(?is)revert(?:s|ed)?\s+"(.+)"\s*$', titles[pr])
+        matched = (
+            {p for p, t in titles.items() if t == nested.group(1) and int(p) < int(pr)}
+            if nested
+            else set()
         )
-        found = re.findall(r"(?i)reverts\s+[\w.-]+/[\w.-]+#(\d+)", body)
-        if found:
-            originals.update(found)
+        if matched:
+            targets[pr] = matched
         else:
             unresolved.append(pr)
+    # A revert always has a higher PR number than what it reverts, so walking
+    # the resolved reverts in descending order settles every chain in one
+    # pass: an uncancelled revert cancels the reverts it targets, and a
+    # cancelled one has no effect of its own.
+    cancelled = set()
+    originals = set()
+    for pr in sorted(targets, key=int, reverse=True):
+        if pr in cancelled:
+            continue
+        cancelled.update(t for t in targets[pr] if t in targets)
+        originals.update(targets[pr])
     return originals, unresolved
 
 
