@@ -3518,7 +3518,7 @@ AS SELECT ...
 [COMMENT 'comment']
 )",
         .parent = "CREATE",
-        .related = {"CREATE", "CREATE TABLE", "ALTER TABLE ... MODIFY QUERY", "DROP", "WATCH"},
+        .related = {"CREATE", "CREATE TABLE", "ALTER TABLE ... MODIFY QUERY", "DROP"},
     });
 
     factory.registerStatement("CREATE DICTIONARY",
