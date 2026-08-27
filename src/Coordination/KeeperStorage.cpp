@@ -616,6 +616,25 @@ bool KeeperStorage::tryMatchPreprocessedBatch(int64_t last_transaction_zxid, siz
     return true;
 }
 
+KeeperDigest KeeperStorage::preprocessRequest(
+    const Coordination::ZooKeeperRequestPtr & request,
+    int64_t session_id,
+    int64_t time,
+    int64_t new_last_zxid,
+    bool check_acl,
+    int64_t log_idx)
+{
+    KeeperRequestBatch batch;
+    batch.requests.push_back(KeeperRequestForSession{.session_id = session_id, .time = time, .request = request});
+    batch.first_zxid = new_last_zxid;
+    batch.log_idx = log_idx;
+
+    auto digest = preprocessBatch(batch, check_acl);
+    if (!digest)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot preprocess request in finalized storage");
+    return *digest;
+}
+
 Coordination::Error KeeperStorage::commit(KeeperStorage::DeltaRange deltas)
 {
     using NodeAction = Coordination::Storage::NodeAction;

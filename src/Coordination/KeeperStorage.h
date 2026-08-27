@@ -296,16 +296,25 @@ public:
     virtual KeeperResponsesForSessions processLocalRequests(
         const KeeperRequestsForSessions & requests,
         bool check_acl) = 0;
-    /// Pre-validate uncommitted request and apply it to uncommitted state.
+    /// Pre-validate the batch's requests and apply them to uncommitted state, in order.
+    /// The batch must have first_zxid assigned; request i gets zxid batch.getZxid(i). Requests
+    /// that don't create storage transactions (`SessionID`, `Reconfig`) are skipped.
+    /// Returns the digest after the last request, or nullopt if the storage is finalized.
+    /// Idempotent: if the batch was already preprocessed (on the leader, in the PreAppendLogLeader
+    /// callback, before the log idx was known), only stamps batch.log_idx on its transactions.
     /// check_acl = false only when converting data from ZooKeeper.
     /// (No default arguments: clang-tidy's google-default-arguments prohibits them on virtual methods.)
-    virtual KeeperDigest preprocessRequest(
+    virtual std::optional<KeeperDigest> preprocessBatch(const KeeperRequestBatch & batch, bool check_acl) = 0;
+
+    /// Convenience wrapper for tools and tests: preprocess a single request as a batch of one.
+    /// The storage must not be finalized.
+    KeeperDigest preprocessRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
         int64_t time,
         int64_t new_last_zxid,
         bool check_acl,
-        int64_t log_idx) = 0;
+        int64_t log_idx);
     /// Commit a previously preprocessed request. Apply the changes to the committed state.
     /// Produce response for the request + triggered watch notifications.
     virtual KeeperResponsesForSessions processRequest(

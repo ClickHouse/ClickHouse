@@ -106,8 +106,9 @@ struct KeeperRequestBatch
     /// `SessionID`, still occupy a zxid slot in the batch; those zxids are simply unused.)
     int64_t first_zxid{0};
     /// Digest of the storage state after preprocessing the whole batch. Assigned by the leader
-    /// together with `first_zxid`. nullopt only for legacy entries that predate digests.
-    std::optional<KeeperDigest> digest{};
+    /// together with `first_zxid`. NO_DIGEST if digests are disabled or the entry predates them
+    /// (all digest consumers treat NO_DIGEST as "nothing to check").
+    KeeperDigest digest{};
     /// Index of the log entry containing this batch. 0 if not known (yet). Not serialized.
     int64_t log_idx{0};
 

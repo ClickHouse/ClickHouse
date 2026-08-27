@@ -1645,7 +1645,66 @@ static std::pair<KeeperResponsesForSessions, Int64> processWatches(
 /// ========== End of request implementations ==========
 
 template <typename NS>
-KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
+std::optional<KeeperDigest> KeeperStorageImpl<NS>::preprocessBatch(const KeeperRequestBatch & batch, bool check_acl)
+{
+    chassert(!batch.requests.empty());
+    chassert(batch.first_zxid != 0);
+
+    if (isFinalized())
+        return std::nullopt;
+
+    /// Requests that don't create storage transactions.
+    const auto is_non_transactional = [](const KeeperRequestForSession & request_for_session)
+    {
+        const auto op_num = request_for_session.request->getOpNum();
+        return op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig;
+    };
+
+    /// On the leader preprocessBatch is called twice: in the PreAppendLogLeader callback
+    /// (before the entry is written to the changelog and before the log idx is known) and in
+    /// pre_commit. Detect the second call using the uncommitted transaction list, to avoid
+    /// (incorrectly) running request logic a second time.
+    {
+        size_t transaction_count = 0;
+        int64_t last_transaction_zxid = 0;
+        for (size_t i = 0; i < batch.requests.size(); ++i)
+        {
+            if (!is_non_transactional(batch.requests[i]))
+            {
+                ++transaction_count;
+                last_transaction_zxid = batch.getZxid(i);
+            }
+        }
+        if (transaction_count != 0
+            && tryMatchPreprocessedBatch(last_transaction_zxid, transaction_count, batch.digest, batch.log_idx))
+            return batch.digest;
+    }
+
+    KeeperDigest digest_after_preprocessing;
+    for (size_t i = 0; i < batch.requests.size(); ++i)
+    {
+        const auto & request_for_session = batch.requests[i];
+
+        if (is_non_transactional(request_for_session))
+        {
+            digest_after_preprocessing = getNodesDigest(false, /*lock_transaction_mutex=*/true);
+            continue;
+        }
+
+        digest_after_preprocessing = preprocessOneRequest(
+            request_for_session.request,
+            request_for_session.session_id,
+            request_for_session.time,
+            batch.getZxid(i),
+            check_acl,
+            batch.log_idx);
+    }
+
+    return digest_after_preprocessing;
+}
+
+template <typename NS>
+KeeperDigest KeeperStorageImpl<NS>::preprocessOneRequest(
     const Coordination::ZooKeeperRequestPtr & zk_request,
     int64_t session_id,
     int64_t time,

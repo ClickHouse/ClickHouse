@@ -866,7 +866,7 @@ int deserializeChangelog(
 
                     auto batch = state_machine->parseRequestBatch(entry->get_buf(), true);
                     /// The digest is per batch (of the state after the whole batch); show it on every row of the batch.
-                    auto digest = batch->digest.value_or(KeeperDigest{KeeperDigestVersion::NO_DIGEST, 0});
+                    const auto & digest = batch->digest;
 
                     for (size_t batch_request_idx = 0; batch_request_idx < batch->requests.size(); ++batch_request_idx)
                     {
@@ -969,8 +969,8 @@ int deserializeChangelog(
                     if (auto buffer = entry->get_buf_ptr(); buffer)
                     {
                         auto batch = state_machine->parseRequestBatch(*buffer, true);
-                        if (batch->digest)
-                            std::cout << fmt::format("Digest: {} ({})\n", batch->digest->value, batch->digest->version);
+                        if (batch->digest.version != KeeperDigestVersion::NO_DIGEST)
+                            std::cout << fmt::format("Digest: {} ({})\n", batch->digest.value, batch->digest.version);
                         for (size_t request_idx = 0; request_idx < batch->requests.size(); ++request_idx)
                         {
                             const auto & request = batch->requests[request_idx];

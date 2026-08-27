@@ -73,8 +73,6 @@ public:
         REQUEST_BATCH = 5,
     };
 
-    static nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session);
-
     /// Batch log entry format. Distinguished from legacy single-request entries by the first
     /// int64: legacy entries start with a session id, which is never INT64_MIN.
     static constexpr int64_t BATCH_ENTRY_MARKER = std::numeric_limits<int64_t>::min();
@@ -266,14 +264,21 @@ private:
     /// for request.
     mutable std::mutex process_and_responses_lock;
 
-    /// Parse a legacy single-request log entry. Used only by parseRequestBatch;
-    /// zxid and digest go to the out-params because they belong to the batch, not the request.
-    static std::shared_ptr<KeeperRequestForSession> parseRequestInOldFormat(
+    /// Serialize the request as a log entry in the legacy single-request format.
+    /// Used only by serializeRequestBatch when the batched format is disabled.
+    static nuraft::ptr<nuraft::buffer> serializeRequestInOldFormat(const KeeperRequestForSession & request_for_session);
+
+    /// Parse a legacy single-request log entry as a batch of one, going through
+    /// parsed_batch_cache. Used only by parseRequestBatch.
+    std::shared_ptr<KeeperRequestBatch> parseRequestInOldFormat(
         nuraft::buffer & data,
+        bool final,
         ZooKeeperLogSerializationVersion * serialization_version,
-        size_t * patched_fields_offset,
-        int64_t & out_zxid,
-        std::optional<KeeperDigest> & out_digest);
+        size_t * patched_fields_offset);
+
+    /// Whether a parsed log entry should go through parsed_batch_cache;
+    /// (session_id, xid) are of the entry's first request.
+    bool shouldCacheParsedEntry(int64_t session_id, int64_t xid, size_t entry_size) const;
 
     /// Cache of parsed batch log entries, keyed by (session_id, xid) of the batch's first request.
     /// Entries of closed sessions are erased on Close commit in case something strange happened.

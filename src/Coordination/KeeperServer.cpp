@@ -844,10 +844,10 @@ void KeeperServer::putLocalReadRequests(const KeeperRequestsForSessions & reques
 
 RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions & requests_for_sessions)
 {
-    std::vector<nuraft::ptr<nuraft::buffer>> entries;
-    entries.reserve(requests_for_sessions.size());
-    for (const auto & request_for_session : requests_for_sessions)
-        entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(request_for_session));
+    /// (Only used by the old dispatcher, which predates the batched log entry format.)
+    KeeperRequestBatch batch;
+    batch.requests = requests_for_sessions;
+    auto entries = KeeperStateMachine::serializeRequestBatch(batch, /*use_batched_format=*/false);
 
     return raft_instance->append_entries(entries);
 }

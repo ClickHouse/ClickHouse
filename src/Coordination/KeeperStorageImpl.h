@@ -20,17 +20,20 @@ public:
     KeeperResponsesForSessions processLocalRequests(
         const KeeperRequestsForSessions & requests,
         bool check_acl) override;
-    KeeperDigest preprocessRequest(
+    std::optional<KeeperDigest> preprocessBatch(const KeeperRequestBatch & batch, bool check_acl) override;
+    KeeperResponsesForSessions processRequest(
+        const Coordination::ZooKeeperRequestPtr & request,
+        int64_t session_id,
+        std::optional<int64_t> new_last_zxid) override;
+
+    /// Preprocess one (transaction-creating) request of a batch.
+    KeeperDigest preprocessOneRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
         int64_t time,
         int64_t new_last_zxid,
         bool check_acl,
-        int64_t log_idx) override;
-    KeeperResponsesForSessions processRequest(
-        const Coordination::ZooKeeperRequestPtr & request,
-        int64_t session_id,
-        std::optional<int64_t> new_last_zxid) override;
+        int64_t log_idx);
 
     /// Helper that uses getUncommittedNode, prepareRemoveNodeWithoutUpdatingParent, and
     /// prepareUpdateNodeStat to remove the given set of ephemeral nodes and update their parents'
