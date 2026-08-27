@@ -59,6 +59,34 @@ SELECT 'arrays';
 SELECT arrayUniq([0.0::Float64, -0.0::Float64]), arrayEnumerateUniq([0.0::Float64, -0.0::Float64]);
 SELECT arrayDistinct([0.0::Float64, -0.0::Float64]), arrayCompact([0.0::Float64, -0.0::Float64]);
 
+SELECT 'uniq with multiple arguments and tuples';
+SELECT uniqExact(x, y), uniq(x, y), uniqHLL12(x, y), uniqCombined(x, y) FROM (SELECT arrayJoin([0.0::Float64, -0.0::Float64]) AS x, 1::UInt32 AS y);
+SELECT uniqExact((x, y)), uniq((x, y)) FROM (SELECT arrayJoin([0.0::Float64, -0.0::Float64]) AS x, 1::UInt32 AS y);
+SELECT uniqExact(x, y), uniq(x, y) FROM (SELECT arrayJoin([0.0::Float32, -0.0::Float32]) AS x, 'hello' AS y);
+SELECT uniqExact(x, y), uniq(x, y) FROM (SELECT arrayJoin([0.0::BFloat16, -0.0::BFloat16]) AS x, 1::UInt32 AS y);
+
+SELECT 'arrayDistinct of composite elements';
+SELECT arrayDistinct([(0.0::Float64, 1), (-0.0::Float64, 1)]);
+SELECT arrayDistinct([[0.0::Float64], [-0.0::Float64]]);
+SELECT arrayDistinct([0.0::BFloat16, -0.0::BFloat16]);
+
+SELECT 'bloom filter does not skip granules with zeros of the other sign';
+DROP TABLE IF EXISTS t_bloom_zero;
+CREATE TABLE t_bloom_zero (x Float64, y Float32, arr Array(Float64),
+    INDEX ix x TYPE bloom_filter GRANULARITY 1,
+    INDEX iy y TYPE bloom_filter GRANULARITY 1,
+    INDEX iarr arr TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bloom_zero VALUES (-0.0, -0.0, [-0.0]), (1.5, 1.5, [2.5]);
+SELECT count() FROM t_bloom_zero WHERE x = 0.0;
+SELECT count() FROM t_bloom_zero WHERE x = -0.0;
+SELECT count() FROM t_bloom_zero WHERE y = 0.0;
+SELECT count() FROM t_bloom_zero WHERE x IN (0.0, 42.0);
+SELECT count() FROM t_bloom_zero WHERE has(arr, 0.0);
+SELECT count() FROM t_bloom_zero WHERE hasAny(arr, [0.0]);
+SELECT count() FROM t_bloom_zero WHERE hasAll(arr, [0.0]);
+DROP TABLE t_bloom_zero;
+
 SELECT 'nan is not equal to zero and is still grouped with itself';
 SELECT nan = nan, nan = 0.0, nan = -0.0;
 SELECT count() FROM (SELECT arrayJoin([nan, nan, 0.0, -0.0]) AS x GROUP BY x);

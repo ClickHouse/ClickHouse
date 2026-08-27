@@ -33,6 +33,23 @@ the joined values are taken from the source blocks, so negative zero is preserve
 arrays
 1	[1,2]
 [0]	[0]
+uniq with multiple arguments and tuples
+1	1	1	1
+1	1
+1	1
+1	1
+arrayDistinct of composite elements
+[(0,1)]
+[[0]]
+[0]
+bloom filter does not skip granules with zeros of the other sign
+1
+1
+1
+1
+1
+1
+1
 nan is not equal to zero and is still grouped with itself
 0	0	0
 2
