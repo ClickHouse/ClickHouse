@@ -2145,19 +2145,6 @@ std::unordered_map<String, ASTPtr> convertArgumentsToOptionsMap(const ASTPtr & a
 
 }
 
-std::optional<String> getTextIndexTokenizerDescription(const IndexDescription & index)
-{
-    if (index.type != "text")
-        return {};
-
-    auto options = convertArgumentsToOptionsMap(index.arguments);
-    auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, /*is_required=*/ false);
-    if (!tokenizer_ast)
-        return {};
-
-    return TokenizerFactory::instance().get(tokenizer_ast)->getDescription();
-}
-
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)
 {
     auto options = convertArgumentsToOptionsMap(index.arguments);

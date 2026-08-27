@@ -40,7 +40,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
-#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -188,24 +187,6 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
     return result;
 }
 
-/// Tokenizer of each simple single-column `text` index of the table, by indexed column name. Expression
-/// indexes are excluded: their tokenizer describes the indexed expression, not a bare column.
-std::unordered_map<String, String> collectTextIndexTokenizers(const ReadFromMergeTree & read_from_merge_tree_step)
-{
-    std::unordered_map<String, String> result;
-
-    for (const auto & index : read_from_merge_tree_step.getStorageMetadata()->getSecondaryIndices())
-    {
-        if (!index.isSimpleSingleColumnIndex())
-            continue;
-
-        if (auto tokenizer = getTextIndexTokenizerDescription(index))
-            result.emplace(index.column_names.front(), std::move(*tokenizer));
-    }
-
-    return result;
-}
-
 const ActionsDAG::Node * removeAliases(const ActionsDAG::Node * node)
 {
     while (node->type == ActionsDAG::ActionType::ALIAS)
@@ -213,91 +194,63 @@ const ActionsDAG::Node * removeAliases(const ActionsDAG::Node * node)
     return node;
 }
 
-/// Names still reading the scan's columns after `dag` renames them, mapped to the original name. An output
-/// reading an input keeps referring to the scan's column; anything computed (`lower(s) AS s`) does not.
-std::unordered_map<String, String> trackColumnsThroughDAG(const ActionsDAG & dag, const std::unordered_map<String, String> & tracked)
+/// Whether every column the haystack of `function_node` reads is one of `tracked`.
+bool isHaystackTracked(const ActionsDAG::Node & function_node, const std::unordered_map<String, String> & tracked)
+{
+    if (function_node.children.empty())
+        return false;
+
+    bool found_input = false;
+    std::vector<const ActionsDAG::Node *> to_visit{function_node.children.front()};
+
+    while (!to_visit.empty())
+    {
+        const auto * node = removeAliases(to_visit.back());
+        to_visit.pop_back();
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+        {
+            if (!tracked.contains(node->result_name))
+                return false;
+            found_input = true;
+        }
+
+        for (const auto * child : node->children)
+            to_visit.push_back(child);
+    }
+
+    return found_input;
+}
+
+/// Names that still read the scan's columns above `step`, mapped to the scan's own name. A step can carry a
+/// column either through its DAG, possibly renaming it, or as a header pass-through that the DAG never
+/// mentions, so both are followed.
+std::unordered_map<String, String> trackColumnsThroughStep(
+    const IQueryPlanStep & step, const ActionsDAG * dag, const std::unordered_map<String, String> & tracked)
 {
     std::unordered_map<String, String> result;
 
-    for (const auto * output : dag.getOutputs())
+    if (dag)
     {
-        const auto * node = removeAliases(output);
-        if (node->type != ActionsDAG::ActionType::INPUT)
-            continue;
+        for (const auto * output : dag->getOutputs())
+        {
+            const auto * node = removeAliases(output);
+            if (node->type != ActionsDAG::ActionType::INPUT)
+                continue;
 
-        if (auto it = tracked.find(node->result_name); it != tracked.end())
-            result.emplace(output->result_name, it->second);
+            if (auto it = tracked.find(node->result_name); it != tracked.end())
+                result.emplace(output->result_name, it->second);
+        }
+    }
+
+    if (step.hasOutputHeader())
+    {
+        for (const auto & column : *step.getOutputHeader())
+            if (auto it = tracked.find(column.name); it != tracked.end())
+                result.emplace(column.name, it->second);
     }
 
     return result;
-}
-
-/// The scan's column that `function_node` searches, if its haystack reads exactly that one column. A JOIN
-/// puts a same-named column of the other side in scope, which must not be matched against this index.
-const String * getTrackedHaystackColumn(const ActionsDAG::Node & function_node, const std::unordered_map<String, String> & tracked)
-{
-    if (function_node.children.empty())
-        return nullptr;
-
-    const auto * haystack = removeAliases(function_node.children.front());
-    if (haystack->type != ActionsDAG::ActionType::INPUT)
-        return nullptr;
-
-    auto it = tracked.find(haystack->result_name);
-    return it == tracked.end() ? nullptr : &it->second;
-}
-
-/// Appends the index tokenizer to the two-argument text-search functions of `dag`, which otherwise fall back
-/// to `splitByNonAlpha` and answer a different question than the index does. Returns the filter node of the
-/// rewritten DAG, whose name changed with the added argument, or nullptr when nothing was rewritten.
-///
-/// Only the tokenizer: a preprocessor changes the value that is searched, so applying it here would change
-/// results for predicates the index cannot answer anyway. That is left to the rewrite next to the scan.
-bool injectTextIndexTokenizers(
-    ActionsDAG & dag,
-    const std::unordered_map<String, String> & tracked_columns,
-    const std::unordered_map<String, String> & tokenizers,
-    const ContextPtr & context)
-{
-    NodesReplacementMap replacements;
-
-    for (const auto * node : dag.getNodesPointers())
-    {
-        if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base || node->children.size() != 2)
-            continue;
-
-        auto function_name = node->function_base->getName();
-        if (function_name != "hasAnyTokens" && function_name != "hasAllTokens" && function_name != "hasPhrase")
-            continue;
-
-        const String * column_name = getTrackedHaystackColumn(*node, tracked_columns);
-        if (!column_name)
-            continue;
-
-        auto tokenizer = tokenizers.find(*column_name);
-        if (tokenizer == tokenizers.end())
-            continue;
-
-        auto type = std::make_shared<DataTypeString>();
-        const auto & tokenizer_node = dag.addColumn(
-            type->createColumnConst(0, Field(tokenizer->second)), type, quoteString(tokenizer->second));
-
-        auto new_children = node->children;
-        new_children.push_back(&tokenizer_node);
-        const auto & rewritten = dag.addFunction(FunctionFactory::instance().get(function_name, context), new_children, "");
-
-        /// Keep the original name: a filter references the predicate by it, and so does any step reading a
-        /// projection that computes it.
-        replacements[node] = &dag.addAlias(rewritten, node->result_name);
-    }
-
-    if (replacements.empty())
-        return false;
-
-    for (auto & output : dag.getOutputs())
-        output = replaceNodes(dag, output, replacements);
-
-    return true;
 }
 
 /// Helper function.
@@ -506,12 +459,13 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
 class TextIndexDAGReplacer
 {
 public:
-    TextIndexDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_, bool direct_read_from_text_index_, bool is_filter_dag_, bool require_index_analyzed_predicate_ = false)
+    TextIndexDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_, bool direct_read_from_text_index_, bool is_filter_dag_, bool require_index_analyzed_predicate_ = false, const std::unordered_map<String, String> * tracked_columns_ = nullptr)
         : actions_dag(actions_dag_)
         , text_index_read_infos(text_index_read_infos_)
         , direct_read_from_text_index(direct_read_from_text_index_)
         , is_filter_dag(is_filter_dag_)
         , require_index_analyzed_predicate(require_index_analyzed_predicate_)
+        , tracked_columns(tracked_columns_)
     {
     }
 
@@ -620,6 +574,9 @@ private:
     bool require_index_analyzed_predicate = false;
     /// Per-index cache of the node names in the index-analysis filter DAG.
     std::unordered_map<String, NameSet> index_analyzed_predicate_names;
+    /// When set, only a haystack reading these columns is rewritten. Used past a JOIN, where the other side
+    /// can have a column of the same name that this index does not describe.
+    const std::unordered_map<String, String> * tracked_columns = nullptr;
 
     struct SelectedCondition
     {
@@ -741,6 +698,9 @@ private:
 
         /// Early exit if there is nothing to process.
         if (!need_transform_function && !direct_read_from_text_index)
+            return replacement;
+
+        if (tracked_columns && !isHaystackTracked(function_node, *tracked_columns))
             return replacement;
 
         auto selected_conditions = selectConditions(function_node, context);
@@ -1190,24 +1150,31 @@ static bool isRowScanPassThroughStep(const IQueryPlanStep * step)
 /// with virtual columns for direct index reads (both WHERE and PREWHERE clauses).
 ///
 /// See TextIndexDAGReplacer class for more details.
-/// Supplies the index tokenizer to the text-search functions of one step past a JOIN, and replaces the step
-/// when the DAG changed. Only the tokenizer: the rewrite used below the JOIN also wraps the haystack in the
-/// index preprocessor, which describes a value the other side of a join does not have.
-static void injectTextIndexTokenizersInStep(
+/// Rewrites the text-search functions of one step past a JOIN, restricted to the columns still known to come
+/// from this scan, and replaces the step when the DAG changed. Same rewrite as below the JOIN (tokenizer,
+/// preprocessor and postprocessor), never a direct read: that answer is per granule of this scan.
+static void applyTextIndexInjectPastJoin(
     ReadFromMergeTree & read_from_merge_tree_step,
     QueryPlan::Node & node,
     ActionsDAG & step_dag,
-    const std::unordered_map<String, String> & tracked_columns,
-    const std::unordered_map<String, String> & tokenizers)
+    const TextIndexReadInfos & text_index_infos,
+    const std::unordered_map<String, String> & tracked_columns)
 {
-    if (!injectTextIndexTokenizers(step_dag, tracked_columns, tokenizers, read_from_merge_tree_step.getContext()))
+    auto * filter_step = typeid_cast<FilterStep *>(node.step.get());
+    const String filter_column_name = filter_step ? filter_step->getFilterColumnName() : String{};
+
+    TextIndexDAGReplacer replacer(
+        step_dag, text_index_infos, /*direct_read_from_text_index=*/ false, /*is_filter_dag=*/ filter_step != nullptr,
+        /*require_index_analyzed_predicate=*/ false, &tracked_columns);
+
+    auto result = replacer.replace(read_from_merge_tree_step.getContext(), filter_column_name);
+    if (!result.is_dag_rewritten)
         return;
 
-    /// The rewrite keeps every output name, so inputs and the filter column are unchanged.
     const SharedHeader & input_header = node.step->getInputHeaders().front();
-    if (auto * filter_step = typeid_cast<FilterStep *>(node.step.get()))
+    if (filter_step)
         node.step = std::make_unique<FilterStep>(
-            input_header, step_dag.clone(), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+            input_header, step_dag.clone(), result.filter_node->result_name, filter_step->removesFilterColumn());
     else
         node.step = std::make_unique<ExpressionStep>(input_header, step_dag.clone());
 }
@@ -1267,7 +1234,6 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     for (const auto & column : *read_from_merge_tree_step->getOutputHeader())
         tracked_columns.emplace(column.name, column.name);
 
-    std::optional<std::unordered_map<String, String>> tokenizers;
     bool crossed_join = false;
 
     /// Walk the steps above the scan; traverse row-preserving pass-throughs (liftUpFunctions may hoist a
@@ -1293,6 +1259,7 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
             if (typeid_cast<const JoinStep *>(step) || typeid_cast<const JoinStepLogical *>(step))
             {
                 crossed_join = true;
+                tracked_columns = trackColumnsThroughStep(*step, /*dag=*/ nullptr, tracked_columns);
                 continue;
             }
 
@@ -1309,17 +1276,14 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
             if (tracked_columns.empty())
                 break;
 
-            if (!tokenizers)
-                tokenizers = collectTextIndexTokenizers(*read_from_merge_tree_step);
-
             /// Read before the step is replaced: that destroys the step owning `step_dag`.
-            auto tracked_columns_above = trackColumnsThroughDAG(step_dag, tracked_columns);
-            injectTextIndexTokenizersInStep(*read_from_merge_tree_step, *node, step_dag, tracked_columns, *tokenizers);
+            auto tracked_columns_above = trackColumnsThroughStep(*step, &step_dag, tracked_columns);
+            applyTextIndexInjectPastJoin(*read_from_merge_tree_step, *node, step_dag, text_index_infos, tracked_columns);
             tracked_columns = std::move(tracked_columns_above);
             continue;
         }
 
-        tracked_columns = trackColumnsThroughDAG(step_dag, tracked_columns);
+        tracked_columns = trackColumnsThroughStep(*step, &step_dag, tracked_columns);
 
         /// Direct read only for the WHERE filter directly above the scan (its rebuild uses the scan's header).
         if (filter_step && it == walk_begin)

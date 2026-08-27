@@ -2,11 +2,28 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
+
+/// Above a JOIN the planner names columns `__table1.name`, `__table2.name`, ...; strip that to compare with
+/// an index, which is defined on the table's own column name. Callers that can see columns of more than one
+/// table must check separately that the column belongs to the table holding the index.
+inline String stripJoinTableQualifier(const String & name)
+{
+    static constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix))
+        return name;
+
+    size_t pos = prefix.size();
+    while (pos < name.size() && isNumericASCII(name[pos]))
+        ++pos;
+
+    return pos > prefix.size() && pos < name.size() && name[pos] == '.' ? name.substr(pos + 1) : name;
+}
 
 class TextIndexTokensCache;
 using TextIndexTokensCachePtr = std::shared_ptr<TextIndexTokensCache>;
@@ -189,7 +206,11 @@ private:
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
-    bool hasIndexForColumn(const String & column_name) const { return header.has(column_name) || column_name == normalized_index_column_name; }
+    bool hasIndexForColumn(const String & column_name) const
+    {
+        String unqualified = stripJoinTableQualifier(column_name);
+        return header.has(unqualified) || unqualified == normalized_index_column_name;
+    }
 
     /// Returns true if all tokens must be read for text index analysis
     /// and we cannot exit analysis earlier if some of the tokens are missing in granule.

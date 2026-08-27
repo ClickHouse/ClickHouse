@@ -607,9 +607,4 @@ public:
     std::optional<String> normalized_index_column_name;
 };
 
-/// Tokenizer of a `text` index, spelled as the optional tokenizer argument of the text-search functions
-/// accepts it. Reads the index definition only, so it needs neither table settings nor a predicate.
-/// Returns nullopt for any other index type.
-std::optional<String> getTextIndexTokenizerDescription(const IndexDescription & index);
-
 }
