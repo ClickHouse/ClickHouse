@@ -1,0 +1,24 @@
+-- canary: variant A with a Shuffle merge (shuffle below the merge, gather above it)
+1	1	1	1	1	1
+-- execution through the Shuffle merge
+0	100	49500
+1	100	49600
+2	100	49700
+3	100	49800
+4	100	49900
+5	100	50000
+6	100	50100
+7	100	50200
+8	100	50300
+9	100	50400
+-- the same execution without the distributed planner must match
+0	100	49500
+1	100	49600
+2	100	49700
+3	100	49800
+4	100	49900
+5	100	50000
+6	100	50100
+7	100	50200
+8	100	50300
+9	100	50400
