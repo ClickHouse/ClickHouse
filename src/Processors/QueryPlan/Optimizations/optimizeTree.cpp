@@ -298,8 +298,7 @@ void optimizeTreeSecondPass(
     /// added. The plan here is already deterministic (post first pass and subplan materialization).
     setAggregationHashTableCacheKeys(optimization_settings, root);
 
-    /// A lifted predicate has to be pushed down as well, so it can reach PREWHERE
-    bool push_down_rerun_needed = predicates_were_lifted;
+    bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
@@ -310,7 +309,7 @@ void optimizeTreeSecondPass(
         [&](auto & frame_node)
         {
             if (optimization_settings.enable_join_runtime_filters)
-                push_down_rerun_needed |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
+                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
             /// Keep joins logical for `applyParallelReplicas` below: it needs the final (reordered,
             /// runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical` supports.
             /// Joins left in the outer plan are converted right after the fragment is created.
@@ -318,9 +317,10 @@ void optimizeTreeSecondPass(
                 convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
-    /// If join runtime filters or lifted join predicates were added re-run push down optimizations
-    /// to move newly added runtime filter as deep in the tree as possible
-    if (push_down_rerun_needed)
+    /// A runtime filter or a lifted predicate is a new filter node, so re-run push down to move it
+    /// as deep in the tree as possible. Each rewrite keeps its own setting: a new filter is no
+    /// reason to run a pass the user turned off
+    if (join_runtime_filters_were_added || predicates_were_lifted)
     {
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
@@ -329,9 +329,12 @@ void optimizeTreeSecondPass(
                 while (true)
                 {
                     size_t changed_nodes = 0;
-                    changed_nodes += tryMergeExpressions(&frame_node, nodes, {});
-                    changed_nodes += tryMergeFilters(&frame_node, nodes, {});
-                    changed_nodes += tryPushDownFilter(&frame_node, nodes, {});
+                    if (optimization_settings.merge_expressions)
+                        changed_nodes += tryMergeExpressions(&frame_node, nodes, {});
+                    if (optimization_settings.merge_filters)
+                        changed_nodes += tryMergeFilters(&frame_node, nodes, {});
+                    if (optimization_settings.filter_push_down)
+                        changed_nodes += tryPushDownFilter(&frame_node, nodes, {});
 
                     if (!changed_nodes)
                         break;
@@ -339,7 +342,7 @@ void optimizeTreeSecondPass(
             });
 
         /// After the __applyFilter filters been fixed, do work to indicate index analysis again
-        if (optimization_settings.enable_join_runtime_filters_index_analysis)
+        if (join_runtime_filters_were_added && optimization_settings.enable_join_runtime_filters_index_analysis)
             traverseQueryPlan(stack, root,
                 [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
     }
@@ -750,7 +753,8 @@ void optimizeTreeSecondPass(
 
     /// The filter merges above and lazy materialization rebuild `FilterStep`s without carrying over
     /// the QCC key that `updateQueryConditionCache` set earlier. Re-walk so they get it back
-    if (optimization_settings.use_query_condition_cache && (push_down_rerun_needed || lazy_materialization_applied))
+    if (optimization_settings.use_query_condition_cache
+        && (join_runtime_filters_were_added || predicates_were_lifted || lazy_materialization_applied))
     {
         Stack qcc_stack;
         qcc_stack.push_back({.node = &root});
