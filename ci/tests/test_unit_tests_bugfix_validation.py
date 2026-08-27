@@ -1409,11 +1409,15 @@ def _drive_main_to_compile_step(monkeypatch, tmp_path, compile_log):
 
     log = tmp_path / "compile.log"
     log.write_text(compile_log)
-    compile_result = job.Result(
-        name="Compile before-binary (ninja unit_tests_dbms, without the fix)",
-        status=job.Result.Status.FAIL,
-        files=[str(log)],
-    )
+
+    def fresh_compile_result(build_type):
+        # A new Result per arm, as the production compile does: main() relabels the arm it
+        # escalates from, and one shared object would carry that relabelling into the next.
+        return job.Result(
+            name=f"Compile before-binary (ninja unit_tests_dbms, without the fix, {build_type})",
+            status=job.Result.Status.FAIL,
+            files=[str(log)],
+        )
 
     captured = {}
     monkeypatch.setattr(job, "Info", _Info)
@@ -1433,8 +1437,9 @@ def _drive_main_to_compile_step(monkeypatch, tmp_path, compile_log):
         "configure_before_binary",
         lambda info, build_type: job.Result(name="Configure", status=job.Result.Status.OK),
     )
-    monkeypatch.setattr(job, "compile_before_binary", lambda build_type: compile_result)
-    # A reproduction must never be reached: step 4b returns either way.
+    monkeypatch.setattr(job, "compile_before_binary", fresh_compile_result)
+    # A reproduction must never be reached: no build type compiles the overlay, so step 4b
+    # decides once the last one has been tried.
     monkeypatch.setattr(
         job, "run_gtests", lambda *a, **kw: pytest.fail("main() ran the gtests")
     )

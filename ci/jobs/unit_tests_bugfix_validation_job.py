@@ -8,20 +8,29 @@ does not contain the new tests.
 
 Instead, this job builds a "before" binary from the merge-base sources with ONLY the
 PR's unit-test file changes overlaid on top (the test, but not the fix), and then
-runs the touched test suites on it — at least one must FAIL or crash. When the
-"before" binary fails to compile and the failure belongs to the overlaid test files
-alone (every compiler error is inside them, or every translation unit that failed to
-compile is one of them), the changed test code depends on the interface the fix
-introduces (the typical case is a call site adapted to a changed function signature);
-the unit side then has nothing it can judge at runtime, the PR author cannot avoid the
-adaptation, and on the first build type the job reports the build failure as expected
-(XFAIL, nothing to validate) instead of staying red forever. Any other build failure is an
-infrastructure or attribution problem and stays an ERROR (inconclusive). The "before" binary
-is built and judged once per build type in `BEFORE_BUILD_TYPES`: a build type on which every
-touched test passes cannot observe a failure mode specific to another one, so a clean arm
-escalates to the next build type and only the last one refutes. On a later build type an
-earlier arm already compiled the same overlay, so an attributed compile failure there is
-ambiguous and stays an ERROR too.
+runs the touched test suites on it — at least one must FAIL or crash.
+
+The "before" binary is built and judged once per build type in `BEFORE_BUILD_TYPES`, and
+only a build type that both compiled the overlaid tests and ran them has a verdict. Three
+outcomes produce none, so they escalate to the next build type instead of deciding:
+
+  * the overlaid test files do not compile there, with every compiler error inside them or
+    every failed translation unit being one of them (`compile_failure_attribution`): the
+    changed test code depends on the interface the fix introduces (typically a call site
+    adapted to a changed signature), which a sanitizer-conditional part of the test can do
+    on one build type only;
+  * a case of the changed test files did not run, having skipped itself (`GTEST_SKIP()`) or
+    being disabled, so the changed regression case was not necessarily exercised;
+  * every touched case ran and passed, which cannot separate "the test does not catch the
+    bug" from "this build cannot observe the failure mode".
+
+The last build type decides: all arms passing is a refutation (FAIL), an overlay that
+compiles on none of them is expected with nothing to validate (XFAIL) instead of staying
+red forever, and anything else, an arm that never ran the tests while another refuted
+them, is inconclusive (ERROR). An attributed compile failure on a build type that follows
+one which did compile the same overlay is confined to what the two compile differently and
+is inconclusive too. Any other build failure is an infrastructure or attribution problem
+and stays an ERROR.
 
 Like the functional/integration validators, this job only checks the "before" side.
 The complementary "the touched tests PASS on the PR binary" side is delegated to the
@@ -36,6 +45,7 @@ See ci/jobs/functional_tests.py:invert_bugfix_validation_status for the analogou
 functional-test logic.
 """
 
+import json
 import os
 import re
 import shlex
@@ -48,7 +58,7 @@ from ci.defs.defs import BuildTypes, ToolSet
 from ci.jobs.build_clickhouse import BUILD_TYPE_TO_CMAKE, setup_build_caches_env
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
-from ci.praktika.result import Result
+from ci.praktika.result import Result, ResultTranslator
 from ci.praktika.utils import Shell
 
 # Inside the binary-builder docker the repo is mounted at /ClickHouse and the cwd is
@@ -736,6 +746,56 @@ def before_run_started_a_test(result):
     return False
 
 
+def changed_cases_unexercised(test_files):
+    """Did this arm fail to exercise the changed regression cases?
+
+    gtest reports a `GTEST_SKIP()` case as `"result": "SKIPPED"` with `"status": "RUN"` and a
+    disabled one as `"SUPPRESSED"`/`"NOTRUN"`, while `ResultTranslator.from_gtest` keys on
+    `"status"` alone, so a case that never ran reaches a caller of `run_gtests` as a passing
+    one; read the gtest report directly instead. A case is matched to a changed file by the
+    basename of its `"file"`, which `-ffile-prefix-map` (CMakeLists.txt) reduces to the
+    source-relative path. ANY unexecuted case of a changed file leaves that file only partly
+    exercised, and which of its cases is the regression one is not known here; with no case
+    matched, only a run that executed nothing is provably no measurement. Returns
+    (unexercised, unexecuted_case_names, reason), and `unexercised` rests on a case
+    positively reporting `SKIPPED` or `SUPPRESSED`, so a report that cannot be read leaves
+    the caller's existing verdict in place.
+    """
+    report_path = ResultTranslator.GTEST_RESULT_FILE
+    try:
+        with open(report_path, "r", encoding="utf-8", errors="ignore") as f:
+            report = json.load(f)
+        cases = [
+            (suite.get("name", "?"), case)
+            for suite in report["testsuites"]
+            for case in suite["testsuite"]
+        ]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        print(f"WARNING: could not read the gtest report {report_path}: {e}")
+        return False, [], ""
+    changed_basenames = {os.path.basename(f) for f in test_files}
+    changed = [
+        (suite_name, case)
+        for suite_name, case in cases
+        if os.path.basename(case.get("file") or "") in changed_basenames
+    ]
+    unexecuted = {"SKIPPED", "SUPPRESSED"}
+    not_run = [
+        f"{suite_name}.{case.get('name', '?')} ({case.get('result')})"
+        for suite_name, case in cases
+        if case.get("result") in unexecuted
+    ]
+    if changed:
+        reason = "a case of the changed test files did not run"
+        unexercised = any(case.get("result") in unexecuted for _, case in changed)
+    else:
+        reason = "no selected case ran"
+        unexercised = bool(cases) and all(
+            case.get("result") in unexecuted for _, case in cases
+        )
+    return unexercised, not_run, reason
+
+
 def mark_reproduced(result):
     """Flip a before-run failure into an expected (XFAIL) success for the report."""
     result.set_label(Result.Label.XFAIL)
@@ -906,9 +966,11 @@ def main():
         return
 
     # 4-5. Build the "before" binary and judge the touched tests on it, one build type at
-    # a time. Only the "every touched test ran and none failed" outcome continues to the
-    # next arm; every other outcome decides the job. The arms share one build directory.
+    # a time, sharing one build directory. Refuting the tests needs a verdict from every
+    # build type, so an arm that produced none escalates and is remembered instead.
     arms_tried = []
+    arms_compiled = []
+    arms_without_a_verdict = []
     for build_type in BEFORE_BUILD_TYPES:
         if arms_tried and not reset_before_build_dir():
             results.append(
@@ -968,13 +1030,13 @@ def main():
             attributed_to, other_errors, refusal = compile_failure_attribution(
                 compile_result, test_files
             )
-            if attributed_to and len(arms_tried) > 1:
+            if attributed_to and arms_compiled:
                 # An earlier arm compiled this same overlay, so the failure is confined to
                 # what this build type compiles differently, and decides nothing either way.
                 compile_result.set_status(Result.Status.ERROR)
                 compile_result.set_info(
                     f"The before-binary compiled the overlaid unit-test changes on "
-                    f"{arms_tried[0]} but not on {build_type}: "
+                    f"{arms_compiled[0]} but not on {build_type}: "
                     + attributed_to
                     + ". Only what this build type compiles differently can be at fault, "
                     "which may include a sanitizer-conditional part of the test that depends "
@@ -986,14 +1048,35 @@ def main():
                 finalize(
                     results,
                     f"Bugfix validation inconclusive: the before-binary compiled on "
-                    f"{arms_tried[0]} but failed to COMPILE on {build_type}.",
+                    f"{arms_compiled[0]} but failed to COMPILE on {build_type}.",
                 )
                 return
+            if attributed_to and len(arms_tried) < len(BEFORE_BUILD_TYPES):
+                # No arm has compiled this overlay yet and a build type is left. What a
+                # test compiles is build-type-dependent too (a sanitizer-conditional part of
+                # it can reference the fix's interface), so the next arm may still validate.
+                compile_result.set_label(Result.Label.XFAIL)
+                compile_result.set_status(Result.Status.XFAIL)
+                compile_result.set_info(
+                    f"The before-binary cannot compile the overlaid unit-test changes on "
+                    f"{build_type}: "
+                    + attributed_to
+                    + f". That is expected when the changed test code depends on the "
+                    f"interface this PR introduces, and it is not a reproduction, but it "
+                    f"is not a refutation either, and a build type that may compile the "
+                    f"overlay is left. Escalating to {BEFORE_BUILD_TYPES[len(arms_tried)]}."
+                )
+                results.append(compile_result)
+                arms_without_a_verdict.append(f"{build_type} (overlay does not compile)")
+                continue
             if attributed_to:
                 compile_result.set_label(Result.Label.XFAIL)
                 compile_result.set_status(Result.Status.XFAIL)
                 compile_result.set_info(
-                    "The before-binary cannot compile the overlaid unit-test changes: "
+                    "The before-binary cannot compile the overlaid unit-test changes on any "
+                    "validated build type ("
+                    + ", ".join(arms_tried)
+                    + "): "
                     + attributed_to
                     + ". The changed test code depends on the interface this PR introduces "
                     "(e.g. a call site adapted to a changed signature), so there is nothing "
@@ -1029,6 +1112,7 @@ def main():
             )
             return
         build_result = compile_result
+        arms_compiled.append(build_type)
 
         results.append(build_result)
 
@@ -1103,17 +1187,62 @@ def main():
             )
             return
 
-        # Every touched test ran and passed on this arm. That only refutes the bug once no
-        # build type is left: a failure mode this build cannot observe is indistinguishable
-        # from a test that does not catch the bug.
-        if len(arms_tried) < len(BEFORE_BUILD_TYPES):
+        # A case that skipped itself or is disabled is still reported as passing, and a
+        # `GTEST_SKIP()` even prints a "[ RUN " marker, so an arm that never ran a changed case
+        # reaches this point as "all touched tests pass": no verdict, as with a wrong build.
+        unexercised, not_run_cases, reason = changed_cases_unexercised(test_files)
+        arms_left = len(BEFORE_BUILD_TYPES) - len(arms_tried)
+        escalating = f" Escalating to {BEFORE_BUILD_TYPES[len(arms_tried)]}." if arms_left else ""
+        not_exercised = (
+            f" Not exercised there: {', '.join(not_run_cases)}." if not_run_cases else ""
+        )
+        if unexercised:
+            before_result.set_status(Result.Status.SKIPPED)
+            before_result.set_info(
+                f"On the {build_type} before-binary {reason} "
+                f"({', '.join(not_run_cases)}), so this build type did not exercise the "
+                f"changed regression case: no verdict, NOT a refutation." + escalating
+            )
+            arms_without_a_verdict.append(f"{build_type}: {reason}")
+            results.append(before_result)
+            if arms_left:
+                continue
+        elif arms_left:
+            # Every touched test that ran passed on this arm. That only refutes the bug once
+            # no build type is left: a failure mode this build cannot observe is
+            # indistinguishable from a test that does not catch the bug.
             before_result.set_info(
                 f"All touched unit tests PASS on the {build_type} before-binary. That is not "
-                f"a refutation: this build cannot observe a failure mode specific to another "
-                f"build type. Escalating to {BEFORE_BUILD_TYPES[len(arms_tried)]}."
+                f"a refutation on its own: this build cannot observe a failure mode specific "
+                f"to another build type." + not_exercised + escalating
             )
             results.append(before_result)
             continue
+
+        # No build type is left. Refuting the test needs a verdict from every one of them.
+        if arms_without_a_verdict:
+            results.append(
+                Result(
+                    name="Bugfix validation verdict",
+                    status=Result.Status.ERROR,
+                    info=(
+                        "The touched unit tests were never both built and run on at least "
+                        "one validated build type: "
+                        + "; ".join(arms_without_a_verdict)
+                        + ". The bug is therefore neither reproduced nor refuted on the "
+                        "merge base: this is inconclusive, NOT a refutation. A regression "
+                        "case that runs, and fails without the fix, on one of "
+                        + ", ".join(BEFORE_BUILD_TYPES)
+                        + " would be validated here."
+                    ),
+                )
+            )
+            finalize(
+                results,
+                "Bugfix validation inconclusive: not every validated build type produced a "
+                "verdict on the touched unit tests.",
+            )
+            return
 
         before_result.set_status(Result.Status.FAIL)
         before_result.set_info(
@@ -1121,6 +1250,7 @@ def main():
             "(merge-base without the fix) on every validated build type ("
             + ", ".join(arms_tried)
             + "). The added/changed test does not catch the bug the fix addresses."
+            + not_exercised
         )
         results.append(before_result)
         finalize(results, "Failed to reproduce the bug.")
