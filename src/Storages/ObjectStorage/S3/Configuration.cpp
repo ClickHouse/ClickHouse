@@ -202,8 +202,8 @@ namespace
     /// `access_key_id` alone leaves the stored `secret_access_key` signing.
     ///
     /// `headers`, `access_headers` and the SSE keys are absent by design - S3's `optional_configuration_keys`
-    /// accepts none of them, so a value there came from the server `<s3>`/endpoint config. So is
-    /// `use_environment_credentials`, whose credential is the server's own identity.
+    /// accepts none of them, so a value there came from the server `<s3>`/endpoint config.
+    /// `use_environment_credentials` is accepted, but the credential it selects is the server's own identity.
     bool hasCollectionDerivedSecret(const NamedCollection & collection, const S3::S3AuthSettings & auth)
     {
         auto stored = [&](const std::string & key, const String & effective_value)
