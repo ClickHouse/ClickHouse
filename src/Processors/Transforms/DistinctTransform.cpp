@@ -672,7 +672,20 @@ void DistinctTransform::transform(Chunk & chunk)
                 column = std::move(filtered);
             }
 
-            num_rows = columns[0]->size();
+            /// A soft timeout observed during the materialization may have truncated only the columns
+            /// processed after it, leaving earlier columns at their full length. Align every key column to
+            /// the same committed source prefix so the key columns stay the same length for the set fill
+            /// below (otherwise `buildFilter` would read past the end of the shorter column).
+            if (truncated_at < num_rows)
+            {
+                IColumn::Filter prefix_keep(keep.begin(), keep.begin() + truncated_at);
+                const size_t prefix_kept = countBytesInFilter(prefix_keep);
+                for (auto & column : columns)
+                    column = column->cut(0, prefix_kept);
+                num_rows = prefix_kept;
+            }
+            else
+                num_rows = columns[0]->size();
 
             if (num_rows == 0)
             {
