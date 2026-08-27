@@ -1454,7 +1454,7 @@ void AggregatingTransform::initGenerate()
             variants.convertToTwoLevel();
     }
 
-    if (many_data->num_finished.fetch_add(1) + 1 < many_data->variants.size())
+    if (many_data->num_finished.fetch_add(1) + 1 < many_data->num_producers)
     {
         /// Note: we reset aggregation state here to release memory earlier.
         /// It might cause extra memory usage for complex queries othervise.
@@ -1529,7 +1529,9 @@ void AggregatingTransform::initGenerate()
         if (shared.early_drain_variants->hasData())
         {
             /// Early-drained records live in the routing table: it holds part of the result
-            /// and joins the merge set like any other variant.
+            /// and joins the merge set like any other variant. Only the last finisher gets
+            /// here, so growing `variants` is safe as long as nothing else reads it - hence
+            /// the barrier above counts `num_producers` rather than the size of this vector.
             many_data->variants.push_back(shared.early_drain_variants);
         }
     }
