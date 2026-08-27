@@ -252,6 +252,44 @@ static PostingsSerialization createSourcePostingsSerialization(MergeTreeIndexRea
     return PostingsSerialization(PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
 }
 
+bool canReuseTextIndexForMerge(
+    const MergeTreeIndexPtr & index,
+    const IMergeTreeDataPart & part,
+    const MergeTreeReaderSettings & reader_settings)
+{
+    auto format = index->getDeserializedFormat(part, index->getFileName());
+    if (!format)
+        return false;
+
+    auto regular = std::ranges::find(format.substreams, MergeTreeIndexSubstream::Type::Regular, &MergeTreeIndexSubstream::type);
+    if (regular == format.substreams.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index {} does not have a regular stream", index->index.name);
+
+    auto stream = makeTextIndexInputStream(
+        part.getDataPartStoragePtr(),
+        index->getFileName() + regular->suffix,
+        regular->extension,
+        MergeTreeIndexReader::patchSettings(reader_settings, regular->type));
+    stream->seekToStart();
+    auto source_header = TextIndexSerialization::deserializeHeaderPrefix(*stream->getDataBuffer());
+
+    const auto & target_configuration = typeid_cast<const MergeTreeIndexText &>(*index).getParams().json_path_values_configuration;
+    const auto & source_configuration = source_header.json_path_values_configuration;
+    if (target_configuration.has_value() != source_configuration.has_value())
+        return false;
+    if (!target_configuration)
+        return true;
+
+    const auto & target_matcher = *target_configuration->path_matcher;
+    const auto & source_matcher = *source_configuration->path_matcher;
+    return target_configuration->token_format_version == source_configuration->token_format_version
+        && target_configuration->max_token_bytes == source_configuration->max_token_bytes
+        && target_matcher.getIncludePaths() == source_matcher.getIncludePaths()
+        && target_matcher.getIncludePathRegexps() == source_matcher.getIncludePathRegexps()
+        && target_matcher.getSkipPaths() == source_matcher.getSkipPaths()
+        && target_matcher.getSkipPathRegexps() == source_matcher.getSkipPathRegexps();
+}
+
 MergeTextIndexesTask::MergeTextIndexesTask(
     std::vector<TextIndexSegment> segments_,
     MergeTreeMutableDataPartPtr new_data_part_,
@@ -662,7 +700,13 @@ void MergeTextIndexesTask::finalize()
 
     auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
     DictionarySparseIndex sparse_index(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
-    TextIndexSerialization::serializeHeader(params.serialization_version, sparse_index, postings_serialization.getPostingListCodec()->getType(), params.positions, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(
+        params.serialization_version,
+        sparse_index,
+        postings_serialization.getPostingListCodec()->getType(),
+        params.positions,
+        index_stream->compressed_hashing,
+        params.json_path_values_configuration);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();

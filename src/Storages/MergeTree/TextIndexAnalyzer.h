@@ -46,6 +46,8 @@ public:
         bool is_failed = false;
         /// Query was discarded (low-selectivity hint, pattern bypass).
         bool is_bypassed = false;
+        /// This part was built with an incompatible tokenizer configuration.
+        bool is_unavailable = false;
         /// Number of tokens whose posting list has already been folded into `postings`.
         size_t num_read_postings = 0;
         /// Declared tokens (`query->getTokens`) that may still contribute to an `Any` query.
@@ -60,7 +62,9 @@ public:
         bool needReadPostings() const { return num_read_postings < tokens.size(); }
     };
 
-    explicit TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text);
+    TextIndexAnalyzer(
+        const MergeTreeIndexConditionText & condition_text,
+        const std::optional<JSONPathValues::IndexConfiguration> & part_configuration);
 
     bool alwaysFalse() const { return always_false; }
     const TokenToPostingsInfosMap & getAllTokenInfos() const { return all_token_infos; }

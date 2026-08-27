@@ -100,6 +100,7 @@ namespace Setting
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V0_Initial) == 0);
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V1_WithCodec) == 1);
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_WithPositions) == 2);
+static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V3_WithTokenizerConfig) == 3);
 
 /// Kept as a fixed default rather than a MergeTree setting: a mutable table-level default would let
 /// an index's positions value change after parts exist, mixing positional and non-positional parts
@@ -505,7 +506,8 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     }
 
     is_empty = false;
-    analyzer = std::make_unique<TextIndexAnalyzer>(condition_text);
+    auto text_index_header = loadHeader(*index_stream, state);
+    analyzer = std::make_unique<TextIndexAnalyzer>(condition_text, text_index_header->json_path_values_configuration);
 
     /// Push the row ranges still readable after the analysis of the primary key and prior skip indexes into the analyzer.
     if (state.readable_ranges)
@@ -526,7 +528,6 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
         analyzer->setReadableRows(std::move(readable_row_ranges));
     }
 
-    auto text_index_header = loadHeader(*index_stream, state);
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
     auto postings_serialization = PostingsSerialization(std::move(postings_codec), text_index_header->version);
     serialization_version = text_index_header->version;
@@ -1189,7 +1190,35 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     }
 }
 
-void TextIndexSerialization::serializeHeader(MergeTreeTextIndexSerializationVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, WriteBuffer & ostr)
+namespace
+{
+
+void serializeStrings(const VectorWithMemoryTracking<String> & values, WriteBuffer & ostr)
+{
+    writeVarUInt(values.size(), ostr);
+    for (const auto & value : values)
+        writeStringBinary(value, ostr);
+}
+
+VectorWithMemoryTracking<String> deserializeStrings(ReadBuffer & istr)
+{
+    UInt64 size = 0;
+    readVarUInt(size, istr);
+    VectorWithMemoryTracking<String> values(size);
+    for (auto & value : values)
+        readStringBinary(value, istr);
+    return values;
+}
+
+}
+
+void TextIndexSerialization::serializeHeader(
+    MergeTreeTextIndexSerializationVersion version,
+    const DictionarySparseIndex & sparse_index,
+    IPostingListCodec::Type posting_list_codec_type,
+    bool has_positions,
+    WriteBuffer & ostr,
+    const std::optional<JSONPathValues::IndexConfiguration> & json_path_values_configuration)
 {
     /// `textIndexCreator` raises the version to one that can represent the codec
     /// and positions, so a violation here is a logical error, not a user error.
@@ -1199,6 +1228,9 @@ void TextIndexSerialization::serializeHeader(MergeTreeTextIndexSerializationVers
     if (has_positions && version < MergeTreeTextIndexSerializationVersion::V2_WithPositions)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index version {} does not support positions", static_cast<UInt64>(version));
 
+    if (json_path_values_configuration && version < MergeTreeTextIndexSerializationVersion::V3_WithTokenizerConfig)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index version {} does not support tokenizer configuration", static_cast<UInt64>(version));
+
     writeVarUInt(static_cast<UInt64>(version), ostr);
 
     if (version >= MergeTreeTextIndexSerializationVersion::V1_WithCodec)
@@ -1206,6 +1238,21 @@ void TextIndexSerialization::serializeHeader(MergeTreeTextIndexSerializationVers
 
     if (version >= MergeTreeTextIndexSerializationVersion::V2_WithPositions)
         writeVarUInt(static_cast<UInt64>(has_positions), ostr);
+
+    if (version >= MergeTreeTextIndexSerializationVersion::V3_WithTokenizerConfig)
+    {
+        writeVarUInt(static_cast<UInt64>(json_path_values_configuration.has_value()), ostr);
+        if (json_path_values_configuration)
+        {
+            const auto & configuration = *json_path_values_configuration;
+            writeVarUInt(configuration.token_format_version, ostr);
+            writeVarUInt(configuration.max_token_bytes, ostr);
+            serializeStrings(configuration.path_matcher->getIncludePaths(), ostr);
+            serializeStrings(configuration.path_matcher->getIncludePathRegexps(), ostr);
+            serializeStrings(configuration.path_matcher->getSkipPaths(), ostr);
+            serializeStrings(configuration.path_matcher->getSkipPathRegexps(), ostr);
+        }
+    }
 
     /// Sparse indexes are created with raw columns and bit-packed only by optimize.
     /// The write path never calls optimize, so expect the raw columns here.
@@ -1226,7 +1273,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
     UInt64 version = 0;
     readVarUInt(version, istr);
 
-    if (version > static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_WithPositions))
+    if (version > static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V3_WithTokenizerConfig))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Unsupported version of sparse index ({})", version);
 
     TextIndexHeader header;
@@ -1248,6 +1295,38 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         UInt64 has_positions = 0;
         readVarUInt(has_positions, istr);
         header.has_positions = has_positions != 0;
+    }
+
+    if (header.version >= MergeTreeTextIndexSerializationVersion::V3_WithTokenizerConfig)
+    {
+        UInt64 has_configuration = 0;
+        readVarUInt(has_configuration, istr);
+        if (has_configuration > 1)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid tokenizer configuration flag in text index header: {}", has_configuration);
+
+        if (has_configuration)
+        {
+            UInt64 token_format_version = 0;
+            UInt64 max_token_bytes = 0;
+            readVarUInt(token_format_version, istr);
+            readVarUInt(max_token_bytes, istr);
+            if (!JSONPathValues::isValidMaxTokenBytes(max_token_bytes))
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid `jsonPathValues` max token size in text index header: {}", max_token_bytes);
+
+            auto include_paths = deserializeStrings(istr);
+            auto include_path_regexps = deserializeStrings(istr);
+            auto skip_paths = deserializeStrings(istr);
+            auto skip_path_regexps = deserializeStrings(istr);
+            header.json_path_values_configuration = JSONPathValues::IndexConfiguration{
+                .token_format_version = token_format_version,
+                .max_token_bytes = max_token_bytes,
+                .path_matcher = std::make_shared<JSONPathValues::PathMatcher>(
+                    std::move(include_paths),
+                    std::move(include_path_regexps),
+                    std::move(skip_paths),
+                    std::move(skip_path_regexps)),
+            };
+        }
     }
 
     return header;
@@ -1555,7 +1634,13 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         postings_serialization,
         positions_stream);
 
-    TextIndexSerialization::serializeHeader(params.serialization_version, sparse_index_block, posting_list_codec_type, params.positions, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(
+        params.serialization_version,
+        sparse_index_block,
+        posting_list_codec_type,
+        params.positions,
+        index_stream->compressed_hashing,
+        params.json_path_values_configuration);
 }
 
 void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)
@@ -2212,6 +2297,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
     auto postprocessor_ast = extractASTOption(options, ARGUMENT_POSTPROCESSOR, false);
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_ast);
+    const bool is_json_path_values = tokenizer->getType() == ITokenizer::Type::JSONPathValues;
 
     /// The parameters below can be set in the index definition or via the `text_index_*` table settings.
     /// A value from the index definition wins; otherwise the table setting is used.
@@ -2236,13 +2322,16 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     /// If the setting contradicts the index features on the current version, the index features take precedence.
     using enum MergeTreeTextIndexSerializationVersion;
     MergeTreeTextIndexSerializationVersion min_version = V0_Initial;
-    MergeTreeTextIndexSerializationVersion max_version = V2_WithPositions;
+    MergeTreeTextIndexSerializationVersion max_version = V3_WithTokenizerConfig;
 
     if (has_codec)
         min_version = V1_WithCodec;
 
     if (positions)
         min_version = V2_WithPositions;
+
+    if (is_json_path_values)
+        min_version = V3_WithTokenizerConfig;
 
     const MergeTreeTextIndexSerializationVersion version_setting = settings[MergeTreeSetting::text_index_serialization_version];
     MergeTreeTextIndexSerializationVersion serialization_version = std::clamp(version_setting, min_version, max_version);
@@ -2254,7 +2343,18 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
         positions,
         std::move(preprocessor_ast),
         std::move(postprocessor_ast),
-        serialization_version};
+        serialization_version,
+        std::nullopt};
+
+    if (is_json_path_values)
+    {
+        const auto & json_tokenizer = assert_cast<const JSONPathValuesTokenizer &>(*tokenizer);
+        index_params.json_path_values_configuration = JSONPathValues::IndexConfiguration{
+            .token_format_version = JSONPathValues::TOKEN_FORMAT_VERSION,
+            .max_token_bytes = json_tokenizer.getMaxTokenBytes(),
+            .path_matcher = json_tokenizer.getPathMatcher(),
+        };
+    }
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));

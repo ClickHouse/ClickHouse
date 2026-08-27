@@ -306,6 +306,7 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
     if (!json_node_info)
         return false;
     const auto & json_info = json_node_info->subcolumn;
+    out.json_path = json_info.path;
 
     const String function_name = function_node.getFunctionName();
     const bool has_multiple_needles = function_name == "multiSearchAny" || function_name == "multiSearchAnyUTF8";
@@ -943,6 +944,7 @@ bool MergeTreeIndexConditionText::tryPrepareJSONPathValuesSet(
         || json_index_info->array_json_levels != 0
         || values.empty())
         return false;
+    out.json_path = json_index_info->subcolumn.path;
 
     auto type = removeNullableOrLowCardinalityNullable(json_index_info->source_type);
     if (!type)

@@ -187,4 +187,9 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & extension,
     const MergeTreeReaderSettings & reader_settings);
 
+bool canReuseTextIndexForMerge(
+    const MergeTreeIndexPtr & index,
+    const IMergeTreeDataPart & part,
+    const MergeTreeReaderSettings & reader_settings);
+
 }

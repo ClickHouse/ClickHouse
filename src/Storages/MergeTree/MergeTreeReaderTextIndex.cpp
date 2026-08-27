@@ -137,10 +137,10 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
     bool has_fallback_candidates = condition_text->hasSearchPatterns()
         || std::ranges::any_of(
             search_queries,
-            [](const auto & search_query)
+            [&](const auto & search_query)
             {
                 return search_query
-                    && (search_query->getJSONPayload()
+                    && (condition_text->isJSONPathValuesQuery(*search_query)
                         || (search_query->getSearchMode() == TextSearchMode::Phrase
                             && search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact));
             });
@@ -173,7 +173,7 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
             continue;
 
         bool needs_fallback = search_query->hasPatternLookup()
-            || search_query->getJSONPayload()
+            || condition_text->isJSONPathValuesQuery(*search_query)
             || (search_query->getSearchMode() == TextSearchMode::Phrase && search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact);
         if (!needs_fallback)
             continue;

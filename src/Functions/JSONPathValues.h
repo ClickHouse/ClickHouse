@@ -165,6 +165,7 @@ private:
 
 inline constexpr UInt64 DEFAULT_MAX_TOKEN_BYTES = 1024;
 inline constexpr UInt64 MAX_TOKEN_BYTES = 1024 * 1024;
+inline constexpr UInt64 TOKEN_FORMAT_VERSION = 1;
 inline constexpr size_t VALUE_HASH_BYTES = 8;
 inline constexpr UInt64 VALUE_HASH_KEY0 = 0;
 inline constexpr UInt64 VALUE_HASH_KEY1 = 0;
@@ -174,6 +175,13 @@ inline bool isValidMaxTokenBytes(UInt64 value)
     return value > 0 && value <= MAX_TOKEN_BYTES;
 }
 
+struct IndexConfiguration
+{
+    UInt64 token_format_version;
+    UInt64 max_token_bytes;
+    std::shared_ptr<const PathMatcher> path_matcher;
+};
+
 /// `jsonPathValues` tokens are persisted as text-index dictionary keys. Path, type, and map-key
 /// components use an order-preserving encoding: zero bytes become `00 01`, and `00 00` terminates
 /// the component. Complete values store their full text serialization. Truncated values store the
@@ -181,8 +189,7 @@ inline bool isValidMaxTokenBytes(UInt64 value)
 /// Scalar descendants of `Array(JSON)` use their `[]` path, binary `Array(T)` type, and scalar
 /// kinds. The type/kind pair distinguishes them from legal literal array paths with the same text,
 /// which use array-element kinds.
-/// There is deliberately no format-version byte: this tokenizer is unpublished and incompatible
-/// changes require rebuilding its materialized indexes. Kind values are append-only.
+/// The text-index part header stores `TOKEN_FORMAT_VERSION`. Kind values are append-only.
 enum class Kind : UInt8
 {
     ScalarComplete = 1,
