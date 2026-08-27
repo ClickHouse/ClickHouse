@@ -53,30 +53,15 @@
 namespace
 {
 
-/// FIXME: Remove this since we have proper interceptors
+/// The default ORC memory pool allocates with `std::malloc`, which returns a null pointer when it
+/// fails - and the library dereferences it - and which is invisible to the memory tracker. A
+/// malformed file can ask for an arbitrarily large buffer, so allocate through `operator new`
+/// instead: it is accounted for and it throws instead of returning null.
 class MemoryPool : public orc::MemoryPool
 {
 public:
-    char * malloc(uint64_t size) override
-    {
-        void * ptr = __real_malloc(size);
-        if (ptr)
-        {
-            AllocationTrace trace;
-            size_t actual_size = Memory::trackMemory(size, trace);
-            trace.onAlloc(ptr, actual_size);
-        }
-
-        return static_cast<char *>(ptr);
-    }
-
-    void free(char * ptr) override
-    {
-        AllocationTrace trace;
-        size_t actual_size = Memory::untrackMemory(ptr, trace);
-        trace.onFree(ptr, actual_size);
-        __real_free(ptr);
-    }
+    char * malloc(uint64_t size) override { return new char[size]; }
+    void free(char * ptr) override { delete[] ptr; }
 };
 
 }
@@ -94,6 +79,11 @@ extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int TOO_DEEP_RECURSION;
 }
 
+orc::MemoryPool & getORCMemoryPool()
+{
+    static MemoryPool pool;
+    return pool;
+}
 
 ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_, bool use_prefetch)
     : in(in_), file_size(file_size_), supports_read_at(use_prefetch && in_.supportsReadAt())
