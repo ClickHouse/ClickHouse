@@ -27,7 +27,6 @@ CREATE TABLE system.asynchronous_metrics
 (
     `metric` String,
     `value` Float64,
-    `key_values` Map(LowCardinality(String), Float64),
     `description` String,
     `name` String ALIAS metric
 )

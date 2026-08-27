@@ -259,7 +259,7 @@ namespace
         if (!config.constant_labels.empty())
         {
             const auto reserved_names = writer->getReservedLabelNames(
-                config.expose_info, config.expose_asynchronous_metrics, config.expose_histograms, config.expose_dimensional_metrics);
+                config.expose_info, config.expose_histograms, config.expose_dimensional_metrics);
             for (const auto & label : config.constant_labels)
             {
                 if (reserved_names.contains(label.first))
