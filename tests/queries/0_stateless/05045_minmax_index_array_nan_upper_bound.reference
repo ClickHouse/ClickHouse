@@ -1,0 +1,17 @@
+array positive indexed	1
+array positive no index	1
+array positive prunes other granule	1
+array negated indexed	4
+array negated no index	4
+map positive indexed	1
+map positive no index	1
+nullable element indexed	2
+nullable element no index	2
+finite array still prunes	1
+finite array indexed	1
+finite array no index	1
+string array still prunes	1
+string array indexed	1
+string array no index	1
+mixed leaves indexed	1
+mixed leaves no index	1
