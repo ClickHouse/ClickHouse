@@ -106,17 +106,28 @@ void replaceLegacyToTimeInAlterExpression(IAST * ast)
     }
 }
 
-void normalizeLegacyToTimeInAlterKeyDefinitions(ASTAlterQuery & alter)
+void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
 {
     for (const auto & child : alter.command_list->children)
     {
         auto * command = child->as<ASTAlterCommand>();
-        if (command->type == ASTAlterCommand::MODIFY_ORDER_BY)
-            replaceLegacyToTimeInAlterExpression(command->order_by);
-        else if (command->type == ASTAlterCommand::MODIFY_SAMPLE_BY)
-            replaceLegacyToTimeInAlterExpression(command->sample_by);
-        else if (command->type == ASTAlterCommand::MODIFY_TTL)
-            replaceLegacyToTimeInAlterExpression(command->ttl);
+
+        /// Every slot that reaches table metadata, so that a reload re-derives the same spelling the
+        /// statement resolved. Slots that only drive a one-off mutation (`predicate`,
+        /// `update_assignments`) are left alone: their expression is never stored as metadata,
+        /// so it must keep resolving as the session wrote it.
+        for (IAST * payload : {command->col_decl,
+                               command->order_by,
+                               command->sample_by,
+                               command->index_decl,
+                               command->constraint_decl,
+                               command->projection_decl,
+                               command->ttl,
+                               command->select})
+        {
+            if (payload)
+                replaceLegacyToTimeInAlterExpression(payload);
+        }
     }
 }
 
@@ -455,7 +466,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
     if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-        normalizeLegacyToTimeInAlterKeyDefinitions(query_ptr->as<ASTAlterQuery &>());
+        normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>());
 
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
