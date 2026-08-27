@@ -66,8 +66,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_codecs;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
     extern const SettingsBool distributed_insert_skip_read_only_replicas;
     extern const SettingsBool insert_allow_materialized_columns;
@@ -980,11 +978,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     if (compression_method == "ZSTD")
         compression_level = settings[Setting::network_zstd_compression_level];
 
-    CompressionCodecFactory::instance().validateCodec(
-        compression_method,
-        compression_level,
-        !settings[Setting::allow_suspicious_codecs],
-        settings[Setting::allow_experimental_codecs]);
+    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, CodecValidationSettings(settings));
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 
     /// tmp directory is used to ensure atomicity of transactions
