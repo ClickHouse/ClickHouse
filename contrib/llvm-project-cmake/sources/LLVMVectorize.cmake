@@ -24,6 +24,7 @@ set(LLVMVECTORIZE_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/Scheduler.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/SeedCollector.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SandboxVectorizer/VecUtils.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SLPVectorizer/SLPUtils.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/SLPVectorizer.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/VectorCombine.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Vectorize/Vectorize.cpp
