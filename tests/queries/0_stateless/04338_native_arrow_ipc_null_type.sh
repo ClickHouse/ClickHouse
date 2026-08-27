@@ -50,6 +50,10 @@ union_null = pa.table({
         pa.array([0, 1, 0], type=pa.int8()),
         [pa.array([1, None, 3], type=pa.int32()),
          pa.array([None, [None, None], None], type=pa.list_(pa.null()))]),
+    'ud': pa.UnionArray.from_sparse(
+        pa.array([0, 1, 0], type=pa.int8()),
+        [pa.array([7, None, 9], type=pa.int32()),
+         pa.DictionaryArray.from_arrays(pa.array([0, None, 0], type=pa.int8()), pa.array([None], type=pa.null()))]),
 })
 with pa.OSFile('${FILE_PREFIX}.union.arrow', 'wb') as sink:
     with pa.ipc.new_file(sink, union_null.schema) as writer:
@@ -85,5 +89,9 @@ ${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${FILE_PREFIX}.dict.arrow', 'Arrow')
 echo 'a union child carrying a nested null type reads too'
 ${CLICKHOUSE_LOCAL} -q "DESC file('${FILE_PREFIX}.union.arrow', 'Arrow')"
 ${CLICKHOUSE_LOCAL} -q "SELECT n, u FROM file('${FILE_PREFIX}.union.arrow', 'Arrow') ORDER BY n"
+
+echo 'a dictionary-encoded null union child maps to NULL and does not desync the buffer walk'
+${CLICKHOUSE_LOCAL} -q "SELECT n, ud FROM file('${FILE_PREFIX}.union.arrow', 'Arrow') ORDER BY n"
+${CLICKHOUSE_LOCAL} -q "SELECT n FROM file('${FILE_PREFIX}.union.arrow', 'Arrow', 'n Int64') ORDER BY n"
 
 rm -f "${FILE_PREFIX}.arrow" "${FILE_PREFIX}.arrows" "${FILE_PREFIX}.trivial.arrow" "${FILE_PREFIX}.nested.arrow" "${FILE_PREFIX}.dict.arrow" "${FILE_PREFIX}.union.arrow"

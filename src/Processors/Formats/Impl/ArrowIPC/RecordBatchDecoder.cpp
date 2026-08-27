@@ -1045,7 +1045,12 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
 
         if (child.type.kind == TypeKind::Null)
         {
-            nextNode(); /// consume the placeholder node; the null type has no buffers
+            /// A dictionary-encoded null child is an index array (not the zero-buffer placeholder);
+            /// its values are all null anyway, so consume its buffers and map its rows to NULL.
+            if (child.dictionary)
+                skipField(child);
+            else
+                nextNode(); /// consume the placeholder node; the null type has no buffers
             type_id_to_local[tid] = -1;
             continue;
         }
@@ -1295,7 +1300,8 @@ void RecordBatchDecoder::skipField(const ArrowField & field)
             nextBuffer();
         for (const ArrowField & child : field.type.children)
         {
-            if (child.type.kind == TypeKind::Null)
+            /// A dictionary-encoded null child is an index array, not the zero-buffer placeholder.
+            if (child.type.kind == TypeKind::Null && !child.dictionary)
                 nextNode();
             else
                 skipField(child);
