@@ -1318,6 +1318,37 @@ void ActionsDAG::substitute(const std::unordered_map<const Node *, ColumnWithTyp
     }
 }
 
+void ActionsDAG::substituteInputForConsumersOnly(const std::string & input_name, const ColumnWithTypeAndName & replacement)
+{
+    auto it = std::ranges::find_if(inputs, [&](const Node * node) { return node->result_name == input_name; });
+    if (it == inputs.end())
+        return;
+
+    const Node * input = *it;
+
+    if (!replacement.column || !isColumnConst(*replacement.column))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Replacement for input {} must be a constant column", input_name);
+    if (!replacement.type->equals(*input->result_type))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Replacement for input {} has type {} but the input has type {}",
+            input_name,
+            replacement.type->getName(),
+            input->result_type->getName());
+
+    const auto & constant = addColumn(
+        typeid_cast<const ColumnConst *>(replacement.column.get())->getPtr(), replacement.type, replacement.name);
+
+    for (auto & node : nodes)
+    {
+        for (auto & child : node.children)
+        {
+            if (child == input)
+                child = &constant;
+        }
+    }
+}
+
 static ColumnWithTypeAndName executeActionForPartialResult(
     const ActionsDAG::Node * node,
     ColumnsWithTypeAndName arguments,
