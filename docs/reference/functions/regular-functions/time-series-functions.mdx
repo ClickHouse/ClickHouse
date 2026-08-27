@@ -49,9 +49,9 @@ SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 
 ```
 
 ```response title=Response
-┌─print_0─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+┌─print_0────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ [[-13.529999,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.530001,-3.18,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1799994,16.71,-13.529999,-3.1799994,16.709997],[23.63,23.63,23.630003,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.630001,23.630001,23.630001,23.630003],[0,0.0000019073486,-0.0000019073486,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.0000019073486,0,0],[10.1,20.449999,40.340004,10.100001,20.45,40.34,10.100001,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.100002,20.45,40.34]] │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## seriesOutliersDetectTukey {#seriesOutliersDetectTukey}
@@ -87,9 +87,9 @@ SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4, 5, 12, 45, 12, 3, 3, 4,
 ```
 
 ```response title=Response
-┌───────────print_0─────────────────┐
-│[0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
-└───────────────────────────────────┘
+┌─print_0────────────────────────────┐
+│ [0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
+└────────────────────────────────────┘
 ```
 
 **Custom parameters outlier detection**
@@ -134,9 +134,9 @@ SELECT seriesPeriodDetectFFT([1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4,
 ```
 
 ```response title=Response
-┌───────────print_0──────┐
-│                      3 │
-└────────────────────────┘
+┌─print_0─┐
+│       3 │
+└─────────┘
 ```
 
 **Period detection with complex pattern**
@@ -194,9 +194,9 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 ```
 
 ```response title=Response
-┌─dest_group─┬─src_group─┬─result_group─┬─timeSeriesGroupToTags(result_group)────────────────────────┐
-│          1 │         2 │            3 │ [('__name__','http_codes'),('code','404'),('region','eu')] │
-└────────────┴───────────┴──────────────┴────────────────────────────────────────────────────────────┘
+┌─dest_group─┬─src_group─┬─result_group─┬─timeSeriesGroupToTags(result_group)───────────────────────┐
+│          1 │         2 │            3 │ [('__name__','http_codes'),('env','dev'),('region','eu')] │
+└────────────┴───────────┴──────────────┴───────────────────────────────────────────────────────────┘
 ```
 
 ## timeSeriesCopyTags {#timeSeriesCopyTags}
@@ -331,7 +331,7 @@ SELECT timeSeriesFromGrid('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:0
 ```
 
 ```response title=Response
-┌─────────────────────────────────────────────result─────────────────────────────────────────────┐
+┌─result─────────────────────────────────────────────────────────────────────────────────────────┐
 │ [('2025-06-01 00:00:00.000',10),('2025-06-01 00:00:30.000',20),('2025-06-01 00:01:30.000',30)] │
 └────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -375,7 +375,7 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 
 ```response title=Response
 ┌─group─┬─────────sampling_key─┐
-│     1 │ 12876543210987654321 │
+│     1 │ 15511321834549144507 │
 └───────┴──────────────────────┘
 ```
 
@@ -421,9 +421,9 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 ```
 
 ```response title=Response
-┌─group─┬─sorted_tags────────────────────────────────────────────────────────┬─same_group─┬─throwIf(notE⋯up, group))─┐
-│     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │          1 │                        0 │
-└───────┴────────────────────────────────────────────────────────────────────┴────────────┴──────────────────────────┘
+┌─group─┬─sorted_tags────────────────────────────────────────────────────────┬─same_group─┬─throwIf(notEquals(same_group, group))─┐
+│     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │          1 │                                     0 │
+└───────┴────────────────────────────────────────────────────────────────────┴────────────┴───────────────────────────────────────┘
 ```
 
 ## timeSeriesIdToGroup {#timeSeriesIdToGroup}
@@ -467,9 +467,9 @@ SELECT 8374283493092 AS id,
 ```
 
 ```response title=Response
-┌────────────id─┬───────same_id─┬─throwIf(notE⋯me_id, id))─┬─group─┬─timeSeriesGroupToTags(group)───────────────────────────────────────┐
-│ 8374283493092 │ 8374283493092 │                        0 │     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
-└───────────────┴───────────────┴──────────────────────────┴───────┴────────────────────────────────────────────────────────────────────┘
+┌────────────id─┬───────same_id─┬─throwIf(notEquals(same_id, id))─┬─group─┬─timeSeriesGroupToTags(group)───────────────────────────────────────┐
+│ 8374283493092 │ 8374283493092 │                               0 │     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
+└───────────────┴───────────────┴─────────────────────────────────┴───────┴────────────────────────────────────────────────────────────────────┘
 ```
 
 ## timeSeriesIdToTags {#timeSeriesIdToTags}
@@ -512,9 +512,9 @@ SELECT 8374283493092 AS id,
 ```
 
 ```response title=Response
-┌────────────id─┬───────same_id─┬─throwIf(notE⋯me_id, id))─┬─timeSeriesIdToTags(same_id)────────────────────────────────────────┐
-│ 8374283493092 │ 8374283493092 │                        0 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
-└───────────────┴───────────────┴──────────────────────────┴────────────────────────────────────────────────────────────────────┘
+┌────────────id─┬───────same_id─┬─throwIf(notEquals(same_id, id))─┬─timeSeriesIdToTags(same_id)────────────────────────────────────────┐
+│ 8374283493092 │ 8374283493092 │                               0 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
+└───────────────┴───────────────┴─────────────────────────────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
 ## timeSeriesJoinTags {#timeSeriesJoinTags}
@@ -564,6 +564,40 @@ SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('src1'
 └───────┴──────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## timeSeriesMetricTypeToSuffixes {#timeSeriesMetricTypeToSuffixes}
+
+Introduced in: v26.8.0
+
+Returns the metric-name suffixes for a metric family of the given Prometheus type.
+
+**Syntax**
+
+```sql
+timeSeriesMetricTypeToSuffixes(type)
+```
+
+**Arguments**
+
+- `type` — Prometheus metric type (`counter`, `gauge`, `histogram`, `summary`, ...). [`String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns the suffixes for a family of that type. [`Array(String)`](/reference/data-types/array)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT timeSeriesMetricTypeToSuffixes('histogram') AS suffixes;
+```
+
+```response title=Response
+┌─suffixes────────────────────┐
+│ ['_bucket','_count','_sum'] │
+└─────────────────────────────┘
+```
+
 ## timeSeriesRange {#timeSeriesRange}
 
 Introduced in: v25.8.0
@@ -599,9 +633,9 @@ SELECT timeSeriesRange('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:0
 ```
 
 ```response title=Response
-┌────────────────────────────────────result─────────────────────────────────────────┐
-│ ['2025-06-01 00:00:00.000', '2025-06-01 00:00:30.000', '2025-06-01 00:01:00.000'] │
-└───────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesRange(CAST('2025-06-01 00:00:00', 'DateTime64(3)'), CAST('2025-06-01 00:01:00', 'DateTime64(3)'), 30)─┐
+│ ['2025-06-01 00:00:00.000','2025-06-01 00:00:30.000','2025-06-01 00:01:00.000']                                 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## timeSeriesRemoveAllTagsExcept {#timeSeriesRemoveAllTagsExcept}
@@ -885,6 +919,45 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 └────────┴────────┴─────────────┴─────────────┴─────────────────────────────────────────┴────────────────────────────────┘
 ```
 
+## timeSeriesTagsToMap {#timeSeriesTagsToMap}
+
+Introduced in: v26.8.0
+
+Combines an array of `(tag_name, tag_value)` pairs with separate tag name/value arguments into a single map.
+The result is sorted by tag name, and duplicate tag names and tags with empty values are removed.
+    
+
+**Syntax**
+
+```sql
+timeSeriesTagsToMap(tags_array, tag_name_1, tag_value_1, tag_name_2, tag_value_2, ...)
+```
+
+**Arguments**
+
+- `tags_array` — Array of pairs (tag_name, tag_value). [`Array(Tuple(String, String))`](/reference/data-types/array) or [`Map(String, String)`](/reference/data-types/map) or [`NULL`](/reference/syntax#null)
+- `tag_name_i` — The name of a tag. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring)
+- `tag_value_i` — The value of a tag. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`Nullable(String)`](/reference/data-types/nullable)
+
+**Returned value**
+
+Returns a map of tag names to tag values, sorted by tag name, without duplicate tag names or empty tag values.
+         [`Map(String, String)`](/reference/data-types/map)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT timeSeriesTagsToMap([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS tags
+```
+
+```response title=Response
+┌─tags─────────────────────────────────────────────────────────┐
+│ {'__name__':'http_requests_count','env':'dev','region':'eu'} │
+└──────────────────────────────────────────────────────────────┘
+```
+
 ## timeSeriesThrowDuplicateSeriesIf {#timeSeriesThrowDuplicateSeriesIf}
 
 Introduced in: v26.2.0
@@ -917,23 +990,34 @@ Returns `0`. [`UInt8`](/reference/data-types/int-uint)
 
 **Examples**
 
-**Example**
+**One series per group**
 
 ```sql title=Query
 CREATE TABLE test(tags Array(Tuple(String, String))) engine=Memory;
 
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
-SELECT timeSeriesTagsToGroup(tags) AS group
+SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, timeSeriesTagsToGroup(tags))
 FROM test
-GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- OK
+GROUP BY timeSeriesTagsToGroup(tags);
+```
 
+```response title=Response
+0
+```
+
+**Two series with the same tags**
+
+```sql title=Query
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
-SELECT timeSeriesTagsToGroup(tags) AS group
+SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, timeSeriesTagsToGroup(tags))
 FROM test
-GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- Throws exception "Multiple series have the same tags {'__name__': 'up'}"
+GROUP BY timeSeriesTagsToGroup(tags);
+```
+
+```response title=Response
+Received exception:
+Code: 768. DB::Exception: Multiple series have the same tags {'__name__': 'up'}, duplicate series in the same result set are not allowed. (DUPLICATE_TIME_SERIES)
 ```
 {/*AUTOGENERATED_END*/}

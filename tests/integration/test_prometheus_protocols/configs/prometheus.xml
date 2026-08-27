@@ -89,6 +89,15 @@
                     <database>default</database>
                 </handler>
             </my_rule_11>
+
+            <!-- Table without min_time/max_time columns: /api/v1/series must ignore the time range for it. -->
+            <my_rule_12>
+                <url_prefix>/no_bounds</url_prefix>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus_no_bounds</table>
+                </handler>
+            </my_rule_12>
         </handlers>
     </prometheus>
 </clickhouse>

@@ -541,6 +541,8 @@ function run_tests
                 # Only when the caller explicitly set CHPC_RUNS ("at least N
                 # runs"); otherwise the adaptive run policy decides.
                 ${CHPC_RUNS:+--runs "$CHPC_RUNS"}
+                # Setup queries marked do_not_check_in_pr="$PR_TO_TEST" may fail on the reference server.
+                ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"}
                 --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
 
@@ -1029,7 +1031,8 @@ do
         --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT" \
         --binary left/clickhouse right/clickhouse \
         --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT" \
-        ${CHPC_RUNS:+--runs "$CHPC_RUNS"} --max-queries 0 --profile-seconds 0 \
+        ${CHPC_RUNS:+--runs "$CHPC_RUNS"} ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"} \
+        --max-queries 0 --profile-seconds 0 \
         --queries-to-run $confirm_indexes \
         > "analyze-confirm/$confirm_test-raw.tsv.tmp" \
         2> "analyze-confirm/$confirm_test-err.log"
@@ -1783,14 +1786,70 @@ do
 done
 }
 
+# The `SELECT` list that brings one side of the asynchronous metric log to the flat
+# per-entity metric names the report has always used, e.g. `BlockReadBytes_sda`.
+#
+# `system.asynchronous_metric_log` gained a `key` column when the per-entity metrics
+# (per CPU core, block device, network interface, disk, ...) were collapsed into
+# key-value metrics. A comparison can put a server from before that change against a
+# server from after it, and once the change reaches master both sides carry the `key`
+# column, so every side is projected on its own according to the columns its own dump
+# has. A log without a `key` column is already in the flat form and is taken as is.
+function async_metric_log_select
+{
+    local log_file=$1
+
+    # `TSVWithNamesAndTypes` puts the column names on the first line. Read them without a
+    # pipeline: `set -o pipefail` would see the `SIGPIPE` of a writer whose reader stops at
+    # the first match, and report the pipeline as failed.
+    local header_columns=()
+    IFS=$'\t' read -r -a header_columns < "$log_file" ||:
+
+    local has_key=0
+    local column
+    for column in ${header_columns[@]+"${header_columns[@]}"}
+    do
+        if [ "$column" = "key" ]
+        then
+            has_key=1
+        fi
+    done
+
+    if [ "$has_key" = 1 ]
+    then
+        cat <<'SELECT_LIST'
+        multiIf(
+            key = '', metric,
+            startsWith(metric, 'OS') AND endsWith(metric, 'CPU'), concat(metric, key),
+            metric = 'Temperature' AND match(key, '^[0-9]+$'), concat(metric, key),
+            metric IN ('EDACCorrectable', 'EDACUncorrectable'), concat('EDAC', key, '_', substring(metric, 5)),
+            metric IN ('DeadBlobsQueueEstimate', 'MissingBlobsQueueEstimate'), concat(key, metric),
+            metric = 'AsyncLoggingQueueSize', concat('AsyncLogging', key, 'QueueSize'),
+            concat(metric, '_', key)) AS metric,
+        event_time,
+        value
+SELECT_LIST
+    else
+        echo "        metric, event_time, value"
+    fi
+}
+
 function report_metrics
 {
 rm -rf metrics ||:
 mkdir metrics
 
 clickhouse-local --query "
+create view left_async_metric_log as
+    select
+$(async_metric_log_select left-async-metric-log.tsv)
+    from file('left-async-metric-log.tsv', TSVWithNamesAndTypes)
+    ;
+
 create view right_async_metric_log as
-    select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes)
+    select
+$(async_metric_log_select right-async-metric-log.tsv)
+    from file('right-async-metric-log.tsv', TSVWithNamesAndTypes)
     ;
 
 -- Use the right log as time reference because it may have higher precision.
@@ -1798,7 +1857,7 @@ create table metrics engine File(TSV, 'metrics/metrics.tsv') as
     with (select min(event_time) from right_async_metric_log) as min_time
     select metric, r.event_time - min_time event_time, l.value as left, r.value as right
     from right_async_metric_log r
-    asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes) l
+    asof join left_async_metric_log l
     on l.metric = r.metric and r.event_time <= l.event_time
     order by metric, event_time
     ;
