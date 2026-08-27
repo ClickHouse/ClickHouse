@@ -1159,8 +1159,9 @@ toTypeName(value): Date32
     /// toTime documentation
     FunctionDocumentation::Description description_toTime = R"(
 Converts an input value to type [Time](/reference/data-types/time).
-Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
+Supports conversion from String, FixedString, DateTime, DateTime64, Time64, or numeric types representing seconds since midnight.
 Numeric values outside of the range of the type (`-999:59:59` to `999:59:59`, that is `-3599999` to `3599999` seconds) are saturated to the range boundaries, and non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
+`Time64` values are floored towards negative infinity to whole seconds and saturated to the same range.
 
 :::note Legacy `toTime`
 Before v25.5, `toTime` was a different function, which converted a date with time to a fixed date (`1970-01-02`) while preserving the
@@ -1174,7 +1175,7 @@ The setting defaults to `0` since v26.7, but defaulted to `1` from v25.6 to v26.
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
     FunctionDocumentation::Arguments arguments_toTime = {
-        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "DateTime64", "(U)Int*", "BFloat16", "Float*"}}
+        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "DateTime64", "Time64", "(U)Int*", "BFloat16", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime = {"Returns the converted value.", {"Time"}};
     FunctionDocumentation::Examples examples_toTime = {
@@ -1276,10 +1277,12 @@ If `expr` is a number, it is interpreted as the number of seconds since the begi
 If `expr` is a [String](/reference/data-types/string), it may be interpreted as a Unix timestamp or as a string representation of date / date with time.
 Thus, parsing of short numbers' string representations (up to 4 digits) is explicitly disabled due to ambiguity, e.g. a string `'1999'` may be both a year (an incomplete string representation of Date / DateTime) or a unix timestamp. Longer numeric strings are allowed.
 :::
+
+If `expr` is a [Time](/reference/data-types/time) or [Time64](/reference/data-types/time64) value, it is interpreted as the number of seconds since the beginning of the Unix Epoch: the fractional part of a `Time64` is floored towards negative infinity, and values outside of the `DateTime` range follow the `date_time_overflow_behavior` setting.
     )";
     FunctionDocumentation::Syntax syntax_toDateTime = "toDateTime(expr[, time_zone])";
     FunctionDocumentation::Arguments arguments_toDateTime = {
-        {"expr", "The value.", {"String", "Int", "Date", "DateTime"}},
+        {"expr", "The value.", {"String", "Int", "Date", "Date32", "Time", "Time64", "DateTime", "DateTime64"}},
         {"time_zone", "Time zone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTime = {"Returns a date time.", {"DateTime"}};
@@ -1307,14 +1310,14 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
     /// toDateTime32 documentation
     FunctionDocumentation::Description description_toDateTime32 = R"(
 Converts an input value to type `DateTime`.
-Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64`, or numeric types (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`). `Decimal` and `Time64` values are not supported and result in an exception; the `Time` type and wide integer types such as `(U)Int128`/`(U)Int256` wrap around instead of saturating.
+Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `Time`, `Time64`, `DateTime`, `DateTime64`, or numeric types (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`). `Decimal` values are not supported and result in an exception; wide integer types such as `(U)Int128`/`(U)Int256` wrap around instead of saturating.
 `DateTime32` is an alias of `DateTime` and supports dates from `1970-01-01 00:00:00` to `2106-02-07 06:28:15`.
 When converting from a string or from one of the saturating numeric types listed above, values outside of this range are saturated to the range boundaries. Non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
-Conversions from other date and time types such as `Date32` or `DateTime64` follow the `date_time_overflow_behavior` setting: the default `ignore` mode may produce wrapped-around values, `saturate` clamps them to the range boundaries, and `throw` throws an exception.
+Conversions from other date and time types such as `Date32`, `DateTime64`, `Time`, or `Time64` follow the `date_time_overflow_behavior` setting: the default `ignore` mode may produce wrapped-around values, `saturate` clamps them to the range boundaries, and `throw` throws an exception. `Time64` values are floored towards negative infinity to whole seconds first.
     )";
     FunctionDocumentation::Syntax syntax_toDateTime32 = "toDateTime32(x[, timezone])";
     FunctionDocumentation::Arguments arguments_toDateTime32 = {
-        {"x", "Input value to convert.", {"String", "FixedString", "(U)Int*", "Float*", "BFloat16", "Date", "Date32", "Time", "DateTime", "DateTime64"}},
+        {"x", "Input value to convert.", {"String", "FixedString", "(U)Int*", "Float*", "BFloat16", "Date", "Date32", "Time", "Time64", "DateTime", "DateTime64"}},
         {"timezone", "Optional. Timezone for the returned `DateTime` value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTime32 = {"Returns the converted input value.", {"DateTime"}};
