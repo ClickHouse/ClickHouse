@@ -701,7 +701,16 @@ void FunctionSecretArgumentsFinder::findURLSecretArguments(size_t url_offset)
             const auto equals_func = function->arguments->at(i)->getFunction();
             if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
                 || equals_func->arguments->size() != 2)
+            {
+                /// `headers(...)` and `extra_credentials(...)` are already masked above. Anything else
+                /// after the collection name is either rejected by the parser or, with the default
+                /// `allow_named_collection_override_by_default`, silently ignored, and both happen after
+                /// the query is formatted, so a url with a secret in it would stay visible. Fail closed.
+                if (!equals_func
+                    || (equals_func->name() != "headers" && equals_func->name() != "extra_credentials"))
+                    markSecretArgument(i);
                 continue;
+            }
 
             String key;
             if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
@@ -1234,6 +1243,12 @@ void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
     else if (engine_name == "Backup")
     {
         findBackupDatabaseSecretArguments();
+    }
+    else if (engine_name == "URL")
+    {
+        /// URL('base_url'): the base url reaches the same backends as the `url` table function, so it
+        /// can carry userinfo credentials and, on the Azure schemes, a shared access signature.
+        findURLSecretArguments(0);
     }
 }
 
