@@ -1817,18 +1817,38 @@ def test_reset_before_build_dir_reports_a_surviving_directory(monkeypatch, tmp_p
     assert job.reset_before_build_dir() is True
 
 
-def test_per_arm_build_step_log_paths_are_distinct(monkeypatch, tmp_path):
-    # praktika names each log from the Result NAME
-    # (`from_commands_run`: {TEMP_DIR}/{normalize_string(name)}.log), so two arms sharing
-    # one name write one file and the second silently overwrites the first arm's
-    # configure and compile logs, the evidence for the arm that started the escalation.
+def test_reset_before_build_dir_actually_removes_the_directory(monkeypatch, tmp_path):
+    # The deletion itself, with nothing stubbed: without it the previous arm's build
+    # directory survives, the predicate above returns False on every escalation and no
+    # second build type is ever run.
     import ci.jobs.unit_tests_bugfix_validation_job as job
-    from ci.praktika.utils import Utils
+
+    before_src = tmp_path / "before_src"
+    build = before_src / "build"
+    build.mkdir(parents=True)
+    (build / "CMakeCache.txt").write_text("CMAKE_BUILD_TYPE:STRING=None\n")
+    # The real `rm -rf` runs below, so the path it is handed must be the pytest tmp_path.
+    assert str(before_src).startswith(str(tmp_path))
+    monkeypatch.setattr(job, "BEFORE_SRC", str(before_src))
+
+    assert job.reset_before_build_dir() is True
+    assert not build.exists()
+
+
+def _drive_configure_and_compile(monkeypatch, tmp_path):
+    """Run the real configure and compile steps for every arm, capturing what praktika got.
+
+    Returns `(names, commands)`, parallel lists in call order: configure, compile, configure,
+    compile.
+    """
+    import ci.jobs.unit_tests_bugfix_validation_job as job
 
     names = []
+    commands = []
 
     def fake_from_commands_run(name, command, **kw):
         names.append(name)
+        commands.append(command)
         return job.Result(name=name, status=job.Result.Status.OK)
 
     monkeypatch.setattr(
@@ -1842,9 +1862,53 @@ def test_per_arm_build_step_log_paths_are_distinct(monkeypatch, tmp_path):
         job.configure_before_binary(None, build_type)
         job.compile_before_binary(build_type)
 
+    return names, commands
+
+
+# The flag string pads the value with spaces (`-DSANITIZE=thread    -DENABLE_...`) and the
+# value is legitimately empty for a non-sanitizer build type, so match the whole token
+# instead of splitting on whitespace and assuming a value follows.
+_SANITIZE_TOKEN_RE = re.compile(r"-DSANITIZE=\S*")
+
+
+def _sanitize_token(cmake_flags):
+    match = _SANITIZE_TOKEN_RE.search(cmake_flags)
+    assert match, f"no -DSANITIZE= token in {cmake_flags!r}"
+    return match.group(0)
+
+
+def test_per_arm_build_step_log_paths_are_distinct(monkeypatch, tmp_path):
+    # praktika names each log from the Result NAME
+    # (`from_commands_run`: {TEMP_DIR}/{normalize_string(name)}.log), so two arms sharing
+    # one name write one file and the second silently overwrites the first arm's
+    # configure and compile logs, the evidence for the arm that started the escalation.
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+    from ci.praktika.utils import Utils
+
+    names, _commands = _drive_configure_and_compile(monkeypatch, tmp_path)
+
     assert len(names) == 2 * len(job.BEFORE_BUILD_TYPES)
     log_paths = [Utils.normalize_string(n) for n in names]
     assert len(set(log_paths)) == len(log_paths), f"log paths collide: {log_paths}"
+
+
+def test_each_arm_is_configured_with_its_own_build_type_flags(monkeypatch, tmp_path):
+    # The cmake flags are looked up per arm. Reuse the first arm's flags for the second and
+    # the same sanitizer is built twice while the Result name, `arms_tried` and the
+    # refutation info all name the second build type: a refutation claiming a build type
+    # that was never built.
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    _names, commands = _drive_configure_and_compile(monkeypatch, tmp_path)
+
+    # Only the configure step carries sanitizer flags; the compile command is
+    # `ninja unit_tests_dbms` for every arm.
+    configure_commands = commands[::2]
+    assert len(configure_commands) == len(job.BEFORE_BUILD_TYPES)
+    tokens = [_sanitize_token(" ".join(c)) for c in configure_commands]
+    assert len(set(tokens)) == len(tokens), f"arms share one sanitizer: {tokens}"
+    for build_type, token in zip(job.BEFORE_BUILD_TYPES, tokens):
+        assert token == _sanitize_token(job.BUILD_TYPE_TO_CMAKE[build_type])
 
 
 # --------------------------------------------------------------------------
@@ -1936,6 +2000,30 @@ def test_symbolizer_options_keep_a_preset_path_and_preset_options(monkeypatch):
         os.environ["ASAN_OPTIONS"]
         == "detect_leaks=1 external_symbolizer_path=/usr/bin/llvm-symbolizer"
     )
+
+
+def test_run_gtests_pins_the_symbolizer_before_launching(monkeypatch):
+    # The arms above call the helper directly and every orchestration arm replaces
+    # `run_gtests`, so this is the one place the two meet. Capture inside the fake rather
+    # than reading the environment afterwards: the option has to be in place before the
+    # gtest child inherits it, and a read after the call would also pass if it were set
+    # later.
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    _isolate_sanitizer_option_vars(monkeypatch, job)
+    monkeypatch.setenv("OPENSSL_CONF", "")
+    monkeypatch.setattr(job.shutil, "which", lambda name: "/usr/bin/llvm-symbolizer")
+    seen = {}
+
+    def fake_from_gtest_run(unit_tests_path, name, gtest_filter):
+        seen["TSAN_OPTIONS"] = os.environ.get("TSAN_OPTIONS")
+        return job.Result(name=name, status=job.Result.Status.OK)
+
+    monkeypatch.setattr(job.Result, "from_gtest_run", staticmethod(fake_from_gtest_run))
+
+    job.run_gtests("/nonexistent/unit_tests_dbms", "Suite.*", name="probe")
+
+    assert "external_symbolizer_path=/usr/bin/llvm-symbolizer" in seen["TSAN_OPTIONS"]
 
 
 if __name__ == "__main__":
