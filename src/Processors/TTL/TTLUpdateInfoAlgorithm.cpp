@@ -23,11 +23,14 @@ void TTLUpdateInfoAlgorithm::execute(Block & block)
         return;
 
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
-    for (size_t i = 0; i < block.rows(); ++i)
-    {
-        Int64 cur_ttl = ITTLAlgorithm::getTimestampByIndex(ttl_column.get(), i);
-        new_ttl_info.update(cur_ttl);
-    }
+
+    /// The loop body is a single min/max update, so resolving the column type once per block
+    /// rather than once per row is both faster and the natural shape here.
+    const size_t rows = block.rows();
+    extractTimestamps(ttl_column.get(), rows, timestamps);
+
+    for (size_t i = 0; i < rows; ++i)
+        new_ttl_info.update(timestamps[i]);
 }
 
 void TTLUpdateInfoAlgorithm::finalize(const MutableDataPartPtr & data_part) const
