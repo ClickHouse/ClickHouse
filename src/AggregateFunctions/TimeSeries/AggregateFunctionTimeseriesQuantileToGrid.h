@@ -162,6 +162,13 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
     };
 
     using Bucket = Samples;
+
+    static constexpr UInt16 FORMAT_VERSION = 1;
+
+    /// Thresholds read by `AggregateFunctionTimeseriesBase::getStackSizeForTwoStacks`, same values and rationale
+    /// as `AggregateFunctionTimeseriesLinearRegressionTraits`: this `Summary` is non-invertible too.
+    static constexpr size_t AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS = 10;
+    static constexpr size_t BPW_TO_FORCE_TWO_STACKS = 20;
 };
 
 
@@ -190,22 +197,11 @@ public:
     {
     }
 
-    static constexpr size_t AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS = 10;
-    static constexpr size_t BPW_TO_FORCE_TWO_STACKS = 20;
-
-    Aggregator createAggregator(size_t num_populated_buckets) const
+    Aggregator createAggregator(size_t stack_size_for_two_stacks) const
     {
-        const size_t avg_buckets_in_window = Base::bucket_count
-            ? static_cast<size_t>(static_cast<double>(Base::buckets_per_window) * static_cast<double>(num_populated_buckets)
-                / static_cast<double>(Base::bucket_count))
-            : 0;
-        const bool use_two_stacks = avg_buckets_in_window >= AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS
-            || Base::buckets_per_window >= BPW_TO_FORCE_TWO_STACKS;
-        const size_t stack_size = use_two_stacks ? std::min(Base::buckets_per_window, num_populated_buckets) : 0;
-        return Aggregator{stack_size, phi};
+        return Aggregator{stack_size_for_two_stacks, phi};
     }
 
-    static constexpr UInt16 FORMAT_VERSION = 1;
     static constexpr bool DateTime64Supported = true;
 
 protected:

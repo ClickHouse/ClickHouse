@@ -91,6 +91,8 @@ struct AggregateFunctionTimeseriesPresentToGridTraits
     };
 
     using Bucket = Summary;
+
+    static constexpr UInt16 FORMAT_VERSION = 1;
 };
 
 
@@ -108,12 +110,11 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesPresentToGrid, Traits>;
     using Base::Base;
 
-    typename Traits::Aggregator createAggregator(size_t /* num_populated_buckets */) const
+    typename Traits::Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return {};
     }
 
-    static constexpr UInt16 FORMAT_VERSION = 1;
     static constexpr bool DateTime64Supported = true;
 };
 
