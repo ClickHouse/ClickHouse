@@ -144,12 +144,19 @@ create_table()
     "
 }
 
+# Expects the read to fail with ICEBERG_SPECIFICATION_VIOLATION and with the field-specific
+# diagnostic given as the argument, so that the test stays tied to the intended range check even
+# if the file patching goes wrong in a way that trips some other Iceberg validation.
+# Usage: check_throws <expected message fragment>
 check_throws()
 {
-    ${CLICKHOUSE_CLIENT} --query "
+    local output
+    output=$(${CLICKHOUSE_CLIENT} --query "
         SELECT * FROM t_malformed_enums ORDER BY x
         SETTINGS use_iceberg_metadata_files_cache = 0;
-    " 2>&1 | grep -oF 'ICEBERG_SPECIFICATION_VIOLATION' | head -1
+    " 2>&1)
+    echo "$output" | grep -oF 'ICEBERG_SPECIFICATION_VIOLATION' | head -1
+    echo "$output" | grep -oF "$1" | head -1
 }
 
 manifest_file() { find "${TABLE_ROOT}/metadata" -name '*.avro' ! -name 'snap-*' | head -1; }
@@ -162,22 +169,35 @@ ${CLICKHOUSE_CLIENT} --query "SELECT * FROM t_malformed_enums ORDER BY x SETTING
 echo "-- out-of-range 'status' of a manifest entry"
 create_table
 patch_avro_int "$(manifest_file)" 'status' 100
-check_throws
+check_throws "unexpected value 100 of 'status' in a manifest file"
+
+# The negative manifest-entry values must be rejected as well. The expected fragment does not pin
+# the reported value: today a negative value surfaces as a huge unsigned one, and the exact
+# rendering may change while the rejection itself must stay.
+echo "-- negative 'status' of a manifest entry"
+create_table
+patch_avro_int "$(manifest_file)" 'status' -1
+check_throws "of 'status' in a manifest file"
 
 echo "-- out-of-range 'data_file.content' of a manifest entry"
 create_table
 patch_avro_int "$(manifest_file)" 'data_file.content' 100
-check_throws
+check_throws "unexpected value 100 of 'data_file.content' in a manifest file"
+
+echo "-- negative 'data_file.content' of a manifest entry"
+create_table
+patch_avro_int "$(manifest_file)" 'data_file.content' -1
+check_throws "of 'data_file.content' in a manifest file"
 
 echo "-- out-of-range 'content' of a manifest list entry"
 create_table
 patch_avro_int "$(manifest_list)" 'content' 100
-check_throws
+check_throws "unexpected value 100 of the field 'content'"
 
 echo "-- negative 'content' of a manifest list entry"
 create_table
 patch_avro_int "$(manifest_list)" 'content' -1
-check_throws
+check_throws "unexpected value -1 of the field 'content'"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_malformed_enums;"
 rm -rf "${TABLE_ROOT}"
