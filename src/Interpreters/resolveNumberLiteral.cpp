@@ -1,10 +1,14 @@
 #include <Interpreters/resolveNumberLiteral.h>
 #include <Interpreters/convertFieldToType.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <algorithm>
 
@@ -182,6 +186,145 @@ std::pair<Field, DataTypePtr> resolveNumberLiteralForFunction(
         return {parsed_field, target_type};
 
     return {Field(), nullptr};
+}
+
+namespace
+{
+
+bool hasNestedNumberLiteral(const Field & field)
+{
+    auto any_of = [](const auto & container)
+    {
+        return std::any_of(container.begin(), container.end(), [](const Field & element) { return hasNestedNumberLiteral(element); });
+    };
+
+    switch (field.getType())
+    {
+        case Field::Types::Number: return true;
+        case Field::Types::Array: return any_of(field.safeGet<Array>());
+        case Field::Types::Tuple: return any_of(field.safeGet<Tuple>());
+        case Field::Types::Map: return any_of(field.safeGet<Map>());
+        default: return false;
+    }
+}
+
+/// `any_resolved` is set when the reference type decided an element's type. A null type means give up.
+std::pair<Field, DataTypePtr> resolveNested(const Field & field, const DataTypePtr & reference_type, bool & any_resolved)
+{
+    auto reference = reference_type ? removeNullable(removeLowCardinality(reference_type)) : nullptr;
+
+    if (field.getType() == Field::Types::Number)
+    {
+        const String & text = field.safeGet<NumberLiteral>().value;
+        if (reference && (isNumber(*reference) || isDecimal(*reference)))
+        {
+            auto [parsed_field, target_type] = resolveNumberLiteralForFunction(text, reference, /*is_comparison=*/ true);
+            if (target_type)
+            {
+                any_resolved = true;
+                return {std::move(parsed_field), std::move(target_type)};
+            }
+        }
+    }
+    else if (field.getType() == Field::Types::Tuple)
+    {
+        const auto & elements = field.safeGet<Tuple>();
+        const auto * reference_tuple = reference ? typeid_cast<const DataTypeTuple *>(reference.get()) : nullptr;
+        if (reference_tuple && reference_tuple->getElements().size() != elements.size())
+            reference_tuple = nullptr;
+
+        Tuple resolved_elements;
+        DataTypes resolved_types;
+        resolved_elements.reserve(elements.size());
+        resolved_types.reserve(elements.size());
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            auto [resolved, type] = resolveNested(elements[i], reference_tuple ? reference_tuple->getElement(i) : nullptr, any_resolved);
+            if (!type)
+                return {};
+            resolved_elements.push_back(std::move(resolved));
+            resolved_types.push_back(std::move(type));
+        }
+        return {Field(std::move(resolved_elements)), std::make_shared<DataTypeTuple>(std::move(resolved_types))};
+    }
+    else if (field.getType() == Field::Types::Array)
+    {
+        const auto & elements = field.safeGet<Array>();
+        const auto * reference_array = reference ? typeid_cast<const DataTypeArray *>(reference.get()) : nullptr;
+        DataTypePtr element_reference = reference_array ? reference_array->getNestedType() : nullptr;
+
+        Array resolved_elements;
+        DataTypes resolved_types;
+        resolved_elements.reserve(elements.size());
+        resolved_types.reserve(elements.size());
+        for (const auto & element : elements)
+        {
+            auto [resolved, type] = resolveNested(element, element_reference, any_resolved);
+            if (!type)
+                return {};
+            resolved_elements.push_back(std::move(resolved));
+            resolved_types.push_back(std::move(type));
+        }
+
+        /// An array holds one type, and different spellings resolve to different Decimal scales.
+        auto element_type = resolved_types.empty() ? element_reference : tryGetLeastSupertype(resolved_types);
+        if (!element_type)
+            return {};
+        for (auto & element : resolved_elements)
+        {
+            Field converted = tryConvertFieldToType(element, *element_type);
+            if (converted.isNull() && !element.isNull())
+                return {};
+            element = std::move(converted);
+        }
+        return {Field(std::move(resolved_elements)), std::make_shared<DataTypeArray>(element_type)};
+    }
+
+    /// Nothing to resolve it against: keep the default.
+    Field resolved = field.resolveNumberLiteral();
+    return {resolved, applyVisitor(FieldToDataType(), resolved)};
+}
+
+}
+
+bool fieldHasNumberLiteral(const Field & field)
+{
+    return hasNestedNumberLiteral(field);
+}
+
+std::pair<Field, DataTypePtr> resolveNumberLiteralSetElement(
+    const Field & element, const DataTypePtr & left_type)
+{
+    if (!left_type || !hasNestedNumberLiteral(element))
+        return {};
+
+    auto reference = removeNullable(removeLowCardinality(left_type));
+
+    if (element.getType() == Field::Types::Number)
+    {
+        if (!isNumber(*reference) && !isDecimal(*reference))
+            return {};
+        return resolveNumberLiteralForFunction(element.safeGet<NumberLiteral>().value, reference, /*is_comparison=*/ true);
+    }
+
+    return resolveNestedNumberLiteralsForComparison(element, reference);
+}
+
+std::pair<Field, DataTypePtr> resolveNestedNumberLiteralsForComparison(
+    const Field & field, const DataTypePtr & reference_type)
+{
+    /// A bare literal goes through the scalar path.
+    if (field.getType() != Field::Types::Tuple && field.getType() != Field::Types::Array)
+        return {};
+    if (!hasNestedNumberLiteral(field))
+        return {};
+
+    bool any_resolved = false;
+    auto [resolved_field, resolved_type] = resolveNested(field, reference_type, any_resolved);
+    if (!any_resolved || !resolved_type)
+        return {};
+
+    return {std::move(resolved_field), std::move(resolved_type)};
 }
 
 }

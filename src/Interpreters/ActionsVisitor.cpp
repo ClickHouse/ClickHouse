@@ -111,22 +111,21 @@ namespace
 {
 /// The right-hand side of `IN` is compared against the left-hand side type, so a number literal
 /// element (which resolves to `Float64` on its own) is parsed from its original text against that
-/// type instead. Returns null when the left-hand side is not a plain numeric type: a `Tuple` one
-/// matches its elements positionally further down, which this does not handle.
+/// type instead. A `Tuple` or `Array` left-hand side matches its elements positionally.
 DataTypePtr getNumberLiteralReferenceTypeForIn(const DataTypePtr & left_arg_type)
 {
     if (!left_arg_type)
         return nullptr;
 
     auto type = removeNullable(removeLowCardinality(left_arg_type));
-    if (isNumber(*type) || isDecimal(*type))
+    if (isNumber(*type) || isDecimal(*type) || isTuple(*type) || isArray(*type))
         return type;
 
     return nullptr;
 }
 
-/// Build the column and type of a set element that is a number literal, parsing it from the original
-/// literal text against `reference_type`. Returns false when the element is not a number literal.
+/// Build the column and type of a set element holding number literals, parsing them from their
+/// original text against `reference_type`. False when there is nothing to re-type.
 bool tryBuildNumberLiteralSetElement(
     const ASTPtr & element, const DataTypePtr & reference_type, ColumnPtr & out_column, DataTypePtr & out_type)
 {
@@ -134,11 +133,10 @@ bool tryBuildNumberLiteralSetElement(
         return false;
 
     const auto * literal = element->as<ASTLiteral>();
-    if (!literal || literal->value.getType() != Field::Types::Number)
+    if (!literal)
         return false;
 
-    auto [parsed_field, target_type] = resolveNumberLiteralForFunction(
-        literal->value.safeGet<NumberLiteral>().value, reference_type, /*is_comparison=*/ true);
+    auto [parsed_field, target_type] = resolveNumberLiteralSetElement(literal->value, reference_type);
     if (!target_type)
         return false;
 
@@ -165,8 +163,7 @@ bool tryBuildNumberLiteralSet(
 
     const auto & elements = literal->value.safeGet<Tuple>();
     /// Checked before the rebuild below, which copies every element of a possibly huge IN list.
-    if (std::none_of(elements.begin(), elements.end(),
-                     [](const Field & element) { return element.getType() == Field::Types::Number; }))
+    if (std::none_of(elements.begin(), elements.end(), fieldHasNumberLiteral))
         return false;
 
     Tuple resolved_elements;
@@ -177,17 +174,13 @@ bool tryBuildNumberLiteralSet(
     bool any_element_resolved = false;
     for (const auto & element : elements)
     {
-        if (element.getType() == Field::Types::Number)
+        auto [parsed_field, target_type] = resolveNumberLiteralSetElement(element, reference_type);
+        if (target_type)
         {
-            auto [parsed_field, target_type] = resolveNumberLiteralForFunction(
-                element.safeGet<NumberLiteral>().value, reference_type, /*is_comparison=*/ true);
-            if (target_type)
-            {
-                resolved_elements.push_back(std::move(parsed_field));
-                resolved_types.push_back(std::move(target_type));
-                any_element_resolved = true;
-                continue;
-            }
+            resolved_elements.push_back(std::move(parsed_field));
+            resolved_types.push_back(std::move(target_type));
+            any_element_resolved = true;
+            continue;
         }
 
         resolved_elements.push_back(element);
@@ -1871,6 +1864,30 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     String new_name = data.getUniqueName("__number_literal");
                     ColumnConstPtr column = target_type->createColumnConst(1, parsed);
                     data.addColumn(std::move(column), target_type, new_name);
+                    argument_names[i] = new_name;
+                }
+            }
+
+            /// A tuple or array of literals is one literal, so its elements are resolved to their
+            /// default type before the compared type is known. Rebuild it against the other argument.
+            if (args.size() == 2 && argument_names.size() == 2)
+            {
+                for (size_t i = 0; i < 2; ++i)
+                {
+                    const auto * lit = args[i]->as<ASTLiteral>();
+                    if (!lit)
+                        continue;
+                    const auto * other = index.tryGetNode(argument_names[1 - i]);
+                    if (!other || !other->result_type)
+                        continue;
+
+                    auto [resolved, target_type]
+                        = resolveNestedNumberLiteralsForComparison(lit->value, other->result_type);
+                    if (!target_type)
+                        continue;
+
+                    String new_name = data.getUniqueName("__number_literal");
+                    data.addColumn(target_type->createColumnConst(1, resolved), target_type, new_name);
                     argument_names[i] = new_name;
                 }
             }

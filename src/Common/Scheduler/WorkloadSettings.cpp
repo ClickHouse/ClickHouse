@@ -1,5 +1,6 @@
 #include <limits>
 #include <base/getMemoryAmount.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MemoryTracker.h>
 #include <Common/Scheduler/CostUnit.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -179,7 +180,8 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
                     return static_cast<Float64>(parseWithSizeSuffix<Int64>(val));
             }
 
-            Float64 value = field.resolveNumberLiteral().safeGet<Float64>();
+            /// A literal too large for UInt64 resolves to a wide integer, which is still a number.
+            Float64 value = applyVisitor(FieldVisitorConvertToNumber<Float64>(), field.resolveNumberLiteral());
             if (!std::isfinite(value))
                 throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
                     "Float setting value must be finite, got {} for workload setting '{}'", value, name);
