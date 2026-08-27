@@ -557,6 +557,18 @@ def test_move_after_processing_existing_destination(started_cluster, engine_name
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     is_s3 = engine_name == "S3Queue"
 
+    def move_collisions():
+        node.query("SYSTEM FLUSH LOGS")
+        return int(
+            node.query(
+                "SELECT value FROM system.events "
+                "WHERE name = 'ObjectStorageQueueMoveCollisions' "
+                "SETTINGS system_events_show_zero_values = 1"
+            )
+        )
+
+    collisions_before = move_collisions()
+
     generate_random_files(
         started_cluster,
         files_path,
@@ -621,12 +633,14 @@ def test_move_after_processing_existing_destination(started_cluster, engine_name
 
     for _ in range(30):
         moved, left = counts()
-        if moved == 1 and left == 1:
+        if moved == 1 and left == 1 and move_collisions() > collisions_before:
             break
         time.sleep(1)
     moved, left = counts()
     assert moved == 1, f"destination object count changed: {moved}"
     assert left == 1, f"source must survive a refused move, got {left} objects"
+    # The refusal has to be reported as a collision, not retried as a generic move failure.
+    assert move_collisions() >= collisions_before + 1
 
     if is_s3:
         minio = started_cluster.minio_client
