@@ -24,8 +24,14 @@ struct ThreadEventData
     UInt64 system_ms    = 0;
     UInt64 memory_usage = 0;
     UInt64 temp_data_on_disk_usage = 0;
-    UInt64 os_read_bytes  = 0;
-    UInt64 os_write_bytes = 0;
+
+    /// Per-packet byte deltas for the live IO/network rates. IO covers block-device reads/writes
+    /// (`OSReadBytes`/`OSWriteBytes`) and object-storage reads/writes (S3, Azure); network covers
+    /// ClickHouse's own network traffic (`NetworkReceiveBytes`/`NetworkSendBytes`).
+    UInt64 io_read_bytes  = 0;
+    UInt64 io_write_bytes = 0;
+    UInt64 net_read_bytes  = 0;
+    UInt64 net_write_bytes = 0;
 
     // -1 used as flag 'is not shown for old servers'
     Int64 peak_memory_usage = -1;
@@ -97,10 +103,12 @@ public:
 
 private:
     double getCPUUsage();
-    /// Disk I/O read and write rates in bytes per second (0 when the server does not report them,
-    /// e.g. on non-Linux servers where `OSReadBytes`/`OSWriteBytes` stay zero).
-    double getDiskReadRate();
-    double getDiskWriteRate();
+    /// IO (disk + object storage) and network read/write rates in bytes per second
+    /// (0 when the server does not report the underlying counters).
+    double getIOReadRate();
+    double getIOWriteRate();
+    double getNetReadRate();
+    double getNetWriteRate();
 
     UInt64 getElapsedNanoseconds() const;
 
@@ -122,8 +130,10 @@ private:
     bool write_progress_on_update = false;
 
     EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average cpu utilization last 2 second, skip first 4 points
-    EventRateMeter disk_read_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average disk read rate last 2 seconds
-    EventRateMeter disk_write_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average disk write rate last 2 seconds
+    EventRateMeter io_read_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average IO read rate last 2 seconds
+    EventRateMeter io_write_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average IO write rate last 2 seconds
+    EventRateMeter net_read_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average network read rate last 2 seconds
+    EventRateMeter net_write_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average network write rate last 2 seconds
     HostToTimesMap hosts_data;
     /// In case of all of the above:
     /// - clickhouse-local
@@ -132,7 +142,7 @@ private:
     ///
     /// It is possible concurrent access to the following:
     /// - writeProgress() (class properties) (guarded with progress_mutex)
-    /// - hosts_data/cpu_usage_meter/disk_read_meter/disk_write_meter (guarded with profile_events_mutex)
+    /// - hosts_data and the rate meters (guarded with profile_events_mutex)
     ///
     /// It is also possible to have more races if query is cancelled, so that clearProgressOutput() is called concurrently
     mutable std::mutex profile_events_mutex;
