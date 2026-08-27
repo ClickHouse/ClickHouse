@@ -4,7 +4,9 @@ if (ENABLE_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
-add_subdirectory(benchmarks)
+if (ENABLE_TESTS OR ENABLE_BENCHMARKS)
+    add_subdirectory(benchmarks)
+endif ()
 
 if (ENABLE_FUZZING)
     add_subdirectory(fuzzers)

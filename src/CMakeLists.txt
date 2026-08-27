@@ -40,39 +40,42 @@ endif()
 set(dbms_headers)
 set(dbms_sources)
 
-# Compile microbenchmark translation units in every build, but keep their comparatively expensive
-# executable links out of the default build unless ENABLE_BENCHMARKS is set. Individual executables
-# and the clickhouse-microbenchmarks aggregate target can still be built explicitly.
-add_custom_target (clickhouse-microbenchmarks-objects)
+# Unit-test builds compile microbenchmark translation units to catch source regressions without
+# linking the comparatively expensive benchmark executables. ENABLE_BENCHMARKS additionally builds
+# those executables as part of the default build.
+if (ENABLE_TESTS OR ENABLE_BENCHMARKS)
+    add_custom_target (clickhouse-microbenchmarks-objects ALL)
 
-if (ENABLE_BENCHMARKS)
-    add_custom_target (clickhouse-microbenchmarks ALL)
-else ()
-    add_custom_target (clickhouse-microbenchmarks)
-endif ()
-
-function (clickhouse_add_microbenchmark target)
-    cmake_parse_arguments (MICROBENCHMARK "" "" "SOURCES;LIBRARIES" ${ARGN})
-    if (NOT MICROBENCHMARK_SOURCES OR MICROBENCHMARK_UNPARSED_ARGUMENTS)
-        message (FATAL_ERROR "clickhouse_add_microbenchmark requires SOURCES and accepts optional LIBRARIES")
+    if (ENABLE_BENCHMARKS)
+        add_custom_target (clickhouse-microbenchmarks ALL)
     endif ()
 
-    set (object_target "${target}_objects")
-    add_library (${object_target} OBJECT ${MICROBENCHMARK_SOURCES})
-    target_link_libraries (${object_target} PRIVATE
-        ch_contrib::gbenchmark_all
-        ${MICROBENCHMARK_LIBRARIES})
-    add_dependencies (clickhouse-microbenchmarks-objects ${object_target})
+    function (clickhouse_add_microbenchmark target)
+        cmake_parse_arguments (MICROBENCHMARK "" "" "SOURCES;LIBRARIES" ${ARGN})
+        if (NOT MICROBENCHMARK_SOURCES OR MICROBENCHMARK_UNPARSED_ARGUMENTS)
+            message (FATAL_ERROR "clickhouse_add_microbenchmark requires SOURCES and accepts optional LIBRARIES")
+        endif ()
 
-    clickhouse_add_executable (${target} EXCLUDE_FROM_ALL $<TARGET_OBJECTS:${object_target}>)
-    target_link_libraries (${target} PRIVATE
-        ch_contrib::gbenchmark_all
-        ${MICROBENCHMARK_LIBRARIES})
-    # Retaining debug sections from ClickHouse dependencies can make each executable several GiB.
-    # Strip only the final executable; benchmark code generation still follows the configured build type.
-    target_link_options (${target} PRIVATE "LINKER:-S")
-    add_dependencies (clickhouse-microbenchmarks ${target})
-endfunction ()
+        set (object_target "${target}_objects")
+        add_library (${object_target} OBJECT ${MICROBENCHMARK_SOURCES})
+        set_property (TARGET ${object_target} PROPERTY EXCLUDE_FROM_ALL TRUE)
+        target_link_libraries (${object_target} PRIVATE
+            ch_contrib::gbenchmark_headers
+            ${MICROBENCHMARK_LIBRARIES})
+        add_dependencies (clickhouse-microbenchmarks-objects ${object_target})
+
+        if (ENABLE_BENCHMARKS)
+            clickhouse_add_executable (${target} EXCLUDE_FROM_ALL $<TARGET_OBJECTS:${object_target}>)
+            target_link_libraries (${target} PRIVATE
+                ch_contrib::gbenchmark_all
+                ${MICROBENCHMARK_LIBRARIES})
+            # Retaining debug sections from ClickHouse dependencies can make each executable several GiB.
+            # Strip only the final executable; benchmark code generation still follows the configured build type.
+            target_link_options (${target} PRIVATE "LINKER:-S")
+            add_dependencies (clickhouse-microbenchmarks ${target})
+        endif ()
+    endfunction ()
+endif ()
 
 add_subdirectory (Access)
 add_subdirectory (Backups)
