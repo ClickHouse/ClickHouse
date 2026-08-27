@@ -3685,6 +3685,35 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
     UNREACHABLE();
 }
 
+/// `Field::isNaN` recognizes a scalar `Float64` only, so a `NaN` nested in a container is invisible to it.
+static bool fieldContainsNaN(const Field & field)
+{
+    if (field.isNaN())
+        return true;
+
+    const auto any_element_contains_nan = [](const auto & elements)
+    {
+        return std::any_of(elements.begin(), elements.end(), [](const Field & element) { return fieldContainsNaN(element); });
+    };
+
+    switch (field.getType())
+    {
+        case Field::Types::Array:
+            return any_element_contains_nan(field.safeGet<Array>());
+        case Field::Types::Tuple:
+            return any_element_contains_nan(field.safeGet<Tuple>());
+        case Field::Types::Map:
+            return any_element_contains_nan(field.safeGet<Map>());
+        case Field::Types::Object:
+        {
+            const auto & object = field.safeGet<Object>();
+            return std::any_of(object.begin(), object.end(), [](const auto & entry) { return fieldContainsNaN(entry.second); });
+        }
+        default:
+            return false;
+    }
+}
+
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out)
 {
     const auto * node_dag = node.getDAGNode();
@@ -3949,6 +3978,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 /// For other comparison operators, skip building the atom
                 return false;
             }
+
+            /// A `NaN` inside a container is ordered after every finite value by the `Field` total order,
+            /// which SQL container comparison does not follow, and equality and ordering disagree per
+            /// nesting path (`[nan, 1] = [nan, 1]` is true, `(nan, 1) = (nan, 1)` is false).
+            if (fieldContainsNaN(const_value))
+                return false;
 
             bool condition_is_relaxed = false;
             bool constant_chain_is_positive = true;

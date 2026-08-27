@@ -1,0 +1,15 @@
+truth order	0	1
+truth equals	0	1
+partition less	2
+partition lessOrEquals	2
+partition greater	2
+partition equals	0
+partition float element	2
+primary key	3
+skip index	3
+nested tuple	2
+array less	0
+array greater	2
+scalar	2
+still prunes parts	1
+still prunes granules	1
