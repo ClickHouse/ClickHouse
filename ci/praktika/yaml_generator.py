@@ -37,7 +37,7 @@ on:
   {EVENT}:
     branches: [{BRANCHES}]
 
-env:
+{CONCURRENCY}env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
 {ENV_CHECKOUT_REFERENCE}
@@ -46,6 +46,15 @@ env:
 
 jobs:
 {JOBS}\
+"""
+        # Two pull_request events can dispatch at one head commit onto state that
+        # praktika keys by (PR, sha) alone, so the newer run must supersede the
+        # older. The head sha is part of the group, so a push is never cancelled.
+        TEMPLATE_CONCURRENCY_PR = """\
+concurrency:
+  group: ${{{{ github.workflow }}}}-${{{{ github.event.pull_request.number }}}}-${{{{ github.event.pull_request.head.sha }}}}
+  cancel-in-progress: true
+
 """
         TEMPLATE_GH_TOKEN_PERMISSIONS = """\
 # Allow updating GH commit statuses and PR comments to post an actual job reports link
@@ -529,10 +538,15 @@ class PullRequestPushYamlGen:
                 ENV_CHECKOUT_REFERENCE = (
                     YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PR
                 )
+                format_kwargs["CONCURRENCY"] = (
+                    YamlGenerator.Templates.TEMPLATE_CONCURRENCY_PR
+                )
             else:
                 ENV_CHECKOUT_REFERENCE = (
                     YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_DEFAULT
                 )
+                # github.event.pull_request is null on a push.
+                format_kwargs["CONCURRENCY"] = ""
         elif self.workflow_config.event in (Workflow.Event.SCHEDULE,):
             base_template = YamlGenerator.Templates.TEMPLATE_SCHEDULE
             format_kwargs = {
