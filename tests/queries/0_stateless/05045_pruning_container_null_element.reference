@@ -8,6 +8,7 @@ pk_arr	[2,3]
 pk_tup	[3]
 pk_ntup	[3]
 comp_in	1
+json_proj	[7,8,9]
 keep_float_pk	1
 keep_float_idx	1
 keep_nullable_idx	1

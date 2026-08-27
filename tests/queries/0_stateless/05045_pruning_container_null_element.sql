@@ -79,6 +79,17 @@ INSERT INTO t_comp_in VALUES (1, 2, ['a']), (2, 2, [NULL]), (3, 2, ['c']), (4, 2
 
 SELECT 'comp_in', count() FROM t_comp_in WHERE (u, a) IN ((2, [NULL])) SETTINGS use_skip_indexes = 1;
 
+-- A projection sorting key reaches the same arithmetic, and two properties are unique to this arm:
+-- `json.c[].d.:Int64` is `Array(Nullable(Int64))` though no column declares that type, and a projection
+-- sorting key needs no `allow_nullable_key`. The element is NULL wherever the JSON path is absent.
+CREATE TABLE t_json_proj (id UInt32, json JSON, PROJECTION p (SELECT json, id ORDER BY json.c[].d.:Int64))
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_json_proj SELECT number, toJSONString(map('c', [toJSONString(map('d', number::UInt32))::JSON]))
+FROM numbers(1, 8) SETTINGS use_variant_as_common_type = 1;
+INSERT INTO t_json_proj VALUES (9, '{"c":[{"e":1}]}');
+
+SELECT 'json_proj', arraySort(groupArray(id)) FROM t_json_proj WHERE json.c[].d.:Int64 > [6] SETTINGS optimize_use_projections = 1;
+
 -- Keep-pruning arms.
 
 -- Array(Float64) with a NaN: the two orders agree for a nested NaN, so both the index and the
@@ -124,6 +135,7 @@ DROP TABLE t_part;
 DROP TABLE t_partval;
 DROP TABLE t_set;
 DROP TABLE t_comp_in;
+DROP TABLE t_json_proj;
 DROP TABLE t_pk_arr;
 DROP TABLE t_pk_tup;
 DROP TABLE t_pk_ntup;

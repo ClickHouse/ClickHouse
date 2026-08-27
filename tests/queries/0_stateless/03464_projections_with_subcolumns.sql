@@ -27,6 +27,8 @@ explain indexes=1 select t from test where t.a = 1 settings enable_parallel_repl
 select trimLeft(*) from (explain indexes=1 select t from test where t.a = 1) where explain like '%ReadFromMergeTree%';
 select t from test where t.a = 1;
 
+-- The sorting key of p3 is `Array(Nullable(Int64))`: a range over such values orders a nested NULL
+-- first while the data and the predicate order it last, so it cannot bound what the predicate compares.
 explain indexes=1 select json from test where json.c[].d.:Int64 = [1] settings enable_parallel_replicas=0;
 select trimLeft(*) from (explain indexes=1 select json from test where json.c[].d.:Int64 = [1]) where explain like '%ReadFromMergeTree%';
 select json from test where json.c[].d.:Int64 = [1];
