@@ -343,7 +343,7 @@ def main():
     # to a new release, they would otherwise fall through to the creation steps
     # below (push tag, bump version, PRs) and produce a partial new release, so
     # reject that misuse and require the release tag instead.
-    if ok and not is_tag_pushed and (args.skip_repo or args.skip_docker):
+    if not is_tag_pushed and (args.skip_repo or args.skip_docker):
 
         def _require_recovery_ref():
             raise RuntimeError(
@@ -418,7 +418,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if ok and args.release_type == "patch" and changelog_absent:
+    if args.release_type == "patch" and changelog_absent:
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
         uid = os.getuid()
@@ -454,7 +454,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if ok and args.release_type == "patch" and not args.dry_run and changelog_absent:
+    if args.release_type == "patch" and not args.dry_run and changelog_absent:
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
 
@@ -569,23 +569,22 @@ def main():
             )
 
     if (
-        ok
-        and args.release_type == "patch"
+        args.release_type == "patch"
         and not args.dry_run
         and not args.skip_docker
     ):
-        with open(RELEASE_INFO_FILE) as f:
-            release_info = json.load(f)
-        release_tag = release_info["release_tag"]
-        # Branch head (bump not landed) → move floating minor/major tags; is_latest also moves `latest`. A later recovery (bump landed) leaves them as they are.
-        is_bump_landed = release_info["is_bump_landed"]
-        is_latest = release_info["latest"]
 
         def _make_docker_build(
             image: str,
             build_configs: List[Tuple[str, str, str]],
         ):
             def build():
+                with open(RELEASE_INFO_FILE) as f:
+                    release_info = json.load(f)
+                release_tag = release_info["release_tag"]
+                # Branch head (bump not landed) → move floating minor/major tags; is_latest also moves `latest`. A later recovery (bump landed) leaves them as they are.
+                is_bump_landed = release_info["is_bump_landed"]
+                is_latest = release_info["latest"]
                 Shell.check(f"git checkout {release_tag}", strict=True)
 
                 m = re.match(r"^v(\d+\.\d+\.\d+\.\d+)", release_tag)
