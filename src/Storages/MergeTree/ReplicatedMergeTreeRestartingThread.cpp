@@ -26,6 +26,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ServerSetting
+{
+    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
+}
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsSeconds zookeeper_session_expiration_check_period;
@@ -41,7 +46,6 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char finish_clean_quorum_failed_parts[];
-    extern const char rmt_restarting_thread_fail_startup[];
 };
 
 /// Used to check whether it's us who set node `is_active`, or not.
@@ -59,7 +63,7 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     const auto storage_settings = storage.getSettings();
     check_period_ms = (*storage_settings)[MergeTreeSetting::zookeeper_session_expiration_check_period].totalSeconds() * 1000;
 
-    task = storage.getContext()->getSchedulePool()->createTask(storage.getStorageID(), log_name, [this]{ run(); });
+    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeRestartingThread::start(bool schedule)
@@ -69,14 +73,6 @@ void ReplicatedMergeTreeRestartingThread::start(bool schedule)
         task->activateAndSchedule();
     else
         task->activate();
-}
-
-void ReplicatedMergeTreeRestartingThread::ensureArmed()
-{
-    LOG_TRACE(log, "Making sure the restarting thread is armed");
-    task->activate();
-    /// overwrite=false keeps a delay that is already armed, so only a refused re-arm is replaced.
-    task->scheduleAfter(0, /*overwrite=*/false);
 }
 
 void ReplicatedMergeTreeRestartingThread::wakeup()
@@ -187,9 +183,11 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.mutations_finalizing_task->activateAndSchedule();
     storage.merge_selecting_task->activateAndSchedule();
     storage.cleanup_thread.start();
+    storage.async_block_ids_cache.start();
     storage.part_check_thread.start();
 
-    storage.deduplication_hashes_cache.start();
+    if (storage.getContext()->getServerSettings()[ServerSetting::insert_deduplication_version].value != InsertDeduplicationVersions::OLD_SEPARATE_HASHES)
+        storage.deduplication_hashes_cache.start();
 
     LOG_DEBUG(log, "Table started successfully");
     return true;
@@ -201,11 +199,6 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     LOG_DEBUG(log, "Trying to start replica up");
     try
     {
-        fiu_do_on(FailPoints::rmt_restarting_thread_fail_startup,
-        {
-            throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Injected failure by the rmt_restarting_thread_fail_startup failpoint");
-        });
-
         removeFailedQuorumParts();
         activateReplica();
 

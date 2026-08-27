@@ -509,8 +509,8 @@ void StorageWindowView::alter(
 
     shutdown_called = false;
 
-    clean_cache_task = getContext()->getSchedulePool()->createTask(getStorageID(), getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
-    fire_task = getContext()->getSchedulePool()->createTask(
+    clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID(), getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
+    fire_task = getContext()->getSchedulePool().createTask(
         getStorageID(), getStorageID().getFullTableName(), [this] { is_proctime ? threadFuncFireProc() : threadFuncFireEvent(); });
     clean_cache_task->deactivate();
     fire_task->deactivate();
@@ -1369,8 +1369,8 @@ StorageWindowView::StorageWindowView(
     if (disabled_due_to_analyzer)
         return;
 
-    clean_cache_task = getContext()->getSchedulePool()->createTask(getStorageID(), getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
-    fire_task = getContext()->getSchedulePool()->createTask(
+    clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID(), getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
+    fire_task = getContext()->getSchedulePool().createTask(
         getStorageID(), getStorageID().getFullTableName(), [this] { is_proctime ? threadFuncFireProc() : threadFuncFireEvent(); });
     clean_cache_task->deactivate();
     fire_task->deactivate();
@@ -1767,26 +1767,6 @@ void StorageWindowView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr que
         StorageID view_id = *view_ids.begin();
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table has dependency {}", view_id);
     }
-}
-
-void StorageWindowView::checkTableSizeBelowDropLimit(ContextPtr query_context) const
-{
-    if (!has_inner_table)
-        return;
-
-    /// Mirror `dropInnerTableIfAny`: it drops `inner_table_id` and, when
-    /// `has_inner_target_table`, also `target_table_id`. We must size-check both;
-    /// otherwise a `CREATE OR REPLACE` codepath that lands on this storage could
-    /// silently delete an over-limit inner table under a zeroed drop guard.
-    auto check_one = [&](const StorageID & inner_id)
-    {
-        if (auto inner = DatabaseCatalog::instance().tryGetTable(inner_id, getContext()))
-            inner->checkTableSizeBelowDropLimit(query_context);
-    };
-
-    check_one(inner_table_id);
-    if (has_inner_target_table)
-        check_one(target_table_id);
 }
 
 void StorageWindowView::drop()

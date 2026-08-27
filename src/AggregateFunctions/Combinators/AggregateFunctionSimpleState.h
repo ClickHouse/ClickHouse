@@ -83,7 +83,7 @@ public:
         nested_func->add(place, columns, row_num, arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
     }
@@ -104,11 +104,6 @@ public:
     }
 
     bool allocatesMemoryInArena() const override { return nested_func->allocatesMemoryInArena(); }
-
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        return nested_func->getArgumentsThatCanBeOnlyNull();
-    }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };

@@ -1,4 +1,3 @@
-#include <Columns/Collator.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
 #include <Functions/IFunction.h>
@@ -10,7 +9,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/logger_useful.h>
-#include <Common/SipHash.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionTopKFilter.h>
@@ -40,10 +38,6 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     /// Cannot support LIMIT 10 WITH TIES because we don't know how many rows will be output
     if (limit_step->withTies())
-        return 0;
-
-    /// TopK filtering can skip source rows, so it is incompatible with exact rows_before_limit_at_least.
-    if (limit_step->alwaysReadTillEnd())
         return 0;
 
     node = node->children.front();
@@ -110,7 +104,14 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     const auto & sort_column = sorting_step->getInputHeaders().front()->getByName(sort_column_name);
 
-    const bool where_clause = filter_step || read_from_mergetree_step->getPrewhereInfo();
+    /// A row-level policy filter restricts the rows inside the reader just like a `WHERE` / `PREWHERE`,
+    /// so it must count as a `where_clause` as well. Otherwise a query filtered only by a row policy leaves
+    /// `where_clause == false`, `MergeTreeDataSelectExecutor` enables `perform_top_k_optimization` and narrows
+    /// the read to the top-K marks before the policy runs: the policy then discards the rows in those marks
+    /// and the query returns fewer rows than the `LIMIT` - or none at all - even though later marks hold rows
+    /// the policy keeps.
+    const bool where_clause
+        = filter_step || read_from_mergetree_step->getPrewhereInfo() || read_from_mergetree_step->getRowLevelFilter();
 
     ///remove alias
     if (sort_column_name.contains('.'))
@@ -249,27 +250,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     ///                                __topKFilter() (Prewhere filtering)
 
     if (use_skip_index || use_dynamic_filtering)
-    {
-        TopKFilterInfo info{sort_column_name, sort_column.type, num_sort_columns, n, sort_col_desc.direction, where_clause, threshold_tracker, /*condition_hash=*/ 0};
-
-        /// Compute a deterministic hash from the planning-time parameters. Used by
-        /// `updateQueryConditionCache` to partition QCC entries by TopK plan, so the same
-        /// query reuses cached granule decisions and a different TopK plan (different LIMIT,
-        /// sort column, direction, NULLS FIRST/LAST, COLLATE, etc.) gets a fresh entry.
-        SipHash hash;
-        hash.update(info.column_name);
-        const String type_name = info.data_type->getName();
-        hash.update(type_name);
-        hash.update(info.num_sort_columns);
-        hash.update(info.limit_n);
-        hash.update(info.direction);
-        hash.update(sort_col_desc.nulls_direction);
-        if (sort_col_desc.collator)
-            hash.update(sort_col_desc.collator->getLocale());
-        info.condition_hash = hash.get64();
-
-        read_from_mergetree_step->setTopKColumn(info);
-    }
+        read_from_mergetree_step->setTopKColumn({sort_column_name, sort_column.type, num_sort_columns, n, sort_col_desc.direction, where_clause, threshold_tracker});
 
     return added_step ? 1 : 0;
 }
