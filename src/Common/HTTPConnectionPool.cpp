@@ -27,9 +27,7 @@
 #include <Poco/RegularExpression.h>
 #include <Poco/Timespan.h>
 
-#include <cerrno>
 #include <climits>
-#include <typeinfo>
 #include <sys/stat.h>
 
 #include <queue>
@@ -461,7 +459,7 @@ private:
             else
             {
                 /// The pool is gone (dropped cache, expired endpoint), so this connection dials on
-                /// its own - still through `doConnect`, or the peer would drop out of the error.
+                /// its own - through `doConnect` too, like every other connect of this connection.
                 auto timer = CurrentThread::getProfileEvents().timer(metrics.elapsed_microseconds);
                 doConnect(connect_time);
                 ProfileEvents::increment(metrics.created);
@@ -653,57 +651,12 @@ private:
             }
         }
 
-        /// `Session::reconnect` resolves the name it dials (the proxy, or the request host) into a
-        /// concrete address only inside `connect`, so stash the address the attempt actually used.
-        void connect(const Poco::Net::SocketAddress & address) override
-        {
-            dialled_address = address.toString();
-            Session::connect(address);
-        }
-
-        /// The endpoint `Session::reconnect` last dialled; `PooledConnection::connect` stashes it
-        /// before any TCP connect can fail, so a deferred connect error can always name it.
-        String connectEndpoint() const
-        {
-            return dialled_address;
-        }
-
+        /// Bare deferred connect errors ("Connection refused" and friends without an address) are
+        /// rewritten by `HTTPClientSession::reconnect` to name the endpoint it dialled, so
+        /// pool-backed and pool-less sessions report the peer alike.
         void doConnect(UInt64 * connect_time)
         {
-            try
-            {
-                /// A failure before `connect` (DNS) must not report the previous attempt's address.
-                dialled_address.clear();
-                Session::reconnect(connect_time);
-            }
-            catch (const Poco::Net::ConnectionRefusedException & e)
-            {
-                /// A refusal discovered after EINPROGRESS reaches us as a bare "Connection refused":
-                /// `SocketImpl::connect` calls `error(err)` without an argument on that path. Poco
-                /// names the peer only on the immediate-failure path, which already carries it here
-                /// and must be left alone so the address is not repeated twice.
-                if (!e.message().empty())
-                    throw;
-
-                /// Rethrow the same exception type carrying the endpoint - Poco's message setters are
-                /// protected, and catching the NetException base instead would also swallow
-                /// SSLException, which the caller of doConnect() has to keep telling apart from a
-                /// routing failure.
-                throw Poco::Net::ConnectionRefusedException(connectEndpoint(), e.code());
-            }
-            catch (const Poco::Net::NetException & e)
-            {
-                /// The other deferred `SO_ERROR` connect failures lose the address the same way and
-                /// arrive as plain NetExceptions with Poco's bare text ("Network is unreachable",
-                /// "No route to host", "Host is down"). Subclasses (SSLException, ...) pass through
-                /// untouched, and so does an immediate failure, whose text already names the peer.
-                if (typeid(e) == typeid(Poco::Net::NetException)
-                    && (e.code() == ENETUNREACH || e.code() == EHOSTUNREACH || e.code() == EHOSTDOWN)
-                    && !e.message().contains(": "))
-                    throw Poco::Net::NetException(e.message(), connectEndpoint(), e.code());
-
-                throw;
-            }
+            Session::reconnect(connect_time);
             notifySocketInode();
         }
 
@@ -741,9 +694,6 @@ private:
 
         std::ostream * request_stream = nullptr;
         std::istream * response_stream = nullptr;
-
-        /// The concrete address of the last `connect` attempt, see `connectEndpoint()`.
-        String dialled_address;
 
         bool request_stream_completed = true;
         bool response_stream_completed = true;

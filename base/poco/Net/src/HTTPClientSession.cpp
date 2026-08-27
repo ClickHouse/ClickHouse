@@ -27,6 +27,8 @@
 #include "Poco/RegularExpression.h"
 #include "Poco/Stopwatch.h"
 #include <Poco/Exception.h>
+#include <cerrno>
+#include <typeinfo>
 #include <sstream>
 
 
@@ -466,17 +468,23 @@ int HTTPClientSession::write(const char* buffer, std::streamsize length)
 void HTTPClientSession::reconnect(uint64_t * connect_time)
 {
     Stopwatch connect_watch;
+    /// The endpoint the actual `connect` below will dial. `SocketImpl::connect` drops it from the
+    /// error on the deferred poll + SO_ERROR path, so the bare exception text is rewritten in the
+    /// handlers to name it; immediate failures already carry it and must be left untouched.
+    std::string dialled_endpoint;
     try
     {
         connect_watch.restart();
         if (_proxyConfig.host.empty() || bypassProxy())
         {
             SocketAddress addr(_resolved_host.empty() ? _host : _resolved_host, _port);
+            dialled_endpoint = addr.toString();
             connect(addr);
         }
         else
         {
             SocketAddress addr(_proxyConfig.host, _proxyConfig.port);
+            dialled_endpoint = addr.toString();
             connect(addr);
         }
         if (connect_time)
@@ -486,6 +494,31 @@ void HTTPClientSession::reconnect(uint64_t * connect_time)
     {
         if (connect_time)
             *connect_time = getConnectionTimeout().totalMicroseconds();
+        throw;
+    }
+    catch (Poco::Net::ConnectionRefusedException& e)
+    {
+        if (connect_time)
+            *connect_time = connect_watch.elapsed();
+        /// A refusal discovered after EINPROGRESS reaches us as a bare "Connection refused":
+        /// rethrow the same type carrying the endpoint - Poco's message setters are protected,
+        /// and catching the NetException base instead would also swallow SSLException.
+        if (!e.message().empty())
+            throw;
+        throw Poco::Net::ConnectionRefusedException(dialled_endpoint, e.code());
+    }
+    catch (Poco::Net::NetException& e)
+    {
+        if (connect_time)
+            *connect_time = connect_watch.elapsed();
+        /// The other deferred SO_ERROR connect failures lose the address the same way and arrive
+        /// as plain NetExceptions with Poco's bare text ("Network is unreachable", "No route to
+        /// host", "Host is down"). Subclasses (SSLException, ...) pass through untouched.
+        if (typeid(e) == typeid(Poco::Net::NetException)
+            && (e.code() == ENETUNREACH || e.code() == EHOSTUNREACH || e.code() == EHOSTDOWN)
+            && e.message().find(": ") == std::string::npos)
+            throw Poco::Net::NetException(e.message(), dialled_endpoint, e.code());
+
         throw;
     }
     catch (...)
