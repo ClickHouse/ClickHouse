@@ -591,10 +591,12 @@ _calls = {{"n": 0}}
 
 class _Proc:
     # Stands in for FTResultsProcessor: rows complete in memory, no server, no suite.
+    # Only the returned rows matter here, so the real signature's other arguments
+    # are accepted and ignored.
     def __init__(self, *a, **k):
         self.debug_files = []
 
-    def run(self, runner_exit_code=None, is_bugfix_validation=False):
+    def run(self, runner_exit_code=None, is_bugfix_validation=False, **kwargs):
         _calls["n"] += 1
         tag = BUILD_TYPES[_calls["n"] - 1] if BUILD_TYPES else "run"
         n = ROWS[_calls["n"] - 1] if isinstance(ROWS, list) else ROWS
