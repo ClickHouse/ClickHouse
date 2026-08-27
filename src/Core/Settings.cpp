@@ -1265,6 +1265,15 @@ From what number of keys, a two-level aggregation starts. 0 - the threshold is n
     DECLARE(UInt64, group_by_two_level_threshold_bytes, 50000000, R"(
 From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. Two-level aggregation is used when at least one of the thresholds is triggered.
 )", 0) \
+    DECLARE(UInt64, distinct_two_level_threshold, 100000, R"(
+Minimum number of distinct keys before the `DistinctTransform` hash set may be converted to a two-level layout, which allows per-bucket parallel filter building. Below this size the set holds too little data to be worth spreading over the sub-tables. Reaching it does not convert the set by itself: the conversion is deferred to the moment the hash table is about to grow, so that the rehash it performs replaces the one the growth would have done and costs approximately nothing. 0 - the conversion is disabled.
+)", 0) \
+    DECLARE(UInt64, distinct_two_level_threshold_bytes, 50000000, R"(
+From what size of the `DistinctTransform` hash set in bytes, it is converted to a two-level layout to allow per-bucket parallel filter building. Unlike `distinct_two_level_threshold`, this triggers the conversion immediately: it is meant for expensive keys, where a set of few but large keys crosses the byte threshold while the hash table itself is still small, and the parallel build already pays off. 0 - the byte-based conversion is disabled.
+)", 0) \
+    DECLARE(UInt64, distinct_two_level_parallel_build_min_rows, 10000, R"(
+Minimum number of rows in a chunk for the `DistinctTransform` to build the two-level filter in parallel across buckets. Smaller chunks use the serial build to avoid the scatter overhead. 0 - no minimum (always build in parallel once the set is two-level and a thread pool is available).
+)", 0) \
     DECLARE(Bool, distributed_aggregation_memory_efficient, true, R"(
 Is the memory-saving mode of distributed aggregation enabled.
 )", 0) \

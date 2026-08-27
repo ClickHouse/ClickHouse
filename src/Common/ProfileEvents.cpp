@@ -998,6 +998,9 @@ The server successfully detected this situation and will download merged part fr
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.", ValueType::Number) \
     M(AggregationConvertedToTwoLevel, "How many times a single-level aggregation hash table was converted to two-level at runtime.", ValueType::Number) \
     M(AggregationOptimizedEqualRangesOfKeys, "For how many blocks optimization of equal ranges of keys was applied", ValueType::Number) \
+    M(DistinctHashTablesInitializedAsTwoLevel, "How many times a DistinctTransform hash set was converted to two-level for parallel filter building.", ValueType::Number) \
+    M(DistinctTwoLevelParallelFilterBuilds, "For how many blocks the DistinctTransform built the two-level filter in parallel across buckets.", ValueType::Number) \
+    M(DistinctTwoLevelSerialFilterBuilds, "For how many blocks the DistinctTransform built the two-level filter serially (chunk below the parallel min-rows gate).", ValueType::Number) \
     M(AggregationTopKRowsSkipped, "How many rows were skipped during aggregation because their grouping key could not enter the top-K result (see `enable_group_by_top_k_optimization`).", ValueType::Number) \
     M(AggregationTopKKeysEvicted, "How many grouping keys were evicted from the bounded top-K heap during aggregation (see `enable_group_by_top_k_optimization`).", ValueType::Number) \
     M(AggregationTopKKeysPruned, "How many evicted grouping keys were also erased from the intermediate hash table, with their aggregate states destroyed (see `enable_group_by_top_k_optimization`). Lower than `AggregationTopKKeysEvicted` when the aggregation method cannot erase keys, or when only a prefix of the key is ranked: the heap then still skips rows, but the hash table keeps every admitted group.", ValueType::Number) \

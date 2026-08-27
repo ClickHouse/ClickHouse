@@ -43,6 +43,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"distinct_two_level_threshold", 0, 100000, "New setting: minimum set size before DistinctTransform may convert its hash set to a two-level layout for parallel filter building, the conversion itself being deferred to the table's next growth. previous_value=0 disables the new two-level path so `compatibility` before 26.9 keeps the pre-existing single-level DISTINCT."},
+            {"distinct_two_level_threshold_bytes", 0, 50000000, "New setting: byte-based threshold for converting the DistinctTransform hash set to a two-level layout, analogous to group_by_two_level_threshold_bytes. previous_value=0 disables the new two-level path so `compatibility` before 26.9 keeps the pre-existing single-level DISTINCT."},
+            {"distinct_two_level_parallel_build_min_rows", 10000, 10000, "New setting: minimum chunk size for DistinctTransform to build the two-level filter in parallel across buckets. Inert under `compatibility` because the two-level path is already disabled by the threshold settings above."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},
             {"query_plan_fuse_filter_into_array_join", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."},

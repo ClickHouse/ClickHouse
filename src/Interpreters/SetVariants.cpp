@@ -62,6 +62,23 @@ size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
     return bytes;
 }
 
+/// Only the single-level types that can be converted are reported. A two-level table's capacity is
+/// spread over 256 independently growing sub-tables, so a single number would not say anything about
+/// an upcoming rehash; `key8` / `key16` are `FixedHashSet`-s, which never grow and are never converted.
+template <typename Variant>
+size_t SetVariantsTemplate<Variant>::getBufferSizeInCells() const
+{
+    switch (type)
+    {
+    #define M(NAME) \
+        case Type::NAME: return (NAME)->data.getBufferSizeInCells();
+        APPLY_FOR_SET_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+    #undef M
+        default:
+            return 0;
+    }
+}
+
 template <typename Variant>
 typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes)
 {
@@ -171,6 +188,59 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
 
     /// Otherwise, will use set of cryptographic hashes of unambiguously serialized values.
     return Type::hashed;
+}
+
+template <typename Variant>
+bool SetVariantsTemplate<Variant>::isConvertibleToTwoLevel(Type type_)
+{
+    switch (type_)
+    {
+    #define M(NAME) case Type::NAME: return true;
+        APPLY_FOR_SET_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+    #undef M
+        default:
+            return false;
+    }
+}
+
+template <typename Variant>
+bool SetVariantsTemplate<Variant>::isTwoLevel() const
+{
+    switch (type)
+    {
+        case Type::hashed_two_level:
+        case Type::key32_two_level:
+        case Type::key64_two_level:
+        case Type::key_string_two_level:
+        case Type::key_fixed_string_two_level:
+        case Type::keys32_two_level:
+        case Type::keys64_two_level:
+        case Type::keys128_two_level:
+        case Type::keys256_two_level:
+        case Type::nullable_keys128_two_level:
+        case Type::nullable_keys256_two_level:
+            return true;
+        default:
+            return false;
+    }
+}
+
+template <typename Variant>
+void SetVariantsTemplate<Variant>::convertToTwoLevel()
+{
+    switch (type)
+    {
+    #define M(NAME) \
+        case Type::NAME: \
+            NAME##_two_level = std::make_unique<typename decltype(NAME##_two_level)::element_type>(*(NAME)); \
+            (NAME).reset(); \
+            type = Type::NAME##_two_level; \
+            break;
+        APPLY_FOR_SET_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+    #undef M
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Set method cannot be converted to two-level");
+    }
 }
 
 template struct SetVariantsTemplate<NonClearableSet>;

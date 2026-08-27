@@ -54,6 +54,7 @@ namespace DB
     M(DEFAULT_THREAD_POOL, "ThreadPool") \
     M(DETACHED_PARTS_BYTES, "DP_BytesOnDisk") \
     M(DICT_RELOAD, "DictReload") \
+    M(DISTINCT_FINAL, "DistinctFinal") \
     M(DISTRIBUTED_FLUSH, "DistFlush") \
     M(DISTRIBUTED_INIT, "DistInit") \
     M(DISTRIBUTED_SCHEDULE_POOL, "BgDistSchPool") \
