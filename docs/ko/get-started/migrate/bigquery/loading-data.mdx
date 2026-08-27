@@ -65,7 +65,7 @@ BigQuery에서 ClickHouse로 데이터를 내보내는 데 걸리는 시간은 �
   </Step>
 
   <Step title="GCS에서 ClickHouse로 데이터 가져오기" id="2-importing-data-into-clickhouse-from-gcs">
-    내보내기가 완료되면 이 데이터를 ClickHouse 테이블로 가져올 수 있습니다. 아래 명령은 [ClickHouse SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console) 또는 [`clickhouse-client`](/ko/concepts/features/interfaces/cli)를 사용해 실행할 수 있습니다.
+    내보내기가 완료되면 이 데이터를 ClickHouse 테이블로 가져올 수 있습니다. 아래 명령은 [ClickHouse SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console) 또는 [`clickhouse-client`](/ko/concepts/features/interfaces/client)를 사용해 실행할 수 있습니다.
 
     먼저 ClickHouse에서 [테이블을 생성](/ko/reference/statements/create/table)해야 합니다:
 
@@ -83,7 +83,7 @@ BigQuery에서 ClickHouse로 데이터를 내보내는 데 걸리는 시간은 �
     ORDER BY (timestamp);
     ```
 
-    테이블을 생성한 후, 클러스터에 ClickHouse 레플리카가 여러 개 있다면 내보내기 속도를 높이려면 `parallel_distributed_insert_select` 설정을 활성화하십시오. ClickHouse 노드가 1개뿐이라면 이 단계는 건너뛰어도 됩니다:
+    테이블을 생성한 후 클러스터에 ClickHouse 레플리카가 여러 개 있는 경우, 내보내기 속도를 높이기 위해 `parallel_distributed_insert_select` 설정을 활성화하십시오. ClickHouse 노드가 1개뿐이라면 이 단계는 건너뛰어도 됩니다:
 
     ```sql
     SET parallel_distributed_insert_select = 1;

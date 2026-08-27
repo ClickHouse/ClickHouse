@@ -72,7 +72,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * [ClickHouse 如何存储数据：parts 和 granules](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes) - 更深入地介绍 ClickHouse 中数据如何组织和查询，并详细讲解 granules 和主键。
 * [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree)- 适合查阅命令和内部实现细节的高级 MergeTree 参考指南。
 
-下面介绍的所有优化都可以通过标准 ClickHouse SQL 直接应用于底层表，可在 [ClickHouse Cloud SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console) 中执行，也可通过 [ClickHouse 客户端](/zh/concepts/features/interfaces/cli) 执行。
+下面介绍的所有优化都可以通过标准 ClickHouse SQL 直接应用于底层表，可在 [ClickHouse Cloud SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console) 中执行，也可通过 [ClickHouse 客户端](/zh/concepts/features/interfaces/client) 执行。
 
 <div id="materialize-frequently-queried-attributes">
   ## 优化 1. 将频繁查询的属性物化

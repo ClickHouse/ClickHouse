@@ -111,7 +111,7 @@ Agora estamos prontos para iniciar o ClickHouse JDBC Bridge:
 
 Agora o ClickHouse pode acessar dados do MySQL usando a [função de tabela JDBC](/pt-BR/reference/functions/table-functions/jdbc) ou o [engine de tabela JDBC](/pt-BR/reference/engines/table-engines/integrations/jdbc).
 
-A maneira mais fácil de executar os exemplos a seguir é copiá-los e colá-los no [`clickhouse-client`](/pt-BR/concepts/features/interfaces/cli) ou na [Play UI](/pt-BR/concepts/features/interfaces/http).
+A maneira mais fácil de executar os exemplos a seguir é copiá-los e colá-los no [`clickhouse-client`](/pt-BR/concepts/features/interfaces/client) ou na [Play UI](/pt-BR/concepts/features/interfaces/http).
 
 * função de tabela JDBC:
 
@@ -138,7 +138,7 @@ A maneira mais fácil de executar os exemplos a seguir é copiá-los e colá-los
 <Note>
   Como primeiro parâmetro da cláusula engine `jdbc`, estamos usando o nome da fonte de dados nomeada que configuramos acima
 
-  O esquema da tabela do engine JDBC do ClickHouse e o esquema da tabela MySQL conectada devem ser compatíveis entre si; por exemplo, os nomes e a ordem das colunas devem ser os mesmos, e os tipos de dados das colunas devem ser compatíveis
+  O schema da tabela do engine JDBC do ClickHouse e o schema da tabela MySQL conectada devem ser compatíveis entre si; por exemplo, os nomes e a ordem das colunas devem ser os mesmos, e os tipos de dados das colunas devem ser compatíveis
 </Note>
 
 <div id="install-the-clickhouse-jdbc-bridge-externally">
