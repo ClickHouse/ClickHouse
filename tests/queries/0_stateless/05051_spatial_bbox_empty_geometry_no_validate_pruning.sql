@@ -31,7 +31,6 @@ INSERT INTO test_spatial_bbox_empty_geometry SELECT number + 5, (100., 100.) FRO
 OPTIMIZE TABLE test_spatial_bbox_empty_geometry FINAL;
 
 SET optimize_move_to_prewhere = 0;
-SET validate_polygons = 0;
 
 -- A wholly empty constant contributes no bbox, but must not veto the sibling conjunct's pruning:
 -- granule 2 lies outside `[(0, 0), (1, 0), (1, 1), (0, 1)]` and must be skipped.
@@ -42,12 +41,14 @@ SELECT extract(explain_text, '(?s)Name: idx_bbox.*?Granules: ([0-9]+/[0-9]+)') F
         SELECT count() FROM test_spatial_bbox_empty_geometry
         WHERE pointInPolygon(p, CAST([], 'Ring'))
           AND pointInPolygon(p, [(0., 0.), (1., 0.), (1., 1.), (0., 1.)])
+        SETTINGS validate_polygons = 0
     )
 );
 
 SELECT count() FROM test_spatial_bbox_empty_geometry
 WHERE pointInPolygon(p, CAST([], 'Ring'))
-  AND pointInPolygon(p, [(0., 0.), (1., 0.), (1., 1.), (0., 1.)]);
+  AND pointInPolygon(p, [(0., 0.), (1., 0.), (1., 1.), (0., 1.)])
+SETTINGS validate_polygons = 0;
 
 -- An empty HOLE nested in a polygon literal removes nothing, so the shell's bbox is the whole
 -- geometry's bbox and pruning must use it: granule 2 is skipped.
@@ -57,16 +58,17 @@ SELECT extract(explain_text, '(?s)Name: idx_bbox.*?Granules: ([0-9]+/[0-9]+)') F
         EXPLAIN indexes = 1
         SELECT count() FROM test_spatial_bbox_empty_geometry
         WHERE pointInPolygon(p, [[(0., 0.), (1., 0.), (1., 1.), (0., 1.)], []])
+        SETTINGS validate_polygons = 0
     )
 );
 
 SELECT count() FROM test_spatial_bbox_empty_geometry
-WHERE pointInPolygon(p, [[(0., 0.), (1., 0.), (1., 1.), (0., 1.)], []]);
+WHERE pointInPolygon(p, [[(0., 0.), (1., 0.), (1., 1.), (0., 1.)], []])
+SETTINGS validate_polygons = 0;
 
--- The default `validate_polygons = 1` must keep failing closed for the same literals: there the
--- predicate does raise, and pruning the far granule away would hide it.
-SET validate_polygons = 1;
-
+-- The default `validate_polygons = 1` must keep failing closed for the same literal: there
+-- `parseConstPolygon` assembles it and `bg::is_valid` rejects it, so pruning the far granule away
+-- would hide the exception.
 SELECT extract(explain_text, '(?s)Name: idx_bbox.*?Granules: ([0-9]+/[0-9]+)') FROM (
     SELECT arrayStringConcat(groupArray(explain), '\n') AS explain_text
     FROM (
@@ -75,5 +77,8 @@ SELECT extract(explain_text, '(?s)Name: idx_bbox.*?Granules: ([0-9]+/[0-9]+)') F
         WHERE pointInPolygon(p, [[(0., 0.), (1., 0.), (1., 1.), (0., 1.)], []])
     )
 );
+
+SELECT count() FROM test_spatial_bbox_empty_geometry
+WHERE pointInPolygon(p, [[(0., 0.), (1., 0.), (1., 1.), (0., 1.)], []]); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE test_spatial_bbox_empty_geometry;
