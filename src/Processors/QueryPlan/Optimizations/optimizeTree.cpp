@@ -195,7 +195,6 @@ void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, Quer
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
-bool planHasInOrderAggregation(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkCascadesSupported(const QueryPlan::Node & root);
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
@@ -685,7 +684,7 @@ void optimizeTreeSecondPass(
     /// projection optimizations can introduce additional reading step
     /// so, applying lazy materialization after it, since it's dependent on reading step
     bool lazy_materialization_applied = false;
-    if (optimization_settings.optimize_lazy_materialization || optimization_settings.optimize_lazy_final)
+    if ((optimization_settings.optimize_lazy_materialization || optimization_settings.optimize_lazy_final) && !optimization_settings.make_distributed_plan)
     {
         chassert(stack.empty());
         stack.push_back({.node = &root});

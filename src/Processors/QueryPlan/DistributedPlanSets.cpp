@@ -46,7 +46,10 @@ std::optional<PreformattedMessage> validateSetsForDistributedPlan(QueryPlan::Nod
             for (const auto & future_set : delayed->getSets())
             {
                 if (future_set && future_set->hasExternalTable())
-                    return PreformattedMessage::create("make_distributed_plan does not support sets backed by an external table (`GLOBAL IN` / `GLOBAL JOIN`): IN-subquery {}", describeSet(*future_set));
+                    return PreformattedMessage::create(
+                        "make_distributed_plan does not support sets backed by an external table (`GLOBAL IN` / `GLOBAL JOIN`): "
+                        "IN-subquery {}",
+                        describeSet(*future_set));
             }
         }
 

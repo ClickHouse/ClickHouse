@@ -260,8 +260,10 @@ private:
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
     mutable std::unique_ptr<WriteBufferFromOwnString> serialized_plan;
 
-
-    bool fallback_distributed_to_local = false;
+    /// Set when the decision point in `optimize` fell back to local execution instead of building
+    /// a distributed plan (`distributed_plan_fallback_to_local_execution`); `convertToDistributed`
+    /// is then a no-op.
+    bool distributed_to_local_fallback_applied = false;
 };
 
 /// This is a structure which contains a query plan and a list of sets.

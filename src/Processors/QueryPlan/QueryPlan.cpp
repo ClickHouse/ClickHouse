@@ -15,25 +15,25 @@
 
 #include <Processors/ConcatProcessor.h>
 #include <Processors/IProcessor.h>
+#include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
-#include <Processors/QueryPlan/ExchangeLookup.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/GatherSendStep.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistributedPlanSets.h>
+#include <Processors/QueryPlan/ExchangeLookup.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/GatherSendStep.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/QueryPlanVisitor.h>
-#include <Processors/QueryPlan/AnalyzePlanStats.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/ReadFromDistributedPlanSource.h>
 
@@ -819,28 +819,36 @@ namespace QueryPlanOptimizations
 
 std::optional<PreformattedMessage> hasUnsupportedStepRemoteExecution(const QueryPlan::Node & node, bool allow_subplan_placeholders);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
-void convertLogicalJoinsForLocalExecution(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
+void convertLogicalJoinsForLocalExecution(
+    QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+DistributedQueryPlan
+makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
-bool planHasInOrderAggregation(const QueryPlan::Node & root);
-bool verifyDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-std::optional<PreformattedMessage> traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
+bool verifyDistributedAggregation(
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+std::optional<PreformattedMessage>
+traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 }
 
 
-std::optional<PreformattedMessage> hasPlanUnsupportedStepForDistributed(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
+std::optional<PreformattedMessage>
+hasPlanUnsupportedStepForDistributed(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 
 
-// if I make change here to only check for optimization_settings.make_distributed_plan and not throw exception in other case
-// where do we propagete this exception to, and who tries to make the plan without distributed call
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryPlanOptimizeMicroseconds);
 
-
     QueryPlanOptimizationSettings effective_settings = optimization_settings;
-    // TODO reasoning for !QueryPlanOptimizations::planContainsLogicalExchange(*root)
+
+    /// The single decision point on whether this plan is distributed, taken before the passes:
+    /// second-pass index analysis can synchronously execute a set subquery, and no set may be
+    /// built for a query the decision rejects. Some plans reach `optimize` more than once
+    /// (re-optimized StorageMerge child plans, set subplans); a plan that already contains
+    /// logical exchanges has passed the decision before, and deciding again could flip the
+    /// setting off and orphan the exchanges (they execute as no-op steps and silently produce
+    /// wrong results), so such plans skip it.
     bool make_distributed_plan = effective_settings.make_distributed_plan && !QueryPlanOptimizations::planContainsLogicalExchange(*root);
     if (make_distributed_plan)
     {
@@ -848,20 +856,14 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
         {
             if (!effective_settings.distributed_plan_fallback_to_local_execution)
             {
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Distributed plan unsupported: {}", res->text);
+                throw Exception(std::move(*res), ErrorCodes::SUPPORT_IS_DISABLED);
             }
-            LOG_INFO(getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", res->text);
+            LOG_INFO(
+                getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", res->text);
             effective_settings.make_distributed_plan = false;
-            fallback_distributed_to_local = true;
+            distributed_to_local_fallback_applied = true;
         }
     }
-
-    /// Reject unsupported sets before the optimization passes: second-pass index analysis can
-    /// synchronously execute a set subquery, and no set should be built for a rejected query.
-
-    // TODO this step is now done beforhand
-    // if (effective_settings.make_distributed_plan)
-    //     validateSetsForDistributedPlan(*root);
 
     /// optimization need to be applied before "mergeExpressions" optimization
     /// it removes redundant sorting steps, but keep underlying expressions,
@@ -894,13 +896,15 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 }
 
 
-std::optional<PreformattedMessage> hasPlanUnsupportedStepForDistributed(QueryPlan::Node & root,  const QueryPlanOptimizationSettings & optimization_settings)
+std::optional<PreformattedMessage>
+hasPlanUnsupportedStepForDistributed(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Reject out-of-range bucket counts before any distributed optimization sizes exchange fan-outs or
     /// read-bucket vectors from them. The tryMakeDistributed* pass below uses the raw setting values.
     QueryPlanOptimizations::validateDistributedPlanBucketCounts(optimization_settings);
 
-    //  sets backed by an external table (`GLOBAL IN` / `GLOBAL JOIN`): IN-subquery {}
+    /// Sets backed by an external table (`GLOBAL IN` / `GLOBAL JOIN`) cannot be shipped with the
+    /// worker tasks.
     if (auto res = validateSetsForDistributedPlan(root); res.has_value())
     {
         return res;
@@ -908,8 +912,10 @@ std::optional<PreformattedMessage> hasPlanUnsupportedStepForDistributed(QueryPla
 
     if (auto res = QueryPlanOptimizations::hasUnsupportedStepRemoteExecution(root, true); res.has_value())
     {
-        return PreformattedMessage::create("make_distributed_plan cannot distribute this query: "
-                                           "it contains the step {} which could not execute remotely", res->text);
+        return PreformattedMessage::create(
+            "make_distributed_plan cannot distribute this query: "
+            "it contains the step {} which could not execute remotely",
+            res->text);
     }
 
     if (auto res = QueryPlanOptimizations::traversePlanForUnsupportedDistributedStep(root, optimization_settings); res.has_value())
@@ -923,34 +929,20 @@ std::optional<PreformattedMessage> hasPlanUnsupportedStepForDistributed(QueryPla
 
 void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    if (fallback_distributed_to_local)
+    /// The decision in `optimize` fell back to local execution: the distributed transforms never
+    /// ran, and `optimize` already ran the local tail (set/CTE expansion), so there is nothing to
+    /// convert.
+    if (distributed_to_local_fallback_applied)
         return;
 
+    /// Backstop for the decision in `optimize`: it accepted this plan, so a non-serializable step
+    /// found here was created by an optimization pass after the decision, i.e. a gap in the
+    /// pre-pass coverage. Falling back is not safe at this point - the plan is already shaped for
+    /// distribution - so fail close instead of silently running it on one node.
     if (auto res = QueryPlanOptimizations::hasUnsupportedStepRemoteExecution(*root, false); res.has_value())
     {
-        /// The plan cannot run on a worker (a leaf is neither a MergeTree read nor serializable). If it
-        /// still contains logical exchanges, running it locally would execute them as no-ops and drop
-        /// the merge or redistribution they stand for, giving wrong results, so throw. A plan with no
-        /// exchange runs correctly on one node, so fall back to it.
-        if (QueryPlanOptimizations::planContainsLogicalExchange(*root))
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "make_distributed_plan cannot distribute this query: it contains distributed exchange "
-                "steps but a step that cannot run on a remote worker, and the exchanges would be no-ops "
-                "if executed locally (producing wrong results)");
-        /// Joins were kept logical for distributed planning; running locally needs them physical.
-        QueryPlanOptimizations::convertLogicalJoinsForLocalExecution(*root, nodes, optimization_settings);
-        /// `optimize` deferred set/CTE expansion for distributed planning; without it the plan
-        /// still carries `DelayedCreatingSets` placeholders, which cannot build a pipeline.
-        /// The expansion must use local settings: the set build plans execute in this process,
-        /// and with `make_distributed_plan` kept on, their own optimization would try to
-        /// distribute them again.
-        QueryPlanOptimizationSettings local_settings = optimization_settings;
-        local_settings.make_distributed_plan = false;
-        if (local_settings.build_sets)
-            QueryPlanOptimizations::addStepsToBuildSets(local_settings, *this, *root, nodes);
-        if (local_settings.materialize_ctes)
-            QueryPlanOptimizations::resolveMaterializingCTEs(local_settings, *this, *root, nodes);
-        return;
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan error: plan became unsupported for distributed execution after optimization: {}.", res->text);
     }
 
     /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
