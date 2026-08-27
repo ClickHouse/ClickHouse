@@ -476,7 +476,7 @@ profiles:
 
         print(f"Starting ClickHouse server replica {replica_num}, command: {command}")
 
-        # The cached pid mirrors this file and must not outlive it: stop_server()
+        # The cached pid mirrors this file and must not outlive it: `stop_server`
         # keys its pid-less kill path off the cached value.
         self._set_pid(replica_num, 0)
         Path(pid_file).unlink(missing_ok=True)
@@ -1037,7 +1037,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                     proc.kill()
             elif proc:
                 # `proc` is the `sh -c` wrapper, not the server, so kill by the
-                # unique --pid-file token, then reap the wrapper.
+                # unique `--pid-file` token, then reap the wrapper.
                 Shell.check(f"pkill -9 -f -- '--pid-file {pid_file}'", verbose=True)
                 try:
                     proc.wait(timeout=10)
