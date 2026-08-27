@@ -73,17 +73,19 @@ INSERT INTO FUNCTION file(currentDatabase() || '_02888_data_paths.tsv', TSVWithN
 -- column name and its type.
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc09 (x UInt64) AS file(currentDatabase() || '_02888_data_paths.tsv', TSVWithNamesAndTypes);
 SELECT length(data_paths) = 1
-    AND position(data_paths[1], currentDatabase() || '_02888_data_paths.tsv') > 0
+    AND basename(data_paths[1]) = currentDatabase() || '_02888_data_paths.tsv'
     FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc09';
 SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.tablefunc09;
 SELECT length(data_paths) = 1
-    AND position(data_paths[1], currentDatabase() || '_02888_data_paths.tsv') > 0
+    AND basename(data_paths[1]) = currentDatabase() || '_02888_data_paths.tsv'
     FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc09';
 
 -- A never resolved proxy reports an unknown row count, so the emptiness interlock no longer
 -- refuses it. Only the proxy's own name goes away; the rows it would have read are untouched.
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc10 (x UInt64) AS merge(currentDatabase(), '^mem$');
-DROP TABLE IF EMPTY {CLICKHOUSE_DATABASE:Identifier}.tablefunc10;
+-- ignore_drop_queries_probability = 0: the stress runner sets it, and because this table stores no
+-- data on disk a rewritten DROP becomes a TRUNCATE that resolves the table function.
+DROP TABLE IF EMPTY {CLICKHOUSE_DATABASE:Identifier}.tablefunc10 SETTINGS ignore_drop_queries_probability = 0;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc10';
 SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.mem;
 
