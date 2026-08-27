@@ -9,8 +9,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
@@ -88,18 +86,19 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
             for (const auto & child : frame.node->children)
             {
                 auto * node = child;
-                /// Look through whatever wrappers sit between the `Union` and the node the two plans
-                /// have in common. These stack in any order and any depth - the replicas plan
-                /// pre-limits its local branch under an `Expression` while the single-node plan carries
-                /// the limit only at the very top - so peel them in a loop rather than one of each.
-                /// None of them changes what the node below computes: `Filter` and `Limit` change only
-                /// how much of it survives, and `Sorting` only the order in which it arrives - the
-                /// number of bytes the replicas would ship is the same either way.
+                /// Look through the wrappers that can sit between the `Union` and the node the two
+                /// plans have in common. They stack in any order and any depth, so peel them in a loop
+                /// rather than one of each kind - `Expression -> CreatingSets -> Expression` used to
+                /// leave the search stranded on the second `Expression`.
+                ///
+                /// Only steps that pass their rows through unchanged belong here. A `Limit` or a
+                /// `Sorting` must not: the replicas ship what comes out of them, so looking past one
+                /// would instrument a node carrying more rows than the replicas would actually send.
+                /// Both already report `supportsDataflowStatisticsCollection`, so they can be matched
+                /// on their own terms.
                 while (node->children.size() == 1
                        && (typeid_cast<const ExpressionStep *>(node->step.get())
                            || typeid_cast<const FilterStep *>(node->step.get())
-                           || typeid_cast<const LimitStep *>(node->step.get())
-                           || typeid_cast<const SortingStep *>(node->step.get())
                            || typeid_cast<const DelayedCreatingSetsStep *>(node->step.get())
                            || typeid_cast<const CreatingSetsStep *>(node->step.get())))
                 {
