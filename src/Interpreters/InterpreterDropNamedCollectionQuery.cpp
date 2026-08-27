@@ -5,6 +5,7 @@
 #include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -113,6 +114,24 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
                     continue;
                 }
 
+                /// A dependency with an empty database name belongs to a dictionary defined in the
+                /// configuration files. It is not created through DDL and never appears in
+                /// `DatabaseCatalog`: it lives in `ExternalDictionariesLoader` for as long as its
+                /// definition stays in the configuration, and every (re)load of it resolves the
+                /// collection again. Consult the loader instead of the catalog, and prune the entry
+                /// only when the definition is gone.
+                if (dep.database_name.empty())
+                {
+                    if (current_context->getExternalDictionariesLoader().has(dep.table_name))
+                    {
+                        dependent_names.push_back(fmt::format("dictionary `{}`", dep.table_name));
+                        continue;
+                    }
+
+                    NamedCollectionFactory::instance().removeDependency(query.collection_name, dep);
+                    continue;
+                }
+
                 /// A table of an `Atomic` database is identified by its UUID: `RENAME` and
                 /// `EXCHANGE` change its name but keep the UUID recorded in the dependency, so the
                 /// name of the entry goes stale while the table is still there and still uses the
@@ -141,47 +160,42 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
                 /// table name for the whole window between the registration and the commit, so re-check
                 /// under that guard: once it is acquired, no create is in flight, and the table's absence
                 /// proves the earlier create failed and left a stale entry.
-                /// An empty database name identifies a dictionary defined in the configuration files; it
-                /// is not created through DDL, so there is no guard to synchronize with.
-                if (!dep.database_name.empty())
+                auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(dep.database_name, dep.table_name, nullptr);
+                if (const auto table_by_uuid = tryGetLiveTableByUUID(dep))
                 {
-                    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(dep.database_name, dep.table_name, nullptr);
-                    if (const auto table_by_uuid = tryGetLiveTableByUUID(dep))
-                    {
-                        dependent_names.push_back(table_by_uuid->getStorageID().getFullTableName());
-                        continue;
-                    }
+                    dependent_names.push_back(table_by_uuid->getStorageID().getFullTableName());
+                    continue;
+                }
 
-                    const auto updated_table = DatabaseCatalog::instance().tryGetTable(
-                        StorageID{dep.database_name, dep.table_name}, current_context);
-                    if (updated_table && (!dep.hasUUID() || updated_table->getStorageID().uuid == dep.uuid))
-                    {
-                        dependent_names.push_back(dep.getFullTableName());
-                        continue;
-                    }
+                const auto updated_table = DatabaseCatalog::instance().tryGetTable(
+                    StorageID{dep.database_name, dep.table_name}, current_context);
+                if (updated_table && (!dep.hasUUID() || updated_table->getStorageID().uuid == dep.uuid))
+                {
+                    dependent_names.push_back(dep.getFullTableName());
+                    continue;
+                }
 
-                    /// A failed CREATE of an Atomic table can leave an entry with the old UUID. Before
-                    /// this guard was acquired, another CREATE of the same table name may have completed
-                    /// with a new UUID and a dependency on this collection. The old StorageID cannot find
-                    /// that table, so check the current dependencies by name before pruning the stale one.
-                    /// The DDLGuard keeps a new CREATE of this name from registering between this check and
-                    /// the removal below.
-                    const auto updated_dependents = NamedCollectionFactory::instance().getDependents(query.collection_name);
-                    const auto same_name_live_dependency = std::any_of(
-                        updated_dependents.begin(),
-                        updated_dependents.end(),
-                        [&](const auto & candidate)
-                        {
-                            return candidate.database_name == dep.database_name
-                                && candidate.table_name == dep.table_name
-                                && candidate.uuid != dep.uuid
-                                && DatabaseCatalog::instance().isTableExist(candidate, current_context);
-                        });
-                    if (same_name_live_dependency)
+                /// A failed CREATE of an Atomic table can leave an entry with the old UUID. Before
+                /// this guard was acquired, another CREATE of the same table name may have completed
+                /// with a new UUID and a dependency on this collection. The old StorageID cannot find
+                /// that table, so check the current dependencies by name before pruning the stale one.
+                /// The DDLGuard keeps a new CREATE of this name from registering between this check and
+                /// the removal below.
+                const auto updated_dependents = NamedCollectionFactory::instance().getDependents(query.collection_name);
+                const auto same_name_live_dependency = std::any_of(
+                    updated_dependents.begin(),
+                    updated_dependents.end(),
+                    [&](const auto & candidate)
                     {
-                        dependent_names.push_back(dep.getFullTableName());
-                        continue;
-                    }
+                        return candidate.database_name == dep.database_name
+                            && candidate.table_name == dep.table_name
+                            && candidate.uuid != dep.uuid
+                            && DatabaseCatalog::instance().isTableExist(candidate, current_context);
+                    });
+                if (same_name_live_dependency)
+                {
+                    dependent_names.push_back(dep.getFullTableName());
+                    continue;
                 }
 
                 /// Only this exact entry: the guard proves that no create is in flight for the recorded
