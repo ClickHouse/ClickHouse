@@ -311,9 +311,10 @@ def test_system_tables_report_nothing_until_loaded(engine):
     before = node.query(
         f"""SELECT
                 (SELECT count() FROM system.parts WHERE database = '{DB}'),
-                (SELECT count() FROM system.data_skipping_indices WHERE database = '{DB}')"""
+                (SELECT count() FROM system.data_skipping_indices WHERE database = '{DB}'),
+                (SELECT sum(data_compressed_bytes) FROM system.columns WHERE database = '{DB}')"""
     ).strip()
-    assert before == "0\t0"
+    assert before == "0\t0\t0"
     assert loaded("t") == "0", "listing the system tables must not load the table"
 
     assert int(node.query(f"SELECT count() FROM {DB}.t")) == 1000
@@ -614,3 +615,22 @@ def test_replica_commands_on_deferred_table(engine):
     assert "BAD_ARGUMENTS" in node.query_and_get_error(
         f"ALTER TABLE {DB}.t UPDATE id = rand() WHERE 1"
     )
+
+
+def test_populate_from_deferred_source(engine):
+    """`POPULATE` pins a snapshot of the source, and a proxy snapshot carries none of the data the
+    reader then expects to find in it."""
+    node.query(
+        f"""
+        CREATE TABLE {DB}.src (id UInt64, n UInt32) ENGINE = {engine} ORDER BY id;
+        INSERT INTO {DB}.src SELECT number, number % 5 FROM numbers(100);
+        {RELOAD}
+        """
+    )
+    assert loaded("src") == "0"
+
+    node.query(
+        f"""CREATE MATERIALIZED VIEW {DB}.mv ENGINE = {engine} ORDER BY n
+            POPULATE AS SELECT n, count() AS c FROM {DB}.src GROUP BY n"""
+    )
+    assert int(node.query(f"SELECT sum(c) FROM {DB}.mv")) == 100

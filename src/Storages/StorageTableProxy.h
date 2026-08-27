@@ -208,13 +208,38 @@ public:
         return std::nullopt;
     }
 
-    /// `system.data_skipping_indices` asks every table for these, so answering must not load one.
+    /// `system.data_skipping_indices` and `system.columns` ask every table for these, so answering
+    /// must not load one.
     IndexSizeByName getSecondaryIndexSizes() const override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
             return nested->getSecondaryIndexSizes();
         return {};
+    }
+
+    ColumnSizeByName getColumnSizes() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->getColumnSizes();
+        return {};
+    }
+
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->getColumnSizes(columns, calculate_subcolumn_sizes);
+        return {};
+    }
+
+    SerializationInfoByName getSerializationHints() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->getSerializationHints();
+        return SerializationInfoByName{{}};
     }
 
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override
