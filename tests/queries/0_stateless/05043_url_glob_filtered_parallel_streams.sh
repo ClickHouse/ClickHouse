@@ -16,7 +16,9 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO FUNCTION s3('http://localhost:11111/test
 $CLICKHOUSE_CLIENT --query "INSERT INTO FUNCTION s3('http://localhost:11111/test/${prefix}_7.tsv', 'test', 'testtest', 'TSV', 'x UInt64') SETTINGS s3_truncate_on_insert = 1 SELECT 7"
 
 echo "--- one stream for the one survivor of the first batch, not one per possible address"
-$CLICKHOUSE_CLIENT --query "EXPLAIN PIPELINE SELECT x FROM url('http://localhost:11111/test/${prefix}_{0..19}.tsv', 'TSV', 'x UInt64') WHERE _file = '${prefix}_5.tsv' SETTINGS glob_expansion_max_elements = 10, max_threads = 4" \
+# `enable_parallel_replicas` would replace the `URL` source with a cluster read, hiding the
+# pipeline shape this test pins.
+$CLICKHOUSE_CLIENT --query "EXPLAIN PIPELINE SELECT x FROM url('http://localhost:11111/test/${prefix}_{0..19}.tsv', 'TSV', 'x UInt64') WHERE _file = '${prefix}_5.tsv' SETTINGS glob_expansion_max_elements = 10, max_threads = 4, enable_parallel_replicas = 0" \
     | grep -vF "ReadFromURL" | grep -oE "URL( × [0-9]+)?"
 
 echo "--- and the surviving addresses are the ones read"
