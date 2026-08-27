@@ -1958,26 +1958,21 @@ bool hasNullableMismatchForCast(const DataTypePtr & src_type, const DataTypePtr 
 /// Returns true if CAST and format+parse produce different results for the given type,
 /// meaning we must fall back to format+parse. Checks the type itself and all nested subtypes.
 /// Cases:
-/// - DateTime/DateTime64 with explicit timezone or non-default date_time_output_format
-///   or when date_time_input_format differs from cast_string_to_date_time_mode
-///   (CAST uses cast_string_to_date_time_mode, format+parse uses date_time_input_format)
+/// - DateTime/DateTime64 with an explicit timezone (format+parse writes the text in the source
+///   timezone and reads it back in the destination one, shifting the value, while CAST keeps it),
+///   or with a non-default date_time_output_format, which CAST does not implement
 /// - String when try_infer_numbers_from_strings is enabled (CAST keeps as String,
 ///   but format+parse would infer "123" as Int64)
-bool needsFormatParseFallback(
-    const DataTypePtr & type,
-    const FormatSettings & format_settings,
-    FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode)
+bool needsFormatParseFallback(const DataTypePtr & type, const FormatSettings & format_settings)
 {
     auto check = [&](const IDataType & t) -> bool
     {
         if (isDateTime(t))
             return assert_cast<const DataTypeDateTime &>(t).hasExplicitTimeZone()
-                || format_settings.date_time_output_format != FormatSettings::DateTimeOutputFormat::Simple
-                || format_settings.date_time_input_format != cast_string_to_date_time_mode;
+                || format_settings.date_time_output_format != FormatSettings::DateTimeOutputFormat::Simple;
         if (isDateTime64(t))
             return assert_cast<const DataTypeDateTime64 &>(t).hasExplicitTimeZone()
-                || format_settings.date_time_output_format != FormatSettings::DateTimeOutputFormat::Simple
-                || format_settings.date_time_input_format != cast_string_to_date_time_mode;
+                || format_settings.date_time_output_format != FormatSettings::DateTimeOutputFormat::Simple;
         if (isStringOrFixedString(t))
             return format_settings.json.try_infer_numbers_from_strings;
         return false;
@@ -2078,11 +2073,7 @@ DataTypePtr getPromotedTypeForDynamic(const DataTypePtr & type, const FormatSett
 
 /// Returns true if CAST(from_type, to_type) produces the same result as
 /// JSON format+parse for the same value.
-bool isDynamicElementToTypedCastSafe(
-    const DataTypePtr & from_type,
-    const DataTypePtr & to_type,
-    const FormatSettings & format_settings,
-    FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode)
+bool isDynamicElementToTypedCastSafe(const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     auto from_inner = removeNullable(from_type);
     auto to_inner = removeNullable(to_type);
@@ -2132,17 +2123,10 @@ bool isDynamicElementToTypedCastSafe(
         return !t.haveSubtypes() && !isDynamic(t);
     };
 
-    /// From String → any simple non-nested type.
-    /// Both paths go through text parsing so semantics match, except for date/time
-    /// targets: CAST parses with cast_string_to_date_time_mode while format+parse uses
-    /// date_time_input_format. When those differ, results can diverge, so fall back.
+    /// From String → any simple non-nested type. Both paths go through text parsing, and the CAST
+    /// is built with date_time_input_format (see castColumnWithSettings), so semantics match.
     if (isStringOrFixedString(*from_inner) && isSimpleNonNested(*to_inner))
-    {
-        if ((isDateTime(*to_inner) || isDateTime64(*to_inner))
-            && format_settings.date_time_input_format != cast_string_to_date_time_mode)
-            return false;
         return true;
-    }
 
     /// Any simple non-nested → String.
     if (isSimpleNonNested(*from_inner) && isStringOrFixedString(*to_inner))
@@ -2153,19 +2137,14 @@ bool isDynamicElementToTypedCastSafe(
     {
         const auto & from_arr = assert_cast<const DataTypeArray &>(*from_inner);
         const auto & to_arr = assert_cast<const DataTypeArray &>(*to_inner);
-        return isDynamicElementToTypedCastSafe(
-            from_arr.getNestedType(), to_arr.getNestedType(), format_settings, cast_string_to_date_time_mode);
+        return isDynamicElementToTypedCastSafe(from_arr.getNestedType(), to_arr.getNestedType());
     }
 
     return false;
 }
 
 /// Returns true if all variant types in the Dynamic column can be safely CAST to dest_type.
-bool canCastDynamicToTyped(
-    const ColumnDynamic & col_dynamic,
-    const DataTypePtr & dest_type,
-    const FormatSettings & format_settings,
-    FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode)
+bool canCastDynamicToTyped(const ColumnDynamic & col_dynamic, const DataTypePtr & dest_type)
 {
     const auto & variant_info = col_dynamic.getVariantInfo();
     const auto & variant_types = assert_cast<const DataTypeVariant &>(
@@ -2179,7 +2158,7 @@ bool canCastDynamicToTyped(
     {
         if (i == col_dynamic.getSharedVariantDiscriminator())
             continue;
-        if (!isDynamicElementToTypedCastSafe(variant_types[i], dest_type, format_settings, cast_string_to_date_time_mode))
+        if (!isDynamicElementToTypedCastSafe(variant_types[i], dest_type))
             return false;
     }
     return true;
@@ -2513,6 +2492,32 @@ ColumnPtr convertTypedColumnToTyped(
     return dest_column;
 }
 
+/// Same as castColumn(), except that the CAST is built from the given conversion settings.
+/// castColumn() builds it without a context, which silently discards every user setting.
+ColumnPtr castColumnWithSettings(
+    const ColumnWithTypeAndName & arg,
+    const DataTypePtr & type,
+    const FunctionConvertSettingsPtr & convert_settings,
+    CastType cast_type)
+{
+    if (arg.type->equals(*type))
+        return arg.column;
+
+    ColumnsWithTypeAndName arguments
+    {
+        arg,
+        {
+            DataTypeString().createColumnConst(arg.column->size(), type->getName()),
+            std::make_shared<DataTypeString>(),
+            ""
+        }
+    };
+
+    auto func_cast = createFunctionBaseCast(
+        convert_settings, cast_type == CastType::accurate ? "accurateCast" : "_CAST", arguments, type, {}, cast_type);
+    return func_cast->execute(arguments, type, arg.column->size(), /* dry_run = */ false);
+}
+
 /// Main optimized Object-to-Object conversion.
 ColumnPtr convertObjectColumns(
     const ColumnPtr & src_col_ptr,
@@ -2520,7 +2525,7 @@ ColumnPtr convertObjectColumns(
     const ObjectConversionPlan & plan,
     size_t rows,
     const FormatSettings & format_settings,
-    FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode)
+    const FunctionConvertSettingsPtr & convert_settings)
 {
     const auto & src = assert_cast<const ColumnObject &>(*src_col_ptr);
     const auto & src_typed_paths = src.getTypedPaths();
@@ -2632,7 +2637,7 @@ ColumnPtr convertObjectColumns(
             const bool nullable_mismatch = hasNullableMismatchForCast(from_tp, to_tp);
 
             if (skip_invalid
-                || needsFormatParseFallback(from_tp, format_settings, cast_string_to_date_time_mode)
+                || needsFormatParseFallback(from_tp, format_settings)
                 || (nullable_mismatch && !format_settings.null_as_default))
             {
                 dst_typed_columns[path]
@@ -2655,7 +2660,8 @@ ColumnPtr convertObjectColumns(
                     }
                 }
 
-                dst_typed_columns[path] = castColumn({src_col, src_type, ""}, to_tp);
+                dst_typed_columns[path]
+                    = castColumnWithSettings({src_col, src_type, ""}, to_tp, convert_settings, CastType::nonAccurate);
             }
         }
     }
@@ -2674,10 +2680,11 @@ ColumnPtr convertObjectColumns(
             dst_typed_columns[path] = convertDynamicColumnToTyped(
                 it_col->second, it_type->second, rows, format_settings, /*skip_on_failure=*/true);
         }
-        else if (canCastDynamicToTyped(dynamic_col, it_type->second, format_settings, cast_string_to_date_time_mode))
+        else if (canCastDynamicToTyped(dynamic_col, it_type->second))
         {
             auto dynamic_type = std::make_shared<DataTypeDynamic>(dst_max_dynamic_types);
-            dst_typed_columns[path] = castColumnAccurate({it_col->second, dynamic_type, ""}, it_type->second);
+            dst_typed_columns[path] = castColumnWithSettings(
+                {it_col->second, dynamic_type, ""}, it_type->second, convert_settings, CastType::accurate);
         }
         else
         {
@@ -2737,7 +2744,7 @@ ColumnPtr convertObjectColumns(
         /// Produce a ColumnDynamic from the typed column.
         /// Check if settings require format+parse fallback before trying the fast CAST path.
         ColumnPtr dynamic_col;
-        auto promoted = needsFormatParseFallback(it_type->second, format_settings, cast_string_to_date_time_mode)
+        auto promoted = needsFormatParseFallback(it_type->second, format_settings)
             ? nullptr
             : getPromotedTypeForDynamic(it_type->second, format_settings);
         if (promoted)
@@ -2745,8 +2752,8 @@ ColumnPtr convertObjectColumns(
             auto dynamic_type = std::make_shared<DataTypeDynamic>(dst_max_dynamic_types);
             ColumnPtr promoted_col = promoted->equals(*it_type->second)
                 ? it_col->second->getPtr()
-                : castColumn({it_col->second, it_type->second, ""}, promoted);
-            dynamic_col = castColumn({promoted_col, promoted, ""}, dynamic_type);
+                : castColumnWithSettings({it_col->second, it_type->second, ""}, promoted, convert_settings, CastType::nonAccurate);
+            dynamic_col = castColumnWithSettings({promoted_col, promoted, ""}, dynamic_type, convert_settings, CastType::nonAccurate);
         }
         else
         {
@@ -3037,12 +3044,20 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             && cast_type != CastType::accurateOrNull)
         {
             auto captured_format_settings = settings.format_settings;
-            auto captured_cast_dt_mode = settings.cast_string_to_date_time_mode;
-            return [captured_plan = std::move(plan), captured_format_settings, captured_cast_dt_mode]
+            /// The nested CASTs must reproduce what the JSON parser would do, so they parse
+            /// date/time with date_time_input_format rather than cast_string_to_date_time_mode.
+            /// The other two overrides keep the semantics castColumn() gave those CASTs before:
+            /// saturating overflow, and NULLs in a Dynamic becoming defaults instead of throwing.
+            auto captured_convert_settings = std::make_shared<const FunctionConvertSettings>(
+                settings,
+                FormatSettings::DateTimeOverflowBehavior::Saturate,
+                captured_format_settings.date_time_input_format,
+                /*cast_keep_nullable_=*/false);
+            return [captured_plan = std::move(plan), captured_format_settings, captured_convert_settings]
                 (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
             {
                 const auto & dst_type_obj = assert_cast<const DataTypeObject &>(*result_type);
-                return convertObjectColumns(arguments[0].column, dst_type_obj, captured_plan, input_rows_count, captured_format_settings, captured_cast_dt_mode);
+                return convertObjectColumns(arguments[0].column, dst_type_obj, captured_plan, input_rows_count, captured_format_settings, captured_convert_settings);
             };
         }
 
