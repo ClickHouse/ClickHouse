@@ -448,6 +448,12 @@ struct BackupsWorker::BackupStarter
         if (is_internal_backup && !query_context->isDDLOrOnClusterInternal())
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
+        /// `backup_uuid` is how a backup proves that the lock file in the destination is its own:
+        /// a user-chosen value could repeat the UUID of a backup in progress and take over its lock.
+        /// Only queries initiated by another query may carry it (the initiator passes its UUID to them).
+        if (backup_settings.backup_uuid && !query_context->isDDLOrOnClusterInternal())
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'backup_uuid' cannot be set explicitly");
+
         on_cluster = !backup_query->cluster.empty() || is_internal_backup;
 
         if (!backup_settings.backup_uuid)
