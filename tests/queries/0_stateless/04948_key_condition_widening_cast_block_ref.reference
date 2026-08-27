@@ -4,7 +4,10 @@ two functions after cast	(15,-119)	(15,-119)
 single point	(1,-50)	(1,-50)
 functions in the other order	(15,-119)	(15,-119)
 unsigned key	(11,165)	(11,165)
+wrapped in	(3,-20)	(3,-20)
 granules read	1
 no cast	(15,-119)	(15,-119)
 chain granules read, lightweight analysis	1
+wrapped in granules read, lightweight analysis	1
 chain granules read, full analysis	1
+wrapped in granules read, full analysis	1

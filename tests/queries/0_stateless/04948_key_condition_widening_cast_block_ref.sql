@@ -51,6 +51,12 @@ SELECT 'unsigned key',
     (SELECT (count(), sum(x)) FROM t_wpk_unsigned WHERE abs(negate(toUInt64(x))) BETWEEN 10 AND 20),
     (SELECT (count(), sum(x)) FROM t_wpk_unsigned_unsorted WHERE abs(negate(toUInt64(x))) BETWEEN 10 AND 20);
 
+-- A set membership test reaches the key bounds through the key's set index, so a chain wrapped in
+-- `IN` is analysed over the same bounds as one wrapped in a range comparison.
+SELECT 'wrapped in',
+    (SELECT (count(), sum(x)) FROM t_wpk_chain WHERE abs(negate(toInt64(x))) IN (10, 20)),
+    (SELECT (count(), sum(x)) FROM t_wpk_chain_unsorted WHERE abs(negate(toInt64(x))) IN (10, 20));
+
 -- A cast alone still narrows the read down to the granules that can hold matching rows.
 SELECT 'granules read', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT sum(x) FROM t_wpk_chain WHERE toInt64(x) BETWEEN -50 AND -40)
@@ -69,9 +75,17 @@ SELECT 'chain granules read, lightweight analysis', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT sum(x) FROM t_wpk_chain WHERE abs(negate(toInt64(x))) BETWEEN 10 AND 20)
 WHERE explain ILIKE '%Granules: 5/8%';
 
+SELECT 'wrapped in granules read, lightweight analysis', count() > 0
+FROM (EXPLAIN indexes = 1 SELECT sum(x) FROM t_wpk_chain WHERE abs(negate(toInt64(x))) IN (10, 20))
+WHERE explain ILIKE '%Granules: 5/8%';
+
 SET use_lightweight_primary_key_index_analysis = 0;
 SELECT 'chain granules read, full analysis', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT sum(x) FROM t_wpk_chain WHERE abs(negate(toInt64(x))) BETWEEN 10 AND 20)
+WHERE explain ILIKE '%Granules: 5/8%';
+
+SELECT 'wrapped in granules read, full analysis', count() > 0
+FROM (EXPLAIN indexes = 1 SELECT sum(x) FROM t_wpk_chain WHERE abs(negate(toInt64(x))) IN (10, 20))
 WHERE explain ILIKE '%Granules: 5/8%';
 
 DROP TABLE t_wpk_edge;
