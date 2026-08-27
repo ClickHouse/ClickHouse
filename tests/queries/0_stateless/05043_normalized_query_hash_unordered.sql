@@ -15,6 +15,10 @@ SELECT normalizedQueryHashUnordered('SELECT a FROM t WHERE x IN (1, 2)') = norma
 SELECT normalizedQueryHashUnordered('SELECT `a1b2c3` FROM t') = normalizedQueryHashUnordered('SELECT `x9y8z7` FROM t');
 SELECT normalizedQueryHashUnordered('SELECT `?` FROM t') = normalizedQueryHashUnordered('SELECT `a1b2c3` FROM t');
 
+-- two elements sharing a placeholder must still sort the same way whichever order they arrive in
+SELECT normalizedQueryHashUnordered('SELECT `a1b2c3`, `?` FROM t') = normalizedQueryHashUnordered('SELECT `?`, `a1b2c3` FROM t');
+SELECT normalizedQueryHashUnordered('SELECT `a1b2c3`, `x9y8z7` FROM t') = normalizedQueryHashUnordered('SELECT `x9y8z7`, `a1b2c3` FROM t');
+
 -- lossy on purpose: these are not the same query, but every expression list is sorted, so they share a hash
 SELECT normalizedQueryHashUnordered('SELECT a FROM t ORDER BY a, b') = normalizedQueryHashUnordered('SELECT a FROM t ORDER BY b, a');
 SELECT normalizedQueryHashUnordered('SELECT a - b FROM t') = normalizedQueryHashUnordered('SELECT b - a FROM t');

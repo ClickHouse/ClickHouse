@@ -6,6 +6,7 @@
 #include <Common/checkStackSize.h>
 
 #include <algorithm>
+#include <utility>
 #include <vector>
 
 
@@ -219,13 +220,15 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
 namespace
 {
 
-String normalizedText(const IAST & ast)
+/// normalized first, so that elements erased to the same placeholder end up adjacent, then the plain text,
+/// because a tie on the normalized form alone would leave two elements the final hash separates in input order
+std::pair<String, String> sortKey(const IAST & ast)
 {
     String text = ast.formatWithSecretsOneLine();
 
     PaddedPODArray<UInt8> normalized;
     normalizeQueryToPODArray(text.data(), text.data() + text.size(), normalized, /*keep_names=*/ false);
-    return String(normalized.begin(), normalized.end());
+    return {String(normalized.begin(), normalized.end()), std::move(text)};
 }
 
 void sortExpressionLists(IAST & ast)
@@ -238,11 +241,10 @@ void sortExpressionLists(IAST & ast)
     if (!ast.as<ASTExpressionList>())
         return;
 
-    /// sort on the normalized text, so that elements erased to the same placeholder are interchangeable
-    std::vector<std::pair<String, ASTPtr>> sorted;
+    std::vector<std::pair<std::pair<String, String>, ASTPtr>> sorted;
     sorted.reserve(ast.children.size());
     for (const auto & element : ast.children)
-        sorted.emplace_back(normalizedText(*element), element);
+        sorted.emplace_back(sortKey(*element), element);
 
     std::sort(sorted.begin(), sorted.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
@@ -257,7 +259,7 @@ UInt64 unorderedQueryHash(const IAST & ast)
     ASTPtr sorted = ast.clone();
     sortExpressionLists(*sorted);
 
-    /// the plain text, not normalizedText - normalizing twice would read the placeholders back as SQL
+    /// the plain text, not the normalized one - normalizing twice would read the placeholders back as SQL
     return normalizedQueryHash(sorted->formatWithSecretsOneLine(), /*keep_names=*/ false);
 }
 
