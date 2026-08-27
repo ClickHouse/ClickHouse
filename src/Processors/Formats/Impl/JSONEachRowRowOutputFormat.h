@@ -20,7 +20,9 @@ public:
         WriteBuffer & out_,
         SharedHeader header_,
         const FormatSettings & settings_,
-        bool pretty_json_ = false);
+        bool pretty_json_ = false,
+        bool with_names_ = false,
+        bool with_types_ = false);
 
     String getName() const override { return "JSONEachRowRowOutputFormat"; }
 
@@ -39,11 +41,15 @@ protected:
 
     size_t field_number = 0;
     bool pretty_json;
+    bool with_names;
+    bool with_types;
 
     FormatSettings settings;
     WriteBuffer * ostr;
 
 private:
+    void writeLine(const std::vector<String> & values);
+
     Names fields;
 };
 

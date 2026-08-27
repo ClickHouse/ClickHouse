@@ -11,8 +11,10 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/SchemaInferenceUtils.h>
+#include <Formats/registerWithNamesAndTypes.h>
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 #include <Common/Exception.h>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace DB
 {
@@ -43,11 +45,15 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     SharedHeader header_,
     Params params_,
     const FormatSettings & format_settings_,
-    bool yield_strings_)
+    bool yield_strings_,
+    bool with_names_,
+    bool with_types_)
     : IRowInputFormat(header_, in_, std::move(params_))
     , name_map(format_settings_.input_format_column_matching_case_sensitivity)
     , prev_positions(header_->columns(), {std::string_view{}, NOT_INITIALIZED})
     , yield_strings(yield_strings_)
+    , with_names(with_names_)
+    , with_types(with_types_)
     , format_settings(format_settings_)
 {
     name_map.initFromBlock(getPort().getHeader());
@@ -304,7 +310,72 @@ void JSONEachRowRowInputFormat::readPrefix()
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(*in);
-    data_in_square_brackets = JSONUtils::checkAndSkipArrayStart(*in);
+
+    if (with_names || with_types)
+    {
+        std::vector<String> column_names;
+        if (with_names)
+            column_names = readHeaderRow();
+
+        if (with_types)
+        {
+            skipWhitespaceIfAny(*in);
+            auto type_names = readHeaderRow();
+            if (format_settings.with_types_use_header)
+                validateTypesFromHeader(column_names, type_names);
+        }
+    }
+    else
+    {
+        data_in_square_brackets = JSONUtils::checkAndSkipArrayStart(*in);
+    }
+}
+
+std::vector<String> JSONEachRowRowInputFormat::readHeaderRow()
+{
+    JSONUtils::skipArrayStart(*in);
+    std::vector<String> fields;
+    String field;
+    do
+    {
+        skipWhitespaceIfAny(*in);
+        readJSONString(field, *in, format_settings.json);
+        fields.push_back(field);
+        skipWhitespaceIfAny(*in);
+    }
+    while (checkChar(',', *in));
+
+    skipWhitespaceIfAny(*in);
+    JSONUtils::skipArrayEnd(*in);
+    skipWhitespaceIfAny(*in);
+    return fields;
+}
+
+void JSONEachRowRowInputFormat::validateTypesFromHeader(const std::vector<String> & column_names, const std::vector<String> & type_names)
+{
+    if (type_names.size() != column_names.size())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "The number of data types differs from the number of column names in input data");
+
+    const auto & header = getPort().getHeader();
+    for (size_t i = 0; i < column_names.size(); ++i)
+    {
+        auto position = name_map.get(column_names[i]);
+        if (position != CaseAwareBlockNameMap::NOT_FOUND)
+        {
+            const auto & type = header.getByPosition(position).type;
+            if (type->getName() != type_names[i])
+            {
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Type of '{}' must be {}, not {}",
+                    header.getByPosition(position).name,
+                    type->getName(),
+                    type_names[i]);
+            }
+        }
+    }
 }
 
 void JSONEachRowRowInputFormat::readSuffix()
@@ -341,9 +412,31 @@ size_t JSONEachRowRowInputFormat::countRows(size_t max_block_size)
     return num_rows;
 }
 
-JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, bool with_names_, bool with_types_)
     : IRowWithNamesSchemaReader(in_, format_settings_)
+    , with_names(with_names_)
+    , with_types(with_types_)
 {
+}
+
+std::vector<String> JSONEachRowSchemaReader::readHeaderRow()
+{
+    JSONUtils::skipArrayStart(in);
+    std::vector<String> fields;
+    String field;
+    do
+    {
+        skipWhitespaceIfAny(in);
+        readJSONString(field, in, format_settings.json);
+        fields.push_back(field);
+        skipWhitespaceIfAny(in);
+    }
+    while (checkChar(',', in));
+
+    skipWhitespaceIfAny(in);
+    JSONUtils::skipArrayEnd(in);
+    skipWhitespaceIfAny(in);
+    return fields;
 }
 
 NamesAndTypesList JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
@@ -351,7 +444,18 @@ NamesAndTypesList JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool &
     if (first_row)
     {
         skipBOMIfExists(in);
-        data_in_square_brackets = JSONUtils::checkAndSkipArrayStart(in);
+        if ((with_names || with_types) && !header_rows_read)
+        {
+            if (with_names)
+                readHeaderRow();
+            if (with_types)
+                readHeaderRow();
+            header_rows_read = true;
+        }
+        else if (!with_names && !with_types)
+        {
+            data_in_square_brackets = JSONUtils::checkAndSkipArrayStart(in);
+        }
         first_row = false;
     }
     else
@@ -394,36 +498,80 @@ void JSONEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
     transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
 }
 
+NamesAndTypesList JSONEachRowSchemaReader::readSchema()
+{
+    if (with_names || with_types)
+    {
+        skipBOMIfExists(in);
+
+        std::vector<String> column_names;
+        if (with_names)
+            column_names = readHeaderRow();
+
+        if (with_types)
+        {
+            std::vector<String> type_names = readHeaderRow();
+            if (type_names.size() != column_names.size())
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "The number of column names {} differs with the number of types {}",
+                    column_names.size(),
+                    type_names.size());
+
+            NamesAndTypesList result;
+            for (size_t i = 0; i != type_names.size(); ++i)
+                result.emplace_back(column_names[i], DataTypeFactory::instance().get(type_names[i]));
+            return result;
+        }
+
+        first_row = false;
+        header_rows_read = true;
+    }
+
+    return IRowWithNamesSchemaReader::readSchema();
+}
+
 void registerInputFormatJSONEachRow(FormatFactory & factory);
 void registerInputFormatJSONEachRow(FormatFactory & factory)
 {
-    auto register_format = [&](const String & format_name, bool json_strings)
+    auto register_format = [&](const String & format_name, bool json_strings, bool with_names, bool with_types)
     {
-        factory.registerInputFormat(format_name, [json_strings](
+        factory.registerInputFormat(format_name, [json_strings, with_names, with_types](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
-            return std::make_shared<JSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings, json_strings);
+            return std::make_shared<JSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings, json_strings, with_names, with_types);
         });
     };
 
-    register_format("JSONEachRow", false);
-    register_format("JSONLines", false);
-    register_format("JSONL", false);
-    register_format("NDJSON", false);
+    for (bool json_strings : {false, true})
+    {
+        auto register_func = [&](const String & format_name, bool with_names, bool with_types)
+        {
+            register_format(format_name, json_strings, with_names, with_types);
+        };
+        registerWithNamesAndTypes(json_strings ? "JSONStringsEachRow" : "JSONEachRow", register_func);
+        markFormatWithNamesAndTypesSupportsSamplingColumns(json_strings ? "JSONStringsEachRow" : "JSONEachRow", factory);
+    }
+
+    register_format("JSONLines", false, false, false);
+    register_format("JSONL", false, false, false);
+    register_format("NDJSON", false, false, false);
 
     factory.registerFileExtension("ndjson", "JSONEachRow");
     factory.registerFileExtension("jsonl", "JSONEachRow");
-
-    register_format("JSONStringsEachRow", true);
 
     factory.markFormatSupportsSubsetOfColumns("JSONEachRow");
     factory.markFormatSupportsSubsetOfColumns("JSONLines");
     factory.markFormatSupportsSubsetOfColumns("NDJSON");
     factory.markFormatSupportsSubsetOfColumns("JSONL");
     factory.markFormatSupportsSubsetOfColumns("JSONStringsEachRow");
+    factory.markFormatSupportsSubsetOfColumns("JSONEachRowWithNames");
+    factory.markFormatSupportsSubsetOfColumns("JSONEachRowWithNamesAndTypes");
+    factory.markFormatSupportsSubsetOfColumns("JSONStringsEachRowWithNames");
+    factory.markFormatSupportsSubsetOfColumns("JSONStringsEachRowWithNamesAndTypes");
 
     factory.setDocumentation("JSONEachRow", Documentation{
         .description = R"DOCS_MD(
@@ -674,6 +822,23 @@ The output will be in JSON format:
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
+    auto register_func = [&](const String & format_name, bool with_names, bool with_types)
+    {
+        size_t min_rows = 1 + int(with_names) + int(with_types);
+        factory.registerFileSegmentationEngineCreator(format_name, [min_rows](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
+        {
+            return [min_rows, max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+            {
+                if (min_rows > 1)
+                    return JSONUtils::fileSegmentationEngineJSONCompactEachRow(in, memory, min_bytes, min_rows, max_rows, max_row_size);
+                return JSONUtils::fileSegmentationEngineJSONEachRow(in, memory, min_bytes, max_rows, max_row_size);
+            };
+        });
+    };
+
+    registerWithNamesAndTypes("JSONEachRow", register_func);
+    registerWithNamesAndTypes("JSONStringsEachRow", register_func);
+
     auto creator = [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
     {
         return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
@@ -681,8 +846,6 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
             return JSONUtils::fileSegmentationEngineJSONEachRow(in, memory, min_bytes, max_rows, max_row_size);
         };
     };
-    factory.registerFileSegmentationEngineCreator("JSONEachRow", creator);
-    factory.registerFileSegmentationEngineCreator("JSONStringsEachRow", creator);
     factory.registerFileSegmentationEngineCreator("JSONLines", creator);
     factory.registerFileSegmentationEngineCreator("NDJSON", creator);
     factory.registerFileSegmentationEngineCreator("JSONL", creator);
@@ -701,11 +864,11 @@ void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory
 void registerJSONEachRowSchemaReader(FormatFactory & factory);
 void registerJSONEachRowSchemaReader(FormatFactory & factory)
 {
-    auto register_schema_reader = [&](const String & format_name)
+    auto register_schema_reader = [&](const String & format_name, bool with_names, bool with_types)
     {
-        factory.registerSchemaReader(format_name, [](ReadBuffer & buf, const FormatSettings & settings)
+        factory.registerSchemaReader(format_name, [with_names, with_types](ReadBuffer & buf, const FormatSettings & settings)
         {
-            return std::make_unique<JSONEachRowSchemaReader>(buf, settings);
+            return std::make_unique<JSONEachRowSchemaReader>(buf, settings, with_names, with_types);
         });
         factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
         {
@@ -713,11 +876,16 @@ void registerJSONEachRowSchemaReader(FormatFactory & factory)
         });
     };
 
-    register_schema_reader("JSONEachRow");
-    register_schema_reader("JSONLines");
-    register_schema_reader("NDJSON");
-    register_schema_reader("JSONL");
-    register_schema_reader("JSONStringsEachRow");
+    auto register_func = [&](const String & format_name, bool with_names, bool with_types)
+    {
+        register_schema_reader(format_name, with_names, with_types);
+    };
+    registerWithNamesAndTypes("JSONEachRow", register_func);
+    registerWithNamesAndTypes("JSONStringsEachRow", register_func);
+
+    register_schema_reader("JSONLines", false, false);
+    register_schema_reader("NDJSON", false, false);
+    register_schema_reader("JSONL", false, false);
 }
 
 }
