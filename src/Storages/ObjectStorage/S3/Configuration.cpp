@@ -966,13 +966,7 @@ static void addStructureAndFormatToArgsIfNeededS3(
             }
             else if (arg_name == "structure")
             {
-                /// Only "auto" is filled in, as in the positional branches below: any other value
-                /// is the caller's own structure, and the replacement carries names and types only.
-                /// The value is evaluated like the key above, because a constant expression is
-                /// accepted here and is not an ASTLiteral.
-                auto structure_ast = evaluateConstantExpressionOrIdentifierAsLiteral(children[1], context);
-                if (checkAndGetLiteralArgument<String>(structure_ast, "structure") == "auto")
-                    children[1] = structure_literal;
+                children[1] = structure_literal;
                 structure_in_key_value = true;
             }
         }
