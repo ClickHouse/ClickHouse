@@ -1331,7 +1331,6 @@ def test_embed_quota_throw_records_input_tokens(started_cluster):
     error = instance.query_and_get_error(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={
-            **AI_SETTINGS,
             "ai_function_embedding_max_batch_size": 1,
             "ai_function_max_input_tokens_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 1,
@@ -1355,7 +1354,6 @@ def test_embed_quota_throw_records_rows_processed(started_cluster):
     error = instance.query_and_get_error(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={
-            **AI_SETTINGS,
             "ai_function_embedding_max_batch_size": 1,
             "ai_function_max_input_tokens_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 1,
@@ -1374,7 +1372,7 @@ def test_embed_malformed_response_records_input_tokens(started_cluster):
     qid = unique_query_id("embed_malformed_tokens")
     error = instance.query_and_get_error(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_dup_index')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
-        settings={**AI_SETTINGS, "ai_function_max_retries": 0},
+        settings={"ai_function_max_retries": 0},
         query_id=qid,
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
@@ -1390,7 +1388,6 @@ def test_generate_malformed_response_records_input_tokens(started_cluster):
     result = instance.query(
         "SELECT aiGenerate('hi', map('credentials', 'ai_no_choices'))",
         settings={
-            **AI_SETTINGS,
             "ai_function_throw_on_error": 0,
             "ai_function_max_retries": 0,
         },
@@ -1411,7 +1408,6 @@ def test_generate_malformed_response_counts_tokens_against_quota(started_cluster
     instance.query(
         "SELECT aiGenerate(x, map('credentials', 'ai_no_choices')) FROM test_input",
         settings={
-            **AI_SETTINGS,
             "ai_function_throw_on_error": 0,
             "ai_function_throw_on_quota_exceeded": 0,
             "ai_function_max_retries": 0,
@@ -1432,7 +1428,6 @@ def test_anthropic_malformed_response_records_input_tokens(started_cluster):
     result = instance.query(
         "SELECT aiGenerate('hi', map('credentials', 'ai_anthropic_no_content'))",
         settings={
-            **AI_SETTINGS,
             "ai_function_throw_on_error": 0,
             "ai_function_max_retries": 0,
         },
@@ -1453,7 +1448,6 @@ def test_similarity_row_counters_stay_zero_on_throw(started_cluster):
         "SELECT aiSimilarity(p.1, p.2, 'test-embed-model', map('credentials', 'ai_embed')) "
         "FROM (SELECT arrayJoin([('a', 'b'), ('c', 'd')]) AS p)",
         settings={
-            **AI_SETTINGS,
             "ai_function_embedding_max_batch_size": 2,
             "ai_function_max_input_tokens_per_query": 2,
             "ai_function_throw_on_quota_exceeded": 1,
@@ -1474,7 +1468,7 @@ def test_embed_error_throw_records_api_calls(started_cluster):
     qid = unique_query_id("embed_error_throw_events")
     error = instance.query_and_get_error(
         "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed_error'))",
-        settings={**AI_SETTINGS, "ai_function_max_retries": 0},
+        settings={"ai_function_max_retries": 0},
         query_id=qid,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
@@ -1488,7 +1482,7 @@ def test_similarity_error_throw_records_api_calls(started_cluster):
     qid = unique_query_id("similarity_error_throw_events")
     instance.query_and_get_error(
         "SELECT aiSimilarity('a', 'b', 'test-embed-model', map('credentials', 'ai_embed_error'))",
-        settings={**AI_SETTINGS, "ai_function_max_retries": 0},
+        settings={"ai_function_max_retries": 0},
         query_id=qid,
     )
     events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
