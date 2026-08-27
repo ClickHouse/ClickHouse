@@ -84,6 +84,7 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -122,6 +123,7 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -161,6 +163,8 @@ ALTER TABLE table DROP INDEX text_idx;
   明示的に指定しない場合 (たとえば `tokenizer = splitByString`) 、デフォルトの区切り文字リストは単一の空白文字 `[' ']` です。
 * `asciiCJK` は、Unicode の単語境界規則を使用して String をトークンに分割します ([Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/) に類似) 。
   ASCII の英数字とアンダースコアは、コネクタ (文字に対する ASCII `:`、同種の文字に対する `.` および `'`) を含むトークンを構成します。非 ASCII の Unicode 文字は、[CJK](https://en.wikipedia.org/wiki/CJK_characters) 文字を含め、1 文字のトークンになります。
+* `chinese[(granularity)]` は、Dictionary と隠れマルコフモデルを使用して中国語テキストを単語に分割します (アルゴリズムは [jieba](https://github.com/fxsjy/jieba) に従い、埋め込み Dictionary とモデルデータは [cppjieba](https://github.com/yanyiwu/cppjieba) に由来します) 。非 ASCII 文字をすべて 1 文字のトークンとして扱う `asciiCJK` とは異なり、`chinese` は連続する中国語文字を単語にまとめます (たとえば、`北京大学` は 4 つの 1 文字トークンではなく、1 つのトークン `北京大学` になります) 。これにより、中国語テキストに対してより意味のあるトークンが得られ、検索品質が向上します。一般的なテキストや混在テキストには `asciiCJK` を、中国語のみのテキストには `chinese` を使用してください。省略可能な `granularity` 引数には、`'coarse_grained'` (指定しない場合のデフォルト) または `'fine_grained'` を指定します。後者では、たとえば `北京邮电大学` に対して `北京`、`邮电`、`大学` も生成されるよう、重複するサブワードも列挙します。きめ細かいトークン化は、より大きな索引を必要とする代わりに再現率を向上させます。
+  `chinese` テキスト索引の検索には、`hasToken` (ASCII の区切り文字でのみ分割) ではなく、[hasAnyTokens](/ja/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/ja/reference/functions/regular-functions/string-search-functions#hasAllTokens) (needle を `chinese` トークナイザーでトークン化) を使用します。
 * `icu(locale)` は、[ICU](https://icu.unicode.org/) ライブラリの Unicode 単語分割 (UAX #29) を使用して String を単語トークンに分割します。単語間に空白を入れない文字体系 (中国語、日本語、タイ語など) では、ICU は Dictionaryベースの分割を適用するため、`asciiCJK` とは異なり、このようなテキストは単一文字ではなく意味のある複数文字の単語に分割されます。ここでの「Dictionary」とは、これらの文字体系用に ICU にバンドルされている単語リストを意味します ([`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries) を参照) 。ICU はこれらの単語に基づいて最も可能性の高い分割を選択します。
   `locale` はセグメンターに渡される ICU ロケールです。分割は主に文字体系と Dictionary に基づいて行われ、ロケールは ICU のロケール固有の調整を選択します。これは必須パラメータであり、たとえば `tokenizer = icu('ja')` または `tokenizer = icu('zh')` のように指定します。
   使用可能なロケールは `SELECT * FROM system.collations` で一覧表示できます。
@@ -267,6 +271,7 @@ SELECT tokens('abc def', 'ngrams', 3);
 非 ASCII テキストには、CJK 文字を含む Unicode の単語境界を正しく処理する `asciiCJK` トークナイザーを推奨します。
 単語を空白で区切らない言語 (中国語、日本語、タイ語など) では、`icu(locale)` トークナイザーが ICU の辞書ベースの単語分割により、意味のある複数文字の単語トークンを生成します。
 日本語の場合、`japanese` トークナイザー (MeCab) はテキストを単一文字ではなく単語に分割するため、一般により良い検索結果が得られます。
+中国語の場合、`chinese` トークナイザー (jieba) はテキストを単一文字ではなく単語に分割するため、一般により良い検索結果が得られます。
 
 <a id="preprocessor-argument-optional" />**プリプロセッサ引数 (任意)&#x20;**。プリプロセッサは、トークン化の前に入力文字列に適用される式を指します。
 
@@ -1463,6 +1468,40 @@ LIKE/ILIKE クエリのパターンが `%<スペースを含まない英数字�
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ja/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 この最適化でサポートされるのは、関数 `like` と `ilike` のみです。
+
+<div id="count-queries-perf">
+  ### 単純なカウントクエリ
+</div>
+
+テキスト検索の条件に一致する行だけをカウントするクエリ
+
+```sql
+SELECT count()
+FROM [...]
+WHERE hasToken(column_with_text_index, 'token')
+-- or: hasAllTokens(column_with_text_index, ['token', ...])
+-- or: hasAnyTokens(column_with_text_index, ['token', ...])
+```
+
+テキスト索引から応答されるため、一致する行を読み取る必要はありません。
+ClickHouse は索引内のポスティングリストのカーディナリティから count を取得するため、一致する行を示す仮想カラムやその集約をスキップします。単一トークンの場合は Dictionary のカーディナリティだけで済むため、ポスティングリストは読み取りません。複数トークンの述語では、ポスティングリストをユニオン (`hasAnyTokens`) または積集合 (`hasAllTokens`) する場合にのみ読み取ります。テキスト索引はパーツ全体をカバーするため、count は正確であり、非常に大きなパーツでも高速です。
+
+この最適化は、単一の `hasToken`、`hasAnyTokens`、または `hasAllTokens` 述語 (または `Array`/`Map` での同等の表現) でフィルタリングされた単独の `count()` に適用されます。`AND`/`OR`/`NOT` で結合した述語、追加のフィルタ (例: `... AND id > 10`) 、`m['key'] = 'value'` のようなヒントモードの述語、count 以外の値の選択、フレーズ検索、または `LIKE`/パターン検索がある場合、クエリは代わりに行を読み取ります。マテリアライズされた索引を持たないパーツも、行を読み取ることで正しくカウントされます。
+
+最適化が有効になっていることを確認するには、クエリプランに `ReadFromTextIndexCount` が含まれているか確認します。
+
+```sql
+EXPLAIN
+SELECT count() FROM table WHERE hasToken(col, 'sometoken')
+```
+
+```text
+[...]
+Aggregating
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = 'sometoken'))
+```
+
+この最適化は、[query&#95;plan&#95;optimize&#95;count&#95;from&#95;text&#95;index](/ja/reference/settings/session-settings/query-plan#query_plan_optimize_count_from_text_index) (デフォルトで有効) で制御されます。[direct read](#direct-read)を前提としているため、[query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ja/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index)、[use&#95;skip&#95;indexes](/ja/reference/settings/session-settings/use-skip-indexes#use_skip_indexes)、および[optimize&#95;trivial&#95;count&#95;query](/ja/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query)も有効にする必要があります (いずれもデフォルトで有効) 。
 
 <div id="caching">
   ### キャッシュ
