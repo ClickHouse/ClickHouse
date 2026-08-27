@@ -50,12 +50,9 @@ inline Int64 rescaleWholeToTicks(Int64 whole, Int64 multiplier, Int64 rem)
 }
 
 /// Adds a fractional number of seconds to a `DateTime64`/`Time64` tick value of the given scale.
-/// The delta is scaled to ticks in one multiplication and rounded to the nearest tick, so the same
-/// fraction behaves the same whatever the whole part is: splitting the whole part off first would round
-/// `+ 0.15` at scale 1 up to 2 ticks while leaving `+ 1.15` at 11, because the remainder of the latter is
-/// exact and lands just below the midpoint the former rounds up to. The product is off by at most half of
-/// the resolution `delta` itself has, so it is never the dominant error. Beyond 2^53 ticks a Float64 no
-/// longer holds every integer, and the whole part is scaled in Int64 instead, where it stays exact.
+/// Scaling in one multiplication keeps a fraction behaving the same whatever the whole part is: splitting
+/// the whole part off first rounds `+ 0.15` at scale 1 to 2 ticks but `+ 1.15` to 11. Beyond 2^53 ticks a
+/// `Float64` no longer holds every integer, so there the whole part is scaled in `Int64` to stay exact.
 inline Int64 addFractionalSeconds(Int64 t, Float64 delta, UInt16 scale)
 {
     if (!isFinite(delta))
