@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,6 +9,7 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectDirectory = path.resolve(scriptDirectory, '..');
 const repositoryDirectory = path.resolve(projectDirectory, '..');
 const sourceDocsDirectory = path.join(repositoryDirectory, 'docs');
+const defaultArtifactsDirectory = path.join(projectDirectory, '.artifacts');
 const defaultArtifactDirectory = path.join(projectDirectory, '.artifacts/latest');
 const defaultGeneratedDirectory = path.join(projectDirectory, 'src/generated');
 
@@ -102,65 +103,28 @@ function mintlifyDocsConfig(documents, sourceSiteConfig, navigation) {
   };
 }
 
-function exactVersionLabel(sourceVersion) {
-  return sourceVersion.match(/^v?(\d+\.\d+\.\d+(?:\.\d+)?)/)?.[1]
-    ?? sourceVersion.replace(/^v/, '');
+function bundleRoute(channel, route) {
+  if (channel === 'latest') return route;
+  if (!route.startsWith('/docs/reference')) {
+    throw new Error(`Cannot version route outside the reference site: ${route}`);
+  }
+  return `/docs/reference/versions/${channel}${route.slice('/docs/reference'.length)}`;
 }
 
-function versionsConfig(manifest, routes) {
-  const exactVersion = exactVersionLabel(manifest.sourceVersion);
-  const currentRoutes = Object.fromEntries(
-    routes.routes.map((route) => [route.id, route.route]),
-  );
-  const currentChannel = manifest.channel === 'latest' || manifest.channel === 'head'
-    ? manifest.channel
-    : null;
-
-  const versions = [
-    {
-      id: 'latest',
-      kind: 'channel',
-      label: 'Latest',
-      exactVersion: currentChannel === 'latest' ? exactVersion : undefined,
-      description: 'Current release',
-      available: currentChannel === 'latest',
-      indexable: true,
-      fallbackRoute: '/docs/reference',
-      routes: currentChannel === 'latest' ? currentRoutes : undefined,
-    },
-    {
-      id: 'head',
-      kind: 'channel',
-      label: 'Head',
-      exactVersion: currentChannel === 'head' ? exactVersion : undefined,
-      description: 'Master preview',
-      available: currentChannel === 'head',
-      indexable: false,
-      fallbackRoute: '/docs/reference/head',
-      routes: currentChannel === 'head' ? currentRoutes : undefined,
-    },
-  ];
-
-  if (manifest.channel !== 'latest' && manifest.channel !== 'head') {
-    versions.push({
-      id: manifest.channel,
-      kind: 'release',
-      label: exactVersion,
-      exactVersion,
-      description: 'Pinned release',
-      available: true,
-      indexable: false,
-      fallbackRoute: `/docs/reference/versions/${exactVersion}`,
-      routes: currentRoutes,
-    });
-  }
-
+function versionsConfig(bundles) {
   return {
-    schemaVersion: 1,
-    currentId: manifest.channel,
-    generatedAt: manifest.generatedAt,
-    sourceRevision: manifest.sourceRevision,
-    versions,
+    schemaVersion: 2,
+    versions: bundles.map(({ manifest, routes }) => ({
+      id: manifest.channel,
+      label: manifest.channel === 'latest' ? 'Latest' : manifest.channel,
+      sourceVersion: manifest.sourceVersion,
+      sourceRevision: manifest.sourceRevision,
+      indexable: manifest.channel === 'latest',
+      fallbackRoute: bundleRoute(manifest.channel, '/docs/reference'),
+      routes: Object.fromEntries(
+        routes.routes.map((route) => [route.id, bundleRoute(manifest.channel, route.route)]),
+      ),
+    })),
   };
 }
 
@@ -277,10 +241,12 @@ async function headerNavigationConfig(sourceSiteConfig) {
 
 function parseArguments(argv) {
   const options = {
+    artifactsDirectory: defaultArtifactsDirectory,
     artifactDirectory: defaultArtifactDirectory,
     generatedDirectory: defaultGeneratedDirectory,
   };
   const names = new Map([
+    ['--artifacts', 'artifactsDirectory'],
     ['--artifact', 'artifactDirectory'],
     ['--generated', 'generatedDirectory'],
   ]);
@@ -289,7 +255,7 @@ function parseArguments(argv) {
     const name = names.get(argv[index]);
     if (!name || index + 1 >= argv.length) {
       throw new Error(
-        'Usage: node scripts/prepare-content.mjs [--artifact <directory>] [--generated <directory>]',
+        'Usage: node scripts/prepare-content.mjs [--artifacts <directory>] [--artifact <directory>] [--generated <directory>]',
       );
     }
     options[name] = path.resolve(argv[index + 1]);
@@ -310,11 +276,49 @@ async function writeJson(destination, value) {
   await writeFile(destination, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 }
 
+async function loadBundleCatalog(artifactsDirectory) {
+  const entries = await readdir(artifactsDirectory, { withFileTypes: true });
+  const bundles = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.endsWith('.next')) continue;
+    const directory = path.join(artifactsDirectory, entry.name);
+    const [manifest, routes] = await Promise.all([
+      readJson(path.join(directory, 'manifest.json')),
+      readJson(path.join(directory, 'routes.json')),
+    ]);
+    if (
+      !/^[a-z0-9][a-z0-9.-]*$/.test(manifest.channel)
+      || manifest.channel !== entry.name
+      || manifest.schemaVersion !== 2
+      || routes.schemaVersion !== 1
+      || routes.routes.length !== manifest.documentCount
+    ) {
+      throw new Error(`Invalid reference bundle catalog entry: ${entry.name}`);
+    }
+    bundles.push({ directory, manifest, routes });
+  }
+  if (!bundles.some(({ manifest }) => manifest.channel === 'latest')) {
+    throw new Error('The latest reference bundle is missing');
+  }
+  return bundles.sort((left, right) => {
+    if (left.manifest.channel === 'latest') return -1;
+    if (right.manifest.channel === 'latest') return 1;
+    return right.manifest.channel.localeCompare(left.manifest.channel, undefined, { numeric: true });
+  });
+}
+
+function versionNavigation(node, channel) {
+  if (node.type === 'document') {
+    return { ...node, route: bundleRoute(channel, node.route) };
+  }
+  return { ...node, children: node.children.map((child) => versionNavigation(child, channel)) };
+}
+
 function escapeRegularExpression(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function rewriteReferenceLinks(content, routeRewrites) {
+function rewriteReferenceLinks(content, routeRewrites, referenceBaseRoute) {
   const docsPrefixes = [
     'changelogs',
     'chdb',
@@ -336,6 +340,12 @@ function rewriteReferenceLinks(content, routeRewrites) {
   let rewritten = content
     .replace(markdownLink, '](/docs/$1')
     .replace(componentLink, 'href=$1/docs/$2');
+
+  if (referenceBaseRoute !== '/docs/reference') {
+    rewritten = rewritten
+      .replace(/(\]\()\/docs\/reference(?=[/#)])/g, `$1${referenceBaseRoute}`)
+      .replace(/(href=['"])\/docs\/reference(?=[/#'"])/g, `$1${referenceBaseRoute}`);
+  }
 
   const rewrites = [...routeRewrites].sort(([left], [right]) => (
     Number(right.includes('#')) - Number(left.includes('#'))
@@ -487,7 +497,13 @@ function componentRegistrySource(componentImports) {
   ].join('\n');
 }
 
-function prepareMdx(content, sourcePath, routeRewrites = new Map(), componentImports = new Map()) {
+function prepareMdx(
+  content,
+  sourcePath,
+  routeRewrites = new Map(),
+  componentImports = new Map(),
+  referenceBaseRoute = '/docs/reference',
+) {
   const importedComponents = new Set();
   let prepared = content.replace(
     /^import\s+(.+?)\s+from\s+['"]\/snippets\/components\/([^'"]+)['"];?\s*$/gm,
@@ -536,7 +552,9 @@ function prepareMdx(content, sourcePath, routeRewrites = new Map(), componentImp
   }
 
   return rewriteInlineCodeBraces(
-    rewriteExplicitHeadingAnchors(rewriteReferenceLinks(prepared, routeRewrites)),
+    rewriteExplicitHeadingAnchors(
+      rewriteReferenceLinks(prepared, routeRewrites, referenceBaseRoute),
+    ),
   ).trim();
 }
 
@@ -563,15 +581,23 @@ function frontmatter(document, sidebarTitle) {
 }
 
 async function main() {
-  const { artifactDirectory, generatedDirectory } = parseArguments(process.argv.slice(2));
+  const { artifactsDirectory, artifactDirectory, generatedDirectory }
+    = parseArguments(process.argv.slice(2));
   const stagingDirectory = `${generatedDirectory}.next`;
+  const bundleCatalog = await loadBundleCatalog(artifactsDirectory);
+  const catalogBundle = bundleCatalog.find(
+    ({ directory }) => path.resolve(directory) === path.resolve(artifactDirectory),
+  );
+  if (!catalogBundle) {
+    throw new Error(`Selected artifact is not present in the bundle catalog: ${artifactDirectory}`);
+  }
   const [
     manifest,
-    documentPayload,
-    navigation,
-    routes,
-    search,
-    snippetPayload,
+    sourceDocumentPayload,
+    sourceNavigation,
+    sourceRoutes,
+    sourceSearch,
+    sourceSnippetPayload,
     sourceSiteConfig,
   ] =
     await Promise.all(
@@ -585,29 +611,63 @@ async function main() {
 
   if (
     manifest.schemaVersion !== 2
-    || documentPayload.schemaVersion !== 1
-    || navigation.schemaVersion !== 2
-    || snippetPayload.schemaVersion !== 2
+    || sourceDocumentPayload.schemaVersion !== 1
+    || sourceNavigation.schemaVersion !== 2
+    || sourceSnippetPayload.schemaVersion !== 2
   ) {
     throw new Error(`Unsupported artifact schema version: ${manifest.schemaVersion}`);
   }
-  if (manifest.documentCount !== documentPayload.documents.length) {
+  if (manifest.channel !== catalogBundle.manifest.channel) {
+    throw new Error('Selected artifact manifest does not match the bundle catalog');
+  }
+  if (manifest.documentCount !== sourceDocumentPayload.documents.length) {
     throw new Error('Artifact document count does not match its manifest');
   }
   const expectedSearchRecordCount = manifest.searchRecordCount ?? manifest.documentCount;
-  if (routes.routes.length !== manifest.documentCount || search.records.length !== expectedSearchRecordCount) {
+  if (
+    sourceRoutes.routes.length !== manifest.documentCount
+    || sourceSearch.records.length !== expectedSearchRecordCount
+  ) {
     throw new Error('Artifact routes or search records do not match its manifest');
   }
 
   const expectedBundleHash = hash(
-    `${JSON.stringify(documentPayload)}\n${JSON.stringify(snippetPayload.snippets)}\n${JSON.stringify(snippetPayload.componentResources)}\n${JSON.stringify(navigation)}\n${JSON.stringify(routes)}\n${JSON.stringify(search)}`,
+    `${JSON.stringify(sourceDocumentPayload)}\n${JSON.stringify(sourceSnippetPayload.snippets)}\n${JSON.stringify(sourceSnippetPayload.componentResources)}\n${JSON.stringify(sourceNavigation)}\n${JSON.stringify(sourceRoutes)}\n${JSON.stringify(sourceSearch)}`,
   );
   if (manifest.bundleHash !== expectedBundleHash) {
     throw new Error('Artifact bundle hash does not match its contents');
   }
-  if (manifest.componentResourceCount !== snippetPayload.componentResources.length) {
+  if (manifest.componentResourceCount !== sourceSnippetPayload.componentResources.length) {
     throw new Error('Artifact component resource count does not match its manifest');
   }
+
+  const referenceBaseRoute = bundleRoute(manifest.channel, '/docs/reference');
+  const documentPayload = {
+    ...sourceDocumentPayload,
+    documents: sourceDocumentPayload.documents.map((document) => ({
+      ...document,
+      route: bundleRoute(manifest.channel, document.route),
+    })),
+  };
+  const navigation = {
+    ...sourceNavigation,
+    root: versionNavigation(sourceNavigation.root, manifest.channel),
+  };
+  const routes = {
+    ...sourceRoutes,
+    routes: sourceRoutes.routes.map((route) => ({
+      ...route,
+      route: bundleRoute(manifest.channel, route.route),
+    })),
+  };
+  const search = {
+    ...sourceSearch,
+    records: sourceSearch.records.map((record) => ({
+      ...record,
+      route: bundleRoute(manifest.channel, record.route),
+    })),
+  };
+  const snippetPayload = sourceSnippetPayload;
 
   const routeRewrites = new Map();
   const routeRedirects = new Map();
@@ -654,8 +714,20 @@ async function main() {
       addRouteRedirect(`${document.route}/index`, document.route);
     }
     for (const legacyRoute of document.legacyRoutes ?? []) {
-      addRouteRewrite(legacyRoute, document.route);
-      if (!legacyRoute.includes('#')) addRouteRedirect(legacyRoute, document.route);
+      const selectedLegacyRoute = manifest.channel !== 'latest'
+        && legacyRoute.startsWith('/docs/reference')
+        ? bundleRoute(manifest.channel, legacyRoute)
+        : legacyRoute;
+      addRouteRewrite(selectedLegacyRoute, document.route);
+      if (
+        !selectedLegacyRoute.includes('#')
+        && (
+          manifest.channel === 'latest'
+          || selectedLegacyRoute.startsWith(`${referenceBaseRoute}/`)
+        )
+      ) {
+        addRouteRedirect(selectedLegacyRoute, document.route);
+      }
     }
   }
   for (const route of routeRedirects.keys()) {
@@ -674,7 +746,7 @@ async function main() {
     navigation,
   );
   const headerNavigation = await headerNavigationConfig(sourceSiteConfig);
-  const versionConfig = versionsConfig(manifest, routes);
+  const versionConfig = versionsConfig(bundleCatalog);
   const configuredPages = new Set();
   const collectConfiguredPages = (entries) => {
     for (const entry of entries) {
@@ -704,7 +776,13 @@ async function main() {
       'mintlify',
       `${pagePathFromRoute(document.route)}.mdx`,
     );
-    const content = `${frontmatter(document, navigationLabels.get(document.id))}\n\n${prepareMdx(document.content, document.sourcePath, routeRewrites, componentImports)}\n`;
+    const content = `${frontmatter(document, navigationLabels.get(document.id))}\n\n${prepareMdx(
+      document.content,
+      document.sourcePath,
+      routeRewrites,
+      componentImports,
+      referenceBaseRoute,
+    )}\n`;
     await mkdir(path.dirname(destination), { recursive: true });
     await writeFile(destination, content, 'utf8');
   }
@@ -721,6 +799,7 @@ async function main() {
       `snippets/${snippet.path}`,
       routeRewrites,
       componentImports,
+      referenceBaseRoute,
     );
     await writeFile(destination, `${preparedSnippet}\n`, 'utf8');
   }
@@ -767,7 +846,10 @@ async function main() {
     writeJson(path.join(stagingDirectory, 'data/header-navigation.json'), headerNavigation),
     writeJson(path.join(stagingDirectory, 'data/versions.json'), versionConfig),
     writeJson(path.join(stagingDirectory, 'mintlify/docs.json'), docsConfig),
-    writeJson(path.join(stagingDirectory, 'public/docs/reference/_search/latest.json'), search),
+    writeJson(
+      path.join(stagingDirectory, `public/docs/reference/_search/${manifest.channel}.json`),
+      search,
+    ),
     writeJson(
       path.join(stagingDirectory, 'public/docs/reference/_versions/versions.json'),
       versionConfig,

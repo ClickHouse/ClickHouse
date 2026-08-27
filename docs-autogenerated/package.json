@@ -4,14 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "export": "node scripts/export-reference-docs.mjs",
-    "prepare:content": "node scripts/prepare-content.mjs",
+    "export": "node scripts/export-reference-docs.mjs && node scripts/create-test-reference-bundle.mjs",
+    "prepare:content": "node scripts/prepare-content.mjs --artifact .artifacts/latest --artifacts .artifacts",
     "prepare:site": "npm run export && npm run prepare:content",
     "test": "node scripts/smoke-test-reference-pipeline.mjs",
     "predev": "npm run prepare:site",
     "dev": "astro dev",
-    "prebuild": "npm run prepare:site",
-    "build": "node --max-old-space-size=8192 node_modules/astro/bin/astro.mjs build",
+    "prebuild": "npm run export",
+    "build": "node scripts/build-reference-site.mjs",
     "preview": "node scripts/serve-dist.mjs"
   },
   "dependencies": {

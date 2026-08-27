@@ -52,8 +52,11 @@ const sourceRepositoryPath = document.sourcePath.startsWith('src/')
   ? document.sourcePath
   : `docs/reference/${document.sourcePath}`;
 const sourceUrl = `https://github.com/ClickHouse/ClickHouse/blob/${manifest.sourceRevision}/${sourceRepositoryPath}`;
+const referenceBaseRoute = manifest.channel === 'latest'
+  ? '/docs/reference'
+  : `/docs/reference/versions/${manifest.channel}`;
 const routeSegments = document.route
-  .replace('/docs/reference', '')
+  .replace(referenceBaseRoute, '')
   .split('/')
   .filter(Boolean);
 const breadcrumbs = routeSegments
@@ -61,7 +64,7 @@ const breadcrumbs = routeSegments
     label: index === routeSegments.length - 1
       ? document.title
       : segment.replace(/[-_]+/g, ' '),
-    href: `/docs/reference/${routeSegments.slice(0, index + 1).join('/')}`,
+    href: `${referenceBaseRoute}/${routeSegments.slice(0, index + 1).join('/')}`,
   }))
   .slice(-2);
 function activeGroupNames(entries: NavEntry[], currentRoute: string): string[] {
@@ -83,6 +86,7 @@ const entityKindLabel = entityKindLabels[document.entityKind];
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
     <meta name="description" content={document.description} />
+    {manifest.channel !== 'latest' && <meta name="robots" content="noindex,follow" />}
     <link rel="icon" href="/_site/favicon.svg" />
     <link rel="canonical" href={canonical} />
     <title>{document.title} | ClickHouse Docs</title>

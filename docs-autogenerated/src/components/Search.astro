@@ -1,10 +1,20 @@
+---
+import manifest from '@generated/data/manifest.json';
+
+const searchVersionLabel = manifest.channel === 'latest' ? 'Latest' : manifest.channel;
+---
+
 <button id="search-bar-entry" class="search-trigger" type="button" aria-label="Search generated reference documentation">
   <span class="search-icon" aria-hidden="true"></span>
   <span class="search-placeholder">Search reference</span>
   <kbd>⌘K</kbd>
 </button>
 
-<dialog class="search-dialog" aria-labelledby="search-title">
+<dialog
+  class="search-dialog"
+  aria-labelledby="search-title"
+  data-search-index={`/docs/reference/_search/${manifest.channel}.json`}
+>
   <div class="search-panel">
     <div class="search-input-row">
       <span class="search-icon" aria-hidden="true"></span>
@@ -17,7 +27,7 @@
     <footer class="search-footer">
       <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
       <span><kbd>↵</kbd> open</span>
-      <span class="search-version">Latest · English</span>
+      <span class="search-version">{searchVersionLabel} · English</span>
     </footer>
   </div>
 </dialog>
@@ -52,7 +62,9 @@
 
   async function loadIndex() {
     if (records) return records;
-    const response = await fetch('/docs/reference/_search/latest.json');
+    const indexUrl = dialog?.dataset.searchIndex;
+    if (!indexUrl) throw new Error('Search index URL is missing');
+    const response = await fetch(indexUrl);
     if (!response.ok) throw new Error(`Search index request failed: ${response.status}`);
     const payload = await response.json();
     records = payload.records;

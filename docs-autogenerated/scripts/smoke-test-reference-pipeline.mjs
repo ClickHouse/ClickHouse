@@ -164,14 +164,28 @@ async function main() {
 
   await mkdir(temporaryRoot, { recursive: true });
   const temporaryDirectory = await mkdtemp(path.join(temporaryRoot, 'reference-pipeline-'));
-  const artifactDirectory = path.join(temporaryDirectory, 'artifact');
+  const artifactsDirectory = path.join(temporaryDirectory, 'artifacts');
+  const artifactDirectory = path.join(artifactsDirectory, 'latest');
+  const testArtifactDirectory = path.join(artifactsDirectory, '26.8');
   const generatedDirectory = path.join(temporaryDirectory, 'generated');
+  const versionedGeneratedDirectory = path.join(temporaryDirectory, 'generated-26.8');
 
   try {
     run('export-reference-docs.mjs', ['--output', artifactDirectory]);
+    run('create-test-reference-bundle.mjs', [
+      '--source', artifactDirectory,
+      '--output', testArtifactDirectory,
+      '--channel', '26.8',
+    ]);
     run('prepare-content.mjs', [
+      '--artifacts', artifactsDirectory,
       '--artifact', artifactDirectory,
       '--generated', generatedDirectory,
+    ]);
+    run('prepare-content.mjs', [
+      '--artifacts', artifactsDirectory,
+      '--artifact', testArtifactDirectory,
+      '--generated', versionedGeneratedDirectory,
     ]);
 
     const documents = (await readJson(path.join(artifactDirectory, 'documents.json'))).documents;
@@ -199,10 +213,30 @@ async function main() {
       'Legacy URL compatibility data changed generated statement metadata',
     );
     const redirects = (await readJson(path.join(generatedDirectory, 'data/redirects.json'))).redirects;
+    const versions = await readJson(path.join(generatedDirectory, 'data/versions.json'));
     const selectPage = await readFile(
       path.join(generatedDirectory, 'mintlify/docs/reference/statements/select.mdx'),
       'utf8',
     );
+    const testManifest = await readJson(path.join(testArtifactDirectory, 'manifest.json'));
+    const versionedVersions = await readJson(
+      path.join(versionedGeneratedDirectory, 'data/versions.json'),
+    );
+    const versionedRedirects = (
+      await readJson(path.join(versionedGeneratedDirectory, 'data/redirects.json'))
+    ).redirects;
+    const versionedSelectPage = await readFile(
+      path.join(
+        versionedGeneratedDirectory,
+        'mintlify/docs/reference/versions/26.8/statements/select.mdx',
+      ),
+      'utf8',
+    );
+    const versionedSearch = (
+      await readJson(
+        path.join(versionedGeneratedDirectory, 'public/docs/reference/_search/26.8.json'),
+      )
+    ).records;
     const alterModifyQueryPage = await readFile(
       path.join(
         generatedDirectory,
@@ -213,6 +247,44 @@ async function main() {
     const routes = new Set(documents.map((document) => document.route));
     const searchTitles = new Set(search.map((record) => record.title));
     const redirectMap = new Map(redirects.map(({ from, to }) => [from, to]));
+
+    requireValue(
+      versions.schemaVersion === 2
+        && versions.versions.map(({ id }) => id).join(',') === 'latest,26.8'
+        && versions.versions.every((version) => (
+          !('available' in version)
+          && !('kind' in version)
+          && !('description' in version)
+        )),
+      'Version selector catalog contains speculative or grouped entries',
+    );
+    requireValue(
+      versions.versions.find(({ id }) => id === '26.8')
+        ?.routes['reference:statement:select']
+        === '/docs/reference/versions/26.8/statements/select',
+      'The test bundle does not map stable document IDs to pinned routes',
+    );
+    requireValue(
+      testManifest.channel === '26.8'
+        && testManifest.testFixture === true
+        && testManifest.bundleHash
+          === (await readJson(path.join(artifactDirectory, 'manifest.json'))).bundleHash,
+      'The second bundle is not an explicit duplicate test fixture',
+    );
+    requireValue(
+      JSON.stringify(versionedVersions) === JSON.stringify(versions)
+        && versionedSelectPage.includes(
+          'route: "/docs/reference/versions/26.8/statements/select"',
+        )
+        && versionedSearch.every((record) => (
+          record.route.startsWith('/docs/reference/versions/26.8/')
+        ))
+        && versionedRedirects.every(({ from, to }) => (
+          from.startsWith('/docs/reference/versions/26.8/')
+          && to.startsWith('/docs/reference/versions/26.8/')
+        )),
+      'The second bundle was not prepared as an isolated versioned site',
+    );
 
     requireValue(
       documents.every((document) => (
