@@ -40,6 +40,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char drop_database_before_exclusive_ddl_lock[];
+    extern const char drop_table_fail_before_metadata_drop[];
 }
 
 namespace Setting
@@ -60,6 +61,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_NOT_EMPTY;
+    extern const int FAULT_INJECTED;
 }
 
 namespace ActionLocks
@@ -363,8 +365,15 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
-            NamedCollectionFactory::instance().removeDependencies(table_id);
+            if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
+                fiu_do_on(FailPoints::drop_table_fail_before_metadata_drop,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before dropping the metadata of table {}", table_id.getNameForLogs());
+                });
             database->dropTable(context_, table_id.table_name, query.sync);
+            /// Only once the metadata is gone: a `dropTable` that throws leaves the table on disk, and it
+            /// is attached again at the next start, so it must keep blocking `DROP NAMED COLLECTION`.
+            NamedCollectionFactory::instance().removeDependencies(table_id);
 
             /// We have to clear mmapio cache when dropping table from Ordinary database
             /// to avoid reading old data if new table with the same name is created
