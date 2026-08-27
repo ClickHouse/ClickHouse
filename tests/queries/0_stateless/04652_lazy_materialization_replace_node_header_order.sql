@@ -13,13 +13,15 @@ INSERT INTO t_lm_header_order VALUES (1, 100, 1), (2, 200, 1), (3, 300, 1), (4, 
 SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
 
--- Lazy materialization must fire for all the queries below, otherwise they assert nothing.
--- Both the local and the distributed plan are checked: the bug only shows under
--- `make_distributed_plan`, so a guard covering the local plan alone could pass vacuously.
+-- Lazy materialization must fire for the local plan, otherwise the queries below assert nothing.
 SELECT 'lazy materialization applied:', countIf(explain LIKE '%LazilyReadFromMergeTree%') > 0
 FROM (EXPLAIN SELECT v, ver, k FROM t_lm_header_order FINAL PREWHERE k > 0 LIMIT 4);
 
-SELECT 'lazy materialization applied (distributed):', countIf(explain LIKE '%LazilyReadFromMergeTree%') > 0
+-- Lazy materialization must not fire while the initiator builds a distributed plan: its steps
+-- (`JoinLazyColumnsStep`, `LazilyReadFromMergeTree`) are not serializable, and even an
+-- exchange-free plan like this one ships as one serialized fragment. The executor re-applies
+-- lazy materialization inside the fragment when it re-optimizes it with `make_distributed_plan = 0`.
+SELECT 'no lazy step in coordinator plan (distributed):', countIf(explain LIKE '%LazilyReadFromMergeTree%') = 0
 FROM (EXPLAIN SELECT v, ver, k FROM t_lm_header_order FINAL PREWHERE k > 0 LIMIT 4
       SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1);
 
@@ -27,9 +29,12 @@ FROM (EXPLAIN SELECT v, ver, k FROM t_lm_header_order FINAL PREWHERE k > 0 LIMIT
 -- header follows the main/lazy split, not the projection. `make_distributed_plan` rebuilds the
 -- plan bottom-up and re-derives every header, so a replacement that lost the replaced node's
 -- header order raised `LOGICAL_ERROR` `Cannot add step Expression to QueryPlan because it has
--- incompatible header with root step JoinLazyColumnsStep`.
+-- incompatible header with root step JoinLazyColumnsStep` (historical: the coordinator no longer
+-- applies lazy materialization under `make_distributed_plan`; these queries now pin that the
+-- exchange-free FINAL shape distributes and returns correct results).
 SELECT v, ver, k FROM t_lm_header_order FINAL PREWHERE k > 0 LIMIT 4
-SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1;
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, log_comment = '04652_distributed';
+
 
 SELECT v, k FROM t_lm_header_order FINAL PREWHERE k > 2 LIMIT 4
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1;
@@ -54,5 +59,14 @@ SELECT 'lazy == not lazy:', (
     SELECT groupArray((v, ver, k)) FROM (
         SELECT v, ver, k FROM t_lm_header_order FINAL PREWHERE k > 0 LIMIT 4
         SETTINGS query_plan_optimize_lazy_materialization = 0));
+
+SYSTEM FLUSH LOGS query_log;
+
+-- `DistributedPlanLocalExecution` is set on the query's own entry when the distributed plan ran
+-- through the in-process executor, proving the query was not silently planned as a local one.
+SELECT 'distributed plan executed:', max(ProfileEvents['DistributedPlanLocalExecution']) > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND type = 'QueryFinish'
+  AND current_database = currentDatabase() AND log_comment = '04652_distributed';
 
 DROP TABLE t_lm_header_order;
