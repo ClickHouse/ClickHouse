@@ -1324,7 +1324,7 @@ The server successfully detected this situation and will download merged part fr
     M(InterfaceNativeReceiveBytes, "Number of bytes received through native interfaces", ValueType::Bytes) \
     M(InterfacePrometheusSendBytes, "Number of bytes sent through Prometheus interfaces", ValueType::Bytes) \
     M(InterfacePrometheusReceiveBytes, "Number of bytes received through Prometheus interfaces", ValueType::Bytes) \
-    M(PrometheusRemoteWriteHistograms, "Number of native histogram samples written through the Prometheus remote-write protocol", ValueType::Number) \
+    M(PrometheusRemoteWriteHistograms, "Number of native histogram samples received through the Prometheus remote-write protocol", ValueType::Number) \
     M(PrometheusRemoteWriteDroppedHistograms, "Number of native histogram samples received through the Prometheus remote-write protocol and dropped because the TimeSeries table has no histograms target table", ValueType::Number) \
     M(InterfaceInterserverSendBytes, "Number of bytes sent through interserver interfaces", ValueType::Bytes) \
     M(InterfaceInterserverReceiveBytes, "Number of bytes received through interserver interfaces", ValueType::Bytes) \

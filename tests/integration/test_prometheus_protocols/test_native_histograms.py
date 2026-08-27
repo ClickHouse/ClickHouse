@@ -284,12 +284,17 @@ def test_table_without_histograms_target_drops_histograms():
         "SELECT timestamp, value FROM timeSeriesSamples(prometheus)"
     ) == TSV([["2024-01-01 00:00:07.000", "1"]])
     assert node.contains_in_log("Dropping 1 native histogram samples")
-    assert (
-        node.query(
-            "SELECT value FROM system.events WHERE event = 'PrometheusRemoteWriteDroppedHistograms'"
-        )
-        == "1\n"
-    )
+    events = {
+        line.split("\t")[0]: int(line.split("\t")[1])
+        for line in node.query(
+            "SELECT event, value FROM system.events"
+            " WHERE event IN ('PrometheusRemoteWriteHistograms', 'PrometheusRemoteWriteDroppedHistograms')"
+        ).splitlines()
+    }
+    # A dropped histogram is counted both as received (PrometheusRemoteWriteHistograms) and as
+    # dropped, so the difference of the two events shows what was actually stored (nothing here).
+    assert events.get("PrometheusRemoteWriteHistograms") == 1
+    assert events.get("PrometheusRemoteWriteDroppedHistograms") == 1
 
 
 def test_invalid_histograms_rejected():

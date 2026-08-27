@@ -599,6 +599,10 @@ void PrometheusRemoteWriteProtocol::write(
         && time_series_storage->hasTarget(ViewTarget::Histograms);
     if (num_histograms && !with_histograms)
     {
+        /// Count the dropped histograms in both events: `PrometheusRemoteWriteHistograms` tracks
+        /// everything received, and the difference with `PrometheusRemoteWriteDroppedHistograms`
+        /// shows how many were actually stored.
+        ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteHistograms, num_histograms);
         ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteDroppedHistograms, num_histograms);
         LOG_WARNING(LogFrequencyLimiter(log, 60),
             "{}: Dropping {} native histogram samples: the table has no \"histograms\" target table. "
