@@ -82,11 +82,10 @@ private:
         /// the lower the better
         UInt64 estimated_row_count = 0;
 
-        /// Bytes read per rejected row (lower is better):
-        /// bytes_per_row * total_rows / (total_rows - estimated_row_count), +inf when it rejects no
-        /// rows. Comparable across conditions only in the same unit, hence a column of unknown size
-        /// is charged an estimated per-row size, never a row count.
-        double cost_with_selectivity = 0;
+        /// Lower is better: bytes_per_row * total_rows / (total_rows - estimated_row_count), +inf
+        /// when the condition rejects no rows. Comparable across conditions only in the same unit,
+        /// hence a column of unknown size is charged an estimated per-row size, never a row count.
+        double bytes_per_rejected_row = 0;
 
         /// Does the condition contain primary key column?
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
@@ -105,20 +104,20 @@ private:
             }
             return fmt::format(
                 "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
-                "columns_size: {}, cost_with_selectivity: {}, table_columns.size: {})",
+                "columns_size: {}, bytes_per_rejected_row: {}, table_columns.size: {})",
                 names,
                 viable,
                 good,
                 min_position_in_primary_key,
                 estimated_row_count,
                 columns_size,
-                cost_with_selectivity,
+                bytes_per_rejected_row,
                 table_columns.size());
         }
 
         auto tuple() const
         {
-            return std::make_tuple(!viable, !good, -min_position_in_primary_key, cost_with_selectivity, table_columns.size());
+            return std::make_tuple(!viable, !good, -min_position_in_primary_key, bytes_per_rejected_row, table_columns.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?

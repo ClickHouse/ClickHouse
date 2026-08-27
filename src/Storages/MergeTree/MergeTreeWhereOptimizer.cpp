@@ -51,18 +51,18 @@ NameToIndexMap fillNamesPositions(const Names & names)
     return names_positions;
 }
 
-/// Uncompressed, unlike the stored column sizes, so it over-charges. Constants match
-/// `estimateColumnWidthFromType`.
+constexpr double default_bytes_per_string_value = 64;
+constexpr double default_bytes_per_complex_value = 128;
+
+/// Uncompressed, unlike the stored column sizes, so it over-charges - the safe direction for a
+/// column whose real cost is unknown.
 double approximateBytesPerValueForType(const IDataType & type)
 {
-    static constexpr double default_string_size = 64;
-    static constexpr double default_complex_type_size = 128;
-
     if (type.haveMaximumSizeOfValue())
         return static_cast<double>(type.getMaximumSizeOfValueInMemory());
     if (WhichDataType(type).isString())
-        return default_string_size;
-    return default_complex_type_size;
+        return default_bytes_per_string_value;
+    return default_bytes_per_complex_value;
 }
 
 /// Find minimal position of any of the column in primary key.
@@ -538,16 +538,16 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             const double rejected_rows = static_cast<double>(total_rows) - static_cast<double>(cond.estimated_row_count);
             if (total_rows == 0)
                 /// No statistics: fall back to pure I/O cost.
-                cond.cost_with_selectivity = static_cast<double>(cond.columns_size);
+                cond.bytes_per_rejected_row = static_cast<double>(cond.columns_size);
             else if (rejected_rows <= 0)
                 /// Rejects no rows, so it is useless in PREWHERE regardless of its cost: schedule it last.
-                cond.cost_with_selectivity = std::numeric_limits<double>::infinity();
+                cond.bytes_per_rejected_row = std::numeric_limits<double>::infinity();
             else if (total_size_of_queried_columns == 0)
                 /// Nothing measured (compact parts): the type estimate is too coarse to outrank
                 /// selectivity, e.g. `Nullable(Int64)` would beat `Int64` on the null byte.
-                cond.cost_with_selectivity = static_cast<double>(cond.estimated_row_count);
+                cond.bytes_per_rejected_row = static_cast<double>(cond.estimated_row_count);
             else
-                cond.cost_with_selectivity = approximateBytesPerRow(cond.table_columns) * static_cast<double>(total_rows) / rejected_rows;
+                cond.bytes_per_rejected_row = approximateBytesPerRow(cond.table_columns) * static_cast<double>(total_rows) / rejected_rows;
 
             res.emplace_back(std::move(cond));
         }
@@ -574,7 +574,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
             Condition cond({conjunct});
             cond.table_columns = columns;
             cond.columns_size = getColumnsSize(columns);
-            cond.cost_with_selectivity = static_cast<double>(cond.columns_size);
+            cond.bytes_per_rejected_row = static_cast<double>(cond.columns_size);
             cond.viable =
                 !has_invalid_column
                 && !columns.empty()
@@ -751,19 +751,23 @@ double MergeTreeWhereOptimizer::approximateBytesPerRowAndColumn(const String & c
     if (auto it = column_sizes.find(column); it != column_sizes.end() && it->second != 0)
         return static_cast<double>(it->second) / static_cast<double>(total_rows);
 
+    const auto * virtual_column
+        = storage_metadata->virtuals.tryGetDescription(column, VirtualsKind::All, VirtualsMaterializationPlace::All);
+
+    /// `_part`, `_partition_id` and the like come from part metadata, so nothing is read for them.
+    /// A virtual column with a default expression (`__text_index_*`) may have to be computed.
+    if (virtual_column && virtual_column->isEphemeral() && !virtual_column->default_desc.expression)
+        return 0;
+
+    if (virtual_column)
+        return approximateBytesPerValueForType(*virtual_column->type);
+
     if (auto column_in_storage = storage_metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, column))
         return approximateBytesPerValueForType(*column_in_storage->type);
 
-    const auto * virtual_column = storage_metadata->virtuals.tryGetDescription(column, VirtualsKind::All, VirtualsMaterializationPlace::All);
-    if (!virtual_column)
-        return 0;
-
-    /// Synthesized from part metadata (`_part`, `_partition_id`), so it reads nothing. One with a
-    /// default expression (`__text_index_*`) may have to be computed instead.
-    if (virtual_column->isEphemeral() && !virtual_column->default_desc.expression)
-        return 0;
-
-    return approximateBytesPerValueForType(*virtual_column->type);
+    /// Not resolvable through the metadata. Charge the widest estimate rather than 0, which would
+    /// schedule it first.
+    return default_bytes_per_complex_value;
 }
 
 bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) const
