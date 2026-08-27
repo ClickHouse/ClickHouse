@@ -21,6 +21,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/ScatterExchangeStep.h>
@@ -128,7 +129,6 @@ void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, Quer
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node);
 void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
-bool keyTypeBreaksHashSharding(const IDataType & type);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
@@ -643,7 +643,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         gather_node.children = {&partial_aggregation_node};
 
         /// Replace original aggregation step with MergingAggregated step
-        aggregator_params.only_merge = true;    /// Merge partial aggregation results
+        aggregator_params.only_merge = true; /// Merge partial aggregation results
         QueryPlanStepPtr final_aggregation_step = std::make_unique<MergingAggregatedStep>(
             gather_node.step->getOutputHeader(),
             aggregator_params,
