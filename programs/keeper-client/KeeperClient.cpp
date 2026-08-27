@@ -16,6 +16,7 @@
 
 #if USE_SSL
 #include <Poco/Net/Context.h>
+#include <Poco/Net/SecureStreamSocket.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/AcceptCertificateHandler.h>
 #include <Poco/Net/RejectCertificateHandler.h>
@@ -80,6 +81,18 @@ String unescapePath(const String & s)
     return result;
 }
 
+constexpr std::string_view SECURE_SCHEME = "secure://";
+
+bool isSecureHost(const String & host)
+{
+    return host.starts_with(SECURE_SCHEME);
+}
+
+String stripSecureScheme(const String & host)
+{
+    return isSecureHost(host) ? host.substr(SECURE_SCHEME.size()) : host;
+}
+
 }
 
 namespace DB
@@ -92,9 +105,28 @@ namespace ErrorCodes
 
 String KeeperClient::executeFourLetterCommand(const String & command)
 {
+    if (zk_args.hosts.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "No keeper hosts are configured — cannot execute four-letter-word command");
+
     /// We need to create a new socket every time because ZooKeeper forcefully shuts down the connection after a four-letter-word command.
+    const String & raw_host = zk_args.hosts[0];
+    bool host_is_secure = isSecureHost(raw_host);
+    /// Strip the `secure://` scheme before passing to SocketAddress, the same way ZooKeeperImpl does.
+    String host_without_scheme = stripSecureScheme(raw_host);
+
     Poco::Net::StreamSocket socket;
-    socket.connect(Poco::Net::SocketAddress{zk_args.hosts[0]}, zk_args.connection_timeout_ms * 1000);
+    if (host_is_secure)
+    {
+#if USE_SSL
+        socket = Poco::Net::SecureStreamSocket();
+#else
+        throw Poco::Exception(
+            "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
+#endif
+    }
+
+    socket.connect(Poco::Net::SocketAddress{host_without_scheme}, zk_args.connection_timeout_ms * 1000);
 
     socket.setReceiveTimeout(zk_args.operation_timeout_ms * 1000);
     socket.setSendTimeout(zk_args.operation_timeout_ms * 1000);
@@ -645,7 +677,7 @@ void KeeperClient::connectToKeeper()
 
             if (clickhouse_config.configuration->has(prefix + ".secure") || config().has("secure"))
             {
-                host = "secure://" + host;
+                host = String(SECURE_SCHEME) + host;
                 secure = true;
             }
 
@@ -657,9 +689,14 @@ void KeeperClient::connectToKeeper()
         String host = config().getString("host", "localhost");
         String port = config().getString("port", "9181");
 
-        if (config().has("secure"))
+        bool host_already_secure = isSecureHost(host);
+
+        /// `--secure` and `--host secure://...` are both valid ways to request TLS.
+        /// Guard against double-prefixing when both are provided at the same time.
+        if (config().has("secure") || host_already_secure)
         {
-            host = "secure://" + host;
+            if (!host_already_secure)
+                host = String(SECURE_SCHEME) + host;
             secure = true;
         }
 
@@ -667,10 +704,18 @@ void KeeperClient::connectToKeeper()
     }
 
 #if USE_SSL
+    /// Also treat hosts that already carry the `secure://` scheme as requesting a secure
+    /// connection, e.g. when the user passes `--host secure://node1` directly without
+    /// the separate `--secure` flag. ZooKeeperImpl::connect uses the same scheme-prefix
+    /// convention as the canonical indicator for TLS.
+    bool any_host_secure = std::any_of(
+        new_zk_args.hosts.begin(), new_zk_args.hosts.end(),
+        [](const String & h) { return isSecureHost(h); });
+
     /// Initialize the SSL client context when a secure connection is requested, or when TLS
     /// options are explicitly provided. Without this, a SecureStreamSocket falls back to the
     /// default (empty) context and verification against a self-signed CA fails.
-    if (secure || config().has("tls-cert-file") || config().has("tls-key-file")
+    if (secure || any_host_secure || config().has("tls-cert-file") || config().has("tls-key-file")
         || config().has("tls-ca-file") || config().has("accept-invalid-certificate"))
     {
         const auto & loaded_config = *clickhouse_config.configuration;
