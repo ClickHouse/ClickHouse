@@ -13,7 +13,6 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/SipHash.h>
-#include <base/scope_guard.h>
 #include <Common/TargetSpecific.h>
 
 #include <base/BFloat16.h>
@@ -455,26 +454,14 @@ void SerializationQBit::serializeBinaryBulkWithMultipleStreams(
 }
 
 void SerializationQBit::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    /// Use `IColumn::mutate` rather than `assumeMutable` because the input column may be shared
-    /// (e.g. when called recursively via `SerializationDynamic` / `SerializationObjectDynamicPath`).
-    /// `IColumn::mutate` clones if shared so subsequent mutations don't affect other holders.
-    /// Keep the caller's slot intact until nested deserialization succeeds.
-    auto * column_slot = &column;
-    auto mutable_column = IColumn::mutate(std::move(*column_slot));
-    SCOPE_EXIT({ if (!*column_slot) *column_slot = std::move(mutable_column); });
-    auto & column_qbit = assert_cast<ColumnQBit &>(*mutable_column);
-    /// Pass the stored tuple `ColumnPtr` by reference directly so the nested deserialization
-    /// can write back into `column_qbit.tuple` if it clones (avoids an extra copy that would
-    /// raise `use_count()` and force `IColumn::mutate` in the nested serializer to clone).
-    nested->deserializeBinaryBulkWithMultipleStreams(column_qbit.getTuple(), rows_offset, limit, settings, state, cache);
-    *column_slot = std::move(mutable_column);
+    auto & column_qbit = assert_cast<ColumnQBit &>(column);
+    nested->deserializeBinaryBulkWithMultipleStreams(column_qbit.getTupleColumn(), limit, settings, state, cache);
 }
 
 template <typename Word>

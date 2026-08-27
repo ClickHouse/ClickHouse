@@ -207,6 +207,23 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     if (!low_cardinality_src)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
 
+    if (length == 0)
+        return;
+
+    /// An already shared, structurally compatible source dictionary is immutable. Reuse it when initializing
+    /// an empty column to avoid rebuilding it and keep its indexes unchanged through generic range insertions.
+    /// A private source dictionary can still be mutated in place, while an incompatible dictionary must be
+    /// rebuilt to perform conversions such as nullable promotion.
+    /// Read the dictionary through the const overload on `*this` to avoid the non-const
+    /// `WrappedPtr::operator*` -> `assumeMutableRef` path, which would trip
+    /// `chassert(use_count() == 1)` when the dictionary is shared.
+    if (
+        empty()
+        && low_cardinality_src->isSharedDictionary()
+        && std::as_const(*this).getDictionary().nestedColumnIsNullable() == low_cardinality_src->getDictionary().nestedColumnIsNullable()
+        && std::as_const(*this).getDictionary().structureEquals(low_cardinality_src->getDictionary()))
+        setSharedDictionary(low_cardinality_src->getDictionaryPtr());
+
     /// Use the const overload on `*this` to compare dictionary addresses without going through
     /// the non-const `WrappedPtr::operator*` -> `assumeMutableRef` path, which would trip
     /// `chassert(use_count() == 1)` when the dictionary is shared (e.g. with a global dictionary).
