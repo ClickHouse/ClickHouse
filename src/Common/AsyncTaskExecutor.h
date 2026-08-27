@@ -51,10 +51,9 @@ public:
 class AsyncTaskExecutor
 {
 public:
-    /// operation_name_ is used as the name of the OpenTelemetry span covering one execution of the task.
-    /// initial_span_attributes_ are added to that span.
+    /// operation_name_: is used as the name of the OpenTelemetry span covering one execution of the task.
+    /// initial_span_attributes_: are added to that span (columns from opentelemetry table)
     /// A non-zero initial_span_start_time_us_ makes the span of the first task execution continue
-    /// a span the caller opened before the executor existed: the span gets this start time.
     AsyncTaskExecutor(
         std::unique_ptr<AsyncTask> task_,
         String operation_name_,
@@ -131,6 +130,7 @@ private:
 
     void createFiber();
     void destroyFiber();
+    /// make sure we flush current span data to a new span in case of unwind or a cancelled fiber
     void flushSpanAttributes(OpenTelemetry::Span & span) noexcept;
 
     FiberStack fiber_stack;
@@ -154,8 +154,7 @@ private:
     /// restart() runs the task again under a new span that must get them too
     OpenTelemetry::SpanAttributes span_attributes;
     /// Start time of a span handed over by the caller, adopted by the span of the first task
-    /// execution and consumed: a task rerun after restart() gets a fresh span. Only accessed
-    /// from inside the fiber routine after construction, so it needs no synchronization.
+    /// A task rerun after restart() gets a fresh span. Only accessed from inside the fiber after construction, mp sync needed.
     UInt64 initial_span_start_time_us = 0;
 };
 
