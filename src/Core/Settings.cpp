@@ -4577,7 +4577,7 @@ Formatter '%e' in function 'formatDateTime' prints single-digit days with a lead
 If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
 )", 0) \
     DECLARE(Bool, array_count_legacy_uint32_result, false, R"(
-If enabled, function `arrayCount` returns `UInt32` as before version 26.8, instead of `UInt64`. The `UInt32` result silently wraps around for arrays with more than `4294967295` matching elements.
+If enabled, function `arrayCount` returns `UInt32` as before version 26.9, instead of `UInt64`. The `UInt32` result silently wraps around for arrays with more than `4294967295` matching elements.
 
 During a rolling upgrade, enable it on the upgraded servers for the users under which distributed queries execute on them, to keep distributed queries initiated by not-yet-upgraded servers fully unchanged (an old initiator does not forward this setting, so type-sensitive expressions evaluated locally on upgraded shards would otherwise observe `UInt64`), and remove it after the upgrade is complete. Which user a shard-side query runs under depends on the cluster configuration: with an interserver `secret` configured, it is the initiator's current user; otherwise it is the user from the cluster definition or from the `remote` table function (`default` unless specified). The simplest robust approach is to enable the setting for all users of the upgraded servers.
 )", 0) \

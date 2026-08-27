@@ -152,12 +152,12 @@ CLICKHOUSE_CI_MIN_TESTED_VERSION = "25.3"
 # compatibility checks for features that are affected by this experimental feature.
 CLICKHOUSE_CI_PRE_NULLABLE_TUPLE_VERSION = "25.12"
 
-# Since 26.8 `arrayCount` returns `UInt64` (`UInt32` before, see the
-# `array_count_legacy_uint32_result` compatibility setting). This last
-# pre-change version is the baseline for compatibility checks of the
-# `arrayCount` result type; unlike `CLICKHOUSE_CI_MIN_TESTED_VERSION` it must
-# not advance past the `26.8` boundary, or the checks stop exercising the
-# pre-change coordinator.
+# Since 26.9 `arrayCount` returns `UInt64` (`UInt32` before, see the
+# `array_count_legacy_uint32_result` compatibility setting). This pre-change
+# version is the baseline for compatibility checks of the `arrayCount` result
+# type (any released pre-`26.9` server works); unlike
+# `CLICKHOUSE_CI_MIN_TESTED_VERSION` it must not advance past the `26.9`
+# boundary, or the checks stop exercising the pre-change coordinator.
 CLICKHOUSE_CI_PRE_ARRAY_COUNT_UINT64_VERSION = "26.7"
 
 ZOOKEEPER_CONTAINERS = ("zoo1", "zoo2", "zoo3")
