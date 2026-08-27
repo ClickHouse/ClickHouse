@@ -4,7 +4,7 @@
       "group": "ClickHouse Cloud",
       "pages": [
         {
-          "group": "Get started",
+          "group": "Premiers pas",
           "pages": [
             "fr/products/cloud/getting-started/cloud-get-started",
             "fr/products/cloud/getting-started/intro",
@@ -12,7 +12,7 @@
           ]
         },
         {
-          "group": "Features",
+          "group": "Fonctionnalités",
           "pages": [
             "fr/products/cloud/features/cloud-tiers",
             "fr/products/cloud/features/cli",
@@ -22,7 +22,7 @@
             "fr/products/cloud/reference/supported-regions",
             {
               "expanded": false,
-              "group": "SQL console",
+              "group": "Console SQL",
               "pages": [
                 "fr/products/cloud/features/sql-console-features/sql-console",
                 "fr/products/cloud/features/sql-console-features/query-insights",
@@ -37,7 +37,7 @@
               "group": "Infrastructure",
               "pages": [
                 {
-                  "group": "Automatic scaling",
+                  "group": "Mise à l’échelle automatique",
                   "pages": [
                     "fr/products/cloud/features/autoscaling/overview",
                     "fr/products/cloud/features/autoscaling/vertical",
@@ -51,6 +51,7 @@
                 },
                 "fr/products/cloud/features/large-single-replica-services",
                 "fr/products/cloud/features/infrastructure/parallel-replicas",
+                "fr/products/cloud/features/infrastructure/replica-aware-routing",
                 "fr/products/cloud/features/infrastructure/deployment-options",
                 "fr/products/cloud/features/infrastructure/shared-catalog",
                 "fr/products/cloud/features/infrastructure/shared-merge-tree",
@@ -75,7 +76,7 @@
             "fr/products/cloud/features/security",
             {
               "expanded": false,
-              "group": "Monitoring",
+              "group": "Supervision",
               "pages": [
                 "fr/products/cloud/features/monitoring/overview",
                 "fr/products/cloud/features/monitoring/cloud-console",
@@ -87,7 +88,7 @@
               ]
             },
             {
-              "group": "Backups",
+              "group": "Sauvegardes",
               "pages": [
                 "fr/products/cloud/features/backups/overview"
               ]
@@ -95,7 +96,7 @@
             "fr/products/cloud/features/support",
             {
               "expanded": false,
-              "group": "AI/ML",
+              "group": "IA/ML",
               "pages": [
                 "fr/products/cloud/features/ai-ml/index",
                 "fr/products/cloud/features/ai-ml/ask-ai",
@@ -136,7 +137,7 @@
           ]
         },
         {
-          "group": "Cloud reference",
+          "group": "Référence Cloud",
           "pages": [
             "fr/products/cloud/reference/index",
             "fr/products/cloud/reference/service-uptime",
@@ -151,7 +152,7 @@
           ]
         },
         {
-          "group": "Billing",
+          "group": "Facturation",
           "pages": [
             "fr/products/cloud/reference/billing/billing-overview",
             {
@@ -189,7 +190,7 @@
           "pages": [
             "fr/products/cloud/guides/index",
             {
-              "group": "Best practices",
+              "group": "Bonnes pratiques",
               "pages": [
                 "fr/products/cloud/guides/best-practices/index",
                 "fr/products/cloud/guides/best-practices/multitenancy",
@@ -198,7 +199,7 @@
             },
             {
               "expanded": false,
-              "group": "General",
+              "group": "Général",
               "pages": [
                 "fr/products/cloud/guides/cloud-compatibility",
                 "fr/products/cloud/guides/production-readiness"
@@ -213,7 +214,7 @@
             },
             {
               "expanded": false,
-              "group": "SQL console",
+              "group": "Console SQL",
               "pages": [
                 "fr/products/cloud/guides/sql-console/connection-details",
                 "fr/products/cloud/guides/sql-console/query-endpoints"
@@ -221,14 +222,14 @@
             },
             {
               "expanded": false,
-              "group": "Backups",
+              "group": "Sauvegardes",
               "pages": [
                 "fr/products/cloud/guides/backups/index",
                 "fr/products/cloud/guides/backups/review-and-restore-backups",
                 "fr/products/cloud/guides/backups/configurable-backups",
                 {
                   "expanded": false,
-                  "group": "Bring Your Own Backup",
+                  "group": "Apportez votre propre sauvegarde",
                   "pages": [
                     "fr/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
                     "fr/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
@@ -239,7 +240,7 @@
             },
             {
               "expanded": false,
-              "group": "Data sources",
+              "group": "Sources de données",
               "pages": [
                 "fr/products/cloud/guides/data-sources/index",
                 "fr/products/cloud/guides/data-sources/cloud-endpoints-api",
@@ -255,7 +256,7 @@
               "pages": [
                 {
                   "expanded": false,
-                  "group": "Deployment modes",
+                  "group": "Modes de déploiement",
                   "pages": [
                     "fr/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
                     "fr/products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
@@ -265,11 +266,11 @@
             },
             {
               "expanded": false,
-              "group": "Security",
+              "group": "Sécurité",
               "pages": [
                 {
                   "expanded": false,
-                  "group": "Cloud access management",
+                  "group": "Gestion des accès Cloud",
                   "pages": [
                     "fr/products/cloud/guides/security/cloud-access-management/index",
                     "fr/products/cloud/guides/security/cloud-access-management/manage-my-account",
@@ -288,12 +289,12 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Connectivity",
+                  "group": "Connectivité",
                   "pages": [
                     "fr/products/cloud/guides/security/connectivity/setting-ip-filters",
                     {
                       "expanded": false,
-                      "group": "Private networking",
+                      "group": "Mise en réseau privée",
                       "pages": [
                         "fr/products/cloud/guides/security/connectivity/private-networking/index",
                         "fr/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
@@ -305,7 +306,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Audit logging",
+                  "group": "Journalisation d’audit",
                   "pages": [
                     "fr/products/cloud/guides/security/audit-logging/index",
                     "fr/products/cloud/guides/security/audit-logging/console-audit-log",
@@ -315,7 +316,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Data security",
+                  "group": "Sécurité des données",
                   "pages": [
                     "fr/products/cloud/guides/security/data-masking",
                     "fr/products/cloud/guides/security/cmek"
@@ -323,7 +324,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Compliance",
+                  "group": "Conformité",
                   "pages": [
                     "fr/products/cloud/guides/security/compliance/hipaa-onboarding",
                     "fr/products/cloud/guides/security/compliance/pci-onboarding"
@@ -334,7 +335,7 @@
           ]
         },
         {
-          "group": "API reference",
+          "group": "Référence de l’API",
           "openapi": {
             "directory": "fr/products/cloud/api-reference",
             "source": "_specs/cloud-openapi.json"
