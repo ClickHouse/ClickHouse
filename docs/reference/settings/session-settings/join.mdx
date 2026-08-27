@@ -71,7 +71,7 @@ Possible values:
 
 - auto
 
- When set to `auto`, `hash` join is tried first, and the algorithm is switched on the fly to another algorithm if the memory limit is violated.
+ When set to `auto`, `hash` join is tried first. If a memory limit is hit, ClickHouse spills through `GraceHashJoin` when `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join` are enabled, otherwise it drains onto `partial_merge`.
 
 - full_sorting_merge
 
