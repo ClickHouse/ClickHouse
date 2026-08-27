@@ -240,6 +240,9 @@ workflow = Workflow.Config(
         JobConfigs.sqlstorm_test_job.set_run_after(
             CORE_BLOCKING_JOB_NAMES
         ),
+        JobConfigs.docs_examples_job.set_run_after(
+            CORE_BLOCKING_JOB_NAMES
+        ),
         # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
         # default backend only, 15 min each. Runs when src/Coordination or stress test files change.
         JobConfigs.keeper_stress_job

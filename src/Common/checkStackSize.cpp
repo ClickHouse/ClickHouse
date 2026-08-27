@@ -3,8 +3,14 @@
 #include <base/defines.h> /// THREAD_SANITIZER
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
-#include <Common/Fiber.h>
+#include <Common/StackfulCoroutine.h>
 #include <cstdint>
+
+#include "config.h"
+
+#if USE_SILK
+#include <silk/fibers/fiber.h>
+#endif
 
 #if defined(OS_WINDOWS)
 
@@ -154,8 +160,13 @@ static NO_INLINE size_t getStackSize(void ** out_address)
 void checkStackSize()
 {
     /// Not implemented for coroutines.
-    if (Fiber::getCurrentFiber())
+    if (StackfulCoroutine::getCurrentCoroutine())
         return;
+
+#if USE_SILK
+    if (silk::FiberScheduler::getCurrentFiberId().raw)
+        return;
+#endif
 
     if (unlikely(!stack_bounds.address))
         stack_bounds.max_size = getStackSize(&stack_bounds.address);
