@@ -1,12 +1,22 @@
 #include <Common/StringUtils.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/quoteString.h>
+#include <Core/DecimalFunctions.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/readDecimalText.h>
 #include <IO/readIntText.h>
+
+#include <algorithm>
+#include <array>
+#include <charconv>
+#include <cmath>
+#include <cstdlib>
+#include <limits>
 
 
 namespace DB
@@ -347,12 +357,291 @@ namespace
 
     using ScalarType = PrometheusQueryParsingUtil::ScalarType;
     using TimestampType = PrometheusQueryParsingUtil::TimestampType;
+    using RequestTimestampType = PrometheusQueryParsingUtil::RequestTimestampType;
     using DurationType = PrometheusQueryParsingUtil::DurationType;
+
+    bool tryParsePrometheusRequestTimestampFloat(std::string_view input, Float64 & result)
+    {
+        if (input.empty() || input.find_first_of(" \t\n\r\f\v") != std::string_view::npos)
+            return false;
+
+        size_t number_start = 0;
+        if (input[number_start] == '+' || input[number_start] == '-')
+            ++number_start;
+        if (number_start >= input.size())
+            return false;
+
+        const bool is_hex = number_start + 2 <= input.size()
+            && input[number_start] == '0'
+            && (input[number_start + 1] == 'x' || input[number_start + 1] == 'X');
+        if (is_hex && input.find_first_of("pP", number_start + 2) == std::string_view::npos)
+            return false;
+
+        const String normalized = is_hex
+            ? removeUnderscoresBetweenDigits<true>(input)
+            : removeUnderscoresBetweenDigits<false>(input);
+
+        if (is_hex)
+        {
+            char * end = nullptr;
+            result = std::strtod(normalized.c_str(), &end);
+            if (end != normalized.data() + normalized.size())
+                return false;
+        }
+        else if (!tryParse(result, normalized))
+        {
+            return false;
+        }
+
+        return std::isfinite(result);
+    }
+
+    bool isPrometheusRequestTimestampNumber(std::string_view input)
+    {
+        Float64 result = 0;
+        return tryParsePrometheusRequestTimestampFloat(input, result);
+    }
+
+    bool isValidRFC3339Date(UInt32 year, UInt32 month, UInt32 day)
+    {
+        if (month == 0 || month > 12 || day == 0)
+            return false;
+
+        UInt32 days_in_month = 31;
+        switch (month)
+        {
+            case 4:
+            case 6:
+            case 9:
+            case 11:
+                days_in_month = 30;
+                break;
+            case 2:
+                days_in_month = 28;
+                if ((year % 400 == 0) || (year % 100 != 0 && year % 4 == 0))
+                    ++days_in_month;
+                break;
+            default:
+                break;
+        }
+
+        return day <= days_in_month;
+    }
+
+    bool tryParseFloatInteger(Float64 input, Int128 & result)
+    {
+        std::array<char, 512> buffer{};
+        const auto [end, error] = std::to_chars(
+            buffer.data(), buffer.data() + buffer.size(), input, std::chars_format::fixed, /* precision */ 0);
+        if (error != std::errc())
+            return false;
+
+        return tryParseInt(result, std::string_view(buffer.data(), end - buffer.data()));
+    }
+
+    /// Parse a numeric HTTP timestamp through the same Float64 -> fractional milliseconds path as
+    /// Prometheus' parseTime. Keep the result in Decimal128 after rounding so range validation can
+    /// still distinguish values outside the storage domain before converting them to its timestamp type.
+    bool tryParsePrometheusRequestTimestampNumber(
+        std::string_view input, UInt32 timestamp_scale, RequestTimestampType & result)
+    {
+        Float64 timestamp = 0;
+        if (!tryParsePrometheusRequestTimestampFloat(input, timestamp))
+            return false;
+
+        Float64 whole_seconds_float = 0;
+        const Float64 fractional_seconds = std::modf(timestamp, &whole_seconds_float);
+        const auto rounded_milliseconds = static_cast<Int64>(std::round(fractional_seconds * 1000));
+
+        Int128 whole_seconds = 0;
+        if (!tryParseFloatInteger(whole_seconds_float, whole_seconds))
+            return false;
+
+        Int64 milliseconds = rounded_milliseconds;
+        if (milliseconds == 1000)
+        {
+            if (whole_seconds == std::numeric_limits<Int128>::max())
+                return false;
+            ++whole_seconds;
+            milliseconds = 0;
+        }
+        else if (milliseconds == -1000)
+        {
+            if (whole_seconds == std::numeric_limits<Int128>::min())
+                return false;
+            --whole_seconds;
+            milliseconds = 0;
+        }
+
+        const auto scale_multiplier = DecimalUtils::scaleMultiplier<Int128>(timestamp_scale);
+        Int128 scaled_milliseconds = milliseconds;
+        if (timestamp_scale > 3)
+            scaled_milliseconds *= DecimalUtils::scaleMultiplier<Int128>(timestamp_scale - 3);
+        else if (timestamp_scale < 3)
+            scaled_milliseconds /= DecimalUtils::scaleMultiplier<Int128>(3 - timestamp_scale);
+
+        return DecimalUtils::tryMultiplyAdd(
+            whole_seconds, scale_multiplier, scaled_milliseconds, result.value);
+    }
+
+    /// Prometheus accepts these two values as special cases because Go's RFC3339 parser only accepts
+    /// four-digit years. Keep the same wire forms and represent them in the request timestamp scale;
+    /// appendTimeRangeConditions() will clip them to the actual TimeSeries storage domain later.
+    constexpr std::string_view prometheus_min_time_string = "-292273086-05-16T16:47:06Z";
+    constexpr std::string_view prometheus_max_time_string = "292277025-08-18T07:12:54.999999999Z";
+    constexpr Int128 prometheus_min_time_seconds
+        = static_cast<Int128>(std::numeric_limits<Int64>::min()) / 1000 + 62135596801;
+    constexpr Int128 prometheus_max_time_seconds
+        = static_cast<Int128>(std::numeric_limits<Int64>::max()) / 1000 - 62135596801;
+
+    bool tryParsePrometheusRequestTimestampBoundary(
+        std::string_view input, UInt32 timestamp_scale, RequestTimestampType & result)
+    {
+        Int128 seconds = 0;
+        UInt32 nanoseconds = 0;
+        if (input == prometheus_min_time_string)
+        {
+            seconds = prometheus_min_time_seconds;
+        }
+        else if (input == prometheus_max_time_string)
+        {
+            seconds = prometheus_max_time_seconds;
+            nanoseconds = 999'999'999;
+        }
+        else
+        {
+            return false;
+        }
+
+        const auto scale_multiplier = DecimalUtils::scaleMultiplier<Int128>(timestamp_scale);
+        Int128 fractional = nanoseconds;
+        if (timestamp_scale > 9)
+            fractional *= DecimalUtils::scaleMultiplier<Int128>(timestamp_scale - 9);
+        else if (timestamp_scale < 9)
+            fractional /= DecimalUtils::scaleMultiplier<Int128>(9 - timestamp_scale);
+
+        result.value = seconds * scale_multiplier + fractional;
+        return true;
+    }
+
+    /// Parse the RFC3339 form accepted by time.Parse(time.RFC3339Nano, ...). The
+    /// DateTime parser has useful calendar validation and UTC conversion, but accepts many
+    /// ClickHouse-specific forms such as date-only and space-separated timestamps. Validate the
+    /// wire grammar here before using DateLUT for the calendar conversion.
+    bool tryParsePrometheusRFC3339Timestamp(
+        std::string_view input, UInt32 timestamp_scale, RequestTimestampType & result)
+    {
+        if (tryParsePrometheusRequestTimestampBoundary(input, timestamp_scale, result))
+            return true;
+
+        constexpr size_t date_time_prefix_size = 19; /// YYYY-MM-DDTHH:MM:SS
+        if (input.size() <= date_time_prefix_size)
+            return false;
+
+        const auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+        for (size_t i : {0uz, 1uz, 2uz, 3uz, 5uz, 6uz, 8uz, 9uz, 11uz, 12uz, 14uz, 15uz, 17uz, 18uz})
+        {
+            if (!is_digit(input[i]))
+                return false;
+        }
+
+        if (input[4] != '-' || input[7] != '-' || input[10] != 'T' || input[13] != ':' || input[16] != ':')
+            return false;
+
+        const auto read_two_digits = [&](size_t pos)
+        {
+            return static_cast<UInt32>((input[pos] - '0') * 10 + input[pos + 1] - '0');
+        };
+
+        const UInt32 year = static_cast<UInt32>((input[0] - '0') * 1000 + (input[1] - '0') * 100 + (input[2] - '0') * 10 + input[3] - '0');
+        const UInt32 month = read_two_digits(5);
+        const UInt32 day = read_two_digits(8);
+        const UInt32 hour = read_two_digits(11);
+        const UInt32 minute = read_two_digits(14);
+        const UInt32 second = read_two_digits(17);
+
+        /// Match time.Parse's range checks for the local clock and calendar fields. Go accepts
+        /// offsets up to 24:60, so retain that behavior here too.
+        if (!isValidRFC3339Date(year, month, day) || hour >= 24 || minute >= 60 || second >= 60)
+            return false;
+
+        size_t pos = date_time_prefix_size;
+        size_t fraction_start = pos;
+        size_t fraction_end = pos;
+        if (input[pos] == '.' || input[pos] == ',')
+        {
+            fraction_start = ++pos;
+            while (pos < input.size() && is_digit(input[pos]))
+                ++pos;
+            if (pos == fraction_start)
+                return false;
+            fraction_end = pos;
+        }
+
+        UInt32 offset_hours = 0;
+        UInt32 offset_minutes = 0;
+        bool negative_offset = false;
+        if (pos < input.size() && input[pos] == 'Z')
+        {
+            ++pos;
+        }
+        else if (pos < input.size() && (input[pos] == '+' || input[pos] == '-'))
+        {
+            negative_offset = input[pos] == '-';
+            if (input.size() != pos + 6 || !is_digit(input[pos + 1]) || !is_digit(input[pos + 2]) || input[pos + 3] != ':'
+                || !is_digit(input[pos + 4]) || !is_digit(input[pos + 5]))
+                return false;
+
+            offset_hours = read_two_digits(pos + 1);
+            offset_minutes = read_two_digits(pos + 4);
+            if (offset_hours > 24 || offset_minutes > 60)
+                return false;
+            pos += 6;
+        }
+        else
+        {
+            return false;
+        }
+
+        if (pos != input.size())
+            return false;
+
+        const auto seconds_since_epoch = DateLUT::instance("UTC").tryToMakeDateTime(
+            static_cast<Int16>(year),
+            static_cast<UInt8>(month),
+            static_cast<UInt8>(day),
+            static_cast<UInt8>(hour),
+            static_cast<UInt8>(minute),
+            static_cast<UInt8>(second));
+        if (!seconds_since_epoch)
+            return false;
+
+        Int128 utc_seconds = static_cast<Int128>(*seconds_since_epoch);
+        const Int128 offset_seconds = static_cast<Int128>(offset_hours) * 3600 + static_cast<Int128>(offset_minutes) * 60;
+        if (negative_offset)
+            utc_seconds += offset_seconds;
+        else
+            utc_seconds -= offset_seconds;
+
+        const auto scale_multiplier = DecimalUtils::scaleMultiplier<Int128>(timestamp_scale);
+        Int128 fractional = 0;
+        const size_t fraction_digits = fraction_end - fraction_start;
+        const size_t retained_fraction_digits = std::min({fraction_digits, size_t(9), static_cast<size_t>(timestamp_scale)});
+        for (size_t i = 0; i < retained_fraction_digits; ++i)
+            fractional = fractional * 10 + (input[fraction_start + i] - '0');
+        if (retained_fraction_digits < timestamp_scale)
+            fractional *= DecimalUtils::scaleMultiplier<Int128>(timestamp_scale - static_cast<UInt32>(retained_fraction_digits));
+
+        result.value = utc_seconds * scale_multiplier + fractional;
+        return true;
+    }
 
     template <typename T>
     std::string_view getTypeName()
     {
         if constexpr (std::is_same_v<T, TimestampType>)
+            return "timestamp";
+        else if constexpr (std::is_same_v<T, RequestTimestampType>)
             return "timestamp";
         else if constexpr (std::is_same_v<T, DurationType>)
             return "duration";
@@ -711,6 +1000,25 @@ bool PrometheusQueryParsingUtil::tryParseTimestamp(
     std::string_view input, UInt32 timestamp_scale, TimestampType & res_timestamp, String * error_message, size_t * error_pos)
 {
     return tryParseNumber(input, timestamp_scale, res_timestamp, error_message, error_pos);
+}
+
+bool PrometheusQueryParsingUtil::tryParsePrometheusRequestTimestamp(
+    std::string_view input,
+    UInt32 timestamp_scale,
+    RequestTimestampType & res_timestamp,
+    String * error_message,
+    size_t * error_pos)
+{
+    if (isPrometheusRequestTimestampNumber(input)
+        && tryParsePrometheusRequestTimestampNumber(input, timestamp_scale, res_timestamp))
+        return true;
+
+    if (tryParsePrometheusRFC3339Timestamp(input, timestamp_scale, res_timestamp))
+        return true;
+
+    setErrorMessage(error_message, "Cannot parse Prometheus HTTP API timestamp {}", quoteString(input));
+    setErrorPos(error_pos, 0);
+    return false;
 }
 
 bool PrometheusQueryParsingUtil::tryParseDuration(

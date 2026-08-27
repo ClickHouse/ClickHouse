@@ -1082,4 +1082,68 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
 
 }
 
+bool PrometheusQueryParsingUtil::tryParseMetricSelector(
+    [[maybe_unused]] std::string_view input,
+    [[maybe_unused]] UInt32 timestamp_scale,
+    [[maybe_unused]] PrometheusQueryTree & res_selector,
+    [[maybe_unused]] String * error_message,
+    [[maybe_unused]] size_t * error_pos)
+{
+#if USE_ANTLR4_GRAMMARS
+    ErrorListener error_listener{input};
+    antlr4::ANTLRInputStream input_stream{input};
+
+    PromQLLexerBailingOutOnError promql_lexer{&input_stream, input, error_listener};
+    promql_lexer.removeErrorListeners();
+    promql_lexer.addErrorListener(&error_listener);
+
+    antlr4::CommonTokenStream token_stream{&promql_lexer};
+
+    antlr4_grammars::PromQLParser promql_parser{&token_stream};
+    promql_parser.removeErrorListeners();
+    promql_parser.addErrorListener(&error_listener);
+
+    antlr4_grammars::PromQLParser::InstantSelectorContext * selector = nullptr;
+    if (!error_listener.hasError())
+        selector = promql_parser.instantSelector();
+
+    if (!selector)
+        error_listener.setError("Couldn't get a metric selector after parsing promql query", 0);
+    else if (!error_listener.hasError() && token_stream.LA(1) != antlr4::Token::EOF)
+    {
+        auto * next_token = token_stream.LT(1);
+        const size_t token_pos = next_token
+            ? convertCodePointPositionToByteOffset(input, next_token->getStartIndex())
+            : input.size();
+        error_listener.setError("Unexpected input after metric selector", token_pos);
+    }
+
+    PrometheusQueryTreeBuilder builder{input, timestamp_scale, error_listener};
+    std::vector<std::unique_ptr<Node>> parsed_nodes;
+    Node * parsed_root = nullptr;
+    if (selector && !error_listener.hasError())
+    {
+        parsed_root = builder.makeNode(selector);
+        parsed_nodes = builder.extractNodes();
+    }
+
+    if (error_listener.hasError())
+    {
+        if (error_message)
+            *error_message = error_listener.getErrorMessage();
+        if (error_pos)
+            *error_pos = error_listener.getErrorPos();
+        return false;
+    }
+
+    if (!parsed_root)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsing promql metric selector '{}' failed without setting any error message", input);
+
+    res_selector = PrometheusQueryTree{std::move(parsed_nodes), parsed_root, timestamp_scale};
+    return true;
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ANTLR4 support is disabled");
+#endif
+}
+
 }

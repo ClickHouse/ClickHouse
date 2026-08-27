@@ -421,6 +421,11 @@ bool PrometheusQueryTree::tryParse(std::string_view promql_query_, UInt32 timest
     return PrometheusQueryParsingUtil::tryParseQuery(promql_query_, timestamp_scale_, *this, error_message_, error_pos_);
 }
 
+bool PrometheusQueryTree::tryParseMetricSelector(std::string_view selector_, UInt32 timestamp_scale_, String * error_message_, size_t * error_pos_)
+{
+    return PrometheusQueryParsingUtil::tryParseMetricSelector(selector_, timestamp_scale_, *this, error_message_, error_pos_);
+}
+
 
 String PrometheusQueryTree::Scalar::toString(const PrometheusQueryTree &) const
 {

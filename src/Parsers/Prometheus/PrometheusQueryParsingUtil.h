@@ -13,7 +13,16 @@ struct PrometheusQueryParsingUtil
 {
     using ScalarType = Float64;
     using TimestampType = DateTime64;
+    using RequestTimestampType = Decimal128;
     using DurationType = Decimal64;
+
+    /// Parses a Prometheus metric selector, without accepting general PromQL expressions.
+    /// Scale `timestamp_scale` is used to parse decimals representing timestamps and durations.
+    static bool tryParseMetricSelector(std::string_view input,
+                                       UInt32 timestamp_scale,
+                                       PrometheusQueryTree & res_selector,
+                                       String * error_message = nullptr,
+                                       size_t * error_pos = nullptr);
 
     /// Parses a prometheus query.
     /// Scale `timestamp_scale` is used to parse decimals representing timestamps and durations.
@@ -47,6 +56,17 @@ struct PrometheusQueryParsingUtil
                                   TimestampType & res_timestamp,
                                   String * error_message = nullptr,
                                   size_t * error_pos = nullptr);
+
+    /// Parses an HTTP API timestamp in a wider representation. The finite numeric form follows
+    /// Prometheus' strconv.ParseFloat grammar, including decimal underscores and hexadecimal
+    /// floating-point values, and is rounded to milliseconds; the other accepted form is strict
+    /// RFC3339Nano. The wider representation is useful when the request value must be compared with
+    /// a storage timestamp domain before converting it to DateTime64.
+    static bool tryParsePrometheusRequestTimestamp(std::string_view input,
+                                                   UInt32 timestamp_scale,
+                                                   RequestTimestampType & res_timestamp,
+                                                   String * error_message = nullptr,
+                                                   size_t * error_pos = nullptr);
 
     /// Parses a timestamp which can be either an integer or floating-point number of seconds,
     /// or a hexadecimal number of seconds, or a duration with time units.
