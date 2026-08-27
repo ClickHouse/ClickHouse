@@ -6,9 +6,11 @@
 #include <Storages/Kafka/AWSMSKIAMAuth.h>
 #include <IO/S3/Credentials.h>
 #include <Common/Exception.h>
+#include <Common/ScopeExit.h>
 #include <IO/S3Defines.h>
 #include <Poco/Util/MapConfiguration.h>
 #include <aws/core/auth/AWSCredentials.h>
+#include <aws/core/config/ConfigAndCredentialsCacheManager.h>
 #include <cppkafka/configuration.h>
 #include <cppkafka/kafka_handle_base.h>
 #include <chrono>
@@ -263,6 +265,13 @@ TEST(AWSMSKIAMAuth, SetupResolvesEnvironmentCredentials)
     // Kafka AWS_MSK_IAM is server-side, operator-configured authentication, not a user S3 query. The S3
     // credential restriction (`forbid_implicit_credentials`, default true) must not apply here: with
     // `kafka.use_environment_credentials = 1` the provider chain must still resolve the environment credentials.
+    // Declared before the variable scopes so it runs after their restores: the profile cache is read
+    // once process-wide, so it has to be re-read after the original files are reachable again.
+    SCOPE_EXIT(
+    {
+        Aws::Config::ReloadCachedConfigFile();
+        Aws::Config::ReloadCachedCredentialsFile();
+    });
     AwsEnvironmentVariableScope access_key("AWS_ACCESS_KEY_ID", /*hide=*/false);
     AwsEnvironmentVariableScope secret_key("AWS_SECRET_ACCESS_KEY", /*hide=*/false);
     AwsEnvironmentVariableScope metadata_disabled("AWS_EC2_METADATA_DISABLED", /*hide=*/false);
@@ -284,6 +293,10 @@ TEST(AWSMSKIAMAuth, SetupResolvesEnvironmentCredentials)
     ::setenv("AWS_CONFIG_FILE", "/dev/null", /*overwrite=*/1);
     ::setenv("AWS_SHARED_CREDENTIALS_FILE", "/dev/null", /*overwrite=*/1);
     /// NOLINTEND(concurrency-mt-unsafe)
+
+    // The cache would otherwise keep serving whatever profile an earlier test in this binary loaded.
+    Aws::Config::ReloadCachedConfigFile();
+    Aws::Config::ReloadCachedCredentialsFile();
 
     cppkafka::Configuration cfg;
     auto config = emptyConfig();
