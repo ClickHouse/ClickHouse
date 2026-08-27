@@ -22,21 +22,17 @@ namespace
 
 /// Mark rows whose `LowCardinality` index is the dictionary's NULL entry with 0 in `keep`, allocating
 /// the filter lazily on the first such row.
-void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Filter & keep, size_t num_rows)
+void markLowCardinalityNullRowsRange(const ColumnLowCardinality & column, IColumn::Filter & keep, size_t begin, size_t end)
 {
     const size_t null_index = column.getDictionary().getNullValueIndex();
     const IColumn & indexes_column = *column.getIndexesPtr();
 
     auto process = [&](const auto & indexes)
     {
-        for (size_t row = 0; row < num_rows; ++row)
+        for (size_t row = begin; row < end; ++row)
         {
             if (static_cast<size_t>(indexes[row]) == null_index)
-            {
-                if (keep.empty())
-                    keep.assign(num_rows, static_cast<UInt8>(1));
                 keep[row] = 0;
-            }
         }
     };
 
@@ -480,8 +476,6 @@ void DistinctTransform::transform(Chunk & chunk)
             {
                 if ((i & 0xFFF) == 0)
                 {
-                    if (i > 0) [[unlikely]]
-                        FailPointInjection::pauseFailPoint("distinct_transform_null_pause");
                     if (isCancelled() && !isCancelledBySoftTimeout())
                     {
                         if (timeoutShouldThrow())
@@ -497,6 +491,8 @@ void DistinctTransform::transform(Chunk & chunk)
                         std::fill(keep.begin() + i, keep.end(), 0);
                         break;
                     }
+                    if (i > 0) [[unlikely]]
+                        FailPointInjection::pauseFailPoint("distinct_transform_null_pause");
                 }
                 keep[i] = !(*null_map)[i];
             }
@@ -512,9 +508,44 @@ void DistinctTransform::transform(Chunk & chunk)
         }
 
         for (const auto * column : column_ptrs)
+        {
             if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(column);
                 low_cardinality && low_cardinality->nestedIsNullable())
-                markLowCardinalityNullRows(*low_cardinality, keep, num_rows);
+            {
+                /// `keep` must already be sized to `num_rows` so the per-range call only flips null rows.
+                if (keep.empty())
+                    keep.assign(num_rows, static_cast<UInt8>(1));
+                for (size_t begin = 0; begin < num_rows; begin += 0x1000)
+                {
+                    if (isCancelled() && !isCancelledBySoftTimeout())
+                    {
+                        if (timeoutShouldThrow())
+                            process_list_element->checkTimeLimit(); // throws TIMEOUT_EXCEEDED
+                        chunk.clear();
+                        stopReading();
+                        return;
+                    }
+                    if (isSoftTimeout())
+                    {
+                        /// Break-mode soft timeout: stop marking null rows; the unprocessed tail keeps
+                        /// its current `keep` value and the rest of the transform handles the prefix.
+                        break;
+                    }
+                    if (begin > 0) [[unlikely]]
+                        FailPointInjection::pauseFailPoint("distinct_transform_null_pause");
+                    markLowCardinalityNullRowsRange(*low_cardinality, keep, begin, std::min(begin + 0x1000, num_rows));
+                }
+            }
+        }
+
+        if (isCancelled() && !isCancelledBySoftTimeout())
+        {
+            if (timeoutShouldThrow())
+                process_list_element->checkTimeLimit(); // throws TIMEOUT_EXCEEDED
+            chunk.clear();
+            stopReading();
+            return;
+        }
 
         if (!keep.empty())
         {

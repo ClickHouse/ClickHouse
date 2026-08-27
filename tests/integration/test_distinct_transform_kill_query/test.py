@@ -654,3 +654,83 @@ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_indep
         f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
     )
     assert int(result.strip()) == 0
+
+
+def test_lc_null_keys_kill_query(started_cluster):
+    """Same as `test_null_keys_kill_query`, but the set key is `LowCardinality(Nullable(UInt64))`, so
+    the `skip_null_keys` prefilter also runs `markLowCardinalityNullRows` (the `LowCardinality(Nullable)`
+    path) in addition to the null-map scan. Cancellation must be honored there too, not after the whole
+    chunk is marked.
+    """
+    node1.query(
+        "CREATE TABLE IF NOT EXISTS null_keys_mt_lc (k LowCardinality(Nullable(UInt64))) "
+        "ENGINE = MergeTree PARTITION BY (CAST(if(k IS NULL, toUInt64(0), k) AS UInt64) % 4) ORDER BY tuple() "
+        "SETTINGS allow_suspicious_low_cardinality_types=1"
+    )
+    node1.query("TRUNCATE TABLE IF EXISTS null_keys_mt_lc")
+    node1.query(
+        "INSERT INTO null_keys_mt_lc SELECT if(number % 9 = 0, NULL, number % 100) FROM numbers(1000000)"
+    )
+
+    query = """SELECT count() FROM numbers(1000000)
+WHERE number IN (SELECT k FROM null_keys_mt_lc)
+FORMAT Null
+SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1, max_rows_to_read=0"""
+
+    query_id = str(uuid.uuid4())
+
+    node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+
+    thread_error = [None]
+
+    def execute_query():
+        try:
+            _, error = node1.query_and_get_answer_with_error(
+                query,
+                query_id=query_id,
+            )
+            assert "DB::Exception: Query was cancelled" in error
+        except Exception as e:
+            thread_error[0] = e
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fault_name, timeout=60):
+        wait_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE")
+        done, _ = concurrent.futures.wait([wait_future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fault_name} not triggered within {timeout} s"
+        wait_future.result()
+
+    try:
+        wait_failpoint(NULL_FAULT_NAME)
+
+        node1.http_query(f"KILL QUERY WHERE query_id='{query_id}'")
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {NULL_FAULT_NAME}")
+
+        second_pause_future = pool.submit(
+            node1.query,
+            f"SYSTEM WAIT FAILPOINT {NULL_FAULT_NAME} PAUSE",
+        )
+        done, _ = concurrent.futures.wait([second_pause_future], timeout=10)
+        if done:
+            second_pause_future.result()
+            assert False, "loop reached the re-armed failpoint: intra-loop cancellation is broken"
+    finally:
+        node1.query(f"SYSTEM DISABLE FAILPOINT {NULL_FAULT_NAME}")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    query_thread.join(timeout=60)
+    assert not query_thread.is_alive(), "killed query did not terminate within 60 s"
+    if thread_error[0] is not None:
+        raise thread_error[0]
+
+    result = node1.query(
+        f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+    )
+    assert int(result.strip()) == 0
