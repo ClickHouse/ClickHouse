@@ -17,6 +17,8 @@ DROP TABLE IF EXISTS t_array;
 DROP TABLE IF EXISTS t_scalar;
 DROP TABLE IF EXISTS t_stored_nan;
 DROP TABLE IF EXISTS a_stored_nan;
+DROP TABLE IF EXISTS t_converted;
+DROP TABLE IF EXISTS f_converted;
 
 CREATE TABLE t_partition (t Tuple(Int32, Int32)) ENGINE = MergeTree ORDER BY tuple() PARTITION BY t;
 INSERT INTO t_partition VALUES ((1, 1)), ((2, 2));
@@ -54,6 +56,16 @@ CREATE TABLE t_scalar (i Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY
 INSERT INTO t_scalar VALUES (1), (2);
 SELECT 'scalar', count() FROM t_scalar WHERE NOT (i < nan);
 
+-- Index analysis converts the constant to the key type, so a string literal that is not a NaN in the
+-- query text still arrives at the range endpoint as one.
+CREATE TABLE t_converted (t Tuple(Float64, Float64)) ENGINE = MergeTree ORDER BY t SETTINGS index_granularity = 1;
+INSERT INTO t_converted VALUES ((1., 1.)), ((2., 2.));
+SELECT 'converted tuple', count() FROM t_converted WHERE NOT (t < '(nan,1)');
+
+CREATE TABLE f_converted (f Float64) ENGINE = MergeTree ORDER BY f SETTINGS index_granularity = 1;
+INSERT INTO f_converted VALUES (1.), (2.);
+SELECT 'converted scalar', count() FROM f_converted WHERE NOT (f < 'nan');
+
 -- A NaN stored in the key makes the two equalities disagree: the Field total order treats two
 -- NaN-bearing tuples as equal, tuple equality in SQL does not.
 CREATE TABLE t_stored_nan (t Tuple(Float64, Float64)) ENGINE = MergeTree ORDER BY t SETTINGS index_granularity = 1;
@@ -85,3 +97,5 @@ DROP TABLE t_array;
 DROP TABLE t_scalar;
 DROP TABLE t_stored_nan;
 DROP TABLE a_stored_nan;
+DROP TABLE t_converted;
+DROP TABLE f_converted;

@@ -11,6 +11,8 @@ nested tuple	2
 array less	0
 array greater	2
 scalar	2
+converted tuple	2
+converted scalar	2
 stored nan notEquals	2
 stored nan greaterOrEquals	2
 stored nan array equals	1
