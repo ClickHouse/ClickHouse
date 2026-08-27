@@ -58,3 +58,15 @@ in-range filling is unchanged
 DISTINCT in order over a filled stream
 256
 256
+NaN and infinity in a float fill column stay accepted
+1	nan
+2	0
+3	100
+1	inf
+2	0
+3	100
+0
+1
+5
+nan
+5

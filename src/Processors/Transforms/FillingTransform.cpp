@@ -16,6 +16,7 @@
 #include <Common/logger_useful.h>
 #include <IO/Operators.h>
 #include <base/arithmeticOverflow.h>
+#include <tuple>
 
 
 namespace DB
@@ -148,6 +149,7 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
 static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & type)
 {
     descr.fill_column_type = type;
+    std::tie(descr.fill_representable_min, descr.fill_representable_max) = fillRepresentableRangeOfColumnType(*type);
 
     auto max_type = Field::Types::Null;
     WhichDataType which(type);

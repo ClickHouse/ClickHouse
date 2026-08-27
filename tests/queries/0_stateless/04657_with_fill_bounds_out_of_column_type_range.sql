@@ -244,3 +244,15 @@ FROM
 )
 ORDER BY s ASC
 FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+
+SELECT 'NaN and infinity in a float fill column stay accepted';
+
+-- A step cannot advance NaN or infinity, and such values simply stop the filling at the border, as they always
+-- did, instead of rejecting the query: the step-advance check fires only for a sequence that would otherwise
+-- never terminate.
+SELECT a, b FROM (SELECT 1 AS a, nan AS b UNION ALL SELECT 3, 100.) ORDER BY a WITH FILL, b WITH FILL TO 3 STEP 1;
+SELECT a, b FROM (SELECT 1 AS a, inf AS b UNION ALL SELECT 3, 100.) ORDER BY a WITH FILL, b WITH FILL TO 3 STEP 1;
+SELECT b FROM (SELECT 0. AS b UNION ALL SELECT nan UNION ALL SELECT 5.) ORDER BY b WITH FILL STALENESS 2;
+-- A NaN border itself (here as a literal TO) generates nothing instead of filling until the step stagnates
+-- in the float precision.
+SELECT b FROM (SELECT 5. AS b) ORDER BY b WITH FILL TO nan STEP 1;

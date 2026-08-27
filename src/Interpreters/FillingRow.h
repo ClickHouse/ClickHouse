@@ -19,6 +19,11 @@ bool fillValueWithinCalendarRange(const Field & value, const IDataType & type);
 /// saturate instead of wrapping around (`Float`, `Decimal`) are not checked and always pass.
 bool fillValueFitsColumnType(const Field & value, const IDataType & type);
 
+/// The inclusive `[min, max]` range that `fillValueFitsColumnType` checks against, as `Field`s comparable with
+/// the values the filling generates, so that the per-generated-value check does not have to redo the type
+/// dispatch. Null bounds mean the type is not checked and every value passes.
+std::pair<Field, Field> fillRepresentableRangeOfColumnType(const IDataType & type);
+
 /** Helps to implement modifier WITH FILL for ORDER BY clause.
  *  Stores row as array of fields and provides functions to generate next row for filling gaps and for comparing rows.
  *  Used in FillingTransform.
@@ -29,6 +34,11 @@ class FillingRow
     Field doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
 
     void checkGeneratedValueFitsColumnType(const Field & value, size_t column_ind) const;
+
+    /// Throws when stepping from `current_value` produced a `next_value` that is not strictly further in the
+    /// sorting direction - the sequence wrapped around the column type or stagnated at a fixed point of the step
+    /// function, so continuing would generate garbage or hang.
+    void checkStepAdvancesInSortingDirection(const Field & current_value, const Field & next_value, size_t column_ind) const;
 
     bool hasSomeConstraints(size_t pos) const;
     bool isConstraintsSatisfied(size_t pos) const;

@@ -37,6 +37,12 @@ struct FillColumnDescription
     Field fill_staleness;   /// Default = Null - should not be considered
     std::optional<IntervalKind> staleness_kind;
     DataTypePtr fill_column_type;
+    /// The inclusive range of the values a fill column of `fill_column_type` can hold - the range of the storage
+    /// type intersected with the calendar window for `Date32`/`DateTime64` - precomputed once so that the per-row
+    /// representability check is two comparisons. Null bounds mean the type is not checked (see
+    /// `fillRepresentableRangeOfColumnType`).
+    Field fill_representable_min;
+    Field fill_representable_max;
 
     using StepFunction = std::function<void(Field &, Int64 jumps_count)>;
     StepFunction step_func;

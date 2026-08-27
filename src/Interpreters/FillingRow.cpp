@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <cstddef>
+#include <limits>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -92,6 +94,79 @@ bool fillValueFitsColumnType(const Field & value, const IDataType & type)
 
     /// `convertFieldToType` returns Null for a value that is out of range of the target storage type.
     return !convertFieldToType(value, type).isNull() && fillValueWithinCalendarRange(value, type);
+}
+
+std::pair<Field, Field> fillRepresentableRangeOfColumnType(const IDataType & type)
+{
+    WhichDataType which(type);
+
+    if (which.isDate())
+        return {Field(static_cast<UInt64>(0)), Field(static_cast<UInt64>(std::numeric_limits<UInt16>::max()))};
+
+    if (which.isDateTime())
+        return {Field(static_cast<UInt64>(0)), Field(static_cast<UInt64>(std::numeric_limits<UInt32>::max()))};
+
+    if (which.isDate32())
+        return {Field(static_cast<Int64>(DATE_LUT_MIN_EXTEND_DAY_NUM)), Field(static_cast<Int64>(DATE_LUT_MAX_EXTEND_DAY_NUM))};
+
+    if (which.isDateTime64())
+    {
+        /// See the comment in `fillValueWithinCalendarRange`: the calendar boundary in raw ticks is shifted by
+        /// the UTC offset of the column's time zone, and the last representable time point has all its sub-second
+        /// digits set. For a high enough scale the calendar window in ticks is wider than the Int64 storage of
+        /// the column, so the window is clamped to the storage range.
+        const auto & date_time_type = static_cast<const DataTypeDateTime64 &>(type);
+        const auto & time_zone = date_time_type.getTimeZone();
+        const UInt32 scale = date_time_type.getScale();
+        const Int64 max_seconds = time_zone.makeDateTime(DATE_LUT_MAX_REPRESENTABLE_YEAR, 12, 31, 23, 59, 59);
+        const Int64 min_seconds = time_zone.makeDateTime(DATE_LUT_MIN_REPRESENTABLE_YEAR, 1, 1, 0, 0, 0);
+        const Int128 scale_multiplier = DecimalUtils::scaleMultiplier<Int128>(scale);
+        const Int128 max_ticks = std::min(
+            static_cast<Int128>(max_seconds) * scale_multiplier + (scale_multiplier - 1),
+            static_cast<Int128>(std::numeric_limits<Int64>::max()));
+        const Int128 min_ticks = std::max(
+            static_cast<Int128>(min_seconds) * scale_multiplier,
+            static_cast<Int128>(std::numeric_limits<Int64>::min()));
+        return {
+            Field(DecimalField<Decimal64>(static_cast<Int64>(min_ticks), scale)),
+            Field(DecimalField<Decimal64>(static_cast<Int64>(max_ticks), scale))};
+    }
+
+    if (isInteger(type))
+    {
+        switch (which.idx)
+        {
+            case TypeIndex::UInt8:
+                return {Field(static_cast<UInt64>(0)), Field(static_cast<UInt64>(std::numeric_limits<UInt8>::max()))};
+            case TypeIndex::UInt16:
+                return {Field(static_cast<UInt64>(0)), Field(static_cast<UInt64>(std::numeric_limits<UInt16>::max()))};
+            case TypeIndex::UInt32:
+                return {Field(static_cast<UInt64>(0)), Field(static_cast<UInt64>(std::numeric_limits<UInt32>::max()))};
+            case TypeIndex::UInt64:
+                return {Field(static_cast<UInt64>(0)), Field(std::numeric_limits<UInt64>::max())};
+            case TypeIndex::UInt128:
+                return {Field(static_cast<UInt128>(0)), Field(std::numeric_limits<UInt128>::max())};
+            case TypeIndex::UInt256:
+                return {Field(static_cast<UInt256>(0)), Field(std::numeric_limits<UInt256>::max())};
+            case TypeIndex::Int8:
+                return {Field(static_cast<Int64>(std::numeric_limits<Int8>::min())), Field(static_cast<Int64>(std::numeric_limits<Int8>::max()))};
+            case TypeIndex::Int16:
+                return {Field(static_cast<Int64>(std::numeric_limits<Int16>::min())), Field(static_cast<Int64>(std::numeric_limits<Int16>::max()))};
+            case TypeIndex::Int32:
+                return {Field(static_cast<Int64>(std::numeric_limits<Int32>::min())), Field(static_cast<Int64>(std::numeric_limits<Int32>::max()))};
+            case TypeIndex::Int64:
+                return {Field(std::numeric_limits<Int64>::min()), Field(std::numeric_limits<Int64>::max())};
+            case TypeIndex::Int128:
+                return {Field(std::numeric_limits<Int128>::min()), Field(std::numeric_limits<Int128>::max())};
+            case TypeIndex::Int256:
+                return {Field(std::numeric_limits<Int256>::min()), Field(std::numeric_limits<Int256>::max())};
+            default:
+                break;
+        }
+    }
+
+    /// Types that saturate instead of wrapping around (Float, Decimal) and everything else are not checked.
+    return {Field(), Field()};
 }
 
 
@@ -208,12 +283,34 @@ void FillingRow::checkGeneratedValueFitsColumnType(const Field & value, size_t c
 {
     const auto & descr = getFillDescription(column_ind);
 
-    if (descr.fill_column_type && !fillValueFitsColumnType(value, *descr.fill_column_type))
+    /// Null bounds - a type whose every value is representable, nothing to check.
+    if (descr.fill_representable_min.isNull())
+        return;
+
+    if (accurateLess(value, descr.fill_representable_min) || accurateLess(descr.fill_representable_max, value))
         throw Exception(
             ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-            "WITH FILL generates the value {} which is out of range of the ORDER BY column type {}",
+            "WITH FILL generates the value {} which is out of range of the ORDER BY column {} of type {}",
             applyVisitor(FieldVisitorToString(), value),
+            sort_description[column_ind].column_name,
             descr.fill_column_type->getName());
+}
+
+void FillingRow::checkStepAdvancesInSortingDirection(const Field & current_value, const Field & next_value, size_t column_ind) const
+{
+    if (less(current_value, next_value, getDirection(column_ind)))
+        return;
+
+    const auto & descr = getFillDescription(column_ind);
+    throw Exception(
+        ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+        "WITH FILL step does not advance the value {} of the ORDER BY column {} of type {} in the sorting direction: "
+        "the next value is {}. This means the sequence wrapped around the range of the column type or stagnated "
+        "at a fixed point of the step function, so continuing would generate values the column cannot hold",
+        applyVisitor(FieldVisitorToString(), current_value),
+        sort_description[column_ind].column_name,
+        descr.fill_column_type ? descr.fill_column_type->getName() : "unknown",
+        applyVisitor(FieldVisitorToString(), next_value));
 }
 
 bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
@@ -252,6 +349,12 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     if (!constraints[pos].isNull() && !less(row[pos], constraints[pos], getDirection(pos)))
         return false;
 
+    /// A NaN border (a NaN `fill_to` or a staleness border derived from a NaN row) generates nothing: `accurateLess`
+    /// orders NaN greatest, so the comparison above cannot stop an ascending fill towards it, and the sequence would
+    /// run until the step stagnates in the float precision.
+    if (constraints[pos].isNaN())
+        return false;
+
     /// If we have any 'fill_to' value at position greater than 'pos' or configured staleness,
     /// we need to generate rows up to one of this borders.
     for (size_t i = row_size - 1; i > pos; --i)
@@ -264,16 +367,21 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         if (constraints[i].isNull())
             continue;
 
+        /// A NaN border generates nothing, see the comment at the same check above.
+        if (constraints[i].isNaN())
+            continue;
+
         Field next_value = row[i];
         fill_column_desc.step_func(next_value, 1);
 
-        if (!less(row[i], next_value, getDirection(i)))
-            throw Exception(
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL step does not advance in the sorting direction");
-
         if (!less(next_value, constraints[i], getDirection(i)))
             continue;
+
+        /// Checked only after the constraint cut-off above: a step that fails to advance (wrapped around the
+        /// column type, stagnated at a fixed point of the calendar arithmetic or of the float addition, or was
+        /// applied to NaN) stops the filling at the constraint the same way it always did, and only a sequence
+        /// that would otherwise loop forever is rejected.
+        checkStepAdvancesInSortingDirection(row[i], next_value, i);
 
         checkGeneratedValueFitsColumnType(next_value, i);
 
@@ -287,16 +395,17 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     auto next_value = row[pos];
     getFillDescription(pos).step_func(next_value, 1);
 
-    if (!less(row[pos], next_value, getDirection(pos)))
-        throw Exception(
-            ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-            "WITH FILL step does not advance in the sorting direction");
-
     if (!next_original_row[pos].isNull() && less(next_original_row[pos], next_value, getDirection(pos)))
         return false;
 
     if (!constraints[pos].isNull() && !less(next_value, constraints[pos], getDirection(pos)))
         return false;
+
+    /// Checked only after the cut-offs above: a step that fails to advance (wrapped around the column type,
+    /// stagnated at a fixed point of the calendar arithmetic or of the float addition, or was applied to NaN)
+    /// stops the filling at the border the same way it always did, and only a sequence that would otherwise
+    /// loop forever is rejected.
+    checkStepAdvancesInSortingDirection(row[pos], next_value, pos);
 
     checkGeneratedValueFitsColumnType(next_value, pos);
 
@@ -423,15 +532,34 @@ void FillingRow::updateConstraintsWithStalenessRow(const Columns& base_row, size
             Field staleness_border = (*base_row[i])[row_ind];
             descr.staleness_step_func(staleness_border, 1);
 
-            if (!fillValueFitsColumnType(staleness_border, *descr.fill_column_type))
+            /// A staleness step cannot advance NaN - keep the border as is (a NaN border makes
+            /// `isConstraintsSatisfied` false, so filling just stops) instead of rejecting the query.
+            /// An infinite border is not exempted: it makes the fill towards it never terminate,
+            /// so failing the advance check below is the right outcome for it.
+            if (staleness_border.isNaN())
+            {
+                constraints[i] = findBorder(descr.fill_to, staleness_border, getDirection(i));
+                continue;
+            }
+
+            if (!descr.fill_representable_min.isNull()
+                && (accurateLess(staleness_border, descr.fill_representable_min)
+                    || accurateLess(descr.fill_representable_max, staleness_border)))
                 throw Exception(
                     ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "WITH FILL STALENESS bound does not fit the column type");
+                    "WITH FILL STALENESS border {} of the ORDER BY column {} does not fit the column type {}",
+                    applyVisitor(FieldVisitorToString(), staleness_border),
+                    sort_description[i].column_name,
+                    descr.fill_column_type->getName());
 
             if (!less((*base_row[i])[row_ind], staleness_border, getDirection(i)))
                 throw Exception(
                     ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "WITH FILL STALENESS does not advance in the sorting direction");
+                    "WITH FILL STALENESS border {} of the ORDER BY column {} does not advance the value {} "
+                    "in the sorting direction",
+                    applyVisitor(FieldVisitorToString(), staleness_border),
+                    sort_description[i].column_name,
+                    applyVisitor(FieldVisitorToString(), (*base_row[i])[row_ind]));
 
             constraints[i] = findBorder(descr.fill_to, staleness_border, getDirection(i));
         }
