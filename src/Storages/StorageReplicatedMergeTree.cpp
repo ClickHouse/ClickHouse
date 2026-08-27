@@ -4550,6 +4550,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     deduplicate,
                     deduplicate_by_columns,
                     cleanup,
+                    /*bypass_min_unreserved_space=*/false,
                     nullptr,
                     merge_predicate->getVersion(),
                     future_merged_part->merge_type);
@@ -4701,6 +4702,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     bool deduplicate,
     const Names & deduplicate_by_columns,
     bool cleanup,
+    bool bypass_min_unreserved_space,
     ReplicatedMergeTreeLogEntryData * out_log_entry,
     int32_t log_version,
     MergeType merge_type)
@@ -4741,6 +4743,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.deduplicate = deduplicate;
     entry.deduplicate_by_columns = deduplicate_by_columns;
     entry.cleanup = cleanup;
+    entry.bypass_min_unreserved_space = bypass_min_unreserved_space;
     entry.create_time = time(nullptr);
 
     for (const auto & part : parts)
@@ -6648,6 +6651,11 @@ bool StorageReplicatedMergeTree::optimize(
             }
 
             ReplicatedMergeTreeLogEntryData merge_entry;
+            /// A non-empty partition_id means the parts came from selectAllPartsToMergeWithinPartition,
+            /// i.e. this is an OPTIMIZE ... FINAL / OPTIMIZE ... PARTITION entry: those bypass
+            /// min_unreserved_disk_space_for_merge when selecting parts, so the queue must not re-apply
+            /// the headroom, or the entry is postponed forever (see #80006). The empty-partition
+            /// (plain OPTIMIZE) path selected parts under the headroom-respecting limit instead.
             CreateMergeEntryResult create_result = createLogEntryToMergeParts(
                 zookeeper,
                 select_merge_result.value()->parts,
@@ -6658,6 +6666,7 @@ bool StorageReplicatedMergeTree::optimize(
                 deduplicate,
                 deduplicate_by_columns,
                 cleanup,
+                /*bypass_min_unreserved_space=*/!partition_id.empty(),
                 &merge_entry,
                 merge_predicate->getVersion(),
                 select_merge_result.value()->merge_type);

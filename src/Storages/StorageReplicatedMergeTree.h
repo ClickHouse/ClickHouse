@@ -758,6 +758,7 @@ private:
         bool deduplicate,
         const Names & deduplicate_by_columns,
         bool cleanup,
+        bool bypass_min_unreserved_space,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
         int32_t log_version,
         MergeType merge_type);
