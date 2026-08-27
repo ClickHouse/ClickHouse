@@ -350,23 +350,38 @@ void considerEnablingParallelReplicas(
     {
         const auto min_bytes_per_replica = optimization_settings.automatic_parallel_replicas_min_bytes_per_replica;
         const auto num_replicas = std::max<size_t>(optimization_settings.max_parallel_replicas, 1);
+
+        /// The largest read measured so far. It is only read by the log message below, which is
+        /// reached exactly when every read was measured, so it really is the largest read in the plan.
         size_t max_bytes_to_read = 0;
-        bool all_reads_estimated = true;
+        bool found_read_worth_parallelizing = false;
         traverseQueryPlan(
             stack,
             root,
             [&](auto & frame_node)
             {
-                if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(frame_node.step.get()))
+                /// One qualifying read is enough to keep the plan, and measuring a read runs index
+                /// analysis, so stop measuring as soon as one is found.
+                if (found_read_worth_parallelizing)
+                    return;
+
+                const auto * reading = typeid_cast<const ReadFromMergeTree *>(frame_node.step.get());
+                if (!reading)
+                    return;
+
+                /// A read whose size cannot be measured may be of any size, so it counts as
+                /// qualifying: the gate must never reject a plan on missing information.
+                const auto bytes_to_read = reading->estimateCompressedBytesToRead();
+                if (!bytes_to_read || *bytes_to_read / num_replicas >= min_bytes_per_replica)
                 {
-                    if (const auto bytes_to_read = reading->estimateCompressedBytesToRead())
-                        max_bytes_to_read = std::max(max_bytes_to_read, *bytes_to_read);
-                    else
-                        all_reads_estimated = false;
+                    found_read_worth_parallelizing = true;
+                    return;
                 }
+
+                max_bytes_to_read = std::max(max_bytes_to_read, *bytes_to_read);
             });
 
-        if (all_reads_estimated && max_bytes_to_read / num_replicas < min_bytes_per_replica)
+        if (!found_read_worth_parallelizing)
         {
             LOG_DEBUG(
                 getLogger("optimizeTree"),
