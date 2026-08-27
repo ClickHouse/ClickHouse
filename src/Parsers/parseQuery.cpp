@@ -7,11 +7,13 @@
 #include <Parsers/Lexer.h>
 #include <Parsers/TokenIterator.h>
 #include <Common/StringUtils.h>
+#include <Common/levenshteinDistance.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <algorithm>
 
 
 namespace DB
@@ -172,6 +174,60 @@ void writeCommonErrorMessage(
 }
 
 
+/** A typo in a keyword is the most common syntax mistake, and the parser answers it with a list of every
+  * alternative it could accept at that place - dozens of them, with the keyword the user meant being just
+  * one item somewhere in the middle. Find that item by the edit distance and name it explicitly.
+  *
+  * Returns an empty string if there is no close enough keyword. The thresholds are deliberately tighter
+  * than in `NamePrompter`: here the candidates are keywords of the language rather than names from the
+  * query, so almost every short word is within a small distance of some keyword (`hits` is two edits away
+  * from `WITH`), and a wrong guess is worse than no guess.
+  */
+std::string_view getKeywordTypoHint(const Token & last_token, const Expected & expected)
+{
+    if (last_token.type != TokenType::BareWord)
+        return {};
+
+    const String token(last_token.begin, last_token.end - last_token.begin);
+    if (token.size() < 3)
+        return {};
+
+    /// Keywords consist of letters only, so a word with a digit in it is a name, not a mistyped keyword.
+    /// Without this, aliases such as `an1` in a query with many joined tables get matched against `ANY`.
+    if (std::any_of(token.begin(), token.end(), isNumericASCII))
+        return {};
+
+    /// One mistaken character, plus one more for longer words, where a transposition of two letters
+    /// (`ESLECT`) already costs two edits.
+    const size_t max_distance = token.size() < 6 ? 1 : 2;
+
+    size_t best_distance = max_distance + 1;
+    std::string_view best_variant;
+
+    for (const char * variant : expected.variants)
+    {
+        /// Only a description that is a keyword itself can be meant literally: the parser also adds prose
+        /// such as `SELECT query, possibly with UNION`. A single word cannot be a typo of a multi-word
+        /// keyword either, so anything with a space is not a candidate.
+        const std::string_view variant_view(variant);
+        if (variant_view.size() + max_distance < token.size() || token.size() + max_distance < variant_view.size())
+            continue;
+        if (!std::all_of(variant_view.begin(), variant_view.end(), [](char c) { return isUpperAlphaASCII(c) || c == '_'; }))
+            continue;
+
+        const size_t distance = levenshteinDistanceCaseInsensitive(token, String(variant_view));
+        /// Zero distance means the token is that keyword, so it cannot be the reason of the failure.
+        if (distance > 0 && distance < best_distance)
+        {
+            best_distance = distance;
+            best_variant = variant_view;
+        }
+    }
+
+    return best_variant;
+}
+
+
 std::string getSyntaxErrorMessage(
     const char * begin,
     const char * end,
@@ -185,7 +241,12 @@ std::string getSyntaxErrorMessage(
     writeQueryAroundTheError(out, begin, end, hilite, &last_token, 1);
 
     if (!expected.variants.empty())
+    {
+        if (const std::string_view hint = getKeywordTypoHint(last_token, expected); !hint.empty())
+            out << "Maybe you meant: " << hint << ". ";
+
         out << "Expected " << expected;
+    }
 
     return out.str();
 }
@@ -206,20 +267,100 @@ std::string getLexicalErrorMessage(
 }
 
 
+/// Describe a bracket as `'(' at position 42 (line 3, col 5)`.
+void writeBracketPosition(WriteBuffer & out, const char * begin, const char * end, const Token & bracket)
+{
+    out << "'" << std::string_view(bracket.begin, bracket.end - bracket.begin)
+        << "' at position " << (bracket.begin - begin + 1);
+
+    /// If query is multiline.
+    const char * nl = find_first_symbols<'\n'>(begin, end);
+    if (nl + 1 < end)
+    {
+        const auto [line, col] = getLineAndCol(begin, bracket.begin);
+        out << " (line " << line << ", col " << col << ")";
+    }
+}
+
+
 std::string getUnmatchedParenthesesErrorMessage(
     const char * begin,
     const char * end,
     const UnmatchedParentheses & unmatched_parens,
+    Token last_token,
     bool hilite,
     const std::string & query_description)
 {
+    /** `checkUnmatchedParentheses` reports either a closing bracket that has nothing to close, or the whole
+      * stack of brackets that are never closed - and in the latter case the first element of that stack is
+      * the outermost bracket, which is a poor place to point at. In
+      *   SELECT a FROM (SELECT count(* FROM t) x
+      * the bracket of `count(` gets matched with the `)` that was meant to close the subquery, so the
+      * leftover bracket is the one of the subquery: bracket counting alone cannot tell which of the nested
+      * brackets the user forgot to close, and in a large query the outermost one is thousands of characters
+      * away from the mistake.
+      *
+      * The token where the parser stopped does not have that problem - it is right next to the mistake
+      * (`FROM` in the example above) - so report it as the error position, and list the leftover brackets
+      * with their own positions separately.
+      */
+
+    const bool closing_bracket_is_unmatched
+        = unmatched_parens.back().type == TokenType::ClosingRoundBracket
+        || unmatched_parens.back().type == TokenType::ClosingSquareBracket;
+
+    /// An unmatched closing bracket is itself the place of the mistake, so keep pointing at it.
+    const bool point_at_parser_position
+        = !closing_bracket_is_unmatched && last_token.begin > unmatched_parens.front().begin;
+
+    const Token error_token = point_at_parser_position ? last_token : unmatched_parens.front();
+
     WriteBufferFromOwnString out;
-    writeCommonErrorMessage(out, begin, end, unmatched_parens[0], query_description);
-    writeQueryAroundTheError(out, begin, end, hilite, unmatched_parens.data(), unmatched_parens.size());
+    writeCommonErrorMessage(out, begin, end, error_token, query_description);
+
+    if (hilite)
+    {
+        /// Highlight both the brackets and the place where the parser stopped. The positions must be
+        /// passed in ascending order, and the parser can stop before some of the brackets.
+        UnmatchedParentheses positions_to_hilite(unmatched_parens);
+        if (point_at_parser_position)
+            positions_to_hilite.push_back(error_token);
+        std::sort(positions_to_hilite.begin(), positions_to_hilite.end(),
+            [](const Token & lhs, const Token & rhs) { return lhs.begin < rhs.begin; });
+
+        writeQueryAroundTheError(out, begin, end, hilite, positions_to_hilite.data(), positions_to_hilite.size());
+    }
+    else
+    {
+        /// Without highlighting only a fragment of the query is printed, starting from the first passed
+        /// position. Show the text around the mistake rather than around the outermost bracket.
+        writeQueryAroundTheError(out, begin, end, hilite, &error_token, 1);
+    }
 
     out << "Unmatched parentheses: ";
-    for (const Token & paren : unmatched_parens)
-        out << *paren.begin;
+
+    if (closing_bracket_is_unmatched && unmatched_parens.size() >= 2)
+    {
+        writeBracketPosition(out, begin, end, unmatched_parens.back());
+        out << " does not match ";
+        writeBracketPosition(out, begin, end, unmatched_parens[unmatched_parens.size() - 2]);
+        out << ".";
+    }
+    else if (closing_bracket_is_unmatched)
+    {
+        writeBracketPosition(out, begin, end, unmatched_parens.back());
+        out << " has no matching opening bracket.";
+    }
+    else
+    {
+        for (size_t i = 0; i < unmatched_parens.size(); ++i)
+        {
+            if (i != 0)
+                out << ", ";
+            writeBracketPosition(out, begin, end, unmatched_parens[i]);
+        }
+        out << (unmatched_parens.size() == 1 ? " is never closed." : " are never closed.");
+    }
 
     return out.str();
 }
@@ -393,7 +534,7 @@ ASTPtr tryParseQuery(
         if (!scoped_parens.empty())
         {
             out_error_message = getUnmatchedParenthesesErrorMessage(
-                query_begin, statement_end, scoped_parens, hilite, query_description);
+                query_begin, statement_end, scoped_parens, last_token, hilite, query_description);
             return nullptr;
         }
     }

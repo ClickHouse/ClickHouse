@@ -1,0 +1,40 @@
+=== unclosed brackets: the error points at the place where the parser stopped, and every bracket
+=== that is never closed is listed with its own position
+--- SELECT a FROM (SELECT b FROM (SELECT c FROM (SELECT count(* AS cnt FROM numbers(10)) t3) t2) t1
+Syntax error: failed at position 68 (FROM): FROM numbers(10)) t3) t2) t1. Unmatched parentheses: '(' at position 15 is never closed. (SYNTAX_ERROR)
+--- SELECT count(* FROM numbers(10)
+Syntax error: failed at position 16 (FROM): FROM numbers(10). Unmatched parentheses: '(' at position 13 is never closed. (SYNTAX_ERROR)
+--- SELECT (1, 2
+Syntax error: failed at position 13 (end of query): . Unmatched parentheses: '(' at position 8 is never closed. (SYNTAX_ERROR)
+--- SELECT [1, 2
+Syntax error: failed at position 13 (end of query): . Unmatched parentheses: '[' at position 8 is never closed. (SYNTAX_ERROR)
+--- SELECT ((1)
+Syntax error: failed at position 12 (end of query): . Unmatched parentheses: '(' at position 8 is never closed. (SYNTAX_ERROR)
+--- SELECT x FROM (SELECT arrayMap(y -> y, [1]
+Syntax error: failed at position 43 (end of query): . Unmatched parentheses: '(' at position 15, '(' at position 31 are never closed. (SYNTAX_ERROR)
+
+=== a closing bracket that does not close anything names what it fails to match
+--- SELECT 1)
+Syntax error: failed at position 9 ()): ). Unmatched parentheses: ')' at position 9 has no matching opening bracket. (SYNTAX_ERROR)
+--- SELECT [1)
+Syntax error: failed at position 8 ([): [1). Unmatched parentheses: ')' at position 10 does not match '[' at position 8. (SYNTAX_ERROR)
+--- SELECT (1]
+Syntax error: failed at position 8 ((): (1]. Unmatched parentheses: ']' at position 10 does not match '(' at position 8. (SYNTAX_ERROR)
+
+=== a mistyped keyword is named explicitly instead of being buried in the list of alternatives
+--- SELEgT 1
+Syntax error: failed at position 1 (SELEgT): SELEgT 1. Maybe you meant: SELECT.
+--- ESLECT 1
+Syntax error: failed at position 1 (ESLECT): ESLECT 1. Maybe you meant: SELECT.
+--- CREAT TABLE t (x UInt8) ENGINE = Memory
+Syntax error: failed at position 1 (CREAT): CREAT TABLE t (x UInt8) ENGINE = Memory. Maybe you meant: CREATE.
+--- SELECT 1 WHERE 1 ANF 2
+Syntax error: failed at position 18 (ANF): ANF 2. Maybe you meant: AND.
+
+=== but a name that merely looks like a keyword is not reported as a typo
+--- SELECT 1 hits hits
+Syntax error: failed at position 15 (hits): hits.
+--- SELECT 1 orders orders
+Syntax error: failed at position 17 (orders): orders.
+--- SELECT 1 an1 an1
+Syntax error: failed at position 14 (an1): an1.
