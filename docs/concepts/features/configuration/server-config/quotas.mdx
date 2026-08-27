@@ -117,17 +117,13 @@ If the limit is exceeded for at least one time interval, an exception is thrown 
 
 ## Queries excluded from quota accounting {#queries-excluded-from-quota-accounting}
 
-To allow quota configuration and usage to be inspected even when a quota is exhausted, queries whose only table source is one of the following system tables are not charged to quotas and are not subject to query-complexity limits:
+To allow quota configuration and usage to be inspected even when a quota is exhausted, `SELECT` queries that exclusively read from one of the following system tables are not charged to quotas and are not subject to query-complexity limits:
 
 - `system.quotas`
 - `system.quota_limits`
 - `system.quota_usage`
 - `system.quotas_usage`
 - `system.one`
-
-A `SELECT` query without a `FROM` clause reads from [`system.one`](/operations/system-tables/one). Therefore, `SELECT 1` is not charged to a quota and must not be used to verify a `queries` or `query_selects` limit.
-
-The exemption applies only when the listed system table is the query's only table source. Queries that access user tables, or combine an exempt system table with another table source, are subject to the applicable quota. These queries can still require the relevant access privileges.
 
 Quotas can use the "quota key" feature to report on resources for multiple keys independently. Here is an example of this:
 
