@@ -847,23 +847,31 @@ namespace
 {
 
 /// Split Dynamic subcolumn name into 2 parts: type name and subcolumn of this type.
-/// We cannot simply split by '.' because type name can also contain dots. For example: Tuple(`a.b` UInt32).
-/// But in all such cases this '.' will be inside back quotes. To split subcolumn name correctly
-/// we search for the first '.' that is not inside back quotes.
+/// We cannot simply split by '.' because type name can also contain dots, either inside back quotes
+/// (Tuple(`a.b` UInt32)) or inside a string literal (Enum8('a.b' = 1), JSON(SHARED REGEXP '^a[.]b$')).
+/// To split subcolumn name correctly we search for the first '.' that is outside of both.
 std::pair<std::string_view, std::string_view> splitSubcolumnName(std::string_view subcolumn_name)
 {
-    bool inside_quotes = false;
+    bool inside_back_quotes = false;
+    bool inside_string_literal = false;
     const char * pos = subcolumn_name.data();
     const char * end = subcolumn_name.data() + subcolumn_name.size();
     while (true)
     {
-        pos = find_first_symbols<'`', '.', '\\'>(pos, end);
+        pos = find_first_symbols<'`', '\'', '.', '\\'>(pos, end);
         if (pos == end)
             break;
 
         if (*pos == '`')
         {
-            inside_quotes = !inside_quotes;
+            if (!inside_string_literal)
+                inside_back_quotes = !inside_back_quotes;
+            ++pos;
+        }
+        else if (*pos == '\'')
+        {
+            if (!inside_back_quotes)
+                inside_string_literal = !inside_string_literal;
             ++pos;
         }
         else if (*pos == '\\')
@@ -872,7 +880,7 @@ std::pair<std::string_view, std::string_view> splitSubcolumnName(std::string_vie
         }
         else if (*pos == '.')
         {
-            if (inside_quotes)
+            if (inside_back_quotes || inside_string_literal)
                 ++pos;
             else
                 break;
