@@ -7,14 +7,18 @@ ExpressionTransform
     DistinctTransform
       Resize 8 → 1
         (Union)
-          (Expression)
-          ExpressionTransform × 4
-            (ReadFromSystemNumbers)
-            NumbersRange × 4 0 → 1
-          (Expression)
-          ExpressionTransform × 4
-            (ReadFromSystemNumbers)
-            NumbersRange × 4 0 → 1
+          (Distinct)
+          DistinctTransform × 4
+            (Expression)
+            ExpressionTransform × 4
+              (ReadFromSystemNumbers)
+              NumbersRange × 4 0 → 1
+          (Distinct)
+          DistinctTransform × 4
+            (Expression)
+            ExpressionTransform × 4
+              (ReadFromSystemNumbers)
+              NumbersRange × 4 0 → 1
 (Expression)
 ExpressionTransform
   (Offset)
@@ -53,14 +57,18 @@ ExpressionTransform
       DistinctTransform
         Resize 8 → 1
           (Union)
-            (Expression)
-            ExpressionTransform × 4
-              (ReadFromSystemNumbers)
-              NumbersRange × 4 0 → 1
-            (Expression)
-            ExpressionTransform × 4
-              (ReadFromSystemNumbers)
-              NumbersRange × 4 0 → 1
+            (Distinct)
+            DistinctTransform × 4
+              (Expression)
+              ExpressionTransform × 4
+                (ReadFromSystemNumbers)
+                NumbersRange × 4 0 → 1
+            (Distinct)
+            DistinctTransform × 4
+              (Expression)
+              ExpressionTransform × 4
+                (ReadFromSystemNumbers)
+                NumbersRange × 4 0 → 1
 (Offset)
 Offset
   (Expression)
@@ -69,28 +77,14 @@ Offset
     DistinctTransform
       Resize 8 → 1
         (Union)
-          (Expression)
-          ExpressionTransform × 4
-            (ReadFromSystemNumbers)
-            NumbersRange × 4 0 → 1
-          (Expression)
-          ExpressionTransform × 4
-            (ReadFromSystemNumbers)
-            NumbersRange × 4 0 → 1
-(Expression)
-ExpressionTransform
-  (LimitBy)
-  LimitByTransform
-    (Expression)
-    ExpressionTransform
-      (Distinct)
-      DistinctTransform
-        Resize 8 → 1
-          (Union)
+          (Distinct)
+          DistinctTransform × 4
             (Expression)
             ExpressionTransform × 4
               (ReadFromSystemNumbers)
               NumbersRange × 4 0 → 1
+          (Distinct)
+          DistinctTransform × 4
             (Expression)
             ExpressionTransform × 4
               (ReadFromSystemNumbers)
@@ -105,11 +99,37 @@ ExpressionTransform
       DistinctTransform
         Resize 8 → 1
           (Union)
-            (Expression)
-            ExpressionTransform × 4
-              (ReadFromSystemNumbers)
-              NumbersRange × 4 0 → 1
-            (Expression)
-            ExpressionTransform × 4
-              (ReadFromSystemNumbers)
-              NumbersRange × 4 0 → 1
+            (Distinct)
+            DistinctTransform × 4
+              (Expression)
+              ExpressionTransform × 4
+                (ReadFromSystemNumbers)
+                NumbersRange × 4 0 → 1
+            (Distinct)
+            DistinctTransform × 4
+              (Expression)
+              ExpressionTransform × 4
+                (ReadFromSystemNumbers)
+                NumbersRange × 4 0 → 1
+(Expression)
+ExpressionTransform
+  (LimitBy)
+  LimitByTransform
+    (Expression)
+    ExpressionTransform
+      (Distinct)
+      DistinctTransform
+        Resize 8 → 1
+          (Union)
+            (Distinct)
+            DistinctTransform × 4
+              (Expression)
+              ExpressionTransform × 4
+                (ReadFromSystemNumbers)
+                NumbersRange × 4 0 → 1
+            (Distinct)
+            DistinctTransform × 4
+              (Expression)
+              ExpressionTransform × 4
+                (ReadFromSystemNumbers)
+                NumbersRange × 4 0 → 1
