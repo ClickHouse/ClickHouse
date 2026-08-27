@@ -564,6 +564,13 @@ function navigationLabel(value) {
   return value.replace(/`/g, '').trim();
 }
 
+function functionNavigationGroupLabel(value) {
+  const label = navigationLabel(value);
+  const conciseLabel = label.replace(/^Functions for working with\s+/i, '').trim();
+  if (conciseLabel === label || !conciseLabel) return label;
+  return conciseLabel[0].toLocaleUpperCase() + conciseLabel.slice(1);
+}
+
 function entityAliases(content, title) {
   const aliases = new Set();
   for (const match of content.matchAll(/^\*{0,2}Alias(?:es)?\*{0,2}:?\s*(.+)$/gmi)) {
@@ -1094,9 +1101,9 @@ async function main() {
           featureState: entityKind === 'setting' ? settingFeatureState(section.content) : null,
           navigationGroup: section.navigationGroup ?? {
             id: `reference.source.${relativePath.replace(/\.mdx?$/, '').replace(/[^A-Za-z0-9_-]+/g, '.')}`,
-            label: navigationLabel(String(
-              entityKind === 'function' ? title : (frontmatter.sidebarTitle ?? title),
-            )),
+            label: entityKind === 'function'
+              ? functionNavigationGroupLabel(title)
+              : navigationLabel(String(frontmatter.sidebarTitle ?? title)),
           },
           content: section.content,
         })),

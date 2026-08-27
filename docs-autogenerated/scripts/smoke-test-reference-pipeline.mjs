@@ -62,6 +62,12 @@ function findNavigationNode(node, id) {
   return findNavigationNode(node.children, id);
 }
 
+function flattenNavigationNodes(node) {
+  if (!node) return [];
+  if (Array.isArray(node)) return node.flatMap(flattenNavigationNodes);
+  return [node, ...flattenNavigationNodes(node.children)];
+}
+
 async function main() {
   requireValue(
     referenceDescription('statement', 'SELECT')
@@ -292,6 +298,24 @@ async function main() {
         && systemTablePage.includes('sidebarTitle: "background_schedule_pool_log"')
         && searchTitles.has('system.background_schedule_pool_log'),
       'System table navigation labels do not omit only the `system.` prefix',
+    );
+
+    for (const [id, label] of [
+      ['reference.source.functions.regular-functions.string-functions', 'Strings'],
+      ['reference.source.functions.regular-functions.time-series-functions', 'Time series'],
+      ['reference.source.functions.regular-functions.ulid-functions', 'ULIDs'],
+    ]) {
+      requireValue(
+        findNavigationNode(navigation.root, id)?.label === label,
+        `Function navigation group ${id} does not use the concise label ${label}`,
+      );
+    }
+    requireValue(
+      flattenNavigationNodes(navigation.root).every((node) => (
+        node.type !== 'group'
+        || !/^Functions for working with\s+/i.test(String(node.label))
+      )),
+      'A function navigation group still uses the redundant `Functions for working with` prefix',
     );
 
     requireValue(
