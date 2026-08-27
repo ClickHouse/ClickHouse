@@ -1,2 +1,0 @@
-Code: 107. DB::ErrnoException: Cannot open file /home/ubuntu/ClickHouse/tests/queries/0_stateless/04102_hash_join_main_loop_optimization.sql: , errno: 2, strerror: No such file or directory. (FILE_DOESNT_EXIST)
-

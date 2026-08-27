@@ -1,5 +1,0 @@
-columns format version: 1
-3 columns:
-`id` UInt64
-`update_ts` DateTime
-`value` UInt32

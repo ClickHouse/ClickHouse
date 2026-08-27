@@ -1,8 +1,0 @@
-columns substreams version: 1
-3 columns:
-1 substreams for column `id`:
-	id
-1 substreams for column `update_ts`:
-	update_ts
-1 substreams for column `value`:
-	value
