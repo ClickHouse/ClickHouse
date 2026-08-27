@@ -6,3 +6,5 @@ functions in the other order	(15,-119)	(15,-119)
 unsigned key	(11,165)	(11,165)
 granules read	1
 no cast	(15,-119)	(15,-119)
+chain granules read, lightweight analysis	1
+chain granules read, full analysis	1

@@ -61,6 +61,18 @@ SELECT 'no cast',
     (SELECT (count(), sum(x)) FROM t_wpk_chain WHERE abs(negate(x)) BETWEEN 10 AND 20),
     (SELECT (count(), sum(x)) FROM t_wpk_chain_unsorted WHERE abs(negate(x)) BETWEEN 10 AND 20);
 
+-- The chain shapes the fix is about must still prune. Result comparisons alone cannot show this: a
+-- chain that declines analysis reads every granule and returns the same correct rows.
+SET use_lightweight_primary_key_index_analysis = 1;
+SELECT 'chain granules read, lightweight analysis', count() > 0
+FROM (EXPLAIN indexes = 1 SELECT sum(x) FROM t_wpk_chain WHERE abs(negate(toInt64(x))) BETWEEN 10 AND 20)
+WHERE explain ILIKE '%Granules: 5/8%';
+
+SET use_lightweight_primary_key_index_analysis = 0;
+SELECT 'chain granules read, full analysis', count() > 0
+FROM (EXPLAIN indexes = 1 SELECT sum(x) FROM t_wpk_chain WHERE abs(negate(toInt64(x))) BETWEEN 10 AND 20)
+WHERE explain ILIKE '%Granules: 5/8%';
+
 DROP TABLE t_wpk_edge;
 DROP TABLE t_wpk_edge_unsorted;
 DROP TABLE t_wpk_chain;
