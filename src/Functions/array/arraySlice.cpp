@@ -466,7 +466,7 @@ The first argument may also be a [QBit](/sql-reference/data-types/qbit): the res
         {"length", "The length of the required slice. If you specify a negative value, the function returns an open slice `[offset, array_length - length]`. If you omit the value, the function returns the slice `[offset, the_end_of_array]`.", {"(U)Int*"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a slice of the array with `length` elements from the specified `offset`", {"Array(T)"}};
-    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;", "[2, NULL, 4]"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;", "[2,NULL,4]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
