@@ -61,7 +61,8 @@ def send(write_request):
 
 HISTOGRAM_COLUMNS = (
     "timestamp, flags, schema, zero_threshold, count, sum, zero_count,"
-    " positive_spans, positive_values, negative_spans, negative_values, custom_values"
+    " positive_spans, positive_values, negative_spans, negative_values, custom_values,"
+    " count_int, zero_count_int, positive_values_int, negative_values_int"
 )
 
 
@@ -114,6 +115,10 @@ def test_int_histogram():
                 "[(-1,1)]",
                 "[2]",
                 "[]",
+                "10",
+                "2",
+                "[3,2,3]",
+                "[2]",
             ]
         ]
     )
@@ -187,6 +192,10 @@ def test_float_histogram_and_nhcb():
                 "[]",
                 "[]",
                 "[]",
+                "0",
+                "0",
+                "[]",
+                "[]",
             ],
             [
                 "2024-01-01 00:00:03.000",
@@ -201,6 +210,10 @@ def test_float_histogram_and_nhcb():
                 "[]",
                 "[]",
                 "[0.1,0.5,1]",
+                "7",
+                "0",
+                "[2,3,4]",
+                "[]",
             ],
         ]
     )
@@ -402,22 +415,40 @@ def test_invalid_histograms_rejected():
             timestamp=1704067219000,
         )
     )
-    # An integer count above 2^53, which the Float64 carrier cannot hold exactly: rejected rather
-    # than rounded, so a stored integer histogram always reads back the count it arrived with.
-    assert_rejected(
-        types_pb2.Histogram(
-            count_int=(1 << 53) + 1,
-            sum=0.0,
-            timestamp=1704067220000,
-        )
+
+
+# Counts ride in Float64 columns, which represent integers exactly only up to 2^53; an
+# integer-flavor histogram also stores them in the exact UInt64 carriers, so one above that
+# bound round-trips losslessly instead of being rejected or rounded.
+def test_int_histogram_lossless_round_trip():
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS store_native_histograms = 1"
     )
-    # The same bound applies to a decoded bucket count.
-    assert_rejected(
-        types_pb2.Histogram(
-            count_int=1,
-            sum=0.0,
-            positive_spans=[types_pb2.BucketSpan(offset=0, length=1)],
-            positive_deltas=[(1 << 53) + 1],
-            timestamp=1704067221000,
-        )
+    big = (1 << 53) + 1  # the first integer Float64 cannot represent: rounds to 2^53
+    histogram = types_pb2.Histogram(
+        count_int=(big << 7),  # still far below 2^64, but way above 2^53
+        sum=float(big),
+        schema=3,
+        zero_count_int=(1 << 53) - 1,  # the largest exact one
+        positive_spans=[types_pb2.BucketSpan(offset=0, length=2)],
+        # Decoded to absolute values [2^59, 2^59 + (2^53 + 1)], both inexact in Float64.
+        positive_deltas=[(big << 6), big],
+        negative_spans=[types_pb2.BucketSpan(offset=-1, length=1)],
+        negative_deltas=[(big << 6) + 5],
+        timestamp=1704067220000,
+    )
+    send(make_write_request({"__name__": "test_hist_big_int"}, [histogram]))
+
+    assert node.query(
+        "SELECT count_int, zero_count_int, positive_values_int, negative_values_int"
+        " FROM timeSeriesHistograms(prometheus)"
+    ) == TSV(
+        [
+            [
+                str(big << 7),
+                str((1 << 53) - 1),
+                f"[{big << 6},{(big << 6) + big}]",
+                f"[{(big << 6) + 5}]",
+            ]
+        ]
     )

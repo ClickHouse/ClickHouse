@@ -39,8 +39,9 @@ SELECT count() FROM timeSeriesHistograms(ts_hist);
 
 SELECT '-- INSERT through the outer histograms column, read back via timeSeriesHistograms()';
 INSERT INTO ts_hist (metric_name, tags, histograms) VALUES
-    ('test_histogram_seconds', map('job', 'test'), [('2024-01-01 00:00:01.000', 0, 3, 0.001, 10, 25.5, 2, [(0, 2), (1, 1)], [3, 2, 3], [], [], []), ('2024-01-01 00:00:02.000', 1, -53, 0, 6.5, 12.25, 0, [(0, 2)], [4.5, 2], [], [], [0.1, 0.5])]);
-SELECT timestamp, flags, schema, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values
+    ('test_histogram_seconds', map('job', 'test'), [('2024-01-01 00:00:01.000', 0, 3, 0.001, 10, 25.5, 2, [(0, 2), (1, 1)], [3, 2, 3], [], [], [], 10, 2, [3, 2, 3], [2]), ('2024-01-01 00:00:02.000', 1, -53, 0, 6.5, 12.25, 0, [(0, 2)], [4.5, 2], [], [], [0.1, 0.5], 0, 0, [], [])]);
+SELECT timestamp, flags, schema, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values,
+    count_int, zero_count_int, positive_values_int, negative_values_int
     FROM timeSeriesHistograms(ts_hist) ORDER BY timestamp;
 
 SELECT '-- histogram rows share the series id with the tags table';
@@ -53,7 +54,7 @@ SELECT '-- min_time and max_time in the tags table come from histogram timestamp
 SELECT min(min_time), max(max_time) FROM timeSeriesTags(ts_hist) WHERE metric_name = 'test_histogram_seconds';
 
 SELECT '-- histograms without a metric name are rejected';
-INSERT INTO ts_hist (metric_name, tags, histograms) VALUES ('', map(), [('2024-01-01 00:00:03.000', 0, 0, 0., 1, 1, 0, [], [], [], [], [])]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_hist (metric_name, tags, histograms) VALUES ('', map(), [('2024-01-01 00:00:03.000', 0, 0, 0., 1, 1, 0, [], [], [], [], [], 0, 0, [], [])]); -- { serverError INCORRECT_DATA }
 
 SELECT '-- a histogram-enabled definition survives DETACH/ATTACH unchanged';
 DETACH TABLE ts_hist;
@@ -82,7 +83,11 @@ CREATE TABLE hist_data
     positive_values Array(Float64),
     negative_spans Array(Tuple(offset Int32, length UInt32)),
     negative_values Array(Float64),
-    custom_values Array(Float64)
+    custom_values Array(Float64),
+    count_int UInt64,
+    zero_count_int UInt64,
+    positive_values_int Array(UInt64),
+    negative_values_int Array(UInt64)
 ) ENGINE = MergeTree ORDER BY (id, timestamp);
 CREATE TABLE ts_ext ENGINE = TimeSeries HISTOGRAMS hist_data;
 SELECT count() FROM timeSeriesHistograms(ts_ext);
@@ -105,7 +110,11 @@ CREATE TABLE hist_bad_type
     positive_values Array(Float64),
     negative_spans Array(Tuple(offset Int32, length UInt32)),
     negative_values Array(Float64),
-    custom_values Array(Float64)
+    custom_values Array(Float64),
+    count_int UInt64,
+    zero_count_int UInt64,
+    positive_values_int Array(Int64),
+    negative_values_int Array(UInt64)
 ) ENGINE = MergeTree ORDER BY (id, timestamp);
 CREATE TABLE ts_ext_badtype ENGINE = TimeSeries HISTOGRAMS hist_bad_type; -- { serverError BAD_TYPE_OF_FIELD }
 
