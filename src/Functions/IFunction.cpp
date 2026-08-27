@@ -790,8 +790,12 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
 
         for (ColumnWithTypeAndName & arg : args_without_low_cardinality)
         {
-            bool is_const = arg.column && isColumnConst(*arg.column);
-            if (is_const)
+            /// A Set-typed argument always becomes a constant column in the plan (`ColumnSet` is
+            /// always wrapped in `ColumnConst`); during analysis the set from a subquery is not
+            /// built yet and has no column, so without this it would count as a full column and
+            /// the same expression would get a different type than with a literal set.
+            bool is_const = (arg.column && isColumnConst(*arg.column)) || WhichDataType(arg.type).isSet();
+            if (is_const && arg.column)
                 arg.column = arg.column->convertToFullColumnIfLowCardinality();
 
             if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(arg.type.get()))

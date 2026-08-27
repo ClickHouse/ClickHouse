@@ -17,7 +17,7 @@ doc_type: '참고'
 
 chDB 엔진을 사용해 SQL 쿼리를 실행합니다.
 
-내장 ClickHouse 엔진을 사용해 SQL 문을 실행하는 기본 쿼리 함수입니다. 다양한 출력 형식을 지원하며, 인메모리 데이터베이스 또는 파일 기반 데이터베이스에서 사용할 수 있습니다.
+내장 ClickHouse 엔진을 사용해 SQL 문을 실행하는 핵심 쿼리 함수입니다. 다양한 출력 형식을 지원하며, 인메모리 데이터베이스 또는 파일 기반 데이터베이스에서 사용할 수 있습니다.
 
 **구문**
 
@@ -32,7 +32,7 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 | `sql`           | str | *필수*    | 실행할 SQL 쿼리 문자열                                                                                                                                                                                                                                            |
 | `output_format` | str | `"CSV"` | 결과의 출력 형식입니다. 지원되는 포맷:<br />• `"CSV"` - 쉼표로 구분된 값<br />• `"JSON"` - JSON 포맷<br />• `"Arrow"` - Apache Arrow 형식<br />• `"Parquet"` - Parquet 포맷<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 상세 로깅 활성화 |
 | `path`          | str | `""`    | 데이터베이스 파일 경로입니다. 기본적으로 인메모리 데이터베이스를 사용합니다.<br />파일 경로 또는 인메모리 데이터베이스를 나타내는 `":memory:"`를 사용할 수 있습니다                                                                                                                                                       |
-| `udf_path`      | str | `""`    | 사용자 정의 함수 디렉터리 경로                                                                                                                                                                                                                                         |
+| `udf_path`      | str | `""`    | 레거시 하위 프로세스 기반 UDF 디렉터리 경로입니다. 네이티브 Python UDF에는 필요하지 않습니다([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                            |
 
 **반환값**
 
@@ -55,14 +55,14 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 **예시**
 
 ```pycon
->>> # 기본 CSV 쿼리
+>>> # Basic CSV query
 >>> result = chdb.query("SELECT 1, 'hello'")
 >>> print(result)
 "1,hello"
 ```
 
 ```pycon
->>> # DataFrame 형식으로 쿼리 실행
+>>> # Query with DataFrame output
 >>> df = chdb.query("SELECT 1 as id, 'hello' as msg", "DataFrame")
 >>> print(df)
    id    msg
@@ -70,13 +70,8 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 ```
 
 ```pycon
->>> # 파일 기반 데이터베이스를 사용한 쿼리
+>>> # Query with file-based database
 >>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
-```
-
-```pycon
->>> # UDF를 사용한 쿼리
->>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
 ```
 
 ***
@@ -97,18 +92,18 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 
 **매개변수**
 
-| 매개변수       | 유형  | Default    | Description                                                                                                                                                                                                                                                         |
+| 매개변수            | 유형  | Default    | Description                                                                                                                                                                                                                                                         |
 | --------------- | --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`           | str | *required* | 실행할 SQL 쿼리 문자열                                                                                                                                                                                                                                                      |
 | `output_format` | str | `"CSV"`    | 결과의 출력 형식입니다. 지원되는 포맷은 다음과 같습니다.<br />• `"CSV"` - 쉼표로 구분된 값<br />• `"JSON"` - JSON 포맷<br />• `"Arrow"` - Apache Arrow 형식<br />• `"Parquet"` - Parquet 포맷<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 상세 로깅 활성화 |
 | `path`          | str | `""`       | 데이터베이스 파일 경로입니다. 기본값은 인메모리 데이터베이스입니다.<br />파일 경로 또는 인메모리 데이터베이스를 위한 `":memory:"`를 사용할 수 있습니다                                                                                                                                                                        |
-| `udf_path`      | str | `""`       | 사용자 정의 함수 디렉터리 경로                                                                                                                                                                                                                                                   |
+| `udf_path`      | str | `""`       | 레거시 하위 프로세스 기반 UDF 디렉터리의 경로입니다. 네이티브 Python UDF에는 필요하지 않습니다([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                     |
 
 **반환값**
 
-지정된 포맷으로 쿼리 결과를 반환합니다.
+지정된 형식으로 쿼리 결과를 반환합니다.
 
-| Return 유형        | Condition                                             |
+| Return 유형          | Condition                                             |
 | ------------------ | ----------------------------------------------------- |
 | `str`              | CSV, JSON과 같은 텍스트 형식인 경우                              |
 | `pd.DataFrame`     | `output_format`이 `"DataFrame"` 또는 `"dataframe"`인 경우   |
@@ -120,19 +115,19 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 | Exception                 | Condition                          |
 | ------------------------- | ---------------------------------- |
 | [`ChdbError`](#chdberror) | SQL 쿼리 실행이 실패한 경우                  |
-| `ImportError`             | DataFrame/Arrow 형식에 필요한 종속성이 없는 경우 |
+| `ImportError`             | DataFrame/Arrow 형식에 필요한 의존성이 없는 경우 |
 
 **예시**
 
 ```pycon
->>> # 기본 CSV 쿼리
+>>> # Basic CSV query
 >>> result = chdb.query("SELECT 1, 'hello'")
 >>> print(result)
 "1,hello"
 ```
 
 ```pycon
->>> # DataFrame 출력으로 쿼리
+>>> # Query with DataFrame output
 >>> df = chdb.query("SELECT 1 as id, 'hello' as msg", "DataFrame")
 >>> print(df)
    id    msg
@@ -140,13 +135,8 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 ```
 
 ```pycon
->>> # 파일 기반 데이터베이스로 쿼리
+>>> # Query with file-based database
 >>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
-```
-
-```pycon
->>> # UDF를 사용한 쿼리
->>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
 ```
 
 ***
@@ -490,7 +480,7 @@ close()
 SQL 쿼리를 실행하고 결과를 반환합니다.
 
 이 메서드는 세션의 데이터베이스에서 SQL 쿼리를 실행하고
-지정된 포맷으로 결과를 반환합니다. 또한 다양한 출력 형식을 지원하며,
+지정된 형식으로 결과를 반환합니다. 또한 다양한 출력 형식을 지원하며,
 쿼리 간에 세션 상태를 유지합니다.
 
 **구문**
@@ -504,8 +494,8 @@ query(sql, fmt='CSV', udf_path='')
 | 매개변수       | 유형  | 기본값        | 설명                                                                                                                                                                                                                                                                         |
 | ---------- | --- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`      | str | *required* | 실행할 SQL 쿼리 문자열                                                                                                                                                                                                                                                             |
-| `fmt`      | str | `"CSV"`    | 결과의 출력 형식입니다. 사용할 수 있는 포맷은 다음과 같습니다:<br />• `"CSV"` - 쉼표로 구분된 값<br />• `"JSON"` - JSON 형식<br />• `"TabSeparated"` - 탭으로 구분된 값<br />• `"Pretty"` - 보기 좋게 출력된 테이블 형식<br />• `"JSONCompact"` - 간결한 JSON 형식<br />• `"Arrow"` - Apache Arrow 형식<br />• `"Parquet"` - Parquet 형식 |
-| `udf_path` | str | `""`       | 사용자 정의 함수의 경로입니다. 지정하지 않으면 세션 초기화 시 설정된 UDF 경로를 사용합니다.                                                                                                                                                                                                                     |
+| `fmt`      | str | `"CSV"`    | 결과의 출력 형식입니다. 사용할 수 있는 포맷은 다음과 같습니다:<br />• `"CSV"` - 쉼표로 구분된 값<br />• `"JSON"` - JSON 포맷<br />• `"TabSeparated"` - 탭으로 구분된 값<br />• `"Pretty"` - 보기 좋게 표시된 테이블 포맷<br />• `"JSONCompact"` - 간결한 JSON 포맷<br />• `"Arrow"` - Apache Arrow 형식<br />• `"Parquet"` - Parquet 포맷 |
+| `udf_path` | str | `""`       | 레거시 하위 프로세스 기반 UDF 디렉터리의 경로입니다. 네이티브 Python UDF([`@func`](#func-decorator) / [`create_function`](#create-function))에는 필요하지 않습니다. 지정하지 않으면 세션 초기화 시 설정된 UDF 경로를 사용합니다.                                                                                                      |
 
 **반환값**
 
@@ -513,7 +503,7 @@ query(sql, fmt='CSV', udf_path='')
 정확한 반환 유형은 `fmt` 매개변수에 따라 달라집니다.
 
 * 문자열 포맷(CSV, JSON 등)은 str을 반환합니다
-* 바이너리 포맷(Arrow, Parquet)은 bytes를 반환합니다
+* 바이너리 형식(Arrow, Parquet)은 bytes를 반환합니다
 
 **예외**
 
@@ -541,7 +531,7 @@ query(sql, fmt='CSV', udf_path='')
 ```pycon
 >>> session = Session("test.db")
 >>>
->>> # 기본 CSV 형식으로 쿼리 실행
+>>> # Basic query with default CSV format
 >>> result = session.query("SELECT 1 as number")
 >>> print(result)
 number
@@ -549,7 +539,7 @@ number
 ```
 
 ```pycon
->>> # JSON 포맷으로 쿼리
+>>> # Query with JSON format
 >>> result = session.query("SELECT 1 as number", fmt="JSON")
 >>> print(result)
 {"number": "1"}
@@ -670,7 +660,7 @@ sql(sql, fmt='CSV', udf_path='')
 | ---------- | --- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`      | str | *required* | 실행할 SQL 쿼리 문자열                                                                                                                                                                                                                                                 |
 | `fmt`      | str | `"CSV"`    | 결과의 출력 형식입니다. 사용 가능한 포맷:<br />• `"CSV"` - 쉼표로 구분된 값<br />• `"JSON"` - JSON 포맷<br />• `"TabSeparated"` - 탭으로 구분된 값<br />• `"Pretty"` - 보기 좋게 표시된 테이블 포맷<br />• `"JSONCompact"` - 간결한 JSON 포맷<br />• `"Arrow"` - Apache Arrow 형식<br />• `"Parquet"` - Parquet 포맷 |
-| `udf_path` | str | `""`       | 사용자 정의 함수의 경로입니다. 지정하지 않으면 세션 초기화 시 설정된 UDF 경로를 사용합니다                                                                                                                                                                                                          |
+| `udf_path` | str | `""`       | 레거시 하위 프로세스 기반 UDF 디렉터리의 경로입니다. 네이티브 Python UDF([`@func`](#func-decorator) / [`create_function`](#create-function))에는 필요하지 않습니다. 지정하지 않으면 세션 초기화 시 설정된 UDF 경로를 사용합니다                                                                                           |
 
 **반환값**
 
@@ -685,7 +675,7 @@ sql(sql, fmt='CSV', udf_path='')
 | 예외             | 조건                    |
 | -------------- | --------------------- |
 | `RuntimeError` | 세션이 닫혔거나 유효하지 않은 경우   |
-| `ValueError`   | SQL 쿼리 형식이 올바르지 않은 경우 |
+| `ValueError`   | SQL 쿼리 구문이 잘못된 경우 |
 
 <Note>
   “Debug” 포맷은 지원되지 않으며, 경고와 함께 자동으로 “CSV”로 변환됩니다.
@@ -705,7 +695,7 @@ sql(sql, fmt='CSV', udf_path='')
 ```pycon
 >>> session = Session("test.db")
 >>>
->>> # 기본 CSV 형식으로 쿼리 실행
+>>> # Basic query with default CSV format
 >>> result = session.query("SELECT 1 as number")
 >>> print(result)
 number
@@ -713,14 +703,14 @@ number
 ```
 
 ```pycon
->>> # JSON 포맷으로 쿼리
+>>> # Query with JSON format
 >>> result = session.query("SELECT 1 as number", fmt="JSON")
 >>> print(result)
 {"number": "1"}
 ```
 
 ```pycon
->>> # 테이블 생성을 포함한 복합 쿼리
+>>> # Complex query with table creation
 >>> session.query("CREATE TABLE test (id INT, name String) ENGINE = MergeTree() order by id")
 >>> session.query("INSERT INTO test VALUES (1, 'Alice'), (2, 'Bob')")
 >>> result = session.query("SELECT * FROM test ORDER BY id")
@@ -838,7 +828,7 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 **관련 항목**
 
 * `Connection` - 데이터베이스 연결 클래스
-* `Cursor` - DB-API 2.0 작업을 위한 데이터베이스 커서"
+* `Cursor` - DB-API 2.0 작업을 위한 데이터베이스 커서&quot;
 
 <div id="chdb-state-sqlitelike-connection">
   ### **class** `chdb.state.sqlitelike.Connection`
@@ -3477,17 +3467,294 @@ with dbapi.connect("test.chdb") as conn:
 </Warning>
 
 <div id="user-defined-functions">
-  ## 사용자 정의 함수(UDF)
+  ## Python 사용자 정의 함수(UDF)
 </div>
 
-chDB용 사용자 정의 함수 모듈입니다.
+chDB는 타입이 지정된 인수, 자동 유형 추론, 구성 가능한 NULL/예외 처리를 지원하는 네이티브 Python UDF를 프로세스 내에서 실행합니다. UDF로 등록된 Python 함수는 SQL 쿼리에서 직접 호출할 수 있습니다.
 
-이 모듈은 chDB에서 사용자 정의 함수(UDF)를 생성하고 관리하는 기능을 제공합니다.
-SQL 쿼리에서 호출할 수 있는 사용자 정의 Python 함수를 작성해 chDB의 기능을
-확장할 수 있습니다.
+아래 예시에서는 기본 CSV 출력 형식을 사용합니다. 인라인 주석은 논리적 결과 값을 보여주며, 원시 출력에서는 `NULL`이 `\N`으로 표시되고 문자열 및 날짜 값에는 CSV 따옴표 처리가 적용됩니다.
+
+<div id="create-function">
+  ### `chdb.create_function`
+</div>
+
+Python 함수를 chDB SQL 함수로 등록합니다.
+
+**구문**
+
+```python
+chdb.create_function(name, func, arg_types=None, return_type=None, *, on_null=None, on_error=None)
+```
+
+**매개변수**
+
+| 매개변수          | 유형                                 | 기본값                | 설명                                                               |
+| ------------- | ---------------------------------- | ------------------ | ---------------------------------------------------------------- |
+| `name`        | str                                | *(필수)*             | 등록할 SQL 함수 이름                                                    |
+| `func`        | callable                           | *(필수)*             | 등록할 Python 함수                                                    |
+| `arg_types`   | list of ChdbType/str/type, or None | `None`             | 인수 타입 목록입니다. `None`이면 타입 어노테이션을 기반으로 추론됩니다                       |
+| `return_type` | ChdbType/str/type, or None         | `None`             | 반환 타입입니다. `None`이면 함수의 반환 어노테이션을 기반으로 추론되며, 어노테이션도 없으면 등록에 실패합니다 |
+| `on_null`     | str or NullHandling                | `None` (skip)      | NULL 입력 처리 방식입니다. `"skip"` 또는 `"pass"`입니다. 키워드 전용입니다             |
+| `on_error`    | str or ExceptionHandling           | `None` (propagate) | 예외 처리 방식입니다. `"propagate"` 또는 `"ignore"`입니다. 키워드 전용입니다           |
+
+각 타입 매개변수(`arg_types` 원소 및 `return_type`)에는 다음을 사용할 수 있습니다.
+
+* `ChdbType` 상수: `INT64`, `STRING`, `FLOAT64` 등
+* ClickHouse 타입 문자열: `"Int64"`, `"String"`, `"DateTime64(6)"`, `"DateTime('UTC')"` 등
+* Python 타입: `int`, `float`, `str`, `bool`, `bytes`, `datetime.date`, `datetime.datetime` — [자동 타입 매핑](#udf-automatic-type-mapping)에 따라 매핑됩니다.
+
+이미 등록된 이름을 다시 등록하면 오류가 발생합니다. UDF는 자동으로 대체되지 않습니다. 함수를 다시 등록하려면 먼저 [`drop_function`](#drop-function)을 호출하십시오.
+
+**예시**
+
+```python
+from chdb import create_function, drop_function, query
+from chdb.sqltypes import INT64, STRING
+
+create_function("strlen", len, arg_types=[STRING], return_type=INT64)
+print(query("SELECT strlen('hello')"))  # 5
+
+drop_function("strlen")
+```
+
+***
+
+<div id="drop-function">
+  ### `chdb.drop_function`
+</div>
+
+이전에 등록된 Python UDF를 제거합니다. 함수가 등록되어 있지 않으면 아무 작업도 수행하지 않으므로, 조건과 관계없이 안전하게 호출할 수 있습니다.
+
+**구문**
+
+```python
+chdb.drop_function(name)
+```
+
+**매개변수**
+
+| 매개변수   | 유형  | 설명                   |
+| ------ | --- | -------------------- |
+| `name` | str | 삭제할 SQL 함수의 이름 |
+
+***
+
+<div id="func-decorator">
+  ### `@func` 데코레이터
+</div>
+
+Python 함수를 chDB SQL 함수로 등록하는 데 사용되는 데코레이터입니다. 등록한 함수는 일반 Python 함수처럼 계속 호출할 수 있으며, 동시에 `__name__`을 통해 SQL 쿼리에서도 사용할 수 있습니다.
+
+**구문**
+
+```python
+from chdb import func
+
+@func(arg_types=None, return_type=None, *, on_null=None, on_error=None)
+def my_function(...):
+    ...
+```
+
+**매개변수**
+
+데코레이터가 적용된 함수에서 가져오는 `name` 및 `func`를 제외하면 [`create_function`](#create-function)과 동일합니다.
+
+**예시**
+
+```python
+from chdb import func, query
+from chdb.sqltypes import INT64, STRING
+
+# Explicit types
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
+
+# Types inferred from annotations
+@func()
+def multiply(a: int, b: int) -> int:
+    return a * b
+
+# Explicit return_type, arg_types inferred from annotations
+@func(return_type=STRING)
+def greet(name: str):
+    return f"Hello, {name}!"
+
+print(query("SELECT add(12, 22)"))       # 34
+print(query("SELECT multiply(3, 7)"))    # 21
+print(query("SELECT greet('world')"))    # Hello, world!
+```
+
+***
+
+<div id="udf-type-system">
+  ### 유형 시스템
+</div>
+
+<div id="udf-available-types">
+  #### 사용 가능한 타입
+</div>
+
+`chdb.sqltypes`에서 타입을 import합니다:
+
+```python
+from chdb.sqltypes import (
+    BOOL,
+    INT8, INT16, INT32, INT64, INT128, INT256,
+    UINT8, UINT16, UINT32, UINT64, UINT128, UINT256,
+    FLOAT32, FLOAT64,
+    STRING,
+    DATE, DATE32, DATETIME, DATETIME64,
+)
+```
+
+<div id="udf-automatic-type-mapping">
+  #### 자동 타입 매핑
+</div>
+
+Python 어노테이션을 기반으로 타입을 추론할 때는 다음 매핑이 사용됩니다:
+
+| Python 타입           | ClickHouse 타입   |
+| ------------------- | --------------- |
+| `bool`              | `Bool`          |
+| `int`               | `Int64`         |
+| `float`             | `Float64`       |
+| `str`               | `String`        |
+| `bytes`             | `String`        |
+| `bytearray`         | `String`        |
+| `datetime.date`     | `Date`          |
+| `datetime.datetime` | `DateTime64(6)` |
+
+<div id="udf-type-specification-methods">
+  #### 타입 지정 방법
+</div>
+
+타입은 여러 방법으로 지정할 수 있습니다:
+
+```python
+from chdb import create_function, func
+from chdb.sqltypes import INT64
+
+# 1. ChdbType constants
+create_function("f1", lambda x: x, arg_types=[INT64], return_type=INT64)
+
+# 2. ClickHouse type strings
+create_function("f2", lambda x: x, arg_types=["Int64"], return_type="Int64")
+
+# 3. Parameterized type strings
+create_function("f3", lambda x: x, arg_types=["DateTime('UTC')"], return_type="DateTime('UTC')")
+
+# 4. Python types — passed directly or used as annotations
+create_function("f4", lambda x: x, arg_types=[int], return_type=int)
+
+@func()
+def f5(x: int) -> int:
+    return x
+```
+
+***
+
+<div id="udf-null-handling">
+  ### NULL 처리
+</div>
+
+`on_null` 매개변수로 NULL 값을 처리하는 방식을 지정합니다.
+
+| 값        | Enum                | 동작                             |
+| -------- | ------------------- | ------------------------------ |
+| `"skip"` | `NullHandling.SKIP` | 함수를 호출하지 않고 NULL을 반환합니다(기본값)   |
+| `"pass"` | `NullHandling.PASS` | NULL을 `None`으로 변환한 후 함수를 호출합니다 |
+
+```python
+from chdb import func, query, NullHandling
+
+# Default: NULL in → NULL out, function not called
+@func(return_type="Int64")
+def add_one(x: int) -> int:
+    return x + 1
+
+print(query("SELECT add_one(NULL)"))  # NULL
+
+# Pass NULL as None
+@func(return_type="Int64", on_null="pass")
+def null_safe(x):
+    return 0 if x is None else x + 1
+
+print(query("SELECT null_safe(NULL)"))  # 0
+```
+
+***
+
+<div id="udf-exception-handling">
+  ### 예외 처리
+</div>
+
+`on_error` 매개변수로 예외 처리 방식을 제어합니다.
+
+| 값             | Enum                          | 동작                     |
+| ------------- | ----------------------------- | ---------------------- |
+| `"propagate"` | `ExceptionHandling.PROPAGATE` | 예외를 SQL 오류로 보고합니다(기본값) |
+| `"ignore"`    | `ExceptionHandling.IGNORE`    | 예외를 처리하고 NULL을 반환합니다   |
+
+```python
+from chdb import func, query
+
+# Default: exception propagates
+@func(arg_types=["Int64", "Int64"], return_type="Int64")
+def divide(a, b):
+    return a // b
+
+# print(query("SELECT divide(1, 0)"))  # Error: division by zero
+
+# Ignore: exception → NULL
+@func(arg_types=["Int64", "Int64"], return_type="Int64", on_error="ignore")
+def safe_divide(a, b):
+    return a // b
+
+print(query("SELECT safe_divide(1, 0)"))   # NULL
+print(query("SELECT safe_divide(10, 2)"))  # 5
+```
+
+***
+
+<div id="udf-datetime">
+  ### DateTime 및 시간대 지원
+</div>
+
+UDF는 시간대를 인식하는 `Date`, `Date32`, `DateTime`, `DateTime64` 타입을 완벽하게 지원합니다.
+
+```python
+from chdb import func, query
+from datetime import datetime, timedelta, date
+
+@func(arg_types=["DateTime('UTC')"], return_type="DateTime('UTC')")
+def add_one_hour(dt):
+    return dt + timedelta(hours=1)
+
+@func()
+def get_year(d: date) -> int:
+    return d.year
+
+print(query("SELECT add_one_hour(toDateTime('2024-01-01 12:00:00', 'UTC'))"))  # 2024-01-01 13:00:00
+print(query("SELECT get_year(toDate('2024-06-15'))"))  # 2024
+```
+
+* 입력 ClickHouse `DateTime`/`DateTime64` 값은 시간대 정보가 포함된 Python `datetime` 객체로 변환됩니다
+* 출력 Python `datetime` 객체는 ClickHouse로 반환될 때 시간대 정보를 유지합니다
+* `chdb.sqltypes`의 `DATETIME64` 타입은 기본적으로 스케일 6(마이크로초)을 사용하며, `DateTime64(6)`과 동일합니다
+
+***
+
+<div id="legacy-udf">
+  ### 레거시 API
+</div>
+
+<Warning>
+  **더 이상 사용되지 않음:** `@chdb_udf` 데코레이터는 레거시 하위 프로세스 기반 UDF 메커니즘으로, 별도의 Python 프로세스에서 함수를 실행하고 모든 인수를 문자열로 전달합니다. 계속 사용할 수는 있지만, 네이티브 Python UDF API([`@func`](#func-decorator) / [`create_function`](#create-function))를 사용하는 것이 좋습니다. 네이티브 UDF는 형식이 지정된 인수, NULL 처리 및 예외 제어를 지원하며 프로세스 내에서 실행됩니다. 전체 사용 방법은 [Python UDF 가이드](/ko/chdb/guides/python-udf)를 참조하십시오.
+</Warning>
 
 <div id="chdb-udf">
-  ### `chdb.udf.chdb_udf`
+  #### `chdb.udf.chdb_udf`
 </div>
 
 chDB Python UDF(사용자 정의 함수)용 데코레이터입니다.
@@ -3523,13 +3790,13 @@ def sum_udf(lhs, rhs):
 @chdb_udf()
 def func_use_json(arg):
     import json
-    # ... json 모듈 사용
+    # ... use json module
 ```
 
 ***
 
 <div id="generate-udf">
-  ### `chdb.udf.generate_udf`
+  #### `chdb.udf.generate_udf`
 </div>
 
 UDF 구성과 실행형 스크립트 파일을 생성합니다.
@@ -3551,7 +3818,7 @@ chdb.udf.generate_udf(func_name, args, return_type, udf_body)
 | ------------- | ---- | ----------------------- |
 | `func_name`   | str  | UDF 함수 이름               |
 | `args`        | list | 함수의 인수 이름 목록            |
-| `return_type` | str  | 함수의 ClickHouse 반환 유형    |
+| `return_type` | str  | 함수의 ClickHouse 반환 타입    |
 | `udf_body`    | str  | UDF 함수의 Python 소스 코드 본문 |
 
 <Note>

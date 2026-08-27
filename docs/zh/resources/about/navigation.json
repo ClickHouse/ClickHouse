@@ -3,10 +3,10 @@
     {
       "group": "关于 ClickHouse",
       "pages": [
+        "zh/resources/about/index",
         "zh/resources/about/adopters",
         "zh/resources/about/support"
-      ],
-      "root": "zh/resources/about/index"
+      ]
     }
   ],
   "icon": "/images/icons/icon-about.svg",
