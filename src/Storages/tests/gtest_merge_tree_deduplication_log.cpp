@@ -3369,6 +3369,172 @@ TEST(MergeTreeDeduplicationLog, FailedPartCommitKeepsCommittedBlockInFullWindow)
         std::filesystem::remove_all(work_dir);
     }
 }
+
+/// The sink rollback receives every block id its insert published; a regression that
+/// compensated only the first one would leave the rest published, so a retry of a
+/// multi-token insert would be deduplicated against a part that never committed and
+/// its data silently dropped. Cover both rollback flavors with an insert of two block
+/// ids and assert that every one of them becomes retryable - in-process and across a
+/// restart - while an unrelated committed block id keeps deduplicating.
+TEST(MergeTreeDeduplicationLog, RollbackCompensatesEveryBlockIdOfFailedInsert)
+{
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    for (bool rollback_without_records : {false, true})
+    {
+        const std::string work_dir = rollback_without_records
+            ? "tmp/gtest_dedup_log_multi_unpublish/"
+            : "tmp/gtest_dedup_log_multi_rollback/";
+        std::filesystem::remove_all(work_dir);
+        std::filesystem::create_directories(work_dir);
+
+        const std::vector<std::string> committed{"block1"};
+        const std::vector<std::string> failed{"block2", "block3"};
+
+        auto fail_to_commit = [&](MergeTreeDeduplicationLog & log, const MergeTreePartInfo & part_info)
+        {
+            bool part_was_published = false;
+            /// The whole insert is accepted: no block id of it may conflict, or the
+            /// sink would drop the insert - so a leftover of an earlier one-token-only
+            /// compensation is caught right here.
+            EXPECT_TRUE(log.addPart(failed, part_info, &part_was_published).empty());
+            EXPECT_TRUE(part_was_published);
+            if (rollback_without_records)
+                log.unpublishFailedPart(part_info, &failed);
+            else
+                log.rollbackPublishedPart(part_info, failed);
+            log.finishPartPublication(failed);
+        };
+
+        {
+            auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+            MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 4, format_version, disk);
+            log.load();
+
+            bool part_was_published = false;
+            EXPECT_TRUE(log.addPart(committed, part("all_1_1_0"), &part_was_published).empty());
+            ASSERT_TRUE(part_was_published);
+            log.finishPartPublication(committed);
+
+            /// One insert publishes two block ids and fails to commit; its retry fails
+            /// too, so the restart below starts from the same state.
+            fail_to_commit(log, part("all_2_2_0"));
+            fail_to_commit(log, part("all_3_3_0"));
+
+            /// The unrelated committed block id still deduplicates.
+            EXPECT_FALSE(log.addPart(committed, part("all_4_4_0")).empty());
+
+            log.shutdown();
+        }
+
+        {
+            auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+            MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 4, format_version, disk);
+            log.load();
+
+            /// The same holds after a restart, which rebuilds the map from the durable
+            /// records rather than from the live state: every block id of the failed
+            /// insert is individually retryable ...
+            EXPECT_TRUE(log.addPart({"block2"}, part("all_5_5_0")).empty());
+            EXPECT_TRUE(log.addPart({"block3"}, part("all_6_6_0")).empty());
+            /// ... and the committed one still deduplicates.
+            EXPECT_FALSE(log.addPart(committed, part("all_7_7_0")).empty());
+
+            log.shutdown();
+        }
+
+        std::filesystem::remove_all(work_dir);
+    }
+}
+
+/// Re-enabling deduplication with `ALTER TABLE ... MODIFY SETTING` while the
+/// unfinished-compaction marker is active discards the whole history (see
+/// ReenablingDeduplicationAfterUnfinishedCompactionDiscardsStaleHistory). That discard
+/// also wipes the per-block-id bookkeeping, so it must not run while an in-flight
+/// insert still holds published block ids - the only entries a zero-window phase
+/// keeps alive: they would survive only in the deduplication map, out of sync with
+/// every other structure (a later rollback, drop, or eviction of such an entry looks
+/// up a log file that no longer exists), and their commit would be forgotten by the
+/// next restart without a trace. The re-enable must fail closed instead and succeed
+/// once the in-flight insert has reported its outcome - preserving the committed
+/// block id, which the discard would have lost.
+TEST(MergeTreeDeduplicationLog, ReenablingWithInFlightPublicationFailsClosed)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_reenable_in_flight/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const std::string marker_path = work_dir + "dedup_logs/deduplication_log_0.txt";
+    auto marker_is_active = [&]() -> bool
+    {
+        return std::filesystem::exists(marker_path) && std::filesystem::file_size(marker_path) != 0;
+    };
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        auto disk = std::make_shared<DiskFailingRotationSyncAndLogFlushes>(
+            "faulty", work_dir, /*fail_on_sync=*/ 1, /*fail_from_flush=*/ 5);
+        /// deduplication_window == 2 gives rotate_interval == 4.
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        /// An insert publishes "block1" (flush 1) and its part commit stays in flight.
+        const std::vector<std::string> in_flight{"block1"};
+        bool part_was_published = false;
+        EXPECT_TRUE(log.addPart(in_flight, part("all_1_1_0"), &part_was_published).empty());
+        ASSERT_TRUE(part_was_published);
+
+        /// A second insert writes its three ADD records (flushes 2 to 4), reaches the
+        /// rotation interval, and the rotation's fsync (sync 1) fails; its rollback
+        /// cannot write the compensating records (flush 5) and the repair snapshot
+        /// cannot be written either, so the history is fenced off with the marker.
+        EXPECT_ANY_THROW(log.addPart({"block2", "block3", "block4"}, part("all_2_2_0")));
+        EXPECT_TRUE(marker_is_active());
+
+        /// Deduplication is disabled while the first insert is still in flight ...
+        log.setDeduplicationWindowSize(0);
+
+        /// ... so re-enabling it must fail closed: acting on the still-active marker
+        /// would discard the history - and the bookkeeping - while "block1" survives
+        /// only in memory.
+        EXPECT_ANY_THROW(log.setDeduplicationWindowSize(2));
+        EXPECT_TRUE(marker_is_active());
+
+        /// The in-flight insert commits, and the disk recovers.
+        log.finishPartPublication(in_flight);
+        disk->fail_from_flush = std::numeric_limits<size_t>::max();
+
+        /// The retried ALTER now succeeds: the first write barrier rewrites the live
+        /// state - which still has consistent bookkeeping for "block1" - as a fresh
+        /// snapshot and clears the marker, so nothing has to be discarded.
+        EXPECT_NO_THROW(log.setDeduplicationWindowSize(2));
+        EXPECT_FALSE(marker_is_active());
+
+        /// The committed block id survived the failed re-enable and deduplicates; the
+        /// rolled-back insert's block ids are retryable.
+        EXPECT_FALSE(log.addPart(in_flight, part("all_3_3_0")).empty());
+        EXPECT_TRUE(log.addPart({"block2"}, part("all_4_4_0")).empty());
+
+        log.shutdown();
+    }
+
+    {
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        /// The snapshot that repaired the history is replayed: the block id committed
+        /// across the failed re-enable still deduplicates after a restart.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_5_5_0")).empty());
+
+        log.shutdown();
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
 #endif
 
 /// Regression test: disabling deduplication before the log has any file must not walk
