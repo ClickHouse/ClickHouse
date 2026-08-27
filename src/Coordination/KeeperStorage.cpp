@@ -611,6 +611,67 @@ KeeperDigest KeeperStorage::preprocessRequest(
     return *digest;
 }
 
+void KeeperStorage::beginProcessBatch(const KeeperRequestBatch & batch)
+{
+    std::lock_guard lock(transaction_mutex);
+    if (uncommitted_batches.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Trying to commit a batch (ZXIDs [{}, {}]) which was not preprocessed",
+            batch.first_zxid,
+            batch.getLastZxid());
+
+    const auto & front_batch = uncommitted_batches.front();
+    if (front_batch.first_zxid != batch.first_zxid || front_batch.last_zxid != batch.getLastZxid())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Trying to commit a batch (ZXIDs [{}, {}]) while the next batch to commit covers ZXIDs [{}, {}]",
+            batch.first_zxid,
+            batch.getLastZxid(),
+            front_batch.first_zxid,
+            front_batch.last_zxid);
+}
+
+void KeeperStorage::endProcessBatch(const KeeperRequestBatch & batch)
+{
+    uint64_t batch_digest = 0;
+    {
+        std::lock_guard lock(transaction_mutex);
+        chassert(!uncommitted_batches.empty() && uncommitted_batches.front().first_zxid == batch.first_zxid);
+        batch_digest = uncommitted_batches.front().nodes_digest.value;
+    }
+
+    /// Publish the committed digest before popping the batch: preprocessing of the next batch
+    /// (on another thread) seeds its digest from the uncommitted digest, which falls back to the
+    /// committed one when the uncommitted batch list is empty.
+    if (!keeper_context->digestEnabledOnCommit())
+    {
+        std::lock_guard lock(storage_mutex);
+        nodes_digest = batch_digest;
+    }
+
+    {
+        std::lock_guard lock(transaction_mutex);
+        uncommitted_batches.pop_front();
+    }
+}
+
+KeeperResponsesForSessions KeeperStorage::processRequest(
+    const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid)
+{
+    if (!new_last_zxid)
+        return processOneRequest(request, session_id, new_last_zxid);
+
+    KeeperRequestBatch batch;
+    batch.requests.push_back(KeeperRequestForSession{.session_id = session_id, .request = request});
+    batch.first_zxid = *new_last_zxid;
+
+    beginProcessBatch(batch);
+    auto responses = processOneRequest(request, session_id, new_last_zxid);
+    endProcessBatch(batch);
+    return responses;
+}
+
 Coordination::Error KeeperStorage::commit(KeeperStorage::DeltaRange deltas)
 {
     using NodeAction = Coordination::Storage::NodeAction;
@@ -810,7 +871,7 @@ void KeeperStorage::rollbackBatch(const KeeperRequestBatch & batch, bool allow_m
         || batch.getLastZxid() != uncommitted_batches.back().last_zxid)
     {
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Trying to rollback batch that doesn't match the last preprocessed batch (rollback zxid [{}, {}], preprocessed [{}, {}].", batch.first_zxid, batch.getLastZxid(), uncommitted_batches.back().first_zxid, uncommitted_batches.back().last_zxid);
+            ErrorCodes::LOGICAL_ERROR, "Trying to rollback batch that doesn't match the last preprocessed batch (rollback zxid [{}, {}], preprocessed [{}, {}]).", batch.first_zxid, batch.getLastZxid(), uncommitted_batches.back().first_zxid, uncommitted_batches.back().last_zxid);
     }
 
     // if an exception occurs during rollback, the best option is to terminate because we can end up in an inconsistent state

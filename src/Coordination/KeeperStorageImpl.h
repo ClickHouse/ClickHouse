@@ -21,7 +21,7 @@ public:
         const KeeperRequestsForSessions & requests,
         bool check_acl) override;
     std::optional<KeeperDigest> preprocessBatch(const KeeperRequestBatch & batch, bool check_acl) override;
-    KeeperResponsesForSessions processRequest(
+    KeeperResponsesForSessions processOneRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
         std::optional<int64_t> new_last_zxid) override;

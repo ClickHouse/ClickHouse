@@ -315,12 +315,32 @@ public:
         int64_t new_last_zxid,
         bool check_acl,
         int64_t log_idx);
-    /// Commit a previously preprocessed request. Apply the changes to the committed state.
+    /// Committing a batch of previously preprocessed requests goes like this:
+    ///   beginProcessBatch(batch);
+    ///   for each request: processOneRequest(...);   // in order; skipped for requests that
+    ///                                               // create no storage transactions (SessionID)
+    ///   endProcessBatch(batch);
+    /// The three steps don't need to happen in one critical section, but must happen on one
+    /// thread, with no other batch committed in between (interleaving processLocalRequests
+    /// in between is fine).
+    /// beginProcessBatch checks that `batch` is the next uncommitted batch; endProcessBatch
+    /// publishes the committed digest and pops the batch from the uncommitted list.
+    void beginProcessBatch(const KeeperRequestBatch & batch);
+    void endProcessBatch(const KeeperRequestBatch & batch);
+
+    /// Commit one previously preprocessed request of the current batch (bracketed by
+    /// beginProcessBatch/endProcessBatch). Apply the changes to the committed state.
     /// Produce response for the request + triggered watch notifications.
-    virtual KeeperResponsesForSessions processRequest(
+    virtual KeeperResponsesForSessions processOneRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
         std::optional<int64_t> new_last_zxid) = 0;
+
+    /// Convenience wrapper for tools and tests: commit a single request as a batch of one.
+    KeeperResponsesForSessions processRequest(
+        const Coordination::ZooKeeperRequestPtr & request,
+        int64_t session_id,
+        std::optional<int64_t> new_last_zxid);
 
     void rollbackBatch(const KeeperRequestBatch & batch, bool allow_missing);
 

@@ -918,6 +918,11 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     if (!keeper_context->localLogsPreprocessed() && !preprocessBatch(*batch, /*lock_mutex=*/ true))
         return nullptr;
 
+    {
+        KEEPER_STORAGE_LOCK_SHARED(lock);
+        storage->beginProcessBatch(*batch);
+    }
+
     for (size_t request_idx = 0; request_idx < batch->requests.size(); ++request_idx)
     {
         const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
@@ -977,28 +982,17 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
 
                 {
                     KEEPER_STORAGE_LOCK_SHARED(lock);
+                    ProfiledExclusiveLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
+                    KeeperResponsesForSessions responses_for_sessions
+                        = storage->processOneRequest(request_for_session.request, request_for_session.session_id, batch->getZxid(request_idx));
+                    for (auto & response_for_session : responses_for_sessions)
                     {
-                        ProfiledExclusiveLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
-                        KeeperResponsesForSessions responses_for_sessions
-                            = storage->processRequest(request_for_session.request, request_for_session.session_id, batch->getZxid(request_idx));
-                        for (auto & response_for_session : responses_for_sessions)
-                        {
-                            if (response_for_session.response->xid != Coordination::WATCH_XID)
-                                response_for_session.request = request_for_session.request;
+                        if (response_for_session.response->xid != Coordination::WATCH_XID)
+                            response_for_session.request = request_for_session.request;
 
-                            if (response_callback)
-                                response_callback(std::move(response_for_session));
-                        }
+                        if (response_callback)
+                            response_callback(std::move(response_for_session));
                     }
-
-                    if (request_idx + 1 == batch->requests.size() && keeper_context->digestEnabled())
-                        assertDigest(
-                            batch->digest,
-                            storage->getNodesDigest(true, /*lock_transaction_mutex=*/true),
-                            *request_for_session.request,
-                            log_idx,
-                            request_for_session.session_id,
-                            true);
                 }
             }
 
@@ -1015,6 +1009,21 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
         }
 
         maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::OK, "");
+    }
+
+    {
+        KEEPER_STORAGE_LOCK_SHARED(lock);
+        /// (Publishes the committed digest, so must happen before the assert.)
+        storage->endProcessBatch(*batch);
+
+        if (keeper_context->digestEnabled())
+            assertDigest(
+                batch->digest,
+                storage->getNodesDigest(true, /*lock_transaction_mutex=*/true),
+                *batch->requests.back().request,
+                log_idx,
+                batch->requests.back().session_id,
+                true);
     }
 
     keeper_context->setLastCommitIndex(log_idx);

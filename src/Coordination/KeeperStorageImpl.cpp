@@ -1865,7 +1865,7 @@ bool KeeperStorageImpl<NS>::preprocessOneRequest(
 }
 
 template <typename NS>
-KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
+KeeperResponsesForSessions KeeperStorageImpl<NS>::processOneRequest(
     const Coordination::ZooKeeperRequestPtr & zk_request,
     int64_t session_id,
     std::optional<int64_t> new_last_zxid)
@@ -1892,43 +1892,18 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
+    /// (The request's membership in the current batch was validated by beginProcessBatch.
+    ///  Skipping or reordering commits within the batch would trip the delta order chassert
+    ///  below: deltas are committed strictly from the front.)
     int64_t commit_zxid = 0;
-    bool last_in_batch = false;
-    uint64_t transaction_digest = 0;
+    if (new_last_zxid)
+    {
+        commit_zxid = *new_last_zxid;
+    }
+    else
     {
         std::lock_guard lock(transaction_mutex);
-        if (new_last_zxid)
-        {
-            if (uncommitted_batches.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to commit a ZXID ({}) which was not preprocessed", *new_last_zxid);
-
-            const auto & front_batch = uncommitted_batches.front();
-            if (*new_last_zxid < front_batch.first_zxid || *new_last_zxid > front_batch.last_zxid)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Trying to commit a ZXID {} while the next batch to commit covers ZXIDs [{}, {}]",
-                    *new_last_zxid,
-                    front_batch.first_zxid,
-                    front_batch.last_zxid);
-            /// (Skipping or reordering commits within the batch would additionally trip the
-            ///  delta order chassert below: deltas are committed strictly from the front.)
-            if (*new_last_zxid <= zxid)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Trying to commit a ZXID {} while ZXID {} is already committed",
-                    *new_last_zxid,
-                    zxid);
-
-            commit_zxid = *new_last_zxid;
-            last_in_batch = commit_zxid == front_batch.last_zxid;
-            /// Digest after the whole batch; only becomes the committed digest when the batch's
-            /// last transaction commits.
-            transaction_digest = front_batch.nodes_digest.value;
-        }
-        else
-        {
-            commit_zxid = zxid;
-        }
+        commit_zxid = zxid;
     }
 
     std::list<Delta> deltas;
@@ -1964,8 +1939,6 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
         {
             std::lock_guard lock(storage_mutex);
             commit(deltas_range);
-            if (!keeper_context->digestEnabledOnCommit() && last_in_batch)
-                nodes_digest = transaction_digest;
         }
         {
             std::lock_guard lock(auth_mutex);
@@ -2005,8 +1978,6 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
             {
                 std::lock_guard lock(storage_mutex);
                 response = process(concrete_zk_request, *this, deltas_range, session_id);
-                if (!keeper_context->digestEnabledOnCommit() && last_in_batch)
-                    nodes_digest = transaction_digest;
             }
 
             /// Watches for this request are added to the watches lists
@@ -2032,11 +2003,10 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
     {
         std::lock_guard lock(transaction_mutex);
 
-        if (new_last_zxid && last_in_batch)
-            uncommitted_batches.pop_front();
-
-        if (commit_zxid < zxid)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to commit smaller ZXID, commit ZXID: {}, current ZXID {}", commit_zxid, zxid);
+        /// Committed transactions have strictly increasing zxids.
+        if (commit_zxid < zxid || (new_last_zxid && commit_zxid == zxid))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Trying to commit ZXID {} while ZXID {} is already committed", commit_zxid, zxid);
 
         zxid = commit_zxid;
     }
