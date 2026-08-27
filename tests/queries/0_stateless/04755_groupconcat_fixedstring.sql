@@ -1,4 +1,4 @@
--- Values are the row's bytes with trailing zero bytes stripped, as CAST(FixedString AS String) produces.
+-- Values are the row's bytes with trailing zero bytes stripped, as `CAST(FixedString AS String)` produces.
 SELECT hex(groupConcat('|')(x)) FROM (SELECT CAST('abc', 'FixedString(3)') AS x FROM numbers(2));
 SELECT hex(groupConcat('|')(x)) FROM (SELECT CAST('ab', 'FixedString(5)') AS x FROM numbers(2));
 SELECT hex(groupConcat('|')(x)) FROM (SELECT CAST('a\0b\0\0', 'FixedString(5)') AS x FROM numbers(2));

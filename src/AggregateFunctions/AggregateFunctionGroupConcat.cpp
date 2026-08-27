@@ -104,7 +104,7 @@ void GroupConcatImpl<has_limit>::add(
 
     if (isFixedString(type))
     {
-        /// Trailing zero bytes are cut, matching CAST(FixedString AS String).
+        /// Trailing zero bytes are cut, matching `CAST(FixedString AS String)`.
         std::string_view ref = assert_cast<const ColumnFixedString &>(*columns[0]).getDataAt(row_num);
         while (!ref.empty() && ref.back() == 0)
             ref.remove_suffix(1);
