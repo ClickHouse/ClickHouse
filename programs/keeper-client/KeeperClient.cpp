@@ -781,14 +781,16 @@ void KeeperClient::connectToKeeper()
             ///
             /// Select the passphrase handler based on
             /// `openSSL.client.privateKeyPassphraseHandler.name`.
-            /// `KeyFileHandler` (and the absent-name default) reads the password
-            /// from `openSSL.client.privateKeyPassphraseHandler.options.password`
-            /// in the ClickHouse config file. `KeyConsoleHandler` prompts stdin.
-            /// Note: the standard `KeyFileHandler` reads from
-            /// `Poco::Util::Application::instance().config()` (CLI options only),
+            /// Default (key absent): `KeyConsoleHandler` — prompts stdin, consistent
+            /// with Poco's `SSLManager::VAL_DELEGATE_HANDLER` and all other ClickHouse clients.
+            /// `KeyFileHandler` reads the password from
+            /// `openSSL.client.privateKeyPassphraseHandler.options.password`
+            /// in the ClickHouse config file. Note: the standard Poco `KeyFileHandler`
+            /// reads from `Poco::Util::Application::instance().config()` (CLI options only),
             /// so `ConfigPassphraseHandler` is used instead to reach `loaded_config`.
+            /// Any other value raises `BAD_ARGUMENTS`.
             const String passphrase_handler_name = loaded_config.getString(
-                "openSSL.client.privateKeyPassphraseHandler.name", "KeyFileHandler");
+                "openSSL.client.privateKeyPassphraseHandler.name", "KeyConsoleHandler");
 
             Poco::Net::SSLManager::PrivateKeyPassphraseHandlerPtr passphrase_handler;
             if (passphrase_handler_name == "KeyConsoleHandler")
