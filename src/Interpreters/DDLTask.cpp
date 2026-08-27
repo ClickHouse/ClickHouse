@@ -1,5 +1,6 @@
 #include <Access/AccessControl.h>
 #include <Access/Role.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/User.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
@@ -38,6 +39,8 @@ namespace Setting
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsUInt64 distributed_ddl_entry_format_version;
     extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     }
 
@@ -298,14 +301,40 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
     const char * end = begin + entry.query.size();
     const auto & settings = context->getSettingsRef();
 
+    UInt64 max_parser_depth = settings[Setting::max_parser_depth];
+    UInt64 max_parser_backtracks = settings[Setting::max_parser_backtracks];
+
+    /// The initiator's changed settings travel with the entry, and `makeQueryContext` applies them to the
+    /// execution context clamped to this host's constraints. Parse the entry text under the same parser
+    /// limits: a server-owned handler query lifts them by sending `max_parser_depth = 0` /
+    /// `max_parser_backtracks = 0` in the entry (see `executeQueryImpl`), which lets an `ON CLUSTER` query
+    /// issued by a handler (whose stored text may be nested deeper than this host's defaults allow)
+    /// execute on every host of the cluster, while a host that pins the parser limits with constraints
+    /// keeps them pinned - for ordinary distributed DDL as well as for handler-issued one.
+    if (entry.settings)
+    {
+        SettingsChanges parser_limit_changes;
+        for (const auto & change : *entry.settings)
+        {
+            if (change.name == "max_parser_depth" || change.name == "max_parser_backtracks")
+                parser_limit_changes.push_back(change);
+        }
+
+        if (!parser_limit_changes.empty())
+        {
+            Settings entry_settings = context->getSettingsCopy();
+            if (const auto constraints_and_profiles = context->getSettingsConstraintsAndCurrentProfiles())
+                constraints_and_profiles->constraints.clamp(entry_settings, parser_limit_changes, SettingSource::QUERY);
+            entry_settings.applyChanges(parser_limit_changes);
+            max_parser_depth = entry_settings[Setting::max_parser_depth];
+            max_parser_backtracks = entry_settings[Setting::max_parser_backtracks];
+        }
+    }
+
     ParserQuery parser_query(end, settings[Setting::allow_settings_after_format_in_insert]);
     String description;
-    /// The entry text is server-owned: it is the AST the initiator parsed and validated, formatted back to SQL.
-    /// It is therefore parsed without limits, the same way its size is not limited - the caller's
-    /// `max_parser_depth` / `max_parser_backtracks` would only reject here what the initiator already accepted.
-    /// This is what lets an `ON CLUSTER` query issued by a server-owned handler query (whose text may be nested
-    /// deeper than the invoking request allows) execute on every host of the cluster.
-    query = parseQuery(parser_query, begin, end, description, 0, 0, 0);
+    /// The entry text size is not limited: it is the AST the initiator parsed and validated, formatted back to SQL.
+    query = parseQuery(parser_query, begin, end, description, 0, max_parser_depth, max_parser_backtracks);
 }
 
 void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
