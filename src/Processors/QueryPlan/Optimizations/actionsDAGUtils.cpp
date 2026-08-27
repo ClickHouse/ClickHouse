@@ -686,7 +686,10 @@ void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * nod
             removeInjectiveFunctionsFromResultsRecursively(node->children.at(0), irreducible, visited);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
-            UNREACHABLE();
+            /// The result of an ARRAY JOIN is not a per-row function of its child, so it cannot be
+            /// reduced any further (see `buildArrayJoinDAG` for how such nodes enter key expressions).
+            irreducible.insert(node);
+            break;
         case ActionsDAG::ActionType::COLUMN:
             irreducible.insert(node);
             break;

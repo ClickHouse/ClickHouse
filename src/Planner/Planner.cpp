@@ -15,6 +15,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <Common/saturatedDuration.h>
 #include <base/scope_guard.h>
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
@@ -23,6 +24,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -122,6 +124,8 @@ namespace Setting
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
+    extern const SettingsBool enable_group_by_top_k_optimization;
+    extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool extremes;
     extern const SettingsBool force_aggregation_in_order;
@@ -168,6 +172,7 @@ namespace Setting
     extern const SettingsBool enable_sharding_aggregator;
     extern const SettingsBool enable_adaptive_aggregator;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
+    extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -179,6 +184,9 @@ namespace Setting
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
     extern const SettingsString temporary_files_codec;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
+    extern const SettingsBool make_distributed_plan;
+    extern const SettingsBool query_plan_enable_optimizations;
+    extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
 }
 
 namespace ServerSetting
@@ -684,7 +692,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::enable_parallel_single_level_merge],
         settings[Setting::enable_packed_string_keys_in_aggregation],
         settings[Setting::enable_adaptive_aggregator],
-        settings[Setting::adaptive_aggregator_freeze_threshold]);
+        settings[Setting::adaptive_aggregator_freeze_threshold],
+        settings[Setting::adaptive_aggregator_freeze_threshold_bytes]);
 
     return aggregator_params;
 }
@@ -700,11 +709,134 @@ SortDescription getSortDescriptionFromNames(const Names & names)
     return order_descr;
 }
 
+void applyTopKPushdownToPartialAggregation(
+    AggregatingStep & aggregating_step,
+    const QueryNode & query_node,
+    PlannerExpressionsAnalysisResult & expression_analysis_result,
+    const QueryAnalysisResult & query_analysis_result,
+    const Settings & settings)
+{
+    if (!settings[Setting::enable_group_by_top_k_optimization])
+        return;
+
+    /// The distributed planner splits aggregation itself; see the matching gate
+    /// in `tryOptimizeGroupByTopK`.
+    if (settings[Setting::make_distributed_plan])
+        return;
+
+    /// With `serialize_query_plan` the follower executes the initiator's
+    /// serialized sub-plan instead of planning the query text, and
+    /// `AggregatingStep::serialize` deliberately does not carry `top_k` (the
+    /// plan-serialization protocol has no version negotiation, so appending
+    /// fields would break older followers).  Annotating the step here would
+    /// only mislead: EXPLAIN would show a Top-K the followers never run.
+    if (settings[Setting::serialize_query_plan])
+        return;
+
+    /// Pruning undercounts `rows_before_limit_at_least` in exact mode.
+    if (settings[Setting::exact_rows_before_limit])
+        return;
+
+    /// `partial_sorting_limit` is `limit + offset` and is already zero for
+    /// DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN and fractional or
+    /// negative values (see `QueryAnalysisResult`).
+    const UInt64 limit = query_analysis_result.partial_sorting_limit;
+    if (limit == 0)
+        return;
+    if (settings[Setting::query_plan_max_limit_for_top_k_optimization] != 0
+        && limit > settings[Setting::query_plan_max_limit_for_top_k_optimization])
+        return;
+
+    if (limit > Aggregator::Params::TopKParams::max_k)
+    {
+        LOG_DEBUG(
+            getLogger("Planner"),
+            "Skipping GROUP BY top-K optimization: the requested heap size {} is larger than the maximum {}",
+            limit, Aggregator::Params::TopKParams::max_k);
+        return;
+    }
+
+    /// These consume all groups on the initiator, so local pruning would change
+    /// their input: HAVING / QUALIFY filter ranked groups back in, window
+    /// functions and TOTALS/ROLLUP/CUBE aggregate across all of them.
+    if (expression_analysis_result.hasHaving() || expression_analysis_result.hasWindow() || expression_analysis_result.hasQualify())
+        return;
+    if (query_node.isGroupByWithTotals() || query_analysis_result.aggregation_with_rollup_or_cube_or_grouping_sets)
+        return;
+    if (query_node.hasInterpolate())
+        return;
+
+    /// An arrayJoin in the projection (or ORDER BY expressions) changes row
+    /// multiplicity after the aggregation: a group can expand to zero rows, so
+    /// the smallest N groups no longer guarantee N result rows and pruning
+    /// loses groups the limit still needs.
+    const auto & projection_actions = expression_analysis_result.getProjection().projection_actions;
+    if (projection_actions && projection_actions->dag.hasArrayJoin())
+        return;
+    if (expression_analysis_result.hasSort() && expression_analysis_result.getSort().before_order_by_actions->dag.hasArrayJoin())
+        return;
+
+    const auto & params = aggregating_step.getParams();
+    if (aggregating_step.isGroupingSets() || params.overflow_row || params.max_rows_to_group_by > 0 || params.keys.empty())
+        return;
+
+    if (aggregating_step.inOrder())
+        return;
+
+    /// ORDER BY must be a leading prefix of the GROUP BY keys, by action name.
+    /// Both name sets come from the same `PlannerContext`, so a name match means
+    /// the same expression; anything else (a function of a key, a projection
+    /// alias reusing the name) produces a different action name and is rejected.
+    const auto & sort_description = query_analysis_result.sort_description;
+    if (sort_description.empty() || sort_description.size() > params.keys.size())
+        return;
+
+    /// The heap ranks the keys as the aggregation produced them, while the sort runs above the projection and the
+    /// ORDER BY expressions. Matching names is not enough on its own: require that both DAGs forward the key
+    /// untouched, the same invariant `tryOptimizeGroupByTopK` enforces on the plan-level expression chain.
+    const auto * before_order_by_dag
+        = expression_analysis_result.hasSort() ? &expression_analysis_result.getSort().before_order_by_actions->dag : nullptr;
+
+    std::vector<int> directions;
+    std::vector<int> nulls_directions;
+    directions.reserve(sort_description.size());
+    nulls_directions.reserve(sort_description.size());
+
+    for (size_t i = 0; i < sort_description.size(); ++i)
+    {
+        if (sort_description[i].column_name != params.keys[i])
+            return;
+
+        if (projection_actions && !isSortKeyPassThrough(projection_actions->dag, params.keys[i]))
+            return;
+
+        if (before_order_by_dag && !isSortKeyPassThrough(*before_order_by_dag, params.keys[i]))
+            return;
+
+        if (sort_description[i].collator || sort_description[i].with_fill)
+            return;
+
+        directions.push_back(sort_description[i].direction);
+        nulls_directions.push_back(sort_description[i].nulls_direction);
+    }
+
+    aggregating_step.applyTopKOptimization(
+        Aggregator::Params::TopKParams{
+            .k = limit,
+            .directions = std::move(directions),
+            .nulls_directions = std::move(nulls_directions),
+            .key_columns = sort_description.size(),
+            .observation_rows = settings[Setting::group_by_top_k_optimization_observation_rows],
+        });
+}
+
 void addAggregationStep(QueryPlan & query_plan,
-    const AggregationAnalysisResult & aggregation_analysis_result,
+    const QueryNode & query_node,
+    PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context)
 {
+    auto aggregation_analysis_result = expression_analysis_result.getAggregation();
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
     auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result);
 
@@ -761,13 +893,18 @@ void addAggregationStep(QueryPlan & query_plan,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
         force_aggregation_in_order,
         settings[Setting::enable_sharding_aggregator]);
+
+    if (!query_analysis_result.aggregate_final)
+        applyTopKPushdownToPartialAggregation(*aggregating_step, query_node, expression_analysis_result, query_analysis_result, settings);
+
     query_plan.addStep(std::move(aggregating_step));
 }
 
 void addMergingAggregatedStep(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const std::unordered_map<String, String> & shard_collapse_duplicate_keys)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -787,7 +924,93 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
       * but it can work more slowly.
       */
 
-    const auto & keys = aggregation_analysis_result.aggregation_keys;
+    const auto & analysis_keys = aggregation_analysis_result.aggregation_keys;
+
+    /// When the query reads from a Distributed table whose duplicate-ALIAS GROUP BY keys the shard collapsed into a
+    /// single key before computing two-level bucket numbers (see `buildShardCollapseFanOut`), the initiator must merge
+    /// by only the representative key columns. Otherwise the initiator would bucket by more key columns than the shard
+    /// did, so equal groups from different shards could land in different two-level buckets and never merge.
+    /// `merge_keys` drops the duplicate keys; the dropped columns are reconstructed (aliased to their representative)
+    /// after the merge so the output header is unchanged.
+    Names merge_keys;
+    std::vector<std::pair<String /*duplicate*/, String /*representative*/>> dropped_duplicate_keys;
+    if (!shard_collapse_duplicate_keys.empty() && aggregation_analysis_result.grouping_sets_parameters_list.empty())
+    {
+        const NameSet analysis_keys_set(analysis_keys.begin(), analysis_keys.end());
+        merge_keys.reserve(analysis_keys.size());
+        for (const auto & key : analysis_keys)
+        {
+            auto it = shard_collapse_duplicate_keys.find(key);
+            /// Drop `key` only when it is a recognized duplicate AND its representative is itself a merge key, so the
+            /// representative remains available to reconstruct the dropped column after merging.
+            if (it != shard_collapse_duplicate_keys.end() && analysis_keys_set.contains(it->second))
+                dropped_duplicate_keys.emplace_back(key, it->second);
+            else
+                merge_keys.push_back(key);
+        }
+        if (dropped_duplicate_keys.empty())
+            merge_keys = analysis_keys;
+    }
+    else
+    {
+        /// A grouping set holding two keys that the shard collapsed onto the same column is rejected: the shard buckets
+        /// that set by one key while the initiator buckets it by both, so a single/two-level partial mix splits the same
+        /// group across buckets (the wrong-results defect the non-grouping-sets branch fixes by merging on the collapsed
+        /// set). Carrying the collapse through the grouping-sets merge machinery is unsupported, so reject rather than
+        /// silently return wrong results. Each used key is canonicalized through the collapse map (a duplicate maps to
+        /// its representative; any other key maps to itself), and a set is rejected when two of its keys share a
+        /// canonical representative -- this covers shapes where the representative itself is absent from the set, e.g.
+        /// ((a2, a3)) with a1, a2, a3 all collapsing onto a1. Sets that keep one key each (e.g. ((a1), (a2))) are
+        /// unaffected. With both two-level thresholds at 0 no shard can build a bucketed state, so the mismatch is
+        /// unreachable and the query keeps working.
+        const bool two_level_aggregation_possible = settings[Setting::group_by_two_level_threshold] != 0
+            || settings[Setting::group_by_two_level_threshold_bytes] != 0;
+        if (!shard_collapse_duplicate_keys.empty() && !aggregation_analysis_result.grouping_sets_parameters_list.empty()
+            && two_level_aggregation_possible)
+        {
+            for (const auto & grouping_set : aggregation_analysis_result.grouping_sets_parameters_list)
+            {
+                std::unordered_map<String, String> representative_to_used_key;
+                for (const auto & key : grouping_set.used_keys)
+                {
+                    auto it = shard_collapse_duplicate_keys.find(key);
+                    const String & representative = it != shard_collapse_duplicate_keys.end() ? it->second : key;
+                    auto [pos, inserted] = representative_to_used_key.emplace(representative, key);
+                    if (!inserted)
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "GROUP BY GROUPING SETS with duplicate ALIAS columns that expand to the same expression "
+                            "({} and {}) over a Distributed table is not supported, as it can produce incorrect results "
+                            "under two-level aggregation. Please use distinct expressions in the grouping sets.",
+                            pos->second, key);
+                }
+            }
+        }
+        merge_keys = analysis_keys;
+    }
+
+    const auto & keys = merge_keys;
+
+    /// Drop the duplicate key columns from the input before merging so the merge sees the same key layout the shard
+    /// produced (representative keys followed by aggregate states). They are reconstructed right after the merge.
+    /// The aggregate columns are unaffected: they are matched by name in the merge, not by position.
+    if (!dropped_duplicate_keys.empty())
+    {
+        NameSet drop_set;
+        for (const auto & [duplicate_name, representative_name] : dropped_duplicate_keys)
+            drop_set.insert(duplicate_name);
+
+        ActionsDAG drop_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+        ActionsDAG::NodeRawConstPtrs kept_outputs;
+        kept_outputs.reserve(drop_dag.getOutputs().size());
+        for (const auto * output : drop_dag.getOutputs())
+            if (!drop_set.contains(output->result_name))
+                kept_outputs.push_back(output);
+        drop_dag.getOutputs() = std::move(kept_outputs);
+
+        auto drop_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(drop_dag));
+        drop_step->setStepDescription("Drop collapsed duplicate-ALIAS GROUP BY keys before merge");
+        query_plan.addStep(std::move(drop_step));
+    }
 
     /// For count() without parameters try to use just one thread
     /// Typically this will either be a trivial count or a really small number of states
@@ -833,6 +1056,61 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         settings[Setting::aggregation_in_order_max_block_bytes],
         settings[Setting::enable_memory_bound_merging_of_aggregation_results]);
     query_plan.addStep(std::move(merging_aggregated));
+
+    /// Reconstruct the canonical aggregated layout the rest of the plan expects: all original aggregation keys first,
+    /// in their declared order, then the aggregate-state columns. The merge produced [representative keys, aggregate
+    /// states] (dropping the duplicate keys); each dropped key is identical to its representative (which the merge
+    /// kept), so it is restored as an alias and placed back in its original key position. Emitting the full
+    /// [keys..., aggregate states...] layout (rather than appending the duplicates at the end) is required because a
+    /// following ROLLUP/CUBE step reads the merged block positionally - the first keys_size columns as the GROUP BY
+    /// keys and the remaining columns as aggregate states - and ROLLUP/CUBE reach this path with an empty
+    /// grouping_sets_parameters_list, so they are not excluded by the guard above.
+    if (!dropped_duplicate_keys.empty())
+    {
+        std::unordered_map<std::string_view, String> representative_by_duplicate;
+        for (const auto & [duplicate_name, representative_name] : dropped_duplicate_keys)
+            representative_by_duplicate.emplace(duplicate_name, representative_name);
+
+        ActionsDAG reconstruct_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+        std::unordered_map<std::string_view, const ActionsDAG::Node *> output_by_name;
+        for (const auto * output : reconstruct_dag.getOutputs())
+            output_by_name.emplace(output->result_name, output);
+
+        const NameSet analysis_keys_set(analysis_keys.begin(), analysis_keys.end());
+
+        ActionsDAG::NodeRawConstPtrs new_outputs;
+        new_outputs.reserve(reconstruct_dag.getOutputs().size() + dropped_duplicate_keys.size());
+
+        /// 1. All original aggregation keys, in their declared order: a representative is kept as-is, a dropped
+        ///    duplicate is restored as an alias of its representative.
+        for (const auto & key : analysis_keys)
+        {
+            auto dup_it = representative_by_duplicate.find(key);
+            if (dup_it != representative_by_duplicate.end())
+            {
+                auto rep_it = output_by_name.find(dup_it->second);
+                if (rep_it != output_by_name.end())
+                    new_outputs.push_back(&reconstruct_dag.addAlias(*rep_it->second, key));
+            }
+            else
+            {
+                auto it = output_by_name.find(key);
+                if (it != output_by_name.end())
+                    new_outputs.push_back(it->second);
+            }
+        }
+
+        /// 2. The aggregate-state columns (everything in the merge output that is not a GROUP BY key), in order.
+        for (const auto * output : reconstruct_dag.getOutputs())
+            if (!analysis_keys_set.contains(output->result_name))
+                new_outputs.push_back(output);
+
+        reconstruct_dag.getOutputs() = std::move(new_outputs);
+
+        auto reconstruct_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(reconstruct_dag));
+        reconstruct_step->setStepDescription("Reconstruct collapsed duplicate-ALIAS GROUP BY keys");
+        query_plan.addStep(std::move(reconstruct_step));
+    }
 }
 
 void addTotalsHavingStep(QueryPlan & query_plan,
@@ -1458,10 +1736,26 @@ void addWindowSteps(QueryPlan & query_plan,
             /// would produce incomplete data and cause the pipeline to get stuck.
             sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
 
+            /// The sort scatters rows across threads by the hash of the partition columns it is given,
+            /// but `WindowTransform` finds partition boundaries with `compareAt`. For key types where
+            /// the two disagree the scatter would split one logical partition across threads, so such
+            /// windows sort in a single merged stream instead.
+            SortDescription scatter_partition_by = window_description.partition_by;
+            const auto & sort_input_header = query_plan.getCurrentHeader();
+            for (const auto & partition_column : window_description.partition_by)
+            {
+                if (QueryPlanOptimizations::keyTypeBreaksHashSharding(
+                        *sort_input_header->getByName(partition_column.column_name).type))
+                {
+                    scatter_partition_by.clear();
+                    break;
+                }
+            }
+
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
                 window_description.full_sort_description,
-                window_description.partition_by,
+                scatter_partition_by,
                 0 /*limit*/,
                 sort_settings);
             sorting_step->setStepDescription("Sorting for window '" + window_description.window_name + "'", max_step_description_length);
@@ -1802,6 +2096,14 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
             if (!materialized_cte->hasPlanOrBuilt())
             {
                 auto cte_subquery = cte_table_node->getMaterializedCTESubquery();
+                /// A by-name reference carries no subquery, but a standalone pipeline still needs a
+                /// gate for it, and the handle alone is enough to build one. The writer stays with
+                /// whoever holds the subquery.
+                if (!cte_subquery && select_query_options.force_materialize_cte)
+                {
+                    ctes.push_back(materialized_cte);
+                    continue;
+                }
                 if (!cte_subquery)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "CTE '{}' does not have query tree, but was not planned yet",
@@ -2424,7 +2726,7 @@ void Planner::buildPlanForQueryNode()
         if (expression_analysis_result.hasAggregation())
         {
             const auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
-            addMergingAggregatedStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context);
+            addMergingAggregatedStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, join_tree_query_plan.shard_collapse_duplicate_keys);
         }
     }
 
@@ -2446,7 +2748,7 @@ void Planner::buildPlanForQueryNode()
                     "Before GROUP BY",
                     useful_sets);
 
-            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context);
+            addAggregationStep(query_plan, query_node, expression_analysis_result, query_analysis_result, planner_context);
         }
 
         /** If we have aggregation, we can't execute any later-stage
@@ -2537,7 +2839,7 @@ void Planner::buildPlanForQueryNode()
 
             if (!query_processing_info.isFirstStage())
             {
-                addMergingAggregatedStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context);
+                addMergingAggregatedStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, join_tree_query_plan.shard_collapse_duplicate_keys);
             }
 
             bool having_executed = false;
@@ -2756,7 +3058,7 @@ void Planner::buildPlanForQueryNode()
     if (should_cache && checkCanWriteQueryResultCache(ast, query_context, skip_context_check))
     {
         auto created_at = std::chrono::system_clock::now();
-        auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+        auto expires_at = saturatedSecondsFrom(created_at, settings[Setting::query_cache_ttl].totalSeconds());
 
         QueryResultCache::Key key(
             ast, query_context->getCurrentDatabase(), *settings_copy, query_plan.getRootNode()->step->getOutputHeader(),
