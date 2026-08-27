@@ -1,20 +1,12 @@
 #include <Processors/Transforms/TTLDeleteFilterTransform.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnSparse.h>
-#include <Columns/ColumnsDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 static bool isTTLExpired(time_t ttl, time_t current_time)
 {
