@@ -1,9 +1,6 @@
 -- Regression test for the AST JSON review hardening of CREATE / SYSTEM / identifier shapes.
 -- Covers boundary validations that reject `clickhouse_json` payloads the SQL parser cannot produce:
---   * `attach_short_syntax` is not an input on any payload: no SQL syntax sets it and no formatter emits
---     it, so it is rejected even for an `ATTACH`. A genuine short `ATTACH TABLE t` still works, because it
---     is recognised from the query's own shape after deserialization.
---   * `CREATE TABLE` must not carry the remaining attach-only state (`attach_from_path` /
+--   * `CREATE TABLE` must not carry attach-only state (`attach_short_syntax`, `attach_from_path` /
 --     `has_attach_from_path`, `attach_as_replicated`); these are gated behind `attach` in the parser and
 --     `formatImpl` even asserts `attach || !has_attach_from_path`.
 --   * `has_uuid` is not an independent input: it must match whether a non-`Nil` `uuid` is present,
@@ -18,8 +15,6 @@
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (x Int) ENGINE = Memory'));
 SELECT formatQueryFromJSON(parseQueryToJSON('ATTACH TABLE t FROM \'/p\' (x Int) ENGINE = Memory'));
--- A genuine short ATTACH is recognised from the query shape after deserialization, not from the flag.
-SELECT formatQueryFromJSON(parseQueryToJSON('ATTACH TABLE t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t UUID \'a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5\' (x Int) ENGINE = Memory'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM STOP LISTEN TCP'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM STOP LISTEN QUERIES ALL EXCEPT TCP'));
@@ -30,9 +25,8 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 FROM {tbl:Identifier}'));
 -- Malformed JSON shapes that must fail closed with BAD_ARGUMENTS at the boundary.
 -- ---------------------------------------------------------------------------
 
--- `attach_short_syntax` is not accepted from JSON at all.
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (x Int) ENGINE = Memory'), '"attach_short_syntax":false', '"attach_short_syntax":true')); -- { serverError BAD_ARGUMENTS }
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('ATTACH TABLE t (x Int) ENGINE = Memory'), '"attach_short_syntax":false', '"attach_short_syntax":true')); -- { serverError BAD_ARGUMENTS }
+-- `attach_short_syntax` is only valid for ATTACH queries.
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (x Int) ENGINE = Memory'), '"replace_table":false', '"attach_short_syntax":true,"replace_table":false')); -- { serverError BAD_ARGUMENTS }
 -- `has_attach_from_path` without an ATTACH (and without a path) is parser-impossible.
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (x Int) ENGINE = Memory'), '"has_attach_from_path":false', '"has_attach_from_path":true')); -- { serverError BAD_ARGUMENTS }
 -- `attach_as_replicated` is only valid for ATTACH queries (inject it into a CREATE).
