@@ -93,3 +93,36 @@ SELECT
 FROM ts_non_finite FORMAT Vertical;
 
 DROP TABLE ts_non_finite;
+
+-- Regression: samples sharing a timestamp collapse into one keeping the largest real value, the rule the
+-- whole timeSeries*ToGrid family follows (`timeseriesMaxValueForDuplicateTimestamp`). Accumulating the
+-- Welford moments straight into the bucket would count each duplicate as a separate sample instead.
+-- All queries below use a single-point grid at 100 with the window (90, 100].
+SELECT 'Duplicate timestamps:';
+
+-- Deduplicates to the single sample (95, 5), so the window has no spread at all.
+SELECT timeSeriesStddevToGrid(100, 100, 1, 10)([95, 95]::Array(UInt32), [3, 5]::Array(Float64));
+SELECT timeSeriesStdvarToGrid(100, 100, 1, 10)([95, 95]::Array(UInt32), [5, 3]::Array(Float64));
+
+-- Deduplicates to (92, 1), (98, 5): population variance 4, standard deviation 2.
+SELECT timeSeriesStddevToGrid(100, 100, 1, 10)([92, 98, 98]::Array(UInt32), [1, 3, 5]::Array(Float64));
+SELECT timeSeriesStdvarToGrid(100, 100, 1, 10)([98, 92, 98]::Array(UInt32), [5, 1, 3]::Array(Float64));
+
+SELECT 'NaN loses to a real value:';
+
+SELECT timeSeriesStdvarToGrid(100, 100, 1, 10)([92, 98, 98]::Array(UInt32), [1, nan, 5]::Array(Float64));
+SELECT timeSeriesStdvarToGrid(100, 100, 1, 10)([92, 98, 98]::Array(UInt32), [1, 5, nan]::Array(Float64));
+
+SELECT 'NaN survives when all values at the timestamp are NaN:';
+
+SELECT timeSeriesStdvarToGrid(100, 100, 1, 10)([92, 98, 98]::Array(UInt32), [1, nan, nan]::Array(Float64));
+
+SELECT 'Partial states sharing a timestamp deduplicate on merge:';
+
+SELECT timeSeriesStdvarToGridMerge(100, 100, 1, 10)(st)
+FROM
+(
+    SELECT initializeAggregation('timeSeriesStdvarToGridState(100, 100, 1, 10)', ts_arr, val_arr) AS st
+    FROM values('ts_arr Array(UInt32), val_arr Array(Float64)', ([95], [3.]), ([95], [5.]))
+)
+SETTINGS max_threads = 1;

@@ -6,6 +6,7 @@
 
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSlidingSum.h>
 
 
@@ -27,13 +28,14 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
         return is_stddev ? "timeSeriesStddevToGrid" : "timeSeriesStdvarToGrid";
     }
 
+    using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
+
     /// Running Welford/Chan `{count, mean, m2}` accumulator - the same technique as
     /// `AggregateFunctionTimeseriesLinearRegression::Summary` and ClickHouse's own `varPopStable`/`stddevPopStable`
     /// (`AggregateFunctionVarianceData` in `AggregateFunctionStatistics.cpp`). `mean` is the running mean and `m2`
     /// is the sum of squared deviations from it (`sum((x - mean)^2)`), updated incrementally per sample (Welford,
     /// `add`) and combined pairwise via Chan et al.'s parallel-merge formula (`merge`), which is commutative and
-    /// associative up to floating-point rounding, so buckets can accumulate their samples directly - there is no
-    /// need to keep raw samples around for later preaggregation.
+    /// associative up to floating-point rounding, so buckets can be preaggregated and combined in any order.
     ///
     /// This replaces an earlier raw `{count, sum, sum2}` accumulator finalized as `sum2 - sum * sum / count`: for
     /// real-world data (e.g. byte counters ~5e8) `sum` and `sum2` reach magnitudes (~1e9, ~1e17) far beyond what a
@@ -53,7 +55,7 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
         Float64 mean = 0;  /// running mean
         Float64 m2 = 0;    /// sum of (x - mean)^2
 
-        void add(TimestampType /*timestamp*/, ValueType value)
+        void add(ValueType value)
         {
             const Float64 x = static_cast<Float64>(value);
             ++count;
@@ -61,12 +63,6 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
             mean += delta / static_cast<Float64>(count);
             /// The trailing factor uses the just-updated `mean` (Welford).
             m2 += delta * (x - mean);
-        }
-
-        void addMany(const TimestampType * timestamps, const ValueType * values, size_t batch_size)
-        {
-            for (size_t i = 0; i < batch_size; ++i)
-                add(timestamps[i], values[i]);
         }
 
         /// Chan et al.'s parallel merge of two centered-moment aggregates (same formula as
@@ -85,32 +81,11 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
             m2 += other.m2 + delta * delta * na * nb / total;
             count += other.count;
         }
-
-        void serialize(WriteBuffer & buf) const
-        {
-            writeBinaryLittleEndian(count, buf);
-            writeBinaryLittleEndian(mean, buf);
-            writeBinaryLittleEndian(m2, buf);
-        }
-
-        void deserialize(ReadBuffer & buf)
-        {
-            readBinaryLittleEndian(count, buf);
-            readBinaryLittleEndian(mean, buf);
-            readBinaryLittleEndian(m2, buf);
-        }
-
-        /// Unlike e.g. `AggregateFunctionTimeseriesToGridSparseTraits::Summary`, this summary carries no timestamp
-        /// to validate - required by the `Bucket` contract only.
-        template <typename RangeType>
-        void checkTimestampsInRange(const RangeType &) const
-        {
-        }
     };
 
-    /// Sliding aggregator: keeps the running `{count, mean, m2}` combine over the window in a `SlidingSum`
-    /// (two-stacks or recompute, chosen by the base from the thresholds below) and derives the (population)
-    /// variance or standard deviation from it at each grid point.
+    /// Sliding aggregator: preaggregates each bucket into `{count, mean, m2}`, keeps the running combine over the
+    /// window in a `SlidingSum` (two-stacks or recompute, chosen by the base from the thresholds below) and derives
+    /// the (population) variance or standard deviation from it at each grid point.
     struct Aggregator
     {
         AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
@@ -119,11 +94,23 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
         {
         }
 
-        void add(const Summary & summary, TimestampType bucket_end_timestamp)
+        void add(const Samples & samples, TimestampType bucket_end_timestamp)
+        {
+            /// Preaggregate the bucket's samples; `forEachSample` visits them with duplicate timestamps already
+            /// collapsed, so each timestamp contributes exactly one sample to the moments.
+            Summary summary;
+            samples.forEachSample([&summary](TimestampType, ValueType value)
+            {
+                summary.add(value);
+            });
+            add(std::move(summary), bucket_end_timestamp);
+        }
+
+        void add(Summary summary, TimestampType bucket_end_timestamp)
         {
             if (summary.count == 0)
                 return;
-            sliding_sum.add(Summary(summary), bucket_end_timestamp);
+            sliding_sum.add(std::move(summary), bucket_end_timestamp);
         }
 
         void removeBefore(TimestampType cut_off)
@@ -157,13 +144,14 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
         }
     };
 
-    /// No raw-sample preaggregation is needed (see `Summary` above) - the bucket accumulates `{count, mean, m2}`
-    /// directly as samples are added.
-    using Bucket = Summary;
+    /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
+    /// Accumulating the moments directly instead would count duplicate timestamps twice, breaking the family's
+    /// shared rule that samples sharing a timestamp collapse to one (`timeseriesMaxValueForDuplicateTimestamp`).
+    using Bucket = Samples;
 
-    /// Bumped from 1: `Summary`'s serialized layout changed meaning (raw `{sum, sum2}` -> Welford/Chan
-    /// `{mean, m2}`), so old serialized states must not be misread as the new format.
-    static constexpr UInt16 FORMAT_VERSION = 2;
+    /// Bumped whenever the serialized bucket layout changes: raw `{sum, sum2}` (1) -> Welford/Chan `{mean, m2}`
+    /// (2) -> raw samples (3), so states written by an older peer are rejected rather than misread.
+    static constexpr UInt16 FORMAT_VERSION = 3;
 
     /// `AggregateFunctionTimeseriesBase::getStackSizeForTwoStacks` switches to the two-stack queue once the
     /// average number of populated buckets in a window reaches this value; below it, recomputing the window

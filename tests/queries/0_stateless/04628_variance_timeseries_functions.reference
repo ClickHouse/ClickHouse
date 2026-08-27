@@ -25,3 +25,15 @@ Row 1:
 ──────
 stddev_nan: [(100,0),(110,nan),(120,nan)]
 stdvar_nan: [(100,0),(110,nan),(120,nan)]
+Duplicate timestamps:
+[0]
+[0]
+[2]
+[4]
+NaN loses to a real value:
+[4]
+[4]
+NaN survives when all values at the timestamp are NaN:
+[nan]
+Partial states sharing a timestamp deduplicate on merge:
+[0]
