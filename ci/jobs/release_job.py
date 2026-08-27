@@ -23,7 +23,11 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
-from ci.jobs.scripts.create_release import ReleaseContextManager, ReleaseProgress
+from ci.jobs.scripts.create_release import (
+    ReleaseContextManager,
+    ReleaseInfo,
+    ReleaseProgress,
+)
 
 _GH_TOKEN_SECRET = Secret.Config(
     name="/github-tokens/robot-1",
@@ -328,20 +332,28 @@ def main():
     # Read the prepared release info once; the steps below reuse it. The fields
     # they read (release_tag, is_tag_pushed, latest, is_bump_landed) are written by
     # prepare and stable for the rest of the run, so a single read is enough.
-    release_info = {}
-    if ok:
-        with open(RELEASE_INFO_FILE) as f:
-            release_info = json.load(f)
+    release_info = ReleaseInfo.from_file() if ok else None
+
+    def _validate_recovery_ref():
+        # Fail fast, before Download Artifacts: skip-repo/skip-docker only
+        # re-publish an existing release, so reject them against a ref that
+        # resolves to a new (untagged) release.
+        assert release_info.is_tag_pushed or not (args.skip_repo or args.skip_docker), (
+            "skip-repo/skip-docker re-publish an existing release and must be "
+            "run against its release tag (recovery); the given ref resolves to "
+            "a new release. Pass the release tag as the ref."
+        )
+
+    step(
+        name="Validate Recovery Ref",
+        command=_validate_recovery_ref,
+        workdir=REPO_PATH,
+    )
 
     def _push_git_tag_for_release():
         with ReleaseContextManager(
             release_progress=ReleaseProgress.PUSH_RELEASE_TAG
         ) as release_info:
-            assert release_info.is_tag_pushed or not (args.skip_repo or args.skip_docker), (
-                "skip-repo/skip-docker re-publish an existing release and must be "
-                "run against its release tag (recovery); the given ref resolves to "
-                "a new release. Pass the release tag as the ref."
-            )
             release_info.push_release_tag(dry_run=args.dry_run)
 
     def _push_new_release_branch():
@@ -391,9 +403,9 @@ def main():
     changelog_absent = False
     if ok and args.release_type == "patch":
         if args.dry_run:
-            changelog_absent = not release_info["is_tag_pushed"]
+            changelog_absent = not release_info.is_tag_pushed
         else:
-            changelog_path = f"docs/changelogs/{release_info['release_tag']}.md"
+            changelog_path = f"docs/changelogs/{release_info.release_tag}.md"
             on_master = bool(
                 Shell.get_output(
                     f"git ls-tree --name-only origin/master -- {shlex.quote(changelog_path)}"
@@ -406,7 +418,6 @@ def main():
             )
 
     if ok and args.release_type == "patch" and changelog_absent:
-        release_tag = release_info["release_tag"]
         uid = os.getuid()
         gid = os.getgid()
         step(
@@ -430,8 +441,8 @@ def main():
                 f" ./tests/ci/changelog.py -v --debug-helpers"
                 f' --gh-user-or-token "$GH_TOKEN"'
                 f" --jobs=5"
-                f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
-                f"git add ./docs/changelogs/{release_tag}.md",
+                f" --output=./docs/changelogs/{release_info.release_tag}.md {release_info.release_tag}",
+                f"git add ./docs/changelogs/{release_info.release_tag}.md",
                 "echo 'Generate Security'",
                 "python3 ./utils/security-generator/generate_security.py"
                 " > SECURITY.md",
@@ -441,10 +452,9 @@ def main():
         )
 
     if ok and args.release_type == "patch" and not args.dry_run and changelog_absent:
-        release_tag = release_info["release_tag"]
 
         def push_changelog_to_master():
-            commit_msg = f"Update version_date.tsv and changelogs after {release_tag}"
+            commit_msg = f"Update version_date.tsv and changelogs after {release_info.release_tag}"
             Shell.check(
                 "git config user.email robot-clickhouse@users.noreply.github.com"
                 " && git config user.name robot-clickhouse",
@@ -454,7 +464,7 @@ def main():
             pathspec = " ".join(
                 [
                     "utils/list-versions/version_date.tsv",
-                    "docs/changelogs/" + shlex.quote(release_tag) + ".md",
+                    "docs/changelogs/" + shlex.quote(release_info.release_tag) + ".md",
                     "SECURITY.md",
                     "docker/keeper/Dockerfile",
                     "docker/keeper/Dockerfile.distroless",
@@ -559,20 +569,16 @@ def main():
         and not args.dry_run
         and not args.skip_docker
     ):
-        release_tag = release_info["release_tag"]
-        # Branch head (bump not landed) → move floating minor/major tags; is_latest also moves `latest`. A later recovery (bump landed) leaves them as they are.
-        is_bump_landed = release_info["is_bump_landed"]
-        is_latest = release_info["latest"]
 
         def _make_docker_build(
             image: str,
             build_configs: List[Tuple[str, str, str]],
         ):
             def build():
-                Shell.check(f"git checkout {release_tag}", strict=True)
+                Shell.check(f"git checkout {release_info.release_tag}", strict=True)
 
-                m = re.match(r"^v(\d+\.\d+\.\d+\.\d+)", release_tag)
-                assert m, f"Cannot parse version from tag {release_tag}"
+                m = re.match(r"^v(\d+\.\d+\.\d+\.\d+)", release_info.release_tag)
+                assert m, f"Cannot parse version from tag {release_info.release_tag}"
                 version_string = m.group(1)
                 parts = version_string.split(".")
                 version_minor = ".".join(parts[:3])
@@ -590,14 +596,14 @@ def main():
                     # Always publish the exact version tag.
                     tags = [f"--tag={image}:{version_string}{version_suffix}"]
                     # Move the floating minor/major tags only for the branch head (bump not landed), so a later recovery does not point them back at an older image.
-                    if not is_bump_landed:
+                    if not release_info.is_bump_landed:
                         tags += [
                             f"--tag={image}:{version_minor}{version_suffix}",
                             f"--tag={image}:{version_major}{version_suffix}",
                         ]
                         # `latest` additionally requires the branch to be the
                         # latest release branch.
-                        if is_latest:
+                        if release_info.latest:
                             tags.append(f"--tag={image}:latest{version_suffix}")
 
                     # The multi-arch buildx log is large; praktika captures and
