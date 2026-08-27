@@ -1,2 +1,2 @@
-Array(JSON) shorthand reaches the prefixed nested variant	[1,3]	[2,4]
-Array(JSON) shorthand after reload	[1,3]	[2,4]
+Array(JSON) shorthand reaches the prefixed nested variant	[1,3]	[2,4]	['a','b']	[5,6]
+Array(JSON) shorthand after reload	[1,3]	[2,4]	['a','b']	[5,6]
