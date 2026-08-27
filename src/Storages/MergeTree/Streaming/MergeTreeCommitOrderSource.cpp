@@ -49,13 +49,6 @@ namespace ErrorCodes
 namespace
 {
 
-std::string explainPipeline(const Pipe & pipe)
-{
-    WriteBufferFromOwnString buffer;
-    printPipeline(pipe.getProcessors(), buffer);
-    return buffer.str();
-}
-
 ContextPtr makeStreamingContext(ContextPtr context_)
 {
     auto copy = Context::createCopy(context_);
@@ -401,8 +394,6 @@ void MergeTreeCommitOrderSource::work()
     read_state.startReadRound(classification, safe_block_numbers);
 
     pending_round = buildReadRoundPipeline(reading_context, read_state, safe_block_numbers);
-    if (pending_round.has_value())
-        LOG_TEST(log, "Built read round pipeline:\n{}", explainPipeline(pending_round->pipe));
 }
 
 std::tuple<int, uint32_t, Int64> MergeTreeCommitOrderSource::scheduleForEvent()

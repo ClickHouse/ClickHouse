@@ -46,6 +46,21 @@ namespace DB
 namespace
 {
 
+std::string explainPlan(const QueryPlan & plan)
+{
+    WriteBufferFromOwnString plan_buffer;
+    ExplainPlanOptions explain_options{.header = true, .actions = true, .indexes = true, .projections = true, .compact = true, .pretty = true};
+    plan.explainPlan(plan_buffer, explain_options);
+    return plan_buffer.str();
+}
+
+std::string explainPipeline(const Pipe & pipe)
+{
+    WriteBufferFromOwnString buffer;
+    printPipeline(pipe.getProcessors(), buffer);
+    return buffer.str();
+}
+
 /// Commit-order key + everything the watermark needs.
 Names metadataStreamColumns(const StreamSettings & stream_settings, const StorageMetadataPtr & metadata, const ContextPtr & context)
 {
@@ -214,6 +229,8 @@ Pipe buildPartitionReadingPipeline(
 
     /// Build pipeline.
     plan->optimize(opt_settings);
+    LOG_TEST(getLogger("buildPartitionReadingPipeline"), "Partition read plan: {}", explainPlan(*plan));
+
     auto builder = plan->buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context), /*do_optimize=*/false);
     return QueryPipelineBuilder::getPipe(std::move(*builder), resources);
 }
@@ -272,6 +289,7 @@ std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     else
         result.pipe.resize(1);
 
+    LOG_TEST(getLogger("buildPartitionReadingPipeline"), "Read-Round pipeline: {}", explainPipeline(result.pipe));
     return result;
 }
 
