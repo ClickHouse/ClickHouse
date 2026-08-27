@@ -39,32 +39,48 @@ INSERT INTO threshold_top_k_events SELECT intDiv(number, 4), number, number % 4 
 -- is dominated by the heavy keys and the threshold cuts the tail off after them.
 INSERT INTO threshold_top_k_events SELECT 500000 + number % 20, 1e9 + number, number FROM numbers(20000);
 
--- Ordering by count is served by the conversion-stage bucket selection (the last output
--- column below), which the threshold merge yields to.
+-- Ordering by the lone count is served by the conversion-stage bucket selection (the last
+-- output column below), which the threshold merge yields to.
+SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
+    SETTINGS log_comment = '05043_ttkm_a_count_alone' FORMAT Null;
+-- When other aggregates ride along, the threshold merge takes over instead: it also skips
+-- merging the losers' other states, which the conversion-stage selection cannot.
 SELECT k, count() AS c, max(u) FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
-    SETTINGS log_comment = '05043_ttkm_a_count' FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_b_count_riders' FORMAT Null;
 SELECT k, uniqExact(u) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
-    SETTINGS log_comment = '05043_ttkm_b_uniq_exact' FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_c_uniq_exact' FORMAT Null;
 -- The extremum bound serves any number of per-thread tables.
 SELECT k, max(u) AS m FROM threshold_top_k_events GROUP BY k ORDER BY m DESC LIMIT 10
-    SETTINGS log_comment = '05043_ttkm_c_max' FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_d_max' FORMAT Null;
+-- The sum of unsigned integers is subadditive just like the count.
+SELECT k, sum(u) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
+    SETTINGS log_comment = '05043_ttkm_e_sum' FORMAT Null;
+-- The `If` and `Null` combinators forward the subadditive bound of the nested function.
+SELECT k, countIf(u >= 2) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
+    SETTINGS log_comment = '05043_ttkm_f_count_if' FORMAT Null;
+SELECT k, uniqExact(nullIf(u, 0)) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
+    SETTINGS log_comment = '05043_ttkm_g_uniq_exact_null' FORMAT Null;
 
 -- Shapes the threshold merge must not serve.
 -- The estimating uniq: its estimate is not exactly subadditive.
 SELECT k, uniq(u) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
-    SETTINGS log_comment = '05043_ttkm_d_uniq_estimate' FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_h_uniq_estimate' FORMAT Null;
 -- A floating-point ordering value: no NaN order is consistent with the merge in both directions.
 SELECT k, max(v) AS m FROM threshold_top_k_events GROUP BY k ORDER BY m DESC LIMIT 10
-    SETTINGS log_comment = '05043_ttkm_e_float' FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_i_float' FORMAT Null;
+-- A String ordering value: the up-front peek of every cell's partial value would copy the whole
+-- ordering payload before anything is pruned.
+SELECT k, max(toString(u)) AS m FROM threshold_top_k_events GROUP BY k ORDER BY m DESC LIMIT 10
+    SETTINGS log_comment = '05043_ttkm_j_string' FORMAT Null;
 -- HAVING sits between the aggregation and the sort as a filter step.
 SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k HAVING c > 1 ORDER BY c DESC LIMIT 10
-    SETTINGS log_comment = '05043_ttkm_f_having' FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_k_having' FORMAT Null;
 -- More than one ORDER BY column: dropped boundary ties would break the tiebreaker.
 SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC, k ASC LIMIT 10
-    SETTINGS log_comment = '05043_ttkm_g_two_columns' FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_l_two_columns' FORMAT Null;
 -- The optimization is off.
 SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
-    SETTINGS log_comment = '05043_ttkm_h_disabled', enable_aggregation_top_k_threshold_merge = 0 FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_m_disabled', enable_aggregation_top_k_threshold_merge = 0 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 

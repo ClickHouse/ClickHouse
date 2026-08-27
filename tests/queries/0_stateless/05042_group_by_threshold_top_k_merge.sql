@@ -72,6 +72,14 @@ SELECT 'countIf DESC';
 SELECT k, countIf(r >= 5) AS c FROM threshold_top_k GROUP BY k ORDER BY c DESC LIMIT 5 SETTINGS enable_aggregation_top_k_threshold_merge = 1;
 SELECT k, countIf(r >= 5) AS c FROM threshold_top_k GROUP BY k ORDER BY c DESC LIMIT 5 SETTINGS enable_aggregation_top_k_threshold_merge = 0;
 
+SELECT 'sum(u) DESC';
+SELECT k, sum(u) AS c FROM threshold_top_k GROUP BY k ORDER BY c DESC LIMIT 5 SETTINGS enable_aggregation_top_k_threshold_merge = 1;
+SELECT k, sum(u) AS c FROM threshold_top_k GROUP BY k ORDER BY c DESC LIMIT 5 SETTINGS enable_aggregation_top_k_threshold_merge = 0;
+
+SELECT 'sum(u) ASC';
+SELECT k, sum(u) AS c FROM threshold_top_k GROUP BY k ORDER BY c ASC LIMIT 5 SETTINGS enable_aggregation_top_k_threshold_merge = 1;
+SELECT k, sum(u) AS c FROM threshold_top_k GROUP BY k ORDER BY c ASC LIMIT 5 SETTINGS enable_aggregation_top_k_threshold_merge = 0;
+
 SELECT 'max(v) DESC';
 SELECT k, max(v) AS m FROM threshold_top_k GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS enable_aggregation_top_k_threshold_merge = 1;
 SELECT k, max(v) AS m FROM threshold_top_k GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS enable_aggregation_top_k_threshold_merge = 0;
@@ -84,6 +92,8 @@ SELECT 'min(v) DESC';
 SELECT k, min(v) AS m FROM threshold_top_k GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS enable_aggregation_top_k_threshold_merge = 1;
 SELECT k, min(v) AS m FROM threshold_top_k GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS enable_aggregation_top_k_threshold_merge = 0;
 
+-- String ordering values are excluded from the threshold merge (the up-front peek of every
+-- cell's partial value would copy the whole ordering payload); the results must stay correct.
 SELECT 'max(s) DESC (String values)';
 SELECT k, max(s) AS m FROM threshold_top_k GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS enable_aggregation_top_k_threshold_merge = 1;
 SELECT k, max(s) AS m FROM threshold_top_k GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS enable_aggregation_top_k_threshold_merge = 0;
