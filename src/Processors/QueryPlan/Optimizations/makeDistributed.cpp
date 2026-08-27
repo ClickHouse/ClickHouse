@@ -54,11 +54,7 @@ namespace QueryPlanOptimizations
 void findStepsUnsupportedForRemoteExecution(const QueryPlan::Node & node, std::vector<const IQueryPlanStep *> & unsupported);
 
 /// Collects every step of the plan that cannot be shipped to a worker as part of a serialized
-/// fragment. Policy-free: the correlated-subquery placeholders (`CommonSubplanStep` /
-/// `CommonSubplanReferenceStep`) are reported like any other non-serializable step, and each
-/// caller decides what it tolerates - the pre-pass decision point filters them out of the result
-/// (see hasPlanUnsupportedStepForDistributed), the post-optimization check in
-/// `convertToDistributed` does not.
+/// fragment.
 void findStepsUnsupportedForRemoteExecution(const QueryPlan::Node & node, std::vector<const IQueryPlanStep *> & unsupported)
 {
     /// `BlocksMarshallingStep` pre-serializes result blocks for the client connection of this
@@ -85,8 +81,8 @@ void findStepsUnsupportedForRemoteExecution(const QueryPlan::Node & node, std::v
     if (!dynamic_cast<const LogicalExchangeStep *>(node.step.get()) && !node.step->isSerializable())
         unsupported.push_back(node.step.get());
 
-    /// Always keep descending: an offending inner step (e.g. a subplan placeholder the pre-pass
-    /// tolerates) can still have non-shippable steps below it, and the caller-side filter relies
+    /// Always keep descending: an offending inner step (e.g. a CommonSubplanStep)
+    /// can still have non-shippable steps below it, and the caller-side filter relies
     /// on those being reported as their own entries.
     for (const auto * child : node.children)
         findStepsUnsupportedForRemoteExecution(*child, unsupported);
@@ -158,7 +154,7 @@ traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPla
 
 
 /// Returns the reason a `ReadFromMergeTree` cannot ship as a distributed read, or nullopt.
-std::optional<PreformattedMessage> isReadFromMergeTreeSupportedForDistributed(const ReadFromMergeTree * read);
+std::optional<PreformattedMessage> hasReadMergeTreeUnsupportedOptionDistributed(const ReadFromMergeTree * read);
 
 /// Returns true if the plan contains a step the distributed pipeline cannot handle yet: WITH TOTALS
 /// (TotalsHaving) and extremes need a separate stream that the exchange protocol does not carry,
@@ -183,7 +179,7 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & node)
 /// Rejects distributed reads a worker cannot reproduce: a pinned snapshot boundary
 /// (select_sequential_consistency) or the part-order virtual columns `_part_index` /
 /// `_part_starting_offset`. Done at planning time so it fails cleanly before the pipeline is built.
-std::optional<PreformattedMessage> isReadFromMergeTreeSupportedForDistributed(const ReadFromMergeTree * read)
+std::optional<PreformattedMessage> hasReadMergeTreeUnsupportedOptionDistributed(const ReadFromMergeTree * read)
 {
     /// The old interpreter plans read-in-order before the query plan is optimized (with
     /// query_plan_read_in_order = 0), building a FinishSorting this pass never revisits:
@@ -240,17 +236,9 @@ void convertLogicalJoinsForLocalExecution(QueryPlan::Node & root, QueryPlan::Nod
 /// Also true if contains a global GROUP BY limit since it can't be enforced once aggregation is split per bucket.
 std::optional<PreformattedMessage> hasAggregationUnsupportedStepForDistributed(QueryPlan::Node & node, bool enable_cascades_optimizer)
 {
-    /// Is this a aggregating step?
     auto * aggregating_step = typeid_cast<AggregatingStep *>(node.step.get());
     if (!aggregating_step)
         return {};
-
-    /// Shuffle scatters by the full key set, so GROUPING SETS subtotals (over key subsets) would be
-    /// produced in several buckets and duplicated. Partial aggregation has no such problem: every
-    /// worker produces partial states for every grouping set over its share of the data, tagged with
-    /// `__grouping_set`, and the merge combines them per set - the same split the shard-based
-    /// distributed path uses. Shuffle is impossible here, so
-    /// `distributed_plan_force_shuffle_aggregation` cannot apply either.
 
     /// An in-order aggregation (or one that requires explicit sorting, `force_aggregation_in_order`)
     /// relies on its input arriving ordered by the group keys, which neither the rule-based exchanges
@@ -272,12 +260,6 @@ std::optional<PreformattedMessage> hasAggregationUnsupportedStepForDistributed(Q
         return PreformattedMessage::create(
             "make_distributed_plan does not support aggregation with a global GROUP BY limit (max_rows_to_group_by): "
             "the limit cannot be enforced once aggregation is split per bucket");
-
-    // Since aggregating_step is not in order and explicit sort is not required, we can use partial aggregation
-    if (aggregating_step->isGroupingSets())
-    {
-        LOG_TRACE(getLogger("optimizer"), "make_distributed_plan expected to use partial aggregation");
-    }
 
     return {};
 }
@@ -353,7 +335,7 @@ traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPla
             /// `_part_starting_offset`. Done at planning time so it fails cleanly before the pipeline is built.
             if (const auto * step = typeid_cast<const ReadFromMergeTree *>(frame_node.step.get()); step != nullptr)
             {
-                if (auto maybe_unsupported = isReadFromMergeTreeSupportedForDistributed(step); maybe_unsupported.has_value())
+                if (auto maybe_unsupported = hasReadMergeTreeUnsupportedOptionDistributed(step); maybe_unsupported.has_value())
                 {
                     unsupported_step = std::move(maybe_unsupported);
                     return;
@@ -658,7 +640,6 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         PartialAggregation, /// Do partial aggregation and then merge aggregation states
         Shuffle,            /// Partition data by aggregation keys and do aggregation in disjoint buckets, then just unite the results
     } strategy = PartialAggregation;
-
 
     /// Choose Shuffle when the estimated number of groups is high.
     if (!aggregation_keys.empty())

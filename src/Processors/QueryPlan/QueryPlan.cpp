@@ -823,9 +823,6 @@ void convertLogicalJoinsForLocalExecution(
     QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 DistributedQueryPlan
 makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
-bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
-bool verifyDistributedAggregation(
-    QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 std::optional<PreformattedMessage>
 traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
@@ -951,10 +948,10 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         return;
 
     /// Backstop for the decision in `optimize`: it accepted this plan, so a non-serializable step
-    /// found here was created by an optimization pass after the decision, i.e. a gap in the
-    /// pre-pass coverage. Falling back is not safe at this point - the plan is already shaped for
-    /// distribution - so fail close instead of silently running it on one node.
-    std::vector<const IQueryPlanStep *> unsupported_steps;
+    /// found here was created by an optimization pass after the decision to go with distributed plan. Falling back could happen
+    /// but it would mean we have either gap in pre-pass or in the optimization, and neither is fine
+    /// as it would silently fall back. Abort the plan.
+    std::vector<const IQueryPlanStep *> unsupported_steps{};
     QueryPlanOptimizations::findStepsUnsupportedForRemoteExecution(*root, unsupported_steps);
     if (!unsupported_steps.empty())
     {
