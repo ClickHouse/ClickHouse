@@ -117,7 +117,8 @@ jPH/irRx/n9ZNzr/X57oHxz/LMuF839JqozjfyUaf6kVGLdxG7dxG7dL0v4LwMIm5ABsAAA=
 
 with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as fixture:
     filter_options = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
-    fixture.extractall(table_path, **filter_options)
+    members = (member for member in fixture if not Path(member.name).name.startswith("._"))
+    fixture.extractall(table_path, members=members, **filter_options)
 PY
 
 # Any filter makes the manifest bounds be parsed; it does not have to touch the decimal column.
