@@ -97,13 +97,9 @@ void generateManifestFile(
     const std::vector<DataFileEntryLineage> & per_file_entry_lineage = {},
     /// Optional schema to serialize into the manifest's Avro `schema` header; when null the table's current schema is used.
     Poco::JSON::Object::Ptr schema_to_serialize = nullptr,
-    /// Optional per-data-file overrides used by OPTIMIZE compaction, aligned index-for-index with
-    /// `data_file_names`. When non-null they take precedence over the single shared `partition_values`
-    /// / `data_file_statistics` above, so a manifest that mixes files from several partitions (or that
-    /// needs distinct freshly-computed per-file bounds) is written correctly. Left null by the normal
-    /// write/mutation paths, which emit one partition per manifest. Distinct from `per_file_statistics`
-    /// above: those carry source stats verbatim for a manifest-only rewrite, while these are freshly
-    /// recomputed `DataFileStatistics` for files that compaction physically rewrote.
+    /// Optional per-data-file overrides aligned index-for-index with `data_file_names`; when
+    /// non-null they take precedence over the shared `partition_values` / `data_file_statistics`
+    /// above. Unlike `per_file_statistics`, these are recomputed rather than carried over verbatim.
     const std::vector<std::vector<Field>> * per_file_partition_values = nullptr,
     const std::vector<const DataFileStatistics *> * per_file_fresh_statistics = nullptr);
 

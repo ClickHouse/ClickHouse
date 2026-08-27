@@ -174,16 +174,11 @@ export const HighlightedClickHouse = () => {
 
 export const McpLink = ({ children }) => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const handleClick = (e) => {
-        e.preventDefault();
-        const target = document.getElementById('mcp-setup');
-        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    };
+    const href = `${assetBase}/ko/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server`;
     return (
         <a
-            href="#mcp-setup"
+            href={href}
             data-galaxy-event="docs.home.mcp-server"
-            onClick={handleClick}
             className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors no-underline"
         >
             <span
@@ -260,25 +255,25 @@ export const PageWrapper = ({ children }) => {
 
 <style>
   {`
-        .ch-goal-icon { color: #374151; }
-        .dark .ch-goal-icon { color: #FAFF69; }
-        /* Integrations 배너: 라이트/다크 모드 모두에서 강조 색상 테두리 */
-        html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
-        html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
-        .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
-        .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
-        /* 홈페이지에서 사이드바를 즉시 숨김(깜빡임 방지) */
-        #sidebar { display: none !important; }
-        /* 사이드바가 숨겨져 있으므로 내비게이션 바가 전체 너비를 사용하도록 설정 */
-        #navbar-transition-maple {
-          width: 100vw !important;
-          left: 0 !important;
-          margin-left: 0 !important;
-          /* 내비게이션 바 자체의 오른쪽 패딩(3rem)과 일치 */
-          padding-left: 3rem !important;
-          justify-content: flex-start !important;
-        }
-        `}
+          .ch-goal-icon { color: #374151; }
+          .dark .ch-goal-icon { color: #FAFF69; }
+          /* Integrations 배너: 라이트/다크 모드 모두에서 강조 색상 테두리 */
+          html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
+          html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
+          .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
+          .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
+          /* 홈페이지에서 사이드바를 즉시 숨김(깜빡임 방지) */
+          #sidebar { display: none !important; }
+          /* 사이드바가 숨겨져 있으므로 내비게이션 바가 전체 너비를 사용하도록 설정 */
+          #navbar-transition-maple {
+            width: 100vw !important;
+            left: 0 !important;
+            margin-left: 0 !important;
+            /* 내비게이션 바 자체의 오른쪽 패딩(3rem)과 일치 */
+            padding-left: 3rem !important;
+            justify-content: flex-start !important;
+          }
+          `}
 </style>
 
 <PageWrapper>
@@ -295,7 +290,7 @@ export const PageWrapper = ({ children }) => {
       </div>
 
       <h1 className="block text-[34px] font-semibold text-center text-gray-900 dark:text-zinc-50 tracking-tight">
-        <HighlightedClickHouse />로 구축을 시작하세요
+        <HighlightedClickHouse />로 시작하세요
       </h1>
 
       <div className="mx-auto px-4 -mt-5 text-[34px] font-semibold text-center text-gray-900 dark:text-zinc-50 tracking-tight">
@@ -317,7 +312,7 @@ export const PageWrapper = ({ children }) => {
         <HeroCard
           title="시작하기"
           galaxyEvent="docs.home.get-started"
-          description="저는 여기 처음이라 시작 방법을 익히고 더 알아보고 싶습니다"
+          description="처음이라 시작하는 방법과 자세한 내용을 알고 싶습니다"
           href="/ko/get-started/quickstarts/create-your-first-service-on-cloud"
           icon={
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 256 256" className="ch-goal-icon">
@@ -368,7 +363,7 @@ export const PageWrapper = ({ children }) => {
         { label: "설정", href: "/ko/reference/settings/index" },
         { label: "함수", href: "/ko/reference/functions/regular-functions/overview" },
         { label: "엔진", href: "/ko/reference/engines/engines" },
-        { label: "시스템 테이블", href: "/ko/reference/system-tables" },
+        { label: "시스템 테이블", href: "/ko/reference/system-tables/overview" },
         { label: "포맷", href: "/ko/reference/formats/index" },
         { label: "데이터 타입", href: "/ko/reference/data-types/index" }
     ]}
@@ -387,7 +382,7 @@ export const PageWrapper = ({ children }) => {
           links={[
         { label: "ClickHouse Cloud", href: "/ko/products/cloud/getting-started/cloud-get-started" },
         { label: "ClickStack", href: "/ko/clickstack" },
-        { label: "Managed Postgres", href: "/ko/products/managed-postgres/overview" },
+        { label: "ClickHouse Managed Postgres", href: "/ko/products/managed-postgres/overview" },
         { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
         { label: "chDB", href: "/ko/chdb" },
         { label: "Kubernetes Operator", href: "/ko/products/kubernetes-operator/overview" },
@@ -436,7 +431,7 @@ export const PageWrapper = ({ children }) => {
               <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">학습할 내용:</p>
           </>}
               links={[
-              { label: "1. 일반적인 데이터 소스에서 최소한의 작업으로 데이터를 수집하는 방법", href: "/ko/integrations" },
+              { label: "1. 일반적인 데이터 소스에서 최소한의 작업으로 데이터를 수집하는 방법", href: "/ko/integrations/home" },
               { label: "2. analytics와 확장성을 위해 데이터를 구성하는 모범 사례", href: "/ko/guides/clickhouse/data-modelling/schema-design" },
               { label: "3. 대규모 데이터셋을 실시간으로 쿼리하는 방법", href: "/ko/get-started/use-cases/real-time-analytics" },
               { label: "4. 그 위에 대시보드, 알림, 이벤트 기반 기능을 구축하는 방법", href: "/ko/get-started/use-cases/data-warehousing" },
@@ -448,11 +443,11 @@ export const PageWrapper = ({ children }) => {
           <div className="flex flex-col gap-4">
             <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickStack" galaxyEvent="docs.home.clickstack" description="ClickHouse 기반의 올인원 관측성 스택으로, logs, 메트릭, traces, 세션 리플레이, 오류에 대해 매우 빠른 쿼리와 강력한 집계 기능을 제공합니다." href="/ko/clickstack/overview" extraClassName="flex-1" showArrow arrowBottom />
 
-            <HeroCard filename="thumbnail-postgres-light.webp" title="Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="ClickHouse와 네이티브로 통합된 빠르고 확장 가능하며 엔터프라이즈급 Postgres 서비스입니다. 트랜잭션에는 Postgres를, analytics에는 ClickHouse를 손쉽게 함께 사용할 수 있습니다." href="/ko/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-postgres-light.webp" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="ClickHouse와 네이티브로 통합된 빠르고 확장 가능하며 엔터프라이즈급 Postgres 서비스입니다. 트랜잭션에는 Postgres를, analytics에는 ClickHouse를 손쉽게 함께 사용할 수 있습니다." href="/ko/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
           </div>
         </div>
 
-        {/* 전체 너비 Integrations 배너 */}
+        {/* 전체 너비 통합 배너 */}
 
         <IntegrationsBanner />
 
@@ -467,51 +462,6 @@ export const PageWrapper = ({ children }) => {
         </div>
       </div>
 
-      <FullWidthDivider style={{ margin: '40px 0 0' }} />
-
-      <div id="mcp-setup" className="mt-16 scroll-mt-20">
-        <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">docs MCP server 설정</h2>
-        <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">Model Context Protocol을 사용하여 AI 도구에서 ClickHouse 문서를 직접 조회합니다.</p>
-
-        <div className="mt-6">
-          <Tabs>
-            <Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]">터미널에서 실행하세요:</p>
-
-              <CodeBlock language="bash">
-                {`claude mcp add --transport http clickhouse-docs https://private-7c7dfe99.mintlify.app/mcp --scope user`}
-              </CodeBlock>
-            </Tab>
-
-            <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]"><code>claude&#95;desktop&#95;config.json</code>에 추가하세요:</p>
-
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
-            </Tab>
-
-            <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
-              <p className="mb-2 text-[#9ca3af] text-[13px]"><code>.cursor/mcp.json</code>에 추가하세요:</p>
-
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
-            </Tab>
-
-            <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
-              <p className="mb-2 text-[#9ca3af] text-[13px]"><code>~/.codeium/windsurf/mcp&#95;config.json</code>에 추가하세요:</p>
-
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
-            </Tab>
-          </Tabs>
-        </div>
-
-        <div className="mt-6 p-4 rounded-lg bg-[#f9f9f9] dark:bg-white/[0.03] border border-[#e5e7eb] dark:border-white/10">
-          <p className="text-sm font-semibold text-gray-900 dark:text-zinc-50 mb-1">코딩 에이전트에 ClickHouse 스킬 추가</p>
-          <p className="text-sm text-gray-500 dark:text-zinc-500 mb-3">에이전트에 ClickHouse 전문 지식과 모범 사례를 제공하려면 ClickHouse 스킬을 설치하세요.</p>
-
-          <CodeBlock language="bash">
-            {`npx skills add https://clickhouse.com`}
-          </CodeBlock>
-        </div>
-      </div>
     </div>
   </div>
 </PageWrapper>

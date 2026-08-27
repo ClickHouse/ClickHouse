@@ -1,0 +1,13 @@
+3
+(a) engine, database = merge(...): Code: 669 names_collection=yes
+3
+3
+(b) engine, sharding_key = rand(): Code: 669 names_collection=yes
+(c) table function, database = merge(...): Code: 669 names_collection=yes
+(d) table function, sharding_key = rand(): Code: 669 names_collection=yes
+3
+3
+(g) unknown cluster, no override: Code: 701 names_collection=no
+3
+3
+CREATE TABLE default.t_live\n(\n    `x` UInt8\n)\nENGINE = Remote(NC_LIVE, sharding_key = rand())

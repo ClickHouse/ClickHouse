@@ -389,12 +389,14 @@ def main():
                 if not Shell.check(
                     f"git clone https://github.com/ClickHouse/SQLStorm.git {sqlstorm_repo}",
                     verbose=True,
+                    retries=3,
                 ):
                     return False
             else:
                 if not Shell.check(
                     f"git -C {sqlstorm_repo} fetch origin",
                     verbose=True,
+                    retries=3,
                 ):
                     return False
             return Shell.check(
@@ -420,12 +422,14 @@ def main():
                 if not Shell.check(
                     f"git clone https://github.com/SQL-Storm/OLAPBench.git {olapbench_repo}",
                     verbose=True,
+                    retries=3,
                 ):
                     return False
             else:
                 if not Shell.check(
                     f"git -C {olapbench_repo} fetch origin",
                     verbose=True,
+                    retries=3,
                 ):
                     return False
             return Shell.check(

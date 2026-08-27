@@ -400,7 +400,7 @@ SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12
 * إذا قُيِّم الشرط `cond` إلى قيمة غير صفرية، فتعيد الدالة نتيجة التعبير `then`.
 * إذا قُيِّم `cond` إلى صفر أو NULL، فتُعاد نتيجة التعبير `else`.
 
-يتحكّم الإعداد [`short_circuit_function_evaluation`](/ar/reference/settings/session-settings#short_circuit_function_evaluation) في ما إذا كان التقييم المختصر مستخدمًا.
+يتحكّم الإعداد [`short_circuit_function_evaluation`](/ar/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) في ما إذا كان التقييم المختصر مستخدمًا.
 
 إذا كان مفعّلًا، فلا يُقيَّم التعبير `then` إلا على الصفوف التي تكون فيها قيمة `cond` هي `true`، ويُقيَّم التعبير `else` على الصفوف التي تكون فيها قيمة `cond` هي `false`.
 
@@ -524,7 +524,7 @@ SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00
 يُقيِّم كل شرط بالترتيب. وبالنسبة إلى أول شرط يكون صحيحًا (غير صفري وليس `NULL`)، يُرجِع قيمة الفرع المقابلة.
 إذا لم يكن أي من الشروط صحيحًا، فسيُرجِع قيمة `else`.
 
-يتحكم الإعداد [`short_circuit_function_evaluation`](/ar/reference/settings/session-settings#short_circuit_function_evaluation) في
+يتحكم الإعداد [`short_circuit_function_evaluation`](/ar/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) في
 ما إذا كان التقييم المختصر مستخدمًا. وإذا كان مفعّلًا، فلن يُقيَّم التعبير `then_i` إلا على الصفوف التي تكون فيها
 `((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` صحيحة.
 

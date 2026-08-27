@@ -446,7 +446,10 @@ static Plan getPlan(
                     plan.partitions.push_back({});
 
                 IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
-                    data_file, persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key), 0);
+                    data_file,
+                    persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key),
+                    0,
+                    Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor));
                 /// Key by the DATA FILE's own path: one manifest can pack many data files, and
                 /// keying by manifest path would collapse them onto the first file's plan, so
                 /// every other live data file in that manifest would be dropped.
@@ -537,7 +540,7 @@ static void writeDataFiles(
         std::shared_ptr<ExpressionActions> schema_transform;
         if (schema_changed)
         {
-            auto initial_schema = schema_processor->getClickhouseTableSchemaById(file_schema_id);
+            auto initial_schema = schema_processor->getClickHouseTableSchemaById(file_schema_id);
             Block old_header;
             for (const auto & [name, type] : *initial_schema)
                 old_header.insert({type->createColumn(), type, name});
@@ -1183,12 +1186,22 @@ static bool writeConsolidatedManifestFile(
     return true;
 }
 
-namespace
+bool overwriteIsPositionDeleteOnly(const SnapshotSummaryUpdateOverwrite & update)
 {
+    /// Every declared added file and row must be accounted for as a position delete: the
+    /// breakdown counters are optional and read as 0 when absent, so their absence is not
+    /// evidence. One delete file with deleted rows but no file count is a position delete file.
+    return update.added_files == 0 && update.added_records == 0 && update.added_delete_files != 0
+        && (update.added_position_delete_files == update.added_delete_files
+            || (update.added_position_delete_files == 0 && update.added_position_deletes != 0
+                && update.added_delete_files == 1))
+        && update.added_equality_delete_files == 0 && update.added_equality_deletes == 0
+        && update.deleted_data_files == 0 && update.removed_records == 0 && update.removed_files_size == 0;
+}
 
 /// Deep copy a metadata JSON object (Poco shares child arrays/objects by pointer on a shallow
 /// copy, so we round-trip through a string to get an independent tree we can safely mutate).
-Poco::JSON::Object::Ptr deepCopyMetadata(const Poco::JSON::Object::Ptr & source)
+static Poco::JSON::Object::Ptr deepCopyMetadata(const Poco::JSON::Object::Ptr & source)
 {
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     source->stringify(oss);
@@ -1209,9 +1222,7 @@ Poco::JSON::Object::Ptr deepCopyMetadata(const Poco::JSON::Object::Ptr & source)
         case SnapshotSummaryOperation::DELETE:
             return std::nullopt;
         case SnapshotSummaryOperation::OVERWRITE: {
-            const auto & update = summary->getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>();
-            /// current compaction (OPTIME TABLE my_iceberg) supports only overwrites wich has only position delete files
-            if (update.added_files == 0 && (update.added_position_deletes == update.added_delete_files) && update.added_position_deletes != 0)
+            if (overwriteIsPositionDeleteOnly(summary->getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>()))
                 return std::nullopt;
             [[fallthrough]];
         }
@@ -1220,6 +1231,8 @@ Poco::JSON::Object::Ptr deepCopyMetadata(const Poco::JSON::Object::Ptr & source)
     }
 };
 
+namespace
+{
 
 /// Current experimental compact implementation expects snapshots to be either appends or overwrites which has only position deletes
 /// Lets force this invariant
