@@ -12,21 +12,29 @@ set(SIMDJSON_SRC "${SIMDJSON_SRC_DIR}/simdjson.cpp")
 add_library(_simdjson ${SIMDJSON_SRC})
 target_include_directories(_simdjson SYSTEM PUBLIC "${SIMDJSON_INCLUDE_DIR}" PRIVATE "${SIMDJSON_SRC_DIR}")
 
-# For x86-64-v2 (and lower), simdjson uses its own CPU dispatching and gets
-# confused if we enable AVX/AVX2 flags. Disable them so it can pick the best
-# implementation at runtime, and enable the scalar fallback for CPUs without
-# AVX2.  For v3+, AVX2 is always available so simdjson can use its Haswell
-# implementation directly with no dispatch overhead.
-if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 3)
+# simdjson is using its own CPU dispatching and get confused if we enable AVX/AVX2 flags.
+if(ARCH_AMD64)
     target_compile_options(_simdjson PRIVATE -mno-avx -mno-avx2)
 endif()
 
-# Enable the scalar fallback implementation. Binaries may run on CPUs that do
-# not support all compiled-in SIMD paths; without the fallback, simdjson
-# returns UNSUPPORTED_ARCHITECTURE.  For x86-64-v3+ the Haswell (AVX2)
-# implementation is always available, so the fallback is unnecessary.
-if (NOT (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3))
-    target_compile_options(_simdjson PRIVATE -DSIMDJSON_IMPLEMENTATION_FALLBACK=1)
+# We allow fallback implementations because binaries are built with all
+# supported instructions, so one implementation will be selected and fallback
+# will be disabled.
+#
+# However, ClickHouse may be run on CPUs that do not support all of these
+# instructions. Since fallback is disabled by default in such cases, this will
+# result in an UNSUPPORTED_ARCHITECTURE error.
+target_compile_options(_simdjson PRIVATE -DSIMDJSON_IMPLEMENTATION_FALLBACK=1)
+
+# On LoongArch, simdjson's CPU dispatch reads the HWCAP_LOONGARCH_LSX / HWCAP_LOONGARCH_LASX
+# bits (see contrib/simdjson/src/internal/isadetection.h). These are kernel UAPI macros defined
+# in <asm/hwcap.h>, but simdjson only includes <sys/auxv.h>, which pulls in glibc's <bits/hwcap.h>.
+# The glibc in our LoongArch sysroot is old enough that its <bits/hwcap.h> defines no bits for this
+# architecture ("No bits defined for this architecture."), so the macros are unreachable and the
+# build fails. Force-include the kernel header so the macros are always available. The header has an
+# include guard and its values match glibc's, so this is a benign no-op once the sysroot is updated.
+if(ARCH_LOONGARCH64)
+    target_compile_options(_simdjson PRIVATE -include asm/hwcap.h)
 endif()
 
 # On ppc64le, ClickHouse globally defines __SSE2__ to enable SSE-to-AltiVec emulation.

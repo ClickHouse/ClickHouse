@@ -72,7 +72,7 @@ public:
         CurrentOffsetsMap current_offsets;
         std::string consumer_id;
         std::string rdkafka_stat;
-        UInt64 num_messages_read{};
+        UInt64 num_messages_read;
         ExceptionsBuffer exceptions_buffer;
     };
 
@@ -84,13 +84,7 @@ public:
         size_t partition_count;
     };
 
-    KafkaConsumer2(
-        LoggerPtr log_,
-        size_t max_batch_size,
-        size_t poll_timeout_,
-        const std::atomic<bool> & stopped_,
-        const Names & topics_,
-        size_t skip_bytes_ = 0);
+    KafkaConsumer2(LoggerPtr log_, size_t max_batch_size, size_t poll_timeout_, const std::atomic<bool> & stopped_, const Names & topics_);
 
     ~KafkaConsumer2() override;
 
@@ -161,7 +155,6 @@ private:
     LoggerPtr log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
-    const size_t skip_bytes = 0;
 
     StalledStatus stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
 

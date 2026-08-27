@@ -10,7 +10,6 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Processors/IProcessor.h>
 #include <Processors/PingPongProcessor.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 
 namespace DB
 {
@@ -62,21 +61,21 @@ public:
     /// Thread-safe.
     void connectPorts(PortPair rhs_ports, IProcessor * proc)
     {
-        chassert(!rhs_ports.first->isConnected() && !rhs_ports.second->isConnected());
+        assert(!rhs_ports.first->isConnected() && !rhs_ports.second->isConnected());
 
         std::lock_guard lock(mux);
         if (input_port || output_port)
         {
-            chassert(input_port && output_port);
-            chassert(!input_port->isConnected());
+            assert(input_port && output_port);
+            assert(!input_port->isConnected());
             connect(*rhs_ports.second, *input_port);
             connect(*output_port, *rhs_ports.first, /* reconnect= */ true);
         }
         else
         {
             std::tie(input_port, output_port) = rhs_ports;
-            chassert(input_port && output_port);
-            chassert(!input_port->isConnected() && !output_port->isConnected());
+            assert(input_port && output_port);
+            assert(!input_port->isConnected() && !output_port->isConnected());
 
             dummy_input_port = std::make_unique<InputPort>(output_port->getHeader(), proc);
             connect(*output_port, *dummy_input_port);
@@ -129,12 +128,12 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
         auto res = std::make_shared<CreatingSetsOnTheFlyTransform>(header, column_names, num_streams, own_set);
-        res->setDescription(std::string(this->getStepDescription()));
+        res->setDescription(this->getStepDescription());
         return res;
     });
 
     Block input_header = pipeline.getHeader();
-    auto pipeline_transform = [&input_header, this](const OutputPortRawPtrs & ports)
+    auto pipeline_transform = [&input_header, this](OutputPortRawPtrs ports)
     {
         Processors result_transforms;
 
@@ -169,7 +168,7 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
             connect(port, transform->getInputPort());
             result_transforms.emplace_back(std::move(transform));
         }
-        chassert(output_it == std::prev(outputs.end()));
+        assert(output_it == std::prev(outputs.end()));
         result_transforms.emplace_back(std::move(stream_balancer));
 
         return result_transforms;
@@ -187,7 +186,7 @@ void CreateSetAndFilterOnTheFlyStep::describeActions(JSONBuilder::JSONMap & map)
 
 void CreateSetAndFilterOnTheFlyStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
     settings.out << prefix << getName();
 
     settings.out << '\n';

@@ -4,8 +4,9 @@ sidebar_label: 'DELETE'
 sidebar_position: 39
 slug: /sql-reference/statements/alter/delete
 title: 'ALTER TABLE ... DELETE Statement'
-doc_type: 'reference'
 ---
+
+# ALTER TABLE ... DELETE Statement
 
 ```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr

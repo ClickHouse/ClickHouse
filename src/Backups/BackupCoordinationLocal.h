@@ -7,7 +7,6 @@
 #include <Backups/BackupCoordinationReplicatedSQLObjects.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationKeeperMapTables.h>
-#include <Backups/BackupSettings.h>
 #include <base/defines.h>
 #include <cstddef>
 #include <mutex>
@@ -24,7 +23,7 @@ class BackupCoordinationLocal : public IBackupCoordination
 {
 public:
     explicit BackupCoordinationLocal(
-        const BackupSettings & backup_settings_,
+        bool is_plain_backup_,
         bool allow_concurrent_backup_,
         BackupConcurrencyCounters & concurrency_counters_);
 

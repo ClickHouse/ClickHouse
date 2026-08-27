@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <Parsers/IAST.h>
 
 namespace DB
@@ -54,7 +53,7 @@ public:
     String getID(char) const override { return "UserNamesWithHost"; }
     ASTPtr clone() const override
     {
-        auto clone = make_intrusive<ASTUserNamesWithHost>(*this);
+        auto clone = std::make_shared<ASTUserNamesWithHost>(*this);
         clone->cloneChildren();
         return clone;
     }

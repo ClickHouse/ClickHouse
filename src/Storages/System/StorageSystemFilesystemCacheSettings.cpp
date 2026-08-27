@@ -1,11 +1,10 @@
 #include <Storages/System/StorageSystemFilesystemCacheSettings.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/FileCache/FileCache.h>
-#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/Common/AccessFlags.h>
@@ -44,6 +43,3 @@ void StorageSystemFilesystemCacheSettings::fillData(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemFilesystemCacheSettings) }

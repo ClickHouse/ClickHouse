@@ -9,9 +9,9 @@
 namespace DB
 {
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
 
-/// This queue is used to poll descriptors. Generally, just a wrapper over epoll (kqueue on macOS).
+/// This queue is used to poll descriptors. Generally, just a wrapper over epoll.
 class PollingQueue
 {
 public:
@@ -27,7 +27,7 @@ public:
 
 private:
     Epoll epoll;
-    int pipe_fd[2]{};
+    int pipe_fd[2];
     std::atomic_bool is_finished = false;
     std::unordered_map<std::uintptr_t, TaskData> tasks;
 
@@ -41,7 +41,7 @@ public:
     bool empty() const { return tasks.empty(); }
 
     /// Add new task to queue.
-    void addTask(size_t thread_number, void * data, int fd, uint32_t events = EPOLLIN | EPOLLERR);
+    void addTask(size_t thread_number, void * data, int fd);
 
     /// Wait for any descriptor. If no descriptors in queue, blocks.
     /// Returns ptr which was inserted into queue or nullptr if finished was called.

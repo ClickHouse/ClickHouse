@@ -38,19 +38,10 @@ void CancellationChecker::cancelTask(CancellationChecker::QueryToTrack task)
 {
     if (task.query)
     {
-        try
-        {
-            if (task.overflow_mode == OverflowMode::THROW)
-                task.query->cancelQuery(CancelReason::TIMEOUT);
-            else
-                task.query->checkTimeLimit();
-        }
-        catch (...)
-        {
-            /// This function is called from BackgroundSchedulePool which does not allow exceptions.
-            /// The query might have been already cancelled by another mechanism, which is fine.
-            tryLogCurrentException("CancellationChecker");
-        }
+        if (task.overflow_mode == OverflowMode::THROW)
+            task.query->cancelQuery(CancelReason::TIMEOUT);
+        else
+            task.query->checkTimeLimit();
     }
 }
 
@@ -185,12 +176,6 @@ void CancellationChecker::workerFunction()
                 });
         }
     }
-
-    /// `terminateThread` flips `stop_thread` to true to signal exit; clear it here while still
-    /// holding the lock so the singleton is left in a re-runnable state. This is mainly relevant
-    /// to tests that own the worker thread and may want to spin it up again later; the server
-    /// starts the worker exactly once during boot, so for the production code path this is a no-op.
-    stop_thread = false;
 }
 
 }
