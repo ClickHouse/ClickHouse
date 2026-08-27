@@ -38,7 +38,7 @@ ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "
 # Empty the elements file of `a`, keeping its sizes file: the column is not recorded as partially
 # read, so nothing refills it. The checksums are recalculated on the next load.
 # `path` from `system.parts` ends with a slash.
-PART_DIR=$(${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "SELECT path FROM system.parts WHERE table = 'corrupted' AND active")
+PART_DIR=$(${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 'corrupted' AND active")
 if [ ! -f "${PART_DIR}a.bin" ]
 then
     echo "no a.bin in the active part of table corrupted, parts:" >&2
