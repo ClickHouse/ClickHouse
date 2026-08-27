@@ -123,8 +123,8 @@ struct BloomFilterHash
             {
                 auto hashes = ColumnUInt64::create();
                 hashes->getData().push_back(getNumberTypeHash<Float64, Float64>(field));
-                hashes->getData().push_back(DefaultHash64<UInt64>(UInt64(1) << 63)); /// Raw bits of Float64 -0.
-                hashes->getData().push_back(DefaultHash64<UInt64>(UInt64(1) << 31)); /// Raw bits of Float32 -0.
+                /// Raw bits of Float64 -0. (Float32 values are hashed after a conversion to Float64).
+                hashes->getData().push_back(DefaultHash64<UInt64>(UInt64(1) << 63));
                 return hashes;
             }
             return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
@@ -205,7 +205,8 @@ struct BloomFilterHash
         if (!hashes)
             return hash_column;
 
-        /// The hash of a canonicalized zero of any floating point width (all bits are zero).
+        /// The hash of a canonicalized floating point zero (all bits are zero;
+        /// Float32 values are hashed after a conversion to Float64).
         const UInt64 zero_hash = DefaultHash64<UInt64>(0);
 
         const auto & data = hashes->getData();
@@ -230,7 +231,6 @@ struct BloomFilterHash
         {
             res_data.assign(data.begin(), data.end());
             res_data.push_back(DefaultHash64<UInt64>(UInt64(1) << 63)); /// Raw bits of Float64 -0.
-            res_data.push_back(DefaultHash64<UInt64>(UInt64(1) << 31)); /// Raw bits of Float32 -0.
         }
 
         return res;
