@@ -29,6 +29,7 @@
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -1155,7 +1156,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
         return true;
     }
 
-    auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+    auto storage_merge_tree = castStorage<MergeTreeData>(storage, StorageResolution::Load);
     if (!storage_merge_tree || settings[Setting::parallel_replicas_min_number_of_rows_per_replica] == 0)
         return false;
 

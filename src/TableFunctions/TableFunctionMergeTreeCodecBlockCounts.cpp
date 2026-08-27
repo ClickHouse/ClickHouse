@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -69,9 +70,9 @@ void TableFunctionMergeTreeCodecBlockCounts::parseArguments(const ASTPtr & ast_f
 
 ColumnsDescription TableFunctionMergeTreeCodecBlockCounts::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
+    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
 
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
+    const auto * merge_tree = castStorage<MergeTreeData>(source_table, StorageResolution::Load).get();
     if (!merge_tree)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Table function {} expected MergeTree table, got: {}", getName(), source_table->getName());
@@ -104,7 +105,7 @@ StoragePtr TableFunctionMergeTreeCodecBlockCounts::executeImpl(
     ColumnsDescription /*cached_columns*/,
     bool is_insert_query) const
 {
-    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
+    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
     auto columns = getActualTableStructure(context, is_insert_query);
 
     StorageID storage_id(getDatabaseName(), table_name);

@@ -1372,9 +1372,9 @@ void InterpreterSystemQuery::restoreReplica()
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
-    const StoragePtr table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
+    const StoragePtr table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
 
-    auto * const table_replicated_ptr = dynamic_cast<StorageReplicatedMergeTree *>(table_ptr.get());
+    auto * const table_replicated_ptr = castStorage<StorageReplicatedMergeTree>(table_ptr, StorageResolution::Load).get();
 
     if (table_replicated_ptr == nullptr)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
@@ -1449,7 +1449,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
     /// The resolved pointer must not outlive this check. `waitDetachedTableNotInUse` below waits
     /// for the last reference to the detached table to be released.
-    if (!dynamic_cast<const StorageReplicatedMergeTree *>(resolveStorageProxyLoading(table).get()))
+    if (!castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Load).get())
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
@@ -1623,7 +1623,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
         for (auto it = elem.second->getTablesIterator(getContext()); it->isValid(); it->next())
         {
-            if (dynamic_cast<const StorageReplicatedMergeTree *>(resolveStorageProxy(it->table()).get()))
+            if (castStorage<StorageReplicatedMergeTree>(it->table(), StorageResolution::Peek).get())
             {
                 if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_RESTART_REPLICA, elem.first, it->name()))
                 {
@@ -1728,7 +1728,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
                 if (auto * storage_replicated
-                    = dynamic_cast<StorageReplicatedMergeTree *>(resolveStorageProxyLoading(iterator->table()).get()))
+                    = castStorage<StorageReplicatedMergeTree>(iterator->table(), StorageResolution::Peek).get())
                 {
                     /// getReplicaPath() is built from getZooKeeperPath(), which strips only a single trailing
                     /// slash, so a table created from "/a///" metadata keeps "/a//replicas/..." and would slip
@@ -1774,8 +1774,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
 bool InterpreterSystemQuery::dropStorageReplica(const String & query_replica, const StoragePtr & storage)
 {
     /// Dropping a replica from Keeper is what the command asks for, so loading the table is warranted.
-    auto resolved = resolveStorageProxyLoading(storage);
-    auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(resolved.get());
+    auto * storage_replicated = castStorage<StorageReplicatedMergeTree>(storage, StorageResolution::Load).get();
     if (!storage_replicated)
         return false;
 
@@ -2185,9 +2184,8 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
             break;
     }
 
-    table = resolveStorageProxyLoading(table);
 
-    if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+    if (auto * storage_replicated = castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Load).get())
     {
         auto log = getLogger("InterpreterSystemQuery");
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
@@ -2233,9 +2231,9 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 void InterpreterSystemQuery::waitLoadingParts()
 {
     getContext()->checkAccess(AccessType::SYSTEM_WAIT_LOADING_PARTS, table_id);
-    StoragePtr table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
-    if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+    if (auto * merge_tree = castStorage<MergeTreeData>(table, StorageResolution::Load).get())
     {
         LOG_TRACE(log, "Waiting for loading of parts of table {}", table_id.getFullTableName());
         merge_tree->waitForOutdatedPartsToBeLoaded();
@@ -2281,7 +2279,7 @@ void InterpreterSystemQuery::restartDisk(const String & disk_name)
         /// skip_not_loaded: act only on already-loaded tables, do not block on async loading.
         for (auto it = elem.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
         {
-            auto * merge_tree = dynamic_cast<MergeTreeData *>(resolveStorageProxy(it->table()).get());
+            auto * merge_tree = castStorage<MergeTreeData>(it->table(), StorageResolution::Peek).get();
             if (!merge_tree)
                 continue;
 
@@ -2318,7 +2316,7 @@ namespace
 MergeTreeData & getMergeTreeWithManualSelector(const StoragePtr & table, const StorageID & table_id, const char * action)
 {
     auto resolved = resolveStorageProxyLoading(table);
-    auto * merge_tree = dynamic_cast<MergeTreeData *>(resolved.get());
+    auto * merge_tree = castStorage<MergeTreeData>(resolved, StorageResolution::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Command {} is supported only for MergeTree-family tables, but got: {}",
@@ -2401,9 +2399,9 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
     if (!table_id.empty())
     {
         getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
-        StoragePtr table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
+        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
-        if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+        if (auto * merge_tree = castStorage<MergeTreeData>(table, StorageResolution::Load).get())
         {
             LOG_TRACE(log, "{} primary keys for table {}", load ? "Loading" : "Unloading", table_id.getFullTableName());
             load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
@@ -2423,7 +2421,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
             {
-                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(resolveStorageProxy(it->table()).get()))
+                if (auto * merge_tree = castStorage<MergeTreeData>(it->table(), StorageResolution::Peek).get())
                 {
                     load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
                 }
@@ -2711,7 +2709,7 @@ void InterpreterSystemQuery::prewarmMarkCache()
     getContext()->checkAccess(AccessType::SYSTEM_PREWARM_MARK_CACHE, table_id);
 
     auto table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
-    auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
+    auto * merge_tree = castStorage<MergeTreeData>(table_ptr, StorageResolution::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
 
@@ -2735,7 +2733,7 @@ void InterpreterSystemQuery::prewarmPrimaryIndexCache()
     getContext()->checkAccess(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, table_id);
 
     auto table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
-    auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
+    auto * merge_tree = castStorage<MergeTreeData>(table_ptr, StorageResolution::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM PRIMARY INDEX CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
 

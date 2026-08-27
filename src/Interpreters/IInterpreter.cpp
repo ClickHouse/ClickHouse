@@ -3,6 +3,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/QueryLog.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageMergeTree.h>
 #include <Common/quoteString.h>
 
@@ -55,7 +56,7 @@ void IInterpreter::checkStorageSupportsTransactionsIfNeeded(const StoragePtr & s
     /// Do not allow transactions with replicated tables or MergeTree tables anyway (unless it's a readonly SELECT query)
     /// because it may try to process transaction on MergeTreeData-level,
     /// but then fail with a logical error or something on Storage{Replicated,Shared}MergeTree-level.
-    if (storage->supportsReplication() || dynamic_cast<StorageMergeTree *>(storage.get()) != nullptr)
+    if (storage->supportsReplication() || castStorage<StorageMergeTree>(storage, StorageResolution::Load).get() != nullptr)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} (table {}) does not support transactions",
                         storage->getName(), storage->getStorageID().getNameForLogs());
 }

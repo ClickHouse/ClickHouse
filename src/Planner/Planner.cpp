@@ -58,6 +58,7 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
@@ -260,7 +261,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         const auto * raw = storage_ptr.get();
         if (typeid_cast<const StorageDistributed *>(raw))
             return true;
-        if (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage_ptr))
+        if (parallel_replicas_estimation_enabled && castStorage<MergeTreeData>(storage_ptr, StorageResolution::Load))
             return true;
         if (typeid_cast<const StorageObjectStorageCluster *>(raw))
             return true;

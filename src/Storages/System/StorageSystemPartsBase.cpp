@@ -162,7 +162,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     String table_name = iterator->name();
-                            StoragePtr storage = resolveStorageProxy(iterator->table());
+                    auto storage = castStorage<MergeTreeData>(iterator->table(), StorageResolution::Peek);
                     if (!storage)
                         continue;
 
@@ -175,9 +175,6 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                         hash.update(table_name);
                         storage_uuid = hash.get128();
                     }
-
-                    if (!dynamic_cast<MergeTreeData *>(storage.get()))
-                        continue;
 
                     if (check_access_for_tables_in_db && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                         continue;

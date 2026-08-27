@@ -451,11 +451,11 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 if (is_system)
                     ++total_number_of_tables_system;
 
-                const auto table = resolveStorageProxy(iterator->table());
+                auto table = iterator->table();
                 if (!table)
                     continue;
 
-                if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+                if (auto table_merge_tree = castStorage<MergeTreeData>(table, StorageResolution::Peek))
                 {
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
 
@@ -497,7 +497,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                     }
                 }
 
-                if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
+                if (StorageReplicatedMergeTree * table_replicated_merge_tree = castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Peek).get())
                 {
                     StorageReplicatedMergeTree::ReplicatedStatus status;
                     table_replicated_merge_tree->getStatus(status, false);
@@ -640,11 +640,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
 
         for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
         {
-            const auto table = resolveStorageProxy(iterator->table());
-            if (!table)
-                continue;
-
-            if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            if (auto table_merge_tree = castStorage<MergeTreeData>(iterator->table(), StorageResolution::Peek))
             {
                 for (const auto & detached_part: table_merge_tree->getDetachedParts())
                 {

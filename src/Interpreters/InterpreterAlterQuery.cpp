@@ -35,6 +35,7 @@
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -328,7 +329,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             alter_commands->validate(table, context);
 
             bool share_nested = true;
-            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            if (auto * merge_tree = castStorage<MergeTreeData>(table, StorageResolution::Load).get())
                 share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
@@ -425,7 +426,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (table_id)
     {
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
-        table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+        /// Resolve once here so every branch below validates against the real structure instead of
+        /// the columns-only metadata a lazily loaded table reports.
+        table = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
     }
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))

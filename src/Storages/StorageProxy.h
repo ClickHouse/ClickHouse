@@ -184,8 +184,6 @@ public:
         return getNested()->updateLightweight(commands, context);
     }
 
-    /// Gates `ALTER TABLE ... MODIFY TTL`.
-    bool supportsTTL() const override { return getNested()->supportsTTL(); }
     /// Gates `SELECT ... FROM t STREAM`.
     bool supportsStreaming() const override { return getNested()->supportsStreaming(); }
     bool supportsTransactions() const override { return getNested()->supportsTransactions(); }
@@ -255,6 +253,28 @@ public:
     {
         return getNested()->totalBytesUncompressed(settings);
     }
+    /// Answering these from the proxy would give the default of a storage that has no data, rather
+    /// than the answer of the table being asked about.
+    bool hasProjection() const override { return getNested()->hasProjection(); }
+    bool supportsPinnedSnapshot() const override { return getNested()->supportsPinnedSnapshot(); }
+    SerializationInfoByName getSerializationHints() const override { return getNested()->getSerializationHints(); }
+    void checkTableCanBeRenamed(const StorageID & new_name) const override { getNested()->checkTableCanBeRenamed(new_name); }
+    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override
+    {
+        getNested()->applyMetadataChangesToCreateQueryForBackup(create_query);
+    }
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(
+        const RangesInDataParts & parts, const Names & names, ContextPtr query_context) const override
+    {
+        return getNested()->getConditionSelectivityEstimator(parts, names, query_context);
+    }
+    void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override
+    {
+        getNested()->waitForMutation(mutation_id, wait_for_another_mutation);
+    }
+    void setMutationCSN(const String & mutation_id, UInt64 csn) override { getNested()->setMutationCSN(mutation_id, csn); }
+    CancellationCode killPartMoveToShard(const UUID & task_uuid) override { return getNested()->killPartMoveToShard(task_uuid); }
+
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override { return getNested()->totalBytes(query_context); }
     std::optional<UInt64> lifetimeRows() const override { return getNested()->lifetimeRows(); }
     std::optional<UInt64> lifetimeBytes() const override { return getNested()->lifetimeBytes(); }
@@ -280,6 +300,27 @@ inline StoragePtr resolveStorageProxyLoading(const StoragePtr & storage)
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
         return proxy->getNested();
     return storage;
+}
+
+/// How a cast should treat a table that has not been loaded yet.
+enum class StorageResolution : uint8_t
+{
+    /// Create the wrapped storage if it does not exist. For an operation that names the table.
+    Load,
+    /// Leave a not-yet-loaded table unresolved, so the cast fails. For an observer that walks every
+    /// table and must not turn a listing into a load.
+    Peek,
+};
+
+/// The single way to cast a catalog pointer to a concrete engine type. A lazily loaded table is
+/// reached through `StorageTableProxy`, so a direct cast fails even once the table is loaded.
+template <typename T>
+std::shared_ptr<T> castStorage(const StoragePtr & storage, StorageResolution resolution)
+{
+    if (!storage)
+        return nullptr;
+    auto resolved = resolution == StorageResolution::Load ? resolveStorageProxyLoading(storage) : resolveStorageProxy(storage);
+    return std::dynamic_pointer_cast<T>(resolved);
 }
 
 /// False only while a proxy has not created the storage it wraps, which is where a lazily loaded

@@ -8356,7 +8356,7 @@ void MergeTreeData::movePartitionToTable(const PartitionCommand & command, Conte
     if (dest_storage->getStorageID() == this->getStorageID())
         return;
 
-    auto * dest_storage_merge_tree = dynamic_cast<MergeTreeData *>(dest_storage.get());
+    auto * dest_storage_merge_tree = castStorage<MergeTreeData>(dest_storage, StorageResolution::Load).get();
     if (!dest_storage_merge_tree)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot move partition from table {} to table {} with storage {}",
@@ -8493,7 +8493,7 @@ Pipe MergeTreeData::alterPartition(
                 auto resolved = query_context->resolveStorageID({command.from_database, command.from_table});
                             auto from_storage = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(resolved, query_context));
 
-                auto * from_storage_merge_tree = dynamic_cast<MergeTreeData *>(from_storage.get());
+                auto * from_storage_merge_tree = castStorage<MergeTreeData>(from_storage, StorageResolution::Load).get();
                 if (!from_storage_merge_tree)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Cannot replace partition from table {} with storage {} to table {}",
@@ -10934,6 +10934,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
 {
+    /// NOLINT(storage-cast): a reference, and the `StoragePtr` overload below resolves the proxy.
     MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(&source_table);
     if (!src_data)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,

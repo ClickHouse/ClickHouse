@@ -69,12 +69,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             // If they have some lag it will be reflected as soon as they are load.
             for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
             {
-                    const auto table = resolveStorageProxy(iterator->table());
-                if (!table)
-                    continue;
-
-                StorageReplicatedMergeTree * table_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
-
+                auto table_replicated = castStorage<StorageReplicatedMergeTree>(iterator->table(), StorageResolution::Peek);
                 if (!table_replicated)
                     continue;
 

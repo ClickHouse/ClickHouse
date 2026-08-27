@@ -28,6 +28,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/Squashing.h>
@@ -1735,7 +1736,7 @@ void TCPHandler::processTablesStatusRequest()
             continue;
 
         TableStatus status;
-        if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+        if (auto * replicated_table = castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Load).get())
         {
             status.is_replicated = true;
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());

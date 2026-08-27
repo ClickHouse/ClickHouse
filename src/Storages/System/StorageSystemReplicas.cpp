@@ -194,11 +194,8 @@ void StorageSystemReplicas::readImpl(
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto table = resolveStorageProxy(iterator->table());
+            auto table = castStorage<StorageReplicatedMergeTree>(iterator->table(), StorageResolution::Peek);
             if (!table)
-                continue;
-
-            if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
                 continue;
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
                 continue;

@@ -13,6 +13,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -330,7 +331,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             TableExclusiveLockHolder table_excl_lock;
             /// We don't need any lock for ReplicatedMergeTree and for simple MergeTree
             /// For the rest of tables types exclusive lock is needed
-            if (!std::dynamic_pointer_cast<MergeTreeData>(table))
+            if (!castStorage<MergeTreeData>(table, StorageResolution::Peek))
                 table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context_, false);
