@@ -23,6 +23,7 @@ def started_cluster():
 HASHMAP_FAULT_NAME = "distinct_transform_pause"
 LC_FAULT_NAME = "distinct_transform_lc_pause"
 NULL_FAULT_NAME = "distinct_transform_null_pause"
+FILTER_FAULT_NAME = "distinct_transform_filter_pause"
 
 
 def run_kill_query_failpoint_test(query, fault_name, query_id=None):
@@ -723,6 +724,181 @@ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_indep
             assert False, "loop reached the re-armed failpoint: intra-loop cancellation is broken"
     finally:
         node1.query(f"SYSTEM DISABLE FAILPOINT {NULL_FAULT_NAME}")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    query_thread.join(timeout=60)
+    assert not query_thread.is_alive(), "killed query did not terminate within 60 s"
+    if thread_error[0] is not None:
+        raise thread_error[0]
+
+    result = node1.query(
+        f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+    )
+    assert int(result.strip()) == 0
+
+
+def test_lc_null_keys_break_prefix(started_cluster):
+    """Break-mode soft timeout must be honored inside the `skip_null_keys` null-marking prepass of a
+    `LowCardinality(Nullable)` set build, without surfacing an error to the client.
+
+    Regression for the Blocker where the soft timeout fires inside `markLowCardinalityNullRows`: the
+    committed prefix must survive the downstream `buildLowCardinalityMask` (which must not discard it via
+    the empty-mask fast path when it sees a soft timeout already latched upstream).
+
+    Only partition 0 is large enough to reach the second 4096-row sub-range (and therefore the failpoint), so
+    the `markLowCardinalityNullRows` loop is the one that observes the timeout. The test holds the loop paused
+    past `max_execution_time` (so the real soft timeout latches upstream of `buildLowCardinalityMask`), then
+    releases it; the soft-timeout latch must stop the loop at the paused row (the re-armed failpoint is never
+    hit again) and the query must finish with no error in break mode. The exact preserved-prefix value cannot be
+    asserted from the client because an interrupted break-mode query returns no rows to the client in this
+    harness (verified: `system.query_log.result_rows` is 0); the prefix-correctness is guaranteed by the fix in
+    `DistinctTransform` (zero the unprocessed tail on soft timeout, and teach `buildLowCardinalityMask` to keep
+    scanning past a pre-latched soft timeout at row 0).
+    """
+    node1.query(
+        "CREATE TABLE IF NOT EXISTS null_keys_mt_lc (k LowCardinality(Nullable(UInt64))) "
+        "ENGINE = MergeTree PARTITION BY (CAST(if(k IS NULL, toUInt64(0), k) AS UInt64) % 4) ORDER BY tuple() "
+        "SETTINGS allow_suspicious_low_cardinality_types=1"
+    )
+    node1.query("TRUNCATE TABLE IF EXISTS null_keys_mt_lc")
+    ## Partition 0 large enough to reach the second 4096-row sub-range (and hit the failpoint); partitions
+    ## 1/2/3 stay below the boundary so only partition 0 can pause.
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(0) FROM numbers(1000000)")
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(1) FROM numbers(100)")
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(2) FROM numbers(100)")
+    node1.query("INSERT INTO null_keys_mt_lc SELECT toNullable(3) FROM numbers(100)")
+
+    query = """SELECT count() FROM numbers(1000000)
+WHERE number IN (SELECT k FROM null_keys_mt_lc)
+FORMAT Null
+SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
+         max_execution_time=2, timeout_overflow_mode='break'"""
+
+    query_id = str(uuid.uuid4())
+    node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+
+    thread_error = [None]
+    query_error = [None]
+
+    def execute_query():
+        try:
+            _, error = node1.query_and_get_answer_with_error(
+                query,
+                settings={"interactive_delay": 0},
+                query_id=query_id,
+            )
+            query_error[0] = error
+        except Exception as e:
+            thread_error[0] = e
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fault_name, timeout=60):
+        wait_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE")
+        done, _ = concurrent.futures.wait([wait_future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fault_name} not triggered within {timeout} s"
+        wait_future.result()
+
+    try:
+        wait_failpoint(NULL_FAULT_NAME)
+        ## Hold past the deadline so the soft timeout latches upstream of `buildLowCardinalityMask`, then
+        ## re-arm and release the loop. With the fix the loop returns at the paused row (committed prefix
+        ## preserved); without it the loop keeps marking rows and pauses again at the next boundary.
+        time.sleep(3)
+        node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {NULL_FAULT_NAME}")
+
+        second_pause_future = pool.submit(
+            node1.query,
+            f"SYSTEM WAIT FAILPOINT {NULL_FAULT_NAME} PAUSE",
+        )
+        done, _ = concurrent.futures.wait([second_pause_future], timeout=10)
+        if done:
+            second_pause_future.result()
+            assert False, "loop reached the re-armed failpoint: soft-timeout latch in markLowCardinalityNullRows is broken"
+    finally:
+        node1.query(f"SYSTEM DISABLE FAILPOINT {NULL_FAULT_NAME}")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    query_thread.join(timeout=60)
+    assert not query_thread.is_alive(), "query did not terminate after the soft timeout"
+    if thread_error[0] is not None:
+        raise thread_error[0]
+    ## Break mode must not surface an error to the client.
+    assert query_error[0] == "", f"break-mode soft timeout raised an error: {query_error[0]}"
+
+
+def test_null_keys_filter_kill(started_cluster):
+    """A `KILL QUERY` arriving during the monolithic `column->filter(keep, ...)` pass of the
+    `skip_null_keys` prepass must be honored promptly, not after the whole chunk is materialized.
+    """
+    node1.query(
+        "CREATE TABLE IF NOT EXISTS null_keys_mt (k Nullable(UInt64)) "
+        "ENGINE = MergeTree PARTITION BY (CAST(if(k IS NULL, toUInt64(0), k) AS UInt64) % 4) ORDER BY tuple()"
+    )
+    node1.query("TRUNCATE TABLE IF EXISTS null_keys_mt")
+    node1.query(
+        "INSERT INTO null_keys_mt SELECT if(number % 9 = 0, NULL, number % 100) FROM numbers(1000000)"
+    )
+
+    query = """SELECT count() FROM numbers(1000000)
+WHERE number IN (SELECT k FROM null_keys_mt)
+FORMAT Null
+SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1, max_rows_to_read=0"""
+
+    query_id = str(uuid.uuid4())
+
+    node1.query(f"SYSTEM ENABLE FAILPOINT {FILTER_FAULT_NAME}")
+
+    thread_error = [None]
+
+    def execute_query():
+        try:
+            _, error = node1.query_and_get_answer_with_error(
+                query,
+                query_id=query_id,
+            )
+            assert "DB::Exception: Query was cancelled" in error
+        except Exception as e:
+            thread_error[0] = e
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fault_name, timeout=60):
+        wait_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE")
+        done, _ = concurrent.futures.wait([wait_future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fault_name} not triggered within {timeout} s"
+        wait_future.result()
+
+    try:
+        wait_failpoint(FILTER_FAULT_NAME)
+
+        node1.http_query(f"KILL QUERY WHERE query_id='{query_id}'")
+
+        ## Re-arm the one-shot failpoint, then resume the pass. With the fix the pass returns at the
+        ## paused column on `isCancelled()`; without it the pass keeps filtering columns (it reaches the
+        ## re-armed failpoint at the next column, which the second WAIT below observes).
+        node1.query(f"SYSTEM ENABLE FAILPOINT {FILTER_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {FILTER_FAULT_NAME}")
+
+        second_pause_future = pool.submit(
+            node1.query,
+            f"SYSTEM WAIT FAILPOINT {FILTER_FAULT_NAME} PAUSE",
+        )
+        done, _ = concurrent.futures.wait([second_pause_future], timeout=10)
+        if done:
+            second_pause_future.result()
+            assert False, "filter pass reached the re-armed failpoint: intra-pass cancellation is broken"
+    finally:
+        node1.query(f"SYSTEM DISABLE FAILPOINT {FILTER_FAULT_NAME}")
         pool.shutdown(wait=False, cancel_futures=True)
 
     query_thread.join(timeout=60)

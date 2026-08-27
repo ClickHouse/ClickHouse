@@ -264,7 +264,18 @@ LowCardinalityMaskResult DistinctTransform::buildLowCardinalityMask(const Column
                 {
                     if (row > 0) [[unlikely]]
                         FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
-                    if (isSoftTimeout() || isCancelled())
+                    /// A hard cancellation (KILL) aborts the chunk immediately.
+                    if (isCancelled() && !isCancelledBySoftTimeout())
+                        return {std::move(mask), state.seen_count - seen_count_before, row};
+                    /// A soft timeout already latched by an upstream stage (e.g. the `skip_null_keys`
+                    /// null-marking prepass) must not discard the whole chunk at row 0; keep scanning so
+                    /// the committed prefix is still emitted. The scan will bail at the next row that is a
+                    /// 4096-boundary (see below) or at the end of the chunk.
+                    if (row == 0 && time_limit_exceeded)
+                    {
+                        // fall through and continue scanning from row 0
+                    }
+                    else if (isSoftTimeout() || isCancelled())
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
@@ -280,7 +291,18 @@ LowCardinalityMaskResult DistinctTransform::buildLowCardinalityMask(const Column
                 {
                     if (row > 0) [[unlikely]]
                         FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
-                    if (isSoftTimeout() || isCancelled())
+                    /// A hard cancellation (KILL) aborts the chunk immediately.
+                    if (isCancelled() && !isCancelledBySoftTimeout())
+                        return {std::move(mask), state.seen_count - seen_count_before, row};
+                    /// A soft timeout already latched by an upstream stage (e.g. the `skip_null_keys`
+                    /// null-marking prepass) must not discard the whole chunk at row 0; keep scanning so
+                    /// the committed prefix is still emitted. The scan will bail at the next row that is a
+                    /// 4096-boundary (see below) or at the end of the chunk.
+                    if (row == 0 && time_limit_exceeded)
+                    {
+                        // fall through and continue scanning from row 0
+                    }
+                    else if (isSoftTimeout() || isCancelled())
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
@@ -296,7 +318,18 @@ LowCardinalityMaskResult DistinctTransform::buildLowCardinalityMask(const Column
                 {
                     if (row > 0) [[unlikely]]
                         FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
-                    if (isSoftTimeout() || isCancelled())
+                    /// A hard cancellation (KILL) aborts the chunk immediately.
+                    if (isCancelled() && !isCancelledBySoftTimeout())
+                        return {std::move(mask), state.seen_count - seen_count_before, row};
+                    /// A soft timeout already latched by an upstream stage (e.g. the `skip_null_keys`
+                    /// null-marking prepass) must not discard the whole chunk at row 0; keep scanning so
+                    /// the committed prefix is still emitted. The scan will bail at the next row that is a
+                    /// 4096-boundary (see below) or at the end of the chunk.
+                    if (row == 0 && time_limit_exceeded)
+                    {
+                        // fall through and continue scanning from row 0
+                    }
+                    else if (isSoftTimeout() || isCancelled())
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
@@ -312,7 +345,18 @@ LowCardinalityMaskResult DistinctTransform::buildLowCardinalityMask(const Column
                 {
                     if (row > 0) [[unlikely]]
                         FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
-                    if (isSoftTimeout() || isCancelled())
+                    /// A hard cancellation (KILL) aborts the chunk immediately.
+                    if (isCancelled() && !isCancelledBySoftTimeout())
+                        return {std::move(mask), state.seen_count - seen_count_before, row};
+                    /// A soft timeout already latched by an upstream stage (e.g. the `skip_null_keys`
+                    /// null-marking prepass) must not discard the whole chunk at row 0; keep scanning so
+                    /// the committed prefix is still emitted. The scan will bail at the next row that is a
+                    /// 4096-boundary (see below) or at the end of the chunk.
+                    if (row == 0 && time_limit_exceeded)
+                    {
+                        // fall through and continue scanning from row 0
+                    }
+                    else if (isSoftTimeout() || isCancelled())
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
@@ -527,8 +571,11 @@ void DistinctTransform::transform(Chunk & chunk)
                     }
                     if (isSoftTimeout())
                     {
-                        /// Break-mode soft timeout: stop marking null rows; the unprocessed tail keeps
-                        /// its current `keep` value and the rest of the transform handles the prefix.
+                        /// Break-mode soft timeout: drop the unprocessed tail so only the already-marked
+                        /// prefix survives; the rest of the transform preserves the committed prefix
+                        /// (including through `buildLowCardinalityMask`, which is taught not to discard an
+                        /// upstream-committed prefix when it sees a pre-latched soft timeout).
+                        std::fill(keep.begin() + begin, keep.end(), 0);
                         break;
                     }
                     if (begin > 0) [[unlikely]]
@@ -550,8 +597,32 @@ void DistinctTransform::transform(Chunk & chunk)
         if (!keep.empty())
         {
             const auto num_kept = countBytesInFilter(keep);
+
+            if (isCancelled() && !isCancelledBySoftTimeout())
+            {
+                if (timeoutShouldThrow())
+                    process_list_element->checkTimeLimit(); // throws TIMEOUT_EXCEEDED
+                chunk.clear();
+                stopReading();
+                return;
+            }
+
+            /// The keep-mask application is a monolithic pass over every key column; poll for a hard
+            /// cancellation between columns so a KILL arriving during materialization is honored
+            /// promptly rather than only after the whole chunk is copied.
             for (auto & column : columns)
+            {
+                FailPointInjection::pauseFailPoint("distinct_transform_filter_pause");
+                if (isCancelled() && !isCancelledBySoftTimeout())
+                {
+                    if (timeoutShouldThrow())
+                        process_list_element->checkTimeLimit(); // throws TIMEOUT_EXCEEDED
+                    chunk.clear();
+                    stopReading();
+                    return;
+                }
                 column = column->filter(keep, num_kept);
+            }
             num_rows = num_kept;
 
             if (num_rows == 0)
