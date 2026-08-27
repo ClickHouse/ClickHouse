@@ -1,17 +1,14 @@
 ---
 description: 'Framing formats multiplex data, totals, extremes, progress, profile events, and server logs in a single response stream over HTTP'
-sidebar_label: 'Framing formats'
-sidebar_position: 22
+sidebarTitle: 'Framing formats'
 slug: /interfaces/framing-formats
 title: 'Framing formats'
 doc_type: 'reference'
 ---
 
-# Framing formats {#framing-formats}
-
 A framing format multiplexes different response parts of the query in a single stream: chunks of data, totals and extremes, progress packets, profile events (metrics), and server logs - everything that the native protocol supports. This allows rich data exchange in the HTTP protocol.
 
-Framing formats are independent of [output formats](/interfaces/formats): they encapsulate bytes produced by any output format, by separating and potentially encoding these chunks of bytes. The concatenation of the payloads of all `data`, `totals`, and `extremes` packets is exactly what the output format would have produced without framing. Auxiliary packets (progress, logs, profile events, exceptions) are represented as JSON.
+Framing formats are independent of [output formats](/reference/formats): they encapsulate bytes produced by any output format, by separating and potentially encoding these chunks of bytes. The concatenation of the payloads of all `data`, `totals`, and `extremes` packets is exactly what the output format would have produced without framing. Auxiliary packets (progress, logs, profile events, exceptions) are represented as JSON.
 
 Framing can also make an output format more expressive - this is the one deliberate exception to the rule above. The `JSONCompactEachRow` family of formats drops totals and extremes in its plain output, because their rows would be indistinguishable from ordinary data rows. Under a framing format the packet kind tells them apart, so these formats emit totals and extremes rows (in their usual row syntax) into the `totals` and `extremes` packets. For these formats the concatenation of the payloads of the `data` packets alone is exactly what the output format would have produced without framing, and the `totals` and `extremes` packets carry additional rows that the unframed output does not contain - so a client that reconstructs the unframed output from such a stream should concatenate only the `data` payloads.
 
