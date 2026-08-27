@@ -8,7 +8,6 @@
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
-#include <Functions/Regexps.h>
 
 #include <limits>
 
@@ -322,8 +321,10 @@ SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_, bool extr
     : ITokenizerHelper(Type::SplitByRegexp)
     , regexp_str(regexp_)
     , extract(extract_)
-    /// Capture groups are tracked in both modes for simplicity, though only `extract` mode reads them.
-    , regexp(std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, /*no_capture=*/ false, false>(regexp_)))
+    /// Captures are tracked in both modes for simplicity. `RE_LONGEST_MATCH` avoids `nextExtractedMatch`
+    /// getting stuck on an empty-matching alternative listed before a non-empty one, e.g. `|a`.
+    , regexp(std::make_shared<OptimizedRegularExpression>(
+          regexp_, OptimizedRegularExpression::RE_DOT_NL | OptimizedRegularExpression::RE_LONGEST_MATCH))
     /// A pattern with capture groups is never "trivial" (a plain substring search), so whenever
     /// `getNumberOfSubpatterns()` is non-zero the RE2 path runs and fills `number_of_subpatterns + 1`
     /// entries - i.e. index 1 is always populated. See the `chassert` in `nextInStringImpl`.

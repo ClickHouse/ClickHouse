@@ -562,8 +562,8 @@ catch (...)
 
 OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regexp_, int options)
 {
-    /// Just three following options are supported
-    if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL)))
+    /// Just four following options are supported
+    if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL | RE_LONGEST_MATCH)))
         throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "OptimizedRegularExpression: Unsupported option.");
 
     RegexpAnalysisResult result = analyze(regexp_);
@@ -574,6 +574,7 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
     is_case_insensitive = options & RE_CASELESS;
     bool is_no_capture = options & RE_NO_CAPTURE;
     bool is_dot_nl = options & RE_DOT_NL;
+    bool is_longest_match = options & RE_LONGEST_MATCH;
 
     number_of_subpatterns = 0;
     if (!is_trivial)
@@ -601,6 +602,9 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
 
         if (is_dot_nl)
             regexp_options.set_dot_nl(true);
+
+        if (is_longest_match)
+            regexp_options.set_longest_match(true);
 
         re2 = std::make_unique<re2::RE2>(regexp_, regexp_options);
 
