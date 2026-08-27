@@ -7,11 +7,18 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <IO/ReadBufferFromString.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int RECEIVED_EMPTY_DATA;
+}
 
 static Block getBlockWithSize(const std::vector<std::string> & columns, size_t rows, size_t stride, size_t & start)
 {
@@ -183,77 +190,68 @@ TEST(MergingSortedTest, MoreInterestingBlockSizes)
 namespace
 {
 
-/// Yields one block of data, then pushes a chunk carrying the header columns and no rows and
-/// finishes its output port in the same `prepare()` -- the shape `ISource::prepare` produces when
-/// the source is cancelled right after a push.
-class RowlessTailSource : public IProcessor
+/// Pushes the given blocks in order, sending a chunk that carries the header columns and no rows in
+/// place of every empty entry, and finishing the port in the same `prepare()` as the last entry. A
+/// port whose header is not empty cannot carry "no data" as a columnless chunk, which is why
+/// `ISimpleTransform::work` builds this shape.
+class ScriptedSource : public IProcessor
 {
 public:
-    explicit RowlessTailSource(const Block & data_)
-        : IProcessor({}, {std::make_shared<const Block>(data_.cloneEmpty())})
+    ScriptedSource(const Block & header, std::vector<Block> script_)
+        : IProcessor({}, {std::make_shared<const Block>(header.cloneEmpty())})
         , output(outputs.front())
-        , data(data_)
+        , script(std::move(script_))
     {
     }
 
-    String getName() const override { return "RowlessTailSource"; }
+    String getName() const override { return "ScriptedSource"; }
 
     Status prepare() override
     {
-        if (finished || output.isFinished())
+        if (output.isFinished())
             return Status::Finished;
 
         if (!output.canPush())
             return Status::PortFull;
 
-        if (!pushed_data)
+        if (pos < script.size())
         {
-            pushed_data = true;
-            output.push(Chunk(data.getColumns(), data.rows()));
-            return Status::PortFull;
+            const auto & block = script[pos];
+            ++pos;
+            if (block.rows() == 0)
+                output.push(Chunk(output.getHeader().cloneEmpty().getColumns(), 0));
+            else
+                output.push(Chunk(block.getColumns(), block.rows()));
         }
 
-        output.push(Chunk(output.getHeader().cloneEmpty().getColumns(), 0));
+        if (pos < script.size())
+            return Status::PortFull;
+
         output.finish();
-        finished = true;
         return Status::Finished;
     }
 
 private:
     OutputPort & output;
-    Block data;
-    bool pushed_data = false;
-    bool finished = false;
+    std::vector<Block> script;
+    size_t pos = 0;
 };
 
 }
 
-/// A chunk with no rows is not data for a merge: a cursor over it has no row to read. Here the
-/// rowless chunk is the last chunk of the last live source, so it reaches the merge with an empty
-/// queue.
-TEST(MergingSortedTest, RowlessChunkFromFinishedInput)
+/// Merges one `ScriptedSource` per script and returns the key column values in the order the merge
+/// produced them.
+static std::vector<UInt64> mergeKeys(const Block & header, const std::vector<std::vector<Block>> & scripts)
 {
-    std::vector<std::string> key_columns{"K1"};
-    auto sort_description = getSortDescription(key_columns);
-
-    size_t start = 0;
-    auto first = getBlockWithSize(key_columns, 4, 1, start);
-    start = 100;
-    auto second = getBlockWithSize(key_columns, 4, 1, start);
-
     Pipes pipes;
-    BlocksList blocks;
-    blocks.push_back(first);
-    pipes.emplace_back(std::make_shared<BlocksListSource>(std::move(blocks)));
-    pipes.emplace_back(std::make_shared<RowlessTailSource>(second));
+    for (const auto & script : scripts)
+        pipes.emplace_back(std::make_shared<ScriptedSource>(header, script));
     auto pipe = Pipe::unitePipes(std::move(pipes));
-
-    EXPECT_EQ(pipe.numOutputPorts(), 2);
 
     pipe.addTransform(std::make_shared<MergingSortedTransform>(
         pipe.getSharedHeader(),
         pipe.numOutputPorts(),
-        sort_description,
+        getSortDescription({"K1"}),
         /*max_block_size_rows=*/ 8192,
         /*max_block_size_bytes=*/ 0,
         /*max_dynamic_subcolumns=*/ std::nullopt,
@@ -275,7 +273,123 @@ TEST(MergingSortedTest, RowlessChunkFromFinishedInput)
         for (size_t i = 0; i < column.size(); ++i)
             keys.push_back(column.getUInt(i));
     }
+    return keys;
+}
+
+/// A chunk with no rows is not data for a merge: a cursor over it has no row to read. Here it is the
+/// last chunk of the last live source, so it reaches the merge with an empty queue.
+TEST(MergingSortedTest, RowlessChunkFromFinishedInput)
+{
+    std::vector<std::string> key_columns{"K1"};
+    size_t start = 0;
+    auto first = getBlockWithSize(key_columns, 4, 1, start);
+    start = 100;
+    auto second = getBlockWithSize(key_columns, 4, 1, start);
+
+    auto keys = mergeKeys(first, {{first}, {second, Block{}}});
 
     /// The rowless chunk must not displace the real data of the source that pushed it.
     EXPECT_EQ(keys, (std::vector<UInt64>{0, 1, 2, 3, 100, 101, 102, 103}));
+}
+
+/// A rowless chunk from a source that has NOT finished only means "no data yet": the merge must wait
+/// for that source instead of treating it as exhausted, or the rows it still owes are lost.
+TEST(MergingSortedTest, RowlessChunkFromUnfinishedInput)
+{
+    std::vector<std::string> key_columns{"K1"};
+    size_t start = 0;
+    auto first = getBlockWithSize(key_columns, 4, 1, start);
+    start = 100;
+    auto second = getBlockWithSize(key_columns, 2, 1, start);
+    auto third = getBlockWithSize(key_columns, 2, 1, start);
+
+    auto keys = mergeKeys(first, {{first}, {second, Block{}, third}});
+
+    EXPECT_EQ(keys, (std::vector<UInt64>{0, 1, 2, 3, 100, 101, 102, 103}));
+}
+
+/// Runs a `ColumnGathererTransform` over one block per source with the given row-sources mask.
+/// Returns the number of rows gathered and the error code the merge failed with, or 0 for success.
+static std::pair<size_t, int> gatherRows(const std::vector<Block> & blocks, const std::vector<size_t> & row_sources)
+{
+    Pipes pipes;
+    for (const auto & block : blocks)
+    {
+        BlocksList list;
+        list.push_back(block);
+        pipes.emplace_back(std::make_shared<BlocksListSource>(std::move(list)));
+    }
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+
+    std::string mask;
+    for (size_t source : row_sources)
+        mask.push_back(static_cast<char>(RowSourcePart(source).data));
+
+    pipe.addTransform(std::make_shared<ColumnGathererTransform>(
+        pipe.getSharedHeader(),
+        pipe.numOutputPorts(),
+        std::make_unique<ReadBufferFromOwnString>(mask),
+        /*block_preferred_size_rows=*/ 8192,
+        /*block_preferred_size_bytes=*/ 1UL << 30,
+        /*max_dynamic_subcolumns=*/ std::nullopt,
+        /*is_result_sparse=*/ false));
+
+    QueryPipeline pipeline(std::move(pipe));
+    PullingPipelineExecutor executor(pipeline);
+
+    size_t rows = 0;
+    try
+    {
+        Block block;
+        while (executor.pull(block))
+            rows += block.rows();
+    }
+    catch (const Exception & e)
+    {
+        return {rows, e.code()};
+    }
+    return {rows, 0};
+}
+
+/// A single source read without a mask is passed through block by block, so its exhaustion ends the
+/// result instead of leaving it short.
+TEST(ColumnGathererTest, SingleSourcePassThrough)
+{
+    std::vector<std::string> key_columns{"K1"};
+    size_t start = 0;
+
+    auto [rows, code] = gatherRows({getBlockWithSize(key_columns, 3, 1, start)}, {});
+
+    EXPECT_EQ(code, 0);
+    EXPECT_EQ(rows, 3u);
+}
+
+/// With a mask, a source is re-requested only while the mask still maps rows to it, so a source that
+/// is exhausted before delivering those rows must fail the merge rather than be asked again.
+TEST(ColumnGathererTest, RequiredSourceExhausted)
+{
+    std::vector<std::string> key_columns{"K1"};
+    size_t start = 0;
+    auto first = getBlockWithSize(key_columns, 2, 1, start);
+    start = 100;
+    auto second = getBlockWithSize(key_columns, 2, 1, start);
+
+    /// Alternate the sources so that gather() cannot copy a whole block at once, then ask for one
+    /// row more from the second source than it delivered.
+    auto code = gatherRows({first, second}, {0, 1, 0, 1, 1}).second;
+
+    EXPECT_EQ(code, DB::ErrorCodes::RECEIVED_EMPTY_DATA);
+}
+
+/// A mask is what makes a shortage detectable, so one source with rows still mapped to it fails even
+/// though the pass-through case above has the same source count.
+TEST(ColumnGathererTest, SingleSourceWithRemainingMask)
+{
+    std::vector<std::string> key_columns{"K1"};
+    size_t start = 0;
+    auto only = getBlockWithSize(key_columns, 2, 1, start);
+
+    auto code = gatherRows({only}, {0, 0, 0}).second;
+
+    EXPECT_EQ(code, DB::ErrorCodes::RECEIVED_EMPTY_DATA);
 }

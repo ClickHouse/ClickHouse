@@ -68,6 +68,7 @@ public:
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
+    void onSourceExhausted(size_t source_num) override;
 
     /// for use in implementations of IColumn::gather()
     template <typename Column>
