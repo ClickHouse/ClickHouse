@@ -720,7 +720,8 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
                 {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
             auto schema_with_metadata = addFlightSQLTypeMetadata(std::move(table_schema), table_columns);
             if (!schema_with_metadata.ok())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to add Flight SQL type metadata: {}", schema_with_metadata.status().ToString());
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Failed to add Flight SQL type metadata: {}", schema_with_metadata.status().ToString());
             table_schema = std::move(schema_with_metadata).ValueUnsafe();
             auto serialized_res = arrow::ipc::SerializeSchema(*table_schema, arrow::default_memory_pool());
             if (!serialized_res.ok())

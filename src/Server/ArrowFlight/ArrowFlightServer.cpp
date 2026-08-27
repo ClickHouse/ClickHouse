@@ -379,11 +379,7 @@ arrow::Result<ArrowFlightServer::DecodeResult> ArrowFlightServer::decodeDescript
                 const auto & ps_info = ps_info_res.ValueUnsafe();
                 auto resolved_query_res = buildQueryWithValues(ps_info.query_parts, ps_info.bound_parameters);
                 ARROW_RETURN_NOT_OK(resolved_query_res);
-                return DecodeResult {
-                    std::move(resolved_query_res).ValueUnsafe(),
-                    sql_set->schema_modifier,
-                    sql_set->block_modifier,
-                    {}};
+                return DecodeResult{std::move(resolved_query_res).ValueUnsafe(), sql_set->schema_modifier, sql_set->block_modifier, {}};
             }
 
             return DecodeResult {sql_set->sql, sql_set->schema_modifier, sql_set->block_modifier, {}};
@@ -597,7 +593,9 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
             schema_header,
             "Arrow",
             nullptr,
-            {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
+            {.output_string_as_string = true,
+             .output_unsupported_types_as_binary
+             = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
 
         if (schema_modifier)
         {
@@ -811,8 +809,12 @@ arrow::Status ArrowFlightServer::GetSchema(
                     const auto schema_header = executor.getHeader().getColumnsWithTypeAndName();
 
                     schema = CHColumnToArrowColumn::calculateArrowSchema(
-                        schema_header, "Arrow", nullptr,
-                        {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
+                        schema_header,
+                        "Arrow",
+                        nullptr,
+                        {.output_string_as_string = true,
+                         .output_unsupported_types_as_binary
+                         = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
                     if (schema_modifier)
                     {
                         auto status = schema_modifier(schema, schema_header);
@@ -1542,7 +1544,9 @@ arrow::Status ArrowFlightServer::DoAction(
                                 *dataset_header,
                                 "Arrow",
                                 nullptr,
-                                {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
+                                {.output_string_as_string = true,
+                                 .output_unsupported_types_as_binary
+                                 = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
                         }
                         block_io.onCancelOrConnectionLoss();
                     }
