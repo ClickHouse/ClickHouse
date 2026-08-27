@@ -4744,7 +4744,10 @@ def run_tests_array(
         stop_exit_code,
     ) = all_tests_with_params
 
-    os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-proc{process_index}-%2m.profraw"
+    # %c enables continuous mode so a client killed mid-write (query timeouts
+    # SIGKILL the whole process group) leaves a valid profile instead of a
+    # truncated one.
+    os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-proc{process_index}-%c%2m.profraw"
 
     OP_SQUARE_BRACKET = colored("[", args, attrs=["bold"])
     CL_SQUARE_BRACKET = colored("]", args, attrs=["bold"])

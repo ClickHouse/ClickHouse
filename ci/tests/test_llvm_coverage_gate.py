@@ -163,6 +163,58 @@ def test_gate_still_fails_the_large_drop():
     assert "dropped 57.60 pp" in res.comment
 
 
+# --- Completeness: the shard-profile presence check --------------------------
+#
+# A verdict may only be derived from a complete measurement. The job compares
+# the profiles on disk against the expected set derived from the coverage
+# artifact manifest; these tests pin the set logic the SKIPPED decision runs on.
+
+from ci.defs.defs import LLVM_ARTIFACTS_LIST
+from ci.jobs.llvm_coverage_job import (
+    expected_profile_files,
+    missing_profile_files,
+    present_profile_files,
+)
+
+
+def test_expected_profiles_cover_every_coverage_artifact():
+    expected = expected_profile_files(LLVM_ARTIFACTS_LIST)
+    assert len(expected) == len(LLVM_ARTIFACTS_LIST)
+    assert all(f.endswith(".profdata") for f in expected)
+    # One profile per artifact: a duplicate artifact name would silently weaken
+    # the completeness check to fewer files than shards.
+    assert len(set(expected)) == len(expected)
+
+
+def test_all_profiles_present_means_nothing_missing():
+    expected = expected_profile_files(LLVM_ARTIFACTS_LIST)
+    assert missing_profile_files(expected, list(expected)) == []
+
+
+def test_one_absent_shard_is_reported_by_name():
+    expected = expected_profile_files(LLVM_ARTIFACTS_LIST)
+    present = [f for f in expected if f != expected[3]]
+    assert missing_profile_files(expected, present) == [expected[3]]
+
+
+def test_extra_files_are_not_an_error_and_do_not_mask_a_missing_shard():
+    # A stale merged.profdata (or a foreign leftover) must neither redden the
+    # run nor hide that an expected shard is absent.
+    expected = expected_profile_files(LLVM_ARTIFACTS_LIST)
+    present = [f for f in expected if f != expected[0]] + ["merged.profdata"]
+    assert missing_profile_files(expected, present) == [expected[0]]
+
+
+def test_present_profiles_lists_only_profdata_files(tmp_path):
+    (tmp_path / "a.profdata").write_bytes(b"x")
+    (tmp_path / "b.profraw").write_bytes(b"x")
+    (tmp_path / "clickhouse").write_bytes(b"x")
+    (tmp_path / "sub").mkdir()
+    assert present_profile_files(str(tmp_path)) == ["a.profdata"]
+
+
+def test_present_profiles_of_missing_directory_is_empty():
+    assert present_profile_files("/nonexistent/definitely/not/here") == []
 # ---------------------------------------------------------------------------
 # The diff step reaches four report-less states, and the job must report the one
 # that happened. generate_diff_coverage_report.sh exits 0 in three of them and
@@ -589,6 +641,7 @@ def test_every_outcome_has_a_reason():
             job.diff_report_message,
             job.uncovered_code_message,
             job.coverage_comment_message,
+            job.coverage_marker_reason,
         ):
             assert helper(outcome).strip(), (outcome, helper.__name__)
 
@@ -1037,12 +1090,17 @@ def _analysis_dispatch(outcome: str, tmp_path, files: dict):
     return bool(spy.commands), ns["print_res"].status
 
 
-def _comment_made(outcome: str) -> bool:
+def _comment_made(outcome: str, tmp_path) -> bool:
+    # TEMP_DIR must be overridden: _run_snippet seeds the namespace from the
+    # job module, whose TEMP_DIR is the real ci/tmp, and the marker-write path
+    # would otherwise create files there.
     _, ns = _run_snippet(
         _comment_dispatch_snippet(),
         _diff_ran=outcome == _MARKER_REPORT,
         _diff_outcome=outcome,
         _made_comment=False,
+        TEMP_DIR=str(tmp_path),
+        current_commit_sha="0123abcd" + "0" * 32,
     )
     return ns["_made_comment"]
 
@@ -1078,6 +1136,8 @@ def test_dispatch_snippets_are_the_real_production_blocks():
     assert "_has_coverage_data = _diff_ran" in comment
     assert "coverage_comment_message" in comment
     assert "_made_comment" in comment
+    assert "skipped_reason" in comment
+    assert "coverage_marker_reason" in comment
 
 
 @pytest.mark.parametrize(
@@ -1102,7 +1162,7 @@ def test_each_outcome_selects_the_dispatches_it_should(
     assert (
         _report_branch_taken(outcome),
         analysis_ran,
-        _comment_made(outcome),
+        _comment_made(outcome, tmp_path),
     ) == (want_report, want_analysis, want_comment)
 
 
@@ -1138,3 +1198,149 @@ def test_a_record_less_slice_is_reported_as_empty_not_as_nothing_coverable(tmp_p
     text = _reported_reasons(script_ok=True, marker=_MARKER_EMPTY, tmp_path=reasons_dir)
     assert "nothing coverable" not in text, text
     assert "empty" in text.lower(), text
+
+
+# --- Producer gates and the stale-comment marker ------------------------------
+#
+# A shard whose run was incomplete must publish no profile, and a report-less
+# aggregate outcome must leave a stale-numbers marker for the comment hook.
+
+import json as _json
+
+_NON_REPORT_OUTCOMES = (
+    _MARKER_NO_CPP,
+    _MARKER_NO_DATA,
+    _MARKER_EMPTY,
+    "failed",
+    "unknown",
+)
+
+
+@pytest.mark.parametrize("outcome", _NON_REPORT_OUTCOMES)
+def test_reportless_outcomes_write_the_stale_comment_marker(outcome, tmp_path):
+    job = sys.modules["ci.jobs.llvm_coverage_job"]
+    assert _comment_made(outcome, tmp_path) is False
+    marker = tmp_path / "coverage_comment.json"
+    assert marker.exists(), outcome
+    d = _json.loads(marker.read_text(encoding="utf-8"))
+    assert set(d) == {"skipped_reason", "commit_sha"}
+    assert d["skipped_reason"] == job.coverage_marker_reason(outcome)
+    # The hook prepends "No coverage measurement for commit <sha>: ", so the
+    # reason must read as a lowercase sentence tail.
+    assert d["skipped_reason"][:1].islower(), d["skipped_reason"]
+
+
+def test_the_report_outcome_writes_no_stale_marker(tmp_path):
+    assert _comment_made(_MARKER_REPORT, tmp_path) is True
+    assert not (tmp_path / "coverage_comment.json").exists()
+
+
+class _JobConfigInfoStub:
+    def __init__(self, provides):
+        self.job_config = {"provides": provides}
+
+
+def test_it_merge_publishes_nothing_for_an_incomplete_run(monkeypatch, tmp_path):
+    import ci.jobs.integration_test_job as it
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "x.profraw").write_bytes(b"x")
+    (tmp_path / "cov_it.profdata").write_bytes(b"stale")
+    monkeypatch.setattr(it, "Info", lambda: _JobConfigInfoStub(["cov_it"]))
+
+    assert it.merge_profraw_files("llvm-profdata", run_complete=False) is None
+    # The stale target is removed (the ./*.profdata artifact glob would publish
+    # it), while the .profraw inputs stay on disk for inspection.
+    assert not (tmp_path / "cov_it.profdata").exists()
+    assert (tmp_path / "x.profraw").exists()
+
+
+def _producer_gate_snippet(path: str, anchor: str) -> str:
+    lines = open(path, encoding="utf-8").read().splitlines(True)
+    start = next(i for i, l in enumerate(lines) if anchor in l)
+    end = next(
+        i for i in range(start + 1, len(lines)) if "profraw_files = []" in lines[i]
+    )
+    return textwrap.dedent("".join(lines[start : end + 1]))
+
+
+class _ErrorableResultStub:
+    def __init__(self, error: bool):
+        self._error = error
+
+    def is_error(self):
+        return self._error
+
+
+def _run_producer_gate(snippet: str, **ns):
+    printed = []
+    ns["print"] = lambda *a, **k: printed.append(" ".join(str(x) for x in a))
+    exec(snippet, ns)  # noqa: S102 - trusted first-party source
+    return "\n".join(printed), ns
+
+
+def test_ft_gate_suppresses_the_profile_on_incomplete_runs():
+    snippet = _producer_gate_snippet(
+        "ci/jobs/functional_tests.py",
+        "if test_result is None or test_result.is_error():",
+    )
+    assert "publishing no profile" in snippet
+
+    text, ns = _run_producer_gate(
+        snippet, test_result=None, profraw_files=["a.profraw"]
+    )
+    assert "the test stage did not run" in text
+    assert ns["profraw_files"] == []
+
+    text, ns = _run_producer_gate(
+        snippet, test_result=_ErrorableResultStub(True), profraw_files=["a.profraw"]
+    )
+    assert "terminated unexpectedly" in text
+    assert ns["profraw_files"] == []
+
+    text, ns = _run_producer_gate(
+        snippet, test_result=_ErrorableResultStub(False), profraw_files=["a.profraw"]
+    )
+    assert ns["profraw_files"] == ["a.profraw"]
+
+
+def test_ut_gate_suppresses_the_profile_when_the_binary_died():
+    snippet = _producer_gate_snippet(
+        "ci/jobs/unit_tests_job.py", "if R.is_error():"
+    )
+    assert "publishing no profile" in snippet
+
+    text, ns = _run_producer_gate(
+        snippet, R=_ErrorableResultStub(True), profraw_files=["a.profraw"]
+    )
+    assert "did not run to completion" in text
+    assert ns["profraw_files"] == []
+
+    text, ns = _run_producer_gate(
+        snippet, R=_ErrorableResultStub(False), profraw_files=["a.profraw"]
+    )
+    assert ns["profraw_files"] == ["a.profraw"]
+
+
+def test_ut_coverage_job_uploads_its_profile_despite_failing_tests():
+    # complete_job exits 1 on FAIL; the runner uploads `provides` artifacts on a
+    # failed job only when do_not_block_pipeline_on_failure is set, so without it
+    # a failing-but-complete unit run would strand its merged profile locally.
+    src = open("ci/jobs/unit_tests_job.py", encoding="utf-8").read()
+    assert (
+        'R.complete_job(do_not_block_pipeline_on_failure="llvm_coverage" in job_name)'
+        in src
+    )
+
+
+def test_paginated_gh_output_is_flattened_across_pages():
+    from ci.jobs.scripts.job_hooks.llvm_coverage_hook import parse_paginated_arrays
+
+    # gh api --paginate emits one JSON array per page, concatenated.
+    assert parse_paginated_arrays('["a", "b"]') == ["a", "b"]
+    assert parse_paginated_arrays('["a"]\n["b", "c"]') == ["a", "b", "c"]
+    assert parse_paginated_arrays('["a"]["b"]') == ["a", "b"]
+    assert parse_paginated_arrays("") == []
+    assert parse_paginated_arrays(None) == []
+    with pytest.raises(ValueError):
+        parse_paginated_arrays("not json")

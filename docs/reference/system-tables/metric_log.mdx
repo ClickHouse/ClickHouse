@@ -1513,6 +1513,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/reference/data-types/int-uint)) — Number of granules examined for read time pruning by JOIN Runtime Filters
 - `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/reference/data-types/int-uint)) — Number of granules pruned at read time by JOIN Runtime Filters
 - `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time of post-processing steps after building the right JOIN side.
+- `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time transforming the right JOIN side payload into row-major format.
 - `ProfileEvent_AIInputTokens` ([UInt64](/reference/data-types/int-uint)) — Total prompt tokens consumed across all AI function calls in the query.
 - `ProfileEvent_AIOutputTokens` ([UInt64](/reference/data-types/int-uint)) — Total completion tokens consumed across all AI function calls in the query.
 - `ProfileEvent_AIAPICalls` ([UInt64](/reference/data-types/int-uint)) — Number of HTTP requests dispatched to AI providers.
