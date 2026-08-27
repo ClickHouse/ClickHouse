@@ -35,6 +35,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <istream>
 #include <memory>
 #include <mutex>
@@ -234,6 +235,13 @@ class SessionPool {
 // for another would silently apply the first mode (the proxy configuration of a
 // pooled session is not reapplied). ClickHouse's own `HTTPConnectionPool` keys
 // on the same discriminators.
+//
+// The proxy password is part of the credentials Poco keeps in the session and
+// replays for `Proxy-Authorization` and `CONNECT`, so it discriminates too:
+// without it, rotating only the secret would keep reusing a socket that was
+// authenticated with the previous one. It enters the key as a hash rather than
+// verbatim, so the pool does not hold a second plaintext copy of the secret for
+// the lifetime of the session.
 std::string SessionKey(
     Poco::URI const& uri,
     Poco::Net::HTTPClientSession::ProxyConfig const& proxy) {
@@ -242,6 +250,7 @@ std::string SessionKey(
          std::to_string(proxy.port) + "|" + proxy.protocol + "|" +
          (proxy.tunnel ? "tunnel" : "direct") + "|" +
          proxy.originalRequestProtocol + "|" + proxy.username + "|" +
+         std::to_string(std::hash<std::string>{}(proxy.password)) + "|" +
          proxy.nonProxyHosts;
 }
 
