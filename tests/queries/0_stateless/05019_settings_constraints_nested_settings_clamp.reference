@@ -18,6 +18,9 @@
 -- a nested SETTINGS name = DEFAULT is still ignored
 1
 10
+-- a dropped use_query_cache = 1 does not opt the subquery into the query cache
+1
+0
 -- a SQL SECURITY INVOKER view with an inner clause the invoker may not set reads with the constraints enforced
 1
 -- a SQL SECURITY DEFINER view still reads

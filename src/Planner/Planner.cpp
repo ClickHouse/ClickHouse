@@ -120,6 +120,7 @@ namespace Setting
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool query_cache_for_subqueries;
+    extern const SettingsBool use_query_cache;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
@@ -2437,8 +2438,12 @@ static bool shouldUseQueryCacheForSubquery(
     {
         for (const auto & change : query_node.getSettingsChanges())
         {
+            /// The recorded clause is the one the user wrote; the value that survived the settings
+            /// constraints clamp in `QueryTreeBuilder::buildSelectExpression` lives in the node's
+            /// context, which is where `settings` comes from. The list only marks the explicit
+            /// opt-in; the context supplies the effective value, so a clamped-away change cannot act.
             if (change.name == "use_query_cache")
-                return change.value.safeGet<bool>();
+                return settings[Setting::use_query_cache];
         }
     }
 

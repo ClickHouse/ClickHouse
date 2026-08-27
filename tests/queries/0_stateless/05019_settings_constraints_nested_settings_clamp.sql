@@ -28,6 +28,7 @@ CREATE VIEW v_definer_05019 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 CREATE SETTINGS PROFILE profile_05019 SETTINGS
     max_execution_time = 10 CONST,
     additional_table_filters = '{''t_05019'':''tenant_id = 1''}' CONST,
+    use_query_cache = 0 CONST,
     max_rows_to_read MAX 2;
 
 SET profile = 'profile_05019';
@@ -68,6 +69,13 @@ SELECT getSetting('max_execution_time');
 SELECT '-- a nested SETTINGS name = DEFAULT is still ignored';
 SELECT count() FROM (SELECT * FROM t_05019 SETTINGS max_execution_time = DEFAULT);
 SELECT getSetting('max_execution_time');
+
+-- `Planner::shouldUseQueryCacheForSubquery` reads the explicit opt-in off the query node, which
+-- records the clause as written; the effective value must come from the node's clamped context.
+SELECT '-- a dropped use_query_cache = 1 does not opt the subquery into the query cache';
+SYSTEM DROP QUERY CACHE;
+SELECT count() FROM (SELECT * FROM t_05019 SETTINGS use_query_cache = 1);
+SELECT count() FROM system.query_cache;
 
 SELECT '-- a SQL SECURITY INVOKER view with an inner clause the invoker may not set reads with the constraints enforced';
 SELECT c FROM v_invoker_05019;
