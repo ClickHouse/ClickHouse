@@ -42,15 +42,15 @@ Returns the first line of a multi-line string.
         "Usage example",
         R"(SELECT firstLine('foo\\nbar\\nbaz'))",
         R"(
-┌─firstLine('foo\\nbar\\nbaz')─┐
-│ foo\nbar\nbaz                │
-└──────────────────────────────┘
+┌─firstLine('foo\nbar\nbaz')─┐
+│ foo                        │
+└────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionFirstLine>(documentation);
 }

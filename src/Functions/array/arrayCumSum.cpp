@@ -6,6 +6,7 @@
 
 #include <Functions/array/FunctionArrayMapped.h>
 
+
 namespace DB
 {
 
@@ -75,7 +76,7 @@ struct ArrayCumSumImpl
             Dst accumulated{};
             for (; pos < offset; ++pos)
             {
-                accumulated += static_cast<Dst>(src_value);
+                accumulated += src_value;
                 res_values[pos] = accumulated;
             }
         }
@@ -92,7 +93,7 @@ struct ArrayCumSumImpl
             Dst accumulated{};
             for (; pos < offset; ++pos)
             {
-                accumulated += static_cast<Dst>(src_values[pos]);
+                accumulated += src_values[pos];
                 res_values[pos] = accumulated;
             }
         }
@@ -184,12 +185,12 @@ REGISTER_FUNCTION(ArrayCumSum)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the partial sums of the elements in the source array. The result type matches the input array's numeric type.", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {
-        {"Basic usage", "SELECT arrayCumSum([1, 1, 1, 1]) AS res", "[1,2,3,4]"},
-        {"With lambda", "SELECT arrayCumSum(x -> x * 2, [1, 2, 3]) AS res", "[2,6,12]"}
+        {"Basic usage", "SELECT arrayCumSum([1, 1, 1, 1]) AS res", "[1, 2, 3, 4]"},
+        {"With lambda", "SELECT arrayCumSum(x -> x * 2, [1, 2, 3]) AS res", "[2, 6, 12]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayCumSum>(documentation);
 }

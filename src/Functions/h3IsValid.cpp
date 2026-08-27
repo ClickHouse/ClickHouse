@@ -22,7 +22,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3IsValid final : public IFunction
+class FunctionH3IsValid : public IFunction
 {
 public:
     static constexpr auto name = "h3IsValid";
@@ -113,7 +113,7 @@ Verifies whether the number is a valid [H3](https://h3geo.org/docs/core-library/
         },
         {
             "Check invalid H3 index",
-            "SELECT h3IsValid(toUInt64(12345)) AS isValid",
+            "SELECT h3IsValid(12345) AS isValid",
             R"(
 ┌─isValid─┐
 │       0 │
@@ -123,7 +123,7 @@ Verifies whether the number is a valid [H3](https://h3geo.org/docs/core-library/
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3IsValid>(documentation);
 }
 

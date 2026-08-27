@@ -1,18 +1,15 @@
 import logging
-import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
 
 
-def check_proxy_logs(cluster, proxy_instance) -> bool:
+def check_proxy_logs(cluster, proxy_instance):
     logs = cluster.get_container_logs(proxy_instance)
     # Check that all possible interactions with Minio are present
     for http_method in ["PUT", "GET", "POST"]:
-        if logs.find(http_method + " https://minio1") < 0:
-            return False
-
-    return True
+        assert logs.find(http_method + " https://minio1") >= 0
 
 
 @pytest.fixture(scope="module")
@@ -65,11 +62,4 @@ def test_s3_with_https(cluster, policy):
     node.query("DROP TABLE IF EXISTS s3_test SYNC")
 
     if policy.find("proxy") != -1:
-        for i in range(100):
-            proxy_logs_exist = check_proxy_logs(cluster, "proxy1")
-            if proxy_logs_exist:
-                break
-
-            time.sleep(1)
-
-        assert proxy_logs_exist
+        check_proxy_logs(cluster, "proxy1")

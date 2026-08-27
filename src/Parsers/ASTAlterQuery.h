@@ -6,7 +6,6 @@
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/IAST.h>
 
-namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -35,10 +34,8 @@ public:
         MATERIALIZE_COLUMN,
 
         MODIFY_ORDER_BY,
-        MODIFY_PROJECTION,
         MODIFY_SAMPLE_BY,
         MODIFY_TTL,
-        REWRITE_PARTS,
         MATERIALIZE_TTL,
         MODIFY_SETTING,
         RESET_SETTING,
@@ -53,7 +50,6 @@ public:
 
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
-        MODIFY_CONSTRAINT,
 
         ADD_PROJECTION,
         DROP_PROJECTION,
@@ -91,8 +87,6 @@ public:
         MODIFY_SQL_SECURITY,
 
         UNLOCK_SNAPSHOT,
-
-        EXECUTE_COMMAND,
     };
 
     Type type = NO_TYPE;
@@ -128,7 +122,7 @@ public:
      */
     IAST * index = nullptr;
 
-    /** The ADD CONSTRAINT and MODIFY CONSTRAINT queries store the ConstraintDeclaration there.
+    /** The ADD CONSTRAINT query stores the ConstraintDeclaration there.
     */
     IAST * constraint_decl = nullptr;
 
@@ -136,11 +130,11 @@ public:
     */
     IAST * constraint = nullptr;
 
-    /** The ADD/MODIFY PROJECTION query stores the ProjectionDeclaration there.
+    /** The ADD PROJECTION query stores the ProjectionDeclaration there.
      */
     IAST * projection_decl = nullptr;
 
-    /** The ADD/MODIFY PROJECTION query stores the name of the projection following AFTER.
+    /** The ADD PROJECTION query stores the name of the projection following AFTER.
      *  The DROP PROJECTION query stores the name for deletion.
      *  The MATERIALIZE PROJECTION query stores the name of the projection to materialize.
      *  The CLEAR PROJECTION query stores the name of the projection to clear.
@@ -181,11 +175,8 @@ public:
     /// Target column name
     IAST * rename_to = nullptr;
 
-    /// For MODIFY COLUMN ADD ENUM VALUES
-    ASTPtr add_enum_values;
-
     /// For MODIFY REFRESH
-    IAST * refresh = nullptr;
+    ASTPtr refresh;
 
     bool detach = false;        /// true for DETACH PARTITION
 
@@ -205,7 +196,7 @@ public:
 
     bool first = false;         /// option for ADD_COLUMN, MODIFY_COLUMN
 
-    DataDestinationType move_destination_type{}; /// option for MOVE PART/PARTITION
+    DataDestinationType move_destination_type; /// option for MOVE PART/PARTITION
 
     String move_destination_name;             /// option for MOVE PART/PARTITION
 
@@ -229,11 +220,7 @@ public:
     String to_table;
 
     String snapshot_name;
-    IAST * snapshot_desc{};
-
-    /// For EXECUTE command (e.g. expire_snapshots)
-    String execute_command_name;
-    IAST * execute_args = nullptr;
+    IAST * snapshot_desc;
 
     /// Which property user want to remove
     String remove_property;
@@ -241,15 +228,11 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
-    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
-
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
+    void forEachPointerToChild(std::function<void(void**)> f) override;
 };
 
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
@@ -266,9 +249,6 @@ public:
 
     ASTExpressionList * command_list = nullptr;
 
-    /// Useful if we already have a DDL lock
-    bool no_ddl_lock = false;
-
     bool isSettingsAlter() const;
 
     bool isFreezeAlter() const;
@@ -284,15 +264,10 @@ public:
     bool isMovePartitionToDiskOrVolumeAlter() const;
 
     bool isCommentAlter() const;
-    bool isSettingsOrCommentAlter() const;
-
-    bool isReplacePartitionAlter() const;
 
     String getID(char) const override;
 
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
@@ -302,13 +277,11 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:
-    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
-
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     bool isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const;
 
-    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
+    void forEachPointerToChild(std::function<void(void**)> f) override;
 };
 
 }

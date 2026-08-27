@@ -2,13 +2,11 @@
 #include <csignal>
 
 #include <base/defines.h>
-#include <Common/Logger_fwd.h>
 #include <Common/PipeFDs.h>
 #include <Common/StackTrace.h>
 #include <Common/ThreadStatus.h>
 #include <Core/Types.h>
 #include <Poco/Runnable.h>
-
 
 class BaseDaemon;
 
@@ -24,12 +22,7 @@ const size_t signal_pipe_buf_size =
     + sizeof(StackTrace)
     + sizeof(UInt64)
     + sizeof(UInt32)
-    + sizeof(void*)
-#if defined(OS_LINUX)
-    + sizeof(UInt8)
-    + sizeof(FramePointers)
-#endif
-    ;
+    + sizeof(void*);
 
 using signal_function = void(int, siginfo_t*, void*);
 
@@ -52,52 +45,10 @@ void childSignalHandler(int sig, siginfo_t * info, void *);
 
 /// Avoid link time dependency on DB/Interpreters - will use this function only when linked.
 __attribute__((__weak__)) void collectCrashLog(
-    Int32 signal,
-    Int32 signal_code,
-    UInt64 thread_id,
-    const String & query_id,
-    const String & query,
-    const StackTrace & stack_trace,
-    std::optional<UInt64> fault_address,
-    const String & fault_access_type,
-    const String & signal_description,
-    const FramePointers & current_exception_trace,
-    size_t current_exception_trace_size);
-
-
-/// Check if we are currently handing the fatal signal and going to terminate
-/// it does not make sense to accept new connections and queries in this case.
-bool isCrashed();
+    Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
 
 
 void blockSignals(const std::vector<int> & signals);
-
-/// The handled signals that are delivered asynchronously, as opposed to the deadly signals
-/// (`SIGSEGV`, `SIGBUS`, ...) that are raised synchronously by the faulting instruction and therefore
-/// cannot be usefully blocked. Their handlers only write to the signal pipe, so blocking them in every
-/// thread does not lose anything: the signal stays pending for the process and is delivered as soon as
-/// some thread unblocks it again.
-const std::vector<int> & asynchronousHandledSignals();
-
-/// Blocks the given signals in the calling thread and restores the previous signal mask on destruction.
-/// Threads created while the scope is active inherit the mask, which is how the signal listener thread
-/// is kept out of the signal handling path.
-class BlockSignalsScope
-{
-public:
-    explicit BlockSignalsScope(const std::vector<int> & signals);
-    ~BlockSignalsScope();
-
-    BlockSignalsScope(const BlockSignalsScope &) = delete;
-    BlockSignalsScope & operator=(const BlockSignalsScope &) = delete;
-
-private:
-    sigset_t saved_mask{};
-};
-
-/// Reset the deadly signal handlers to SIG_DFL (like HandledSignals::reset(false)), idempotently.
-/// Safe to call from the sanitizer death callback: it does not construct HandledSignals.
-void resetHandledSignals();
 
 
 /** The thread that read info about signal or std::terminate from pipe.
@@ -111,26 +62,13 @@ public:
     static constexpr int StdTerminate = -1;
     static constexpr int StopThread = -2;
 
-    /// Called on signals like SIGTERM, if setupCommonTerminateRequestSignalHandlers() was called.
-    /// The first time such signal is received, the callback is called with `crashing = false`,
-    /// then waitForTerminationRequest is unblocked.
-    /// The second time, the callback is called with `crashing = true`, then we crash.
-    using TerminateRequestCallback = std::function<void(int signal_id, bool crashing)>;
-
-    explicit SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRequestCallback terminate_request_callback_ = nullptr);
+    explicit SignalListener(BaseDaemon * daemon_, LoggerPtr log_);
     void run() override;
-
-    bool waitForTerminationRequest(std::chrono::milliseconds timeout = std::chrono::milliseconds::max());
 
 private:
     BaseDaemon * daemon;
     LoggerPtr log;
     std::function<String()> build_id;
-    TerminateRequestCallback terminate_request_callback;
-
-    std::mutex terminate_request_mutex;
-    std::condition_variable terminate_request_cv;
-    size_t terminate_requested = 0;
 
     void onTerminate(std::string_view message, UInt32 thread_num) const;
 
@@ -139,11 +77,9 @@ private:
         const siginfo_t & info,
         ucontext_t * context,
         const StackTrace & stack_trace,
-        const std::vector<FramePointers> & thread_frame_pointers,
+        const std::vector<StackTrace::FramePointers> & thread_frame_pointers,
         UInt32 thread_num,
-        DB::ThreadStatus * thread_ptr,
-        const FramePointers & exception_trace,
-        size_t exception_trace_size) const;
+        DB::ThreadStatus * thread_ptr) const;
 };
 
 struct HandledSignals
@@ -159,16 +95,7 @@ struct HandledSignals
     void setupCommonDeadlySignalHandlers();
     void setupCommonTerminateRequestSignalHandlers();
 
-    /// `additional_masked_signals` are blocked while `handler` runs (added to `sa_mask`) but the
-    /// handler is not registered for them.
-    /// `use_alt_stack` requests `SA_ONSTACK`: required for any handler that must still run after the
-    /// faulting thread's stack is exhausted.
-    void addSignalHandler(
-        const std::vector<int> & signals,
-        signal_function handler,
-        bool register_signal,
-        const std::vector<int> & additional_masked_signals = {},
-        bool use_alt_stack = false);
+    void addSignalHandler(const std::vector<int> & signals, signal_function handler, bool register_signal);
 
     void reset(bool close_pipe = true);
 

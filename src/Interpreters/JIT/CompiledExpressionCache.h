@@ -5,6 +5,7 @@
 #if USE_EMBEDDED_COMPILER
 #    include <Common/CacheBase.h>
 #    include <Common/HashTable/Hash.h>
+#    include <Interpreters/JIT/CHJIT.h>
 
 namespace DB
 {

@@ -3,12 +3,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnReplicated.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/array/length.h>
@@ -40,7 +35,7 @@ std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type)
     return nullptr;
 }
 
-static ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
+ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
 {
     if (typeid_cast<const ColumnArray *>(column.get()))
         return column;
@@ -61,16 +56,15 @@ ColumnWithTypeAndName convertArrayJoinColumn(const ColumnWithTypeAndName & src_c
     ColumnWithTypeAndName array_col;
     array_col.name = src_col.name;
     array_col.type = getArrayJoinDataType(src_col.type);
-    array_col.column = getArrayJoinColumn(src_col.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated());
+    array_col.column = getArrayJoinColumn(src_col.column->convertToFullColumnIfConst());
     return array_col;
 }
 
-ArrayJoinAction::ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_)
+ArrayJoinAction::ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_)
     : columns(columns_.begin(), columns_.end())
     , is_left(is_left_)
     , is_unaligned(is_unaligned_)
     , max_block_size(max_block_size_)
-    , enable_lazy_columns_replication(enable_lazy_columns_replication_)
 {
     if (columns.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No arrays to join");
@@ -112,7 +106,7 @@ ArrayJoinResultIteratorPtr ArrayJoinAction::execute(Block block)
     if (columns.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No arrays to join");
 
-    return std::make_unique<ArrayJoinResultIterator>(this, std::move(block), enable_lazy_columns_replication);
+    return std::make_unique<ArrayJoinResultIterator>(this, std::move(block));
 }
 
 static void updateMaxLength(ColumnUInt64 & max_length, UInt64 length)
@@ -133,20 +127,20 @@ static void updateMaxLength(ColumnUInt64 & max_length, const IColumn & length)
     if (!length_uint64)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected UInt64 for array length, got {}", length.getName());
 
-    auto & max_length_data = max_length.getData();
+    auto & max_lenght_data = max_length.getData();
     const auto & length_data = length_uint64->getData();
-    size_t num_rows = max_length_data.size();
+    size_t num_rows = max_lenght_data.size();
     if (num_rows != length_data.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Different columns sizes in ARRAY JOIN: {} and {}", num_rows, length_data.size());
 
     for (size_t row = 0; row < num_rows; ++row)
-        max_length_data[row] = std::max(max_length_data[row], length_data[row]);
+        max_lenght_data[row] = std::max(max_lenght_data[row], length_data[row]);
 }
 
-ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_join_, Block block_, bool enable_lazy_columns_replication_)
-    : array_join(array_join_), block(std::move(block_)), enable_lazy_columns_replication(enable_lazy_columns_replication_), total_rows(block.rows()), current_row(0)
+ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_join_, Block block_)
+    : array_join(array_join_), block(std::move(block_)), total_rows(block.rows()), current_row(0)
 {
     const auto & columns = array_join->columns;
     bool is_unaligned = array_join->is_unaligned;
@@ -155,8 +149,7 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
     const auto & function_array_resize = array_join->function_array_resize;
     const auto & function_builder = array_join->function_builder;
 
-    /// TODO: avoid convertToFullColumnIfReplicated
-    any_array_map_ptr = block.getByName(*columns.begin()).column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+    any_array_map_ptr = block.getByName(*columns.begin()).column->convertToFullColumnIfConst();
     any_array = getArrayJoinColumnRawPtr(any_array_map_ptr);
     if (!any_array)
         throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN requires array or map argument");
@@ -223,9 +216,6 @@ Block ArrayJoinResultIterator::next()
     if (!hasNext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No more elements in ArrayJoinResultIterator.");
 
-    if (array_join->element_filter)
-        return nextWithElementFilter();
-
     size_t max_block_size = array_join->max_block_size;
     const auto & offsets = any_array->getOffsets();
 
@@ -246,7 +236,6 @@ Block ArrayJoinResultIterator::next()
     bool is_left = array_join->is_left;
     auto cut_any_col = any_array->cut(current_row, next_row - current_row);
     const auto * cut_any_array = typeid_cast<const ColumnArray *>(cut_any_col.get());
-    ColumnPtr indexes_for_lazy_replication;
 
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -270,11 +259,11 @@ Block ArrayJoinResultIterator::next()
                 {
                     array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, next_row - current_row)
                                                            : current.column;
-                    array_ptr = array_ptr->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+                    array_ptr = array_ptr->convertToFullColumnIfConst();
                 }
                 else
                 {
-                    ColumnPtr map_ptr = current.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+                    ColumnPtr map_ptr = current.column->convertToFullColumnIfConst();
                     const ColumnMap & map = typeid_cast<const ColumnMap &>(*map_ptr);
                     array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, next_row - current_row)
                                                            : map.getNestedColumnPtr();
@@ -292,16 +281,7 @@ Block ArrayJoinResultIterator::next()
         }
         else
         {
-            if (enable_lazy_columns_replication && isLazyReplicationUseful(current.column))
-            {
-                if (!indexes_for_lazy_replication)
-                    indexes_for_lazy_replication = convertOffsetsToIndexes(cut_any_array->getOffsets());
-                current.column = ColumnReplicated::create(current.column, indexes_for_lazy_replication);
-            }
-            else
-            {
-                current.column = current.column->replicate(cut_any_array->getOffsets());
-            }
+            current.column = current.column->replicate(cut_any_array->getOffsets());
         }
 
         res.insert(std::move(current));
@@ -309,154 +289,6 @@ Block ArrayJoinResultIterator::next()
 
     current_row = next_row;
     return res;
-}
-
-Block ArrayJoinResultIterator::nextWithElementFilter()
-{
-    const size_t max_block_size = array_join->max_block_size;
-    const auto & offsets = any_array->getOffsets();
-    const auto & columns = array_join->columns;
-    const bool is_unaligned = array_join->is_unaligned;
-    const bool is_left = array_join->is_left;
-
-    /// Skip fully-dead windows here, the inflating transform would push each empty chunk otherwise
-    while (current_row < total_rows)
-    {
-        size_t next_row = current_row;
-        for (; next_row < total_rows; ++next_row)
-            if (offsets[next_row] - offsets[current_row - 1] >= max_block_size)
-                break;
-        if (next_row == current_row)
-            ++next_row;
-
-        const size_t window_rows = next_row - current_row;
-        auto cut_any_col = any_array->cut(current_row, window_rows);
-        const auto * cut_any_array = typeid_cast<const ColumnArray *>(cut_any_col.get());
-        const auto & win_offsets = cut_any_array->getOffsets();
-        size_t num_elements = cut_any_array->getData().size();
-
-        /// Element block, the nested element column of each joined column, keyed by name
-        Block element_block;
-        for (const auto & name : columns)
-        {
-            const auto & src = block.getByName(name);
-
-            /// Mirrors next(). The first aligned-inner column is already the unwrapped nested array
-            ColumnPtr column;
-            DataTypePtr branch_type;
-            if (!is_unaligned && !is_left && name == *columns.begin())
-            {
-                column = cut_any_col;
-                branch_type = getArrayJoinDataType(src.type);
-            }
-            else
-            {
-                column = src.column->cut(current_row, window_rows);
-                branch_type = src.type;
-            }
-
-            const auto & nested_type = getArrayJoinDataType(branch_type);
-            if (!nested_type)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN of not array nor map: {}", name);
-
-            ColumnPtr array_ptr;
-            if (typeid_cast<const DataTypeArray *>(branch_type.get()))
-            {
-                array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[name]->cut(current_row, window_rows) : column;
-                array_ptr = array_ptr->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
-            }
-            else
-            {
-                ColumnPtr map_ptr = column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
-                const ColumnMap & map = typeid_cast<const ColumnMap &>(*map_ptr);
-                array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[name]->cut(current_row, window_rows) : map.getNestedColumnPtr();
-            }
-
-            const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
-            if (!is_unaligned && !array.hasEqualOffsets(*cut_any_array))
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Sizes of ARRAY-JOIN-ed arrays do not match");
-
-            element_block.insert({array.getDataPtr(), nested_type->getNestedType(), name});
-        }
-
-        array_join->element_filter->execute(element_block, num_elements);
-        auto filter_column = element_block.getByName(array_join->element_filter_column_name).column;
-
-        ConstantFilterDescription constant_filter(*filter_column);
-        IColumn::Filter mask;
-        if (constant_filter.always_true)
-            mask.assign(num_elements, static_cast<UInt8>(1));
-        else if (constant_filter.always_false)
-            mask.assign(num_elements, static_cast<UInt8>(0));
-        else
-        {
-            FilterDescription filter_description(*filter_column);
-            mask.assign(filter_description.data->begin(), filter_description.data->end());
-        }
-
-        size_t survivors = countBytesInFilter(mask);
-        /// Skip dead windows, but still emit one structured empty block for the last one
-        if (survivors == 0 && next_row < total_rows)
-        {
-            current_row = next_row;
-            continue;
-        }
-
-        /// Fast path: the filter dropped nothing, so this window expands exactly like the unfiltered next()
-        const bool all_survive = survivors == num_elements;
-
-        /// Per-row survivor counts, cumulative - offsets for the non-lazy replicate path. When everything
-        /// survives these equal win_offsets, so reuse those directly and skip the recount.
-        IColumn::Offsets new_offsets;
-        if (!all_survive)
-        {
-            new_offsets.resize(window_rows);
-            size_t accumulated = 0;
-            for (size_t row = 0; row != window_rows; ++row)
-            {
-                for (size_t pos = win_offsets[row - 1]; pos != win_offsets[row]; ++pos)
-                    accumulated += (mask[pos] != 0);
-                new_offsets[row] = accumulated;
-            }
-        }
-        const IColumn::Offsets & result_offsets = all_survive ? win_offsets : new_offsets;
-
-        Block res;
-        ColumnPtr indexes;
-        size_t num_columns = block.columns();
-        for (size_t i = 0; i != num_columns; ++i)
-        {
-            ColumnWithTypeAndName current = block.safeGetByPosition(i);
-            if (columns.contains(current.name))
-            {
-                const auto & element = element_block.getByName(current.name);
-                current.column = all_survive ? element.column : element.column->filter(mask, survivors);
-                current.type = element.type;
-            }
-            else
-            {
-                auto cut_col = current.column->cut(current_row, window_rows);
-                if (enable_lazy_columns_replication && isLazyReplicationUseful(cut_col))
-                {
-                    if (!indexes)
-                    {
-                        indexes = convertOffsetsToIndexes(win_offsets);
-                        if (!all_survive)
-                            indexes = indexes->filter(mask, survivors);
-                    }
-                    current.column = ColumnReplicated::create(cut_col, indexes);
-                }
-                else
-                    current.column = cut_col->replicate(result_offsets);
-            }
-            res.insert(std::move(current));
-        }
-
-        current_row = next_row;
-        return res;
-    }
-
-    return {};
 }
 
 }

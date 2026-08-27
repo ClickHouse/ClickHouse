@@ -5,24 +5,15 @@ if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 endif ()
 
 # Print details to output
-if (OS_WASM)
-    # `emcc` knows its own target and sysroot, and rejects being passed an empty one.
-    execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
-        OUTPUT_VARIABLE COMPILER_SELF_IDENTIFICATION
-        COMMAND_ERROR_IS_FATAL ANY
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-else ()
-    execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version --target=${CMAKE_CXX_COMPILER_TARGET} --sysroot=${CMAKE_SYSROOT}
-        OUTPUT_VARIABLE COMPILER_SELF_IDENTIFICATION
-        COMMAND_ERROR_IS_FATAL ANY
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-endif ()
+execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
+    OUTPUT_VARIABLE COMPILER_SELF_IDENTIFICATION
+    COMMAND_ERROR_IS_FATAL ANY
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
 message (STATUS "Using compiler:\n${COMPILER_SELF_IDENTIFICATION}")
 
 # Require minimum compiler versions
-set (CLANG_MINIMUM_VERSION 21)
+set (CLANG_MINIMUM_VERSION 19)
 if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
     message (FATAL_ERROR "Compilation with Clang version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${CLANG_MINIMUM_VERSION}.")
 endif ()
@@ -50,7 +41,7 @@ if (NOT LINKER_NAME)
     if (OS_LINUX AND NOT ARCH_S390X)
         ch_find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
     elseif (OS_DARWIN)
-        ch_find_program (LLD_PATH NAMES "ld64.lld-${COMPILER_VERSION_MAJOR}" "ld64.lld" "ld")
+        ch_find_program (LLD_PATH NAMES "ld")
         # Duplicate libraries passed to the linker is not a problem.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_warn_duplicate_libraries")
     endif ()
@@ -72,10 +63,7 @@ endif ()
 
 if (LINKER_NAME)
     message(STATUS "Using linker: ${LINKER_NAME}")
-elseif (OS_WASM)
-    # `emcc` drives `wasm-ld` itself and takes no `--ld-path`.
-    message(STATUS "Using linker: <wasm-ld, through emcc>")
-elseif (NOT ARCH_S390X AND NOT OS_FREEBSD AND NOT OS_SUNOS)
+elseif (NOT ARCH_S390X AND NOT OS_FREEBSD)
     message (FATAL_ERROR "The only supported linker is LLVM's LLD, but we cannot find it.")
 else ()
     message(STATUS "Using linker: <default>")
@@ -108,14 +96,6 @@ if (OBJCOPY_PATH)
     message (STATUS "Using objcopy: ${OBJCOPY_PATH}")
 else ()
     message (FATAL_ERROR "Cannot find objcopy.")
-endif ()
-
-# nm (used by helper scripts that inspect symbol tables, e.g. cmake/localize_rust_c_symbols.sh)
-ch_find_program (NM_PATH NAMES "llvm-nm-${COMPILER_VERSION_MAJOR}" "llvm-nm" "nm")
-if (NM_PATH)
-    message (STATUS "Using nm: ${NM_PATH}")
-else ()
-    message (FATAL_ERROR "Cannot find nm.")
 endif ()
 
 # Strip

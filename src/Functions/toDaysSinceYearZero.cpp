@@ -30,14 +30,14 @@ toDaysSinceYearZero(date[, time_zone])
 SELECT toDaysSinceYearZero(toDate('2023-09-08'))
         )",
         R"(
-┌─toDaysSinceYearZero(toDate('2023-09-08'))─┐
-│                                    739136 │
-└───────────────────────────────────────────┘
+┌─toDaysSinceYearZero(toDate('2023-09-08')))─┐
+│                                     713569 │
+└────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToDaysSinceYearZero>(documentation);
 

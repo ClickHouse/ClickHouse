@@ -33,19 +33,19 @@ The logical OR between two bits is true if at least one of the input bits is tru
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of the logical disjunction", {"UInt8"}};
     FunctionDocumentation::Examples examples = {{"Usage example 1", "SELECT bitTestAny(43, 0, 2);",
         R"(
-┌─bitTestAny(43, 0, 2)─┐
-│                    1 │
-└──────────────────────┘
+┌─bin(43)──┬─bitTestAny(43, 0, 2)─┐
+│ 00101011 │                    1 │
+└──────────┴──────────────────────┘
         )"}, {"Usage example 2", "SELECT bitTestAny(43, 4, 2);",
     R"(
-┌─bitTestAny(43, 4, 2)─┐
-│                    0 │
-└──────────────────────┘
+┌─bin(43)──┬─bitTestAny(43, 4, 2)─┐
+│ 00101011 │                    0 │
+└──────────┴──────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBitTestAny>(documentation);
 }

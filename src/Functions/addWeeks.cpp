@@ -40,14 +40,14 @@ SELECT
 SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 week)
         )",
         R"(
-┌─plus(CAST('1998-06-16', 'Date'), toIntervalWeek(10))─┐
-│                                           1998-08-25 │
-└──────────────────────────────────────────────────────┘
+┌─plus(CAST('1⋯alWeek(10))─┐
+│               1998-08-25 │
+└──────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionAddWeeks>(documentation);
 }

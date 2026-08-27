@@ -13,7 +13,7 @@ import psycopg2 as py_psql
 import psycopg2.extras
 import pytest
 
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 
 psycopg2.extras.register_uuid()
 
@@ -31,13 +31,9 @@ cluster.add_instance(
         "configs/server.crt",
         "configs/server.key",
     ],
-    user_configs=[
-        "configs/default_passwd.xml",
-        "configs/sync_inserts.xml"
-    ],
+    user_configs=["configs/default_passwd.xml"],
     with_postgres=True,
     with_postgresql_java_client=True,
-    with_postgresql_dotnet_client=True,
 )
 
 cluster.add_instance(
@@ -50,10 +46,7 @@ cluster.add_instance(
         "configs/server.crt",
         "configs/server.key",
     ],
-    user_configs=[
-        "configs/default_passwd.xml",
-        "configs/sync_inserts.xml"
-    ],
+    user_configs=["configs/default_passwd.xml"],
     with_postgres=True,
     with_postgresql_java_client=True,
 )
@@ -86,8 +79,6 @@ def test_psql_client(started_cluster):
         "query3.sql",
         "query4.sql",
         "query5.sql",
-        "query6.sql",
-        "query7.sql",
     ]:
         started_cluster.copy_file_to_container(
             started_cluster.postgres_id,
@@ -98,8 +89,7 @@ def test_psql_client(started_cluster):
         "/usr/bin/psql",
         f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
     ]
-    # -F same as --field-separator
-    cmd_prefix += ["--no-align", "-F", " "]
+    cmd_prefix += ["--no-align", "--field-separator=' '"]
 
     res = started_cluster.exec_in_container(
         started_cluster.postgres_id, cmd_prefix + ["-f", "/query1.sql"], shell=True
@@ -119,11 +109,11 @@ def test_psql_client(started_cluster):
     logging.debug(res)
     assert res == "\n".join(
         [
-            "CREATE DATABASE",
-            "USE",
-            "CREATE TABLE",
-            "INSERT 0 3",
-            "INSERT 0 3",
+            "SELECT 0",
+            "SELECT 0",
+            "SELECT 0",
+            "INSERT 0 0",
+            "INSERT 0 0",
             "column",
             "0",
             "0",
@@ -132,7 +122,7 @@ def test_psql_client(started_cluster):
             "5",
             "5",
             "(6 rows)",
-            "DROP DATABASE\n",
+            "SELECT 0\n",
         ]
     )
 
@@ -141,7 +131,7 @@ def test_psql_client(started_cluster):
     )
     logging.debug(res)
     assert res == "\n".join(
-        ["CREATE TABLE", "INSERT 0 2", "tmp_column", "0", "1", "(2 rows)", "DROP TABLE\n"]
+        ["SELECT 0", "INSERT 0 0", "tmp_column", "0", "1", "(2 rows)", "SELECT 0\n"]
     )
 
     res = started_cluster.exec_in_container(
@@ -150,162 +140,15 @@ def test_psql_client(started_cluster):
     logging.debug(res)
     assert res == "\n".join(
         [
-            "CREATE DATABASE",
-            "USE",
-            "CREATE TABLE",
-            "INSERT 0 3",
-            "CREATE TABLE",
-            "INSERT 0 3",
-            "DROP DATABASE\n",
+            "SELECT 0",
+            "SELECT 0",
+            "SELECT 0",
+            "INSERT 0 0",
+            "SELECT 0",
+            "INSERT 0 0",
+            "SELECT 0\n",
         ]
     )
-
-    res = started_cluster.exec_in_container(
-        started_cluster.postgres_id, cmd_prefix + ["-f", "/query6.sql"], shell=True
-    )
-    logging.debug(res)
-    # PostgreSQL should return boolean values as 't' or 'f'
-    assert res == "\n".join(
-        ["bool_true bool_false", "t f", "(1 row)", ""]
-    )
-
-    res = started_cluster.exec_in_container(
-        started_cluster.postgres_id, cmd_prefix + ["-f", "/query7.sql"], shell=True
-    )
-    logging.debug(res)
-    # Test all DDL command tags
-    assert res == "\n".join(
-        [
-            "CREATE DATABASE",
-            "USE",
-            "CREATE TABLE",
-            "CREATE TABLE",
-            "ALTER TABLE",
-            "INSERT 0 3",
-            "id name age",
-            "1 Alice 25",
-            "2 Bob 30",
-            "3 Charlie 35",
-            "(3 rows)",
-            "SET",
-            "TRUNCATE",
-            "DROP TABLE",
-            "DROP TABLE",
-            "DROP DATABASE\n",
-        ]
-    )
-
-
-def test_psql_describe(started_cluster):
-    node = cluster.instances["node"]
-
-    started_cluster.copy_file_to_container(
-        started_cluster.postgres_id,
-        os.path.join(SCRIPT_DIR, "queries", "query8.sql"),
-        "/query8.sql",
-    )
-
-    cmd_prefix = [
-        "/usr/bin/psql",
-        f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
-    ]
-    # -F same as --field-separator
-    cmd_prefix += ["--no-align", "-F", " "]
-
-    res = started_cluster.exec_in_container(
-        started_cluster.postgres_id, cmd_prefix + ["-f", "/query8.sql"], shell=True
-    )
-    logging.debug(res)
-    # \d lists the tables of the current database (with their types and owner),
-    # \dt lists only the tables. The exact psql chrome (headers, row counts)
-    # varies between psql versions, so check the rows themselves.
-    assert "db_psql_describe t_described table user_with_sha256" in res
-    assert "db_psql_describe v_described view user_with_sha256" in res
-    # The view must not be listed by \dt: expect exactly one more listing of the
-    # table (from \dt) than of the view (only from \d).
-    assert res.count("t_described table") == 2
-    assert res.count("v_described view") == 1
-
-
-def test_query_error_keeps_connection(started_cluster):
-    node = cluster.instances["node"]
-
-    ch = py_psql.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-        dbname="default",
-    )
-    cur = ch.cursor()
-
-    # A failed query must not tear the connection down: the server sends
-    # ErrorResponse and returns to the ReadyForQuery state, like PostgreSQL.
-    with pytest.raises(Exception) as exc:
-        cur.execute("SELECT this is not valid SQL")
-    assert "Query execution failed" in str(exc.value)
-
-    cur.execute("SELECT 1")
-    assert int(cur.fetchone()[0]) == 1
-
-    # Same for an error from query execution (not parsing).
-    with pytest.raises(Exception) as exc:
-        cur.execute("SELECT throwIf(1)")
-
-    cur.execute("SELECT 2")
-    assert int(cur.fetchone()[0]) == 2
-
-    ch.close()
-
-
-def test_prepared_query_error_keeps_connection(started_cluster):
-    node = cluster.instances["node"]
-
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-        dbname="default",
-    )
-    cur = ch.cursor()
-
-    # An error in the extended protocol keeps the connection usable after its
-    # `Sync`, which psycopg sends before reporting the failed operation.
-    with pytest.raises(Exception):
-        cur.execute("SELECT throwIf(1)", prepare=True)
-
-    cur.execute("SELECT 1", prepare=True)
-    assert int(cur.fetchone()[0]) == 1
-    ch.close()
-
-
-def test_prepared_query_error_after_output_closes_connection(started_cluster):
-    node = cluster.instances["node"]
-
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-        dbname="default",
-    )
-    cur = ch.cursor()
-
-    # When an extended-protocol `Execute` fails after some result bytes were
-    # already sent, the output stream may be cut in the middle of a protocol
-    # message, so the server must tear the connection down instead of
-    # returning to the `ReadyForQuery` state.
-    with pytest.raises(Exception):
-        cur.execute(
-            "SELECT throwIf(number = 100000) FROM numbers(1000000)", prepare=True
-        )
-
-    with pytest.raises(Exception):
-        cur.execute("SELECT 1", prepare=True)
-
-    ch.close()
-
 
 def test_psql_client_secure(started_cluster):
     node = cluster.instances["node_secure"]
@@ -320,8 +163,7 @@ def test_psql_client_secure(started_cluster):
         "/usr/bin/psql",
         f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
     ]
-    # -F same as --field-separator
-    cmd_prefix += ["--no-align", "-F", " "]
+    cmd_prefix += ["--no-align", "--field-separator=' '"]
 
     res = started_cluster.exec_in_container(
         started_cluster.postgres_id, cmd_prefix + ["-f", "/query1.sql"], shell=True
@@ -336,8 +178,7 @@ def test_psql_client_secure(started_cluster):
         "/usr/bin/psql",
         f"sslmode=disable host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
     ]
-    # -F same as --field-separator
-    cmd_prefix += ["--no-align", "-F", " "]
+    cmd_prefix += ["--no-align", "--field-separator=' '"]
 
     code, (stdout, stderr) = postgres_container.exec_run(cmd_prefix + ["-f", "/query1.sql"], demux=True,)
     logging.debug(f"test_psql_client_secure code:{code} stdout:{stdout}, stderr:{stderr}")
@@ -347,7 +188,7 @@ def test_psql_client_secure(started_cluster):
     )
 
     assert node.contains_in_log(
-        "<Error> PostgreSQLHandler: DB::Exception: SSL connection required."
+        f"<Error> PostgreSQLHandler: DB::Exception: SSL connection required."
     )
 
 
@@ -393,6 +234,19 @@ def test_new_user(started_cluster):
 def test_python_client(started_cluster):
     node = cluster.instances["node"]
 
+    with pytest.raises(py_psql.OperationalError) as exc_info:
+        ch = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        cur = ch.cursor()
+        cur.execute("select name from tables;")
+
+    assert exc_info.value.args == ("SSL connection has been closed unexpectedly\n",)
+
     ch = py_psql.connect(
         host=node.ip_address,
         port=server_port,
@@ -401,13 +255,6 @@ def test_python_client(started_cluster):
         database="",
     )
     cur = ch.cursor()
-
-    # A failed query returns an error and keeps the connection usable
-    # (as in PostgreSQL) instead of closing the connection.
-    with pytest.raises(py_psql.errors.SqlRoutineException) as exc_info:
-        cur.execute("select name from tables;")
-
-    assert "Unknown table expression identifier" in str(exc_info.value)
 
     cur.execute("select 1 as a, 2 as b")
     assert (cur.description[0].name, cur.description[1].name) == ("a", "b")
@@ -462,7 +309,7 @@ def test_prepared_statement(started_cluster):
     assert cur.fetchall() == [(1,)]
 
     cur.execute("DEALLOCATE select_test;")
-    with pytest.raises(Exception):
+    with pytest.raises(Exception) as exc:
         cur.execute("EXECUTE select_test(1);")
 
 
@@ -527,51 +374,6 @@ def test_copy_command(started_cluster):
     cur.execute("DROP DATABASE copy_x")
 
 
-def test_boolean_type(started_cluster):
-    node = cluster.instances["node"]
-
-    ch = py_psql.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-        database="",
-    )
-    cur = ch.cursor()
-
-    # Test boolean literals
-    # PostgreSQL protocol MUST return boolean values as 't' or 'f' in text format
-    # psycopg2 will automatically convert 't'/'f' to Python True/False
-    # If server sends '1'/'0' or 'true'/'false', psycopg2 will NOT convert them to bool
-    cur.execute("SELECT true AS bool_true, false AS bool_false")
-    result = cur.fetchone()
-    logging.debug(f"Boolean literals result: {result}, types: {type(result[0])}, {type(result[1])}")
-    # psycopg2 should convert 't'/'f' to True/False automatically
-    # If we get strings or numbers, it means the server didn't send proper PostgreSQL boolean format
-    assert result == (True, False), \
-        f"Expected (True, False) from psycopg2 conversion of 't'/'f', but got {result} with types {type(result[0])}, {type(result[1])}"
-
-    # Test with table
-    cur.execute("CREATE DATABASE test_bool_db")
-    cur.execute("USE test_bool_db")
-    cur.execute("CREATE TEMPORARY TABLE bool_test (id Int32, flag Bool) ENGINE = Memory")
-    cur.execute("INSERT INTO bool_test VALUES (1, true), (2, false)")
-    cur.execute("SELECT id, flag FROM bool_test ORDER BY id")
-    results = cur.fetchall()
-    logging.debug(f"Table boolean results: {results}")
-    assert len(results) == 2
-    # Strict check for boolean values from table
-    assert results[0][1] is True, \
-        f"Expected True (psycopg2 conversion of 't'), but got {results[0][1]} with type {type(results[0][1])}"
-    assert results[1][1] is False, \
-        f"Expected False (psycopg2 conversion of 'f'), but got {results[1][1]} with type {type(results[1][1])}"
-
-    cur.execute("DROP TABLE bool_test")
-    cur.execute("DROP DATABASE test_bool_db")
-    cur.close()
-    ch.close()
-
-
 def test_java_client(started_cluster):
     node = cluster.instances["node"]
 
@@ -603,160 +405,3 @@ def test_java_client(started_cluster):
         ],
     )
     assert res == reference
-
-
-def test_dotnet_client(started_cluster):
-    node = cluster.instances["node"]
-
-    with open(os.path.join(SCRIPT_DIR, "dotnet.reference")) as fp:
-        reference = fp.read()
-
-    res = started_cluster.exec_in_container(
-        started_cluster.postgresql_dotnet_client_docker_id,
-        [
-            "bash",
-            "-c",
-            f"cd /pg_testapp && dotnet run -- --host {node.hostname} --port {server_port} --username default --password 123",
-        ],
-    )
-    # `dotnet run` builds first, so the .NET SDK can prepend build diagnostics to
-    # stdout. That noise only appears before the client output, so tolerate it
-    # with a directional suffix check while still catching any trailing or
-    # inserted protocol divergence.
-    assert res.endswith(reference)
-
-
-def test_restricted_user_cannot_bypass_grants(started_cluster):
-    """Verify that a user with limited grants can connect via PostgreSQL protocol
-    (pg_type and other system views are initialized internally), but cannot
-    perform operations beyond their granted privileges."""
-    node = started_cluster.instances["node"]
-
-    # Create a restricted user that can only SELECT from default database
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-    )
-    cur = ch.cursor()
-    cur.execute(
-        "CREATE USER IF NOT EXISTS pg_restricted IDENTIFIED WITH plaintext_password BY 'restricted123'"
-    )
-    cur.execute("GRANT SELECT ON default.* TO pg_restricted")
-    ch.close()
-
-    # Connect as the restricted user - should succeed
-    restricted = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="pg_restricted",
-        password="restricted123",
-        dbname="default",
-    )
-    cur = restricted.cursor()
-
-    # The internal compatibility views should be accessible without direct
-    # grants on their `system.*` sources.
-    # ClickHouse currently sends scalar values over the PostgreSQL protocol in
-    # text mode, so result[0] arrives as a string from psycopg.
-    cur.execute("SELECT count() FROM pg_type")
-    result = cur.fetchone()
-    assert int(result[0]) > 0
-
-    cur.execute("SELECT count() FROM pg_namespace")
-    assert int(cur.fetchone()[0]) > 0
-
-    cur.execute("SELECT count() FROM pg_class")
-    assert int(cur.fetchone()[0]) > 0
-
-    # SELECT should work
-    cur.execute("SELECT 1")
-    assert int(cur.fetchone()[0]) == 1
-
-    # CREATE TABLE should be denied
-    with pytest.raises(Exception) as exc:
-        cur.execute("CREATE TABLE default.test_restricted (id Int32) ENGINE = Memory")
-    assert "Not enough privileges" in str(exc.value)
-
-    restricted.close()
-
-    # Clean up
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-    )
-    cur = ch.cursor()
-    cur.execute("DROP USER IF EXISTS pg_restricted")
-    ch.close()
-
-
-def test_restricted_user_catalog_visibility(started_cluster):
-    """The pg_namespace / pg_class compatibility views must expose only the
-    metadata visible to the session user: a user granted a single table must
-    not be able to enumerate other databases or ungranted tables through
-    them."""
-    node = started_cluster.instances["node"]
-
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-    )
-    cur = ch.cursor()
-    cur.execute("CREATE DATABASE IF NOT EXISTS pg_visible_db")
-    cur.execute("CREATE DATABASE IF NOT EXISTS pg_hidden_db")
-    cur.execute(
-        "CREATE TABLE IF NOT EXISTS pg_visible_db.t_granted (id Int32) ENGINE = Memory"
-    )
-    cur.execute(
-        "CREATE TABLE IF NOT EXISTS pg_visible_db.t_ungranted (id Int32) ENGINE = Memory"
-    )
-    cur.execute(
-        "CREATE TABLE IF NOT EXISTS pg_hidden_db.t_hidden (id Int32) ENGINE = Memory"
-    )
-    cur.execute(
-        "CREATE USER IF NOT EXISTS pg_narrow IDENTIFIED WITH plaintext_password BY 'narrow123'"
-    )
-    cur.execute("GRANT SELECT ON pg_visible_db.t_granted TO pg_narrow")
-    ch.close()
-
-    narrow = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="pg_narrow",
-        password="narrow123",
-        dbname="pg_visible_db",
-    )
-    cur = narrow.cursor()
-
-    # pg_namespace must list the granted database but not unrelated ones.
-    cur.execute("SELECT nspname FROM pg_namespace")
-    namespaces = {row[0] for row in cur.fetchall()}
-    assert "pg_visible_db" in namespaces
-    assert "pg_hidden_db" not in namespaces
-
-    # pg_class (behind psql's \d) must list only the granted table.
-    cur.execute("SELECT relname FROM pg_class WHERE relname != ''")
-    relations = {row[0] for row in cur.fetchall()}
-    assert "t_granted" in relations
-    assert "t_ungranted" not in relations
-    assert "t_hidden" not in relations
-
-    narrow.close()
-
-    # Clean up
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-    )
-    cur = ch.cursor()
-    cur.execute("DROP USER IF EXISTS pg_narrow")
-    cur.execute("DROP DATABASE IF EXISTS pg_visible_db")
-    cur.execute("DROP DATABASE IF EXISTS pg_hidden_db")
-    ch.close()

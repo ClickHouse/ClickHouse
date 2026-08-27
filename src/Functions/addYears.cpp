@@ -40,14 +40,14 @@ SELECT
 SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 year)
         )",
         R"(
-┌─plus(CAST('1998-06-16', 'Date'), toIntervalYear(10))─┐
-│                                           2008-06-16 │
-└──────────────────────────────────────────────────────┘
+┌─plus(CAST('1⋯alYear(10))─┐
+│               2008-06-16 │
+└──────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionAddYears>(documentation);
 }

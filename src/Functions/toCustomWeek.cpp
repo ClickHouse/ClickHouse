@@ -45,7 +45,7 @@ For mode values with a meaning of "contains January 1", the week contains Januar
 It does not matter how many days in the new year the week contained, even if it contained only one day.
 I.e. if the last week of December contains January 1 of the next year, it will be week 1 of the next year.
 
-The first argument can also be specified as [`String`](/reference/data-types/string) in a format supported by [`parseDateTime64BestEffort`](/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). Support for string arguments exists only for reasons of compatibility with MySQL which is expected by certain 3rd party tools. As string argument support may in future be made dependent on new MySQL-compatibility settings and because string parsing is generally slow, it is recommended to not use it.
+The first argument can also be specified as [`String`](../data-types/string.md) in a format supported by [`parseDateTime64BestEffort()`](type-conversion-functions.md#parsedatetime64besteffort). Support for string arguments exists only for reasons of compatibility with MySQL which is expected by certain 3rd party tools. As string argument support may in future be made dependent on new MySQL-compatibility settings and because string parsing is generally slow, it is recommended to not use it.
     )";
     FunctionDocumentation::Syntax syntax_toWeek = R"(
 toWeek(datetime[, mode[, time_zone]])
@@ -68,18 +68,18 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
     };
     FunctionDocumentation::IntroducedIn introduced_in_toWeek = {20, 1};
     FunctionDocumentation::Category category_toWeek = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toWeek = {description_toWeek, syntax_toWeek, arguments_toWeek, {}, returned_value_toWeek, examples_toWeek, introduced_in_toWeek, category_toWeek};
+    FunctionDocumentation documentation_toWeek = {description_toWeek, syntax_toWeek, arguments_toWeek, returned_value_toWeek, examples_toWeek, introduced_in_toWeek, category_toWeek};
 
     factory.registerFunction<FunctionToWeek>(documentation_toWeek);
 
     FunctionDocumentation::Description description_toYearWeek = R"(
 Returns the year and week for a date. The year in the result may be different from the year in the date argument for the first and the last week of the year.
 
-The mode argument works like the mode argument of [`toWeek()`](/reference/functions/regular-functions/date-time-functions#toWeek).
+The mode argument works like the mode argument of [`toWeek()`](/sql-reference/functions/date-time-functions#toWeek).
 
 Warning: The week number returned by `toYearWeek()` can be different from what the `toWeek()` returns. `toWeek()` always returns week number in the context of the given year, and in case `toWeek()` returns `0`, `toYearWeek()` returns the value corresponding to the last week of previous year. See `prev_yearWeek` in example below.
 
-The first argument can also be specified as [`String`](/reference/data-types/string) in a format supported by [`parseDateTime64BestEffort`](/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). Support for string arguments exists only for reasons of compatibility with MySQL which is expected by certain 3rd party tools. As string argument support may in future be made dependent on new MySQL-compatibility settings and because string parsing is generally slow, it is recommended to not use it.
+The first argument can also be specified as [`String`](../data-types/string.md) in a format supported by [`parseDateTime64BestEffort()`](type-conversion-functions.md#parsedatetime64besteffort). Support for string arguments exists only for reasons of compatibility with MySQL which is expected by certain 3rd party tools. As string argument support may in future be made dependent on new MySQL-compatibility settings and because string parsing is generally slow, it is recommended to not use it.
     )";
     FunctionDocumentation::Syntax syntax_toYearWeek = R"(
 toYearWeek(datetime[, mode[, timezone]])
@@ -102,7 +102,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
     };
     FunctionDocumentation::IntroducedIn introduced_in_toYearWeek = {20, 1};
     FunctionDocumentation::Category category_toYearWeek = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toYearWeek = {description_toYearWeek, syntax_toYearWeek, arguments_toYearWeek, {}, returned_value_toYearWeek, examples_toYearWeek, introduced_in_toYearWeek, category_toYearWeek};
+    FunctionDocumentation documentation_toYearWeek = {description_toYearWeek, syntax_toYearWeek, arguments_toYearWeek, returned_value_toYearWeek, examples_toYearWeek, introduced_in_toYearWeek, category_toYearWeek};
 
     factory.registerFunction<FunctionToYearWeek>(documentation_toYearWeek);
 
@@ -110,7 +110,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 Rounds a date or date with time down to the nearest Sunday or Monday.
 
 :::note
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/operations/settings/settings#enable_extended_results_for_datetime_functions).
 :::
     )";
     FunctionDocumentation::Syntax syntax_to_start_of_week = R"(
@@ -122,7 +122,7 @@ toStartOfWeek(datetime[, mode[, timezone]])
         {"mode", "Determines the first day of the week as described in the `toWeek()` function. Default `0`.", {"UInt8"}},
         {"timezone", "The timezone to use for the conversion. If not specified, the server's timezone is used.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_start_of_week = {"Returns the date of the nearest Sunday or Monday on, or prior to, the given date, depending on the mode.", {"Date", "Date32"}};
+    FunctionDocumentation::ReturnedValue returned_value_to_start_of_week = {"Returns the date of the nearest Sunday or Monday on, or prior to, the given date, depending on the mode", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_to_start_of_week = {
         {"Round down to the nearest Sunday or Monday", R"(
     SELECT
@@ -132,24 +132,24 @@ toStartOfWeek(datetime[, mode[, timezone]])
         toStartOfWeek(toDate('2023-04-24'), 1) /* a Monday */
     FORMAT Vertical
     )", R"(
-Row 1:
-──────
-toStartOfWeek(toDateTime('2023-04-21 10:20:30')):    2023-04-16
-toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1): 2023-04-17
-toStartOfWeek(toDate('2023-04-24')):                 2023-04-23
-toStartOfWeek(toDate('2023-04-24'), 1):              2023-04-24
+    Row 1:
+    ──────
+    toStartOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-17
+    toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-17
+    toStartOfWeek(toDate('2023-04-24')):                   2023-04-24
+    toStartOfWeek(toDate('2023-04-24'), 1):                2023-04-24
     )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_to_start_of_week = {20, 1};
     FunctionDocumentation::Category category_to_start_of_week = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_to_start_of_week = {description_to_start_of_week, syntax_to_start_of_week, arguments_to_start_of_week, {}, returned_value_to_start_of_week, examples_to_start_of_week, introduced_in_to_start_of_week, category_to_start_of_week};
+    FunctionDocumentation documentation_to_start_of_week = {description_to_start_of_week, syntax_to_start_of_week, arguments_to_start_of_week, returned_value_to_start_of_week, examples_to_start_of_week, introduced_in_to_start_of_week, category_to_start_of_week};
     factory.registerFunction<FunctionToStartOfWeek>(documentation_to_start_of_week);
 
     FunctionDocumentation::Description description_to_last_day_of_week = R"(
 Rounds a date or date with time up to the nearest Saturday or Sunday.
 
 :::note
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/operations/settings/settings#enable_extended_results_for_datetime_functions).
 :::
     )";
     FunctionDocumentation::Syntax syntax_to_last_day_of_week = R"(
@@ -160,7 +160,7 @@ The return type can be configured by setting [`enable_extended_results_for_datet
         {"mode", "Determines the first day of the week as described in the `toWeek()` function. Default `0`.", {"UInt8"}},
         {"timezone", "Optional. The timezone to use for the conversion. If not specified, the server's timezone is used.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_last_day_of_week = {"Returns the date of the nearest Saturday or Sunday, on or after the given date, depending on the mode.", {"Date", "Date32"}};
+    FunctionDocumentation::ReturnedValue returned_value_to_last_day_of_week = {"Returns the date of the nearest Saturday or Sunday, on or after the given date, depending on the mode", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_to_last_day_of_week = {
         {"Round up to the nearest Saturday or Sunday", R"(
 SELECT
@@ -172,15 +172,15 @@ FORMAT Vertical
     )", R"(
 Row 1:
 ──────
-toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):    2023-04-22
-toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1): 2023-04-23
-toLastDayOfWeek(toDate('2023-04-23')):                 2023-04-29
-toLastDayOfWeek(toDate('2023-04-23'), 1):              2023-04-23
+toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-23
+toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-22
+toLastDayOfWeek(toDate('2023-04-23')):                   2023-04-23
+toLastDayOfWeek(toDate('2023-04-23'), 1):                2023-04-23
     )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_to_last_day_of_week = {23, 5};
     FunctionDocumentation::Category category_to_last_day_of_week = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_to_last_day_of_week = {description_to_last_day_of_week, syntax_to_last_day_of_week, arguments_to_last_day_of_week, {}, returned_value_to_last_day_of_week, examples_to_last_day_of_week, introduced_in_to_last_day_of_week, category_to_last_day_of_week};
+    FunctionDocumentation documentation_to_last_day_of_week = {description_to_last_day_of_week, syntax_to_last_day_of_week, arguments_to_last_day_of_week, returned_value_to_last_day_of_week, examples_to_last_day_of_week, introduced_in_to_last_day_of_week, category_to_last_day_of_week};
     factory.registerFunction<FunctionToLastDayOfWeek>(documentation_to_last_day_of_week);
 
     /// Compatibility aliases for mysql.

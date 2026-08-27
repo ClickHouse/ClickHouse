@@ -42,14 +42,14 @@ SELECT
 SELECT dateSub('1998-06-16'::Date, INTERVAL 10 month)
         )",
         R"(
-┌─minus(CAST('1998-06-16', 'Date'), toIntervalMonth(10))─┐
-│                                             1997-08-16 │
-└────────────────────────────────────────────────────────┘
+┌─minus(CAST('⋯lMonth(10))─┐
+│               1997-08-16 │
+└──────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSubtractMonths>(documentation);
 }

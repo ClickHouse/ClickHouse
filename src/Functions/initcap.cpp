@@ -104,15 +104,15 @@ This is a known behaviour and there are no plans to fix it currently.
         "Example of known behavior for words containing apostrophes or capital letters",
         "SELECT initcap('John''s cat won''t eat.');",
         R"(
-┌─initcap('John\'s cat won\'t eat.')─┐
-│ John'S Cat Won'T Eat.              │
-└────────────────────────────────────┘
+┌─initcap('Joh⋯n\'t eat.')─┐
+│ John'S Cat Won'T Eat.    │
+└──────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionInitcap>(documentation, FunctionFactory::Case::Insensitive);
 }

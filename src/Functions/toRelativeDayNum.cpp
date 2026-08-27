@@ -30,14 +30,14 @@ toRelativeDayNum(date)
 SELECT toRelativeDayNum(toDate('2023-04-01')) - toRelativeDayNum(toDate('2023-01-01'))
         )",
         R"(
-┌─minus(toRelativeDayNum(toDate('2023-04-01')), toRelativeDayNum(toDate('2023-01-01')))─┐
-│                                                                                    90 │
-└───────────────────────────────────────────────────────────────────────────────────────┘
+┌─minus(toRela⋯3-01-01')))─┐
+│                       90 │
+└──────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToRelativeDayNum>(documentation);
 }

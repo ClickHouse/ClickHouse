@@ -28,7 +28,7 @@ struct BitShiftRightImpl
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
         else if (b < 0)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value");
-        else if (static_cast<UInt256>(b) >= 8 * sizeof(A))
+        else if (static_cast<UInt256>(b) > 8 * sizeof(A))
             return static_cast<Result>(0);
         else if constexpr (is_big_int_v<A>)
             return static_cast<Result>(a) >> static_cast<UInt32>(b);
@@ -64,7 +64,7 @@ struct BitShiftRightImpl
             if (b < 0)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value");
 
-            if (static_cast<decltype(bit_limit)>(b) >= bit_limit)
+            if (b == bit_limit || static_cast<decltype(bit_limit)>(b) > bit_limit)
             {
                 /// insert default value
                 out_offsets.push_back(out_offsets.back());
@@ -103,7 +103,7 @@ struct BitShiftRightImpl
             if (b < 0)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value");
 
-            if (static_cast<decltype(bit_limit)>(b) >= bit_limit)
+            if (b == bit_limit || static_cast<decltype(bit_limit)>(b) > bit_limit)
             {
                 // insert default value
                 out_vec.resize_fill(out_vec.size() + n);
@@ -169,31 +169,30 @@ On the contrary, a `String` value is extended with additional bytes, so no bits 
 SELECT 101 AS a, bin(a), bitShiftRight(a, 2) AS a_shifted, bin(a_shifted);
         )",
         R"(
-┌───a─┬─bin(a)───┬─a_shifted─┬─bin(a_shifted)─┐
-│ 101 │ 01100101 │        25 │ 00011001       │
-└─────┴──────────┴───────────┴────────────────┘
+┌───a─┬─bin(101)─┬─a_shifted─┬─bin(bitShiftRight(101, 2))─┐
+│ 101 │ 01100101 │        25 │ 00011001                   │
+└─────┴──────────┴───────────┴────────────────────────────┘
         )"},
         {"Usage example with hexadecimal encoding", R"(
--- The shifted value is binary, so it is shown with `hex`.
-SELECT 'abc' AS a, hex(a), hex(bitShiftRight(a, 12)) AS a_shifted;
+SELECT 'abc' AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
         )",
         R"(
-┌─a───┬─hex(a)─┬─a_shifted─┐
-│ abc │ 616263 │ 0616      │
-└─────┴────────┴───────────┘
+┌─a───┬─hex('abc')─┬─a_shifted─┬─hex(bitShiftRight('abc', 12))─┐
+│ abc │ 616263     │           │ 0616                          │
+└─────┴────────────┴───────────┴───────────────────────────────┘
         )"},
 {"Usage example with Fixed String encoding", R"(
-SELECT toFixedString('abc', 3) AS a, hex(a), hex(bitShiftRight(a, 12)) AS a_shifted;
+SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftRight(a, 12) AS a_shifted, hex(a_shifted);
         )",
 R"(
-┌─a───┬─hex(a)─┬─a_shifted─┐
-│ abc │ 616263 │ 000616    │
-└─────┴────────┴───────────┘
+┌─a───┬─hex(toFixedString('abc', 3))─┬─a_shifted─┬─hex(bitShiftRight(toFixedString('abc', 3), 12))─┐
+│ abc │ 616263                       │           │ 000616                                          │
+└─────┴──────────────────────────────┴───────────┴─────────────────────────────────────────────────┘
         )"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBitShiftRight>(documentation);
 }

@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -18,7 +17,6 @@ namespace DB
                 const ContextPtr & context_,
                 QueryProcessingStage::Enum processed_stage_,
                 StoragePtr inner_storage_,
-                ASTPtr inner_table_function_ast_,
                 size_t max_block_size_,
                 size_t num_streams_);
 
@@ -33,7 +31,6 @@ namespace DB
         const Names column_names;
         QueryProcessingStage::Enum processed_stage;
         StoragePtr inner_storage;
-        ASTPtr inner_table_function_ast;
         size_t max_block_size;
         size_t num_streams;
     };

@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -11,6 +11,9 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 
+#include <h3api.h>
+
+
 namespace DB
 {
 namespace ErrorCodes
@@ -20,16 +23,12 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionH3ToGeoBoundary final : public IFunction
+class FunctionH3ToGeoBoundary : public IFunction
 {
 public:
     static constexpr auto name = "h3ToGeoBoundary";
     String getName() const override { return name; }
-    H3Validator validator;
-
-    explicit FunctionH3ToGeoBoundary(const ContextPtr & context) : validator(context) {}
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToGeoBoundary>(context); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToGeoBoundary>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -79,12 +78,6 @@ public:
             H3Index h3index = data[row];
             CellBoundary boundary{};
 
-            if (!validator.validateCell(h3index))
-            {
-                offsets->insert(current_offset);
-                continue;
-            }
-
             auto err = cellToBoundary(h3index, &boundary);
             if (err)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", h3index, err);
@@ -123,15 +116,15 @@ Returns array of pairs `(lat, lon)`, which corresponds to the boundary of the pr
             "Get boundary coordinates for an H3 index",
             "SELECT h3ToGeoBoundary(644325524701193974) AS coordinates",
             R"(
-┌─coordinates─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [(55.71290022535552,37.79505811173474),(55.71289713485417,37.795065069971834),(55.712899340954834,37.79507312653982),(55.71290463755744,37.79507422487166),(55.71290772805917,37.79506726663345),(55.7129055219579,37.795059210064515)] │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─h3ToGeoBoundary(599686042433355775)────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [(37.2713558667319,-121.91508032705622),(37.353926450852256,-121.8622232890249),(37.42834118609435,-121.92354999630156),(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044),(37.26319797461824,-122.02910130919001)] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
             )"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToGeoBoundary>(documentation);
 }
 

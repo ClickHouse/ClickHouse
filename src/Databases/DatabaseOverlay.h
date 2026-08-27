@@ -34,8 +34,6 @@ public:
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
-    DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
-        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     void renameTable(
         ContextPtr current_context,
@@ -46,6 +44,7 @@ public:
         bool dictionary) override;
 
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
+    ASTPtr getCreateDatabaseQuery() const override;
 
     String getTableDataPath(const String & table_name) const override;
     String getTableDataPath(const ASTCreateQuery & query) const override;
@@ -55,7 +54,7 @@ public:
 
     void drop(ContextPtr context) override;
 
-    void alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, bool validate_new_create_query) override;
+    void alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
 
@@ -67,9 +66,9 @@ public:
 
     void shutdown() override;
 
-    /// Return false if at least one underlying database is not external, otherwise return true
-    bool isExternal() const override;
-
+    bool canContainMergeTreeTables() const override;
+    bool canContainDistributedTables() const override;
+    bool canContainRocksDBTables() const override;
     void loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;
     bool supportsLoadingInTopologicalOrder() const override;
     void beforeLoadingMetadata(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;
@@ -101,11 +100,8 @@ public:
     void waitDatabaseStarted() const override;
     void stopLoading() override;
     void checkMetadataFilenameAvailability(const String & table_name) const override;
-    void checkTableNameLength(const String & table_name) const override;
 
 protected:
-    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
-
     std::vector<DatabasePtr> databases;
     LoggerPtr log;
 };

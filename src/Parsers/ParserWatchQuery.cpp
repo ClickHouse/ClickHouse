@@ -13,8 +13,6 @@ limitations under the License. */
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -30,7 +28,7 @@ bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ASTPtr database;
     ASTPtr table;
-    auto query = make_intrusive<ASTWatchQuery>();
+    auto query = std::make_shared<ASTWatchQuery>();
 
     if (!s_watch.ignore(pos, expected))
     {
@@ -76,30 +74,5 @@ bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-
-}
-
-namespace DB
-{
-
-void registerStatementWatch(StatementFactory & factory)
-{
-    factory.registerStatement("WATCH",
-    {
-        .description = R"DOCS_MD(
-import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
-
-<DeprecatedBadge/>
-
-This feature is deprecated and will be removed in the future.
-
-For your convenience, the old documentation is located [here](https://pastila.nl/?007cd3ec/47276db1eb25eb10c6ee043a44fdf597#AESDirdloBX4wF5BjPSZSA==)
-)DOCS_MD",
-        .syntax = R"(
-WATCH [db.]live_view [EVENTS] [LIMIT n] [FORMAT format]
-)",
-        .related = {"CREATE VIEW", "SELECT"},
-    });
-}
 
 }

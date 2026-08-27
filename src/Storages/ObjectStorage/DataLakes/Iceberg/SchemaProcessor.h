@@ -1,30 +1,26 @@
 #pragma once
 
-
 #include <memory>
 #include <mutex>
+#include "config.h"
 
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
-#include <Formats/FormatFilterInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <base/defines.h>
+
+
+#include <Formats/FormatFilterInfo.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <Common/SharedMutex.h>
 
 #include <unordered_map>
-#include <unordered_set>
 namespace DB::Iceberg
 {
-
-/// Build a ColumnMapper carrying all Iceberg per-path metadata (field ids, string paths, optional
-/// paths) from a schema `fields` array. Single wiring point shared by createColumnMapper and the
-/// MultipleFileWriter INSERT path so no consumer can drift out of sync.
-ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields);
 
 ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
 
@@ -41,8 +37,6 @@ ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
  *   - time (time of day in microseconds since midnight)
  *   - timestamp (in microseconds since 1970-01-01)
  *   - timestamptz (timestamp with timezone, stores values in UTC timezone)
- *   - timestamp_ns (in nanoseconds since 1970-01-01, format version 3+)
- *   - timestamptz_ns (timestamp with timezone in nanoseconds, format version 3+)
  *   - string
  *   - uuid
  *   - fixed(L) (fixed-length byte array of length L)
@@ -88,28 +82,19 @@ class IcebergSchemaProcessor
     using Node = ActionsDAG::Node;
 
 public:
-    explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false) : allow_geo_parser(allow_geo_parser_) {}
-
     void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr);
-    std::shared_ptr<NamesAndTypesList> getClickHouseTableSchemaById(Int32 id);
+    std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
     NameAndTypePair getFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
     std::optional<NameAndTypePair> tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
     NamesAndTypesList tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids) const;
     std::optional<Int32> tryGetColumnIDByName(Int32 schema_id, const std::string & name) const;
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
-    bool hasClickHouseTableSchemaById(Int32 id) const;
+    bool hasClickhouseTableSchemaById(Int32 id) const;
 
-    static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
+    static DataTypePtr getSimpleType(const String & type_name);
 
     static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
-
-    /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString.
-    static std::unordered_set<String> collectIcebergStringPaths(Poco::JSON::Array::Ptr schema);
-
-    /// Paths whose Iceberg field is `optional` (required=false). A complex container is never
-    /// Nullable in the ClickHouse type, so a writer emitting Iceberg `required` must consult this.
-    static std::unordered_set<String> collectIcebergOptionalPaths(Poco::JSON::Array::Ptr schema);
 
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
@@ -142,7 +127,6 @@ private:
         const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema, Int32 old_id, Int32 new_id);
 
     mutable SharedMutex mutex;
-    bool allow_geo_parser = true;
 };
 
 using IcebergSchemaProcessorPtr = std::shared_ptr<IcebergSchemaProcessor>;

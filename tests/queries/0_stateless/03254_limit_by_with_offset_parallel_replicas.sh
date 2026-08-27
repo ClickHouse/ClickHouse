@@ -34,11 +34,11 @@ CREATE TABLE test_fetch(a Int32, b Int32) Engine = MergeTree ORDER BY ();
 INSERT INTO test_fetch VALUES(1, 1), (2, 1), (3, 4), (3, 3), (5, 4), (0, 6), (5, 7);
 "
 
-for enable_analyzer in 1; do
+for enable_analyzer in {0..1}; do
   for enable_parallel_replicas in {0..1}; do
     ${CLICKHOUSE_CLIENT} --query="
     set enable_analyzer=${enable_analyzer};
-    set allow_experimental_parallel_reading_from_replicas=${enable_parallel_replicas}, automatic_parallel_replicas_mode=0, cluster_for_parallel_replicas='parallel_replicas', max_parallel_replicas=100, parallel_replicas_for_non_replicated_merge_tree=1;
+    set allow_experimental_parallel_reading_from_replicas=${enable_parallel_replicas}, cluster_for_parallel_replicas='parallel_replicas', max_parallel_replicas=100, parallel_replicas_for_non_replicated_merge_tree=1;
 
     select * from limit_by order by id, val limit 2 by id;
     select * from limit_by order by id, val limit 3 by id;

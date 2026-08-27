@@ -1,23 +1,14 @@
 #include <Storages/prepareReadingFromFormat.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <base/scope_guard.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
-
-#include <unordered_map>
 
 namespace DB
 {
@@ -47,15 +38,10 @@ ReadFromFormatInfo prepareReadingFromFormat(
     Strings columns_to_read;
     for (const auto & column_name : requested_columns)
     {
-        if (auto virtual_column = storage_snapshot->metadata->virtuals.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
-        {
+        if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
             info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
-        }
-        else if (auto it = hive_parameters.hive_partition_columns_to_read_from_file_path_map.find(column_name);
-                 it != hive_parameters.hive_partition_columns_to_read_from_file_path_map.end())
-        {
+        else if (auto it = hive_parameters.hive_partition_columns_to_read_from_file_path_map.find(column_name); it != hive_parameters.hive_partition_columns_to_read_from_file_path_map.end())
             info.hive_partition_columns_to_read_from_file_path.emplace_back(it->first, it->second);
-        }
         else
             columns_to_read.push_back(column_name);
     }
@@ -78,9 +64,147 @@ ReadFromFormatInfo prepareReadingFromFormat(
     {
         if (supports_tuple_elements)
         {
-            columns_to_read = filterTupleColumnsToRead(info.requested_columns);
+            /// Format can read tuple element subcolumns, e.g. `t.x` or `t.a.x`.
+            /// But we still need to do some processing on the set of requested columns:
+            ///  * If a non-tuple-element subcolumn is requested, request the whole column.
+            ///    E.g. if the type of `t` is Object, `t.x` is a dynamic subcolumn, and we should
+            ///    request the whole `t` instead. Reading a subset of dynamic subcolumns is
+            ///    currently not supported by any format parser (though we might want to add it in
+            ///    future for parquet variant columns).
+            ///  * Don't request tuple element if the whole tuple is also requested.
+            ///    E.g. `SELECT t, t.x` should just read `t`.
+
+            struct SubcolumnInfo
+            {
+                ISerialization::SubstreamPath path;
+                String name;
+                DataTypePtr type;
+                bool is_duplicate = false;
+            };
+
+            std::vector<SubcolumnInfo> columns_info(info.requested_columns.size());
+            std::unordered_map<String, size_t> name_to_idx;
+            size_t idx = 0;
+            for (const auto & column_to_read : info.requested_columns)
+            {
+                SCOPE_EXIT({ ++idx; });
+
+                /// Suppose column `t.a.b.c` was requested, and `t` and `t.a` are tuples,
+                /// but `t.a.b` is an Object (with dynamic subcolumn `c`). We want to read `t.a.b`.
+                /// So, we're looking for the longest prefix of the requested path that consists
+                /// only of tuple element accesses. In this example we want path = {a, b}.
+                /// (Note that `t.a.b.c` will not be listed by enumerateStreams because `c`
+                ///  is a dynamic subcolumn.)
+                auto & column_info = columns_info[idx];
+                bool found_full_path = false;
+                column_info.type = column_to_read.getTypeInStorage();
+
+                if (column_to_read.isSubcolumn())
+                {
+                    /// Do subcolumn lookup similar to getColumnFromBlock.
+
+                    auto type = column_to_read.getTypeInStorage();
+                    auto data = ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type);
+                    auto subcolumn_name = column_to_read.getSubcolumnName();
+
+                    ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
+                    {
+                        if (found_full_path)
+                            return;
+
+                        for (size_t i = 0; i < subpath.size(); ++i)
+                        {
+                            /// Allow `a.x` where `a` is array of tuples.
+                            if (subpath[i].type == ISerialization::Substream::ArrayElements)
+                                continue;
+
+                            if (subpath[i].type != ISerialization::Substream::TupleElement)
+                                break;
+
+                            if (subpath[i].visited)
+                                continue;
+                            subpath[i].visited = true;
+                            size_t prefix_len = i + 1;
+                            if (prefix_len <= column_info.path.size())
+                                continue;
+
+                            auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
+                            if (name == subcolumn_name)
+                                found_full_path = true;
+                            else if (!subcolumn_name.starts_with(name + "."))
+                                continue;
+
+                            column_info.path.insert(column_info.path.end(), subpath.begin() + column_info.path.size(), subpath.begin() + prefix_len);
+                            if (found_full_path)
+                                break;
+                        }
+                    };
+
+                    ISerialization::EnumerateStreamsSettings settings;
+                    settings.position_independent_encoding = false;
+                    settings.enumerate_dynamic_streams = false;
+                    data.serialization->enumerateStreams(settings, callback_with_data, data);
+
+                    if (!column_info.path.empty())
+                        column_info.type = ISerialization::createFromPath(column_info.path, column_info.path.size()).type;
+                }
+
+                column_info.name = column_to_read.getNameInStorage();
+                if (!column_info.path.empty())
+                {
+                    column_info.name += '.';
+                    column_info.name += ISerialization::getSubcolumnNameForStream(column_info.path);
+                }
+                bool emplaced = name_to_idx.emplace(column_info.name, idx).second;
+                column_info.is_duplicate = !emplaced;
+            }
+
+            std::vector<String> new_columns_to_read;
+            idx = 0;
+            for (auto & column_to_read : info.requested_columns)
+            {
+                SCOPE_EXIT({ ++idx; });
+
+                /// Check if any ancestor subcolumn is requested.
+                /// (This is why we iterate over requested_columns twice: first to form name_to_idx,
+                ///  then to check this. E.g. consider `SELECT t.x, t.y, t`.)
+                bool ancestor_requested = false;
+                const auto & column_info = columns_info[idx];
+                for (size_t prefix_len = 0; prefix_len < column_info.path.size(); ++prefix_len)
+                {
+                    String ancestor_name = column_to_read.getNameInStorage();
+                    if (prefix_len)
+                    {
+                        ancestor_name += '.';
+                        ancestor_name += ISerialization::getSubcolumnNameForStream(column_info.path, prefix_len);
+                    }
+                    auto it = name_to_idx.find(ancestor_name);
+                    if (it != name_to_idx.end())
+                    {
+                        const auto & ancestor_info = columns_info[it->second];
+                        column_to_read.setDelimiterAndTypeInStorage(ancestor_name, ancestor_info.type);
+                        ancestor_requested = true;
+                        break;
+                    }
+                }
+                if (ancestor_requested)
+                    continue;
+
+                column_to_read.setDelimiterAndTypeInStorage(column_info.name, column_info.type);
+                if (!column_info.is_duplicate)
+                    new_columns_to_read.push_back(column_info.name);
+            }
+            columns_to_read = std::move(new_columns_to_read);
+
+            /// (Not checking columns_to_read.empty() in this case, assuming that formats with
+            ///  supports_tuple_elements also support empty list of columns.)
         }
-        else if (!columns_to_read.empty())
+        else if (columns_to_read.empty())
+        {
+            /// If only virtual columns were requested, just read the smallest column.
+            columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
+        }
+        else
         {
             /// We need to replace all subcolumns with their nested columns (e.g `a.b`, `a.b.c`, `x.y` -> `a`, `x`),
             /// because most formats cannot extract subcolumns on their own.
@@ -100,12 +224,6 @@ ReadFromFormatInfo prepareReadingFromFormat(
             columns_to_read = std::move(new_columns_to_read);
         }
 
-        /// If only virtual columns were requested, just read the smallest column.
-        if (columns_to_read.empty())
-        {
-            columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
-        }
-
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
     }
     else
@@ -116,187 +234,30 @@ ReadFromFormatInfo prepareReadingFromFormat(
     }
 
     /// Create header for InputFormat with columns that will be read from the data.
-    for (const auto & column : info.columns_description)
-    {
-        /// Never read hive partition columns from the data file. This fixes https://github.com/ClickHouse/ClickHouse/issues/87515
-        if (!hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(column.name))
-            info.format_header.insert(ColumnWithTypeAndName{column.type, column.name});
-    }
+    info.format_header = storage_snapshot->getSampleBlockForColumns(info.columns_description.getNamesOfPhysical());
 
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
     return info;
 }
 
-Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
+ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info)
 {
-    /// Format can read tuple element subcolumns, e.g. `t.x` or `t.a.x`.
-    /// But we still need to do some processing on the set of requested columns:
-    ///  * If a non-tuple-element subcolumn is requested, request the whole column.
-    ///    E.g. if the type of `t` is Object, `t.x` is a dynamic subcolumn, and we should
-    ///    request the whole `t` instead. Reading a subset of dynamic subcolumns is
-    ///    currently not supported by any format parser (though we might want to add it in
-    ///    future for parquet variant columns).
-    ///  * Don't request tuple element if the whole tuple is also requested.
-    ///    E.g. `SELECT t, t.x` should just read `t`.
-
-    struct SubcolumnInfo
-    {
-        ISerialization::SubstreamPath path;
-        String name;
-        DataTypePtr type;
-        bool is_duplicate = false;
-    };
-
-    std::vector<SubcolumnInfo> columns_info(requested_columns.size());
-    std::unordered_map<String, size_t> name_to_idx;
-    size_t idx = 0;
-    for (const auto & column_to_read : requested_columns)
-    {
-        SCOPE_EXIT({ ++idx; });
-
-        /// Suppose column `t.a.b.c` was requested, and `t` and `t.a` are tuples,
-        /// but `t.a.b` is an Object (with dynamic subcolumn `c`). We want to read `t.a.b`.
-        /// So, we're looking for the longest prefix of the requested path that consists
-        /// only of tuple element accesses. In this example we want path = {a, b}.
-        /// (Note that `t.a.b.c` will not be listed by enumerateStreams because `c`
-        ///  is a dynamic subcolumn.)
-        auto & column_info = columns_info[idx];
-        bool found_full_path = false;
-        column_info.type = column_to_read.getTypeInStorage();
-
-        if (column_to_read.isSubcolumn())
-        {
-            /// Do subcolumn lookup similar to getColumnFromBlock.
-
-            auto type = column_to_read.getTypeInStorage();
-            auto data = ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type);
-            auto subcolumn_name = column_to_read.getSubcolumnName();
-
-            ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
-            {
-                if (found_full_path)
-                    return;
-
-                for (size_t i = 0; i < subpath.size(); ++i)
-                {
-                    /// Allow `a.x` where `a` is array of tuples.
-                    if (subpath[i].type == ISerialization::Substream::ArrayElements)
-                        continue;
-
-                    if (subpath[i].type != ISerialization::Substream::TupleElement)
-                        break;
-
-                    if (subpath[i].visited)
-                        continue;
-                    subpath[i].visited = true;
-                    size_t prefix_len = i + 1;
-                    if (prefix_len <= column_info.path.size())
-                        continue;
-
-                    auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
-                    if (name == subcolumn_name)
-                        found_full_path = true;
-                    else if (!subcolumn_name.starts_with(name + "."))
-                        continue;
-
-                    column_info.path.insert(column_info.path.end(), subpath.begin() + column_info.path.size(), subpath.begin() + prefix_len);
-                    if (found_full_path)
-                        break;
-                }
-            };
-
-            ISerialization::EnumerateStreamsSettings settings;
-            settings.position_independent_encoding = false;
-            settings.enumerate_dynamic_streams = false;
-            data.serialization->enumerateStreams(settings, callback_with_data, data);
-
-            if (!column_info.path.empty())
-                column_info.type = ISerialization::createFromPath(column_info.path, column_info.path.size()).type;
-        }
-
-        column_info.name = column_to_read.getNameInStorage();
-        if (!column_info.path.empty())
-        {
-            column_info.name += '.';
-            column_info.name += ISerialization::getSubcolumnNameForStream(column_info.path);
-        }
-        bool emplaced = name_to_idx.emplace(column_info.name, idx).second;
-        column_info.is_duplicate = !emplaced;
-    }
-
-    std::vector<String> new_columns_to_read;
-    idx = 0;
-    for (auto & column_to_read : requested_columns)
-    {
-        SCOPE_EXIT({ ++idx; });
-
-        /// Check if any ancestor subcolumn is requested.
-        /// (This is why we iterate over requested_columns twice: first to form name_to_idx,
-        ///  then to check this. E.g. consider `SELECT t.x, t.y, t`.)
-        bool ancestor_requested = false;
-        const auto & column_info = columns_info[idx];
-        for (size_t prefix_len = 0; prefix_len < column_info.path.size(); ++prefix_len)
-        {
-            String ancestor_name = column_to_read.getNameInStorage();
-            if (prefix_len)
-            {
-                ancestor_name += '.';
-                ancestor_name += ISerialization::getSubcolumnNameForStream(column_info.path, prefix_len);
-            }
-            auto it = name_to_idx.find(ancestor_name);
-            if (it != name_to_idx.end())
-            {
-                const auto & ancestor_info = columns_info[it->second];
-                column_to_read.setDelimiterAndTypeInStorage(ancestor_name, ancestor_info.type);
-                ancestor_requested = true;
-                break;
-            }
-        }
-        if (ancestor_requested)
-            continue;
-
-        column_to_read.setDelimiterAndTypeInStorage(column_info.name, column_info.type);
-        if (!column_info.is_duplicate)
-            new_columns_to_read.push_back(column_info.name);
-    }
-    return new_columns_to_read;
-
-    /// (Not checking columns_to_read.empty() in this case, assuming that formats with
-    ///  supports_tuple_elements also support empty list of columns.)
-}
-
-ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info)
-{
-    chassert(prewhere_info || row_level_filter);
+    chassert(prewhere_info);
 
     if (info.prewhere_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "updateFormatPrewhereInfo called more than once");
 
     ReadFromFormatInfo new_info;
     new_info.prewhere_info = prewhere_info;
-    new_info.row_level_filter = row_level_filter;
 
     /// Removes columns that are only used as prewhere input.
-    /// Adds prewhere outputs (the actual prewhere filter column is only added if
-    /// !remove_prewhere_column; but there may also be subexpressions computed by prewhere
-    /// expression and preserved for use further down the query pipeline).
-    /// If row_level_filter was already applied in a previous call, don't re-apply it;
-    /// only apply the new prewhere_info on top.
-    new_info.format_header = SourceStepWithFilter::applyPrewhereActions(
-        info.format_header, info.row_level_filter ? nullptr : row_level_filter, prewhere_info);
+    /// Adds prewhere result column if !remove_prewhere_column.
+    new_info.format_header = SourceStepWithFilter::applyPrewhereActions(info.format_header, prewhere_info);
 
     /// We assume that any format that supports prewhere also supports subset of subcolumns, so we
     /// don't need to replace subcolumns with their nested columns etc.
     new_info.source_header = new_info.format_header;
-
-    /// Hive partition columns come from the file path, not the data file, so prewhere column
-    /// pruning above does not concern them. Carry them over and keep their position before the
-    /// virtual columns (as in prepareReadingFromFormat), otherwise the source skips appending them
-    /// to the chunk and selecting a hive column while filtering a real one fails.
-    new_info.hive_partition_columns_to_read_from_file_path = info.hive_partition_columns_to_read_from_file_path;
-    for (const auto & column_from_file_path : new_info.hive_partition_columns_to_read_from_file_path)
-        new_info.source_header.insert({column_from_file_path.type->createColumn(), column_from_file_path.type, column_from_file_path.name});
 
     new_info.requested_virtual_columns = info.requested_virtual_columns;
     for (const auto & requested_virtual_column : new_info.requested_virtual_columns)
@@ -307,12 +268,12 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
         new_info.requested_columns.emplace_back(col.name, col.type);
         if (info.format_header.has(col.name))
         {
-            /// Column read from file.
             new_info.columns_description.add(info.columns_description.get(col.name));
         }
         else
         {
-            /// Column produced by prewhere expression.
+            chassert(col.name == prewhere_info->prewhere_column_name);
+            chassert(!prewhere_info->remove_prewhere_column);
             new_info.columns_description.add(ColumnDescription(col.name, col.type));
         }
     }
@@ -323,21 +284,20 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
 SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
 {
     if (!context->getSettingsRef()[Setting::enable_parsing_to_custom_serialization])
-        return SerializationInfoByName{{}};
+        return {};
 
     auto insertion_table = context->getInsertionTable();
     if (!insertion_table)
-        return SerializationInfoByName{{}};
+        return {};
 
     auto storage_ptr = DatabaseCatalog::instance().tryGetTable(insertion_table, context);
     if (!storage_ptr)
-        return SerializationInfoByName{{}};
+        return {};
 
-    const auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
     const auto & our_columns = metadata_snapshot->getColumns();
-    const auto & storage_columns = storage_metadata_snapshot->getColumns();
+    const auto & storage_columns = storage_ptr->getInMemoryMetadataPtr()->getColumns();
     auto storage_hints = storage_ptr->getSerializationHints();
-    SerializationInfoByName res({});
+    SerializationInfoByName res;
 
     for (const auto & hint : storage_hints)
     {
@@ -352,7 +312,7 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     source_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
     format_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
-    writeStringBinary(columns_description.toString(false), ctx.out);
+    writeStringBinary(columns_description.toString(), ctx.out);
     requested_columns.writeTextWithNamesInStorage(ctx.out);
     requested_virtual_columns.writeTextWithNamesInStorage(ctx.out);
     serialization_hints.writeJSON(ctx.out);
@@ -394,312 +354,19 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     result.requested_virtual_columns.readTextWithNamesInStorage(ctx.in);
     std::string json;
     readString(json, ctx.in);
-    result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), json);
+    result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), SerializationInfoSettings{}, json);
 
     ctx.in >> "\n";
 
     result.hive_partition_columns_to_read_from_file_path.readTextWithNamesInStorage(ctx.in);
-    bool has_prewhere_info = false;
+    bool has_prewhere_info;
     readBinary(has_prewhere_info, ctx.in);
     if (has_prewhere_info)
-        result.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
+        result.prewhere_info = PrewhereInfo::deserialize(ctx);
 
     ctx.in >> "\n";
 
     return result;
-}
-
-Block buildAllowedFilterInputs(
-    const StorageSnapshotPtr & storage_snapshot,
-    const Block & source_header,
-    const PrewhereInfoPtr & prewhere_info,
-    const FilterDAGInfoPtr & row_level_filter)
-{
-    Block base = storage_snapshot->metadata->getSampleBlock();
-    for (const auto & col : source_header)
-        if (!base.has(col.name))
-            base.insert(col);
-    return FormatFilterInfo::buildKeyConditionInputs(std::move(base), prewhere_info, row_level_filter);
-}
-
-void prepareEagerKeyConditionSets(
-    const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
-    const StorageSnapshotPtr & storage_snapshot,
-    const Block & source_header,
-    const PrewhereInfoPtr & prewhere_info,
-    const FilterDAGInfoPtr & row_level_filter,
-    const ContextPtr & context)
-{
-    if (!filter_actions_dag)
-        return;
-
-    auto allowed_inputs = buildAllowedFilterInputs(
-        storage_snapshot, source_header, prewhere_info, row_level_filter);
-    if (auto split = VirtualColumnUtils::splitFilterDagForAllowedInputs(
-            filter_actions_dag->getOutputs().at(0), &allowed_inputs, context,
-            /*allow_partial_result=*/ true))
-        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*split, context);
-}
-
-size_t clampClusterFunctionNumStreams(UInt64 num_streams)
-{
-    /// 256 * cores is the ceiling max_threads gets in Context::setSetting; reuse it so a *Cluster
-    /// read step never reserves/resizes a pipe vector for a pathological user-supplied value.
-    return std::min<UInt64>(num_streams, 256 * getNumberOfCPUCoresToUse());
-}
-
-std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromFormatInfo & info, const NameSet & required_names)
-{
-    /// Columns that the PREWHERE / row-level filter needs as inputs must stay in the main read
-    /// because filtering happens there.
-    NameSet columns_to_keep = required_names;
-    if (info.row_level_filter)
-        for (const auto & column : info.row_level_filter->actions.getRequiredColumns())
-            columns_to_keep.insert(column.name);
-    if (info.prewhere_info)
-        for (const auto & column : info.prewhere_info->prewhere_actions.getRequiredColumns())
-            columns_to_keep.insert(column.name);
-
-    /// `updateFormatPrewhereInfo` preserves filter outputs that are used by the rest of the
-    /// query in `source_header` and `requested_columns`. They are produced by the filter DAG,
-    /// not read from the format, so a lazy reread cannot reconstruct them without replaying the
-    /// filter. Keep them on the main branch together with the filter itself.
-    auto keep_filter_outputs = [&](const ActionsDAG & actions)
-    {
-        for (const auto * output : actions.getOutputs())
-            if (output->type != ActionsDAG::ActionType::INPUT)
-                columns_to_keep.insert(output->result_name);
-    };
-    if (info.row_level_filter)
-        keep_filter_outputs(info.row_level_filter->actions);
-    if (info.prewhere_info)
-        keep_filter_outputs(info.prewhere_info->prewhere_actions);
-
-    /// Hive partition columns are parsed from the file path, reading them is cheap; keep them.
-    for (const auto & column : info.hive_partition_columns_to_read_from_file_path)
-        columns_to_keep.insert(column.name);
-
-    /// Virtual columns are cheap as well.
-    for (const auto & column : info.requested_virtual_columns)
-        columns_to_keep.insert(column.name);
-
-    NameSet requested_from_format;
-    for (const auto & column : info.requested_columns)
-        requested_from_format.insert(column.name);
-
-    NameSet source_header_names;
-    for (const auto & column : info.source_header)
-        source_header_names.insert(column.name);
-
-    /// `AddingDefaultsTransform` runs independently inside every branch (see
-    /// `StorageObjectStorageSource::createReader` and `StorageFileSource::generate`): for a column
-    /// that a file does not contain it evaluates the column's `DEFAULT` expression over the columns
-    /// of that branch alone. An input of the expression that the branch does not read is not an
-    /// error - it is substituted with the type's default value (see `defaultRequiredExpressions`),
-    /// so splitting a defaulted column away from the inputs of its expression would silently
-    /// compute it from zeros instead of the row's real values, and with the defaulted column in the
-    /// sort key the `LIMIT` would then pick the wrong rows. A defaulted column and the transitive
-    /// inputs of its expression must therefore always land on the same branch.
-    ///
-    /// That does not have to be the main branch: a defaulted column that nothing needs before the
-    /// `LIMIT` moves to the lazy branch whenever every input of its expression is deferred with it,
-    /// and its expression is then evaluated there over just the surviving rows. Only a defaulted
-    /// column that stays on the main branch - one something needs before the `LIMIT`, or one whose
-    /// expression consumes an input the lazy branch would not see (an input pinned to the main
-    /// branch, or one the format does not read at all) - pins the inputs of its expression to the
-    /// main branch. The last rule feeds itself (pinning an input can strand another default's
-    /// expression), so iterate to a fixpoint.
-    ///
-    /// A hive partition column is such a format-unread input: it is parsed from the file path and
-    /// appended to the chunk only after the per-file reader pipeline, where `AddingDefaultsTransform`
-    /// runs, so no branch ever sees its real value and a default over one cannot be evaluated at
-    /// all - the single-pass plan fails with `UNKNOWN_IDENTIFIER` just the same (a pre-existing
-    /// limitation of hive partitioning). Keeping such a defaulted column on the main branch
-    /// preserves the single-pass behavior exactly.
-    ///
-    /// Only the defaults that this query can actually evaluate matter: `AddingDefaultsTransform`
-    /// applies a default expression solely for a column present in the block of its own branch
-    /// (`res.has(col_name)`), so a defaulted column that the query does not read at all imposes no
-    /// dependency and must not pin its inputs to the main branch - otherwise a schema with unused
-    /// `DEFAULT` / `ALIAS` columns would lose the I/O savings for no reason.
-    const auto & column_defaults = info.columns_description.getDefaults();
-
-    /// The names in `source_header` / `requested_columns` are query-level and can be subcolumns
-    /// (`j.user.name`), while `column_defaults` and the identifiers inside default expressions are
-    /// storage-level (`j`, `a`). The dependency analysis therefore runs on storage-level names:
-    /// a subcolumn seeds and pins through its storage parent, and a pinned parent keeps all of its
-    /// subcolumns on the main branch (the format reads a subcolumn as its whole parent column, so
-    /// `AddingDefaultsTransform` evaluates the parent's expression in every branch that reads any
-    /// subcolumn of it).
-    std::unordered_map<String, String> storage_name_of;
-    for (const auto & column : info.requested_columns)
-        storage_name_of[column.name] = column.getNameInStorage();
-    auto to_storage_name = [&](const String & name)
-    {
-        auto it = storage_name_of.find(name);
-        return it == storage_name_of.end() ? name : it->second;
-    };
-    /// `columns_to_keep` accumulates both query-level names and storage-level names (the latter
-    /// from the default analysis), so a column is pinned to the main branch when either itself or
-    /// its storage parent is.
-    auto is_kept = [&](const String & name)
-    {
-        return columns_to_keep.contains(name) || columns_to_keep.contains(to_storage_name(name));
-    };
-
-    /// A filter can keep one subcolumn on the main pass while a sibling is still deferred. Keep
-    /// the query-level set above for splitting `source_header`, but also retain the physical
-    /// parent in `format_header`: formats such as Parquet read JSON and dynamic subcolumns through
-    /// their parent column.
-    NameSet columns_to_keep_in_format_header;
-    for (const auto & column : info.requested_columns)
-        if (columns_to_keep.contains(column.name))
-            columns_to_keep_in_format_header.insert(column.getNameInStorage());
-
-    NameSet names_in_default_expressions;
-    std::vector<String> names_to_visit;
-    auto seed_defaulted_column = [&](const String & name)
-    {
-        const String storage_name = to_storage_name(name);
-        if (column_defaults.contains(storage_name) && names_in_default_expressions.insert(storage_name).second)
-            names_to_visit.push_back(storage_name);
-    };
-    auto default_expression_inputs = [&](const String & name)
-    {
-        RequiredSourceColumnsVisitor::Data columns_context;
-        auto expression = column_defaults.at(name).expression->clone();
-        RequiredSourceColumnsVisitor(columns_context).visit(expression);
-        return columns_context.requiredColumns();
-    };
-    for (const auto & column : info.source_header)
-        if (columns_to_keep.contains(column.name))
-            seed_defaulted_column(column.name);
-    /// A defaulted column consumed only by the PREWHERE / row-level filter is stripped from
-    /// `info.source_header` by `updateFormatPrewhereInfo`, but the main branch still reads it and
-    /// `AddingDefaultsTransform` evaluates its expression there before the filter runs - so it
-    /// pins the inputs of its expression to the main branch just like a visible column.
-    if (info.row_level_filter)
-        for (const auto & column : info.row_level_filter->actions.getRequiredColumns())
-            seed_defaulted_column(column.name);
-    if (info.prewhere_info)
-        for (const auto & column : info.prewhere_info->prewhere_actions.getRequiredColumns())
-            seed_defaulted_column(column.name);
-    bool pinned_more = true;
-    while (pinned_more)
-    {
-        while (!names_to_visit.empty())
-        {
-            const String name = names_to_visit.back();
-            names_to_visit.pop_back();
-
-            if (!column_defaults.contains(name))
-                continue;
-
-            for (const auto & required_name : default_expression_inputs(name))
-                if (names_in_default_expressions.insert(required_name).second)
-                    names_to_visit.push_back(required_name);
-        }
-        columns_to_keep.insert(names_in_default_expressions.begin(), names_in_default_expressions.end());
-
-        /// Pin every still-deferred defaulted column whose expression has an input the lazy
-        /// branch would not read the real value of.
-        pinned_more = false;
-        for (const auto & column : info.source_header)
-        {
-            const String storage_name = to_storage_name(column.name);
-            if (is_kept(column.name) || !column_defaults.contains(storage_name))
-                continue;
-
-            for (const auto & input : default_expression_inputs(storage_name))
-            {
-                /// The lazy branch sees the real value of the input only when the input is a whole
-                /// requested column (a subcolumn is read as its parent, which the expression does
-                /// not reference) that is deferred as well.
-                const bool input_is_deferred_too = source_header_names.contains(input)
-                    && requested_from_format.contains(input)
-                    && to_storage_name(input) == input
-                    && !is_kept(input);
-                if (!input_is_deferred_too)
-                {
-                    seed_defaulted_column(column.name);
-                    pinned_more = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    /// Defer the physical columns that the format reads and nothing needs before the LIMIT.
-    NameSet lazy_names;
-    Block lazy_source_header;
-    for (const auto & column : info.source_header)
-    {
-        if (!is_kept(column.name) && requested_from_format.contains(column.name))
-        {
-            lazy_names.insert(column.name);
-            lazy_source_header.insert(column);
-        }
-    }
-
-    if (!lazy_source_header.columns())
-        return {};
-
-    /// The info for the lazy read: only the deferred columns, no virtual columns, no filters.
-    ReadFromFormatInfo lazy_info;
-    lazy_info.source_header = lazy_source_header;
-    lazy_info.columns_description = info.columns_description;
-    lazy_info.serialization_hints = info.serialization_hints;
-    for (const auto & column : info.requested_columns)
-        if (lazy_names.contains(column.name))
-            lazy_info.requested_columns.push_back(column);
-
-    /// The format reads a requested subcolumn (e.g. `json.some.path`) as its whole parent column;
-    /// the subcolumn is extracted afterwards by `ExtractColumnsTransform`. `format_header` therefore
-    /// contains the parent's name, not the subcolumn's, so split it by the storage-level names each
-    /// branch needs: the parent of a deferred subcolumn goes to the lazy branch, and it stays in the
-    /// main branch as well when something there still needs it (a requested column of its own name,
-    /// another subcolumn of the same parent, or any column pinned by `columns_to_keep`).
-    NameSet lazy_format_names;
-    for (const auto & column : lazy_info.requested_columns)
-        lazy_format_names.insert(column.getNameInStorage());
-
-    NameSet main_format_names;
-    for (const auto & column : info.requested_columns)
-        if (!lazy_names.contains(column.name))
-            main_format_names.insert(column.getNameInStorage());
-
-    for (const auto & column : info.format_header)
-        if (lazy_names.contains(column.name) || lazy_format_names.contains(column.name))
-            lazy_info.format_header.insert(column);
-
-    /// Remove the deferred columns from the main read and make it produce the global row index.
-    Block main_source_header;
-    for (const auto & column : info.source_header)
-        if (!lazy_names.contains(column.name))
-            main_source_header.insert(column);
-    main_source_header.insert({std::make_shared<DataTypeUInt64>(), "__global_row_index"});
-
-    Block main_format_header;
-    for (const auto & column : info.format_header)
-    {
-        const bool needed_by_lazy = lazy_names.contains(column.name) || lazy_format_names.contains(column.name);
-        const bool needed_by_main = main_format_names.contains(column.name)
-            || columns_to_keep.contains(column.name)
-            || columns_to_keep_in_format_header.contains(column.name);
-        if (!needed_by_lazy || needed_by_main)
-            main_format_header.insert(column);
-    }
-
-    NamesAndTypesList main_requested_columns;
-    for (const auto & column : info.requested_columns)
-        if (!lazy_names.contains(column.name))
-            main_requested_columns.push_back(column);
-
-    info.source_header = std::move(main_source_header);
-    info.format_header = std::move(main_format_header);
-    info.requested_columns = std::move(main_requested_columns);
-
-    return lazy_info;
 }
 
 }

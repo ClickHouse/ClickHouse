@@ -1,27 +1,8 @@
 import dataclasses
 import os
-from typing import Dict, List
+from typing import List
 
-from .settings import Settings
 from .utils import Shell, Utils
-
-# Matched against the pull's stderr. Transport-class phrases only: must never match a
-# permanent failure (`manifest unknown`, `pull access denied`, `no matching manifest`).
-_IMAGE_PULL_RETRY_ERRORS = [
-    "connection reset by peer",
-    "connection refused",
-    "TLS handshake timeout",
-    "i/o timeout",
-    "unexpected EOF",
-    # A nameserver answered badly (SERVFAIL), so the name can resolve next attempt.
-    # Its NXDOMAIN sibling `no such host` is permanent and is deliberately absent.
-    "server misbehaving",
-    # What `timeout --verbose` writes when it kills a stalled attempt. Plain `timeout`
-    # writes nothing, so without this entry a stall is not retried.
-    "sending signal TERM to command",
-]
-_IMAGE_PULL_TIMEOUT_S = 300  # per attempt, matching prefetch-integration-test-images
-_IMAGE_PULL_RETRIES = 3
 
 
 class Docker:
@@ -36,15 +17,9 @@ class Docker:
         path: str
         depends_on: List[str]
         platforms: List[str]
-        # Extra `--build-arg NAME=VALUE` passed to `docker buildx build` for this
-        # image (e.g. apt_archive / apt_ports_archive to point apt at an in-region
-        # mirror). Images that don't declare the arg silently ignore it.
-        build_args: Dict[str, str] = dataclasses.field(default_factory=dict)
 
     @classmethod
-    def build(
-        cls, config: "Docker.Config", digests, amd_only, arm_only, disable_push=False
-    ):
+    def build(cls, config: "Docker.Config", digests, amd_only, arm_only):
         from .result import Result
 
         sw = Utils.Stopwatch()
@@ -64,13 +39,7 @@ class Docker:
         print(
             f"Docker inspect results for {config.name}:{tag}: exit code [{code}], out [{out}], err [{err}]"
         )
-        # A successful inspect is the only evidence that the image is already there.
-        # A missing tag in an existing repository reports "no such manifest", but the
-        # first ever build of a new image reports "denied: requested access to the
-        # resource is denied" instead, because the repository itself does not exist
-        # yet - and treating that as "image exists" leaves the manifest merge with
-        # nothing to merge.
-        if code != 0:
+        if "no such manifest" in err:
             tags_substr = f" -t {config.name}:{tag}"
 
             from_tag = ""
@@ -88,30 +57,9 @@ class Docker:
                     continue
                 platforms.append(platform)
 
-            build_args = "".join(
-                f" --build-arg {name}={value}"
-                for name, value in config.build_args.items()
-            )
+            command = f"docker buildx build --builder default {tags_substr} {from_tag} --platform {','.join(platforms)} --cache-to type=inline --cache-from type=registry,ref={config.name} {config.path} --push"
 
-            if disable_push:
-                push_out = ""
-            else:
-                push_out = (
-                    " --output type=image,push=true"
-                    f",compression={Settings.DOCKER_LAYER_COMPRESSION}"
-                    f",compression-level={Settings.DOCKER_LAYER_COMPRESSION_LEVEL}"
-                    ",force-compression=true"
-                )
-
-            command = f"docker buildx build {tags_substr} {from_tag}{build_args} --platform {','.join(platforms)} --provenance=mode=max --sbom=true {config.path}{push_out}"
-
-            return Result.from_commands_run(
-                name=name,
-                command=command,
-                retry_errors=[
-                    "Error response from daemon: manifest unknown: manifest unknown",
-                ],
-            )
+            return Result.from_commands_run(name=name, command=command)
         else:
             return Result(
                 name=name,
@@ -138,20 +86,19 @@ class Docker:
             else:
                 assert f"Not supported platform [{platform}]"
 
-        # Use imagetools create instead of manifest create/push: when images are
-        # built with --sbom=true --provenance=mode=max, buildx produces OCI image
-        # indices (not plain manifests), which docker manifest create cannot handle.
-        # imagetools create works correctly with both plain manifests and indices,
-        # preserving attestation manifests in the merged result.
-        src_refs = " ".join(f"{config.name}:{t}" for t in tags[1:])
         commands = [
-            f"docker buildx imagetools create --tag {config.name}:{digests[config.name]} {src_refs}"
+            "docker manifest create --amend "
+            + " ".join(f"{config.name}:{t}" for t in tags)
         ]
+        commands.append(f"docker manifest push {config.name}:{digests[config.name]}")
 
         if add_latest:
-            commands.append(
-                f"docker buildx imagetools create --tag {config.name}:latest {src_refs}"
-            )
+            tags[0] = "latest"
+            commands += [
+                "docker manifest create --amend "
+                + " ".join(f"{config.name}:{t}" for t in tags)
+            ]
+            commands.append(f"docker manifest push {config.name}:latest")
 
         return Result.from_commands_run(
             name=f"merge: {config.name}:{digests[config.name]} (latest={add_latest})",
@@ -173,40 +120,6 @@ class Docker:
             else:
                 dockers.append(dockers.pop(i))
         return dockers
-
-    @classmethod
-    def pull_image(
-        cls,
-        image,
-        *,
-        strict=False,
-        on_retry=None,
-        verbose=True,
-        timeout_s=_IMAGE_PULL_TIMEOUT_S,
-        retries=_IMAGE_PULL_RETRIES,
-    ):
-        """Pull `image`, retrying only transport-class failures.
-
-        `strict` raises on a failed pull; `on_retry(matched, attempt, attempts)`
-        is called once per actual retry, so a caller with a report surface can
-        make the retry visible. Returns the pull's exit code.
-
-        `timeout_s` bounds one attempt and `retries` caps their number; a caller
-        that pays the retries out of its own job timeout passes a budget that
-        fits inside it.
-        """
-        # Below these floors the budget silently widens: `timeout 0` runs unbounded,
-        # and Shell.run raises `retries` to 2 whenever `retry_errors` is set.
-        assert timeout_s >= 1, f"timeout_s must be >= 1, got [{timeout_s}]"
-        assert retries >= 2, f"retries must be >= 2, got [{retries}]"
-        return Shell.run(
-            f"timeout --verbose {timeout_s} docker pull {image}",
-            strict=strict,
-            retries=retries,
-            retry_errors=_IMAGE_PULL_RETRY_ERRORS,
-            verbose=verbose,
-            on_retry=on_retry,
-        )
 
     @classmethod
     def login(cls, user_name, user_password):

@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/JSONAsStringRowInputFormat.h>
 #include <Formats/JSONUtils.h>
@@ -96,26 +95,13 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
     if (*buf->position() != '{')
         throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object must begin with '{{'.");
 
-    const size_t start_count = buf->count();
-
     ++buf->position();
     ++balance;
 
-    char * pos = nullptr;
+    char * pos;
 
     while (balance)
     {
-        if (format_settings.json.max_row_size_for_json_each_row
-            && buf->count() - start_count > format_settings.json.max_row_size_for_json_each_row)
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Size of JSON object at position {} is extremely large. "
-                "Expected not greater than {} bytes, but current is {} bytes per object. "
-                "Increase the value of setting 'input_format_json_max_object_size' "
-                "or check your data manually, most likely JSON is malformed",
-                buf->count(),
-                format_settings.json.max_row_size_for_json_each_row,
-                buf->count() - start_count);
-
         if (buf->eof())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of file while parsing JSON object.");
 
@@ -183,7 +169,7 @@ JSONAsObjectRowInputFormat::JSONAsObjectRowInputFormat(
     : JSONAsRowInputFormat(header_, in_, params_, format_settings_)
 {
     const auto & type = header_->getByPosition(0).type;
-    if (!isObject(type))
+    if (!isObject(type) && !isObjectDeprecated(type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Input format JSONAsObject is only suitable for tables with a single column of type JSON but the column type is {}",
             type->getName());
@@ -205,7 +191,6 @@ JSONAsObjectExternalSchemaReader::JSONAsObjectExternalSchemaReader(const FormatS
 {
 }
 
-void registerInputFormatJSONAsString(FormatFactory & factory);
 void registerInputFormatJSONAsString(FormatFactory & factory)
 {
     factory.registerInputFormat("JSONAsString", [](
@@ -216,85 +201,18 @@ void registerInputFormatJSONAsString(FormatFactory & factory)
     {
         return std::make_shared<JSONAsStringRowInputFormat>(std::make_unique<const Block>(sample), buf, params, format_settings);
     });
-
-    factory.setDocumentation("JSONAsString", Documentation{
-        .description = R"DOCS_MD(
-| Input | Output  | Alias |
-|-------|---------|-------|
-| ✔     | ✗       |       |
-
-## Description {#description}
-
-In this format, a single JSON object is interpreted as a single value. 
-If the input has several JSON objects (which are comma separated), they are interpreted as separate rows. 
-If the input data is enclosed in `[]`, it is interpreted as an array of JSON objects.
-
-:::note
-This format can only be parsed for a table with a single field of type [String](/reference/data-types/string).
-The remaining columns must be set to either [`DEFAULT`](/reference/statements/create/table#default) or [`MATERIALIZED`](/reference/statements/create/view#materialized-view),
-or be omitted. 
-:::
-
-Once you serialize the entire JSON object to a String you can use the [JSON functions](/reference/functions/regular-functions/json-functions) to process it.
-
-## Example usage {#example-usage}
-
-### Basic example {#basic-example}
-
-```sql title="Query"
-DROP TABLE IF EXISTS json_as_string;
-CREATE TABLE json_as_string (json String) ENGINE = Memory;
-INSERT INTO json_as_string (json) FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
-SELECT * FROM json_as_string;
-```
-
-```response title="Response"
-┌─json──────────────────────────────┐
-│ {"foo":{"bar":{"x":"y"},"baz":1}} │
-│ {}                                │
-│ {"any json stucture":1}           │
-└───────────────────────────────────┘
-```
-
-### An array of JSON objects {#an-array-of-json-objects}
-
-```sql title="Query"
-CREATE TABLE json_square_brackets (field String) ENGINE = Memory;
-INSERT INTO json_square_brackets FORMAT JSONAsString [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
-
-SELECT * FROM json_square_brackets;
-```
-
-```response title="Response"
-┌─field──────────────────────┐
-│ {"id": 1, "name": "name1"} │
-│ {"id": 2, "name": "name2"} │
-└────────────────────────────┘
-```
-
-## Format settings {#format-settings}
-)DOCS_MD"});
 }
 
-void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngineCreator("JSONAsString", [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
-    {
-        return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
-        {
-            return JSONUtils::fileSegmentationEngineJSONEachRow(in, memory, min_bytes, max_rows, max_row_size);
-        };
-    });
+    factory.registerFileSegmentationEngine("JSONAsString", &JSONUtils::fileSegmentationEngineJSONEachRow);
 }
 
-void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory);
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory)
 {
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsString", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
-void registerJSONAsStringSchemaReader(FormatFactory & factory);
 void registerJSONAsStringSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("JSONAsString", [](const FormatSettings &)
@@ -303,7 +221,6 @@ void registerJSONAsStringSchemaReader(FormatFactory & factory)
     });
 }
 
-void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatJSONAsObject(FormatFactory & factory)
 {
     factory.registerInputFormat("JSONAsObject", [](
@@ -314,83 +231,18 @@ void registerInputFormatJSONAsObject(FormatFactory & factory)
     {
         return std::make_shared<JSONAsObjectRowInputFormat>(std::make_unique<const Block>(sample), buf, std::move(params), settings);
     });
-
-    factory.setDocumentation("JSONAsObject", Documentation{
-        .description = R"DOCS_MD(
-## Description {#description}
-
-In this format, a single JSON object is interpreted as a single [JSON](/reference/data-types/newjson) value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in `[]`, it is interpreted as an array of JSONs.
-
-This format can only be parsed for a table with a single field of type [JSON](/reference/data-types/newjson). The remaining columns must be set to [`DEFAULT`](/reference/statements/create/table#default) or [`MATERIALIZED`](/reference/statements/create/view#materialized-view).
-
-## Example usage {#example-usage}
-
-### Basic example {#basic-example}
-
-```sql title="Query"
-CREATE TABLE json_as_object (json JSON) ENGINE = Memory;
-INSERT INTO json_as_object (json) FORMAT JSONAsObject {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
-SELECT * FROM json_as_object FORMAT JSONEachRow;
-```
-
-```response title="Response"
-{"json":{"foo":{"bar":{"x":"y"},"baz":"1"}}}
-{"json":{}}
-{"json":{"any json stucture":"1"}}
-```
-
-### An array of JSON objects {#an-array-of-json-objects}
-
-```sql title="Query"
-CREATE TABLE json_square_brackets (field JSON) ENGINE = Memory;
-INSERT INTO json_square_brackets FORMAT JSONAsObject [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
-SELECT * FROM json_square_brackets FORMAT JSONEachRow;
-```
-
-```response title="Response"
-{"field":{"id":"1","name":"name1"}}
-{"field":{"id":"2","name":"name2"}}
-```
-
-### Columns with default values {#columns-with-default-values}
-
-```sql title="Query"
-CREATE TABLE json_as_object (json JSON, time DateTime MATERIALIZED now()) ENGINE = Memory;
-INSERT INTO json_as_object (json) FORMAT JSONAsObject {"foo":{"bar":{"x":"y"},"baz":1}};
-INSERT INTO json_as_object (json) FORMAT JSONAsObject {};
-INSERT INTO json_as_object (json) FORMAT JSONAsObject {"any json stucture":1}
-SELECT time, json FROM json_as_object FORMAT JSONEachRow
-```
-
-```response title="Response"
-{"time":"2024-09-16 12:18:10","json":{}}
-{"time":"2024-09-16 12:18:13","json":{"any json stucture":"1"}}
-{"time":"2024-09-16 12:18:08","json":{"foo":{"bar":{"x":"y"},"baz":"1"}}}
-```
-
-## Format settings {#format-settings}
-)DOCS_MD"});
 }
 
-void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factory);
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factory)
 {
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsObject", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
-void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngineCreator("JSONAsObject", [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
-    {
-        return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
-        {
-            return JSONUtils::fileSegmentationEngineJSONEachRow(in, memory, min_bytes, max_rows, max_row_size);
-        };
-    });
+    factory.registerFileSegmentationEngine("JSONAsObject", &JSONUtils::fileSegmentationEngineJSONEachRow);
 }
 
-void registerJSONAsObjectSchemaReader(FormatFactory & factory);
 void registerJSONAsObjectSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("JSONAsObject", [](const FormatSettings & settings)

@@ -7,8 +7,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
-#include <Common/re2.h>
-#include <unordered_set>
 
 
 namespace DB
@@ -16,7 +14,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_COMPILE_REGEXP;
     extern const int INVALID_GRANT;
     extern const int LOGICAL_ERROR;
 }
@@ -150,20 +147,15 @@ void AccessRightsElement::formatFilter(WriteBuffer & buffer) const
     buffer << "(" << backQuoteIfNeed(filter) << ")";
 }
 
-void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool precise) const
+void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
 {
     auto is_enabled_user_name_access_type = true;
     auto is_enabled_read_write_grants = true;
-    /// In precise mode the backward-compatibility rewrites below must not fire, so keep both toggles enabled
-    /// regardless of the server configuration (see the declaration for the rationale).
-    if (!precise)
+    if (const auto context = Context::getGlobalContextInstance())
     {
-        if (const auto context = Context::getGlobalContextInstance())
-        {
-            const auto & access_control = context->getAccessControl();
-            is_enabled_user_name_access_type = access_control.isEnabledUserNameAccessType();
-            is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
-        }
+        const auto & access_control = context->getAccessControl();
+        is_enabled_user_name_access_type = access_control.isEnabledUserNameAccessType();
+        is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
     }
 
     buffer << "ON ";
@@ -212,7 +204,7 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool precise) con
         if (columns.empty() && wildcard)
             buffer << "*";
     }
-    else if (!database.empty())
+    else
     {
         buffer << backQuoteIfNeed(database);
 
@@ -220,10 +212,6 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool precise) con
             buffer << "*";
 
         buffer << ".*";
-    }
-    else
-    {
-        buffer << "*";
     }
 }
 
@@ -328,43 +316,61 @@ void AccessRightsElement::replaceDeprecated()
     if (access_flags.toAccessTypes().size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "replaceDeprecated() was called on an access element with multiple access flags: {}", access_flags.toString());
 
-    static const auto deprecated_source_types = [] {
-        std::unordered_set<AccessType> result;
-        #define ADD_DEPRECATED_SOURCE_TYPE(name, alias) result.insert(AccessType::name);
-        APPLY_FOR_SOURCE(ADD_DEPRECATED_SOURCE_TYPE)
-        #undef ADD_DEPRECATED_SOURCE_TYPE
-        return result;
-    }();
-
-    const auto current_access_type = access_flags.toAccessTypes()[0];
-    if (deprecated_source_types.contains(current_access_type))
+    switch (const auto current_access_type = access_flags.toAccessTypes()[0])
     {
-        if (!anyDatabase())
-            /// This will leave statements like `REVOKE S3 ON system.*` untouched
-            /// These statements will be deleted afterwards with `eraseNotGrantable()`
-            return;
-        access_flags = AccessType::READ | AccessType::WRITE;
-        parameter = DB::toString(current_access_type);
-    }
-    else if (current_access_type == AccessType::SOURCES)
-    {
-        access_flags = AccessType::READ | AccessType::WRITE;
+        case AccessType::FILE:
+        case AccessType::URL:
+        case AccessType::REMOTE:
+        case AccessType::MONGO:
+        case AccessType::REDIS:
+        case AccessType::MYSQL:
+        case AccessType::POSTGRES:
+        case AccessType::SQLITE:
+        case AccessType::ODBC:
+        case AccessType::JDBC:
+        case AccessType::HDFS:
+        case AccessType::S3:
+        case AccessType::HIVE:
+        case AccessType::AZURE:
+        case AccessType::KAFKA:
+        case AccessType::NATS:
+        case AccessType::RABBITMQ:
+            if (!anyDatabase())
+                /// This will leave statements like `REVOKE S3 ON system.*` untouched
+                /// These statements will be deleted afterwards with `eraseNotGrantable()`
+                break;
+            access_flags = AccessType::READ | AccessType::WRITE;
+            parameter = DB::toString(current_access_type);
+            break;
+        case AccessType::SOURCES:
+            access_flags = AccessType::READ | AccessType::WRITE;
+            break;
+        default:
+            break;
     }
 }
 
 void AccessRightsElement::makeBackwardCompatible()
 {
-    static const auto string_to_accessType = [] {
-        std::unordered_map<std::string, AccessType> result;
-        /// Insert both the spaced form (e.g. "ARROW FLIGHT" from replaceDeprecated())
-        /// and the canonical form (e.g. "ARROW_FLIGHT" from unifySource() in the parser).
-        #define ADD_BACKWARD_COMPAT_SOURCE(name, alias) \
-            result.emplace(DB::toString(AccessType::name), AccessType::name); \
-            result.emplace(#name, AccessType::name);
-        APPLY_FOR_SOURCE(ADD_BACKWARD_COMPAT_SOURCE)
-        #undef ADD_BACKWARD_COMPAT_SOURCE
-        return result;
-    }();
+    static const std::unordered_map<std::string, AccessType> string_to_accessType = {
+        {"FILE", AccessType::FILE},
+        {"URL", AccessType::URL},
+        {"REMOTE", AccessType::REMOTE},
+        {"MONGO", AccessType::MONGO},
+        {"REDIS", AccessType::REDIS},
+        {"MYSQL", AccessType::MYSQL},
+        {"POSTGRES", AccessType::POSTGRES},
+        {"SQLITE", AccessType::SQLITE},
+        {"ODBC", AccessType::ODBC},
+        {"JDBC", AccessType::JDBC},
+        {"HDFS", AccessType::HDFS},
+        {"S3", AccessType::S3},
+        {"HIVE", AccessType::HIVE},
+        {"AZURE", AccessType::AZURE},
+        {"KAFKA", AccessType::KAFKA},
+        {"NATS", AccessType::NATS},
+        {"RABBITMQ", AccessType::RABBITMQ},
+    };
 
     auto is_enabled_read_write_grants = false;
     if (const auto context = Context::getGlobalContextInstance())
@@ -414,28 +420,10 @@ bool AccessRightsElements::sameOptions() const
     return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameOptions(front()); });
 }
 
-void AccessRightsElement::throwIfFilterIsNotCompilable() const
-{
-    if (!hasFilter())
-        return;
-
-    re2::RE2::Options options;
-    options.set_log_errors(false);
-    if (const re2::RE2 compiled(filter, options); !compiled.ok())
-        throw Exception(
-            ErrorCodes::CANNOT_COMPILE_REGEXP, "The pattern '{}' cannot be compiled: {}", filter, compiled.error());
-}
-
 void AccessRightsElements::throwIfNotGrantable() const
 {
     for (const auto & element : *this)
         element.throwIfNotGrantable();
-}
-
-void AccessRightsElements::throwIfFilterIsNotCompilable() const
-{
-    for (const auto & element : *this)
-        element.throwIfFilterIsNotCompilable();
 }
 
 void AccessRightsElements::eraseNotGrantable()
@@ -462,36 +450,19 @@ void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
 String AccessRightsElements::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElements::toStringWithoutOptions() const { return toStringImpl(*this, false); }
 
-void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bool precise) const
+void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) const
 {
     bool no_output = true;
-    /// Track which access flags have already been output within the current group
-    /// to avoid duplicate keywords after backward-compatible conversion
-    /// (e.g., READ ON FILE and WRITE ON FILE both become FILE after makeBackwardCompatible).
-    AccessFlags group_flags;
-
     for (size_t i = 0; i != size(); ++i)
     {
         auto element = (*this)[i];
-        /// The backward-compatibility conversion widens grants (see `formatONClause`); skip it in precise mode.
-        if (!precise)
-            element.makeBackwardCompatible();
+        element.makeBackwardCompatible();
 
         auto keywords = element.access_flags.toKeywords();
         if (keywords.empty() || (!element.anyColumn() && element.columns.empty()))
             continue;
 
-        /// Deduplicate keywords only for table-wide grants (anyColumn()).
-        /// Column-scoped grants (e.g., SELECT(a), SELECT(b)) must output each
-        /// keyword+column combination even when the access flag is the same.
-        auto output_keywords = keywords;
-        if (element.anyColumn())
-        {
-            output_keywords = (element.access_flags - group_flags).toKeywords();
-            group_flags |= element.access_flags;
-        }
-
-        for (const auto & keyword : output_keywords)
+        for (const auto & keyword : keywords)
         {
             if (!std::exchange(no_output, false))
                 buffer << ", ";
@@ -504,11 +475,7 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bo
         bool next_element_on_same_db_and_table = false;
         if (i != size() - 1)
         {
-            /// Compare backward-compatible versions of both elements so that
-            /// the parameter field (cleared by makeBackwardCompatible) matches on both sides.
-            auto next_element = (*this)[i + 1];
-            if (!precise)
-                next_element.makeBackwardCompatible();
+            const auto & next_element = (*this)[i + 1];
             if (element.sameDatabaseAndTableAndParameter(next_element))
             {
                 next_element_on_same_db_and_table = true;
@@ -518,20 +485,12 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bo
         if (!next_element_on_same_db_and_table)
         {
             buffer << " ";
-            element.formatONClause(buffer, precise);
-            group_flags = {};
+            element.formatONClause(buffer);
         }
     }
 
     if (no_output)
         buffer << "USAGE ON " << "*.*";
-}
-
-String AccessRightsElements::toStringPrecise() const
-{
-    WriteBufferFromOwnString buffer;
-    formatElementsWithoutOptions(buffer, /*precise=*/true);
-    return buffer.str();
 }
 
 }

@@ -6,7 +6,6 @@
 #include <mysqlxx/Pool.h>
 
 #include <Common/ThreadPool.h>
-#include <Core/LogsLevel.h>
 #include <Storages/ColumnsDescription.h>
 #include <Databases/DatabasesCommon.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -20,7 +19,6 @@
 #include <unordered_set>
 #include <vector>
 
-
 namespace DB
 {
 
@@ -29,16 +27,11 @@ struct AlterCommand;
 struct MySQLSettings;
 enum class MySQLDataTypesSupport : uint8_t;
 
-/// Log level for an exception that `DatabaseMySQL` tolerates: Warning for a connection failure to
-/// the (unreachable) remote, Error for anything else. Must be called from within a catch block.
-/// Exposed so that `gtest_mysql_tolerated_connection_failure` can pin the classification.
-LogsLevel mysqlToleratedConnectionFailureLogLevel();
-
 /** Real-time access to table list and table structure from remote MySQL
  *  It doesn't make any manipulations with filesystem.
  *  All tables are created by calling code after real-time pull-out structure from remote MySQL
  */
-class DatabaseMySQL final : public DatabaseWithAltersOnDiskBase, WithContext
+class DatabaseMySQL final : public IDatabase, WithContext
 {
 public:
     ~DatabaseMySQL() override;
@@ -57,13 +50,19 @@ public:
     String getEngineName() const override { return "MySQL"; }
     UUID getUUID() const override { return db_uuid; }
 
-    bool isRemoteDatabase() const override { return true; }
+    bool canContainMergeTreeTables() const override { return false; }
+
+    bool canContainDistributedTables() const override { return false; }
+
+    bool canContainRocksDBTables() const override { return false; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     bool empty() const override;
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_nam, bool skip_not_loaded) const override;
+
+    ASTPtr getCreateDatabaseQuery() const override;
 
     bool isTableExist(const String & name, ContextPtr context) const override;
 
@@ -84,17 +83,16 @@ public:
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
-    DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
-        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     void dropTable(ContextPtr context, const String & table_name, bool sync) override;
 
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
 
+    void alterDatabaseComment(const AlterCommand & command) override;
+
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
 protected:
-    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
 
 private:
@@ -113,7 +111,7 @@ private:
     mutable std::vector<StoragePtr> outdated_tables;
     mutable std::map<String, ModifyTimeAndStorage> local_tables_cache;
 
-    mutable std::unordered_set<String> remove_or_detach_tables;
+    std::unordered_set<String> remove_or_detach_tables;
 
     void cleanOutdatedTables();
 

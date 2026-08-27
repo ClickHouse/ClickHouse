@@ -24,7 +24,7 @@ namespace
 /** bar(x, min, max, width) - draws a strip from the number of characters proportional to (x - min) and equal to width for x == max.
   * Returns a string with nice Unicode-art bar with resolution of 1/8 part of symbol.
   */
-class FunctionBar final : public IFunction
+class FunctionBar : public IFunction
 {
 public:
     static constexpr auto name = "bar";
@@ -134,78 +134,7 @@ public:
 
 REGISTER_FUNCTION(Bar)
 {
-    FunctionDocumentation::Description description = R"(
-Builds a bar chart.
-Draws a band with width proportional to (x - min) and equal to width characters when x = max.
-The band is drawn with accuracy to one eighth of a symbol.
-)";
-    FunctionDocumentation::Syntax syntax = "bar(x, min, max[, width])";
-    FunctionDocumentation::Arguments arguments = {
-        {"x", "Size to display.", {"(U)Int*", "Float*", "Decimal"}},
-        {"min", "The minimum value.", {"(U)Int*", "Float*", "Decimal"}},
-        {"max", "The maximum value.", {"(U)Int*", "Float*", "Decimal"}},
-        {"width", "Optional. The width of the bar in characters. The default is `80`.", {"const (U)Int*", "const Float*", "const Decimal"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a unicode-art bar string.", {"String"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        R"(
-CREATE TABLE hits (EventTime DateTime('UTC')) ENGINE = Memory;
-
--- One row per page view, spread over the hours of a day.
-INSERT INTO hits
-SELECT toDateTime('2026-01-01 00:00:00', 'UTC') + toIntervalHour(hour)
-FROM (
-    SELECT
-        number AS hour,
-        [293, 181, 115, 85, 69, 78, 113, 171, 278, 391, 458, 494, 510, 523, 540, 528, 539, 524, 506, 521, 522, 542, 494, 400][number + 1] AS count
-    FROM numbers(24)
-)
-ARRAY JOIN range(count);
-
-SELECT
-toHour(EventTime) AS h,
-count() AS c,
-bar(c, 0, 600, 20) AS bar
-FROM hits
-GROUP BY h
-ORDER BY h ASC
-        )",
-        R"(
-┌──h─┬───c─┬─bar────────────────┐
-│  0 │ 293 │ █████████▊         │
-│  1 │ 181 │ ██████             │
-│  2 │ 115 │ ███▊               │
-│  3 │  85 │ ██▊                │
-│  4 │  69 │ ██▎                │
-│  5 │  78 │ ██▌                │
-│  6 │ 113 │ ███▊               │
-│  7 │ 171 │ █████▋             │
-│  8 │ 278 │ █████████▎         │
-│  9 │ 391 │ █████████████      │
-│ 10 │ 458 │ ███████████████▎   │
-│ 11 │ 494 │ ████████████████▍  │
-│ 12 │ 510 │ █████████████████  │
-│ 13 │ 523 │ █████████████████▍ │
-│ 14 │ 540 │ ██████████████████ │
-│ 15 │ 528 │ █████████████████▌ │
-│ 16 │ 539 │ █████████████████▉ │
-│ 17 │ 524 │ █████████████████▍ │
-│ 18 │ 506 │ ████████████████▊  │
-│ 19 │ 521 │ █████████████████▎ │
-│ 20 │ 522 │ █████████████████▍ │
-│ 21 │ 542 │ ██████████████████ │
-│ 22 │ 494 │ ████████████████▍  │
-│ 23 │ 400 │ █████████████▎     │
-└────┴─────┴────────────────────┘
-        )"
-        }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionBar>(documentation);
+    factory.registerFunction<FunctionBar>();
 }
 
 }

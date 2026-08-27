@@ -1,22 +1,19 @@
 #pragma once
 
-#include <Common/Exception.h>
-#include <Common/TypePromotion.h>
-
-#include <Parsers/IASTFormatState.h>
+#include <base/types.h>
 #include <Parsers/IASTHash.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/LiteralEscapingStyle.h>
-#include <base/types.h>
+#include <Common/Exception.h>
+#include <Common/TypePromotion.h>
+#include <Common/checkStackSize.h>
 
-#include <atomic>
 #include <set>
-#include <string_view>
+
 
 class SipHash;
 
-namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -29,90 +26,19 @@ namespace ErrorCodes
 using IdentifierNameSet = std::set<String>;
 
 class WriteBuffer;
+using Strings = std::vector<String>;
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
-class IAST : public TypePromotion<IAST>
+class IAST : public std::enable_shared_from_this<IAST>, public TypePromotion<IAST>
 {
 public:
     ASTs children;
-private:
-    /// We implement intrusive reference counting (based on boost::intrusive_ref_counter) to avoid the padding added by the ref_counter
-    /// And we use the extra bytes to store flags_storage which can be used in derived classes.
-    mutable std::atomic<UInt32> ref_counter{0};
-    UInt32 flags_storage = 0;
-
-    /// Helper to detect if a type has _parent_reserved member
-    template <typename T>
-    static consteval bool hasParentReserved()
-    {
-        if constexpr (requires { T::_parent_reserved; })
-            return true;
-        else
-            return false;
-    }
-
-public:
-
-    /// Bit 31 of `flags_storage` is reserved for the `parenthesized` flag — see accessors below.
-    /// Derived `BitfieldStruct` definitions must keep `RESERVED_BITS <= 31`.
-    static constexpr UInt32 PARENTHESIZED_BIT_MASK = UInt32{1} << 31;
-
-    /// If the element has extra parentheses around it, e.g., in "a + (b)", b has extra parentheses.
-    bool isParenthesized() const { return (flags_storage & PARENTHESIZED_BIT_MASK) != 0; }
-    void setParenthesized(bool value)
-    {
-        flags_storage = (flags_storage & ~PARENTHESIZED_BIT_MASK) | (value ? PARENTHESIZED_BIT_MASK : 0);
-    }
 
     virtual ~IAST();
     IAST() = default;
-    IAST(const IAST & other);
-    IAST & operator=(const IAST & other);
-
-    /// Accessors for flags_storage.
-    /// BitfieldStruct must declare:
-    ///   - using ParentFlags = <parent's flags struct or void for root>;
-    ///   - static constexpr UInt32 RESERVED_BITS = <total bits used including parent>;
-    ///   - UInt32 _parent_reserved : ParentFlags::RESERVED_BITS; (if ParentFlags is not void)
-    /// The high bit (31) is reserved for IAST's `parenthesized` flag, so RESERVED_BITS must be <= 31.
-    template <typename BitfieldStruct>
-    BitfieldStruct & flags()
-    {
-        static_assert(std::is_standard_layout_v<BitfieldStruct>);
-        static_assert(sizeof(BitfieldStruct) == sizeof(flags_storage), "Bitfield struct must be the same size as flags_storage");
-        static_assert(BitfieldStruct::RESERVED_BITS <= 31, "RESERVED_BITS exceeds 31 (bit 31 is reserved for parenthesized)");
-
-        if constexpr (!std::is_void_v<typename BitfieldStruct::ParentFlags>)
-        {
-            static_assert(hasParentReserved<BitfieldStruct>(), "Derived flags struct must have _parent_reserved field");
-            static_assert(
-                BitfieldStruct::ParentFlags::RESERVED_BITS < BitfieldStruct::RESERVED_BITS,
-                "Derived RESERVED_BITS must be greater than parent's");
-        }
-
-        return *reinterpret_cast<BitfieldStruct *>(&flags_storage);
-    }
-
-    template <typename BitfieldStruct>
-    const BitfieldStruct & flags() const
-    {
-        static_assert(std::is_standard_layout_v<BitfieldStruct>);
-        static_assert(sizeof(BitfieldStruct) == sizeof(flags_storage), "Bitfield struct must be the same size as flags_storage");
-        static_assert(BitfieldStruct::RESERVED_BITS <= 31, "RESERVED_BITS exceeds 31 (bit 31 is reserved for parenthesized)");
-
-        if constexpr (!std::is_void_v<typename BitfieldStruct::ParentFlags>)
-        {
-            static_assert(hasParentReserved<BitfieldStruct>(), "Derived flags struct must have _parent_reserved field");
-            static_assert(
-                BitfieldStruct::ParentFlags::RESERVED_BITS < BitfieldStruct::RESERVED_BITS,
-                "Derived RESERVED_BITS must be greater than parent's");
-        }
-
-        return *reinterpret_cast<const BitfieldStruct *>(&flags_storage);
-    }
-
-    UInt32 use_count() const noexcept { return ref_counter.load(std::memory_order_relaxed); }
+    IAST(const IAST &) = default;
+    IAST & operator=(const IAST &) = default;
 
     /** Get the canonical name of the column if the element is a column */
     String getColumnName() const;
@@ -137,20 +63,15 @@ public:
     virtual String tryGetAlias() const { return String(); }
 
     /** Set the alias. */
-    virtual void setAlias(const String & to)
+    virtual void setAlias(const String & /*to*/)
     {
-        /// Deliberately not `getColumnName()` and `getID()`. Both are virtual, and this throw is
-        /// the only thing that names them in the parser - so it alone keeps an override of each
-        /// alive in every one of the ~150 AST classes, which a build of the parser on its own
-        /// pays for. `formatForErrorMessage` is on the formatting path, which is needed anyway,
-        /// and shows the offending node rather than just its kind.
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias '{}' of {}", to, formatForErrorMessage());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias of {} of {}", getColumnName(), getID());
     }
 
     /** Get the text that identifies this element. */
     virtual String getID(char delimiter = '_') const = 0; /// NOLINT
 
-    ASTPtr ptr() { return ASTPtr(this); }
+    ASTPtr ptr() { return shared_from_this(); }
 
     /** Get a deep copy of the tree. Cloned object must have the same range. */
     virtual ASTPtr clone() const = 0;
@@ -158,39 +79,13 @@ public:
     /** Get hash code, identifying this element and its subtree.
      *  Hashing by default ignores aliases (e.g. identifier aliases, function aliases, literal aliases) which is
      *  useful for common subexpression elimination. Set 'ignore_aliases = false' if you don't want that behavior.
-     *
-     *  The default implementation only hashes `getID` and `children`. When adding a member that is
-     *  not a child and is part of the element's meaning, hash it here as well, otherwise two
-     *  elements that differ only in that member get the same hash, and the callers that use the
-     *  hash as an identity of the expression treat them as the same expression.
-     */
+      */
     IASTHash getTreeHash(bool ignore_aliases) const;
     void updateTreeHash(SipHash & hash_state, bool ignore_aliases) const;
     virtual void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const;
 
     void dumpTree(WriteBuffer & ostr, size_t indent = 0) const;
     std::string dumpTree(size_t indent = 0) const;
-
-    /** Serialize the AST node and its subtree to JSON.
-      * The default implementation writes: {"type":"<type>", "children":[...]}
-      * Subclasses override to include their specific properties.
-      */
-    virtual void writeJSON(WriteBuffer & out) const;
-
-    /** Deserialize the AST node from a JSON object.
-      * Called by the factory after creating the correct node type.
-      * The default implementation reads the "children" array.
-      * Subclasses override to read their specific properties (symmetric with writeJSON).
-      */
-    virtual void readJSON(const Poco::JSON::Object & json);
-
-    /** Factory: deserialize an AST tree from a JSON string with depth/element limits enforced during construction.
-      * This is the only public string entry point: callers MUST go through it so the thread-local depth/element
-      * limits are always set before parsing (the limit-less internal worker is private below). */
-    static ASTPtr createFromJSON(const String & json, size_t max_depth, size_t max_elements);
-
-    /** Factory: deserialize an AST node from a parsed JSON object. */
-    static ASTPtr createFromJSON(const Poco::JSON::Object & json);
 
     /** Check the depth of the tree.
       * If max_depth is specified and the depth is greater - throw an exception.
@@ -269,7 +164,7 @@ public:
         if (field == nullptr)
             return;
 
-        auto child = children.begin();
+        auto * child = children.begin();
         while (child != children.end())
         {
             if (child->get() == field)
@@ -285,73 +180,14 @@ public:
         field = nullptr;
     }
 
-    void reset(ASTPtr & field)
-    {
-        if (!field)
-            return;
-
-        auto child = children.begin();
-        while (child != children.end())
-        {
-            if (child->get() == field.get())
-                break;
-
-            child++;
-        }
-
-        if (child == children.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
-
-        children.erase(child);
-        field.reset();
-    }
-
-    void set(ASTPtr & field, ASTPtr child)
-    {
-        if (!child)
-            return;
-
-        children.push_back(child);
-        field = std::move(child);
-    }
-
-    void replace(ASTPtr & field, ASTPtr child)
-    {
-        if (!child)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to replace AST subtree with nullptr");
-
-        for (ASTPtr & current_child : children)
-        {
-            if (current_child.get() == field.get())
-            {
-                current_child = child;
-                field = std::move(child);
-                return;
-            }
-        }
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
-    }
-
-    void setOrReplace(ASTPtr & field, ASTPtr child)
-    {
-        if (field)
-            replace(field, std::move(child));
-        else
-            set(field, std::move(child));
-    }
-
     /// After changing one of `children` elements, update the corresponding member pointer if needed.
-    void updatePointerToChild(const IAST * old_ptr, const ASTPtr & new_ptr)
+    void updatePointerToChild(void * old_ptr, void * new_ptr)
     {
-        std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f = [old_ptr, new_ptr](IAST ** raw, boost::intrusive_ptr<IAST> * smart)
+        forEachPointerToChild([old_ptr, new_ptr](void ** ptr) mutable
         {
-            if (raw && *raw == old_ptr)
-                *raw = new_ptr.get();
-            else if (smart && smart->get() == old_ptr)
-                *smart = new_ptr;
-        };
-        forEachPointerToChild(f);
+            if (*ptr == old_ptr)
+                *ptr = new_ptr;
+        });
     }
 
     /// Convert to a string.
@@ -367,12 +203,6 @@ public:
         LiteralEscapingStyle literal_escaping_style;
         bool print_pretty_type_names;
         bool enforce_strict_identifier_format;
-        /// This is needed for distributed queries with the old analyzer. Remove it after removing the old analyzer.
-        bool collapse_identical_nodes_to_aliases;
-        /// Do not print the redundant parentheses that the user has written around an expression
-        /// (the `parenthesized` flag), so that `(a)` and `a` produce the same text. Used to store
-        /// and to compare table definition expressions - see `formatIgnoringRedundantParentheses`.
-        bool ignore_redundant_parentheses = false;
 
         explicit FormatSettings(
             bool one_line_,
@@ -381,8 +211,7 @@ public:
             bool show_secrets_ = true,
             LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular,
             bool print_pretty_type_names_ = false,
-            bool enforce_strict_identifier_format_ = false,
-            bool collapse_identical_nodes_to_aliases_ = false)
+            bool enforce_strict_identifier_format_ = false)
             : one_line(one_line_)
             , identifier_quoting_rule(identifier_quoting_rule_)
             , identifier_quoting_style(identifier_quoting_style_)
@@ -391,7 +220,6 @@ public:
             , literal_escaping_style(literal_escaping_style_)
             , print_pretty_type_names(print_pretty_type_names_)
             , enforce_strict_identifier_format(enforce_strict_identifier_format_)
-            , collapse_identical_nodes_to_aliases(collapse_identical_nodes_to_aliases_)
         {
         }
 
@@ -399,7 +227,17 @@ public:
         void checkIdentifier(const String & name) const;
     };
 
-    using FormatState = IASTFormatState;
+    /// State. For example, a set of nodes can be remembered, which we already walk through.
+    struct FormatState
+    {
+        /** The SELECT query in which the alias was found; identifier of a node with such an alias.
+          * It is necessary that when the node has met again, output only the alias.
+          */
+        std::set<std::tuple<
+            const IAST * /* SELECT query node */,
+            std::string /* alias */,
+            IASTHash /* printed content */>> printed_asts_with_alias;
+    };
 
     /// The state that is copied when each node is formatted. For example, nesting level.
     struct FormatStateStacked
@@ -409,28 +247,24 @@ public:
         bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
         bool surround_each_list_element_with_parens = false;
+        bool ignore_printed_asts_with_alias = false; /// Ignore FormatState::printed_asts_with_alias
         bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
-        bool allow_moving_operators_before_parens = true; /// Allow moving operators like "-" before parens: (-...) -> -(...)
         size_t list_element_index = 0;
         std::string create_engine_name;
         const IAST * current_select = nullptr;
-        const IAST * current_function = nullptr;  /// Pointer to the function whose arguments are being formatted
-        bool parent_has_trailing_settings = false; /// A parent ASTQueryWithOutput will append SETTINGS after this node's output.
-        bool has_trailing_output_options = false; /// A parent ASTQueryWithOutput has trailing output options (SETTINGS, FORMAT, INTO OUTFILE).
-        bool disable_from_first_syntax = false; /// Disable FROM-first syntax for SELECTs inside INSERT (to avoid parsing ambiguity).
-        /// Set by a parent formatter that has explicitly emitted `(` around this child to indicate
-        /// that the child should not emit its own `parenthesized` parens (which would duplicate the parent's).
-        /// Consumed (cleared) by `IAST::format` so it only applies one level deep.
-        bool wrapped_in_parens = false;
-        /// Set by `IAST::format` when the node has both `isParenthesized()` and a non-empty alias,
-        /// to tell `ASTWithAlias::formatImpl` to emit `(expr) AS alias` instead of `(expr AS alias)`.
-        /// This keeps the format-parse-format round-trip stable: `(expr) AS alias` re-parses with
-        /// `parenthesized=true` on the aliased node, which formats back to `(expr) AS alias`.
-        bool parenthesize_alias_inner_only = false;
     };
 
-    void format(WriteBuffer & ostr, const FormatSettings & settings) const;
-    void format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
+    void format(WriteBuffer & ostr, const FormatSettings & settings) const
+    {
+        FormatState state;
+        formatImpl(ostr, settings, state, FormatStateStacked());
+    }
+
+    void format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+    {
+        checkStackSize();
+        formatImpl(ostr, settings, state, std::move(frame));
+    }
 
     /// TODO: Move more logic into this class (see https://github.com/ClickHouse/ClickHouse/pull/45649).
     struct FormattingBuffer
@@ -441,7 +275,11 @@ public:
         FormatStateStacked frame;
     };
 
-    void format(FormattingBuffer out) const;
+    void format(FormattingBuffer out) const
+    {
+        checkStackSize();
+        formatImpl(out.ostr, out.settings, out.state, out.frame);
+    }
 
     /// Secrets are displayed regarding show_secrets, then SensitiveDataMasker is applied.
     /// You can use Interpreters/formatWithPossiblyHidingSecrets.h for convenience.
@@ -451,8 +289,7 @@ public:
         bool show_secrets,
         bool print_pretty_type_names,
         IdentifierQuotingRule identifier_quoting_rule,
-        IdentifierQuotingStyle identifier_quoting_style,
-        bool ignore_redundant_parentheses = false) const;
+        IdentifierQuotingStyle identifier_quoting_style) const;
 
     /** formatForLogging and formatForErrorMessage always hide secrets. This inconsistent
       * behaviour is due to the fact such functions are called from Client which knows nothing about
@@ -463,17 +300,6 @@ public:
     String formatForErrorMessage() const;
     String formatWithSecretsOneLine() const;
     String formatWithSecretsMultiLine() const;
-
-    /** Same as `formatWithSecretsOneLine`, but the redundant parentheses that the user has written
-      * around an expression are not printed, so `(a)` and `a` give the same text.
-      *
-      * Use it for the definition expressions of a table (keys, `TTL`, indices, projections,
-      * constraints, column defaults) that are stored in ZooKeeper or in a part, and for comparing
-      * two such definitions: whether the parentheses were written is not a property of the table,
-      * and the servers that did not remember them (before the parentheses became a part of the AST)
-      * stored the same text this method produces.
-      */
-    String formatIgnoringRedundantParentheses() const;
 
     virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }
 
@@ -514,48 +340,36 @@ public:
         AsyncInsertFlush,
         ParallelWithQuery,
         Copy,
-        Snapshot,
     };
 
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
 
 protected:
-    virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
-    virtual void formatImpl(FormattingBuffer /*out*/) const;
+    virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+    {
+        formatImpl(FormattingBuffer{ostr, settings, state, std::move(frame)});
+    }
+
+    virtual void formatImpl(FormattingBuffer /*out*/) const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
+    }
 
     bool childrenHaveSecretParts() const;
 
     /// Some AST classes have naked pointers to children elements as members.
     /// This method allows to iterate over them.
-    virtual void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)>) {}
+    virtual void forEachPointerToChild(std::function<void(void**)>) {}
 
 private:
     size_t checkDepthImpl(size_t max_depth) const;
 
-    /** Internal worker: parse a JSON string into an AST using the *currently set* thread-local
-      * depth/element limits. It does NOT set those limits itself, so it must only be reached through
-      * the public `createFromJSON(json, max_depth, max_elements)` overload (which sets them first).
-      * Keeping it private prevents an external caller from deserializing untrusted JSON with no
-      * depth/element protection. */
-    static ASTPtr createFromJSON(const String & json);
-
-    friend void intrusive_ptr_add_ref(const IAST * p) noexcept;
-    friend void intrusive_ptr_release(const IAST * p) noexcept;
+    /** Forward linked list of ASTPtr to delete.
+      * Used in IAST destructor to avoid possible stack overflow.
+      */
+    ASTPtr next_to_delete = nullptr;
+    ASTPtr * next_to_delete_list_head = nullptr;
 };
-
-/** The SQL text of `ast`, for the few places where the parser has to keep a fragment of the query
-  * as a string rather than as a subtree: the type in `CAST(x, 'T')` and in
-  * `defaultValueOfTypeName('T')`, the settings in `viewExplain('<kind>', '<settings>', ...)`.
-  *
-  * This is the formatted node. It is the canonical spelling - the one that ends up in table
-  * metadata and in `SHOW CREATE TABLE` - so it cannot be replaced by the text the user wrote, which
-  * carries their line breaks and comments into places that then have to store them.
-  *
-  * `source_text` is that query text, and it is what a `CLICKHOUSE_PARSER_NO_FORMATTING` build uses,
-  * having no formatter to ask. The two differ only in whitespace, and both parse back to the same
-  * thing.
-  */
-String astText(const IAST & ast, std::string_view source_text);
 
 }

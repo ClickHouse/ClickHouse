@@ -42,14 +42,14 @@ SELECT
 SELECT dateSub('1998-06-16'::Date, INTERVAL 10 hour)
         )",
         R"(
-┌─minus(CAST('1998-06-16', 'Date'), toIntervalHour(10))─┐
-│                                   1998-06-15 14:00:00 │
-└───────────────────────────────────────────────────────┘
+┌─minus(CAST('⋯alHour(10))─┐
+│      1998-06-15 14:00:00 │
+└──────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSubtractHours>(documentation);
 }

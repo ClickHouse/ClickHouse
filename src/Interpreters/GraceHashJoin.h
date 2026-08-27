@@ -3,7 +3,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
@@ -49,48 +48,22 @@ class GraceHashJoin final : public IJoin
 
     using InMemoryJoinPtr = std::shared_ptr<HashJoin>;
 
-    struct GraceHashJoinStats
-    {
-        size_t right_rows = 0;
-        size_t unique_keys = 0;
-        size_t peak_in_memory_bytes = 0;
-        size_t num_rehashes = 0;
-        size_t num_buckets = 0;
-        size_t left_spilled_compressed_bytes = 0;
-        size_t right_spilled_compressed_bytes = 0;
-
-        UInt64 left_rows_total = 0;
-        MatchedRowsAccumulator matched_left;
-        MatchedRowsAccumulator matched_right;
-
-        void foldIn(const HashJoin & in_memory_join);
-    };
-
 public:
     using BucketPtr = std::shared_ptr<FileBucket>;
     using Buckets = std::vector<BucketPtr>;
 
-    /// `external_join_threshold_` is the auto-spill memory cap supplied by `SpillingHashJoin`
-    /// when this instance is wrapped. It triggers in-bucket rehashing whenever the in-memory
-    /// hash table approaches half of the cap, so the configured spill ceiling is honored.
-    /// Pass 0 for standalone use (`join_algorithm = 'grace_hash'`); the user-visible
-    /// `max_bytes_before_external_join` setting deliberately does NOT apply to standalone
-    /// instances - those still rely on `max_rows_in_join` / `max_bytes_in_join` for spill
-    /// decisions.
     GraceHashJoin(
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader left_sample_block_, SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
-        bool any_take_last_row_ = false,
-        size_t external_join_threshold_ = 0);
+        bool any_take_last_row_ = false);
 
     ~GraceHashJoin() override;
 
     std::string getName() const override { return "GraceHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
-    bool anyTakeLastRow() const override { return any_take_last_row; }
 
     void initialize(const Block & sample_block) override;
 
@@ -99,14 +72,13 @@ public:
     JoinResultPtr joinBlock(Block block) override;
 
     void setTotals(const Block & block) override;
-    const Block & getTotals() const override;
 
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
-    StepAnalysisReport getAnalysisReport() const override;
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return true; }
+    bool supportTotals() const override { return false; }
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size) const override;
@@ -115,6 +87,8 @@ public:
     /// Must be called after all @joinBlock calls.
     IBlocksStreamPtr getDelayedBlocks() override;
     bool hasDelayedBlocks() const override { return true; }
+    bool rightTableCanBeReranged() const override;
+    void tryRerangeRightTableData() override;
 
     void onBuildPhaseFinish() override;
 
@@ -152,8 +126,6 @@ private:
     size_t getNumBuckets() const;
     Buckets getCurrentBuckets() const;
 
-    GraceHashJoinStats collectStats() const;
-
     /// Structure block to store in the HashJoin according to sample_block.
     Block prepareRightBlock(const Block & block);
 
@@ -165,7 +137,6 @@ private:
     bool any_take_last_row;
     const size_t initial_num_buckets;
     const size_t max_num_buckets;
-    const size_t external_join_threshold;
 
     Names left_key_names;
     Names right_key_names;
@@ -183,10 +154,6 @@ private:
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
     std::atomic<bool> force_spill = false;
-
-    GraceHashJoinStats stats;
-
-    mutable std::mutex totals_mutex;
 };
 
 }

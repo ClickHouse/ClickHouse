@@ -1,10 +1,8 @@
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include "config.h"
 
 #if USE_MYSQL
 #    include <filesystem>
 #    include <string>
-#    include <Poco/Net/NetException.h>
 #    include <Columns/IColumn.h>
 #    include <Core/Settings.h>
 #    include <DataTypes/DataTypeDateTime.h>
@@ -15,7 +13,6 @@
 #    include <Databases/DatabaseFactory.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
-#    include <mysqlxx/Exception.h>
 #    include <Disks/IDisk.h>
 #    include <IO/Operators.h>
 #    include <Interpreters/Context.h>
@@ -41,11 +38,6 @@
 #    include <Common/parseAddress.h>
 #    include <Common/parseRemoteDescription.h>
 #    include <Common/setThreadName.h>
-#    include <Core/LogsLevel.h>
-
-#if CLICKHOUSE_CLOUD
-#    include <Interpreters/SharedDatabaseCatalog.h>
-#endif
 
 namespace fs = std::filesystem;
 
@@ -73,46 +65,11 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int CANNOT_CREATE_DATABASE;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-    extern const int ALL_CONNECTION_TRIES_FAILED;
-}
-
-/// Demote only a connection failure to the (unreachable) remote, so that anything else is not
-/// hidden. Must be called from within a catch block: it rethrows the active exception to classify it.
-/// A failed connect through `mysqlxx::PoolWithFailover::get` arrives rewrapped as
-/// `ALL_CONNECTION_TRIES_FAILED`, a direct `mysqlxx::Pool` probe throws `ConnectionFailed` as is,
-/// and a connection dropped mid-query throws `ConnectionLost`.
-LogsLevel mysqlToleratedConnectionFailureLogLevel()
-{
-    try
-    {
-        throw;
-    }
-    catch (const mysqlxx::ConnectionFailed &)
-    {
-        return LogsLevel::warning;
-    }
-    catch (const mysqlxx::ConnectionLost &)
-    {
-        return LogsLevel::warning;
-    }
-    catch (const Poco::Net::NetException &)
-    {
-        return LogsLevel::warning;  // Expected during network connectivity issues
-    }
-    catch (const Exception & e)
-    {
-        return e.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED ? LogsLevel::warning : LogsLevel::error;
-    }
-    catch (...)  // Ok - Unexpected failures (logic bugs, disk errors, etc.) must stay loud
-    {
-        return LogsLevel::error;
-    }
 }
 
 constexpr static const auto suffix = ".remove_flag";
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
-static const Poco::Timespan lock_acquire_timeout{10ull, 0ull};
+static const std::chrono::seconds lock_acquire_timeout{10};
 
 DatabaseMySQL::DatabaseMySQL(
     ContextPtr context_,
@@ -124,7 +81,7 @@ DatabaseMySQL::DatabaseMySQL(
     mysqlxx::PoolWithFailover && pool,
     bool attach,
     UUID uuid)
-    : DatabaseWithAltersOnDiskBase(database_name_)
+    : IDatabase(database_name_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
@@ -141,20 +98,11 @@ DatabaseMySQL::DatabaseMySQL(
     catch (...)
     {
         if (attach)
-        {
-            tryLogCurrentException("DatabaseMySQL", "", mysqlToleratedConnectionFailureLogLevel());
-        }
-#if CLICKHOUSE_CLOUD
-        else if (SharedDatabaseCatalog::initialized() && !SharedDatabaseCatalog::isInitialQuery(context_))
-        {
-            tryLogCurrentException("DatabaseMySQL", "", mysqlToleratedConnectionFailureLogLevel());
-        }
-#endif
+            tryLogCurrentException("DatabaseMySQL");
         else
             throw;
     }
 
-    persistent = !context_->getClientInfo().is_shared_catalog_internal;
     if (persistent)
     {
         auto db_disk = getDisk();
@@ -194,31 +142,6 @@ DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_cont
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }
 
-/// Note: DatabaseMySQL does not own the underlying data -- it lives on the remote MySQL server.
-/// dropTable() is implemented as detachTablePermanently() for this engine, so a "dropped" table
-/// here is really just a locally-detached, remotely-recoverable table (same semantics as an
-/// explicit DETACH TABLE PERMANENTLY). It is therefore correct for such tables to show up here
-/// with is_permanently = 1, tracked via remove_or_detach_tables.
-DatabaseDetachedTablesSnapshotIteratorPtr DatabaseMySQL::getDetachedTablesIterator(
-    ContextPtr /* context */, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
-{
-    SnapshotDetachedTables snapshot;
-    std::lock_guard lock(mutex);
-    for (const auto & table_name : remove_or_detach_tables)
-    {
-        if (filter_by_table_name && !filter_by_table_name(table_name))
-            continue;
-        SnapshotDetachedTable snapshot_table;
-        snapshot_table.database = database_name;
-        snapshot_table.table = table_name;
-        auto db_disk = getDisk();
-        fs::path remove_flag_path = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-        snapshot_table.is_permanently = db_disk->existsFile(remove_flag_path);
-        snapshot.emplace(table_name, std::move(snapshot_table));
-    }
-    return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(std::move(snapshot));
-}
-
 bool DatabaseMySQL::isTableExist(const String & name, ContextPtr local_context) const
 {
     return bool(tryGetTable(name, local_context));
@@ -230,7 +153,7 @@ StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name, ContextPt
 
     fetchTablesIntoLocalCache(local_context);
 
-    if (!remove_or_detach_tables.contains(mysql_table_name) && local_tables_cache.contains(mysql_table_name))
+    if (!remove_or_detach_tables.contains(mysql_table_name) && local_tables_cache.find(mysql_table_name) != local_tables_cache.end())
         return local_tables_cache[mysql_table_name].second;
 
     return StoragePtr{};
@@ -240,25 +163,9 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
 {
     std::lock_guard lock(mutex);
 
-    try
-    {
-        /// This function can throw mysql exception, we don't have enough context to handle it.
-        /// So we just catch and re-throw as known exception if needed.
-        fetchTablesIntoLocalCache(local_context);
-    }
-    catch (...)
-    {
-        if (throw_on_error)
-        {
-            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY,
-                            "Received error while fetching table structure for table {} from MySQL: {}",
-                            backQuote(table_name), getCurrentExceptionMessage(true));
-        }
+    fetchTablesIntoLocalCache(local_context);
 
-        tryLogCurrentException(__PRETTY_FUNCTION__, "", mysqlToleratedConnectionFailureLogLevel());
-    }
-
-    if (!local_tables_cache.contains(table_name))
+    if (local_tables_cache.find(table_name) == local_tables_cache.end())
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {}.{} doesn't exist.", database_name_in_mysql, table_name);
@@ -269,23 +176,25 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
     auto table_storage_define = database_engine_define->clone();
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
-        ast_storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
+        ast_storage->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
+        ASTs storage_children = ast_storage->children;
         auto storage_engine_arguments = ast_storage->engine->arguments;
 
         /// Add table_name to engine arguments
         if (typeid_cast<ASTIdentifier *>(storage_engine_arguments->children[0].get()))
         {
             storage_engine_arguments->children.push_back(
-                makeASTOperator("equals", make_intrusive<ASTIdentifier>("table"), make_intrusive<ASTLiteral>(table_name)));
+                makeASTFunction("equals", std::make_shared<ASTIdentifier>("table"), std::make_shared<ASTLiteral>(table_name)));
         }
         else
         {
-            auto mysql_table_name = make_intrusive<ASTLiteral>(table_name);
+            auto mysql_table_name = std::make_shared<ASTLiteral>(table_name);
             storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
         }
 
         /// Unset settings
-        ast_storage->reset(ast_storage->settings);
+        std::erase_if(storage_children, [&](const ASTPtr & element) { return element.get() == ast_storage->settings; });
+        ast_storage->settings = nullptr;
     }
 
     const Settings & settings = getContext()->getSettingsRef();
@@ -295,8 +204,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         true,
         static_cast<unsigned>(settings[Setting::max_parser_depth]),
         static_cast<unsigned>(settings[Setting::max_parser_backtracks]),
-        throw_on_error,
-        getContext());
+        throw_on_error);
     return create_table_query;
 }
 
@@ -306,21 +214,20 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
 
     fetchTablesIntoLocalCache(getContext());
 
-    if (!local_tables_cache.contains(table_name))
+    if (local_tables_cache.find(table_name) == local_tables_cache.end())
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {}.{} doesn't exist.", database_name_in_mysql, table_name);
 
     return time_t(local_tables_cache[table_name].first);
 }
 
-ASTPtr DatabaseMySQL::getCreateDatabaseQueryImpl() const
+ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
 {
-    const auto & create_query = make_intrusive<ASTCreateQuery>();
-    create_query->setDatabase(database_name);
+    const auto & create_query = std::make_shared<ASTCreateQuery>();
+    create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, database_engine_define);
-    create_query->uuid = db_uuid;
 
-    if (!comment.empty())
-        create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
+    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
 
     return create_query;
 }
@@ -337,48 +244,12 @@ void DatabaseMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> 
 {
     for (auto iterator = local_tables_cache.begin(); iterator != local_tables_cache.end();)
     {
-        if (tables_with_modification_time.contains(iterator->first))
+        if (tables_with_modification_time.find(iterator->first) != tables_with_modification_time.end())
             ++iterator;
         else
         {
             outdated_tables.emplace_back(iterator->second.second);
             iterator = local_tables_cache.erase(iterator);
-        }
-    }
-
-    /// Reconcile remove_or_detach_tables with the live remote schema:
-    /// - If a table was only ordinarily DETACH'd (no .remove_flag marker), and the remote table
-    ///   has disappeared, the entry is pruned (nothing left to ATTACH).
-    /// - If a table was permanently detached (DETACH TABLE PERMANENTLY or DROP TABLE → .remove_flag exists),
-    ///   the marker and entry are preserved even if the remote table disappears. This ensures that
-    ///   if a same-name table is later recreated remotely, it stays hidden in ClickHouse until
-    ///   explicit ATTACH TABLE — matching the documented behavior.
-    /// Mirrors DatabasePostgreSQL::removeOutdatedTables logic for permanent detach.
-    auto db_disk = getDisk();
-    for (auto iterator = remove_or_detach_tables.begin(); iterator != remove_or_detach_tables.end();)
-    {
-        if (tables_with_modification_time.contains(*iterator))
-            ++iterator;
-        else
-        {
-            const auto & table_name = *iterator;
-            fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-            bool is_permanent = persistent && db_disk->existsFile(remove_flag);
-
-            /// Only prune non-permanent detach entries when the remote table disappears.
-            /// Permanent detach markers (.remove_flag) are preserved so a recreated remote table
-            /// stays hidden until explicit ATTACH TABLE.
-            if (!is_permanent)
-            {
-                if (persistent)
-                    db_disk->removeFileIfExists(remove_flag);
-                iterator = remove_or_detach_tables.erase(iterator);
-            }
-            else
-            {
-                /// Permanent detach: preserve the marker and keep the table in remove_or_detach_tables
-                ++iterator;
-            }
         }
     }
 }
@@ -417,7 +288,7 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
                 StorageID(database_name, table_name),
                 std::move(mysql_pool),
                 database_name_in_mysql,
-                TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
+                table_name,
                 /* replace_query_ */ false,
                 /* on_duplicate_clause = */ "",
                 ColumnsDescription{columns_name_and_type},
@@ -444,7 +315,7 @@ std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime(ContextP
              " WHERE TABLE_SCHEMA = " << quote << database_name_in_mysql;
 
     std::map<String, UInt64> tables_with_modification_time;
-    MySQLStreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
+    StreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
     auto result = std::make_unique<MySQLSource>(mysql_pool.get(), query.str(), tables_status_sample_block, mysql_input_stream_settings);
     QueryPipeline pipeline(std::move(result));
 
@@ -502,7 +373,7 @@ void DatabaseMySQL::drop(ContextPtr)
 
 void DatabaseMySQL::cleanOutdatedTables()
 {
-    DB::setThreadName(ThreadName::MYSQL_DATABASE_CLEANUP);
+    setThreadName("MySQLDBCleaner");
 
     std::unique_lock lock{mutex};
 
@@ -519,89 +390,6 @@ void DatabaseMySQL::cleanOutdatedTables()
                 (*iterator)->flushAndShutdown();
                 (*iterator)->is_dropped = true;
                 iterator = outdated_tables.erase(iterator);
-            }
-        }
-
-        /// Background reconciliation: reconcile remove_or_detach_tables with the live remote schema.
-        /// - If a table was only ordinarily DETACH'd (no .remove_flag marker), and the remote table
-        ///   has disappeared, the entry is pruned (nothing left to ATTACH).
-        /// - If a table was permanently detached (DETACH TABLE PERMANENTLY or DROP TABLE → .remove_flag exists),
-        ///   the marker and entry are preserved even if the remote table disappears. This ensures that
-        ///   if a same-name table is later recreated remotely, it stays hidden in ClickHouse until
-        ///   explicit ATTACH TABLE — matching the documented behavior.
-        /// Skip reconciliation if there are no detached tables, or if all detached tables are
-        /// permanent markers (which can never be pruned), to avoid unnecessary network I/O and
-        /// spurious error-level logging during expected remote outages.
-        bool has_non_permanent_detach = false;
-        if (!remove_or_detach_tables.empty() && persistent)
-        {
-            auto db_disk = getDisk();
-            for (const auto & table_name : remove_or_detach_tables)
-            {
-                fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-                if (!db_disk->existsFile(remove_flag))
-                {
-                    has_non_permanent_detach = true;
-                    break;
-                }
-            }
-        }
-        else if (!remove_or_detach_tables.empty() && !persistent)
-        {
-            has_non_permanent_detach = true;  /// All entries are non-permanent in non-persistent mode
-        }
-
-        if (has_non_permanent_detach)
-        {
-            try
-            {
-                /// Release mutex before network I/O to avoid blocking other operations
-                lock.unlock();
-
-                auto tables_on_remote = fetchTablesWithModificationTime(getContext());
-
-                /// Re-acquire mutex to update remove_or_detach_tables
-                lock.lock();
-
-                auto db_disk = getDisk();
-                for (auto iter = remove_or_detach_tables.begin(); iter != remove_or_detach_tables.end();)
-                {
-                    if (!tables_on_remote.contains(*iter))
-                    {
-                        const auto & table_name = *iter;
-                        fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-                        bool is_permanent = persistent && db_disk->existsFile(remove_flag);
-
-                        /// Only prune non-permanent detach entries when the remote table disappears.
-                        /// Permanent detach markers (.remove_flag) are preserved so a recreated remote table
-                        /// stays hidden until explicit ATTACH TABLE.
-                        if (!is_permanent)
-                        {
-                            if (persistent)
-                                db_disk->removeFileIfExists(remove_flag);
-                            iter = remove_or_detach_tables.erase(iter);
-                        }
-                        else
-                        {
-                            /// Permanent detach: preserve the marker and keep the table in remove_or_detach_tables
-                            ++iter;
-                        }
-                    }
-                    else
-                        ++iter;
-                }
-            }
-            catch (...)
-            {
-                /// Determine appropriate log level: connection failures during MySQL outages are expected
-                /// and logged at warning level, while logic bugs or unexpected errors remain at error level
-                /// for visibility.
-                auto log_level = mysqlToleratedConnectionFailureLogLevel();
-                tryLogCurrentException("DatabaseMySQL", "Background reconciliation failed to fetch remote schema",
-                                       log_level);
-                /// Ensure we re-acquire the lock before wait_for
-                if (!lock.owns_lock())
-                    lock.lock();
             }
         }
 
@@ -649,6 +437,11 @@ StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & t
 
     remove_or_detach_tables.emplace(table_name);
     return local_tables_cache[table_name].second;
+}
+
+void DatabaseMySQL::alterDatabaseComment(const AlterCommand & command)
+{
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
 
 String DatabaseMySQL::getMetadataPath() const
@@ -719,7 +512,6 @@ void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_nam
     if (!persistent)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP TABLE is not supported for non-persistent MySQL database");
 
-    auto component_guard = Coordination::setCurrentComponent("DatabaseMySQL::dropTable");
     detachTablePermanently(local_context, table_name);
 }
 
@@ -772,7 +564,6 @@ void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_n
     attachTable(local_context, table_name, storage, {});
 }
 
-void registerDatabaseMySQL(DatabaseFactory & factory);
 void registerDatabaseMySQL(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -793,16 +584,10 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         }
         else
         {
-            /// The TLS credentials are trailing `key = value` arguments; the copy keeps them in the
-            /// stored `CREATE DATABASE` query, where they are masked when it is formatted.
-            ASTs positional_arguments = arguments;
-            configuration.ssl_params = StorageMySQL::extractSSLParamsFromArguments(positional_arguments, args.context);
-
-            if (positional_arguments.size() != 4)
+            if (arguments.size() != 4)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments "
-                    "(optionally followed by ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...').");
+                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
 
 
             arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], args.context);
@@ -849,203 +634,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
         }
     };
-    factory.registerDatabase("MySQL", create_fn, {
-        .supports_arguments = true,
-        .supports_settings = true,
-        .is_external = true,
-        .source_access_type = AccessTypeObjects::Source::MYSQL,
-    }, Documentation{
-        .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-# MySQL database engine
-
-<CloudNotSupportedBadge />
-
-Allows to connect to databases on a remote MySQL server and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and MySQL.
-
-The `MySQL` database engine translate queries to the MySQL server so you can perform operations such as `SHOW TABLES` or `SHOW CREATE TABLE`.
-
-You cannot perform the following queries:
-
-- `RENAME`
-- `CREATE TABLE`
-- `ALTER`
-
-## Creating a database {#creating-a-database}
-
-```sql
-CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
-[SETTINGS enable_compression=0]
-```
-
-**Engine Parameters**
-
-- `host:port` — MySQL server address.
-- `database` — Remote database name.
-- `user` — MySQL user.
-- `password` — User password.
-
-**Settings**
-
-### `enable_compression` {#enable-compression}
-
-Enables zlib compression for the MySQL protocol connection. When set to `1`, ClickHouse requests protocol-level compression from the MySQL server.
-
-Default value: `0`.
-
-Example:
-
-```sql
-CREATE DATABASE mysql_db
-ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
-SETTINGS enable_compression = 1;
-```
-
-## TLS/SSL {#tls-ssl}
-
-The credentials of an encrypted connection to MySQL are passed as [named collection](/concepts/features/configuration/server-config/named-collections) keys (or as key-value arguments):
-
-| Parameter | Description |
-|-----------|-------------|
-| `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. |
-| `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. |
-| `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. |
-
-The values are the contents of the corresponding PEM files, which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
-
-The same credentials can also be given as paths to files on the server, in `ssl_ca`, `ssl_cert` and `ssl_key` — but **only in a named collection defined in the server configuration file**, and such a value cannot be overridden in a query. The server opens those files with its own privileges, so accepting a path from SQL would let any user who is able to define a MySQL source probe the local filesystem, and authenticate with a certificate and key they are not allowed to read themselves.
-
-<a id="data_types-support"></a>
-## Data types support {#data-types-support}
-
-| MySQL                            | ClickHouse                                                   |
-|----------------------------------|--------------------------------------------------------------|
-| UNSIGNED TINYINT                 | [UInt8](/reference/data-types/int-uint)          |
-| TINYINT                          | [Int8](/reference/data-types/int-uint)           |
-| UNSIGNED SMALLINT                | [UInt16](/reference/data-types/int-uint)         |
-| SMALLINT                         | [Int16](/reference/data-types/int-uint)          |
-| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/reference/data-types/int-uint)         |
-| INT, MEDIUMINT                   | [Int32](/reference/data-types/int-uint)          |
-| UNSIGNED BIGINT                  | [UInt64](/reference/data-types/int-uint)         |
-| BIGINT                           | [Int64](/reference/data-types/int-uint)          |
-| FLOAT                            | [Float32](/reference/data-types/float)           |
-| DOUBLE                           | [Float64](/reference/data-types/float)           |
-| DATE                             | [Date](/reference/data-types/date)               |
-| DATETIME, TIMESTAMP              | [DateTime](/reference/data-types/datetime)       |
-| BINARY                           | [FixedString](/reference/data-types/fixedstring) |
-| POINT                            | [Point](/reference/data-types/geo#point)         |
-| LINESTRING                       | [LineString](/reference/data-types/geo#linestring) |
-| POLYGON                          | [Polygon](/reference/data-types/geo#polygon)     |
-| MULTILINESTRING                  | [MultiLineString](/reference/data-types/geo#multilinestring) |
-| MULTIPOLYGON                     | [MultiPolygon](/reference/data-types/geo#multipolygon) |
-| MULTIPOINT                       | [MultiPoint](/reference/data-types/geo#multipoint) |
-| GEOMETRY                         | [Geometry](/reference/data-types/geo#geometry)   |
-
-The conversion of the spatial types (other than `POINT`, which is always converted) is controlled by the `geometry` flag of the [`mysql_datatypes_support_level`](/reference/settings/session-settings/mysql#mysql_datatypes_support_level) setting, enabled by default. The generic `GEOMETRY` column type is mapped to the umbrella [`Geometry`](/reference/data-types/geo#geometry) type (a `Variant` over the concrete geometric types). Because such a column can hold a value of any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; this incompatibility is accepted in exchange for a proper geometric type. Columns declared with the `GEOMETRYCOLLECTION` type are converted into [String](/reference/data-types/string) like all other MySQL data types.
-
-[Nullable](/reference/data-types/nullable) is supported. A spatial column maps to `String` (`Nullable(String)` if it is nullable) instead of a geometric type in three cases: it is declared `GEOMETRYCOLLECTION`; the `geometry` flag is disabled and the type is not `POINT`; or the column is nullable and the type is not `POINT`, since `Point` is the only geometric type that can be nested inside `Nullable`. In all three the string holds the value exactly as MySQL returns it: a 4-byte SRID prefix followed by the WKB payload, so strip those 4 leading bytes before passing it to a WKB decoder.
-
-## Global variables support {#global-variables-support}
-
-For better compatibility you may address global variables in MySQL style, as `@@identifier`.
-
-These variables are supported:
-- `version`
-- `max_allowed_packet`
-
-:::note
-By now these variables are stubs and don't correspond to anything.
-:::
-
-Example:
-
-```sql
-SELECT @@version;
-```
-
-## Examples of use {#examples-of-use}
-
-Table in MySQL:
-
-```text
-mysql> USE test;
-Database changed
-
-mysql> CREATE TABLE `mysql_table` (
-    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
-    ->   `float` FLOAT NOT NULL,
-    ->   PRIMARY KEY (`int_id`));
-Query OK, 0 rows affected (0,09 sec)
-
-mysql> insert into mysql_table (`int_id`, `float`) VALUES (1,2);
-Query OK, 1 row affected (0,00 sec)
-
-mysql> select * from mysql_table;
-+------+-----+
-| int_id | value |
-+------+-----+
-|      1 |     2 |
-+------+-----+
-1 row in set (0,00 sec)
-```
-
-Database in ClickHouse, exchanging data with the MySQL server:
-
-```sql
-CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password') SETTINGS read_write_timeout=10000, connect_timeout=100;
-```
-
-```sql
-SHOW DATABASES
-```
-
-```text
-┌─name─────┐
-│ default  │
-│ mysql_db │
-│ system   │
-└──────────┘
-```
-
-```sql
-SHOW TABLES FROM mysql_db
-```
-
-```text
-┌─name─────────┐
-│  mysql_table │
-└──────────────┘
-```
-
-```sql
-SELECT * FROM mysql_db.mysql_table
-```
-
-```text
-┌─int_id─┬─value─┐
-│      1 │     2 │
-└────────┴───────┘
-```
-
-```sql
-INSERT INTO mysql_db.mysql_table VALUES (3,4)
-```
-
-```sql
-SELECT * FROM mysql_db.mysql_table
-```
-
-```text
-┌─int_id─┬─value─┐
-│      1 │     2 │
-│      3 │     4 │
-└────────┴───────┘
-```
-)DOCS_MD",
-        .syntax = "ENGINE = MySQL('host:port', 'database', 'user', 'password')",
-        .related = {"PostgreSQL"}});
+    factory.registerDatabase("MySQL", create_fn, {.supports_arguments = true, .supports_settings = true});
 }
 }
 

@@ -3,17 +3,9 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
-#include <Common/SilkFiberScheduler.h>
 #include <IO/WriteHelpers.h>
 
 #include <base/scope_guard.h>
-#include <base/sleep.h>
-
-#include "config.h"
-
-#if USE_SILK
-#include <silk/fibers/fiber.h>
-#endif
 
 #include <atomic>
 #include <limits>
@@ -40,7 +32,7 @@ Throttler::Throttler(size_t max_speed_, const ThrottlerPtr & parent_,
     : max_speed(max_speed_)
     , max_burst(max_speed_ * default_burst_seconds)
     , limit_exceeded_exception_message("")
-    , tokens(static_cast<double>(max_burst))
+    , tokens(max_burst)
     , parent(parent_)
     , event_amount(event_amount_)
     , event_sleep_us(event_sleep_us_)
@@ -57,21 +49,9 @@ Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceed
     , max_burst(max_speed_ * default_burst_seconds)
     , limit(limit_)
     , limit_exceeded_exception_message(limit_exceeded_exception_message_)
-    , tokens(static_cast<double>(max_burst))
+    , tokens(max_burst)
     , parent(parent_)
 {}
-
-void Throttler::sleep(UInt64 nanoseconds)
-{
-#if USE_SILK
-    if (Silk::isInsideFiber())
-    {
-        silk::FiberScheduler::sleep(nanoseconds);
-        return;
-    }
-#endif
-    sleepForNanoseconds(nanoseconds);
-}
 
 bool Throttler::throttle(size_t amount, size_t max_block_ns)
 {
@@ -102,7 +82,7 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
             timer2.emplace(profile_events.timer(event_sleep_us));
 
         // Calculate how long to sleep
-        double block_ns_double = -tokens_value / static_cast<double>(max_speed_value) * NS;
+        double block_ns_double = -tokens_value / max_speed_value * NS;
         chassert(block_ns_double >= 0.0);
 
         // Clamp to be safe and avoid any UB
@@ -111,7 +91,7 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
             : static_cast<UInt64>(block_ns_double);
 
         // Note that throwing exception from the following blocking call is safe. It is important for query cancellation.
-        sleep(std::min<UInt64>(max_block_ns, block_ns));
+        sleepForNanoseconds(std::min<UInt64>(max_block_ns, block_ns));
     }
 
     bool parent_block = false;
@@ -135,8 +115,7 @@ void Throttler::throttleImpl(size_t amount, size_t & count_value, double & token
     {
         max_speed_value = max_speed;
         double delta_seconds = prev_ns ? static_cast<double>(now - prev_ns) / NS : 0;
-        tokens = std::min<double>(
-            tokens + static_cast<double>(max_speed) * delta_seconds - static_cast<double>(amount), static_cast<double>(max_burst));
+        tokens = std::min<double>(tokens + max_speed * delta_seconds - amount, max_burst);
     }
     count += amount;
     count_value = count;
@@ -149,7 +128,7 @@ void Throttler::reset()
     std::lock_guard lock(mutex);
 
     count = 0;
-    tokens = static_cast<double>(max_burst);
+    tokens = max_burst;
     prev_ns = 0;
     // NOTE: do not zero `accumulated_sleep` to avoid races
 }

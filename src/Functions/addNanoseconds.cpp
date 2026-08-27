@@ -38,14 +38,14 @@ SELECT
 SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 1000 nanosecond)
         )",
         R"(
-┌─plus(CAST('1998-06-16', 'DateTime'), toIntervalNanosecond(1000))─┐
-│                                    1998-06-16 00:00:00.000001000 │
-└──────────────────────────────────────────────────────────────────┘
+┌─plus(CAST('199⋯osecond(1000))─┐
+│ 1998-06-16 00:00:00.000001000 │
+└───────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionAddNanoseconds>(documentation);
 }

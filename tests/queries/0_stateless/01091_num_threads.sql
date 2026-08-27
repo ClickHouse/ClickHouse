@@ -12,7 +12,7 @@ WITH
     (
         SELECT query_id
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND (normalizeQuery(query) like normalizeQuery('WITH 01091 AS id SELECT 1;')) AND (event_date >= (today() - 1) AND event_time >= now() - 600)
+        WHERE current_database = currentDatabase() AND (normalizeQuery(query) like normalizeQuery('WITH 01091 AS id SELECT 1;')) AND (event_date >= (today() - 1))
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id
@@ -27,13 +27,11 @@ WITH
     (
         SELECT query_id
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND (normalizeQuery(query) = normalizeQuery('with 01091 as id select sum(number) from numbers(1000000);')) AND (event_date >= (today() - 1) AND event_time >= now() - 600)
+        WHERE current_database = currentDatabase() AND (normalizeQuery(query) = normalizeQuery('with 01091 as id select sum(number) from numbers(1000000);')) AND (event_date >= (today() - 1))
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id
--- `numbers` is a single-stream source and an aggregation without keys keeps a single
--- output stream, so this query must not fan out to `max_threads` worker threads.
-SELECT uniqExact(thread_id) <= 2
+SELECT uniqExact(thread_id) > 2
 FROM system.query_thread_log
 WHERE (event_date >= (today() - 1)) AND (query_id = id) AND (thread_id != master_thread_id);
 
@@ -44,7 +42,7 @@ WITH
     (
         SELECT query_id
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND (normalizeQuery(query) = normalizeQuery('with 01091 as id select sum(number) from numbers_mt(1000000);')) AND (event_date >= (today() - 1) AND event_time >= now() - 600)
+        WHERE current_database = currentDatabase() AND (normalizeQuery(query) = normalizeQuery('with 01091 as id select sum(number) from numbers_mt(1000000);')) AND (event_date >= (today() - 1))
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id

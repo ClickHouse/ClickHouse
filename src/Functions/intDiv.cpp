@@ -1,7 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
-#include <Functions/divideImpl.h>
+#include <Functions/divide/divide.h>
 
 
 namespace DB
@@ -56,52 +56,23 @@ struct DivideIntegralByConstantImpl
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {
         /// Division by -1. By the way, we avoid FPE by division of the largest negative number by -1.
-        if constexpr (is_signed_v<B>)
+        if (unlikely(is_signed_v<B> && b == -1))
         {
-            if (b == -1) [[unlikely]]
-            {
-                /// The quotient of the minimal signed number by -1 does not fit in the result type,
-                /// so this case must be an exception, same as `throwIfDivisionLeadsToFPE` in the
-                /// generic and constant-folded paths. Silently wrapping it would place the wrapped
-                /// value out of order in an otherwise monotonic result, and consumers relying on the
-                /// monotonicity of `intDiv` by a constant (e.g. reading in order for
-                /// `ORDER BY intDiv(key, -1)`) would then work on a stream that is not actually
-                /// sorted: a logical error in `DistinctSortedStreamTransform` in debug builds,
-                /// wrong query results in release builds.
-                using SignedA = make_signed_t<A>;
-                bool has_min = false;
-                for (size_t i = 0; i < size; ++i)
-                {
-                    has_min |= static_cast<SignedA>(a_pos[i]) == std::numeric_limits<SignedA>::min();
-                    c_pos[i] = -make_unsigned_t<A>(a_pos[i]);   /// Avoid UBSan report in signed integer overflow.
-                }
-                if (has_min) [[unlikely]]
-                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division of minimal signed number by minus one");
-                return;
-            }
+            for (size_t i = 0; i < size; ++i)
+                c_pos[i] = -make_unsigned_t<A>(a_pos[i]);   /// Avoid UBSan report in signed integer overflow.
+            return;
         }
 
         /// Division with too large divisor.
-        if (b > std::numeric_limits<A>::max()) [[unlikely]]
+        if (unlikely(b > std::numeric_limits<A>::max()
+            || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
         {
             for (size_t i = 0; i < size; ++i)
                 c_pos[i] = 0;
             return;
         }
-        else
-        {
-            if constexpr (std::is_signed_v<A> && std::is_signed_v<B>)
-            {
-                if (b < std::numeric_limits<A>::lowest()) [[unlikely]]
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        c_pos[i] = 0;
-                    return;
-                }
-            }
-        }
 
-        if (static_cast<A>(b) == 0) [[unlikely]]
+        if (unlikely(static_cast<A>(b) == 0))
             throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
         divideImpl(a_pos, b, c_pos, size);
@@ -167,9 +138,9 @@ in the range of the dividend, or when dividing a minimal negative number by minu
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
     FunctionDocumentation::ReturnedValue returned_value = {"Result of integer division of `x` and `y`"};
     FunctionDocumentation::Example example1 = {"Integer division of two floats", "SELECT intDiv(toFloat64(1), 0.001) AS res, toTypeName(res)", R"(
-┌──res─┬─toTypeName(res)─┐
-│ 1000 │ Int64           │
-└──────┴─────────────────┘
+┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
+│ 1000 │ Int64                                   │
+└──────┴─────────────────────────────────────────┘
     )"};
     FunctionDocumentation::Example example2 = {
         "Quotient does not fit in the range of the dividend",
@@ -188,8 +159,8 @@ large number: While processing intDiv(1, 0.001) AS res, toTypeName(res).
     };
     FunctionDocumentation::Examples examples = {example1, example2};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionIntDiv>(documentation);
 }
@@ -216,8 +187,8 @@ minimal negative number by minus one.
         {"Dividing a minimal negative number by minus 1", "SELECT intDivOrNull(-9223372036854775808, -1)", "\\N"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionIntDivOrNull>(documentation);
 }

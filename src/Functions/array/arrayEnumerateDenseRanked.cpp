@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class FunctionArrayEnumerateDenseRanked final : public FunctionArrayEnumerateRankedExtended<FunctionArrayEnumerateDenseRanked>
+class FunctionArrayEnumerateDenseRanked : public FunctionArrayEnumerateRankedExtended<FunctionArrayEnumerateDenseRanked>
 {
     using Base = FunctionArrayEnumerateRankedExtended<FunctionArrayEnumerateDenseRanked>;
 
@@ -47,12 +47,12 @@ SELECT arrayEnumerateDenseRanked(1,[[10,10,30,20],[40,50,10,30]],2);
 -- Changing clear_depth=2 results in the enumeration occurring separately for each row anew.
 
 SELECT arrayEnumerateDenseRanked(2,[[10,10,30,20],[40,50,10,30]],2);
-        )", "[[1,1,2,3],[1,2,3,4]]"
+        )", "[[1, 1, 2, 3], [1, 2, 3, 4]]"
       }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayEnumerateDenseRanked>(documentation);
 }

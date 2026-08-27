@@ -1,43 +1,17 @@
 #include <Columns/IColumn.h>
 #include <Core/ColumnNumbers.h>
-#include <Interpreters/castColumn.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
-#include <Common/Exception.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/MapToRange.h>
 #include <Common/PODArray.h>
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-ScatterByPartitionTransform::ScatterByPartitionTransform(SharedHeader header, size_t output_size_, ColumnNumbers key_columns_, DataTypes hash_cast_types_)
+ScatterByPartitionTransform::ScatterByPartitionTransform(SharedHeader header, size_t output_size_, ColumnNumbers key_columns_)
     : IProcessor(InputPorts{header}, OutputPorts{output_size_, header})
     , output_size(output_size_)
     , key_columns(std::move(key_columns_))
-    , hash_cast_types(std::move(hash_cast_types_))
     , hash(0)
-{
-    if (!hash_cast_types.empty() && hash_cast_types.size() != key_columns.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "ScatterByPartitionTransform: hash_cast_types size ({}) does not match key columns size ({})",
-            hash_cast_types.size(), key_columns.size());
-
-    hash_input_types.reserve(key_columns.size());
-    for (const auto & column_number : key_columns)
-        hash_input_types.push_back(header->getByPosition(column_number).type);
-}
-
-std::shared_ptr<ScatterByPartitionTransform> ScatterByPartitionTransform::createRoundRobin(SharedHeader header, size_t output_size_, size_t start_bucket)
-{
-    auto transform = std::make_shared<ScatterByPartitionTransform>(std::move(header), output_size_, ColumnNumbers{});
-    transform->round_robin_bucket = start_bucket % output_size_;
-    return transform;
-}
+{}
 
 IProcessor::Status ScatterByPartitionTransform::prepare()
 {
@@ -64,20 +38,10 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
     {
         auto output_it = outputs.begin();
         bool can_push = false;
-        /// A finished output never becomes pushable again, so waiting for one would wedge the
-        /// pipeline forever. `work` already skips them; `prepare` must agree.
-        bool has_pending_output = false;
         for (size_t i = 0; i < output_size; ++i, ++output_it)
-        {
-            if (was_output_processed[i] || output_it->isFinished())
-                continue;
-
-            if (output_it->canPush())
+            if (!was_output_processed[i] && output_it->canPush())
                 can_push = true;
-            else
-                has_pending_output = true;
-        }
-        if (!can_push && has_pending_output)
+        if (!can_push)
             return Status::PortFull;
         return Status::Ready;
     }
@@ -121,13 +85,6 @@ void ScatterByPartitionTransform::work()
         if (output.isFinished())
             continue;
 
-        if (output_chunk.getNumRows() == 0 && output_chunk.getChunkInfos().empty())
-        {
-            /// Avoid pushing empty data chunks downstream.
-            was_processed = true;
-            continue;
-        }
-
         if (!output.canPush())
         {
             all_outputs_processed = false;
@@ -152,14 +109,6 @@ void ScatterByPartitionTransform::generateOutputChunks()
 
     output_chunks.resize(output_size);
 
-    if (round_robin_bucket)
-    {
-        /// The chunk is moved whole so its ChunkInfo (e.g. aggregation metadata) survives.
-        output_chunks[*round_robin_bucket] = std::move(chunk);
-        *round_robin_bucket = (*round_robin_bucket + 1) % output_size;
-        return;
-    }
-
     /// Special case for 0 key columns. It is an unlikely but still valid case.
     if (key_columns.empty())
     {
@@ -179,26 +128,16 @@ void ScatterByPartitionTransform::generateOutputChunks()
 
     chassert(!columns.empty());
 
-    /// Cast to size_t to select the (count, value) overload of `assign`: on Darwin `UInt64` is
-    /// `unsigned long long` while `size_t` is `unsigned long`, so without the cast the iterator-pair
-    /// overload would be deduced and fail to compile.
-    hash.assign(static_cast<size_t>(num_rows), WEAK_HASH32_INITIAL_VALUE);
+    hash.reset(num_rows);
 
-    for (size_t i = 0; i < key_columns.size(); ++i)
-    {
-        const auto & column = columns[key_columns[i]];
-        const auto & cast_type = hash_cast_types.empty() ? nullptr : hash_cast_types[i];
-        if (cast_type && !cast_type->equals(*hash_input_types[i]))
-        {
-            auto casted = castColumn({column, hash_input_types[i], ""}, cast_type);
-            casted->computeHashInto(0, num_rows, hash.data(), false);
-        }
-        else
-            column->computeHashInto(0, num_rows, hash.data(), false);
-    }
+    for (const auto & column_number : key_columns)
+        hash.update(columns[column_number]->getWeakHash32());
 
-    selector.resize(num_rows);
-    mapToRange(hash.data(), num_rows, static_cast<UInt32>(output_size), selector.data());
+    const auto & hash_data = hash.getData();
+    IColumn::Selector selector(num_rows);
+
+    for (size_t row = 0; row < num_rows; ++row)
+        selector[row] = hash_data[row] % output_size;  /// TODO: use libdivide to speedup modulus calculation?
 
     for (const auto & column : columns)
     {

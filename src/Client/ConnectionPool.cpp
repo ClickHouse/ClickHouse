@@ -1,9 +1,7 @@
 #include <Client/ConnectionPool.h>
 #include <Core/Settings.h>
-#include <IO/WriteHelpers.h>
 
 #include <boost/functional/hash.hpp>
-
 
 namespace DB
 {
@@ -11,21 +9,6 @@ namespace Setting
 {
     extern const SettingsMilliseconds connection_pool_max_wait_ms;
 }
-
-IConnectionPool::IConnectionPool(String host_, UInt16 port_, Priority config_priority_)
-    : host(host_), port(port_), address(host + ":" + toString(port_)), config_priority(config_priority_)
-{
-}
-
-Poco::Timespan::TimeDiff connectionPoolMaxWaitMilliseconds(const Settings & settings)
-{
-    /// `connection_pool_max_wait_ms` documents 0 as an infinite timeout and is unsigned, so a
-    /// negative value cannot be written. `PoolBase::get` spells "infinite" as a negative timeout,
-    /// hence the translation: without it 0 selects a zero-length wait and the retry loop spins.
-    const Int64 wait_ms = settings[Setting::connection_pool_max_wait_ms].totalMilliseconds();
-    return wait_ms > 0 ? wait_ms : -1;
-}
-
 
 ConnectionPoolPtr ConnectionPoolFactory::get(
     unsigned max_connections,
@@ -112,6 +95,17 @@ ConnectionPoolFactory & ConnectionPoolFactory::instance()
 {
     static ConnectionPoolFactory ret;
     return ret;
+}
+
+IConnectionPool::Entry ConnectionPool::get(const DB::ConnectionTimeouts& timeouts, const DB::Settings& settings,
+        bool force_connected)
+{
+    Entry entry = Base::get(settings[Setting::connection_pool_max_wait_ms].totalMilliseconds());
+
+    if (force_connected)
+        entry->forceConnected(timeouts);
+
+    return entry;
 }
 
 }

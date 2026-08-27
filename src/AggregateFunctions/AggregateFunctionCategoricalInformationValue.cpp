@@ -6,6 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -89,9 +90,6 @@ public:
         const auto * y_col = static_cast<const ColumnUInt8 *>(columns[category_count]);
         bool y = y_col->getData()[row_num];
 
-        /// Limit unrolling: x86-64-v3 defaults to unroll-by-4 which hurts when `category_count` is small (the unrolled body
-        /// is skipped, paying extra setup cost per row). Unroll-by-2 matches the v2 codegen.
-#pragma clang loop unroll_count(2)
         for (size_t i = 0; i < category_count; ++i)
         {
             const auto * x_col = static_cast<const ColumnUInt8 *>(columns[i]);
@@ -104,7 +102,7 @@ public:
         ++counter(place, category_count, y);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         for (size_t i = 0; i <= category_count; ++i)
         {
@@ -180,69 +178,10 @@ AggregateFunctionPtr createAggregateFunctionCategoricalIV(
 
 }
 
-void registerAggregateFunctionCategoricalIV(AggregateFunctionFactory & factory);
 void registerAggregateFunctionCategoricalIV(AggregateFunctionFactory & factory)
 {
-    FunctionDocumentation::Description description = R"(
-Calculates the information value (IV) for categorical features in relation to a binary target variable.
-
-For each category, the function computes: `(P(tag = 1) - P(tag = 0)) × (log(P(tag = 1)) - log(P(tag = 0)))`
-
-where:
-- P(tag = 1) is the probability that the target equals 1 for the given category
-- P(tag = 0) is the probability that the target equals 0 for the given category
-
-Information Value is a statistic used to measure the strength of a categorical feature's relationship with a binary target variable in predictive modeling.
-Higher absolute values indicate stronger predictive power.
-
-The result indicates how much each discrete (categorical) feature `[category1, category2, ...]` contributes to a learning model which predicts the value of `tag`.
-    )";
-    FunctionDocumentation::Syntax syntax = "categoricalInformationValue(category1[, category2, ...,]tag)";
-    FunctionDocumentation::Arguments arguments = {
-        {"category1, category2, ...", "One or more categorical features to analyze. Each category should contain discrete values.", {"UInt8"}},
-        {"tag", "Binary target variable for prediction. Should contain values 0 and 1.", {"UInt8"}}
-    };
-    FunctionDocumentation::Parameters parameters = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of Float64 values representing the information value for each unique combination of categories. Each value indicates the predictive strength of that category combination for the target variable.", {"Array(Float64)"}};
-    FunctionDocumentation::Examples examples =
-    {
-    {
-        "Basic usage analyzing age groups vs mobile usage",
-        R"(
-CREATE TABLE visits (is_young UInt8, is_female UInt8, is_mobile UInt8) ENGINE = Memory;
-
--- 80 of the 100 young visitors browse on a mobile device, and only 20 of the 100 older ones do,
--- while the sex of a visitor says nothing about the device.
-INSERT INTO visits SELECT 1, number % 2, number < 80 FROM numbers(100);
-INSERT INTO visits SELECT 0, number % 2, number < 20 FROM numbers(100);
-
-SELECT round(categoricalInformationValue(is_young, is_mobile)[1], 4) AS iv FROM visits;
-        )",
-        R"(
-┌─────iv─┐
-│ 0.8318 │
-└────────┘
-        )"
-    },
-    {
-        "Multiple categorical features with user demographics",
-        R"(
--- The age of a visitor predicts the device, the sex of a visitor does not.
-SELECT arrayMap(x -> round(x, 4), categoricalInformationValue(is_young, is_female, is_mobile)) AS iv
-FROM visits;
-        )",
-        R"(
-┌─iv─────────┐
-│ [0.8318,0] │
-└────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
-    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
-    factory.registerFunction("categoricalInformationValue", { createAggregateFunctionCategoricalIV, documentation, properties });
+    factory.registerFunction("categoricalInformationValue", { createAggregateFunctionCategoricalIV, properties });
 }
 
 }

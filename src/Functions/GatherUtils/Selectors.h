@@ -25,7 +25,7 @@ namespace GatherUtils
 template <typename Base, typename Tuple, int index, typename ... Args>
 void callSelectMemberFunctionWithTupleArgument(Tuple & tuple, Args && ... args)
 {
-    if constexpr (index == std::tuple_size_v<Tuple>)
+    if constexpr (index == std::tuple_size<Tuple>::value)
         Base::selectImpl(args ...);
     else
         callSelectMemberFunctionWithTupleArgument<Base, Tuple, index + 1>(tuple, args ..., std::get<index>(tuple));
@@ -34,7 +34,7 @@ void callSelectMemberFunctionWithTupleArgument(Tuple & tuple, Args && ... args)
 template <typename Base, typename Tuple, int index, typename ... Args>
 void callSelectSource(bool is_const, bool is_nullable, Tuple & tuple, Args && ... args)
 {
-    if constexpr (index == std::tuple_size_v<Tuple>)
+    if constexpr (index == std::tuple_size<Tuple>::value)
         Base::selectSource(is_const, is_nullable, args ...);
     else
         callSelectSource<Base, Tuple, index + 1>(is_const, is_nullable, tuple, args ..., std::get<index>(tuple));
@@ -63,16 +63,6 @@ struct ArraySourceSelector
     template <typename ... Args>
     static void select(IArraySource & source, Args && ... args)
     {
-        /// ReplicatedSource follows the non-virtual iteration methods of its base source, so it must be dispatched to the algorithm
-        /// with its concrete type. Only selectors that declare `supports_replicated_source = true` do that
-        constexpr bool supports_replicated_source = requires { requires Base::supports_replicated_source; };
-        if constexpr (!supports_replicated_source)
-        {
-            if (source.isReplicated())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "{} does not support lazily replicated array sources", demangle(typeid(Base).name()));
-        }
-
         ArraySourceSelectorVisitor<Base, Args ...> visitor(source, args ...);
         source.accept(visitor);
     }

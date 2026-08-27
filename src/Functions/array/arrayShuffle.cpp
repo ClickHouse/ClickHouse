@@ -52,7 +52,7 @@ struct FunctionArrayPartialShuffleTraits
 };
 
 template <typename Traits>
-class FunctionArrayShuffleImpl final : public IFunction
+class FunctionArrayShuffleImpl : public IFunction
 {
 public:
     static constexpr auto name = Traits::name;
@@ -61,10 +61,8 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return Traits::getArgumentsThatAreAlwaysConstant(); }
-    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayShuffleImpl<Traits>>(); }
 
@@ -110,8 +108,7 @@ private:
 template <typename Traits>
 ColumnPtr FunctionArrayShuffleImpl<Traits>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
-    auto col = arguments[0].column->convertToFullColumnIfConst();
-    const ColumnArray * array = checkAndGetColumn<ColumnArray>(col.get());
+    const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
     if (!array)
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
@@ -195,7 +192,7 @@ This function will not materialize constants.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayShuffleTraits>>(documentation, FunctionFactory::Case::Insensitive);
 
@@ -219,25 +216,25 @@ The value of `limit` should be in the range `[1..N]`. Values outside of that ran
     returned_value = {"Array with elements partially shuffled.", {"Array(T)"}};
     examples = {
         {"no_limit1", "SELECT arrayPartialShuffle([1, 2, 3, 4], 0)", "[2, 4, 3, 1]"},
-        {"no_limit2", "SELECT arrayPartialShuffle([1, 2, 3, 4])", "[2,3,4,1]"},
+        {"no_limit2", "SELECT arrayPartialShuffle([1, 2, 3, 4])", "[4, 1, 3, 2]"},
         {"random_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2)", "[3, 4, 1, 2]"},
-        {"explicit_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)", "[3,2,1,4]"},
+        {"explicit_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)", "[3, 2, 1, 4]"},
         {"materialize", "SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffle([1, 2, 3], 2, 42) FROM numbers(10)", R"(
-┌─arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42)─┬─arrayPartialShuffle([1, 2, 3], 2, 42)─┐
-│ [3,2,1,4]                                             │ [3,2,1]                               │
-│ [3,2,1,4]                                             │ [3,1,2]                               │
-│ [4,3,2,1]                                             │ [1,3,2]                               │
-│ [1,4,3,2]                                             │ [2,1,3]                               │
-│ [3,4,1,2]                                             │ [3,2,1]                               │
-│ [1,2,3,4]                                             │ [3,2,1]                               │
-│ [1,4,3,2]                                             │ [1,2,3]                               │
-│ [1,4,3,2]                                             │ [3,2,1]                               │
-│ [3,1,2,4]                                             │ [3,2,1]                               │
-│ [1,3,2,4]                                             │ [2,1,3]                               │
-└───────────────────────────────────────────────────────┴───────────────────────────────────────┘
+┌─arrayPartial⋯4]), 2, 42)─┬─arrayPartial⋯ 3], 2, 42)─┐
+│ [3,2,1,4]                │ [3,2,1]                  │
+│ [3,2,1,4]                │ [3,2,1]                  │
+│ [4,3,2,1]                │ [3,2,1]                  │
+│ [1,4,3,2]                │ [3,2,1]                  │
+│ [3,4,1,2]                │ [3,2,1]                  │
+│ [1,2,3,4]                │ [3,2,1]                  │
+│ [1,4,3,2]                │ [3,2,1]                  │
+│ [1,4,3,2]                │ [3,2,1]                  │
+│ [3,1,2,4]                │ [3,2,1]                  │
+│ [1,3,2,4]                │ [3,2,1]                  │
+└──────────────────────────┴──────────────────────────┘
     )"}
     };
-    documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayPartialShuffleTraits>>(documentation, FunctionFactory::Case::Insensitive);
 }
 

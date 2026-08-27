@@ -2,10 +2,9 @@
 
 #include <Core/Field.h>
 
-#include <Core/ConstantValue.h>
+#include <Analyzer/ConstantValue.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Columns/IColumn_fwd.h>
-#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
@@ -22,8 +21,8 @@ using ConstantNodePtr = std::shared_ptr<ConstantNode>;
 class ConstantNode final : public IQueryTreeNode
 {
 public:
-    /// Construct constant query tree node from constant value, source expression and deterministic flag
-    explicit ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression, bool is_deterministic = true);
+    /// Construct constant query tree node from constant value and source expression
+    explicit ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression);
 
     /// Construct constant query tree node from constant value
     explicit ConstantNode(ConstantValue constant_value_);
@@ -32,10 +31,10 @@ public:
       *
       * Throws exception if value cannot be converted to value data type.
       */
-    explicit ConstantNode(ColumnConstPtr constant_column_, DataTypePtr value_data_type_);
+    explicit ConstantNode(ColumnPtr constant_column_, DataTypePtr value_data_type_);
 
     /// Construct constant query tree node from column, data type will be derived from field value
-    explicit ConstantNode(ColumnConstPtr constant_column_);
+    explicit ConstantNode(ColumnPtr constant_column_);
 
     /** Construct constant query tree node from field and data type.
       *
@@ -47,25 +46,18 @@ public:
     explicit ConstantNode(Field value_);
 
     /// Get constant value
-    const ColumnConstPtr & getColumn() const
+    const ColumnPtr & getColumn() const
     {
         return constant_value.getColumn();
     }
 
-    /// Get constant value as a `Field` (materializes it). Prefer the typed getters below where a caller
-    /// only needs a scalar - they avoid the `Field`.
+    /// Get constant value
     Field getValue() const
     {
-        return constant_value.getField();
+        Field out;
+        constant_value.getColumn()->get(0, out);
+        return out;
     }
-
-    /// Typed value accessors - read the constant without materializing a `Field` (delegate to ConstantValue).
-    bool isNull() const { return constant_value.isNull(); }
-    UInt64 getUInt() const { return constant_value.getUInt(); }
-    Int64 getInt() const { return constant_value.getInt(); }
-    Float64 getFloat64() const { return constant_value.getFloat64(); }
-    bool getBool() const { return constant_value.getBool(); }
-    std::string_view getDataAt() const { return constant_value.getDataAt(); }
 
     /// Get constant value string representation
     String getValueStringRepresentation() const;
@@ -128,14 +120,12 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    String getValueName(const IColumn::Options & options) const
+    std::pair<String, DataTypePtr> getValueNameAndType() const
     {
         if (isMasked())
-            return getMaskString();
-        return constant_value.getValueName(options);
+            return {getMaskString(), constant_value.getType()};
+        return constant_value.getValueNameAndType();
     }
-
-    bool isDeterministic() const { return is_deterministic; }
 
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
@@ -144,22 +134,14 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    template <typename F>
-    boost::intrusive_ptr<ASTLiteral> getCachedAST(const F &ast_generator) const;
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     ConstantValue constant_value;
     QueryTreeNodePtr source_expression;
-    bool is_deterministic = true;
     size_t mask_id = 0;
 
     static constexpr size_t children_size = 0;
-
-    /// Converting to AST maybe costly (for example for large arrays), so we want
-    /// to cache it using hash to check for update
-    mutable boost::intrusive_ptr<ASTLiteral> cached_ast;
-    mutable Hash hash_ast;
 };
 
 }

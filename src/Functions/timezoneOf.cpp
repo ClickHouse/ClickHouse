@@ -17,7 +17,7 @@ namespace
 /** timezoneOf(x) - get the name of the timezone of DateTime data type.
   * Example: Pacific/Pitcairn.
   */
-class FunctionTimezoneOf final : public IFunction
+class FunctionTimezoneOf : public IFunction
 {
 public:
     static constexpr auto name = "timezoneOf";
@@ -78,9 +78,9 @@ private:
 REGISTER_FUNCTION(TimezoneOf)
 {
     FunctionDocumentation::Description description = R"(
-Returns the timezone name of a [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64) value.
+Returns the timezone name of a [`DateTime`](/sql-reference/data-types/datetime) or [`DateTime64`](/sql-reference/data-types/datetime64) value.
     )";
-    FunctionDocumentation::Syntax syntax = "timezoneOf(datetime)";
+    FunctionDocumentation::Syntax syntax = "timeZoneOf(datetime)";
     FunctionDocumentation::Arguments arguments = {
         {"datetime", "A value of type.", {"DateTime", "DateTime64"}},
         {"timezone", "Optional. Timezone name to convert the `datetime` value's timezone to.", {"String"}}
@@ -92,13 +92,13 @@ SELECT timezoneOf(now());
         )",
         R"(
 ┌─timezoneOf(now())─┐
-│ Etc/UTC           │
+│ Europe/Amsterdam  │
 └───────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimezoneOf>(documentation);
     factory.registerAlias("timeZoneOf", "timezoneOf");

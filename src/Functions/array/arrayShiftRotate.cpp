@@ -31,7 +31,7 @@ enum class ShiftRotateDirection : uint8_t
 };
 
 template <typename Impl, typename Name>
-class FunctionArrayShiftRotate final : public IFunction
+class FunctionArrayShiftRotate : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -265,8 +265,8 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
     FunctionDocumentation::Syntax syntax_rotateleft = "arrayRotateLeft(arr, n)";
     FunctionDocumentation::Arguments arguments_rotateleft =
     {
-        {"arr", "The array for which to rotate the elements.[`Array(T)`](/reference/data-types/array)."},
-        {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/reference/data-types/int-uint)."}
+        {"arr", "The array for which to rotate the elements.[`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_rotateleft = {"An array rotated to the left by the specified number of elements", {"Array(T)"}};
     FunctionDocumentation::Examples examples_rotateleft = {
@@ -275,7 +275,15 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
     };
     FunctionDocumentation::IntroducedIn introduced_in_rotateleft = {23, 8};
     FunctionDocumentation::Category category_rotateleft = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_rotateleft = {description_rotateleft, syntax_rotateleft, arguments_rotateleft, {}, returned_value_rotateleft, examples_rotateleft, introduced_in_rotateleft, category_rotateleft};
+    FunctionDocumentation documentation_rotateleft = {
+        description_rotateleft,
+        syntax_rotateleft,
+        arguments_rotateleft,
+        returned_value_rotateleft,
+        examples_rotateleft,
+        introduced_in_rotateleft,
+        category_rotateleft
+    };
 
     factory.registerFunction<FunctionArrayRotateLeft>(documentation_rotateleft);
 
@@ -283,8 +291,8 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
     FunctionDocumentation::Syntax syntax_rotateright = "arrayRotateRight(arr, n)";
     FunctionDocumentation::Arguments arguments_rotateright =
     {
-        {"arr", "The array for which to rotate the elements.[`Array(T)`](/reference/data-types/array)."},
-        {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/reference/data-types/int-uint)."}
+        {"arr", "The array for which to rotate the elements.[`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_rotateright = {"An array rotated to the right by the specified number of elements", {"Array(T)"}};
     FunctionDocumentation::Examples examples_rotateright =
@@ -298,7 +306,6 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
         description_rotateright,
         syntax_rotateright,
         arguments_rotateright,
-        {},
         returned_value_rotateright,
         examples_rotateright,
         introduced_in_rotateright,
@@ -315,8 +322,8 @@ If the number of elements is negative, the array is shifted to the right.
     FunctionDocumentation::Syntax syntax_shiftleft = "arrayShiftLeft(arr, n[, default])";
     FunctionDocumentation::Arguments arguments_shiftleft =
     {
-        {"arr", "The array for which to shift the elements.[`Array(T)`](/reference/data-types/array)."},
-        {"n", "Number of elements to shift.[`(U)Int8/16/32/64`](/reference/data-types/int-uint)."},
+        {"arr", "The array for which to shift the elements.[`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Number of elements to shift.[`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."},
         {"default", "Optional. Default value for new elements."}
     };
     FunctionDocumentation::ReturnedValue returned_value_shiftleft = {"An array shifted to the left by the specified number of elements", {"Array(T)"}};
@@ -333,7 +340,6 @@ If the number of elements is negative, the array is shifted to the right.
         description_shiftleft,
         syntax_shiftleft,
         arguments_shiftleft,
-        {},
         returned_value_shiftleft,
         examples_shiftleft,
         introduced_in_shiftleft,
@@ -360,13 +366,13 @@ If the number of elements is negative, the array is shifted to the left.
     };
     FunctionDocumentation::Examples examples_shiftright =
     {
-        {"Usage example", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2) as res;", "[0,0,1,2,3,4]"},
-        {"Negative value of n", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], -2) as res;", "[3,4,5,6,0,0]"},
-        {"Using a default value", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2, 42) as res;", "[42,42,1,2,3,4]"}
+        {"Usage example", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2) as res;", "[0, 0, 1, 2, 3, 4]"},
+        {"Negative value of n", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], -2) as res;", "[3, 4, 5, 6, 0, 0]"},
+        {"Using a default value", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2, 42) as res;", "[42, 42, 1, 2, 3, 4]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_shiftright = {23, 8};
     FunctionDocumentation::Category category_shiftright = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_shiftright = {description_shiftright, syntax_shiftright, arguments_shiftright, {}, returned_value_shiftright, examples_shiftright, introduced_in_shiftright, category_shiftright};
+    FunctionDocumentation documentation_shiftright = {description_shiftright, syntax_shiftright, arguments_shiftright, returned_value_shiftright, examples_shiftright, introduced_in_shiftright, category_shiftright};
 
     factory.registerFunction<FunctionArrayShiftRight>(documentation_shiftright);
 }

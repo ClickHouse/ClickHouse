@@ -12,8 +12,7 @@ namespace DB
   * In compact format one mark is an array of marks for every column and a number of rows in granule.
   * Format of other data part files is not changed.
   * It's considered to store only small parts in compact format (up to 10M).
-  * NOTE: New Compact parts aren't created for tables with non-adaptive granularity (a Compact
-  *       part is always adaptive), but an existing Compact part can still be loaded by such a table.
+  * NOTE: Compact parts aren't supported for tables with non-adaptive granularity.
   * NOTE: In compact part compressed and uncompressed size of single column is unknown.
   */
 class MergeTreeDataPartCompact : public IMergeTreeDataPart
@@ -24,14 +23,10 @@ public:
 
     MergeTreeDataPartCompact(
         const MergeTreeData & storage_,
-        const MergeTreeSettings & storage_settings,
         const String & name_,
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
-        const IMergeTreeDataPart * parent_part_,
-        PartDirIntent intent);
-
-    Strings getPreferredFileOrder() const override;
+        const IMergeTreeDataPart * parent_part_ = nullptr);
 
     bool isStoredOnReadonlyDisk() const override;
 
@@ -50,15 +45,15 @@ public:
 
     ~MergeTreeDataPartCompact() override;
 
-    static void loadIndexGranularityImpl(
-        MergeTreeIndexGranularityPtr & index_granularity_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
-        size_t marks_per_granule,
-        const IDataPartStorage & data_part_storage_,
-        const MergeTreeSettings & storage_settings);
-
 protected:
-    void doCheckConsistency(bool require_part_metadata) const override;
+     static void loadIndexGranularityImpl(
+         MergeTreeIndexGranularityPtr & index_granularity_,
+         const MergeTreeIndexGranularityInfo & index_granularity_info_,
+         size_t marks_per_granule,
+         const IDataPartStorage & data_part_storage_,
+         const MergeTreeSettings & storage_settings);
+
+     void doCheckConsistency(bool require_part_metadata) const override;
 
 private:
      /// Loads marks index granularity into memory

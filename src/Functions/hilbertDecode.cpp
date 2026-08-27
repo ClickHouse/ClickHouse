@@ -1,5 +1,4 @@
 #include <limits>
-#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/BitHelpers.h>
 #include <Functions/hilbertDecode2DLUT.h>
@@ -8,7 +7,7 @@
 namespace DB
 {
 
-class FunctionHilbertDecode final : public FunctionSpaceFillingCurveDecode<2, 0, 32>
+class FunctionHilbertDecode : public FunctionSpaceFillingCurveDecode<2, 0, 32>
 {
 public:
     static constexpr auto name = "hilbertDecode";
@@ -21,7 +20,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        size_t num_dimensions = 0;
+        size_t num_dimensions;
         const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
         const auto * mask = typeid_cast<const ColumnTuple *>(col_const->getDataColumnPtr().get());
         if (mask)
@@ -111,14 +110,14 @@ hilbertDecode(tuple_size, code)
         {
             "Simple mode",
             "SELECT hilbertDecode(2, 31)",
-            R"((3,4))"
+            R"(["3", "4"])"
         },
         {
             "Single argument", R"(
 -- Hilbert code for one argument is always the argument itself (as a tuple).
 SELECT hilbertDecode(1, 1)
             )",
-            R"((1))"
+            R"(["1"])"
         },
         {
             "Expanded mode",
@@ -126,7 +125,7 @@ SELECT hilbertDecode(1, 1)
 -- A single argument with a tuple specifying bit shifts will be right-shifted accordingly.
 SELECT hilbertDecode(tuple(2), 32768)
             )",
-            R"((8192))"
+            R"(["128"])"
         },
         {
             "Column usage",
@@ -137,18 +136,18 @@ CREATE TABLE hilbert_numbers(
     n2 UInt32
 )
 ENGINE=MergeTree()
-ORDER BY n1 SETTINGS index_granularity_bytes = '10Mi';
+ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into hilbert_numbers (*) values(1,2);
 
 -- Use column names instead of constants as function arguments
 SELECT untuple(hilbertDecode(2, hilbertEncode(n1, n2))) FROM hilbert_numbers;
             )",
-            "1\t2"
+            "1    2"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionHilbertDecode>(documentation);
 }

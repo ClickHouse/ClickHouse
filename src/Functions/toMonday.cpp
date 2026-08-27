@@ -14,7 +14,7 @@ REGISTER_FUNCTION(ToMonday)
 Rounds down a date or date with time to the Monday of the same week. Returns the date.
 
 :::note
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/operations/settings/settings#enable_extended_results_for_datetime_functions).
 :::
     )";
     FunctionDocumentation::Syntax syntax = R"(
@@ -39,7 +39,7 @@ toMonday(toDate('2023-04-24'));              -- Already a Monday
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToMonday>(documentation);
 }

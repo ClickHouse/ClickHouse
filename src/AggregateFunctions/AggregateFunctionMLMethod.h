@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -33,24 +32,22 @@ public:
 
     /// Adds computed gradient in new point (weights, bias) to batch_gradient
     virtual void compute(
-        VectorWithMemoryTracking<Float64> & batch_gradient,
-        const VectorWithMemoryTracking<Float64> & weights,
+        std::vector<Float64> & batch_gradient,
+        const std::vector<Float64> & weights,
         Float64 bias,
         Float64 l2_reg_coef,
         Float64 target,
         const IColumn ** columns,
-        size_t row_num)
-        = 0;
+        size_t row_num) = 0;
 
     virtual void predict(
         ColumnVector<Float64>::Container & container,
         const ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        const VectorWithMemoryTracking<Float64> & weights,
+        const std::vector<Float64> & weights,
         Float64 bias,
-        ContextPtr context) const
-        = 0;
+        ContextPtr context) const = 0;
 };
 
 
@@ -60,8 +57,8 @@ public:
     LinearRegression() = default;
 
     void compute(
-        VectorWithMemoryTracking<Float64> & batch_gradient,
-        const VectorWithMemoryTracking<Float64> & weights,
+        std::vector<Float64> & batch_gradient,
+        const std::vector<Float64> & weights,
         Float64 bias,
         Float64 l2_reg_coef,
         Float64 target,
@@ -73,7 +70,7 @@ public:
         const ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        const VectorWithMemoryTracking<Float64> & weights,
+        const std::vector<Float64> & weights,
         Float64 bias,
         ContextPtr context) const override;
 };
@@ -85,8 +82,8 @@ public:
     LogisticRegression() = default;
 
     void compute(
-        VectorWithMemoryTracking<Float64> & batch_gradient,
-        const VectorWithMemoryTracking<Float64> & weights,
+        std::vector<Float64> & batch_gradient,
+        const std::vector<Float64> & weights,
         Float64 bias,
         Float64 l2_reg_coef,
         Float64 target,
@@ -98,7 +95,7 @@ public:
         const ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        const VectorWithMemoryTracking<Float64> & weights,
+        const std::vector<Float64> & weights,
         Float64 bias,
         ContextPtr context) const override;
 };
@@ -115,9 +112,9 @@ public:
 
     /// Calls GradientComputer to update current mini-batch
     virtual void addToBatch(
-        VectorWithMemoryTracking<Float64> & batch_gradient,
+        std::vector<Float64> & batch_gradient,
         IGradientComputer & gradient_computer,
-        const VectorWithMemoryTracking<Float64> & weights,
+        const std::vector<Float64> & weights,
         Float64 bias,
         Float64 l2_reg_coef,
         Float64 target,
@@ -125,9 +122,12 @@ public:
         size_t row_num);
 
     /// Updates current weights according to the gradient from the last mini-batch
-    virtual void
-    update(UInt64 batch_size, VectorWithMemoryTracking<Float64> & weights, Float64 & bias, Float64 learning_rate, const VectorWithMemoryTracking<Float64> & gradient)
-        = 0;
+    virtual void update(
+        UInt64 batch_size,
+        std::vector<Float64> & weights,
+        Float64 & bias,
+        Float64 learning_rate,
+        const std::vector<Float64> & gradient) = 0;
 
     /// Used during the merge of two states
     virtual void merge(const IWeightsUpdater &, Float64, Float64) {}
@@ -135,24 +135,15 @@ public:
     /// Used for serialization when necessary
     virtual void write(WriteBuffer &) const {}
 
-    /// Used for serialization when necessary. The state comes from the data, so the updaters that
-    /// store vectors must check them against `expected_size` (the size of the gradient, that is,
-    /// the number of weights plus one for the bias): the updaters index these vectors by the
-    /// weight number during `merge` and `addToBatch`. An empty vector is also valid: versions
-    /// before 23.2 serialized the vectors empty until the first update.
-    virtual void read(ReadBuffer &, UInt64 /* expected_size */) {}
+    /// Used for serialization when necessary
+    virtual void read(ReadBuffer &) {}
 };
 
 
 class StochasticGradientDescent : public IWeightsUpdater
 {
 public:
-    void update(
-        UInt64 batch_size,
-        VectorWithMemoryTracking<Float64> & weights,
-        Float64 & bias,
-        Float64 learning_rate,
-        const VectorWithMemoryTracking<Float64> & batch_gradient) override;
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 };
 
 
@@ -165,22 +156,17 @@ public:
         accumulated_gradient.resize(num_params + 1, 0);
     }
 
-    void update(
-        UInt64 batch_size,
-        VectorWithMemoryTracking<Float64> & weights,
-        Float64 & bias,
-        Float64 learning_rate,
-        const VectorWithMemoryTracking<Float64> & batch_gradient) override;
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 
     void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
     void write(WriteBuffer & buf) const override;
 
-    void read(ReadBuffer & buf, UInt64 expected_size) override;
+    void read(ReadBuffer & buf) override;
 
 private:
     Float64 alpha{0.1};
-    VectorWithMemoryTracking<Float64> accumulated_gradient;
+    std::vector<Float64> accumulated_gradient;
 };
 
 
@@ -193,31 +179,26 @@ public:
     }
 
     void addToBatch(
-        VectorWithMemoryTracking<Float64> & batch_gradient,
+        std::vector<Float64> & batch_gradient,
         IGradientComputer & gradient_computer,
-        const VectorWithMemoryTracking<Float64> & weights,
+        const std::vector<Float64> & weights,
         Float64 bias,
         Float64 l2_reg_coef,
         Float64 target,
         const IColumn ** columns,
         size_t row_num) override;
 
-    void update(
-        UInt64 batch_size,
-        VectorWithMemoryTracking<Float64> & weights,
-        Float64 & bias,
-        Float64 learning_rate,
-        const VectorWithMemoryTracking<Float64> & batch_gradient) override;
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 
     void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
     void write(WriteBuffer & buf) const override;
 
-    void read(ReadBuffer & buf, UInt64 expected_size) override;
+    void read(ReadBuffer & buf) override;
 
 private:
     const Float64 alpha = 0.9;
-    VectorWithMemoryTracking<Float64> accumulated_gradient;
+    std::vector<Float64> accumulated_gradient;
 };
 
 
@@ -235,27 +216,22 @@ public:
     }
 
     void addToBatch(
-        VectorWithMemoryTracking<Float64> & batch_gradient,
-        IGradientComputer & gradient_computer,
-        const VectorWithMemoryTracking<Float64> & weights,
-        Float64 bias,
-        Float64 l2_reg_coef,
-        Float64 target,
-        const IColumn ** columns,
-        size_t row_num) override;
+            std::vector<Float64> & batch_gradient,
+            IGradientComputer & gradient_computer,
+            const std::vector<Float64> & weights,
+            Float64 bias,
+            Float64 l2_reg_coef,
+            Float64 target,
+            const IColumn ** columns,
+            size_t row_num) override;
 
-    void update(
-        UInt64 batch_size,
-        VectorWithMemoryTracking<Float64> & weights,
-        Float64 & bias,
-        Float64 learning_rate,
-        const VectorWithMemoryTracking<Float64> & batch_gradient) override;
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 
     void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
     void write(WriteBuffer & buf) const override;
 
-    void read(ReadBuffer & buf, UInt64 expected_size) override;
+    void read(ReadBuffer & buf) override;
 
 private:
     /// beta1 and beta2 hyperparameters have such recommended values
@@ -265,8 +241,8 @@ private:
     Float64 beta1_powered;
     Float64 beta2_powered;
 
-    VectorWithMemoryTracking<Float64> average_gradient;
-    VectorWithMemoryTracking<Float64> average_squared_gradient;
+    std::vector<Float64> average_gradient;
+    std::vector<Float64> average_squared_gradient;
 };
 
 
@@ -291,10 +267,7 @@ public:
 
     void write(WriteBuffer & buf) const;
 
-    /// `expected_param_num` is the number of features declared by the type: the state comes from
-    /// the data and must agree with it, because everything downstream indexes the weights by the
-    /// feature number.
-    void read(ReadBuffer & buf, UInt64 expected_param_num);
+    void read(ReadBuffer & buf);
 
     void predict(
         ColumnVector<Float64>::Container & container,
@@ -305,16 +278,16 @@ public:
 
     void returnWeights(IColumn & to) const;
 private:
-    VectorWithMemoryTracking<Float64> weights;
+    std::vector<Float64> weights;
     Float64 bias{0.0};
 
-    Float64 learning_rate{};
-    Float64 l2_reg_coef{};
-    UInt64 batch_capacity{};
+    Float64 learning_rate;
+    Float64 l2_reg_coef;
+    UInt64 batch_capacity;
 
     UInt64 iter_num = 0;
-    VectorWithMemoryTracking<Float64> gradient_batch;
-    UInt64 batch_size{};
+    std::vector<Float64> gradient_batch;
+    UInt64 batch_size;
 
     std::shared_ptr<IGradientComputer> gradient_computer;
     std::shared_ptr<IWeightsUpdater> weights_updater;
@@ -389,14 +362,11 @@ public:
         this->data(place).add(columns, row_num);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override { this->data(place).merge(this->data(rhs)); }
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override { this->data(place).merge(this->data(rhs)); }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override { this->data(place).write(buf); }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
-    {
-        this->data(place).read(buf, param_num);
-    }
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override { this->data(place).read(buf); }
 
     void predictValues(
         ConstAggregateDataPtr __restrict place,

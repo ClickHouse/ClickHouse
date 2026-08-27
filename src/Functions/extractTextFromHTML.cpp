@@ -291,7 +291,7 @@ size_t extract(const char * __restrict src, size_t size, char * __restrict dst)
 }
 
 
-class FunctionExtractTextFromHTML final : public IFunction
+class FunctionExtractTextFromHTML : public IFunction
 {
 public:
     static constexpr auto name = "extractTextFromHTML";
@@ -383,15 +383,15 @@ SELECT extractTextFromHTML('
 ');
         )",
         R"(
-┌─extractTextFromHTML('\n<html>\n    <head><title>Page Title</title></head>\n    <body>\n        <p>Hello <b>World</b>!</p>\n        <script>alert("test");</script>\n        <!-- comment -->\n    </body>\n</html>\n')─┐
-│ Page Title Hello World !                                                                                                                                                                                               │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─extractTextFromHTML('<html><head>...')─┐
+│ Page Title Hello World!                │
+└────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionExtractTextFromHTML>(documentation);
 }

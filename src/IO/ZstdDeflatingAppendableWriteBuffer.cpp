@@ -1,6 +1,7 @@
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromFile.h>
 
 namespace DB
 {
@@ -23,10 +24,10 @@ ZstdDeflatingAppendableWriteBuffer::ZstdDeflatingAppendableWriteBuffer(
     , read_buffer_creator(std::move(read_buffer_creator_))
     , append_to_existing_file(append_to_existing_file_)
 {
-    cctx.reset(ZSTD_createCCtx());
+    cctx = ZSTD_createCCtx();
     if (cctx == nullptr)
         throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "ZSTD stream encoder init failed: ZSTD version: {}", ZSTD_VERSION_STRING);
-    size_t ret = ZSTD_CCtx_setParameter(cctx.get(), ZSTD_c_compressionLevel, compression_level);
+    size_t ret = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, compression_level);
     if (ZSTD_isError(ret))
         throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED,
                         "ZSTD stream encoder option setting failed: error code: {}; zstd version: {}",
@@ -62,7 +63,7 @@ void ZstdDeflatingAppendableWriteBuffer::nextImpl()
             output.size = out->buffer().size();
             output.pos = out->offset();
 
-            size_t compression_result = ZSTD_compressStream2(cctx.get(), &output, &input, ZSTD_e_flush);
+            size_t compression_result = ZSTD_compressStream2(cctx, &output, &input, ZSTD_e_flush);
             if (ZSTD_isError(compression_result))
                 throw Exception(
                                 ErrorCodes::ZSTD_ENCODER_FAILED,
@@ -121,7 +122,7 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeBefore()
     /// block on each new buffer creation for non-empty file unconditionally (without isNeedToAddEmptyBlock).
     /// However ZSTD_decompressStream is able to read non-terminated frame (we use it in reader buffer),
     /// but console zstd utility cannot.
-    size_t remaining = ZSTD_compressStream2(cctx.get(), &output, &input, ZSTD_e_end);
+    size_t remaining = ZSTD_compressStream2(cctx, &output, &input, ZSTD_e_end);
     while (remaining != 0)
     {
         if (ZSTD_isError(remaining))
@@ -129,7 +130,7 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeBefore()
                             "ZSTD stream encoder end failed: error: '{}' ZSTD version: {}",
                             ZSTD_getErrorName(remaining), ZSTD_VERSION_STRING);
 
-        remaining = ZSTD_compressStream2(cctx.get(), &output, &input, ZSTD_e_end);
+        remaining = ZSTD_compressStream2(cctx, &output, &input, ZSTD_e_end);
 
         out->position() = out->buffer().begin() + output.pos;
 
@@ -150,8 +151,25 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeAfter()
 
 void ZstdDeflatingAppendableWriteBuffer::finalizeZstd()
 {
-    /// Free the memory earlier than the destructor would (ZSTD_freeCCtx never fails on a context created by ZSTD_createCCtx).
-    cctx.reset();
+    if (!cctx)
+        return;
+
+    try
+    {
+        size_t err = ZSTD_freeCCtx(cctx);
+        /// This is just in case, since it is impossible to get an error by using this wrapper.
+        if (unlikely(err))
+            throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "ZSTD_freeCCtx failed: error: '{}'; zstd version: {}",
+                            ZSTD_getErrorName(err), ZSTD_VERSION_STRING);
+    }
+    catch (...)
+    {
+        /// It is OK not to terminate under an error from ZSTD_freeCCtx()
+        /// since all data already written to the stream.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    cctx = nullptr;
 }
 
 void ZstdDeflatingAppendableWriteBuffer::addEmptyBlock()
@@ -174,7 +192,7 @@ bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock()
     auto fsize = reader->getFileSize();
     if (fsize > 3)
     {
-        std::array<char, 3> result{};
+        std::array<char, 3> result;
         reader->seek(fsize - 3, SEEK_SET);
         reader->readStrict(result.data(), 3);
 

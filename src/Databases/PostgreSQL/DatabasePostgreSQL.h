@@ -21,7 +21,7 @@ struct AlterCommand;
  *  If `cache_tables` == 1 (default: 0) table structure is cached and not checked for being modififed,
  *  but it will be updated during detach->attach.
  */
-class DatabasePostgreSQL final : public DatabaseWithAltersOnDiskBase, WithContext
+class DatabasePostgreSQL final : public IDatabase, WithContext
 {
 
 public:
@@ -38,11 +38,14 @@ public:
     String getEngineName() const override { return "PostgreSQL"; }
     UUID getUUID() const override { return db_uuid; }
 
-    bool isRemoteDatabase() const override { return true; }
-
     String getMetadataPath() const override { return metadata_path; }
 
+    bool canContainMergeTreeTables() const override { return false; }
+    bool canContainDistributedTables() const override { return false; }
+    bool canContainRocksDBTables() const override { return false; }
     bool shouldBeEmptyOnDetach() const override { return false; }
+
+    ASTPtr getCreateDatabaseQuery() const override;
 
     bool empty() const override;
 
@@ -58,17 +61,15 @@ public:
 
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
-    void detachTablePermanently(ContextPtr context, const String & table_name) override;
-    DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
-        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     void drop(ContextPtr /*context*/) override;
     void shutdown() override;
 
+    void alterDatabaseComment(const AlterCommand & command) override;
+
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
 protected:
-    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
 private:
@@ -96,6 +97,7 @@ private:
 
     void removeOutdatedTables();
 
+    ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 };
 
 }

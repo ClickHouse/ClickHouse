@@ -5,12 +5,9 @@
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
-#include <Formats/EscapingRuleUtils.h>
-#include <Formats/registerWithNamesAndTypes.h>
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/IDataType.h>
 #include <Processors/Port.h>
 
 
@@ -32,7 +29,6 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
 
     names_and_paddings.resize(columns);
     is_number.resize(columns);
-    is_json.resize(columns);
 
     for (size_t i = 0; i < columns; ++i)
     {
@@ -56,9 +52,7 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     {
         size_t new_size = max_name_width - name_widths[i] + names_and_paddings[i].size();
         names_and_paddings[i].resize(new_size, ' ');
-        const auto & type = removeNullable(recursiveRemoveLowCardinality(sample.getByPosition(i).type));
-        is_number[i] = isNumber(type);
-        is_json[i] = isObject(type);
+        is_number[i] = isNumber(removeNullable(recursiveRemoveLowCardinality(sample.getByPosition(i).type)));
     }
 }
 
@@ -76,15 +70,10 @@ void VerticalRowOutputFormat::writeField(const IColumn & column, const ISerializ
 }
 
 
-void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerialization & serialization, const size_t row_num) const
+void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerialization & serialization, size_t row_num) const
 {
-    if (is_json[field_number])
-    {
-        constexpr size_t indent = 0;
-        serialization.serializeTextJSONPretty(column, row_num, out, format_settings, indent);
-    }
     /// If we need highlighting.
-    else if (color
+    if (color
         && ((format_settings.pretty.highlight_digit_groups && is_number[field_number])
             || format_settings.pretty.highlight_trailing_spaces))
     {
@@ -201,7 +190,6 @@ void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t ro
         writeField(*columns[i], *serializations[i], row_num);
 }
 
-void registerOutputFormatVertical(FormatFactory & factory);
 void registerOutputFormatVertical(FormatFactory & factory)
 {
     factory.registerOutputFormat("Vertical", [](
@@ -214,65 +202,6 @@ void registerOutputFormatVertical(FormatFactory & factory)
     });
 
     factory.markOutputFormatSupportsParallelFormatting("Vertical");
-
-    /// Each field is labelled with its column name, written verbatim, so a name that is not valid UTF-8
-    /// makes the output not valid UTF-8 either. The values are written through the plain
-    /// `serializeText` kind, which writes the `Bool` representations verbatim (see
-    /// `settingsLiteralsMayProduceRawBytes`). The text framings reject or base64-encode the output in
-    /// these cases (see `checkIfOutputFormatMayProduceRawBytes`). `Vertical` does not write the data
-    /// type names.
-    factory.registerOutputFormatMayProduceRawBytesChecker(
-        "Vertical",
-        [](const FormatSettings & settings, const Block & header)
-        {
-            return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false)
-                || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::None);
-        });
-
-    factory.setDocumentation("Vertical", Documentation{
-        .description = R"DOCS_MD(
-| Input | Output | Alias |
-|-------|--------|-------|
-| ✗     | ✔      |       |
-
-## Description {#description}
-
-Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows if each row consists of a large number of columns.
-
-Note that [`NULL`](/reference/syntax) is output as `ᴺᵁᴸᴸ` to make it easier to distinguish between the string value `NULL` and no value. JSON columns will be pretty printed, and `NULL` is output as `null`, because it is a valid JSON value and easily distinguishable from `"null"`.
-
-## Example usage {#example-usage}
-
-Example:
-
-```sql
-SELECT * FROM t_null FORMAT Vertical
-```
-
-```response
-Row 1:
-──────
-x: 1
-y: ᴺᵁᴸᴸ
-```
-
-Rows are not escaped in Vertical format:
-
-```sql
-SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
-```
-
-```response
-Row 1:
-──────
-test: string with 'quotes' and      with some special
- characters
-```
-
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
-
-## Format settings {#format-settings}
-)DOCS_MD"});
 }
 
 }

@@ -3,11 +3,8 @@
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
-#include <DataTypes/IDataType.h>
-
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -16,68 +13,21 @@
 namespace DB
 {
 
-LambdaArgumentsNode::LambdaArgumentsNode(Names argument_names)
-    : ITableExpressionNode(0 /*children_size*/)
-    , names(std::move(argument_names))
-{
-}
-
-void LambdaArgumentsNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
-{
-    buffer << std::string(indent, ' ') << "ARGUMENTS id: " << format_state.getNodeId(this);
-
-    if (hasAlias())
-        buffer << ", alias: " << getAlias();
-
-    size_t names_size = names.size();
-    for (size_t i = 0; i < names_size; ++i)
-    {
-        buffer << '\n' << std::string(indent + 2, ' ') << "ARGUMENT id: " << i << ", name: " << names[i];
-        if (i < types.size() && types[i])
-            buffer << ", type: " << types[i]->getName();
-    }
-}
-
-bool LambdaArgumentsNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
-{
-    const auto & rhs_typed = assert_cast<const LambdaArgumentsNode &>(rhs);
-    return names == rhs_typed.names;
-}
-
-void LambdaArgumentsNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
-{
-    hash_state.update(names.size());
-    for (const auto & name : names)
-    {
-        hash_state.update(name.size());
-        hash_state.update(name);
-    }
-}
-
-QueryTreeNodePtr LambdaArgumentsNode::cloneImpl() const
-{
-    auto result = std::make_shared<LambdaArgumentsNode>(names);
-    result->types = types;
-    return result;
-}
-
-ASTPtr LambdaArgumentsNode::toASTImpl(const ConvertToASTOptions & /*options*/) const
-{
-    auto expression_list_ast = make_intrusive<ASTExpressionList>();
-    expression_list_ast->children.reserve(names.size());
-
-    for (const auto & name : names)
-        expression_list_ast->children.push_back(make_intrusive<ASTIdentifier>(name));
-
-    return expression_list_ast;
-}
-
-LambdaNode::LambdaNode(LambdaArgumentsNodePtr arguments_, QueryTreeNodePtr expression_, bool is_operator_, DataTypePtr result_type_)
+LambdaNode::LambdaNode(Names argument_names_, QueryTreeNodePtr expression_, DataTypePtr result_type_)
     : IQueryTreeNode(children_size)
+    , argument_names(std::move(argument_names_))
     , result_type(std::move(result_type_))
-    , is_operator(is_operator_)
 {
-    children[arguments_child_index] = std::move(arguments_);
+    auto arguments_list_node = std::make_shared<ListNode>();
+    auto & nodes = arguments_list_node->getNodes();
+
+    size_t argument_names_size = argument_names.size();
+    nodes.reserve(argument_names_size);
+
+    for (size_t i = 0; i < argument_names_size; ++i)
+        nodes.push_back(std::make_shared<IdentifierNode>(Identifier{argument_names[i]}));
+
+    children[arguments_child_index] = std::move(arguments_list_node);
     children[expression_child_index] = std::move(expression_);
 }
 
@@ -88,50 +38,56 @@ void LambdaNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, 
     if (hasAlias())
         buffer << ", alias: " << getAlias();
 
-    if (!getArguments().getNames().empty())
+    const auto & arguments = getArguments();
+    if (!arguments.getNodes().empty())
     {
-        buffer << '\n';
-        getArguments().dumpTreeImpl(buffer, format_state, indent + 2);
+        buffer << '\n' << std::string(indent + 2, ' ') << "ARGUMENTS " << '\n';
+        getArguments().dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
     buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION " << '\n';
     getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-bool LambdaNode::isEqualImpl(const IQueryTreeNode &, CompareOptions) const
+bool LambdaNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
-    return true;
+    const auto & rhs_typed = assert_cast<const LambdaNode &>(rhs);
+    return argument_names == rhs_typed.argument_names;
 }
 
-void LambdaNode::updateTreeHashImpl(HashState &, CompareOptions) const
+void LambdaNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
+    state.update(argument_names.size());
+    for (const auto & argument_name : argument_names)
+    {
+        state.update(argument_name.size());
+        state.update(argument_name);
+    }
 }
 
 QueryTreeNodePtr LambdaNode::cloneImpl() const
 {
-    return std::make_shared<LambdaNode>(static_pointer_cast<LambdaArgumentsNode>(children[arguments_child_index]), getExpression(), is_operator, result_type);
+    return std::make_shared<LambdaNode>(argument_names, getExpression(), result_type);
 }
 
 ASTPtr LambdaNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto lambda_function_arguments_ast = make_intrusive<ASTExpressionList>();
+    auto lambda_function_arguments_ast = std::make_shared<ASTExpressionList>();
 
-    auto tuple_function = make_intrusive<ASTFunction>();
+    auto tuple_function = std::make_shared<ASTFunction>();
     tuple_function->name = "tuple";
     tuple_function->children.push_back(children[arguments_child_index]->toAST(options));
     tuple_function->arguments = tuple_function->children.back();
-    tuple_function->setIsOperator(true);
 
     lambda_function_arguments_ast->children.push_back(std::move(tuple_function));
     lambda_function_arguments_ast->children.push_back(children[expression_child_index]->toAST(options));
 
-    auto lambda_function_ast = make_intrusive<ASTFunction>();
+    auto lambda_function_ast = std::make_shared<ASTFunction>();
     lambda_function_ast->name = "lambda";
     lambda_function_ast->children.push_back(std::move(lambda_function_arguments_ast));
     lambda_function_ast->arguments = lambda_function_ast->children.back();
 
-    lambda_function_ast->setIsLambdaFunction(true);
-    lambda_function_ast->setIsOperator(is_operator);
+    lambda_function_ast->is_lambda_function = true;
 
     return lambda_function_ast;
 }

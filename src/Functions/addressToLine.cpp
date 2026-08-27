@@ -1,4 +1,4 @@
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <Common/Dwarf.h>
 #include <Columns/ColumnString.h>
@@ -18,7 +18,7 @@ namespace DB
 namespace
 {
 
-class FunctionAddressToLine final : public FunctionAddressToLineBase<std::string_view, Dwarf::LocationInfoMode::FAST>
+class FunctionAddressToLine : public FunctionAddressToLineBase<StringRef, Dwarf::LocationInfoMode::FAST>
 {
 public:
     static constexpr auto name = "addressToLine";
@@ -38,13 +38,13 @@ protected:
         auto result_column = ColumnString::create();
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view res_str = implCached(data[i]);
-            result_column->insertData(res_str.data(), res_str.size());
+            StringRef res_str = implCached(data[i]);
+            result_column->insertData(res_str.data, res_str.size);
         }
         return result_column;
     }
 
-    void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const VectorWithMemoryTracking<Dwarf::SymbolizedFrame> &) const override
+    void setResult(StringRef & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &) const override
     {
         const char * arena_begin = nullptr;
         WriteBufferFromArena out(cache.arena, arena_begin);
@@ -72,7 +72,7 @@ This function is slow and may impose security considerations.
 To enable this introspection function:
 
 - Install the `clickhouse-common-static-dbg` package.
-- Set setting [`allow_introspection_functions`](/reference/settings/session-settings/allow#allow_introspection_functions) to `1`.
+- Set setting [`allow_introspection_functions`](../../operations/settings/settings.md#allow_introspection_functions) to `1`.
     )";
     FunctionDocumentation::Syntax syntax = "addressToLine(address_of_binary_instruction)";
     FunctionDocumentation::Arguments arguments = {
@@ -84,7 +84,7 @@ To enable this introspection function:
         "Selecting the first string from the `trace_log` system table",
         R"(
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
+SELECT * FROM system.trace_log LIMIT 1 \G;
         )",
         R"(
 -- The `trace` field contains the stack trace at the moment of sampling.
@@ -103,7 +103,7 @@ trace:                   [140658411141617,94784174532828,94784076370703,94784076
         "Getting the source code filename and the line number for a single address",
         R"(
 SET allow_introspection_functions=1;
-SELECT addressToLine(94784076370703) FORMAT Vertical;
+SELECT addressToLine(94784076370703) \G;
         )",
         R"(
 Row 1:
@@ -121,7 +121,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
 FROM system.trace_log
 LIMIT 1
-FORMAT Vertical;
+\G
         )",
         R"(
 Row 1:
@@ -139,7 +139,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionAddressToLine>(documentation);
 }

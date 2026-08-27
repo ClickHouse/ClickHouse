@@ -1,6 +1,3 @@
-#include "config.h"
-
-#include <Access/AuthenticationData.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 
@@ -16,12 +13,14 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/ASTDatabaseOrNone.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <boost/range/algorithm/copy.hpp>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <IO/parseDateTimeBestEffort.h>
+#include <IO/ReadBufferFromString.h>
 
 
 namespace DB
@@ -42,8 +41,7 @@ namespace
         User & user,
         const ASTCreateUserQuery & query,
         const std::vector<AuthenticationData> authentication_methods,
-        const boost::intrusive_ptr<ASTUserNameWithHost> & override_name,
-        const std::optional<RolesOrUsersSet> & override_roles,
+        const std::shared_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_default_roles,
         const std::optional<AlterSettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_grantees,
@@ -94,23 +92,7 @@ namespace
         {
             // we only check if user exceeds the allowed quantity of authentication methods in case the create/alter query includes
             // authentication information. Otherwise, we can bypass this check to avoid blocking non-authentication related alters.
-
-            // Count each SSH key individually toward the limit, so the same set of keys counts equally whether
-            // written as one `ssh_key` method with several keys (`ssh_key BY KEY k1 TYPE t1, KEY k2 TYPE t2`)
-            // or as several `ssh_key` methods (`ssh_key BY KEY k1 TYPE t1, ssh_key BY KEY k2 TYPE t2`).
-            auto count_methods = [](const std::vector<AuthenticationData> & methods)
-            {
-#if USE_SSH
-                size_t count = 0;
-                for (const auto & method : methods)
-                    count += method.getType() == AuthenticationType::SSH_KEY ? method.getSSHKeys().size() : 1;
-                return count;
-#else
-                return methods.size();
-#endif
-            };
-
-            auto number_of_authentication_methods = count_methods(user.authentication_methods) + count_methods(authentication_methods);
+            auto number_of_authentication_methods = user.authentication_methods.size() + authentication_methods.size();
             if (number_of_authentication_methods > max_number_of_authentication_methods)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -126,31 +108,11 @@ namespace
 
         bool has_no_password_authentication_method = false;
 
-        /// The methods added in this statement were just appended at the end of the list, so the first
-        /// `num_pre_existing_methods` entries are the methods the user already had before this statement.
-        chassert(user.authentication_methods.size() >= authentication_methods.size());
-        const size_t num_pre_existing_methods = user.authentication_methods.size() - authentication_methods.size();
-
-        for (size_t i = 0; i < user.authentication_methods.size(); ++i)
+        for (auto & authentication_method : user.authentication_methods)
         {
-            auto & authentication_method = user.authentication_methods[i];
-
             if (global_valid_until)
             {
-                /// A user-level `VALID UNTIL` / `VALID FOR` clause applies to every authentication method,
-                /// except a method added in the same statement that carries its own explicit clause - its
-                /// more specific deadline must be preserved. Pre-existing methods (e.g. the ones already on
-                /// the user during `ALTER USER ... VALID FOR ... ADD IDENTIFIED ...`) always take the
-                /// user-level deadline.
-                bool method_has_explicit_valid_until = false;
-                if (i >= num_pre_existing_methods)
-                {
-                    const auto & method_ast = query.authentication_methods[i - num_pre_existing_methods];
-                    method_has_explicit_valid_until = method_ast->valid_until != nullptr;
-                }
-
-                if (!method_has_explicit_valid_until)
-                    authentication_method.setValidUntil(*global_valid_until);
+                authentication_method.setValidUntil(*global_valid_until);
             }
 
             if (authentication_method.getType() == AuthenticationType::NO_PASSWORD)
@@ -193,26 +155,12 @@ namespace
         if (query.add_hosts)
             user.allowed_client_hosts.add(*query.add_hosts);
 
-        auto grant_roles = [&](const RolesOrUsersSet & roles_, bool as_default_role_)
+        auto set_default_roles = [&](const RolesOrUsersSet & default_roles_)
         {
-            if (as_default_role_ && (query.alter || roles_.all))
-                return;
-            chassert(!query.alter && !roles_.all);
-            user.granted_roles.grant(roles_.getMatchingIDs());
-        };
+            if (!query.alter && !default_roles_.all)
+                user.granted_roles.grant(default_roles_.getMatchingIDs());
 
-        if (override_roles)
-            grant_roles(*override_roles, /* as_default_role = */ false);
-        else if (query.roles)
-            grant_roles(*query.roles, /* as_default_role = */ false);
-        else if (override_default_roles)
-            grant_roles(*override_default_roles, /* as_default_role = */ true);
-        else if (query.default_roles)
-            grant_roles(*query.default_roles, /* as_default_role = */ true);
-
-        auto set_default_roles = [&](const RolesOrUsersSet & roles_)
-        {
-            InterpreterSetRoleQuery::updateUserSetDefaultRoles(user, roles_);
+            InterpreterSetRoleQuery::updateUserSetDefaultRoles(user, default_roles_);
         };
 
         if (override_default_roles)
@@ -255,51 +203,22 @@ BlockIO InterpreterCreateUserQuery::execute()
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
 
-    /// Capture one reference time for the whole statement, so every `VALID FOR <interval>` clause (the
-    /// global one and each per-authentication one) resolves against the same `now`. Otherwise each
-    /// clause would take its own `CLOCK_REALTIME` sample while methods are built one by one (interleaved
-    /// with e.g. bcrypt hashing), and two identical `VALID FOR INTERVAL 1 DAY` clauses could end up with
-    /// slightly different deadlines.
-    const time_t valid_for_base_time = getCurrentTime();
-
-    /// An attach query holds the stable storage representation emitted by
-    /// `AuthenticationData::toAST(true)`, e.g. a numeric Unix timestamp for dates past 2286, which must
-    /// use the same no-context parsing path as access-entity deserialization. `ATTACH USER` is not part
-    /// of the client SQL grammar (only `ParserAttachAccessEntity` parses it, and its result goes through
-    /// `updateUserFromQuery`, not here), so this only matters for an internally constructed attach AST;
-    /// still, both paths must agree. Ordinary `CREATE`/`ALTER USER` statements evaluate their
-    /// expressions against the query context.
-    const ContextPtr valid_until_context = query.attach ? nullptr : getContext();
-
     std::vector<AuthenticationData> authentication_methods;
     if (!query.authentication_methods.empty())
     {
         for (const auto & authentication_method_ast : query.authentication_methods)
         {
-            authentication_methods.push_back(AuthenticationData::fromAST(*authentication_method_ast, valid_until_context, !query.attach, valid_for_base_time));
+            authentication_methods.push_back(AuthenticationData::fromAST(*authentication_method_ast, getContext(), !query.attach));
         }
     }
 
     std::optional<time_t> global_valid_until;
     if (query.global_valid_until)
-        global_valid_until = getValidUntilFromAST(query.global_valid_until, valid_until_context, query.global_valid_until_is_interval, valid_for_base_time);
-
-    std::optional<RolesOrUsersSet> roles_from_query;
-    if (query.roles)
-    {
-        roles_from_query = RolesOrUsersSet{*query.roles, access_control};
-        chassert(!query.alter && !roles_from_query->all);
-        for (const UUID & role : roles_from_query->getMatchingIDs())
-            access->checkAdminOption(role);
-    }
+        global_valid_until = getValidUntilFromAST(query.global_valid_until, getContext());
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
     {
-        /// Changing which roles activate by default for a user is role administration, which a session
-        /// limited by an authentication method's GRANTS clause must not do (the ALTER path is otherwise
-        /// authorized with plain ALTER_USER and does not go through the admin-option check below).
-        access->checkCanAdministerDefaultRoles();
         default_roles_from_query = RolesOrUsersSet{*query.default_roles, access_control};
         if (!query.alter && !default_roles_from_query->all)
         {
@@ -318,52 +237,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
 
     if (!query.cluster.empty())
-    {
-        /// The deadline of a `VALID FOR <interval>` or `VALID UNTIL <datetime>` clause is resolved on the
-        /// initiator, but when the query is distributed `ON CLUSTER` the AST *text* is what reaches every
-        /// replica. A `VALID FOR <interval>` clause would be re-evaluated as `now + interval` against each
-        /// replica's own clock; a `VALID UNTIL` clause with a bare, time-zone-less literal (for example
-        /// `'2035-01-01 00:00:00'`) would be parsed in each replica's own default time zone. Either way the
-        /// stored `valid_until` could diverge across a cluster whose nodes run in different time zones. To
-        /// keep the deadline identical everywhere, we resolve every deadline once here (on the initiator)
-        /// and rewrite the AST to an absolute, explicit-`UTC` `VALID UNTIL` literal before distributing it.
-        auto cluster_query_ptr = updated_query_ptr->clone();
-        auto & cluster_query = cluster_query_ptr->as<ASTCreateUserQuery &>();
-
-        /// Bind bare-table grants of the authentication methods (e.g. `GRANTS (SELECT ON t1)`) to the current
-        /// database of the initiator before shipping the query, so that every node persists the same limit.
-        /// `AddDefaultDatabaseVisitor` does not rewrite `ASTAuthenticationData::grants` (they are stored outside
-        /// the AST children), and the current database of a DDL worker is not the initiator's, so otherwise each
-        /// node would rebind bare-table grants to a different database.
-        for (auto & authentication_method_ast : cluster_query.authentication_methods)
-            authentication_method_ast->grants.replaceEmptyDatabase(getContext()->getCurrentDatabase());
-
-        auto rewrite_deadline = [](IAST & owner, ASTPtr & valid_until, bool & is_interval, time_t deadline)
-        {
-            /// No clause to canonicalize, or the deadline is the `VALID UNTIL 'infinity'` sentinel
-            /// (`0` == "no expiration"), which is time-zone independent and is left untouched.
-            if (!valid_until || deadline == 0)
-                return;
-
-            /// The explicit `UTC` suffix in the literal makes every replica parse the resulting
-            /// `VALID UNTIL` string to the same instant. Without the zone, a bare `'2026-07-14 12:00:00'`
-            /// would be interpreted in each replica's own default time zone and the stored `valid_until`
-            /// would diverge on mixed-time-zone clusters. The clause subtree is registered in the owner's
-            /// `children`, so it is replaced there too (not just the member pointer).
-            owner.setOrReplace(valid_until, make_intrusive<ASTLiteral>(formatValidUntilInUTC(deadline)));
-            is_interval = false;
-        };
-
-        rewrite_deadline(cluster_query, cluster_query.global_valid_until, cluster_query.global_valid_until_is_interval, global_valid_until.value_or(0));
-
-        for (size_t i = 0; i < cluster_query.authentication_methods.size(); ++i)
-        {
-            auto & method = *cluster_query.authentication_methods[i];
-            rewrite_deadline(method, method.valid_until, method.valid_until_is_interval, authentication_methods[i].getValidUntil());
-        }
-
-        return executeDDLQueryOnCluster(cluster_query_ptr, getContext());
-    }
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
 
     IAccessStorage * storage = &access_control;
     MultipleAccessStorage::StoragePtr storage_ptr;
@@ -385,7 +259,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         {
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
             updateUserFromQueryImpl(
-                *updated_user, query, authentication_methods, {}, roles_from_query, default_roles_from_query, settings_from_query, grantees_from_query,
+                *updated_user, query, authentication_methods, {}, default_roles_from_query, settings_from_query, grantees_from_query,
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
                 plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
@@ -406,9 +280,9 @@ BlockIO InterpreterCreateUserQuery::execute()
         for (const auto & name : *query.names)
         {
             auto new_user = std::make_shared<User>();
-            const auto & name_with_host = boost::static_pointer_cast<ASTUserNameWithHost>(name);
+            const auto & name_with_host = typeid_cast<std::shared_ptr<ASTUserNameWithHost>>(name);
             updateUserFromQueryImpl(
-                *new_user, query, authentication_methods, name_with_host, roles_from_query, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
+                *new_user, query, authentication_methods, name_with_host, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
                 plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
@@ -466,13 +340,12 @@ void InterpreterCreateUserQuery::updateUserFromQuery(
 
     std::optional<time_t> global_valid_until;
     if (query.global_valid_until)
-        global_valid_until = getValidUntilFromAST(query.global_valid_until, {}, query.global_valid_until_is_interval);
+        global_valid_until = getValidUntilFromAST(query.global_valid_until, {});
 
     updateUserFromQueryImpl(
         user,
         query,
         authentication_methods,
-        {},
         {},
         {},
         {},
@@ -486,7 +359,6 @@ void InterpreterCreateUserQuery::updateUserFromQuery(
         max_number_of_authentication_methods);
 }
 
-void registerInterpreterCreateUserQuery(InterpreterFactory & factory);
 void registerInterpreterCreateUserQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

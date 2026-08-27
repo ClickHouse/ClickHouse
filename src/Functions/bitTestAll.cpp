@@ -33,19 +33,19 @@ The logical AND between two bits is true if and only if both input bits are true
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of the logical conjunction", {"UInt8"}};
     FunctionDocumentation::Examples examples = {{"Usage example 1", "SELECT bitTestAll(43, 0, 1, 3, 5);",
         R"(
-┌─bitTestAll(43, 0, 1, 3, 5)─┐
-│                          1 │
-└────────────────────────────┘
+┌─bin(43)──┬─bitTestAll(43, 0, 1, 3, 5)─┐
+│ 00101011 │                          1 │
+└──────────┴────────────────────────────┘
         )"}, {"Usage example 2", "SELECT bitTestAll(43, 0, 1, 3, 5, 2);",
     R"(
-┌─bitTestAll(43, 0, 1, 3, 5, 2)─┐
-│                             0 │
-└───────────────────────────────┘
+┌─bin(43)──┬─bitTestAll(4⋯1, 3, 5, 2)─┐
+│ 00101011 │                        0 │
+└──────────┴──────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBitTestAll>(documentation);
 }

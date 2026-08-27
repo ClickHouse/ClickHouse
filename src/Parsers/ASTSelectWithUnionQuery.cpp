@@ -1,54 +1,16 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/SelectUnionMode.h>
-#include <Parsers/ASTJSONHelpers.h>
-#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Common/SipHash.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
-#include <Parsers/QueryParameterVisitor.h>
 
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
-namespace
-{
-
-/// `as<ASTSelectQuery>()` is an exact typeid check, so a derived or nested child of
-/// `list_of_selects` (interpreter passes substitute both) would be skipped and its query
-/// parameters lost. The last branch is the general answer; the first two only keep the memo.
-
-bool childHasQueryParameters(const ASTPtr & child)
-{
-    if (const auto * select_node = child->as<ASTSelectQuery>())
-        return select_node->hasQueryParameters();
-    if (const auto * union_node = child->as<ASTSelectWithUnionQuery>())
-        return union_node->hasQueryParameters();
-    return !analyzeReceiveQueryParams(child).empty();
-}
-
-NameToNameMap childQueryParameters(const ASTPtr & child)
-{
-    if (const auto * select_node = child->as<ASTSelectQuery>())
-        return select_node->getQueryParameters();
-    if (const auto * union_node = child->as<ASTSelectWithUnionQuery>())
-        return union_node->getQueryParameters();
-    return analyzeReceiveQueryParamsWithType(child);
-}
-
-}
-
 ASTPtr ASTSelectWithUnionQuery::clone() const
 {
-    auto res = make_intrusive<ASTSelectWithUnionQuery>(*this);
+    auto res = std::make_shared<ASTSelectWithUnionQuery>(*this);
     res->children.clear();
 
     res->list_of_selects = list_of_selects->clone();
@@ -61,17 +23,6 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
 
     cloneOutputOptions(*res);
     return res;
-}
-
-void ASTSelectWithUnionQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
-{
-    /// The set operation joining the selects is not a child, so the default implementation does not
-    /// see it: without hashing the modes, `a UNION ALL b` and `a UNION DISTINCT b` hash equally.
-    hash_state.update(union_mode);
-    hash_state.update(list_of_modes.size());
-    for (auto mode : list_of_modes)
-        hash_state.update(mode);
-    ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 
@@ -109,14 +60,11 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
             || mode == SelectUnionMode::EXCEPT_DISTINCT;
     };
 
-    auto get_mode = [&](ASTs::const_iterator it) -> SelectUnionMode
+    auto get_mode = [&](ASTs::const_iterator it)
     {
-        if (is_normalized)
-            return union_mode;
-        auto index = static_cast<size_t>(it - list_of_selects->children.begin()) - 1;
-        if (index >= list_of_modes.size())
-            return union_mode;
-        return list_of_modes[index];
+        return is_normalized
+            ? union_mode
+            : list_of_modes[it - list_of_selects->children.begin() - 1];
     };
 
     for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
@@ -146,29 +94,10 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
         if (union_node)
             need_parens = true;
 
-        /// When `settings_ast` is set on the whole SelectWithUnionQuery (inherited
-        /// from ASTQueryWithOutput), or a parent query (e.g. EXPLAIN) will append
-        /// SETTINGS after this node (signalled via `frame.parent_has_trailing_settings`),
-        /// and no `out_file` or `format_ast` precedes it in the formatted output,
-        /// the base class formats `SETTINGS ...` immediately after the UNION chain.
-        /// Without parentheses around individual SELECTs, the re-parser's
-        /// `ParserSelectQuery` would consume SETTINGS as part of the last individual
-        /// SELECT, moving it from the outer query to the last SelectQuery and breaking
-        /// the formatting roundtrip.
-        /// When `out_file` or `format_ast` is present, they are formatted before
-        /// SETTINGS, and `ParserSelectQuery` stops before them (it doesn't handle
-        /// INTO OUTFILE or FORMAT), so SETTINGS remains on the outer query.
-        /// Wrapping each SELECT in parentheses prevents this: the parser treats
-        /// each `(SELECT ...)` as a self-contained subquery, and SETTINGS stays on
-        /// the outer query. `ParserUnionQueryElement` flattens single-child
-        /// subqueries back to `SelectQuery`, preserving the AST structure.
-        if ((settings_ast || frame.parent_has_trailing_settings) && !out_file && !format_ast && (*it)->as<ASTSelectQuery>())
-            need_parens = true;
-
         if (need_parens)
         {
             ostr << indent_str;
-            auto subquery = make_intrusive<ASTSubquery>(*it);
+            auto subquery = std::make_shared<ASTSubquery>(*it);
             subquery->format(ostr, settings, state, frame);
         }
         else
@@ -191,10 +120,13 @@ bool ASTSelectWithUnionQuery::hasQueryParameters() const
     {
         for (const auto & child : list_of_selects->children)
         {
-            if (childHasQueryParameters(child))
+            if (auto * select_node = child->as<ASTSelectQuery>())
             {
-                has_query_parameters = true;
-                return has_query_parameters.value();
+                if (select_node->hasQueryParameters())
+                {
+                    has_query_parameters = true;
+                    return has_query_parameters.value();
+                }
             }
         }
         has_query_parameters = false;
@@ -212,96 +144,17 @@ NameToNameMap ASTSelectWithUnionQuery::getQueryParameters() const
 
     for (const auto & child : list_of_selects->children)
     {
-        NameToNameMap child_params = childQueryParameters(child);
-        query_params.insert(child_params.begin(), child_params.end());
+        if (auto * select_node = child->as<ASTSelectQuery>())
+        {
+            if (select_node->hasQueryParameters())
+            {
+                NameToNameMap select_node_param = select_node->getQueryParameters();
+                query_params.insert(select_node_param.begin(), select_node_param.end());
+            }
+        }
     }
 
     return query_params;
-}
-
-void ASTSelectWithUnionQuery::writeJSON(WriteBuffer & out) const
-{
-    JSONObjectWriter w(out, "SelectWithUnionQuery");
-
-    w.writeString("union_mode", toString(union_mode));
-
-    if (!list_of_modes.empty())
-    {
-        w.writeKey("list_of_modes");
-        auto & o = w.getOut();
-        o << '[';
-        for (size_t i = 0; i < list_of_modes.size(); ++i)
-        {
-            if (i > 0) o << ',';
-            writeJSONString(toString(list_of_modes[i]), o, w.getFormatSettings());
-        }
-        o << ']';
-    }
-
-    w.writeChild("list_of_selects", list_of_selects);
-    w.writeChild("out_file", out_file);
-    w.writeChild("format_ast", format_ast);
-    w.writeChild("settings_ast", settings_ast);
-    w.writeChild("compression", compression);
-    w.writeChild("compression_level", compression_level);
-
-    /// Output-option flags from `ASTQueryWithOutput`: without these, `INTO OUTFILE ... APPEND`,
-    /// `INTO OUTFILE ... TRUNCATE`, and `INTO OUTFILE ... AND STDOUT` would be silently lost on round-trip.
-    w.writeBool("is_outfile_append", isOutfileAppend());
-    w.writeBool("is_outfile_truncate", isOutfileTruncate());
-    w.writeBool("is_into_outfile_with_stdout", isIntoOutfileWithStdout());
-}
-
-void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
-{
-    JSONObjectReader r(json);
-
-    union_mode = parseSelectUnionMode(r.getString("union_mode", "UNION_DEFAULT"));
-
-    auto modes_arr = r.readStringArray("list_of_modes");
-    for (const auto & mode_str : modes_arr)
-        list_of_modes.push_back(parseSelectUnionMode(mode_str));
-
-    /// `list_of_selects` is a required invariant: `clone`, `formatQueryImpl`, and the interpreters
-    /// dereference it unconditionally. Reject malformed JSON that omits it instead of producing an
-    /// AST that crashes later. It must be a non-empty `ASTExpressionList`, because `formatQueryImpl`
-    /// iterates its children and dereferences each element.
-    list_of_selects = r.readChild("list_of_selects");
-    if (!list_of_selects)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`SelectWithUnionQuery` AST requires 'list_of_selects' during AST JSON deserialization");
-    if (!list_of_selects->as<ASTExpressionList>())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`SelectWithUnionQuery` AST requires 'list_of_selects' to be an `ASTExpressionList` during AST JSON deserialization");
-    if (list_of_selects->children.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`SelectWithUnionQuery` AST requires a non-empty 'list_of_selects' during AST JSON deserialization");
-    /// Each element must itself be a select-form node: analyzer paths call `buildSelectOrUnionExpression`
-    /// per child and only support `ASTSelectQuery`, `ASTSelectWithUnionQuery`, or
-    /// `ASTSelectIntersectExceptQuery`. Reject any other child type here instead of letting it reach that
-    /// code as an internal AST-invariant violation.
-    for (const auto & select_child : list_of_selects->children)
-        if (!select_child
-            || !(select_child->as<ASTSelectQuery>()
-                 || select_child->as<ASTSelectWithUnionQuery>()
-                 || select_child->as<ASTSelectIntersectExceptQuery>()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "`SelectWithUnionQuery` 'list_of_selects' must contain only select queries during AST JSON deserialization");
-    children.push_back(list_of_selects);
-
-    /// `list_of_modes` describes the separators between adjacent selects, so its cardinality must be
-    /// exactly one less than the number of selects. `formatQueryImpl` indexes `list_of_modes` by
-    /// `(position - 1)`, so a mismatch would either read stale modes or leave gaps; reject it.
-    if (!list_of_modes.empty() && list_of_modes.size() != list_of_selects->children.size() - 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`SelectWithUnionQuery` AST has {} entries in 'list_of_modes' but expected {} for {} selects "
-            "during AST JSON deserialization",
-            list_of_modes.size(), list_of_selects->children.size() - 1, list_of_selects->children.size());
-
-    /// Restore output options (`INTO OUTFILE` / `FORMAT` / `SETTINGS` / compression and flags)
-    /// through the shared helper so the validation of their interdependencies stays in one place
-    /// instead of diverging from `ASTQueryWithOutput::readOutputOptionsJSON`.
-    readOutputOptionsJSON(r);
 }
 
 }

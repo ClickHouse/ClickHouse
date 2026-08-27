@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <gtest/gtest.h>
-#include <Common/Exception.h>
 
 using namespace DB;
 
@@ -62,56 +61,6 @@ TEST(ColumnLowCardinality, Clone)
 
     ASSERT_TRUE(assert_cast<const ColumnLowCardinality &>(*nullable_column).nestedIsNullable());
     ASSERT_FALSE(assert_cast<const ColumnLowCardinality &>(*column).nestedIsNullable());
-}
-
-TEST(ColumnLowCardinality, CloneNullableKeepsZeroValue)
-{
-    auto data_type = std::make_shared<DataTypeUInt64>();
-    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(data_type);
-    auto column = low_cardinality_type->createColumn();
-
-    column->insert(static_cast<UInt64>(0));
-    column->insert(static_cast<UInt64>(1));
-    column->insert(static_cast<UInt64>(2));
-
-    auto nullable_column = assert_cast<const ColumnLowCardinality &>(*column).cloneNullable();
-    const auto & nullable_lc = assert_cast<const ColumnLowCardinality &>(*nullable_column);
-
-    ASSERT_TRUE(nullable_lc.nestedIsNullable());
-    ASSERT_FALSE(nullable_lc.isNullAt(0));
-    ASSERT_FALSE(nullable_lc.isNullAt(1));
-    ASSERT_FALSE(nullable_lc.isNullAt(2));
-
-    Field value;
-    nullable_column->get(0, value);
-    ASSERT_EQ(value.safeGet<UInt64>(), 0);
-    nullable_column->get(1, value);
-    ASSERT_EQ(value.safeGet<UInt64>(), 1);
-    nullable_column->get(2, value);
-    ASSERT_EQ(value.safeGet<UInt64>(), 2);
-}
-
-TEST(ColumnLowCardinality, InsertRangeFromChecksBoundsAfterSharingDictionary)
-{
-    auto dictionary_keys = ColumnUInt64::create();
-    for (UInt64 value : {0, 10})
-        dictionary_keys->insertValue(value);
-
-    ColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeUInt64(), std::move(dictionary_keys));
-
-    auto source_indexes = ColumnUInt8::create();
-    source_indexes->insertValue(1);
-    auto source = ColumnLowCardinality::create(dictionary, std::move(source_indexes), /* is_shared = */ true);
-
-    auto wide_indexes = ColumnUInt16::create();
-    wide_indexes->insertValue(1);
-    auto wide_column = ColumnLowCardinality::create(dictionary, std::move(wide_indexes), /* is_shared = */ false);
-    auto destination = wide_column->cloneEmpty();
-    const auto & low_cardinality_destination = assert_cast<const ColumnLowCardinality &>(*destination);
-
-    ASSERT_EQ(low_cardinality_destination.getSizeOfIndexType(), sizeof(UInt16));
-    EXPECT_THROW(destination->insertRangeFrom(*source, source->size(), 1), Exception);
-    EXPECT_TRUE(destination->empty());
 }
 
 TEST(ColumnLowCardinality, EmptyDictionaryEmptyIndexes)

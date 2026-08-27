@@ -5,7 +5,6 @@
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -64,9 +63,6 @@ public:
 
     virtual JoinResultBlock next() = 0;
 
-    /// Right table rows matched while producing the result. Only meaningful once the result is exhausted.
-    virtual size_t getMatchedRightRows() const { return 0; }
-
     static JoinResultPtr createFromBlock(Block block);
 };
 
@@ -79,12 +75,6 @@ public:
 
     virtual const TableJoin & getTableJoin() const = 0;
 
-    /// The `join_any_take_last_row` setting: for `ANY` joins it selects the last matching right-side
-    /// row instead of the first one. It is not part of `TableJoin`, it is baked into the concrete
-    /// algorithm, so algorithms that honor it expose it here. Algorithms for which the setting is
-    /// meaningless keep the default.
-    virtual bool anyTakeLastRow() const { return false; }
-
     /// Returns true if clone is supported
     virtual bool isCloneSupported() const
     {
@@ -96,9 +86,9 @@ public:
         SharedHeader left_sample_block_,
         SharedHeader right_sample_block_) const
     {
-        (void)table_join_;
-        (void)left_sample_block_;
-        (void)right_sample_block_;
+        (void)(table_join_);
+        (void)(left_sample_block_);
+        (void)(right_sample_block_);
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Clone method is not supported for {}", getName());
     }
 
@@ -109,16 +99,6 @@ public:
     /// Add block of data from right hand of JOIN.
     /// @returns false, if some limit was exceeded and you should not insert more data.
     virtual bool addBlockToJoin(const Block & block, bool check_limits = true) = 0; /// NOLINT
-
-    /// Overload that accepts the actual number of rows from the Chunk.
-    /// Needed because Block::rows() returns 0 when the block has no columns
-    /// (e.g., when PREWHERE consumed all columns from the right side of a cross join).
-    virtual bool addBlockToJoin(const Block & block, size_t num_rows, bool check_limits = true) /// NOLINT
-    {
-        /// Default implementation ignores num_rows; joins that need row-count-only blocks override it.
-        (void)num_rows;
-        return addBlockToJoin(block, check_limits);
-    }
 
     /* Some initialization may be required before joinBlock() call.
      * It's better to done in in constructor, but left block exact structure is not known at that moment.
@@ -141,7 +121,6 @@ public:
     /// Number of rows/bytes stored in memory
     virtual size_t getTotalRowCount() const = 0;
     virtual size_t getTotalByteCount() const = 0;
-    virtual StepAnalysisReport getAnalysisReport() const = 0;
 
     /// Returns true if no data to join with.
     virtual bool alwaysReturnsEmptySet() const = 0;
@@ -153,59 +132,19 @@ public:
 
     // That can run FillingRightJoinSideTransform parallelly
     virtual bool supportParallelJoin() const { return false; }
+    virtual bool supportTotals() const { return true; }
 
     /// Peek next stream of delayed joined blocks.
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     virtual bool hasDelayedBlocks() const { return false; }
-
-    /// Whether the join emits left rows in the same order they arrive. HashJoin/DirectJoin/ConcurrentHashJoin
-    /// stream the probe side, so they do. PartialMergeJoin re-sorts left blocks by the join key, so it does not;
-    /// the read-in-order-through-join optimisation in optimizeReadInOrder.cpp must not propagate through such joins.
-    virtual bool preservesLeftBlockOrder() const { return true; }
+    virtual bool rightTableCanBeReranged() const { return false; }
+    virtual void tryRerangeRightTableData() {}
 
     virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
-    virtual bool supportParallelNonJoinedBlocksProcessing() const { return false; }
-    /// This serves as a runtime check in JoiningTransform to decide whether to utilize the parallel processing of
-    /// non-joined blocks. Only relevant for joins that support parallel processing of non-joined blocks.
-    /// If the join supports parallel processing, it can still decide during build phase whether to utilize it or not.
-    /// The decision should be done at latest in onBuildPhaseFinish, after that the returned value should not change.
-    /// This is important for SpillingHashJoin, which can change algorithms runtime, and parallel non-joined blocks
-    /// processing depends on the algorithm used.
-    virtual bool isParallelNonJoinedProcessingEnabled() const { return supportParallelNonJoinedBlocksProcessing(); }
-
-    /// Get non-joined blocks for a specific stream partition
-    /// stream_idx is in [0, num_streams), each stream must produce a disjoint subset of rows
-    /// Default: stream 0 returns everything, others return nothing
-    virtual IBlocksStreamPtr getNonJoinedBlocks(
-        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
-        size_t stream_idx, size_t /*num_streams*/) const
-    {
-        if (stream_idx != 0)
-            return {};
-        return getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
-    }
-
-    /// Notify the join that the query plan requires left-side read-in-order preservation.
-    /// SpillingHashJoin overrides this to forbid switching to GraceHashJoin at runtime.
-    virtual void keepLeftPipelineInOrder() {}
-
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
     virtual void onBuildPhaseFinish() { }
-
-    /// Called by `JoiningTransform` when every probe stream has consumed its whole left input.
-    /// Not called when the probe is cut short (LIMIT, cancellation).
-    /// `matched_right_rows` is the number of right table rows matched across every probe stream.
-    virtual void onProbePhaseFinish(size_t /*matched_right_rows*/) { }
-
-    /// Called by `FillingRightJoinSideTransform` after `onBuildPhaseFinish` if the join has
-    /// a post build optimization step.
-    virtual bool hasPostBuildPhase() const { return false; }
-    virtual void runPostBuildPhase() { }
-
-    /// Enables lazy columns indexing optimization on hash join variants
-    virtual void setEnableLazyColumnsIndexing(bool /*value*/) { }
 
 private:
     Block totals;

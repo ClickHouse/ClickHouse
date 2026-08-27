@@ -28,14 +28,14 @@ toRelativeYearNum(date)
 SELECT toRelativeYearNum('2010-10-01'::DateTime) - toRelativeYearNum('2000-01-01'::DateTime)
         )",
         R"(
-┌─minus(toRelativeYearNum(CAST('2010-10-01', 'DateTime')), toRelativeYearNum(CAST('2000-01-01', 'DateTime')))─┐
-│                                                                                                          10 │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─minus(toRela⋯ateTime')))─┐
+│                       10 │
+└──────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToRelativeYearNum>(documentation);
 }

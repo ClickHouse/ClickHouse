@@ -1,7 +1,9 @@
 import pytest
 
 import uuid
+import time
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -9,11 +11,9 @@ node1 = cluster.add_instance(
     main_configs=["config/metric_log_config.xml"],
     stay_alive=True,
 )
-# The `bucketed` schema adds engine settings to the default table definition, which is only
-# used when the configuration does not specify `engine` explicitly, hence a separate config.
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["config/metric_log_bucketed_config.xml"],
+    main_configs=["config/metric_log_config.xml"],
     stay_alive=True,
 )
 node3 = cluster.add_instance(
@@ -29,17 +29,7 @@ node4 = cluster.add_instance(
     stay_alive=True,
 )
 
-node5 = cluster.add_instance(
-    "node5",
-    main_configs=[
-        "config/metric_log_bucketed_config.xml",
-        "config/skip_alias_columns.xml",
-    ],
-    stay_alive=True,
-)
-
 LOG_PATH = "/etc/clickhouse-server/config.d/metric_log_config.xml"
-BUCKETED_LOG_PATH = "/etc/clickhouse-server/config.d/metric_log_bucketed_config.xml"
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -77,61 +67,105 @@ def test_table_rotation(start_cluster):
 
     assert in_old_metric_log > 0
 
-    node1.replace_in_config(LOG_PATH, ">transposed<", ">wide<")
+    time.sleep(1)
+    node1.query("SYSTEM FLUSH LOGS")
+
+    in_old_metric_log_again = int(node1.query("select count() from system.metric_log_0").strip())
+
+    assert in_old_metric_log == in_old_metric_log_again
+
+    node1.replace_in_config(LOG_PATH, ">transposed<", ">transposed_with_wide_view<")
+
+    # transposed with wide view
     node1.restart_clickhouse()
 
+    time.sleep(1)
+    node1.query("SYSTEM FLUSH LOGS")
 
-def test_bucketed_schema(start_cluster):
-    # default wide mode
-    node2.query("SYSTEM FLUSH LOGS")
-    assert int(node2.query("select count() from system.metric_log").strip()) > 0
-    assert "ProfileEvent_Query" in node2.query("SHOW CREATE TABLE system.metric_log")
+    assert int(node1.query("select count() from system.metric_log").strip()) > 0
+    assert int(node1.query("select count() from system.transposed_metric_log").strip()) > 0
 
-    node2.replace_in_config(BUCKETED_LOG_PATH, ">wide<", ">bucketed<")
+    assert "metric" in node1.query("SHOW CREATE TABLE system.transposed_metric_log")
+    # ignores specified ORDER BY
+    assert "ORDER BY (event_date, toStartOfHour(event_time), metric)" in node1.query("SHOW CREATE TABLE system.transposed_metric_log")
+    assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log")
 
-    # bucketed mode: a single Map(Enum16(...), Int64) column with bucketed serialization and per-metric aliases
-    node2.restart_clickhouse()
+    in_old_metric_log_again = int(node1.query("select count() from system.metric_log_0").strip())
+    in_older_metric_log_again = int(node1.query("select count() from system.metric_log_1").strip())
 
-    # The public table name must resolve to the bucketed log for named flushes as well
-    node2.query("SYSTEM FLUSH LOGS metric_log")
-    node2.query("SYSTEM FLUSH LOGS system.metric_log")
+    assert in_old_metric_log_again > 0
+    assert in_older_metric_log_again > 0
 
-    # `TSVRaw`: the default format escapes the quotes inside the query text
-    create_query = node2.query("SHOW CREATE TABLE system.metric_log FORMAT TSVRaw")
-    assert "`metrics` Map(Enum16(" in create_query
-    assert "map_serialization_version = 'with_buckets'" in create_query
-    assert "max_buckets_in_map = 128" in create_query
-    assert "map_buckets_strategy = 'constant'" in create_query
-    assert "ALIAS metrics['ProfileEvent_Query']" in create_query
+    time.sleep(1)
+    node1.query("SYSTEM FLUSH LOGS")
 
-    assert int(node2.query("select count() from system.metric_log").strip()) > 0
-    assert int(node2.query("select max(length(metrics)) from system.metric_log").strip()) > 0
-    # aliases read from the map; a missing key reads as zero
-    assert int(node2.query("select sum(ProfileEvent_Query) from system.metric_log").strip()) > 0
-    assert int(node2.query("select max(CurrentMetric_GlobalThread) from system.metric_log").strip()) > 0
+    assert int(node1.query("select count() from system.metric_log_0").strip()) == in_old_metric_log_again
+    assert int(node1.query("select count() from system.metric_log_1").strip()) == in_older_metric_log_again
 
-    # the old wide table was rotated
-    assert int(node2.query("select count() from system.metric_log_0").strip()) > 0
+    # back to wide mode again
+    node1.replace_in_config(LOG_PATH, ">transposed_with_wide_view<", ">wide<")
+    node1.restart_clickhouse()
 
-    node2.replace_in_config(BUCKETED_LOG_PATH, ">bucketed<", ">wide<")
-    node2.restart_clickhouse()
+    time.sleep(1)
+    node1.query("SYSTEM FLUSH LOGS")
 
+    assert int(node1.query("select count() from system.metric_log").strip()) > 0
+    assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log")
+    transposed_counter = int(node1.query("select count() from system.transposed_metric_log").strip())
 
-def test_bucketed_schema_is_rejected_without_alias_columns(start_cluster):
-    # With `default_system_log_flush_policy.skip_alias_columns` the per-metric columns of the
-    # bucketed schema cannot be created, so the server must refuse to start instead of
-    # silently exposing a table without the `ProfileEvent_*` / `CurrentMetric_*` columns.
-    node5.query("SYSTEM FLUSH LOGS")
-    assert "ProfileEvent_Query" in node5.query("SHOW CREATE TABLE system.metric_log")
+    time.sleep(1)
+    node1.query("SYSTEM FLUSH LOGS")
 
-    node5.replace_in_config(BUCKETED_LOG_PATH, ">wide<", ">bucketed<")
-    node5.stop_clickhouse()
-    node5.start_clickhouse(expected_to_fail=True)
+    assert int(node1.query("select count() from system.transposed_metric_log").strip()) == transposed_counter
 
-    assert node5.contains_in_log("cannot be created without alias columns")
+    assert int(node1.query("EXISTS TABLE system.metric_log_2").strip()) == 0
 
-    node5.replace_in_config(BUCKETED_LOG_PATH, ">bucketed<", ">wide<")
-    node5.start_clickhouse()
+    # now complex trick, let's test that views work for multiple transposed tables
+    node1.query("CREATE TABLE system.transposed_metric_log_0 as system.transposed_metric_log")
+    node1.query("INSERT INTO system.transposed_metric_log_0 SELECT * FROM system.transposed_metric_log")
+    node1.query("CREATE TABLE system.transposed_metric_log_1 as system.transposed_metric_log")
+    node1.query("INSERT INTO system.transposed_metric_log_1 SELECT * FROM system.transposed_metric_log")
+
+    node1.replace_in_config(LOG_PATH, ">wide<",  ">transposed_with_wide_view<")
+    node1.restart_clickhouse()
+
+    time.sleep(1)
+    node1.query("SYSTEM FLUSH LOGS")
+    print(node1.query("SHOW TABLES FROM system"))
+
+    assert int(node1.query("EXISTS TABLE system.metric_log").strip()) == 1
+    assert int(node1.query("EXISTS TABLE system.metric_log_0").strip()) == 1
+    assert int(node1.query("EXISTS TABLE system.metric_log_1").strip()) == 1
+    assert int(node1.query("EXISTS TABLE system.metric_log_2").strip()) == 1
+    assert int(node1.query("EXISTS TABLE system.metric_log_3").strip()) == 1
+    assert int(node1.query("EXISTS TABLE system.metric_log_4").strip()) == 1
+
+    assert "SystemMetricLogView" in node1.query("SHOW CREATE TABLE system.metric_log")
+    assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log")
+    assert int(node1.query("SELECT count() FROM system.metric_log WHERE not ignore(*)").strip()) > 0
+
+    assert "SystemMetricLogView" in node1.query("SHOW CREATE TABLE system.metric_log_0")
+    assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log_0")
+    assert int(node1.query("SELECT count() FROM system.metric_log_0 WHERE not ignore(*)").strip()) > 0
+
+    assert "SystemMetricLogView" in node1.query("SHOW CREATE TABLE system.metric_log_1")
+    assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log_1")
+    assert int(node1.query("SELECT count() FROM system.metric_log_1 WHERE not ignore(*)").strip()) > 0
+
+    node1.query("DROP TABLE system.transposed_metric_log_0")
+    node1.query("CREATE TABLE system.transposed_metric_log_2 as system.transposed_metric_log")
+    node1.query("CREATE TABLE system.transposed_metric_log_3 as system.transposed_metric_log")
+    node1.query("INSERT INTO system.transposed_metric_log_3 SELECT * FROM system.transposed_metric_log")
+
+    # to have some data accumulated before flush
+    time.sleep(1)
+    node1.query("SYSTEM FLUSH LOGS")
+
+    assert "SystemMetricLogView" in node1.query("SHOW CREATE TABLE system.metric_log_3")
+    assert int(node1.query("SELECT count() FROM system.metric_log_3 WHERE not ignore(*)").strip()) > 0
+    node1.query("DROP TABLE system.transposed_metric_log_3 SYNC")
+    # still works, return 0
+    assert int(node1.query("SELECT count() FROM system.metric_log_3 WHERE not ignore(*)").strip()) == 0
 
 
 def insert_into_transposed_metric_log(node, table_name, size):
@@ -173,6 +207,58 @@ def insert_into_metric_log(node, table_name, size):
 
     node.query(query)
 
+def test_data_correctness(start_cluster):
+    node2.query("SYSTEM FLUSH LOGS")
+    assert "ProfileEvent_Query" in node2.query("SHOW CREATE TABLE system.metric_log")
+
+    node2.replace_in_config(LOG_PATH, ">wide<", ">transposed_with_wide_view<")
+
+    # transposed mode
+    node2.restart_clickhouse()
+
+    node2.query("SYSTEM FLUSH LOGS")
+
+    insert_into_transposed_metric_log(node2, "transposed_metric_log", 20000)
+    insert_into_metric_log(node2, "metric_log_0", 20000)
+
+    old_data = int(node2.query("SELECT count() FROM system.metric_log_0 WHERE event_date == toDate('2024-10-01')").strip())
+    new_data = int(node2.query("SELECT count() FROM system.metric_log WHERE event_date == toDate('2024-10-01')").strip())
+    assert new_data == old_data
+
+    old_data = TSV(node2.query("SELECT event_time, ProfileEvent_Query FROM system.metric_log_0 WHERE event_date == toDate('2024-10-01') order by event_time LIMIT 1"))
+    new_data = TSV(node2.query("SELECT event_time, ProfileEvent_Query FROM system.metric_log WHERE event_date == toDate('2024-10-01') order by event_time LIMIT 1"))
+
+    assert old_data == new_data
+
+    old_data = TSV(node2.query("SELECT event_time, ProfileEvent_Query FROM system.metric_log_0 WHERE event_date == toDate('2024-10-01') order by event_time LIMIT 2000,4053"))
+    new_data = TSV(node2.query("SELECT event_time, ProfileEvent_Query FROM system.metric_log WHERE event_date == toDate('2024-10-01') order by event_time LIMIT 2000,4053"))
+
+    assert old_data == new_data
+
+    old_data = TSV(node2.query("SELECT event_time, ProfileEvent_Query FROM system.metric_log_0 WHERE event_date == toDate('2024-10-01') and event_time between toDateTime('2024-10-01 07:13:44') and toDateTime('2024-10-01 09:59:59') order by event_time"))
+    new_data = TSV(node2.query("SELECT event_time, ProfileEvent_Query FROM system.metric_log WHERE event_date == toDate('2024-10-01') and event_time between toDateTime('2024-10-01 07:13:44') and toDateTime('2024-10-01 09:59:59') order by event_time"))
+
+    assert old_data == new_data
+
+    old_data = TSV(node2.query("SELECT event_time, ProfileEvent_Query, CurrentMetric_Query, ProfileEvent_FileSegmentLockMicroseconds, ProfileEvent_MarkCacheHits FROM system.metric_log_0 WHERE event_date == toDate('2024-10-01') and event_time between toDateTime('2024-10-01 07:13:44') and toDateTime('2024-10-01 09:59:59') order by event_time"))
+    new_data = TSV(node2.query("SELECT event_time, ProfileEvent_Query, CurrentMetric_Query, ProfileEvent_FileSegmentLockMicroseconds, ProfileEvent_MarkCacheHits FROM system.metric_log WHERE event_date == toDate('2024-10-01') and event_time between toDateTime('2024-10-01 07:13:44') and toDateTime('2024-10-01 09:59:59') order by event_time"))
+
+    assert old_data == new_data
+
+    old_data = TSV(node2.query("SELECT * FROM system.metric_log_0 WHERE event_date == toDate('2024-10-01') order by event_time LIMIT 1"))
+    new_data = TSV(node2.query("SELECT * FROM system.metric_log WHERE event_date == toDate('2024-10-01') order by event_time LIMIT 1"))
+
+    assert old_data == new_data
+
+    old_data = TSV(node2.query("select sum(h) from (select cityHash64(*) as h FROM system.metric_log_0 WHERE event_date == toDate('2024-10-01') order by event_time) group by all"))
+    new_data = TSV(node2.query("select sum(h) from (select cityHash64(*) as h FROM system.metric_log WHERE event_date == toDate('2024-10-01') order by event_time) group by all"))
+
+    assert old_data == new_data
+
+    old_data = TSV(node2.query("SELECT event_time, ProfileEvent_Query, CurrentMetric_Query, ProfileEvent_FileSegmentLockMicroseconds, ProfileEvent_MarkCacheHits FROM system.metric_log_0 WHERE event_date == toDate('2024-10-01') and event_time between toDateTime('2024-10-01 07:13:44') and toDateTime('2024-10-01 09:59:59') order by event_time desc"))
+    new_data = TSV(node2.query("SELECT event_time, ProfileEvent_Query, CurrentMetric_Query, ProfileEvent_FileSegmentLockMicroseconds, ProfileEvent_MarkCacheHits FROM system.metric_log WHERE event_date == toDate('2024-10-01') and event_time between toDateTime('2024-10-01 07:13:44') and toDateTime('2024-10-01 09:59:59') order by event_time desc"))
+
+    assert old_data == new_data
 
 def exec_query_and_print_stats(node, name, query, settings={}):
     query_id = uuid.uuid4().hex

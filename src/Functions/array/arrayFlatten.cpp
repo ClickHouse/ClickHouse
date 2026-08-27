@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 /// arrayFlatten([[1, 2, 3], [4, 5]]) = [1, 2, 3, 4, 5] - flatten array.
-class ArrayFlatten final : public IFunction
+class ArrayFlatten : public IFunction
 {
 public:
     static constexpr auto name = "arrayFlatten";
@@ -109,7 +109,7 @@ result: Row 1: [1, 2, 3], Row2: [4]
 
         return ColumnArray::create(
             prev_data->getPtr(),
-            result_offsets_column ? std::move(result_offsets_column) : src_col->getOffsetsPtr());  /// NOLINT(performance-move-const-arg)
+            result_offsets_column ? std::move(result_offsets_column) : src_col->getOffsetsPtr());
     }
 
 private:
@@ -137,10 +137,10 @@ The flattened array contains all the elements from all source arrays.
         {"arr", "A multidimensional array.", {"Array(Array(T))"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a flattened array from the multidimensional array", {"Array(T)"}};
-    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayFlatten([[[1]], [[2], [3]]]);", "[1,2,3]"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayFlatten([[[1]], [[2], [3]]]);", "[1, 2, 3]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<ArrayFlatten>(documentation);
     factory.registerAlias("flatten", "arrayFlatten", FunctionFactory::Case::Insensitive);

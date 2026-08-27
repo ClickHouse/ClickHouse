@@ -31,7 +31,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-class FunctionSynonyms final : public IFunction
+class FunctionSynonyms : public IFunction
 {
 public:
     static constexpr auto name = "synonyms";
@@ -94,14 +94,14 @@ public:
         /// Create and fill the result array.
         const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*result_type).getNestedType();
 
-        auto out_data_column = elem_type->createColumn();
-        auto out_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
-        IColumn & out_data = *out_data_column;
-        IColumn::Offsets & out_offsets = out_offsets_column->getData();
+        auto out = ColumnArray::create(elem_type->createColumn());
+        IColumn & out_data = out->getData();
+        IColumn::Offsets & out_offsets = out->getOffsets();
 
         const ColumnString::Chars & data = word_col->getChars();
         const ColumnString::Offsets & offsets = word_col->getOffsets();
         out_data.reserve(input_rows_count);
+        out_offsets.resize(input_rows_count);
 
         IColumn::Offset current_offset = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -120,47 +120,13 @@ public:
             out_offsets[i] = current_offset;
         }
 
-        return ColumnArray::create(std::move(out_data_column), std::move(out_offsets_column));
+        return out;
     }
 };
 
 REGISTER_FUNCTION(Synonyms)
 {
-    FunctionDocumentation::Description description = R"(
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
-
-:::warning
-This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
-
-Finds synonyms of a given word.
-
-There are two types of synonym extensions:
-- `plain`
-- `wordnet`
-
-With the `plain` extension type you need to provide a path to a simple text file, where each line corresponds to a certain synonym set.
-Words in this line must be separated with space or tab characters.
-
-With the `wordnet` extension type you need to provide a path to a directory with the WordNet thesaurus in it.
-The thesaurus must contain a WordNet sense index.
-)";
-    FunctionDocumentation::Syntax syntax = "synonyms(ext_name, word)";
-    FunctionDocumentation::Arguments arguments = {
-        {"ext_name", "Name of the extension in which search will be performed.", {"String"}},
-        {"word", "Word that will be searched in extension.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns array of synonyms for the given word.", {"Array(String)"}};
-    FunctionDocumentation::Examples examples = {
-        {"Find synonyms", "SET allow_experimental_nlp_functions = 1;\nSELECT synonyms('en', 'important')", "['important','big','critical','crucial','essential']"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionSynonyms>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionSynonyms>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

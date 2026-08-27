@@ -1,19 +1,13 @@
-#include <Common/ThreadStatus.h>
-
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
-#include <base/getPageSize.h>
-#include <Common/CurrentThread.h>
-#include <Common/ErrnoException.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/QueryProfiler.h>
-#include <Common/SignalUnsafeMutationGuard.h>
 #include <Common/ThreadProfileEvents.h>
+#include <Common/QueryProfiler.h>
+#include <Common/ThreadStatus.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/memory.h>
-#include <Common/setThreadName.h>
-#include <Common/PerCPUMemory.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <base/getPageSize.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
 
@@ -23,12 +17,14 @@
 
 namespace DB
 {
+thread_local ThreadStatus constinit * current_thread = nullptr;
+
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
-#if !defined(SANITIZER) && defined(OS_HAS_SIGNAL_HANDLERS)
+#if !defined(SANITIZER)
 namespace
 {
 
@@ -81,26 +77,6 @@ struct ThreadStack
     }
     ~ThreadStack()
     {
-        /// The deadly signal handlers request SA_ONSTACK, so a signal delivered after this point would
-        /// run on freed memory. The thread keeps executing thread_local destructors after this one.
-        stack_t disable{};
-        disable.ss_flags = SS_DISABLE;
-        /// Darwin rejects a zero size even when disabling.
-        disable.ss_size = getSize();
-        if (sigaltstack(&disable, nullptr) != 0)
-        {
-            const auto saved_errno = errno;
-            /// Leak rather than free a stack signals may still be delivered onto.
-            try
-            {
-                LOG_FATAL(getLogger("ThreadStatus"), "Cannot disable the alternative signal stack, leaking it, {}", errnoToString(saved_errno));
-            }
-            catch (...) // NOLINT(bugprone-empty-catch) Ok: a destructor must not throw, and logging is best-effort
-            {
-            }
-            return;
-        }
-
         if constexpr (guardPagesEnabled())
             memoryGuardRemove(data, getPageSize());
 
@@ -109,12 +85,7 @@ struct ThreadStack
 
     static size_t getSize()
     {
-        auto size = std::max<size_t>({UNWIND_MINSIGSTKSZ, static_cast<size_t>(MINSIGSTKSZ), static_cast<size_t>(getPageSize())});
-
-        /// aligned_alloc() requires size to be a multiple of alignment, but MINSIGSTKSZ on
-        /// glibc >= 2.34 is a runtime sysconf(_SC_SIGSTKSZ) value that may not be page-aligned.
-        /// Not the case for official builds: they use the static MINSIGSTKSZ from the bundled sysroot.
-        size = ::Memory::alignUp(size, getPageSize());
+        auto size = std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ);
 
         if constexpr (guardPagesEnabled())
             size += getPageSize();
@@ -124,6 +95,7 @@ struct ThreadStack
     void * getData() const { return data; }
 
 private:
+    /// 16 KiB - not too big but enough to handle error.
     void * data = nullptr;
 };
 
@@ -133,28 +105,19 @@ static thread_local ThreadStack alt_stack;
 static thread_local bool has_alt_stack = false;
 #endif
 
+ThreadGroup::ThreadGroup()
+    : master_thread_id(CurrentThread::get().thread_id)
+    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(false))
+{}
 
 ThreadStatus::ThreadStatus()
-    : ThreadStatus(getThreadId())
-{
-}
-
-ThreadStatus::ThreadStatus(NoOSThreadTag)
-    : ThreadStatus(NO_OS_THREAD)
-{
-}
-
-ThreadStatus::ThreadStatus(UInt64 thread_id_)
-    : thread_id(thread_id_)
+    : thread_id(getThreadId())
 {
     chassert(!current_thread);
 
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("Thread");
-    /// memory_tracker is already parented to total_memory_tracker, so a thread that never attaches
-    /// to a group still honors total_memory_tracker_sample_probability.
-    resolveMemorySampleConfig();
     log = getLogger("ThreadStatus");
 
     current_thread = this;
@@ -165,22 +128,40 @@ ThreadStatus::ThreadStatus(UInt64 thread_id_)
     /// Will set alternative signal stack to provide diagnostics for stack overflow errors.
     /// If not already installed for current thread.
     /// Sanitizer makes larger stack usage and also it's incompatible with alternative stack by default (it sets up and relies on its own).
-    /// A target without signal delivery (`OS_HAS_SIGNAL_HANDLERS` undefined) has nothing for the alternative stack to serve.
-#if !defined(SANITIZER) && defined(OS_HAS_SIGNAL_HANDLERS)
+#if !defined(SANITIZER)
     if (!has_alt_stack)
     {
         /// Don't repeat tries even if not installed successfully.
         has_alt_stack = true;
 
+        /// We have to call 'sigaltstack' before first 'sigaction'. (It does not work other way, for unknown reason).
         stack_t altstack_description{};
         altstack_description.ss_sp = alt_stack.getData();
         altstack_description.ss_flags = 0;
         altstack_description.ss_size = ThreadStack::getSize();
 
-        /// `SA_ONSTACK` is requested once for all deadly signals in `setupCommonDeadlySignalHandlers`;
-        /// the kernel selects this stack at delivery time, so it may be installed afterwards.
         if (0 != sigaltstack(&altstack_description, nullptr))
+        {
             LOG_WARNING(log, "Cannot set alternative signal stack for thread, {}", errnoToString());
+        }
+        else
+        {
+            /// Obtain existing sigaction and modify it by adding a flag.
+            struct sigaction action{};
+            if (0 != sigaction(SIGSEGV, nullptr, &action))
+            {
+                LOG_WARNING(log, "Cannot obtain previous signal action to set alternative signal stack for thread, {}", errnoToString());
+            }
+            else if (!(action.sa_flags & SA_ONSTACK))
+            {
+                action.sa_flags |= SA_ONSTACK;
+
+                if (0 != sigaction(SIGSEGV, &action, nullptr))
+                {
+                    LOG_WARNING(log, "Cannot set action with alternative signal stack for thread, {}", errnoToString());
+                }
+            }
+        }
     }
 #endif
 }
@@ -194,26 +175,20 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
 void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
 {
     chassert(query_id.empty());
-    SignalUnsafeMutationGuard guard(is_query_id_usable);
     query_id = std::move(new_query_id);
 }
 
 void ThreadStatus::clearQueryId() noexcept
 {
-    SignalUnsafeMutationGuard guard(is_query_id_usable);
     query_id.clear();
 }
 
-std::string_view ThreadStatus::getQueryId() const
+const String & ThreadStatus::getQueryId() const
 {
-    if (!is_query_id_usable.load(std::memory_order_acquire))
-        return "";
-
-    std::atomic_signal_fence(std::memory_order_seq_cst);
     return query_id;
 }
 
-ContextPtr ThreadStatus::tryGetQueryContext() const
+ContextPtr ThreadStatus::getQueryContext() const
 {
     return query_context.lock();
 }
@@ -262,22 +237,13 @@ LogsLevel ThreadStatus::getClientLogsLevel() const
 
 void ThreadStatus::flushUntrackedMemory()
 {
-    /// The deferred bytes our contribution accounted for are about to be tracked, so remove it.
-    per_cpu_memory.release(per_cpu_untracked_memory);
-
-    Int64 current_untracked_memory = untracked_memory.load();
-    if (current_untracked_memory == 0)
+    if (untracked_memory == 0)
         return;
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
-    untracked_memory.store(0);
+    Int64 current_untracked_memory = current_thread->untracked_memory;
+    untracked_memory = 0;
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
-}
-
-void ThreadStatus::publishUntrackedMemory()
-{
-    if (!per_cpu_memory.publish(untracked_memory.load(), per_cpu_untracked_memory))
-        flushUntrackedMemory();
 }
 
 bool ThreadStatus::isQueryCanceled() const
@@ -288,15 +254,6 @@ bool ThreadStatus::isQueryCanceled() const
     if (local_data.query_is_canceled_predicate)
         return local_data.query_is_canceled_predicate();
     return false;
-}
-
-void ThreadStatus::throwIfQueryCanceled() const
-{
-    if (!thread_group)
-        return;
-
-    if (local_data.throw_if_query_canceled_predicate)
-        local_data.throw_if_query_canceled_predicate();
 }
 
 size_t ThreadStatus::getNextPlanStepIndex() const
@@ -313,7 +270,7 @@ ThreadStatus::~ThreadStatus()
 {
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
-    chassert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));
+    assert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));
 
     /// detachGroup if it was attached
     if (deleter)
@@ -392,7 +349,7 @@ MainThreadStatus::~MainThreadStatus()
     /// the file descriptors are closed, which will throw errors.
     /// As we don't really care about stats of the main thread (they won't be used) it's simpler to just disable them before the
     /// implicit ~ThreadStatus is called here
-    getInstance().taskstats = nullptr;
+    getInstance().taskstats.reset();
     main_thread = nullptr;
 }
 

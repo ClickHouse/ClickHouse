@@ -1,6 +1,4 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
@@ -20,24 +18,6 @@ SerializationNamed::SerializationNamed(
 {
     if (!ISerialization::Substream::named_types.contains(substream_type))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "SerializationNamed doesn't support substream type {}", substream_type);
-}
-
-UInt128 SerializationNamed::getHash(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_)
-{
-    SipHash hash;
-    hash.update("Named");
-    hash.update(nested_->getHash());
-    hash.update(name_.size());
-    hash.update(name_);
-    hash.update(static_cast<int>(substream_type_));
-    return hash.get128();
-}
-
-SerializationPtr SerializationNamed::create(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_)
-{
-    if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationNamed(nested_, name_, substream_type_));
-    return ISerialization::pooled(getHash(nested_, name_, substream_type_), [&] { return new SerializationNamed(nested_, name_, substream_type_); });
 }
 
 void SerializationNamed::enumerateStreams(
@@ -95,14 +75,15 @@ void SerializationNamed::serializeBinaryBulkWithMultipleStreams(
 }
 
 void SerializationNamed::deserializeBinaryBulkWithMultipleStreams(
-    IColumn & column,
+    ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
     addToPath(settings.path);
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, cache);
     settings.path.pop_back();
 }
 
@@ -110,18 +91,6 @@ void SerializationNamed::addToPath(SubstreamPath & path) const
 {
     path.push_back(substream_type);
     path.back().name_of_substream = name;
-}
-
-size_t SerializationNamed::allocatedBytes() const
-{
-    return sizeof(*this) + name.capacity();
-}
-
-SerializationPtr removeNamedSerialization(const SerializationPtr & serialization)
-{
-    if (const auto * named = typeid_cast<const SerializationNamed *>(serialization.get()))
-        return named->getNested();
-    return serialization;
 }
 
 }

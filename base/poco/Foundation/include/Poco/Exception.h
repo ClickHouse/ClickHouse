@@ -18,7 +18,7 @@
 #define Foundation_Exception_INCLUDED
 
 
-#include <exception>
+#include <stdexcept>
 #include "Poco/Foundation.h"
 
 
@@ -47,23 +47,19 @@ public:
     Exception(const Exception & exc);
     /// Copy constructor.
 
-    Exception(Exception && exc);
-    /// Move constructor.
-
-    ~Exception() noexcept;
+    ~Exception() throw();
     /// Destroys the exception and deletes the nested exception.
 
     Exception & operator=(const Exception & exc);
-    Exception & operator=(Exception && exc);
     /// Assignment operator.
 
-    virtual const char * name() const noexcept;
+    virtual const char * name() const throw();
     /// Returns a static string describing the exception.
 
-    virtual const char * className() const noexcept;
+    virtual const char * className() const throw();
     /// Returns the name of the exception class.
 
-    virtual const char * what() const noexcept;
+    virtual const char * what() const throw();
     /// Returns a static string describing the exception.
     ///
     /// Same as name(), but for compatibility with std::exception.
@@ -154,10 +150,10 @@ inline int Exception::code() const
         CLS(const std::string & msg, const std::string & arg, int code = CODE); \
         CLS(const std::string & msg, const Poco::Exception & exc, int code = CODE); \
         CLS(const CLS & exc); \
-        ~CLS() noexcept; \
+        ~CLS() throw(); \
         CLS & operator=(const CLS & exc); \
-        const char * name() const noexcept; \
-        const char * className() const noexcept; \
+        const char * name() const throw(); \
+        const char * className() const throw(); \
         Poco::Exception * clone() const; \
         void rethrow() const; \
     };
@@ -180,7 +176,7 @@ inline int Exception::code() const
     CLS::CLS(const CLS & exc) : BASE(exc) \
     { \
     } \
-    CLS::~CLS() noexcept \
+    CLS::~CLS() throw() \
     { \
     } \
     CLS & CLS::operator=(const CLS & exc) \
@@ -188,11 +184,11 @@ inline int Exception::code() const
         BASE::operator=(exc); \
         return *this; \
     } \
-    const char * CLS::name() const noexcept \
+    const char * CLS::name() const throw() \
     { \
         return NAME; \
     } \
-    const char * CLS::className() const noexcept \
+    const char * CLS::className() const throw() \
     { \
         return typeid(*this).name(); \
     } \

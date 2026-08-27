@@ -1,14 +1,13 @@
 #pragma once
 
 #include <base/strong_typedef.h>
-#include <base/types.h>
 
 #include <atomic>
+#include <condition_variable>
+#include <deque>
+#include <map>
 #include <memory>
-
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/NonblockingBoundedQueue.h>
-#include <Common/VectorWithMemoryTracking.h>
+#include <vector>
 
 #include <boost/noncopyable.hpp>
 
@@ -32,10 +31,9 @@ struct TextLogElement;
 using TextLogQueue = SystemLogQueue<TextLogElement>;
 
 using AsyncLogQueueSize = std::pair<std::string, size_t>;
-using AsyncLogQueueSizes = VectorWithMemoryTracking<AsyncLogQueueSize>;
+using AsyncLogQueueSizes = std::vector<AsyncLogQueueSize>;
 
 class ExtendedLogMessage;
-enum class ThreadName : uint8_t;
 
 class OwnSplitChannelBase : public Poco::Channel
 {
@@ -86,9 +84,9 @@ public:
     void setLevel(const std::string & name, int level) override;
 
     void logSplit(
-        const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, ThreadName msg_thread_name);
+        const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & msg_thread_name);
 
-    MapWithMemoryTracking<std::string, ChannelPtr> channels;
+    std::map<std::string, ChannelPtr> channels;
     std::weak_ptr<DB::TextLogQueue> text_log;
     std::atomic<int> text_log_max_priority = 0;
     std::atomic<bool> stop_logging = false;
@@ -100,7 +98,46 @@ struct OwnRunnableForTextLog;
 class AsyncLogMessage;
 using AsyncLogMessagePtr = std::shared_ptr<AsyncLogMessage>;
 
-/// Like OwnSplitChannel but logs on background threads — one per channel (plus text_log), to preserve order; internalTextLogsQueue (--send-logs-level) is still written synchronously.
+class AsyncLogMessageQueue
+{
+public:
+    explicit AsyncLogMessageQueue(
+        size_t max_size_, const ProfileEvents::Event & event_on_passed_message_, const ProfileEvents::Event & event_on_drop_message_);
+
+    using Queue = std::deque<AsyncLogMessagePtr>;
+
+    /// Enqueues a single message notification
+    void enqueueMessage(AsyncLogMessagePtr message);
+
+    /// Waits for a message notification to be dequeued and returns it. It might return an empty notification if wakeUp() was called
+    /// or a spurious wakeup occurs
+    AsyncLogMessagePtr waitDequeueMessage();
+
+    /// Gets the full queue including all pending notifications and clears it. It might return an empty queue if no messages were available
+    Queue getCurrentQueueAndClear();
+
+    /// Wakes up any threads waiting for a message notification.
+    void wakeUp();
+
+    /// Gets the current size of the queue.
+    size_t getCurrentMessageSize();
+
+private:
+    Queue message_queue;
+    std::condition_variable condition;
+    const ProfileEvents::Event & event_on_passed_message;
+    const ProfileEvents::Event & event_on_drop_message;
+    /// Default queue limit, to prevent memory overflow
+    const size_t max_size = 10000;
+    size_t dropped_messages = 0;
+    std::mutex mutex;
+};
+
+
+/// Same as OwnSplitChannel but it uses separate threads for logging.
+/// Note that it uses a separate thread per each different channel (including one for text_log) instead of using a common thread pool
+/// to ensure the order is kept
+/// Currently logging to the internalTextLogsQueue (TCP queue for --send-logs-level) is done synchronously when log is called
 class OwnAsyncSplitChannel final : public OwnSplitChannelBase, public boost::noncopyable
 {
 public:
@@ -108,12 +145,7 @@ public:
     ~OwnAsyncSplitChannel() override;
 
     void open() override;
-    /// Best-effort: reports a failed thread join to stderr and returns. For shutdown paths
-    /// (destructor, `Loggers::stopLogging`), where there is nothing better to do with the error.
     void close() override;
-    /// Fail-closed variant of `close`: propagates a failed thread join. For callers whose correctness
-    /// depends on no logging thread surviving, e.g. quiescing the process around `remapExecutable`.
-    void closeAndJoinThreads();
 
     void log(const Poco::Message & msg) override;
     void log(Poco::Message && msg) override;
@@ -136,76 +168,23 @@ public:
     AsyncLogQueueSizes getAsynchronousMetrics();
 
 private:
-    /// One channel's queue: lock-free bounded MPSC with drop-on-overflow accounting; producers are `log` callers, the single consumer is the background thread feeding the channel (or text_log).
-    struct LogQueue : boost::noncopyable
-    {
-        LogQueue(
-            size_t max_size,
-            const ProfileEvents::Event & event_on_passed_message_,
-            const ProfileEvents::Event & event_on_dropped_message_)
-            : messages(max_size)
-            , event_on_passed_message(event_on_passed_message_)
-            , event_on_dropped_message(event_on_dropped_message_)
-        {
-        }
-
-        /// Fixed power-of-two capacity, slots preallocated; new messages are dropped on overflow.
-        NonblockingBoundedQueue<AsyncLogMessagePtr> messages;
-        const ProfileEvents::Event & event_on_passed_message;
-        const ProfileEvents::Event & event_on_dropped_message;
-        /// Overflow drops so far: incremented by producers, reported and reset by the consumer.
-        std::atomic<size_t> dropped_messages = 0;
-    };
-
-    /// Pushes the message into the queue. If the queue is full, drops the message and counts the drop.
-    static void enqueueMessage(LogQueue & queue, AsyncLogMessagePtr message);
-
-    /// Publishes the current flush request counter as completed and wakes the waiters.
-    void releaseWaitingFlushers();
-
-    /// Waits until every producer that entered the asynchronous path before close started has
-    /// either published its message or switched to the synchronous path. Consumers call this
-    /// before taking their final drain boundary.
-    void waitForActiveAsyncLoggers();
-
     std::atomic<bool> is_open = false;
-    /// Producers that have observed an open channel and may still enqueue asynchronously. Closing waits
-    /// for this count to reach zero before draining, preventing a producer from adding a message after the
-    /// final drain.
-    std::atomic<size_t> active_async_loggers = 0;
     const size_t async_queue_size;
 
     /// Each channel has a different queue, and each one a single thread handling it
-    MapWithMemoryTracking<std::string, ChannelPtr> name_to_channels;
-    VectorWithMemoryTracking<OwnFormattingChannel *> channels;
-    VectorWithMemoryTracking<std::unique_ptr<LogQueue>> queues;
-    VectorWithMemoryTracking<std::unique_ptr<Poco::Thread>> threads;
-    VectorWithMemoryTracking<std::unique_ptr<OwnRunnableForChannel>> runnables;
+    std::map<std::string, ChannelPtr> name_to_channels;
+    std::vector<OwnFormattingChannel *> channels;
+    std::vector<std::unique_ptr<AsyncLogMessageQueue>> queues;
+    std::vector<std::unique_ptr<Poco::Thread>> threads;
+    std::vector<std::unique_ptr<OwnRunnableForChannel>> runnables;
 
     /// system.text_log does not have a channel, but it's also async
-    LogQueue text_log_queue;
-    /// Flush handshake. A flushTextLogs caller increments text_log_flush_requested and waits until
-    /// text_log_flush_completed reaches its request number. The text log thread loads the request counter,
-    /// only then samples the queue's enqueue position, drains up to it, and publishes the request number it
-    /// served. Sampling after the load makes the boundary exact: the acquire load of the request counter
-    /// synchronizes with every requester's increment (an RMW extends the release sequence), so every record
-    /// enqueued before a served request is covered by the sampled position (read-write coherence).
-    /// This covers records pushed by threads other than the requester too. The only observable sense in
-    /// which such a push precedes the request is a happens-before chain from the completed tryPush to the
-    /// requester's increment (the requester learned of the record through some synchronization — a query
-    /// response, a mutex, a pipe); prepending that chain to the edge above orders the push's enqueue_pos
-    /// update before the sample, so coherence still applies. A push with no such chain is concurrent with
-    /// the request, and no data-race-free program can tell whether it "was accepted first" — a mutex-based
-    /// boundary would make no stronger observable promise.
-    /// Distinct request numbers also keep concurrent flushers exact: a flush that starts during another
-    /// flush gets a higher number and is not released by the earlier drain, whose boundary was sampled
-    /// before its records were pushed.
-    std::atomic<UInt64> text_log_flush_requested = 0;
-    std::atomic<UInt64> text_log_flush_completed = 0;
+    AsyncLogMessageQueue text_log_queue;
     std::unique_ptr<Poco::Thread> text_log_thread;
     std::unique_ptr<OwnRunnableForTextLog> text_log_runnable;
     std::weak_ptr<DB::TextLogQueue> text_log;
     std::atomic<int> text_log_max_priority = 0;
+    std::atomic<bool> flush_text_logs = false;
 };
 
 

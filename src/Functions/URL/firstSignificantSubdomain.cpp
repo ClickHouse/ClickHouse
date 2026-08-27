@@ -26,25 +26,14 @@ For example, firstSignificantSubdomain('https://news.clickhouse.com/') = 'clickh
 
 The list of "insignificant" second-level domains and other implementation details may change in the future.
         )",
-        .syntax = "firstSignificantSubdomain(url)",
-        .examples{
-            {"firstSignificantSubdomain",
-             "SELECT firstSignificantSubdomain('https://news.clickhouse.com/')",
-             R"(
-┌─firstSignificantSubdomain('https://news.clickhouse.com/')─┐
-│ clickhouse                                                │
-└───────────────────────────────────────────────────────────┘
-)"}},
-        .introduced_in = {1, 1},
+        .examples{{"firstSignificantSubdomain", "SELECT firstSignificantSubdomain('https://news.clickhouse.com/')", ""}},
         .category = FunctionDocumentation::Category::URL
         });
 
     factory.registerFunction<FunctionFirstSignificantSubdomainRFC>(
         FunctionDocumentation{
         .description=R"(Returns the "first significant subdomain" according to RFC 1034.)",
-        .syntax = "firstSignificantSubdomainRFC(url)",
         .examples{},
-        .introduced_in = {22, 10},
         .category = FunctionDocumentation::Category::URL
         });
 }

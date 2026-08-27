@@ -39,14 +39,14 @@ SELECT
 SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 nanosecond)
         )",
         R"(
-┌─minus(CAST('1998-06-16', 'DateTime'), toIntervalNanosecond(10))─┐
-│                                   1998-06-15 23:59:59.999999990 │
-└─────────────────────────────────────────────────────────────────┘
+┌─minus(CAST('19⋯anosecond(10))─┐
+│ 1998-06-15 23:59:59.999999990 │
+└───────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSubtractNanoseconds>(documentation);
 }

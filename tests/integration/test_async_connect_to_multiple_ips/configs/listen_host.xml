@@ -1,0 +1,4 @@
+<clickhouse>
+    <listen_host>::</listen_host>
+</clickhouse>
+
