@@ -38,7 +38,7 @@ ${CLICKHOUSE_LOCAL} -q "SELECT x, n FROM file('${FILE_PREFIX}.arrow', 'Arrow', '
 echo 'stream, explicit structure'
 ${CLICKHOUSE_LOCAL} -q "SELECT x, n FROM file('${FILE_PREFIX}.arrows', 'ArrowStream', 'x Nullable(String), n UInt64') ORDER BY n"
 
-echo 'schema inference maps the null column to Nullable(Nothing)'
+echo 'schema inference maps the null-typed column to Nullable(Nothing)'
 ${CLICKHOUSE_LOCAL} -q "DESC file('${FILE_PREFIX}.arrow', 'Arrow')"
 
 echo 'select * with the inferred schema'

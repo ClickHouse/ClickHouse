@@ -483,10 +483,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             }
             else
             {
-                /// date64: milliseconds since the epoch, maps to DateTime (UInt32 seconds). The raw values
-                /// are untrusted and may fall outside the DateTime range; a plain narrowing cast would
-                /// silently wrap modulo 2^32 and return a wrong-but-plausible value, so out-of-range values
-                /// throw (or clamp with `date_time_overflow_behavior = 'saturate'`), like the date32 branch.
+                /// date64 (ms since epoch) -> DateTime (UInt32 seconds); out-of-range values throw or
+                /// saturate (date_time_overflow_behavior) instead of silently wrapping mod 2^32.
                 checkBufferSize(values, requiredBytes(rows, sizeof(Int64)), "date64");
                 auto & data = assert_cast<ColumnUInt32 &>(*column).getData();
                 data.resize(rows);
@@ -708,11 +706,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                     "Arrow IPC fixed-size-list child has {} rows, expected {}", child->size(), expected_child);
             auto offsets_col = ColumnUInt64::create(rows);
             auto & offs = offsets_col->getData();
-            /// The list's own validity cannot survive as a null map (ClickHouse Array is not Nullable) and,
-            /// unlike List/LargeList where a null slot has equal offsets and reads back empty, every
-            /// fixed-size slot spans `list_size` child elements whose values Arrow leaves unspecified for
-            /// null slots. Emit an empty array for a null slot and drop its child range, so unspecified
-            /// child memory is never exposed as values; a valid slot keeps its `list_size` elements.
+            /// A null slot still spans `list_size` child elements Arrow leaves unspecified; emit an empty
+            /// array and drop its child range (CH Array is not Nullable) so that memory is not read as data.
             if (null_count != 0)
             {
                 ColumnPtr null_map_col = buildNullMap(validity, rows, null_count);
@@ -1097,12 +1092,8 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
 
     if (dense)
     {
-        /// Compact each Variant element to only the rows the union references. Passing the children
-        /// through as-is would require every child to hold exactly its referenced values in row order,
-        /// but Arrow only requires the offsets to be monotonic per child: a child may legitimately hold
-        /// MORE values than the union references (e.g. a shared or sliced child), and a referenced null
-        /// in a nullable child is translated to the Variant NULL discriminator, leaving its value behind.
-        /// Either case would fail `ColumnVariant`'s size-per-discriminator invariant.
+        /// Compact each element to the referenced rows: a dense-union child may hold more values than
+        /// referenced (shared/sliced), which would break ColumnVariant's size-per-discriminator invariant.
         MutableColumns dense_compact;
         dense_compact.reserve(variant_columns.size());
         for (const auto & col : variant_columns)

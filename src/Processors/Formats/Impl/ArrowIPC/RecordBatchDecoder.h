@@ -122,8 +122,6 @@ private:
     /// reading or materializing its data. Used to skip an unrequested top-level column while keeping the
     /// flat node/buffer cursors aligned for the columns that follow.
     void skipField(const ArrowField & field);
-    /// `validity`/`null_count` are the field's own (outer) validity, needed by container types that cannot
-    /// be `Nullable` in ClickHouse (FixedSizeList) so a null slot does not expose unspecified child values.
     ColumnPtr decodeInner(
         const ArrowField & field, size_t rows, const Slice & validity, Int64 null_count,
         const DataTypePtr & target_hint, const String & path);

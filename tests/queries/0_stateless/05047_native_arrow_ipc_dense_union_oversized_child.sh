@@ -2,12 +2,9 @@
 # Tags: no-fasttest
 # no-fasttest: Arrow format and pyarrow are not available in fasttest builds
 
-# A dense Arrow union's offsets must be monotonic per child, but a child may legitimately hold MORE
-# values than the union references (e.g. a shared or sliced child). The decoder used to pass the
-# child columns straight into ColumnVariant, whose size-per-discriminator invariant then failed with
-# a LOGICAL_ERROR on such files (and on nullable children whose referenced nulls are translated to
-# the Variant NULL discriminator). The referenced values must be compacted instead. The file is
-# built with pyarrow because the ClickHouse writer always emits exactly-referenced children.
+# A dense Arrow union child may hold more values than the union references (shared/sliced child).
+# Only the referenced values must surface; passing children through as-is broke ColumnVariant.
+# Built with pyarrow because the ClickHouse writer always emits exactly-referenced children.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -2,11 +2,9 @@
 # Tags: no-fasttest
 # no-fasttest: Arrow format and pyarrow are not available in fasttest builds
 
-# Arrow `date64` (milliseconds since the epoch) maps to DateTime (UInt32 seconds). A value outside
-# the DateTime range used to be narrowed with a plain cast, silently wrapping modulo 2^32 into a
-# wrong-but-plausible DateTime. It must instead throw by default and clamp under
-# `date_time_overflow_behavior = 'saturate'`, like the date32 branch. The file is built with
-# pyarrow because the ClickHouse writer never emits date64.
+# Arrow date64 (ms) maps to DateTime (UInt32 seconds). Out-of-range values must throw (or saturate
+# with date_time_overflow_behavior), not silently wrap mod 2^32 into a wrong-but-plausible DateTime.
+# Built with pyarrow because the ClickHouse writer never emits date64.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -2,12 +2,9 @@
 # Tags: no-fasttest
 # no-fasttest: Arrow format and pyarrow are not available in fasttest builds
 
-# A null slot of an Arrow fixed_size_list still spans `list_size` positions in the child array, and
-# Arrow leaves the values at those positions unspecified. ClickHouse's Array cannot be Nullable, so
-# the slot itself cannot stay NULL — but it must read back as an EMPTY array (matching how a null
-# slot of the variable-size List reads), never as whatever bytes the writer happened to leave in the
-# child buffer. The file is built with pyarrow because the ClickHouse writer never produces a
-# fixed_size_list with null slots.
+# A null slot of an Arrow fixed_size_list spans list_size unspecified child positions. It must read
+# back as an empty array (CH Array is not Nullable), never as leftover child-buffer bytes.
+# Built with pyarrow because the ClickHouse writer never produces null fixed_size_list slots.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
