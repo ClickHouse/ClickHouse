@@ -38,19 +38,23 @@ struct DeserializeBinaryBulkStateVariantElementNullMap : public ISerialization::
 };
 
 
-UInt128 SerializationVariantElementNullMap::getHash(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
+UInt128 SerializationVariantElementNullMap::getHash(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_)
 {
     SipHash hash;
     hash.update("VariantElementNullMap");
     hash.update(variant_element_name_.size());
     hash.update(variant_element_name_);
     hash.update(variant_discriminator_);
+    hash.update(num_variants_);
     return hash.get128();
 }
 
-SerializationPtr SerializationVariantElementNullMap::create(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
+SerializationPtr SerializationVariantElementNullMap::create(
+    const String & variant_element_name_,
+    ColumnVariant::Discriminator variant_discriminator_,
+    size_t num_variants_)
 {
-    return ISerialization::pooled(getHash(variant_element_name_, variant_discriminator_), [&] { return new SerializationVariantElementNullMap(variant_element_name_, variant_discriminator_); });
+    return ISerialization::pooled(getHash(variant_element_name_, variant_discriminator_, num_variants_), [&] { return new SerializationVariantElementNullMap(variant_element_name_, variant_discriminator_, num_variants_); });
 }
 
 void SerializationVariantElementNullMap::enumerateStreams(
@@ -152,6 +156,8 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
                 discriminators_stream,
                 settings.continuous_reading,
                 variant_element_null_map_state->discriminators_state,
+                settings,
+                num_variants,
                 this);
 
             variant_limit = variant_pair.second;
@@ -201,11 +207,13 @@ SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::VariantNullM
     const ColumnPtr & local_discriminators_,
     const String & variant_element_name_,
     ColumnVariant::Discriminator global_variant_discriminator_,
-    ColumnVariant::Discriminator local_variant_discriminator_)
+    ColumnVariant::Discriminator local_variant_discriminator_,
+    size_t num_variants_)
     : local_discriminators(local_discriminators_)
     , variant_element_name(variant_element_name_)
     , global_variant_discriminator(global_variant_discriminator_)
     , local_variant_discriminator(local_variant_discriminator_)
+    , num_variants(num_variants_)
 {
 }
 
@@ -216,7 +224,7 @@ DataTypePtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::
 
 SerializationPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::create(const DB::SerializationPtr &, const DataTypePtr &) const
 {
-    return SerializationVariantElementNullMap::create(variant_element_name, global_variant_discriminator);
+    return SerializationVariantElementNullMap::create(variant_element_name, global_variant_discriminator, num_variants);
 }
 
 ColumnPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::create(const DB::ColumnPtr &) const
