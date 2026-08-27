@@ -45,7 +45,13 @@ set(DMLC_CORE_SOURCES
     ${DMLC_CORE_SOURCE_DIR}/io/line_split.cc
     ${DMLC_CORE_SOURCE_DIR}/io/filesys.cc
     ${DMLC_CORE_SOURCE_DIR}/config.cc
-    # These files cause issue related to missing libs (e.g., curl). Commented out as I don't really know how to fix it for now
+    # dmlc's S3, Azure and HDFS filesystem backends are deliberately left out. `DMLC_USE_S3` and
+    # `DMLC_USE_HDFS` default to 0 in `dmlc/base.h`, and `DMLC_USE_AZURE` is never defined, so `io.cc`
+    # compiles a "please compile with DMLC_USE_S3=1" stub in place of each backend and nothing
+    # references these translation units. They are unreachable here in any case: ClickHouse drives
+    # XGBoost entirely through the in-memory C API (`XGDMatrixCreateFromMat`,
+    # `XGBoosterPredictFromDMatrix`) and never hands it a path or a URI. Building them would pull in
+    # curl and libhdfs for no benefit.
     # ${DMLC_CORE_SOURCE_DIR}/io/s3_filesys.cc
     # ${DMLC_CORE_SOURCE_DIR}/io/azure_filesys.cc
     # ${DMLC_CORE_SOURCE_DIR}/io/hdfs_filesys.cc
