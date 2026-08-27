@@ -44,6 +44,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
+    extern const char set_or_join_sink_pause_before_publish[];
     extern const char set_or_join_sink_pause_before_replay[];
 }
 
@@ -77,7 +78,6 @@ private:
     std::optional<CompressedWriteBuffer> compressed_backup_buf;
     std::optional<NativeWriter> backup_stream;
     bool backup_promoted = false;
-    bool state_update_started = false;
     /// Set when `onFinish` published the backup and the live state. Until then the staged file
     /// belongs to an unfinished `INSERT` and must be removed if the sink goes away.
     bool insert_finished = false;
@@ -110,8 +110,8 @@ SetOrJoinSink::~SetOrJoinSink()
     /// successfully, and the backup of a finished `INSERT` must survive that.
     if (!insert_finished)
     {
-        /// A concurrent `rebuildFromBackups` reads the committed backup files, so removing one
-        /// must not interleave with it.
+        /// The rollback of a concurrently failed insert reads the committed backup files, so
+        /// removing one must not interleave with it.
         std::lock_guard publish_lock(table.mutate_mutex);
         discardStagedBackup();
     }
@@ -158,27 +158,15 @@ void SetOrJoinSink::discardStagedBackup() noexcept
 
 void SetOrJoinSink::onException(std::exception_ptr)
 {
-    /// The same critical section as the publish phase in `onFinish`: the live state must not be
-    /// rebuilt and swapped while another insert is still replaying its own committed backup,
-    /// otherwise that insert would apply the rows of its backup on top of a rebuilt state that
-    /// already contains them.
+    /// The same critical section as the publish phase in `onFinish`: the rollback of a concurrently
+    /// failed insert rebuilds the live state from the committed backup files, so removing the
+    /// staged or promoted file must not interleave with it.
     std::lock_guard publish_lock(table.mutate_mutex);
 
+    /// If the failure happened while `publishBackup` was replaying the promoted backup, the live
+    /// state has already been restored and the promoted file removed (`publishBackup` gives the
+    /// strong exception guarantee), so only the file of an earlier failure remains to clean up.
     discardStagedBackup();
-
-    if (!state_update_started)
-        return;
-
-    try
-    {
-        table.rebuildFromBackups(getContext());
-    }
-    catch (...)
-    {
-        tryLogCurrentException(
-            getLogger("SetOrJoinSink"),
-            fmt::format("Cannot restore the in-memory state of table {} after a failed INSERT", table.getStorageID().getNameForLogs()));
-    }
 }
 
 
@@ -213,6 +201,8 @@ void SetOrJoinSink::onFinish()
 {
     if (backup_buf)
     {
+        FailPointInjection::pauseFailPoint(FailPoints::set_or_join_sink_pause_before_publish);
+
         /// The whole publish phase (promote the staged file, then replay it into the live state)
         /// must be atomic with respect to other persistent inserts and their rollbacks: if the
         /// rollback of a concurrently failed insert rebuilt the live state from the committed
@@ -233,11 +223,16 @@ void SetOrJoinSink::onFinish()
 
         FailPointInjection::pauseFailPoint(FailPoints::set_or_join_sink_pause_before_replay);
 
-        state_update_started = true;
-        table.restoreFromFile(fs::path(backup_path) / backup_file_name, getContext());
+        /// Replays the promoted backup into the live state with the strong exception guarantee:
+        /// if the replay fails, the state is restored and the promoted file removed before the
+        /// exception leaves the publish critical section.
+        table.publishBackup(fs::path(backup_path) / backup_file_name, getContext());
+    }
+    else
+    {
+        table.finishInsert();
     }
 
-    table.finishInsert();
     insert_finished = true;
 }
 
@@ -328,7 +323,33 @@ void StorageSet::finishInsert()
     current_set->finishInsert();
 }
 
-void StorageSet::rebuildFromBackups(ContextPtr)
+void StorageSet::publishBackup(const String & backup_file_path, ContextPtr context)
+{
+    try
+    {
+        restoreFromFile(backup_file_path, context);
+    }
+    catch (...)
+    {
+        /// Restore the previous live state while still inside the publish critical section, so no
+        /// concurrent publish or rollback can replay the backup of this failed insert. The file is
+        /// removed first because the rebuild reads all committed backups.
+        try
+        {
+            disk->removeFileIfExists(backup_file_path);
+            rebuildFromBackups();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                getLogger("StorageSet"),
+                fmt::format("Cannot restore the in-memory state of table {} after a failed INSERT", getStorageID().getNameForLogs()));
+        }
+        throw;
+    }
+}
+
+void StorageSet::rebuildFromBackups()
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     auto rebuilt_set = std::make_shared<Set>(SizeLimits(), 0, true);
@@ -459,7 +480,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path, ContextPtr 
         file_path, info.rows, ReadableSize(info.bytes), getSize(context));
 }
 
-void StorageSetOrJoinBase::forEachBackupBlock(const std::function<void(const Block &)> & callback) const
+void StorageSetOrJoinBase::forEachBackupBlock(const std::function<void(const Block &)> & callback, const String & exclude_file_name) const
 {
     static const char * file_suffix = ".bin";
     static const auto file_suffix_size = strlen(".bin");
@@ -470,19 +491,26 @@ void StorageSetOrJoinBase::forEachBackupBlock(const std::function<void(const Blo
     {
         const auto & name = dir_it->name();
         const auto & file_path = dir_it->path();
+        if (name == exclude_file_name)
+            continue;
         if (disk->existsFile(file_path) && endsWith(name, file_suffix) && disk->getFileSize(file_path) > 0)
             backup_files.push({parse<UInt64>(name.substr(0, name.size() - file_suffix_size)), file_path});
     }
 
     while (!backup_files.empty())
     {
-        auto backup_buf = disk->readFile(backup_files.top().second, getReadSettings());
-        CompressedReadBuffer compressed_backup_buf(*backup_buf);
-        NativeReader backup_stream(compressed_backup_buf, 0);
-        for (Block block = backup_stream.read(); !block.empty(); block = backup_stream.read())
-            callback(block);
+        forEachBlockInBackupFile(backup_files.top().second, callback);
         backup_files.pop();
     }
+}
+
+void StorageSetOrJoinBase::forEachBlockInBackupFile(const String & file_path, const std::function<void(const Block &)> & callback) const
+{
+    auto backup_buf = disk->readFile(file_path, getReadSettings());
+    CompressedReadBuffer compressed_backup_buf(*backup_buf);
+    NativeReader backup_stream(compressed_backup_buf, 0);
+    for (Block block = backup_stream.read(); !block.empty(); block = backup_stream.read())
+        callback(block);
 }
 
 

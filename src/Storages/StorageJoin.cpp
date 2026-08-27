@@ -21,6 +21,7 @@
 #include <Core/BaseSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/JoinUtils.h>
+#include <IO/ReadHelpers.h>
 #include <Formats/NativeWriter.h>
 
 #include <Compression/CompressedWriteBuffer.h>
@@ -248,27 +249,41 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         /// rewrite does fail halfway, resynchronize the live state with whatever survived on disk.
         try
         {
+            /// Backup names must stay unique for the lifetime of the table: an insert that reserved
+            /// its backup number before this mutation started may still be streaming its staged
+            /// file, and will promote it under that name after the mutation finishes. Reuse the
+            /// smallest committed number for the consolidated backup -- `increment` is never
+            /// rewound, so that number can no longer be handed out to a new insert -- and leave
+            /// `increment` itself untouched.
+            static const auto file_suffix_size = strlen(".bin");
+            std::optional<UInt64> consolidated_num;
             std::vector<std::string> files;
             disk->listFiles(path, files);
             for (const auto & file_name: files)
             {
                 if (file_name.ends_with(".bin"))
+                {
+                    UInt64 file_num = parse<UInt64>(file_name.substr(0, file_name.size() - file_suffix_size));
+                    if (!consolidated_num || file_num < *consolidated_num)
+                        consolidated_num = file_num;
                     disk->removeFileIfExists(path + file_name);
+                }
             }
 
-            disk->replaceFile(path + tmp_backup_file_name, path + "1.bin");
+            if (consolidated_num)
+                disk->replaceFile(path + tmp_backup_file_name, path + toString(*consolidated_num) + ".bin");
+            else
+                disk->removeFileIfExists(path + tmp_backup_file_name);
         }
         catch (...)
         {
-            /// The write lock is already held here, so rebuild in place instead of calling
-            /// `rebuildFromBackups`, which would try to take it again.
+            /// The write lock is already held here, so rebuild in place instead of taking it again.
             join = buildFromBackups();
             throw;
         }
     }
 
     join = std::move(new_data);
-    increment = 1;
 }
 
 HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const
@@ -381,7 +396,7 @@ void StorageJoin::checkInsertIsPossible(ContextPtr context) const
             ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
 }
 
-HashJoinPtr StorageJoin::buildFromBackups() const
+HashJoinPtr StorageJoin::buildFromBackups(const String & exclude_file_name) const
 {
     auto rebuilt_join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
     forEachBackupBlock([&](const Block & block)
@@ -389,23 +404,50 @@ HashJoinPtr StorageJoin::buildFromBackups() const
         Block block_to_insert = block;
         convertRightBlock(block_to_insert);
         rebuilt_join->addBlockToJoin(block_to_insert, true);
-    });
+    }, exclude_file_name);
     return rebuilt_join;
 }
 
-void StorageJoin::rebuildFromBackups(ContextPtr context)
+void StorageJoin::publishBackup(const String & backup_file_path, ContextPtr context)
 {
-    auto rebuilt_join = buildFromBackups();
-
-    /// Use the query id of the failed insert: waiting for a lock that the same query holds would
-    /// never finish, so fail instead of blocking until `lock_acquire_timeout`.
+    /// Hold the write lock across the whole replay: a reader must never observe a partially
+    /// replayed backup, and the rollback of a failed replay must not have to reacquire the lock
+    /// after the partial state was already exposed -- a long-running reader could block that
+    /// reacquisition until `lock_acquire_timeout`, leaving the rows of the failed insert visible
+    /// until restart.
     TableLockHolder holder = tryLockForCurrentQueryTimedWithContext(rwlock, RWLockImpl::Write, context);
     if (!holder)
         throw Exception(
-            ErrorCodes::DEADLOCK_AVOIDED,
-            "StorageJoin: cannot restore the state because current query tries to read from this storage");
+            ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
 
-    join = std::move(rebuilt_join);
+    try
+    {
+        forEachBlockInBackupFile(backup_file_path, [this](const Block & block)
+        {
+            Block block_to_insert = block;
+            convertRightBlock(block_to_insert);
+            join->addBlockToJoin(block_to_insert, true);
+        });
+    }
+    catch (...)
+    {
+        /// The write lock is still held, so the partially updated state is replaced before any
+        /// reader can see it. The backup of the failed insert is excluded from the rebuild and
+        /// removed within the same publish critical section, so no concurrent rollback can
+        /// replay it either.
+        try
+        {
+            join = buildFromBackups(/*exclude_file_name=*/ fs::path(backup_file_path).filename());
+            disk->removeFileIfExists(backup_file_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                getLogger("StorageJoin"),
+                fmt::format("Cannot restore the in-memory state of table {} after a failed INSERT", getStorageID().getNameForLogs()));
+        }
+        throw;
+    }
 }
 
 size_t StorageJoin::getSize(ContextPtr context) const

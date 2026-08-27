@@ -64,16 +64,23 @@ protected:
     /// Restore from backup.
     void restore();
 
-    /// Read every committed backup in insertion order. The caller owns the destination state, so
-    /// it can keep an update private until it has been built successfully.
-    void forEachBackupBlock(const std::function<void(const Block &)> & callback) const;
+    /// Read every committed backup in insertion order, optionally skipping one file by name. The
+    /// caller owns the destination state, so it can keep an update private until it has been
+    /// built successfully.
+    void forEachBackupBlock(const std::function<void(const Block &)> & callback, const String & exclude_file_name = {}) const;
 
-    /// Restore the live state after an insert failed while publishing its committed backup.
-    virtual void rebuildFromBackups(ContextPtr context) = 0;
+    /// Read the blocks of a single backup file in insertion order.
+    void forEachBlockInBackupFile(const String & file_path, const std::function<void(const Block &)> & callback) const;
 
-private:
+    /// Apply the just-promoted backup file of an `INSERT` to the live state, with the strong
+    /// exception guarantee: on failure the live state has been restored to what it was before and
+    /// the backup file has been removed, so a failed `INSERT` never publishes any rows. Called
+    /// under `mutate_mutex`.
+    virtual void publishBackup(const String & backup_file_path, ContextPtr context) = 0;
+
     void restoreFromFile(const String & file_path, ContextPtr context = nullptr);
 
+private:
     /// Insert the block into the state.
     virtual void insertBlock(const Block & block, ContextPtr context) = 0;
     /// Call after all blocks were inserted.
@@ -117,7 +124,10 @@ private:
     void insertBlock(const Block & block, ContextPtr) override;
     void finishInsert() override;
     size_t getSize(ContextPtr) const override;
-    void rebuildFromBackups(ContextPtr) override;
+    void publishBackup(const String & backup_file_path, ContextPtr context) override;
+
+    /// Build a fresh state from the committed backups and swap it in.
+    void rebuildFromBackups();
 };
 
 }

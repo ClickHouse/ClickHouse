@@ -108,6 +108,7 @@ static struct InitFiu
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     PAUSEABLE(file_segment_pause_before_write) \
+    PAUSEABLE(set_or_join_sink_pause_before_publish) \
     PAUSEABLE(set_or_join_sink_pause_before_replay) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \

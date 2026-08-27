@@ -131,11 +131,12 @@ private:
     void insertBlock(const Block & block, ContextPtr context) override;
     void finishInsert() override {}
     size_t getSize(ContextPtr context) const override;
-    void rebuildFromBackups(ContextPtr context) override;
+    void publishBackup(const String & backup_file_path, ContextPtr context) override;
 
-    /// Build a fresh state from the committed backups without touching `join`. The caller decides
-    /// when and under which lock the result is published.
-    HashJoinPtr buildFromBackups() const;
+    /// Build a fresh state from the committed backups without touching `join`, optionally skipping
+    /// one backup file by name. The caller decides when and under which lock the result is
+    /// published.
+    HashJoinPtr buildFromBackups(const String & exclude_file_name = {}) const;
     RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
     /// Same as tryLockTimedWithContext, but returns `nullptr` if lock is already acquired by current query.
     static RWLockImpl::LockHolder tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context);
