@@ -459,7 +459,7 @@ timeSeriesIdToGroup(id)
 
 **الوسائط**
 
-* `id` — معرّف سلسلة زمنية. [`UInt64`](/ar/reference/data-types/int-uint) أو [`UInt128`](/ar/reference/data-types/int-uint) أو [`UUID`](/ar/reference/data-types/uuid) أو [`FixedString(16)`](/ar/reference/data-types/fixedstring)
+* `id` — معرّف سلسلة زمنية. يجب أن يكون من النوع نفسه الذي استُخدم عند استدعاء [timeSeriesStoreTags()](/ar/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/ar/reference/data-types/index)
 
 **القيمة المعادة**
 
@@ -504,7 +504,7 @@ timeSeriesIdToTags(id)
 
 **الوسيطات**
 
-* `id` — معرّف سلسلة زمنية. [`UInt64`](/ar/reference/data-types/int-uint) أو [`UInt128`](/ar/reference/data-types/int-uint) أو [`UUID`](/ar/reference/data-types/uuid) أو [`FixedString(16)`](/ar/reference/data-types/fixedstring)
+* `id` — معرّف سلسلة زمنية. يجب أن يكون من النوع نفسه المستخدم عند استدعاء [timeSeriesStoreTags()](/ar/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/ar/reference/data-types/index)
 
 **القيمة المعادة**
 
@@ -824,7 +824,7 @@ SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('servi
 و[timeSeriesIdToGroup()](/ar/reference/functions/regular-functions/time-series-functions#timeSeriesIdToGroup)
 للوصول إلى هذا التعيين لاحقًا أثناء تنفيذ الاستعلام.
 
-**الصياغة**
+**بنية**
 
 ```sql
 timeSeriesStoreTags(id, tags_array, separate_tag_name_1, separate_tag_value_1, ...)
@@ -832,7 +832,7 @@ timeSeriesStoreTags(id, tags_array, separate_tag_name_1, separate_tag_value_1, .
 
 **الوسائط**
 
-* `id` — معرّف سلسلة زمنية. [`UInt64`](/ar/reference/data-types/int-uint) أو [`UInt128`](/ar/reference/data-types/int-uint) أو [`UUID`](/ar/reference/data-types/uuid) أو [`FixedString(16)`](/ar/reference/data-types/fixedstring)
+* `id` — معرّف سلسلة زمنية. يمكن أن يكون من أي نوع قابل للمقارنة. يتم تخطي الصفوف ذات المعرّفات NULL. [`Any`](/ar/reference/data-types/index)
 * `tags_array` — مصفوفة من الأزواج (tag&#95;name, tag&#95;value). [`Array(Tuple(String, String))`](/ar/reference/data-types/array) أو [`NULL`](/ar/reference/syntax#null)
 * `separate_tag_name_i` — اسم وسم. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
 * `separate_tag_value_i` — قيمة وسم. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Nullable(String)`](/ar/reference/data-types/nullable)

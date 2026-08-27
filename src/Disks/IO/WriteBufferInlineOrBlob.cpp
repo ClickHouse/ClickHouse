@@ -1,5 +1,7 @@
 #include <Disks/IO/WriteBufferInlineOrBlob.h>
 
+#include <Core/Defines.h>
+
 namespace DB
 {
 
@@ -10,13 +12,21 @@ WriteBufferInlineOrBlob::WriteBufferInlineOrBlob(
     CreateUnderlying create_underlying_,
     FinalizeCallback finalize_callback_,
     size_t buf_size)
-    : WriteBufferFromFileBase(buf_size, nullptr, /*alignment=*/0)
+    /// This is a staging buffer only: before the spill it has to hold just the inline-or-blob
+    /// decision window (`max_inline_bytes`), after it the data is copied into `underlying`, which
+    /// does its own batching with a properly sized buffer. Allocating the full `buf_size` here
+    /// would defeat the adaptive write buffer sizing of wide-part writers, where every column
+    /// stream holds one of these buffers (see `use_adaptive_write_buffer`).
+    : WriteBufferFromFileBase(
+          std::min<size_t>(buf_size, std::max<size_t>(max_inline_bytes_, DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE)), nullptr, /*alignment=*/0)
     , file_name(std::move(file_name_))
     , max_inline_bytes(max_inline_bytes_)
     , create_blob_if_empty(create_blob_if_empty_)
     , create_underlying(std::move(create_underlying_))
     , finalize_callback(std::move(finalize_callback_))
 {
+    if (max_inline_bytes == 0)
+        spill();
 }
 
 void WriteBufferInlineOrBlob::spill()
@@ -42,7 +52,7 @@ void WriteBufferInlineOrBlob::nextImpl()
 void WriteBufferInlineOrBlob::preFinalize()
 {
     next();
-    if (underlying)
+    if (underlying && (create_blob_if_empty || count() > 0))
         underlying->preFinalize();
 }
 
@@ -50,20 +60,19 @@ void WriteBufferInlineOrBlob::finalizeImpl()
 {
     next();
 
-    if (!underlying && max_inline_bytes > 0)
+    if (!underlying)
     {
         finalize_callback(InlineData{std::move(accumulated)});
         return;
     }
 
-    /// Inlining is disabled and nothing was written: upload the empty blob only when the
-    /// metadata cannot represent an empty file without one.
-    if (!underlying && create_blob_if_empty)
-        spill();
-
     const size_t bytes_written = count();
-    if (underlying)
+
+    if (bytes_written == 0 && !create_blob_if_empty)
+        underlying->cancel();
+    else
         underlying->finalize();
+
     finalize_callback(WrittenBlob{bytes_written});
 }
 

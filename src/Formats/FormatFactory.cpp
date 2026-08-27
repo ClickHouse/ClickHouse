@@ -212,6 +212,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.write_map_as_array_of_tuples = settings[Setting::output_format_json_map_as_array_of_tuples];
     format_settings.json.read_map_as_array_of_tuples = settings[Setting::input_format_json_map_as_array_of_tuples];
     format_settings.json.json_type_escape_dots_in_keys = settings[Setting::json_type_escape_dots_in_keys];
+    format_settings.json.max_row_size_for_json_each_row = settings[Setting::input_format_json_max_object_size];
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
@@ -237,6 +238,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference];
     format_settings.parquet.output_string_as_string = settings[Setting::output_format_parquet_string_as_string];
     format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_parquet_fixed_string_as_fixed_byte_array];
+    format_settings.parquet.output_wide_integer_as_decimal = settings[Setting::output_format_parquet_wide_integer_as_decimal];
     format_settings.parquet.output_datetime_as_uint32 = settings[Setting::output_format_parquet_datetime_as_uint32];
     format_settings.parquet.output_date_as_uint16 = settings[Setting::output_format_parquet_date_as_uint16];
     format_settings.parquet.max_dictionary_size = settings[Setting::output_format_parquet_max_dictionary_size];

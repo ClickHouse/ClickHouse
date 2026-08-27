@@ -7,7 +7,9 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -26,6 +28,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/Context.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
@@ -62,10 +65,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
+    extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_statistics;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool flatten_nested;
     extern const SettingsUInt64 max_parser_depth;
@@ -79,6 +81,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int NO_SUCH_PROJECTION_IN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
@@ -458,6 +461,20 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
+    if (command_ast->type == ASTAlterCommand::MODIFY_PROJECTION)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.projection_decl = command_ast->projection_decl->clone();
+        command.type = AlterCommand::MODIFY_PROJECTION;
+
+        const auto & ast_projection_decl = command_ast->projection_decl->as<ASTProjectionDeclaration &>();
+
+        command.projection_name = ast_projection_decl.name;
+        command.if_exists = command_ast->if_exists;
+
+        return command;
+    }
     if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT)
     {
         AlterCommand command;
@@ -567,6 +584,16 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     }
     if (command_ast->type == ASTAlterCommand::MODIFY_QUERY)
     {
+        /// Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) shape a
+        /// result via derived-table wrapping during direct execution; a stored materialized view query
+        /// cannot support them equivalently (same reasons as the `CREATE VIEW` guard in
+        /// InterpreterCreateQuery::createTable). Reject them here too — including when nested in a
+        /// subquery's own `SETTINGS` — so `ALTER TABLE ... MODIFY QUERY` cannot bypass that guard.
+        if (hasConstructionSettings(*command_ast->select))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) "
+                "are not supported in a materialized view definition. Specify them on the query that reads the view instead.");
+
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_QUERY;
@@ -665,7 +692,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, CodecValidationSettings::trusted());
 
         column.ttl = ttl;
 
@@ -743,7 +770,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             else
             {
                 if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true);
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                        codec, data_type ? data_type : column.type, CodecValidationSettings::trusted());
 
                 if (comment)
                     column.comment = *comment;
@@ -1033,6 +1061,47 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
     }
+    else if (type == MODIFY_PROJECTION)
+    {
+        if (!metadata.projections.has(projection_name))
+        {
+            /// With `IF EXISTS` the whole command must be a no-op
+            if (if_exists)
+                return;
+
+            throw Exception(
+                ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
+                "There is no projection {} in table{}",
+                projection_name,
+                metadata.projections.getHintsMessage(projection_name));
+        }
+
+        /// create a new projection with the modified settings
+        auto new_projection = ProjectionDescription::getProjectionFromAST(
+            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
+
+        /// Existing parts store projection data built from the query body, so only the `WITH SETTINGS` clause may change
+        auto definition_without_settings = [](const IAST & definition_ast)
+        {
+            auto cloned = definition_ast.clone();
+            auto & decl = cloned->as<ASTProjectionDeclaration &>();
+            cloned->reset(decl.with_settings);
+            return cloned->formatWithSecretsOneLine();
+        };
+
+        const auto & old_projection = metadata.projections.get(projection_name);
+        if (definition_without_settings(*old_projection.definition_ast) != definition_without_settings(*new_projection.definition_ast))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot modify projection {}: only the WITH SETTINGS clause may be changed, "
+                "but the projection query differs from the existing one. "
+                "Use DROP PROJECTION and ADD PROJECTION to change the query",
+                projection_name);
+
+        /// Intentionally not a mutation because the new settings apply lazily
+        /// to parts written by future inserts and merges; `MATERIALIZE PROJECTION` forces a rebuild.
+        metadata.projections.replace(std::move(new_projection));
+    }
     else if (type == DROP_PROJECTION)
     {
         if (!partition && !clear)
@@ -1198,7 +1267,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             /// For implicit indices, check the index name rather than column_names because
             /// for ALIAS columns, column_names contains the underlying expression columns.
             if (index.isImplicitlyCreated() && index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
+            {
                 index.definition_ast = createImplicitMinMaxIndexAST(rename_to);
+                index.name = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to;
+                /// For an ALIAS column the index covers the columns its expression expands to,
+                /// which the column's own name never appears in, so a rename does not affect them.
+                if (!metadata.columns.hasAlias(rename_to))
+                    index.column_names = {rename_to};
+            }
             else
                 rename_visitor.visit(index.definition_ast);
         }
@@ -1315,16 +1391,7 @@ bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
     }
 }
 
-/// Metadata-only ALTER (no data rewrite): either byte-identical (`isTrueMetadataOnlyConversion`)
-/// or a lazy cast (`isLazyMetadataConversion`).
-bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
-{
-    return isTrueMetadataOnlyConversion(from, to) || isLazyMetadataConversion(from, to, context);
-}
-
-}
-
-bool isLazyMetadataConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
+bool isJSONLazyMetadataConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
 {
     if (!context || !context->getSettingsRef()[Setting::allow_experimental_json_lazy_type_hints])
         return false;
@@ -1361,36 +1428,155 @@ bool isLazyMetadataConversion(const IDataType * from, const IDataType * to, cons
     }
 }
 
+/// True for named-Tuple subfield additions through `Array` and `Map` wrappers.
+/// Existing fields must keep their names and order. `nested_lazy_settings` records other lazy
+/// conversions required by retained fields and is merged only if the whole Tuple change is valid.
+bool isNamedTupleSubfieldAddition(
+    const IDataType * from,
+    const IDataType * to,
+    const ContextPtr & context,
+    std::set<std::string_view> & nested_lazy_settings)
+{
+    if (!context || !context->getSettingsRef()[Setting::allow_metadata_only_named_tuple_alter])
+        return false;
+
+    if (from->equals(*to))
+        return false;
+
+    /// Unwrap Array
+    if (const auto * arr_from = typeid_cast<const DataTypeArray *>(from))
+    {
+        const auto * arr_to = typeid_cast<const DataTypeArray *>(to);
+        if (!arr_to)
+            return false;
+        return isNamedTupleSubfieldAddition(
+            arr_from->getNestedType().get(), arr_to->getNestedType().get(), context, nested_lazy_settings);
+    }
+
+    if (typeid_cast<const DataTypeNullable *>(from))
+        return false;
+
+    /// Unwrap Map (check key equality)
+    if (const auto * map_from = typeid_cast<const DataTypeMap *>(from))
+    {
+        const auto * map_to = typeid_cast<const DataTypeMap *>(to);
+        if (!map_to)
+            return false;
+        if (!map_from->getKeyType()->equals(*map_to->getKeyType()))
+            return false;
+        return isNamedTupleSubfieldAddition(
+            map_from->getValueType().get(), map_to->getValueType().get(), context, nested_lazy_settings);
+    }
+
+    /// Tuple level: check names present, ordering preserved, existing fields compatible
+    const auto * tuple_from = typeid_cast<const DataTypeTuple *>(from);
+    const auto * tuple_to = typeid_cast<const DataTypeTuple *>(to);
+    if (!tuple_from || !tuple_to
+        || !tuple_from->hasExplicitNames() || !tuple_to->hasExplicitNames())
+        return false;
+
+    const auto & from_names = tuple_from->getElementNames();
+    const auto & from_types = tuple_from->getElements();
+    const auto & to_names = tuple_to->getElementNames();
+    const auto & to_types = tuple_to->getElements();
+
+    bool found_addition = to_names.size() > from_names.size();
+    std::optional<size_t> last_to_index;
+    for (size_t i = 0; i < from_names.size(); ++i)
+    {
+        auto to_index = tuple_to->tryGetPositionByName(from_names[i]);
+        if (!to_index || (last_to_index && *to_index <= *last_to_index))
+            return false;
+        last_to_index = to_index;
+        const IDataType * old_elem = from_types[i].get();
+        const IDataType * new_elem = to_types[*to_index].get();
+        if (old_elem->equals(*new_elem))
+            continue;
+
+        if (isNamedTupleSubfieldAddition(old_elem, new_elem, context, nested_lazy_settings))
+        {
+            found_addition = true;
+            continue;
+        }
+        if (isJSONLazyMetadataConversion(old_elem, new_elem, context))
+        {
+            nested_lazy_settings.emplace("allow_experimental_json_lazy_type_hints");
+            continue;
+        }
+        if (!isTrueMetadataOnlyConversion(old_elem, new_elem))
+            return false;
+    }
+    return found_addition;
+}
+
+/// Collects every setting that enables a lazy conversion for this type change. Lazy conversions
+/// change the on-disk representation without scheduling an immediate mutation. Checks are
+/// independent because one conversion may be enabled by more than one mechanism.
+std::set<std::string_view> getLazyMetadataConversionSettings(
+    const IDataType * from, const IDataType * to, const ContextPtr & context)
+{
+    std::set<std::string_view> settings;
+    if (!context)
+        return settings;
+
+    std::set<std::string_view> named_tuple_nested_settings;
+    if (isNamedTupleSubfieldAddition(from, to, context, named_tuple_nested_settings))
+    {
+        settings.emplace("allow_metadata_only_named_tuple_alter");
+        settings.insert(named_tuple_nested_settings.begin(), named_tuple_nested_settings.end());
+    }
+
+    if (isJSONLazyMetadataConversion(from, to, context))
+        settings.emplace("allow_experimental_json_lazy_type_hints");
+
+    return settings;
+}
+
+}
+
 bool AlterCommand::isSettingsAlter() const
 {
     return type == MODIFY_SETTING || type == RESET_SETTING;
 }
 
-bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const
+MutationStageDecision AlterCommand::getMutationStageDecision(
+    const StorageInMemoryMetadata & metadata, const ContextPtr & context) const
 {
+    MutationStageDecision decision;
     if (ignore)
-        return false;
+        return decision;
 
-    /// We remove properties on metadata level
     if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
-        return false;
+        return decision;
 
     if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN || type == DROP_STATISTICS)
-        return true;
+    {
+        decision.requires_mutation = true;
+        return decision;
+    }
 
-    /// Drop alias is metadata alter, in other case mutation is required.
     if (type == DROP_COLUMN)
-        return metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name);
+    {
+        decision.requires_mutation = metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name);
+        return decision;
+    }
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
-        return false;
+        return decision;
 
     for (const auto & column : metadata.columns.getAllPhysical())
     {
-        if (column.name == column_name && !isMetadataOnlyConversion(column.type.get(), data_type.get(), context))
-            return true;
+        if (column.name != column_name)
+            continue;
+
+        if (isTrueMetadataOnlyConversion(column.type.get(), data_type.get()))
+            return decision;
+
+        decision.lazy_settings = getLazyMetadataConversionSettings(column.type.get(), data_type.get(), context);
+        decision.requires_mutation = decision.lazy_settings.empty();
+        return decision;
     }
-    return false;
+    return decision;
 }
 
 bool AlterCommand::isCommentAlter() const
@@ -1453,7 +1639,7 @@ bool AlterCommand::isDropOrRename() const
 
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
 {
-    if (!isRequireMutationStage(metadata, context))
+    if (!getMutationStageDecision(metadata, context).requires_mutation)
     {
         /// Even though this command doesn't require a mutation, we still need to apply it
         /// to the metadata so that subsequent commands see the updated state. For example,
@@ -1622,24 +1808,41 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     metadata_copy.column_ttls_by_name.clear();
     for (const auto & [name, ast] : column_ttl_asts)
     {
-        auto new_ttl_entry = TTLDescription::getTTLFromAST(
-            ast,
-            metadata_copy.columns,
-            context,
-            metadata_copy.primary_key,
-            context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
-                                                                                 : TTLValidationMode::Validate);
-        metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
+        try
+        {
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(
+                ast,
+                metadata_copy.columns,
+                context,
+                metadata_copy.primary_key,
+                context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
+                                                                                     : TTLValidationMode::Validate);
+            metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
+        }
+        catch (const Exception & exception)
+        {
+            throw Exception(
+                exception.code(), "Cannot apply ALTER because it breaks the TTL of column {}: {}", backQuote(name), exception.message());
+        }
     }
 
     if (metadata_copy.table_ttl.definition_ast != nullptr)
-        metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            metadata_copy.table_ttl.definition_ast,
-            metadata_copy.columns,
-            context,
-            metadata_copy.primary_key,
-            context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
-                                                                                 : TTLValidationMode::Validate);
+    {
+        try
+        {
+            metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                metadata_copy.table_ttl.definition_ast,
+                metadata_copy.columns,
+                context,
+                metadata_copy.primary_key,
+                context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
+                                                                                     : TTLValidationMode::Validate);
+        }
+        catch (const Exception & exception)
+        {
+            throw Exception(exception.code(), "Cannot apply ALTER because it breaks the TTL of the table: {}", exception.message());
+        }
+    }
 
     metadata = std::move(metadata_copy);
 }
@@ -1829,6 +2032,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
@@ -1881,12 +2085,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (command.codec)
             {
-                const auto & settings = context->getSettingsRef();
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
                     command.data_type,
-                    !settings[Setting::allow_suspicious_codecs],
-                    settings[Setting::allow_experimental_codecs]);
+                    codec_validation_settings);
             }
 
             /// Advance the working snapshot with the exact columns apply() would materialize
@@ -1928,8 +2130,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
                     command.data_type,
-                    !context->getSettingsRef()[Setting::allow_suspicious_codecs],
-                    context->getSettingsRef()[Setting::allow_experimental_codecs]);
+                    codec_validation_settings);
             }
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
