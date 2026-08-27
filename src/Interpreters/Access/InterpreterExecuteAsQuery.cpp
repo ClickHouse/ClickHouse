@@ -35,6 +35,9 @@ namespace
         /// CREATE HANDLER time and bound from the request - fails with UNKNOWN_QUERY_PARAMETER.
         new_context->setQueryParameters(context->getQueryParameters());
 
+        /// An empty current database cannot be copied over: `setCurrentDatabase` rejects an empty name,
+        /// and it cannot happen for a query anyway - the server refuses to start with an empty
+        /// `default_database`, so every session context has a database to inherit.
         const auto & database = context->getCurrentDatabase();
         if (!database.empty() && database != new_context->getCurrentDatabase())
             new_context->setCurrentDatabase(database);
@@ -49,7 +52,19 @@ namespace
         if (context->getZooKeeperMetadataTransaction())
             new_context->initZooKeeperMetadataTransaction(context->getZooKeeperMetadataTransaction());
 
-        new_context->setUser(context->getAccessControl().getID<User>(target_user_name));
+        /// The auth-method limits (`GRANTS` clause, per-method `VALID UNTIL`) belong to the session's
+        /// credential, not to the principal, so impersonation must not shed them: the impersonated
+        /// context keeps the intersection with the originating method's grants and its expiry.
+        new_context->setUser(
+            context->getAccessControl().getID<User>(target_user_name),
+            /* external_roles_= */ {},
+            context->getAuthenticationGrants(),
+            context->getAuthenticationValidUntil());
+
+        /// `setUser` replaces the current database with the target user's default database, but
+        /// the wrapped statement belongs to the caller's query and must keep its database scope.
+        if (!database.empty() && database != new_context->getCurrentDatabase())
+            new_context->setCurrentDatabase(database);
 
         /// We need to update the client info to make currentUser() return `target_user_name`.
         new_context->setCurrentUserName(target_user_name);
@@ -68,7 +83,17 @@ namespace
         auto database = context->getCurrentDatabase();
         auto changed_settings = context->getSettingsRef().changes();
 
-        context->setUser(context->getAccessControl().getID<User>(target_user_name));
+        /// `setUser` resets the auth-method limits (`GRANTS` clause, per-method `VALID UNTIL`), but they
+        /// belong to the session's credential, not to the principal — capture and re-apply them so an
+        /// auth-limited session cannot escape its limit by switching principals.
+        auto authentication_grants = context->getAuthenticationGrants();
+        auto authentication_valid_until = context->getAuthenticationValidUntil();
+
+        context->setUser(
+            context->getAccessControl().getID<User>(target_user_name),
+            /* external_roles_= */ {},
+            authentication_grants,
+            authentication_valid_until);
 
         /// We need to update the client info to make currentUser() return `target_user_name`.
         context->setCurrentUserName(target_user_name);
@@ -77,6 +102,7 @@ namespace
         context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
         context->applySettingsChanges(changed_settings);
 
+        /// See the note about an empty current database in `impersonateQueryContext`.
         if (!database.empty() && database != context->getCurrentDatabase())
             context->setCurrentDatabase(database);
     }

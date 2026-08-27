@@ -14,6 +14,20 @@
 
     <mlock_executable>true</mlock_executable>
 
+    <!-- The `default` single-node cluster, same as in the packaged `config.xml`. Without it a
+         server started with no config file has no clusters at all, so `cluster('default', ...)`,
+         `clusterAllReplicas('default', ...)` and `cluster_for_parallel_replicas = 'default'` all
+         fail with `CLUSTER_DOESNT_EXIST`. -->
+    <remote_servers>
+        <default>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
+
     <send_crash_reports>
         <enabled>true</enabled>
         <send_logical_errors>true</send_logical_errors>

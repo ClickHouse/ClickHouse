@@ -6,6 +6,10 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+#include <Common/Epoll.h>
+#endif
+
 namespace DB
 {
 
@@ -39,11 +43,17 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
         {
             started = true;
             distributed_query_executor = createDistributedQueryExecutor(
-                unique_query_id, distributed_query_plan, task_to_host_map, CurrentThread::tryGetQueryContext(), cancellation);
+                unique_query_id, distributed_query_plan, task_to_host_map, CurrentThread::tryGetQueryContext(), cancellation, stage_wakeup);
             distributed_query_executor->start();
         }
 
-        if (distributed_query_executor->execute())
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        /// `prepare` waits for the stages in the async queue, so do not block an execution thread here.
+        const UInt64 stage_poll_timeout_ms = 0;
+#else
+        const UInt64 stage_poll_timeout_ms = 100;
+#endif
+        if (distributed_query_executor->execute(stage_poll_timeout_ms))
         {
             cleanupLocked();
             return std::nullopt;
@@ -58,8 +68,42 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
         throw;
     }
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    waiting_for_stages = true;
+#endif
+
     return Chunk();
 }
+
+IProcessor::Status ReadFromDistributedPlanSource::prepare()
+{
+    auto status = ISource::prepare();
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// `Ready` means `work` would be called next, but the stages are still running and there is
+    /// nothing for it to do until the poll interval elapses. Give the execution thread back.
+    if (status == Status::Ready && waiting_for_stages)
+        return Status::Async;
+#endif
+
+    return status;
+}
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+std::tuple<int, uint32_t, Int64> ReadFromDistributedPlanSource::scheduleForEvent()
+{
+    /// Wake on the executor's notification, and fall back to the interval so a state change that
+    /// does not notify still gets noticed.
+    return {stage_wakeup->fd(), EPOLLIN | EPOLLERR, stage_poll_interval_ms};
+}
+
+void ReadFromDistributedPlanSource::onAsyncJobReady()
+{
+    /// Drains nothing when the interval fired instead of a notification; the fd is non-blocking.
+    stage_wakeup->drain();
+    waiting_for_stages = false;
+}
+#endif
 
 void ReadFromDistributedPlanSource::onCancel() noexcept
 {
@@ -67,6 +111,8 @@ void ReadFromDistributedPlanSource::onCancel() noexcept
     /// under the lock. Without active cleanup, cancellation is only seen on the next tryGenerate,
     /// which may never come once the pipeline is cancelled.
     cancellation->cancel();
+    /// Wake a parked source so it observes the cancellation now instead of at the next interval.
+    notifyStageWakeup(stage_wakeup);
     try
     {
         /// Wake exchange waiters before taking the lock: the lock holder itself may be blocked
