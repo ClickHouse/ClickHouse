@@ -645,12 +645,17 @@ struct DeltaJSONSchemaVisitor
     std::exception_ptr exception;
     bool has_char_varchar = false;
 
-    std::vector<Node> & listAt(size_t id)
+    const std::vector<Node> & listAt(size_t id) const
     {
         auto it = lists.find(id);
         if (it == lists.end())
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Delta schema list with id {} does not exist", id);
         return it->second;
+    }
+
+    std::vector<Node> & listAt(size_t id)
+    {
+        return const_cast<std::vector<Node> &>(static_cast<const DeltaJSONSchemaVisitor &>(*this).listAt(id));
     }
 
     Poco::Dynamic::Var buildType(const Node & node) const
@@ -662,7 +667,7 @@ struct DeltaJSONSchemaVisitor
                 return node.primitive;
             case Node::Kind::Array:
             {
-                const auto & children = lists.at(node.child_list_id);
+                const auto & children = listAt(node.child_list_id);
                 Poco::JSON::Object::Ptr obj = new Poco::JSON::Object;
                 obj->set("type", "array");
                 obj->set("elementType", buildType(children.at(0)));
@@ -671,7 +676,7 @@ struct DeltaJSONSchemaVisitor
             }
             case Node::Kind::Map:
             {
-                const auto & children = lists.at(node.child_list_id);
+                const auto & children = listAt(node.child_list_id);
                 Poco::JSON::Object::Ptr obj = new Poco::JSON::Object;
                 obj->set("type", "map");
                 obj->set("keyType", buildType(children.at(0)));
@@ -693,7 +698,7 @@ struct DeltaJSONSchemaVisitor
     Poco::JSON::Array::Ptr buildFields(size_t list_id) const
     {
         Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
-        for (const auto & node : lists.at(list_id))
+        for (const auto & node : listAt(list_id))
         {
             Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
             field->set("name", node.name);

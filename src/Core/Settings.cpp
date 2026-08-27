@@ -8945,7 +8945,7 @@ Trigger processor to spill data into external storage adpatively. grace join is 
 Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
 )", BETA, allow_experimental_delta_kernel_rs) \
     DECLARE(Bool, allow_delta_lake_create_table, false, R"(
-Allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog.
+Allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog. Creating a partitioned table (`PARTITION BY`) is not supported yet.
 )", EXPERIMENTAL) \
     DECLARE_WITH_ALIAS(Bool, allow_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.

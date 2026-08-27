@@ -791,19 +791,22 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
             ErrorCodes::NOT_IMPLEMENTED,
             "CREATE TABLE with ENGINE = DeltaLake is only supported in a Unity catalog database");
 
-    /// Keep compatible behaviour without adding extra round trip on successful path.
-    /// If delta_log does not exist -- it will be shown to user anyway.
-    if (!register_with_catalog && !local_context->getSettingsRef()[Setting::allow_delta_lake_create_table])
-        return;
+    /// Decide everything the setting governs before touching storage. Without a catalog, keep the
+    /// pre-feature behaviour: return silently, so a plain `CREATE TABLE ... ENGINE = DeltaLake(...)` stays
+    /// lazy and adds no round trip. With a catalog the CREATE cannot do anything useful while the feature is
+    /// off (the registration is the whole point), so fail instead of reporting success with no catalog entry.
+    if (!local_context->getSettingsRef()[Setting::allow_delta_lake_create_table])
+    {
+        if (!register_with_catalog)
+            return;
 
-    const bool delta_log_exists = deltaLogExists(*object_storage, configuration_ptr->getRawPath().path);
-    const bool fresh_create = has_explicit_columns && !delta_log_exists;
-    if ((fresh_create || register_with_catalog)
-        && !local_context->getSettingsRef()[Setting::allow_delta_lake_create_table])
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Creating a new DeltaLake table or registering an existing one into a catalog with CREATE TABLE "
             "is experimental; set allow_delta_lake_create_table = 1 to enable it");
+    }
+
+    const bool delta_log_exists = deltaLogExists(*object_storage, configuration_ptr->getRawPath().path);
 
     if (has_explicit_columns)
     {
