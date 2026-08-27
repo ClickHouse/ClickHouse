@@ -185,14 +185,15 @@ static void appendRequiredness(
 }
 
 /// Record `id`'s type signature into `out`, recursing into struct/list/map children.
-/// The signature is name- and order-agnostic: a primitive maps to its type string, a complex node
-/// to its kind, and every nested field/element/key/value is keyed by its own field id.
+/// The signature is name- and order-agnostic: a primitive maps to its canonicalized type string,
+/// a complex node to its kind, and every nested field/element/key/value is keyed by its own
+/// field id.
 static void walkTypeNode(
     Int64 id, const Poco::JSON::Object::Ptr & container, const char * type_key, std::unordered_map<Int64, String> & out)
 {
     if (!container->isObject(type_key))
     {
-        out[id] = container->getValue<String>(type_key); /// primitive leaf
+        out[id] = canonicalizeTypeSpacing(container->getValue<String>(type_key)); /// primitive leaf
         return;
     }
 
@@ -246,7 +247,7 @@ static std::unordered_map<Int64, String> schemaFieldTypes(const Poco::JSON::Arra
 /// ids and signatures as the current one. The rewrite materializes the current schema into files
 /// that older snapshots resolve against their own, so a dropped id, a changed type and an added id
 /// are all unsafe. Renames and reorders keep ids and signatures and stay allowed.
-static void checkCompactionSupportsSchemaEvolution(const Poco::JSON::Object::Ptr & initial_metadata_object)
+void checkCompactionSupportsSchemaEvolution(const Poco::JSON::Object::Ptr & initial_metadata_object)
 {
     auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     auto schemas = initial_metadata_object->getArray(Iceberg::f_schemas);
