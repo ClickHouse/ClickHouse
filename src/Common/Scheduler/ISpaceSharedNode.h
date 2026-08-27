@@ -25,6 +25,7 @@ public:
 
     ResourceCost allocated = 0; /// Currently allocated amount of resource under this node.
     size_t allocations = 0; /// Number of currently running allocations under this node.
+    size_t active_allocations = 0; /// Number of allocations currently holding a nonzero amount.
 
     /// Requests to be processed next from the node or its children.
     /// Keeping these fields up-to-date is part of request processing and activation logic
@@ -90,6 +91,10 @@ public:
     virtual void approveIncrease() = 0;
     virtual void approveDecrease() = 0;
 
+    /// Starts a new fit-check round for increases hidden by memory-growth suspension.
+    /// Composite nodes forward this to their children; queues perform the reset on activation.
+    virtual void retrySuspendedIncreases() = 0;
+
     /// Returns allocation to be killed from this node or its children to approve a `killer` increase request.
     /// NOTE: It is important to keep killing order opposite to acquire ordering.
     /// This means that allocation policies of every node should have:
@@ -125,17 +130,21 @@ public:
         {
             allocated += update.attached->allocated;
             allocations += update.attached->allocations;
+            active_allocations += update.attached->active_allocations;
         }
         if (update.detached)
         {
             allocated -= update.detached->allocated;
             allocations -= update.detached->allocations;
+            active_allocations -= update.detached->active_allocations;
         }
         ++updates;
     }
 
     void apply(IncreaseRequest & request)
     {
+        if (request.allocation.allocated == 0)
+            ++active_allocations;
         allocated += request.size;
         ++increases;
         if (request.kind == IncreaseRequest::Kind::Initial || request.kind == IncreaseRequest::Kind::Pending)
@@ -149,6 +158,11 @@ public:
 
     void apply(DecreaseRequest & request)
     {
+        if (request.size > 0 && request.allocation.allocated == request.size)
+        {
+            chassert(active_allocations > 0);
+            --active_allocations;
+        }
         allocated -= request.size;
         ++decreases;
         if (request.removing_allocation)

@@ -930,6 +930,12 @@ private:
         return child->selectAllocationToKill(killer, limit, details);
     }
 
+    void retrySuspendedIncreases() override
+    {
+        if (child)
+            child->retrySuspendedIncreases();
+    }
+
     void propagateUpdateSchedulingSettings() override
     {
         if (parent)

@@ -124,6 +124,12 @@ public:
         decrease = child->decrease;
     }
 
+    void retrySuspendedIncreases() override
+    {
+        if (child)
+            child->retrySuspendedIncreases();
+    }
+
     ResourceAllocation * selectAllocationToKill(IncreaseRequest &, ResourceCost, String &) override
     {
         chassert(false);

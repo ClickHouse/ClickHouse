@@ -121,6 +121,12 @@ void FairAllocation::approveDecrease()
     setDecrease(*decrease_child, decrease_child->decrease, false);
 }
 
+void FairAllocation::retrySuspendedIncreases()
+{
+    for (auto & [_, child] : children)
+        child->retrySuspendedIncreases();
+}
+
 void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
 {
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());

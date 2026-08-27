@@ -887,17 +887,13 @@ void suspendedIncreaseIsHiddenThroughPolicyHierarchy()
     heavy.increaseAsync(5000);
     auto small = std::make_unique<ManualAllocation>(small_queue_ptr, "small", 1000, /* wait_for_admission = */ false);
 
-    std::promise<std::pair<ResourceCost, size_t>> observed;
-    auto observed_future = observed.get_future();
-    t.scheduler.event_queue.enqueue([&]
-    {
-        observed.set_value({small->size(), heavy.killCount()});
-    });
     release.set_value();
 
-    auto [small_size, heavy_kills] = observed_future.get();
-    EXPECT_EQ(small_size, 1000);
-    EXPECT_EQ(heavy_kills, 0u);
+    /// Events are processed before approvals, so observe the policy through the actual admission
+    /// completion rather than an event that can legitimately run first.
+    small->waitSynced();
+    EXPECT_EQ(small->size(), 1000);
+    EXPECT_EQ(heavy.killCount(), 0u);
 
     /// The admitted sibling remains productive work, so the heavy query stays suspended until the
     /// sibling releases its allocation. That release retries the growth across queue boundaries.
@@ -916,6 +912,198 @@ TEST(SchedulerSpaceShared, SuspendedIncreaseIsHiddenThroughFairHierarchy)
 TEST(SchedulerSpaceShared, SuspendedIncreaseIsHiddenThroughPrecedenceHierarchy)
 {
     suspendedIncreaseIsHiddenThroughPolicyHierarchy<PrecedenceAllocation>();
+}
+
+
+TEST(SchedulerSpaceShared, FittingRegularGrowthRemainsProductive)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation heavy(queue, "heavy", 6000);
+    auto other = std::make_unique<ManualAllocation>(queue, "other", 1000);
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    heavy.increaseAsync(5000);
+    auto anchor = std::make_unique<ManualAllocation>(queue, "anchor", 500, /* wait_for_admission = */ false);
+    release.set_value();
+
+    anchor->waitSynced();
+    other->increaseAsync(500);
+    other->waitSynced();
+    EXPECT_EQ(other->size(), 1500);
+    EXPECT_EQ(heavy.killCount(), 0u);
+
+    /// The anchor can finish without ending the suspension while the regular-growth winner is active.
+    anchor.reset();
+    EXPECT_EQ(heavy.killCount(), 0u);
+
+    other.reset();
+    heavy.waitKills(1);
+}
+
+
+TEST(SchedulerSpaceShared, BeneficiaryReleasingToZeroEndsSuspension)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation heavy(queue, "heavy", 8000);
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    heavy.increaseAsync(5000);
+    ManualAllocation beneficiary(queue, "beneficiary", 1000, /* wait_for_admission = */ false);
+    release.set_value();
+
+    beneficiary.waitSynced();
+    EXPECT_EQ(heavy.killCount(), 0u);
+
+    /// Releasing all memory ends productive membership even though the allocation object stays alive.
+    beneficiary.decreaseAsync(1000);
+    beneficiary.waitSynced();
+    EXPECT_EQ(beneficiary.size(), 0);
+    heavy.waitKills(1);
+}
+
+
+TEST(SchedulerSpaceShared, NestedLimitsTrackTheSameBeneficiaryIndependently)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+
+    auto outer_limit = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 10000);
+    auto policy = std::make_shared<FairAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
+    policy->basename = "policy";
+    outer_limit->attachChild(policy);
+
+    auto inner_limit = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 7000);
+    inner_limit->basename = "inner_limit";
+    auto inner_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo{});
+    inner_queue->basename = "inner_queue";
+    AllocationQueue * inner_queue_ptr = inner_queue.get();
+    inner_limit->attachChild(inner_queue);
+    policy->attachChild(inner_limit);
+
+    auto outer_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo{});
+    outer_queue->basename = "outer_queue";
+    AllocationQueue * outer_queue_ptr = outer_queue.get();
+    policy->attachChild(outer_queue);
+
+    r.root_node = outer_limit;
+    outer_queue.reset();
+    inner_queue.reset();
+    inner_limit.reset();
+    policy.reset();
+    outer_limit.reset();
+    r.registerResource();
+
+    ManualAllocation inner_heavy(inner_queue_ptr, "inner_heavy", 6000);
+    ManualAllocation outer_heavy(outer_queue_ptr, "outer_heavy", 3000);
+
+    std::promise<void> inner_entered;
+    std::promise<void> inner_release;
+    t.scheduler.event_queue.enqueue([&] { inner_entered.set_value(); inner_release.get_future().get(); });
+    inner_entered.get_future().get();
+
+    inner_heavy.increaseAsync(2000);
+    auto inner_beneficiary = std::make_unique<ManualAllocation>(
+        inner_queue_ptr, "inner_beneficiary", 500, /* wait_for_admission = */ false);
+    inner_release.set_value();
+    inner_beneficiary->waitSynced();
+    EXPECT_EQ(inner_heavy.killCount(), 0u);
+
+    std::promise<void> outer_entered;
+    std::promise<void> outer_release;
+    t.scheduler.event_queue.enqueue([&] { outer_entered.set_value(); outer_release.get_future().get(); });
+    outer_entered.get_future().get();
+
+    outer_heavy.increaseAsync(8000); // Impossible even after the inner branch releases.
+    auto shared_beneficiary = std::make_unique<ManualAllocation>(
+        inner_queue_ptr, "shared_beneficiary", 200, /* wait_for_admission = */ false);
+    outer_release.set_value();
+    shared_beneficiary->waitSynced();
+
+    EXPECT_EQ(inner_heavy.killCount(), 0u);
+    EXPECT_EQ(outer_heavy.killCount(), 0u);
+
+    shared_beneficiary.reset();
+    inner_beneficiary.reset();
+
+    /// The inner last resort releases its branch. The outer impossible growth must then reach its
+    /// own last resort; a leaked nested beneficiary membership would leave it suspended forever.
+    inner_heavy.waitKills(1);
+    outer_heavy.waitKills(1);
+}
+
+
+TEST(SchedulerSpaceShared, FairHierarchySearchesPastNonFittingSibling)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+
+    auto limit = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 10000);
+    auto policy = std::make_shared<FairAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
+    policy->basename = "policy";
+    limit->attachChild(policy);
+
+    auto heavy_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo{});
+    heavy_queue->basename = "heavy_queue";
+    AllocationQueue * heavy_queue_ptr = heavy_queue.get();
+    policy->attachChild(heavy_queue);
+
+    auto blocked_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo{});
+    blocked_queue->basename = "blocked_queue";
+    AllocationQueue * blocked_queue_ptr = blocked_queue.get();
+    policy->attachChild(blocked_queue);
+
+    auto fitting_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo{});
+    fitting_queue->basename = "fitting_queue";
+    AllocationQueue * fitting_queue_ptr = fitting_queue.get();
+    policy->attachChild(fitting_queue);
+
+    r.root_node = limit;
+    fitting_queue.reset();
+    blocked_queue.reset();
+    heavy_queue.reset();
+    policy.reset();
+    limit.reset();
+    r.registerResource();
+
+    ManualAllocation heavy(heavy_queue_ptr, "heavy", 8000);
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    heavy.increaseAsync(5000);
+    auto blocked = std::make_unique<ManualAllocation>(
+        blocked_queue_ptr, "blocked", 3000, /* wait_for_admission = */ false);
+    auto fitting = std::make_unique<ManualAllocation>(
+        fitting_queue_ptr, "fitting", 1000, /* wait_for_admission = */ false);
+    release.set_value();
+
+    fitting->waitSynced();
+    EXPECT_EQ(fitting->size(), 1000);
+    EXPECT_EQ(blocked->size(), 0);
+    EXPECT_EQ(heavy.killCount(), 0u);
+
+    fitting.reset();
+    heavy.waitKills(1);
 }
 
 

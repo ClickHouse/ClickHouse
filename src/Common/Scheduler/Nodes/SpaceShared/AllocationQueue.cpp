@@ -68,7 +68,13 @@ void AllocationQueue::insertAllocation(ResourceAllocation & allocation, Resource
         pending_allocations.push_back(allocation);
         pending_allocations_size += initial_size;
         SCHED_DBG("{} -- insert(id={}, size={}, pending={})", basename, allocation.unique_id, initial_size, pending_allocations.size());
-        if (&allocation == &*pending_allocations.begin() && increasing_allocations.empty()) // Only if it should be processed next
+        /// A suspended running increase remains linked in `increasing_allocations`, but it is
+        /// ineligible. Wake the scheduler when this pending allocation is now the first visible
+        /// request; otherwise it can wait forever for an unrelated event.
+        const bool has_eligible_running_increase = std::any_of(
+            increasing_allocations.begin(), increasing_allocations.end(),
+            [](const ResourceAllocation & running) { return !running.isIncreaseSuspended(); });
+        if (&allocation == &*pending_allocations.begin() && !has_eligible_running_increase)
             scheduleActivation();
     }
     else // Zero-cost allocations are not blocked - enqueue into running allocations directly
@@ -121,24 +127,15 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
 {
     chassert(&allocation.queue == this);
 
-    if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
-    {
-        if (allocation.memory_growth_suspension_attempted)
-            return false;
-        if (suspended_growth && suspended_growth != &allocation)
-            return false;
+    /// Every request gets one fit check per resource-state round. The first regular request parked
+    /// in a queue is its growth owner; later regular, initial, and pending requests may also yield so
+    /// policy nodes can continue searching the constrained subtree.
+    if (allocation.memory_growth_suspension_attempted)
+        return false;
 
-        allocation.memory_growth_suspension_attempted = true;
-        if (!suspended_growth)
-            suspended_growth = &allocation;
-    }
-    else
-    {
-        /// A pending/initial request is not the memory holder whose growth started this round.
-        /// Park it only while searching for work behind an already suspended regular increase.
-        if (!suspended_growth || allocation.memory_growth_suspended)
-            return false;
-    }
+    allocation.memory_growth_suspension_attempted = true;
+    if (allocation.increase.kind == IncreaseRequest::Kind::Regular && !suspended_growth)
+        suspended_growth = &allocation;
 
     allocation.memory_growth_suspended = true;
     memory_growth_suspension_changed = true;
@@ -148,14 +145,10 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
     return true;
 }
 
-void AllocationQueue::retrySuspendedIncrease(ResourceAllocation & allocation)
+void AllocationQueue::retrySuspendedIncreases()
 {
-    chassert(&allocation.queue == this);
-    if (suspended_growth != &allocation)
-        return;
-
-    allocation.memory_growth_suspended = false;
-    allocation.memory_growth_suspension_attempted = false;
+    /// The owning limit may be above policy nodes and sibling queues. Defer the O(n) reset to this
+    /// queue's activation so every intrusive container is examined while holding `mutex`.
     memory_growth_suspension_retry_requested = true;
     memory_growth_suspension_changed = true;
     scheduleActivation();
@@ -228,6 +221,7 @@ void AllocationQueue::purgeQueue()
     decrease = nullptr;
     allocated = 0;
     allocations = 0;
+    active_allocations = 0;
     is_not_usable = true;
 }
 
@@ -349,11 +343,14 @@ void AllocationQueue::approveDecrease()
         /// fit check as well. This preserves queue order without letting one oversized request hide
         /// a later fitting request permanently.
         for (ResourceAllocation & pending : pending_allocations)
+        {
             pending.memory_growth_suspended = false;
+            pending.memory_growth_suspension_attempted = false;
+        }
         for (ResourceAllocation & increasing : increasing_allocations)
         {
-            if (&increasing != suspended_growth)
-                increasing.memory_growth_suspended = false;
+            increasing.memory_growth_suspended = false;
+            increasing.memory_growth_suspension_attempted = false;
         }
         memory_growth_suspension_changed = true;
     }
@@ -414,9 +411,15 @@ void AllocationQueue::processActivation()
         {
             /// A release elsewhere in the constrained subtree starts a new fit-check round here.
             for (ResourceAllocation & pending : pending_allocations)
+            {
                 pending.memory_growth_suspended = false;
+                pending.memory_growth_suspension_attempted = false;
+            }
             for (ResourceAllocation & increasing : increasing_allocations)
+            {
                 increasing.memory_growth_suspended = false;
+                increasing.memory_growth_suspension_attempted = false;
+            }
             memory_growth_suspension_retry_requested = false;
         }
 
@@ -572,7 +575,10 @@ void AllocationQueue::clearMemoryGrowthSuspension() // TSA_REQUIRES(mutex)
         allocation.memory_growth_suspension_attempted = false;
     }
     for (ResourceAllocation & allocation : pending_allocations)
+    {
         allocation.memory_growth_suspended = false;
+        allocation.memory_growth_suspension_attempted = false;
+    }
 }
 
 bool AllocationQueue::setDecrease() // TSA_REQUIRES(mutex)

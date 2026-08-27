@@ -43,10 +43,6 @@ public:
     /// a parent constraint may call it while an `AllocationQueue` mutex is held during decrease propagation.
     virtual bool trySuspendIncrease(ResourceAllocation & allocation) = 0;
 
-    /// Starts a new fit-check round for a previously suspended regular increase. Used by the hard-limit
-    /// owner when memory is released in another queue of the same scheduling subtree.
-    virtual void retrySuspendedIncrease(ResourceAllocation & allocation) = 0;
-
     /// Requests to remove an allocation from the queue.
     /// The removal is processed asynchronously by the scheduler thread.
     /// For pending allocations, `ResourceAllocation::allocationFailed` will be called.

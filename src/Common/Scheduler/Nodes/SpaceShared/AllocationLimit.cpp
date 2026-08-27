@@ -87,21 +87,11 @@ void AllocationLimit::approveIncrease()
     SCHED_DBG("{} -- approveIncrease({})", getPath(), increase->allocation.id);
     chassert(increase);
     if (increase == suspended_growth)
+        clearMemoryGrowthSuspension();
+    else if (suspended_growth && increase->allocation.allocated == 0)
     {
-        suspended_growth = nullptr;
-        suspended_growth_retry_pending = false;
-        memory_growth_suspension_beneficiaries = 0;
-        ++memory_growth_suspension_generation;
-    }
-    else if (suspended_growth
-        && (increase->kind == IncreaseRequest::Kind::Pending || increase->kind == IncreaseRequest::Kind::Initial)
-        && (increase->allocation.memory_growth_suspension_owner != this
-            || increase->allocation.memory_growth_suspension_generation != memory_growth_suspension_generation))
-    {
-        /// This allocation was admitted only because the blocked growth yielded. Keep the suspension
-        /// alive until the beneficiary releases, finishes, or becomes blocked on its own growth.
-        increase->allocation.memory_growth_suspension_owner = this;
-        increase->allocation.memory_growth_suspension_generation = memory_growth_suspension_generation;
+        /// A zero-sized allocation became productive while growth was parked. Positive allocations
+        /// already belonged to the suspension's active set, including fitting regular winners.
         ++memory_growth_suspension_beneficiaries;
     }
     apply(*increase);
@@ -121,38 +111,30 @@ void AllocationLimit::approveDecrease()
     const bool removed_suspended_growth = suspended_growth
         && &decreased_allocation == &suspended_growth->allocation
         && decrease->removing_allocation;
-    const bool retry_from_other_queue = suspended_growth
-        && &decreased_allocation.queue != &suspended_growth->allocation.queue
-        && !removed_suspended_growth;
-    const bool removed_beneficiary = suspended_growth
-        && decrease->removing_allocation
-        && decreased_allocation.memory_growth_suspension_owner == this
-        && decreased_allocation.memory_growth_suspension_generation == memory_growth_suspension_generation;
+    const bool beneficiary_became_inactive = suspended_growth
+        && &decreased_allocation != &suspended_growth->allocation
+        && decrease->size > 0
+        && decrease->size == decreased_allocation.allocated;
 
     // Check if allocation being killed released all its resources
     if (&decrease->allocation == allocation_to_kill && decrease->removing_allocation)
         allocation_to_kill = nullptr;
     if (removed_suspended_growth)
+        clearMemoryGrowthSuspension();
+    else if (suspended_growth)
     {
-        suspended_growth = nullptr;
-        suspended_growth_retry_pending = false;
-        memory_growth_suspension_beneficiaries = 0;
-        ++memory_growth_suspension_generation;
-    }
-    else
-    {
-        if (removed_beneficiary)
+        if (beneficiary_became_inactive)
         {
             chassert(memory_growth_suspension_beneficiaries > 0);
             --memory_growth_suspension_beneficiaries;
         }
 
-        if (retry_from_other_queue)
+        if (decrease->size > 0)
         {
-            /// The leaf that owns the parked growth cannot observe releases in sibling queues. Wake it
-            /// explicitly; the retry remains event-driven and is evaluated after this decrease is applied.
+            /// A release is a new resource-state round for every hidden request in this subtree,
+            /// including requests parked in sibling queues behind policy nodes.
             suspended_growth_retry_pending = true;
-            suspended_growth->allocation.queue.retrySuspendedIncrease(suspended_growth->allocation);
+            child->retrySuspendedIncreases();
         }
     }
 
@@ -195,7 +177,6 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
         suspended_growth = nullptr;
         suspended_growth_retry_pending = false;
         memory_growth_suspension_beneficiaries = 0;
-        ++memory_growth_suspension_generation;
         reapply_constraint = true;
     }
     // Publish the decrease BEFORE evaluating the increase: the eviction decision in `setIncrease` skips
@@ -277,18 +258,22 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                     if (suspended)
                     {
                         suspended_growth = new_increase;
-                        memory_growth_suspension_beneficiaries = 0;
-                        ++memory_growth_suspension_generation;
+                        /// Every other allocation already holding resources can make progress and
+                        /// release memory. Count them without per-limit pointer bookkeeping, which
+                        /// remains correct when AllocationLimits are stacked.
+                        const size_t suspended_is_active = new_increase->allocation.allocated > 0 ? 1 : 0;
+                        chassert(active_allocations >= suspended_is_active);
+                        memory_growth_suspension_beneficiaries = active_allocations - suspended_is_active;
                     }
                 }
                 else if (new_increase == suspended_growth)
                 {
                     suspended = new_increase->allocation.queue.trySuspendIncrease(new_increase->allocation);
                 }
-                else if (&new_increase->allocation.queue == &suspended_growth->allocation.queue
-                    && new_increase->kind != IncreaseRequest::Kind::Regular)
+                else
                 {
-                    /// Continue the same queue-local search past alternatives that do not fit.
+                    /// Keep searching across the complete constrained subtree. The request's own
+                    /// queue hides it for this round, allowing policy nodes to expose later siblings.
                     suspended = new_increase->allocation.queue.trySuspendIncrease(new_increase->allocation);
                 }
 
@@ -315,6 +300,21 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
     }
 
     return increase != old_increase;
+}
+
+void AllocationLimit::retrySuspendedIncreases()
+{
+    if (child)
+        child->retrySuspendedIncreases();
+}
+
+void AllocationLimit::clearMemoryGrowthSuspension()
+{
+    suspended_growth = nullptr;
+    suspended_growth_retry_pending = false;
+    memory_growth_suspension_beneficiaries = 0;
+    if (child)
+        child->retrySuspendedIncreases();
 }
 
 void AllocationLimit::selectAndKill(IncreaseRequest & killer)

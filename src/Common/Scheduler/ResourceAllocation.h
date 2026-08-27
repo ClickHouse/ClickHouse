@@ -53,6 +53,7 @@ public:
     bool isIncreaseSuspended() const { return memory_growth_suspended; }
 
 private:
+    friend class ISpaceSharedNode;
     friend class AllocationQueue;
     friend class AllocationLimit;
 
@@ -62,11 +63,6 @@ private:
     /// request can be considered. The allocation can still decrease or be removed while growth is parked.
     bool memory_growth_suspended = false; /// Scheduler-thread only.
     bool memory_growth_suspension_attempted = false; /// Scheduler-thread only.
-    /// Identifies the hard-limit suspension round that admitted this allocation as productive work.
-    /// The generation makes an old marker inert without requiring allocation during pressure cleanup.
-    AllocationLimit * memory_growth_suspension_owner = nullptr; /// Scheduler-thread only.
-    UInt64 memory_growth_suspension_generation = 0; /// Scheduler-thread only.
-
     IncreaseRequest increase;
     DecreaseRequest decrease;
 
