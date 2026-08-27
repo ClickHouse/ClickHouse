@@ -372,6 +372,25 @@ void triggerWatchCallback(
     }
 }
 
+#if USE_SSL
+/// The host part of "<host>:<port>", split lexically at the same character Poco::Net::SocketAddress
+/// splits it at, so that a port spelled as a service name still resolves. The result is matched
+/// against a certificate, so an IPv6 literal loses its brackets; a shape naming no host is empty.
+std::string peerHostName(const std::string & host_and_port)
+{
+    if (host_and_port.starts_with('/'))
+        return {};
+
+    if (host_and_port.starts_with('['))
+    {
+        size_t closing_bracket = host_and_port.find(']');
+        return closing_bracket == std::string::npos ? std::string{} : host_and_port.substr(1, closing_bracket - 1);
+    }
+
+    return host_and_port.substr(0, host_and_port.find(':'));
+}
+#endif
+
 }
 
 template <typename T>
@@ -617,7 +636,13 @@ void ZooKeeper::connect(
                 if (node.secure)
                 {
 #if USE_SSL
-                    socket = Poco::Net::SecureStreamSocket();
+                    auto secure_socket = Poco::Net::SecureStreamSocket();
+                    /// The certificate names the configured host while the socket connects to the
+                    /// address it resolved to, so the name has to be carried explicitly. This is
+                    /// also what puts the host into the SNI extension.
+                    if (const auto peer_host_name = peerHostName(node.host); !peer_host_name.empty())
+                        secure_socket.setPeerHostName(peer_host_name);
+                    socket = secure_socket;
 #else
                     throw Poco::Exception(
                         "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
