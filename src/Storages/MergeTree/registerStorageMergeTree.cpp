@@ -4818,6 +4818,7 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
         .syntax = "ENGINE = ReplicatedVersionedCollapsingMergeTree('zoo_path', 'replica_name', sign, version) ORDER BY expr",
         .related = {"VersionedCollapsingMergeTree"}});
 
+#if CLICKHOUSE_CLOUD
     factory.registerStorage("SharedMergeTree", create, features);
     factory.registerStorage("SharedCollapsingMergeTree", create, features);
     factory.registerStorage("SharedReplacingMergeTree", create, features);
@@ -4826,6 +4827,8 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
     factory.registerStorage("SharedCoalescingMergeTree", create, features);
     factory.registerStorage("SharedGraphiteMergeTree", create, features);
     factory.registerStorage("SharedVersionedCollapsingMergeTree", create, features);
+#endif
+
 }
 
 }
