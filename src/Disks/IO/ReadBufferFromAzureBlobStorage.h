@@ -19,9 +19,10 @@ class BlobStorageLogWriter;
 using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
 
 /// Copies at most `n` bytes from `body_stream` into `to` and returns the number of bytes copied.
-/// The length of the stream is the `Content-Length` reported by the remote endpoint: it is not
-/// trusted, because an endpoint that returns more data than the requested range would otherwise
-/// overflow the destination buffer.
+/// The length of the stream is the `Content-Length` reported by the remote endpoint and is not
+/// consulted at all: an endpoint that returns more data than the requested range would otherwise
+/// overflow the destination buffer, and one that reports less than the body actually holds would
+/// truncate the copy. The copy stops at `n` bytes or at the actual end of the body.
 size_t copyFromAzureBodyStream(Azure::Core::IO::BodyStream & body_stream, char * to, size_t n, const Azure::Core::Context & context);
 
 class ReadBufferFromAzureBlobStorage : public ReadBufferFromFileBase
@@ -77,8 +78,9 @@ private:
     void setMetadataFromResponse(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details, size_t blob_size) const;
 
     /// The offset just past the last byte that the current download is allowed to deliver.
-    /// `reported_length` is the length of the response body as reported by the remote endpoint,
-    /// and is not trusted: it is bounded by `read_until_position_`, which is set locally.
+    /// When `read_until_position_` is set, it is authoritative, because it is set locally;
+    /// `reported_length`, the length of the response body as reported by the remote endpoint,
+    /// is not trusted and is only used to size the reads of an unbounded download.
     static size_t getTotalSizeOfCurrentDownload(int64_t reported_length, off_t offset_, off_t read_until_position_);
 
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;

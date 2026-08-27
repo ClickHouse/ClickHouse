@@ -19,6 +19,11 @@
 
 #include <gtest/gtest.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int UNEXPECTED_END_OF_FILE;
+}
+
 namespace
 {
 
@@ -50,13 +55,13 @@ private:
     size_t position = 0;
 };
 
-/// A blob of `size` bytes counting up from zero, so that every byte can be attributed to its
-/// position in the blob.
-std::vector<uint8_t> countingUpFromZero(size_t size)
+/// The bytes of the blob at positions `start`..`start + size - 1`: every byte of the blob holds
+/// the low 8 bits of its position, so that every byte can be attributed to its position.
+std::vector<uint8_t> countingBytes(size_t start, size_t size)
 {
     std::vector<uint8_t> data(size);
     for (size_t i = 0; i < size; ++i)
-        data[i] = static_cast<uint8_t>(i);
+        data[i] = static_cast<uint8_t>(start + i);
     return data;
 }
 
@@ -66,47 +71,73 @@ void assertCountsUpFromZero(const std::string & data)
         ASSERT_EQ(static_cast<uint8_t>(data[i]), static_cast<uint8_t>(i)) << "at position " << i;
 }
 
-/// Answers every `Download` with `response_size` bytes from the beginning of the blob, no matter
-/// what range was requested.
-class FixedSizeResponseTransport : public Azure::Core::Http::HttpTransport
+/// Serves a blob whose every byte holds the low 8 bits of its position, but misbehaves in the
+/// two ways a remote endpoint can: every response carries at most `max_response_size` bytes no
+/// matter how much was requested (an endpoint that caps or truncates its ranged responses), and
+/// no byte at position `served_size` or beyond is ever served (a blob that is shorter than the
+/// caller believes), while `blob_size` is what the endpoint claims in `Content-Range`.
+class MisbehavingRangeTransport : public Azure::Core::Http::HttpTransport
 {
 public:
-    FixedSizeResponseTransport(size_t response_size_, size_t blob_size_, bool send_etag_)
-        : response_size(response_size_), blob_size(blob_size_), send_etag(send_etag_)
+    MisbehavingRangeTransport(size_t max_response_size_, size_t served_size_, size_t blob_size_, bool send_etag_)
+        : max_response_size(max_response_size_), served_size(served_size_), blob_size(blob_size_), send_etag(send_etag_)
     {
     }
 
-    std::unique_ptr<Azure::Core::Http::RawResponse> Send(Azure::Core::Http::Request &, const Azure::Core::Context &) override
+    std::unique_ptr<Azure::Core::Http::RawResponse> Send(Azure::Core::Http::Request & request, const Azure::Core::Context &) override
     {
+        /// "x-ms-range: bytes=<start>-<end>", where "-<end>" is optional.
+        size_t range_start = 0;
+        if (auto range = request.GetHeader("x-ms-range"); range.HasValue())
+        {
+            const std::string & value = range.Value();
+            if (const size_t eq_pos = value.find('='); eq_pos != std::string::npos)
+                range_start = std::stoull(value.substr(eq_pos + 1));
+        }
+
+        const size_t response_size = range_start < served_size
+            ? std::min(max_response_size, served_size - range_start)
+            : 0;
+        const size_t range_end = range_start + (response_size == 0 ? 0 : response_size - 1);
+
         auto response = std::make_unique<Azure::Core::Http::RawResponse>(
             1, 1, Azure::Core::Http::HttpStatusCode::PartialContent, "Partial Content");
 
         response->SetHeader("Content-Length", std::to_string(response_size));
         response->SetHeader(
-            "Content-Range", "bytes 0-" + std::to_string(response_size - 1) + "/" + std::to_string(blob_size));
+            "Content-Range",
+            "bytes " + std::to_string(range_start) + "-" + std::to_string(range_end) + "/" + std::to_string(blob_size));
         response->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
         if (send_etag)
             response->SetHeader("ETag", "\"0x8DA000000000000\"");
         response->SetBodyStream(
-            std::make_unique<LyingBodyStream>(countingUpFromZero(response_size), static_cast<int64_t>(response_size)));
+            std::make_unique<LyingBodyStream>(countingBytes(range_start, response_size), static_cast<int64_t>(response_size)));
 
         return response;
     }
 
 private:
-    size_t response_size;
+    size_t max_response_size;
+    size_t served_size;
     size_t blob_size;
     bool send_etag;
 };
 
-/// Reads a blob from an endpoint that answers every ranged request with `response_size` bytes,
+/// Reads a blob from an endpoint that answers every ranged request with at most
+/// `max_response_size` bytes and never serves a byte at position `served_size` or beyond,
 /// with the right bound set to `read_until_position` and a `buffer_size`-byte reading buffer.
 std::string readWithRightBound(
-    size_t response_size, size_t blob_size, size_t read_until_position, size_t buffer_size, bool send_etag = true)
+    size_t max_response_size,
+    size_t served_size,
+    size_t blob_size,
+    size_t read_until_position,
+    size_t buffer_size,
+    size_t max_read_retries = 1,
+    bool send_etag = true)
 {
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry.MaxRetries = 0;
-    client_options.Transport.Transport = std::make_shared<FixedSizeResponseTransport>(response_size, blob_size, send_etag);
+    client_options.Transport.Transport = std::make_shared<MisbehavingRangeTransport>(max_response_size, served_size, blob_size, send_etag);
 
     auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
         Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
@@ -118,7 +149,7 @@ std::string readWithRightBound(
         container_client,
         "blob",
         read_settings,
-        /* max_single_read_retries */ 1,
+        max_read_retries,
         /* max_single_download_retries */ 1);
 
     buffer.setReadUntilPosition(read_until_position);
@@ -158,6 +189,22 @@ TEST(AzureBodyStreamCopy, ShortResponse)
     ASSERT_EQ(copied, 3);
 }
 
+/// The endpoint reports a `Content-Length` smaller than the bytes the body can actually produce:
+/// the reported length must not truncate the copy, because the requested size is the only bound
+/// that matters and the copy stops at the actual end of the body anyway.
+TEST(AzureBodyStreamCopy, LengthSmallerThanData)
+{
+    const size_t requested = 8;
+    LyingBodyStream body_stream(std::vector<uint8_t>(8, 0x5A), 1);
+
+    std::vector<char> destination(requested);
+    const size_t copied = DB::copyFromAzureBodyStream(body_stream, destination.data(), requested, Azure::Core::Context());
+
+    ASSERT_EQ(copied, requested);
+    for (char byte : destination)
+        ASSERT_EQ(static_cast<uint8_t>(byte), 0x5A);
+}
+
 /// A stream of unknown length must not be copied beyond the destination buffer either.
 TEST(AzureBodyStreamCopy, UnknownLength)
 {
@@ -176,7 +223,8 @@ TEST(AzureBodyStreamCopy, UnknownLength)
 TEST(AzureReadUntilPosition, OverlongRangeResponse)
 {
     std::string data;
-    ASSERT_NO_THROW(data = readWithRightBound(/* response_size */ 128, /* blob_size */ 1000, /* read_until_position */ 100, /* buffer_size */ 64));
+    ASSERT_NO_THROW(data = readWithRightBound(
+        /* max_response_size */ 128, /* served_size */ 1000, /* blob_size */ 1000, /* read_until_position */ 100, /* buffer_size */ 64));
 
     ASSERT_EQ(data.size(), static_cast<size_t>(100));
     assertCountsUpFromZero(data);
@@ -187,7 +235,8 @@ TEST(AzureReadUntilPosition, OverlongRangeResponse)
 TEST(AzureReadUntilPosition, OverlongRangeResponseWithLargeBuffer)
 {
     std::string data;
-    ASSERT_NO_THROW(data = readWithRightBound(/* response_size */ 128, /* blob_size */ 1000, /* read_until_position */ 100, /* buffer_size */ 1024));
+    ASSERT_NO_THROW(data = readWithRightBound(
+        /* max_response_size */ 128, /* served_size */ 1000, /* blob_size */ 1000, /* read_until_position */ 100, /* buffer_size */ 1024));
 
     ASSERT_EQ(data.size(), static_cast<size_t>(100));
     assertCountsUpFromZero(data);
@@ -197,21 +246,43 @@ TEST(AzureReadUntilPosition, OverlongRangeResponseWithLargeBuffer)
 TEST(AzureReadUntilPosition, ExactRangeResponse)
 {
     std::string data;
-    ASSERT_NO_THROW(data = readWithRightBound(/* response_size */ 100, /* blob_size */ 1000, /* read_until_position */ 100, /* buffer_size */ 64));
+    ASSERT_NO_THROW(data = readWithRightBound(
+        /* max_response_size */ 100, /* served_size */ 1000, /* blob_size */ 1000, /* read_until_position */ 100, /* buffer_size */ 64));
 
     ASSERT_EQ(data.size(), static_cast<size_t>(100));
     assertCountsUpFromZero(data);
 }
 
-/// An endpoint that returns less than the requested range must not make the reader report bytes it
-/// never received.
+/// The endpoint answers every ranged request with at most 40 bytes, less than was requested. The
+/// right bound is authoritative: the reader must reopen the download at the new offset and hand
+/// the caller all 100 requested bytes instead of reporting the end of the file at 40 bytes.
 TEST(AzureReadUntilPosition, ShortRangeResponse)
 {
     std::string data;
-    ASSERT_NO_THROW(data = readWithRightBound(/* response_size */ 40, /* blob_size */ 1000, /* read_until_position */ 100, /* buffer_size */ 64));
+    ASSERT_NO_THROW(data = readWithRightBound(
+        /* max_response_size */ 40, /* served_size */ 1000, /* blob_size */ 1000, /* read_until_position */ 100, /* buffer_size */ 64,
+        /* max_read_retries */ 4));
 
-    ASSERT_EQ(data.size(), static_cast<size_t>(40));
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
     assertCountsUpFromZero(data);
+}
+
+/// The blob ends at 40 bytes no matter how often the download is reopened, while the caller asked
+/// to read until position 100. A bounded read must either reach the right bound or fail - it must
+/// not silently report the end of the file before the bound.
+TEST(AzureReadUntilPosition, TruncatedBlob)
+{
+    try
+    {
+        readWithRightBound(
+            /* max_response_size */ 40, /* served_size */ 40, /* blob_size */ 1000, /* read_until_position */ 100, /* buffer_size */ 64,
+            /* max_read_retries */ 3);
+        FAIL() << "Expected an exception on a premature end of the response before the right bound";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::UNEXPECTED_END_OF_FILE);
+    }
 }
 
 /// The `ETag` response header is optional, and `Azure::ETag::ToString` aborts the process when the
@@ -221,7 +292,8 @@ TEST(AzureReadUntilPosition, ResponseWithoutETag)
     std::string data;
     ASSERT_NO_THROW(
         data = readWithRightBound(
-            /* response_size */ 100, /* blob_size */ 1000, /* read_until_position */ 100, /* buffer_size */ 64, /* send_etag */ false));
+            /* max_response_size */ 100, /* served_size */ 1000, /* blob_size */ 1000, /* read_until_position */ 100, /* buffer_size */ 64,
+            /* max_read_retries */ 1, /* send_etag */ false));
 
     ASSERT_EQ(data.size(), static_cast<size_t>(100));
     assertCountsUpFromZero(data);

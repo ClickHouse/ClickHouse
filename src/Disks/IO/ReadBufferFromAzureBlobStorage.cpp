@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
+    extern const int UNEXPECTED_END_OF_FILE;
 }
 
 ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
@@ -122,6 +123,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
 
     for (size_t i = 0; i < max_single_read_retries; ++i)
     {
+        bool premature_end_of_response = false;
         try
         {
             ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, to_read_bytes);
@@ -129,7 +131,11 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
             rlock.unlock(bytes_read); // Do not hold resource under bandwidth throttler
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->throttle(bytes_read);
-            break;
+
+            if (bytes_read != 0 || !read_until_position)
+                break;
+
+            premature_end_of_response = true;
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
@@ -154,6 +160,28 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
 
             if (i + 1 == max_single_read_retries)
                 throw;
+
+            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+            sleep_time_with_backoff_milliseconds *= 2;
+            initialized = false;
+            initialize(i + 1);
+        }
+
+        if (premature_end_of_response)
+        {
+            /// The response ended before the right bound that was requested locally. The bound is
+            /// authoritative (`supportsRightBoundedReads`), so a shorter response must not be
+            /// reported to the caller as the end of the file: reopen the download at the current
+            /// offset, and if the endpoint keeps answering short, fail instead of returning
+            /// truncated data.
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
+            LOG_DEBUG(log, "Premature end of the response at offset {} while reading until position {} for file {} at attempt {}/{}",
+                offset, read_until_position, path, i + 1, max_single_read_retries);
+
+            if (i + 1 == max_single_read_retries)
+                throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE,
+                    "Premature end of the response from Azure Blob Storage at offset {} while reading until position {} of file {}",
+                    offset, read_until_position, path);
 
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
@@ -337,22 +365,22 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
 
 size_t ReadBufferFromAzureBlobStorage::getTotalSizeOfCurrentDownload(int64_t reported_length, off_t offset_, off_t read_until_position_)
 {
-    /// `reported_length` is the `Content-Length` of the response, which is chosen by the remote
-    /// endpoint: an endpoint that answers a ranged request with more data than was requested must
-    /// not be able to push bytes past the right bound into the caller. A negative value means that
-    /// the length of the response is unknown.
-    ///
-    /// The size of the blob from the same response is not used to bound it, because it comes from
-    /// the same untrusted place; only `read_until_position`, which is set locally by the caller,
-    /// is a trustworthy bound.
-    size_t total = reported_length >= 0
+    /// Only `read_until_position`, which is set locally by the caller, is a trustworthy bound:
+    /// when it is set, it is authoritative in both directions. An endpoint that answers a ranged
+    /// request with more data than was requested must not be able to push bytes past the right
+    /// bound into the caller, and an endpoint that answers with less must not be able to move the
+    /// end of the file before the right bound either (`nextImpl` reopens the download or throws
+    /// on a premature end of the response instead).
+    if (read_until_position_)
+        return static_cast<size_t>(read_until_position_);
+
+    /// For an unbounded read, `reported_length` - the `Content-Length` of the response, chosen by
+    /// the remote endpoint - is the only estimate there is. It is used solely to size the reads;
+    /// the actual end of the data is wherever the response body actually ends. A negative value
+    /// means that the length of the response is unknown.
+    return reported_length >= 0
         ? static_cast<size_t>(offset_) + static_cast<size_t>(reported_length)
         : std::numeric_limits<size_t>::max();
-
-    if (read_until_position_)
-        total = std::min(total, static_cast<size_t>(read_until_position_));
-
-    return total;
 }
 
 std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
@@ -379,11 +407,12 @@ std::optional<RemoteFileMetadata> ReadBufferFromAzureBlobStorage::getRemoteFileM
 
 size_t copyFromAzureBodyStream(Azure::Core::IO::BodyStream & body_stream, char * to, size_t n, const Azure::Core::Context & context)
 {
-    /// The length of the body is the `Content-Length` reported by the remote endpoint and can be
-    /// larger than the requested range, while the destination buffer only has room for `n` bytes.
-    const int64_t length = body_stream.Length();
-    const size_t bytes_to_copy = length >= 0 ? std::min(static_cast<size_t>(length), n) : n;
-    return body_stream.ReadToCount(reinterpret_cast<uint8_t *>(to), bytes_to_copy, context);
+    /// The length of the body reported by the remote endpoint is deliberately not consulted: it
+    /// can be larger than the destination buffer, which only has room for `n` bytes, and it can
+    /// also undercut the bytes the body can actually produce, which must not truncate the copy.
+    /// `ReadToCount` stops at the actual end of the body, so the size of the destination is the
+    /// only bound that is needed.
+    return body_stream.ReadToCount(reinterpret_cast<uint8_t *>(to), n, context);
 }
 
 size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & /*progress_callback*/) const
