@@ -83,7 +83,7 @@ See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID struct
     )";
     FunctionDocumentation::Syntax syntax = "generateUUIDv7([expr])";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID.", {"Any"}}
+        {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a UUIDv7.", {"UUID"}};
     FunctionDocumentation::Examples examples = {

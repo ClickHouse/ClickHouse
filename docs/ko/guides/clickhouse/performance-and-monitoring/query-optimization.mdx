@@ -550,7 +550,7 @@ ClickHouse는 매우 다양한 데이터 타입을 지원합니다. 성능을 �
 숫자의 경우 데이터셋의 최소/최대값을 확인해 현재 precision 값이 실제 데이터셋에 맞는지 판단할 수 있습니다. 
 
 ```sql
--- payment_type 필드의 최솟값/최댓값 찾기
+-- Find min/max values for the payment_type field
 SELECT
     min(payment_type),max(payment_type),
     min(passenger_count), max(passenger_count)
@@ -558,14 +558,14 @@ FROM trips_small_inferred
 ```
 
 ```response
-쿼리 id: 4306a8e1-2a9c-4b06-97b4-4d902d2233eb
+Query id: 4306a8e1-2a9c-4b06-97b4-4d902d2233eb
 
    ┌─min(payment_type)─┬─max(payment_type)─┐
 1. │                 1 │                 4 │
    └───────────────────┴───────────────────┘
 ```
 
-날짜에는 데이터셋에 맞고 실행할 쿼리에 응답하기에 가장 적합한 정밀도를 선택해야 합니다.
+날짜에는 데이터셋에 맞고 실행하려는 쿼리에 가장 적합한 정밀도를 선택해야 합니다.
 
 <div id="apply-the-optimizations">
   ### 최적화를 적용합니다

@@ -332,11 +332,7 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
         }
 
-        if (write_request.timeseries_size())
-            protocol.writeTimeSeries(write_request.timeseries());
-
-        if (write_request.metadata_size())
-            protocol.writeMetricsMetadata(write_request.metadata());
+        protocol.write(write_request.timeseries(), write_request.metadata());
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
         response.setChunkedTransferEncoding(false);
@@ -448,8 +444,8 @@ public:
             return false;
 
         /// Some parameters (default_format, everything used in the code above) do not belong to the
-        /// Settings class.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "lookback_delta", "database", "table"};
+        /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "lookback_delta", "database", "table"};
         return !reserved_param_names.contains(name);
     }
 
@@ -534,13 +530,24 @@ public:
             }
             else if (uri_path.ends_with("/series"))
             {
-                String match = params->get("match[]", "");
+                Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
 
-                /// TODO: Support limit=<number> optional parameter
+                /// The optional `limit` parameter caps the number of returned series (0 means no limit, which is also the default).
+                UInt64 limit = 0;
+                String limit_param = params->get("limit", "");
+                if (!limit_param.empty())
+                {
+                    Int64 parsed_limit = 0;
+                    if (!tryParse(parsed_limit, limit_param.data(), limit_param.size()) || (parsed_limit < 0))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                        "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
+                                        limit_param);
+                    limit = static_cast<UInt64>(parsed_limit);
+                }
 
-                protocol.getSeries(getOutputStream(response), match, start, end);
+                protocol.getSeries(getOutputStream(response), match, start, end, limit, query_finish_callback);
             }
             else if (uri_path.ends_with("/labels"))
             {

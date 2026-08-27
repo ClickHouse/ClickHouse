@@ -44,7 +44,7 @@ PARTITION BY toStartOfMonth(date);
   ### البنية على القرص
 </div>
 
-عند إدراج مجموعة من الصفوف في الجدول، لا ينشئ ClickHouse جزء بيانات واحدًا يحتوي على جميع الصفوف المُدرجة (على [الأقل](/ar/reference/settings/session-settings#max_insert_block_size))، كما هو موضح [هنا](/ar/concepts/core-concepts/parts)، بل ينشئ جزء بيانات جديدًا لكل قيمة فريدة لمفتاح التقسيم بين الصفوف المُدرجة:
+عند إدراج مجموعة من الصفوف في الجدول، لا ينشئ ClickHouse جزء بيانات واحدًا يحتوي على جميع الصفوف المُدرجة (على [الأقل](/ar/reference/settings/session-settings/max-insert#max_insert_block_size))، كما هو موضح [هنا](/ar/concepts/core-concepts/parts)، بل ينشئ جزء بيانات جديدًا لكل قيمة فريدة لمفتاح التقسيم بين الصفوف المُدرجة:
 
 <Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="معالجة INSERT" />
 
@@ -217,7 +217,7 @@ WHERE date >= '2020-12-01'
 Peak memory usage: 2.73 MiB.
 ```
 
-ما يعني أن ClickHouse فحص وعالج granule واحدة (كتلة من [8192](/ar/reference/settings/merge-tree-settings#index_granularity) صفًا) في غضون 6 مللي ثانية لحساب نتيجة الاستعلام.
+ما يعني أن ClickHouse فحص وعالج granule واحدة (كتلة من [8192](/ar/reference/settings/merge-tree-settings/index-granularity#index_granularity) صفًا) في غضون 6 مللي ثانية لحساب نتيجة الاستعلام.
 
 <div id="partitioning-is-primarily-a-data-management-feature">
   ### يُعد التقسيم في المقام الأول ميزة لإدارة البيانات
