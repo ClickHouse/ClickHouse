@@ -46,10 +46,6 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
     extern const SettingsBool ai_function_throw_on_error;
-    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
-    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsString ai_function_text_default_credentials;
 }
 
@@ -228,7 +224,12 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     {
         bool known = std::any_of(spec.begin(), spec.end(), [&](const AIParamSpec & p) { return p.name == key; });
         if (!known)
+        {
+            if (key == "model")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "This function does not accept 'model' in the parameter map; pass 'model' to the function directly");
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown AI function parameter '{}'", key);
+        }
     }
 
     /// Resolve credentials first: they name the collection everything else is read from.
@@ -259,6 +260,14 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
 
     context->getRemoteHostFilter().checkURL(Poco::URI(params.collection.endpoint));
 
+    /// A function that does not declare `model` (i.e. `aiEmbed`, which takes it as an argument) must
+    /// not silently ignore a `model` defined in the named collection: reject it instead.
+    const bool declares_model = std::any_of(spec.begin(), spec.end(), [](const AIParamSpec & p) { return p.name == "model"; });
+    if (!declares_model && collection->has("model"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "AI named collection '{}' defines 'model', which this function does not read from the named collection; "
+            "remove it from the collection and pass 'model' to the function directly", credentials);
+
     /// Resolve every declared parameter: map override -> named collection (if inherited) -> default.
     for (const auto & p : spec)
     {
@@ -288,15 +297,16 @@ UInt64 FunctionBaseAI::computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 att
     return delay_ms;
 }
 
-bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr exception)
+bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr eptr)
 {
+    /// Catch order matters: more derived exception types must come first.
     try
     {
-        std::rethrow_exception(exception);
+        std::rethrow_exception(eptr);
     }
-    catch (const AIProviderHTTPException & exception)
+    catch (const AIProviderHTTPException & e)
     {
-        return isRetriableHTTPError(exception.getHTTPStatus());
+        return isRetriableHTTPError(e.getHTTPStatus());
     }
     catch (const NetException &)
     {
@@ -313,16 +323,16 @@ bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr exception)
         /// Connect or receive timeout.
         return true;
     }
-    catch (const Poco::IOException & exception)
+    catch (const Poco::IOException & e)
     {
         /// Write-side transient I/O failure, e.g. a broken pipe (`EPIPE`) when the peer resets the
         /// connection mid-request. Out-of-file-descriptors (`EMFILE`) is not retriable.
-        return exception.code() != POCO_EMFILE;
+        return e.code() != POCO_EMFILE;
     }
     catch (...)
     {
-        /// Ok: any other exception is a deterministic and non-retrieable error, e.g. a malformed
-        /// provider response, bad configuration, JSON parse failure, etc.
+        /// Ok: any other exception is a deterministic argument/usage error (malformed provider
+        /// response, bad configuration, JSON parse failure, …) — retrying would only repeat it.
         return false;
     }
 }
@@ -362,11 +372,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
 
-    AIQuotaTracker quota(
-        settings[Setting::ai_function_max_input_tokens_per_query].value,
-        settings[Setting::ai_function_max_output_tokens_per_query].value,
-        settings[Setting::ai_function_max_api_calls_per_query].value,
-        settings[Setting::ai_function_throw_on_quota_exceeded].value);
+    /// Shared across every AI function call in the query
+    auto quota_tracker = getContext()->getAIQuotaTracker();
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
@@ -389,7 +396,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             continue;
         }
 
-        if (quota.checkQuotas())
+        if (quota_tracker->checkQuotas())
         {
             result_col->insertDefault();
             ++rows_skipped;
@@ -402,9 +409,9 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
-            /// Check quotas before every request.
-            /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
-            if (quota.checkQuotas())
+            /// Reserve an API-call slot before each request; this also performs a quota check.
+            /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
+            if (!quota_tracker->recordApiCall())
                 break;
 
             try
@@ -416,14 +423,13 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 ai_request.model = model;
                 ai_request.temperature = temperature;
                 ai_request.max_tokens = max_tokens;
+                ai_request.function_name = getName();
 
-                /// update api_calls/quotas before call so failed calls are still added to total
                 ++total_api_calls;
-                quota.recordAttempt();
 
                 auto ai_response = provider->call(ai_request, timeouts);
 
-                quota.recordTokens(ai_response.input_tokens, ai_response.output_tokens);
+                quota_tracker->recordTokens(ai_response.input_tokens, ai_response.output_tokens);
                 total_input_tokens += ai_response.input_tokens;
                 total_output_tokens += ai_response.output_tokens;
 
@@ -433,6 +439,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             }
             catch (...)
             {
+                /// Retry transient failures (network errors, provider-side HTTP errors) like the
+                /// `url` table function does; deterministic errors are surfaced immediately.
                 if (attempt < max_retries && isRetriableProviderError(std::current_exception()))
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(retry_delay_ms, attempt)));

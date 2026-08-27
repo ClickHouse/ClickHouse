@@ -673,11 +673,7 @@ struct ToTime64TransformSigned
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 
-        /// For Saturate / Ignore overflow modes the value still has to be clamped to the representable
-        /// Time64 range. Otherwise two casts can produce Time64 values that render identically as e.g.
-        /// '999:59:59.000' but compare as different, because the underlying decimal stores the raw input.
-        const auto clamped = std::max<Int64>(std::min<Int64>(static_cast<Int64>(from), MAX_TIME_TIMESTAMP), -static_cast<Int64>(MAX_TIME_TIMESTAMP));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(clamped, 0, scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(from, 0, scale_multiplier);
     }
 };
 
@@ -698,14 +694,10 @@ struct ToTime64TransformFloat
         {
             if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
-        }
+        } // need to reconsider this
 
-        /// Time64 has a much narrower representable range than DateTime64; clamping to the DateTime64
-        /// bounds would let casts pass values up to ~MAX_DATETIME64_TIMESTAMP through to the underlying
-        /// decimal, producing Time64 values that display correctly but compare as different from the
-        /// saturated maximum.
-        from = std::max(from, static_cast<FromType>(-static_cast<Int64>(MAX_TIME_TIMESTAMP)));
-        from = std::min(from, static_cast<FromType>(MAX_TIME_TIMESTAMP));
+        from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
+        from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
         return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };
@@ -939,7 +931,7 @@ void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTI
         if (precise_float_parsing)
             readFloatTextPrecise(x, rb);
         else
-            readFloatImpreciseForCompatibility(x, rb);
+            readFloatTextFast(x, rb);
     }
     else
         readText(x, rb);
@@ -1011,7 +1003,7 @@ bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateL
         if (precise_float_parsing)
             return tryReadFloatTextPrecise(x, rb);
         else
-            return tryReadFloatImpreciseForCompatibility(x, rb);
+            return tryReadFloatTextFast(x, rb);
     }
     else /*if constexpr (is_integral_v<typename DataType::FieldType>)*/
         return tryReadIntText(x, rb);
@@ -2595,11 +2587,9 @@ struct ConvertImpl
             auto res_col = IColumn::mutate(ColumnInt64::create(calc_num_rows));
             auto & res_data = assert_cast<ColumnInt64 &>(*res_col).getData();
 
-            /// interval_conversions[i] holds the factor between kind i and kind i-1,
-            /// so every boundary crossing between kinds i-1 and i uses interval_conversions[i]
             if (from_position < to_position)
             {
-                for (int i = from_position + 1; i <= to_position; ++i)
+                for (int i = from_position; i < to_position; ++i)
                     conversion_factor *= interval_conversions[i];
                 for (size_t row = 0; row < calc_num_rows; ++row)
                     res_data[row] = arguments[0].column->getInt(row) / conversion_factor;
@@ -4101,9 +4091,6 @@ struct ToDateTimeMonotonicity
     }
 };
 
-/** The monotonicity for the `toString` function is mainly determined for test purposes.
-  * It is doubtful that anyone is looking to optimize queries with conditions `toString(CounterID) = 34`.
-  */
 struct ToStringMonotonicity
 {
     static bool has() { return true; }
@@ -4130,13 +4117,36 @@ struct ToStringMonotonicity
             return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
         }
 
-        /// `toString` function is monotonous if the argument is Date or Date32 or DateTime or String, or non-negative numbers with the same number of symbols.
-        if (checkDataTypes<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime, DataTypeString>(type_ptr))
-            return positive;
+        /// `toString(String)` is the identity.
+        if (checkDataTypes<DataTypeString>(type_ptr))
+            return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+        /// `Date` is formatted as a zero-padded `YYYY-MM-DD` of a fixed width independently of the time zone,
+        /// and the whole type range falls into the years 1970-2149, so the order is preserved exactly.
+        if (checkDataTypes<DataTypeDate>(type_ptr))
+            return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+        /// The same holds for `Date32`, except that day numbers out of the type range are saturated
+        /// to `0000-01-01` and `9999-12-31` when formatted, which makes the transformation non-injective.
+        if (checkDataTypes<DataTypeDate32>(type_ptr))
+            return {.is_monotonic = true, .is_always_monotonic = true};
+
+        /// `DateTime` is formatted in the time zone of the type, and local time decreases when the clocks are
+        /// turned back, so the order is preserved only if the time zone never changes its offset.
+        if (checkAndGetDataType<DataTypeDateTime>(type_ptr))
+        {
+            return not_monotonic;
+        }
+
+        /// `Time` and `Time64` are formatted with a sign and a variable number of digits for hours,
+        /// so, for example, `'99:00:00'` is greater than `'100:00:00'` as a string.
+        if (checkDataTypes<DataTypeTime, DataTypeTime64>(type_ptr))
+            return not_monotonic;
 
         if (left.isNull() || right.isNull())
             return {};
 
+        /// `toString` is monotonous for non-negative numbers with the same number of symbols.
         if (left.getType() == Field::Types::UInt64
             && right.getType() == Field::Types::UInt64)
         {
@@ -4724,29 +4734,10 @@ private:
 
     template <typename FloatType>
     static ColumnPtr convertArrayToQBit(
-        ColumnsWithTypeAndName & arguments,
-        const DataTypePtr &,
-        const ColumnNullable * nullable_source,
-        size_t n,
-        size_t size,
-        size_t stride);
+        ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t n, size_t size);
 
     template <typename T>
     WrapperType createArrayToQBitWrapper(const DataTypeArray & from_array_type, const DataTypeQBit & to_qbit_type) const;
-
-    template <typename FloatType>
-    static ColumnPtr convertQBitToArray(ColumnsWithTypeAndName & arguments, const ColumnNullable * nullable_source, size_t dimension, size_t stride);
-
-    template <typename T>
-    WrapperType createQBitToArrayWrapper(const DataTypeQBit & from_qbit_type, const DataTypeArray & to_type) const;
-
-    /// CAST between two QBit types. Keeps the dimension; may change the element type and/or the stride.
-    WrapperType createQBitToQBitWrapper(const DataTypeQBit & from_qbit_type, const DataTypeQBit & to_qbit_type) const;
-
-    /// Repack a QBit into a different stride and/or between the Float32/BFloat16 pair as a pure byte operation on the
-    /// bit-plane FixedStrings, without reconstructing the vector through floats (see the definition).
-    static ColumnPtr repackQBit(
-        const ColumnQBit & src, size_t from_element_size, size_t to_element_size, size_t dimension, size_t from_stride, size_t to_stride);
 
     /// The case of: tuple([key1, key2, ..., key_n], [value1, value2, ..., value_n])
     WrapperType createTupleToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const;

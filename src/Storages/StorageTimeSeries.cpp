@@ -277,28 +277,13 @@ void StorageTimeSeries::dropInnerTableIfAny(bool sync, ContextPtr local_context)
         {
             if (auto inner_table_id = tryGetTargetTableID(target_kind, local_context))
             {
-                /// Best-effort to make them work: the inner table name is almost always less than the TimeSeries name (so it's safe to lock DDLGuard).
-                /// (See the comment in StorageMaterializedView::dropInnerTableIfAny.)
+                /// DDLGuards must be locked in order of increasing table name, so the inner guard
+                /// may be requested only when this table's name sorts first.
                 bool may_lock_ddl_guard = getStorageID().getQualifiedName() < inner_table_id.getQualifiedName();
                 InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
                                                     sync, /* ignore_sync_setting= */ true, may_lock_ddl_guard);
             }
         }
-    }
-}
-
-void StorageTimeSeries::checkTableSizeBelowDropLimit(ContextPtr query_context) const
-{
-    if (!hasInnerTables())
-        return;
-
-    for (auto target_kind : getTargetKinds())
-    {
-        if (!isInnerTable(target_kind))
-            continue;
-
-        if (auto inner_table = tryGetTargetTable(target_kind, query_context))
-            inner_table->checkTableSizeBelowDropLimit(query_context);
     }
 }
 
@@ -865,7 +850,7 @@ TAGS INNER COLUMNS
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
-TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1
+TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
 METRICS INNER COLUMNS
 (
     `metric_family_name` String,
@@ -907,7 +892,6 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
 ORDER BY (metric_name, id)
-SETTINGS allow_dimensions_outside_sorting_key = 1
 ```
 
 ```sql
@@ -1004,13 +988,6 @@ SAMPLES ENGINE=ReplicatedMergeTree
 TAGS ENGINE=ReplicatedAggregatingMergeTree
 METRICS ENGINE=ReplicatedReplacingMergeTree
 ```
-
-The [tags](#tags-table) table keeps the tag columns (and the `tags`/`all_tags` Maps) outside its sorting key,
-which `AggregatingMergeTree` rejects by default (see [`allow_dimensions_outside_sorting_key`](../mergetree-family/aggregatingmergetree)).
-This is safe here because those columns are functionally dependent on `id`, which is part of the sorting key, so all
-rows that a background merge collapses together share the same values. When the inner tags table is generated or its
-engine is specified inline as above, `TimeSeries` sets `allow_dimensions_outside_sorting_key = 1` on it automatically;
-for a manually created [external](#external-target-tables) aggregating tags table you must set it yourself.
 
 ## External target tables {#external-target-tables}
 

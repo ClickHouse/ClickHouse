@@ -1365,6 +1365,12 @@ The text index currently has the following limitations:
   index materialization can happen directly (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) or indirectly in part merges.
 - It is not possible to materialize text indexes on parts with more than 4.294.967.296 (= 2^32 = ca. 4.2 billion) rows. Without a materialized text index, queries fall back to slow brute-force search within the part. As a worst case estimation, assume a part contains a single column of type String and MergeTree setting `max_bytes_to_merge_at_max_space_in_pool` (default: 150 GB) was not changed. In this case, the situation happens if the column contains less than 29.5 characters per row on average. In practice, tables also contain other columns and the threshold is multiples times smaller than that (depending on the number, type and size of the other columns).
 
+## Upgrade Notes {#upgrade-notes}
+
+The on-disk format version of text indexes is controlled by the table-level setting [`text_index_serialization_version`](/operations/settings/merge-tree-settings#text_index_serialization_version) (default: `v1_with_codec`).
+The setting is a preference rather than a hard constraint: if the configured version cannot represent an index, a newer version that can represent it is chosen automatically, so writing a text index never fails because of this setting.
+During a rolling upgrade, pin the format with the [`compatibility`](../../../operations/settings/settings#compatibility) setting on the already upgraded servers: when it is set to a version older than the one that introduced the corresponding format, `text_index_serialization_version` reverts to an older value automatically and newer servers keep writing the format that older servers can still read.
+
 ## Text Indexes vs Bloom-Filter-Based Indexes {#text-index-vs-bloom-filter-indexes}
 
 String predicates can be sped up using text indexes and bloom-filter-based based indexes (index type `bloom_filter`, `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`), yet both are fundamentally different in their design and intended use cases:

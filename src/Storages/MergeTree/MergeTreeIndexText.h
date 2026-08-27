@@ -1,11 +1,10 @@
 #pragma once
 
+#include <Core/SettingsEnums.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
-#include <Common/BitPackedStringArray.h>
-#include <Common/BitPackedUInt64Array.h>
 #include <Common/Logger.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
@@ -18,7 +17,6 @@
 #include <absl/container/flat_hash_set.h>
 #include <base/types.h>
 
-#include <variant>
 #include <vector>
 
 #include <roaring/roaring.hh>
@@ -85,6 +83,7 @@ struct MergeTreeIndexTextParams
     size_t positions = 0;
     ASTPtr preprocessor;
     ASTPtr postprocessor;
+    MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
 };
 
 using PostingList = roaring::Roaring;
@@ -162,7 +161,7 @@ struct TokenPostingsInfo;
 
 struct PostingsSerialization
 {
-    PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeIndexVersion serialization_version_);
+    PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeTextIndexSerializationVersion serialization_version_);
 
     enum Flags : UInt64
     {
@@ -191,7 +190,7 @@ struct PostingsSerialization
 
 private:
     PostingListCodecPtr posting_list_codec;
-    MergeTreeIndexVersion serialization_version;
+    MergeTreeTextIndexSerializationVersion serialization_version;
 
     /// Reusable buffers to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;
@@ -237,47 +236,35 @@ struct TokenPostingsInfo
 using TokenPostingsInfoPtr = std::shared_ptr<TokenPostingsInfo>;
 using TokenToPostingsInfosMap = absl::flat_hash_map<String, TokenPostingsInfoPtr>;
 
-struct DictionaryBlock
+struct DictionaryBlockBase
+{
+    ColumnPtr tokens;
+
+    DictionaryBlockBase() = default;
+    explicit DictionaryBlockBase(ColumnPtr tokens_) : tokens(std::move(tokens_)) {}
+
+    bool empty() const;
+    size_t size() const;
+    size_t upperBound(std::string_view token) const;
+};
+
+struct DictionaryBlock : public DictionaryBlockBase
 {
     DictionaryBlock() = default;
     DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_);
 
-    bool empty() const;
-    size_t size() const;
-
-    ColumnPtr tokens;
     std::vector<TokenPostingsInfo> token_infos;
     UInt64 tokens_format = 0;
 };
 
-class DictionarySparseIndex
+struct DictionarySparseIndex : public DictionaryBlockBase
 {
-public:
     DictionarySparseIndex() = default;
     DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_);
-
-    bool empty() const { return size() == 0; }
-    size_t size() const;
-    size_t upperBound(std::string_view token) const;
-
-    std::string_view getToken(size_t idx) const;
     UInt64 getOffsetInFile(size_t idx) const;
     size_t memoryUsageBytes() const;
 
-    /// Returns the raw tokens column. Throws if tokens were bit-packed by optimize.
-    ColumnPtr getTokensColumn() const;
-    /// Returns the raw offsets column. Throws if offsets were bit-packed by optimize.
-    ColumnPtr getOffsetsColumn() const;
-
-    /// Decomposes the tokens column into chars and bit-packed offsets
-    /// and bit-packs the offsets in file to reduce memory usage.
-    void optimize();
-
-private:
-    /// Tokens and offsets in the dictionary file to the beginning of each block.
-    /// Stored as raw columns after creation and bit-packed after optimize.
-    std::variant<ColumnPtr, BitPackedStringArray> tokens;
-    std::variant<ColumnPtr, BitPackedUInt64Array> offsets_in_file;
+    ColumnPtr offsets_in_file;
 };
 
 using DictionarySparseIndexPtr = std::shared_ptr<DictionarySparseIndex>;
@@ -285,16 +272,9 @@ using DictionarySparseIndexPtr = std::shared_ptr<DictionarySparseIndex>;
 
 struct TextIndexHeader
 {
-    enum class Version
-    {
-        Initial = 0,
-        WithCodec = 1,
-        WithPositions = 2,
-    };
-
-    MergeTreeIndexVersion version = static_cast<MergeTreeIndexVersion>(Version::Initial);
+    MergeTreeTextIndexSerializationVersion version = MergeTreeTextIndexSerializationVersion::V0_Initial;
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
-    /// Persisted for version >= WithPositions.
+    /// Persisted for version >= V2_WithPositions.
     bool has_positions = false;
     DictionarySparseIndex sparse_index;
 };
@@ -315,7 +295,9 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
-    static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, WriteBuffer & ostr);
+    /// Reject a token the reader would refuse (throws `TOO_LARGE_STRING_SIZE`); call before copying a token elsewhere.
+    static void checkTokenSize(size_t token_size);
+    static void serializeHeader(MergeTreeTextIndexSerializationVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
     /// Reads only the version and posting list codec from the start of the header, without the
@@ -373,7 +355,7 @@ public:
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
     IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
-    MergeTreeIndexVersion getSerializationVersion() const { return serialization_version; }
+    MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
@@ -410,7 +392,7 @@ private:
     /// Codec type used to serialize postings in this granule.
     IPostingListCodec::Type postings_codec_type = IPostingListCodec::Type::None;
     /// On-disk serialization version of the text index header.
-    MergeTreeIndexVersion serialization_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::Initial);
+    MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
 };
 
 /// Text index granule created on writing of the index.

@@ -57,8 +57,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         settings.read_settings,
         settings_.load_marks_asynchronously ? &data_part_info_for_read_->getContext()->getLoadMarksThreadpool() : nullptr,
         data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams
-            ? columns_substreams.getTotalSubstreams() : data_part_info_for_read_->getColumns().size(),
-        settings.use_streaming_marks_compression))
+            ? columns_substreams.getTotalSubstreams() : data_part_info_for_read_->getColumns().size()))
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
     , has_substream_marks(data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams)
@@ -400,6 +399,13 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
             }
         }
 
+        /// Set check_stream_exists_callback so that enumerateStreams can skip substreams
+        /// that do not exist in this part (e.g. MapBucketIndexes in old bucketed Map parts).
+        enumerate_settings.check_stream_exists_callback = [&, column_pos = *pos](const ISerialization::SubstreamPath & substream_path) -> bool
+        {
+            return columns_substreams.tryGetSubstreamPosition(column_pos, column_from_part, substream_path, storage_settings).has_value();
+        };
+
         auto order = getSubcolumnsDeserializationOrder(column, subcolumns_data, columns_substreams.getColumnSubstreams(*pos), enumerate_settings, ISerialization::StreamFileNameSettings(*storage_settings));
         deserialization_order.reserve(subcolumns_indexes.size());
         for (size_t i : order)
@@ -442,13 +448,23 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
         return stream.getDataBuffer();
     };
 
+    /// Build check_stream_exists_callback for this column if we have a column position.
+    ISerialization::DeserializeBinaryBulkSettings::CheckStreamExistsCallback check_stream_exists_callback;
+    if (column_positions[column_idx])
+    {
+        check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
+        {
+            return columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings).has_value();
+        };
+    }
+
     if (column.isSubcolumn())
     {
         if (has_substream_marks)
         {
             const auto & serialization = serializations[column_idx];
             auto & state = deserialize_binary_bulk_state_map_for_subcolumns[column.name];
-            readPrefix(column, serialization, state, buffer_getter, seek_to_substream_mark ? cache : nullptr);
+            readPrefix(column, serialization, state, buffer_getter, seek_to_substream_mark ? cache : nullptr, check_stream_exists_callback);
         }
         else
         {
@@ -458,14 +474,14 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
 
             const auto & serialization = serializations_of_full_columns.at(name_in_storage);
             auto & state = deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage];
-            readPrefix(column, serialization, state, buffer_getter, nullptr);
+            readPrefix(column, serialization, state, buffer_getter, nullptr, check_stream_exists_callback);
         }
     }
     else
     {
         const auto & serialization = serializations[column_idx];
         auto & state = deserialize_binary_bulk_state_map[column.name];
-        readPrefix(column, serialization, state, buffer_getter, seek_to_substream_mark ? cache : nullptr);
+        readPrefix(column, serialization, state, buffer_getter, seek_to_substream_mark ? cache : nullptr, check_stream_exists_callback);
     }
 }
 
@@ -474,7 +490,8 @@ void MergeTreeReaderCompact::readPrefix(
     const SerializationPtr & serialization,
     ISerialization::DeserializeBinaryBulkStatePtr & state,
     const InputStreamGetter & buffer_getter,
-    ISerialization::SubstreamsDeserializeStatesCache * cache)
+    ISerialization::SubstreamsDeserializeStatesCache * cache,
+    ISerialization::DeserializeBinaryBulkSettings::CheckStreamExistsCallback check_stream_exists_callback)
 {
     try
     {
@@ -483,6 +500,7 @@ void MergeTreeReaderCompact::readPrefix(
         deserialize_settings.object_and_dynamic_read_statistics = true;
         deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;
+        deserialize_settings.check_stream_exists_callback = std::move(check_stream_exists_callback);
 
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state, cache);
     }

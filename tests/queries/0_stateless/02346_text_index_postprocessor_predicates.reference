@@ -38,6 +38,8 @@
 0
 1
 1
+1
+1
 2
 0
 8. Map column + postprocessor: mapContainsKey / mapContainsKeyLike normalize the needle.

@@ -18,6 +18,7 @@
 #include <Storages/MutationCommands.h>
 
 #include <memory>
+#include <mutex>
 
 #include <Storages/IPartitionStrategy.h>
 namespace DB
@@ -62,10 +63,6 @@ public:
         bool lazy_init = false);
 
     String getName() const override;
-
-    /// The concrete data format resolved for this table (after schema/format inference).
-    /// Used by the unified `URL` engine to persist the delegate's inferred format.
-    String getFormatName() const { return configuration->format; }
 
     void read(
         QueryPlan & query_plan,
@@ -209,6 +206,11 @@ protected:
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
 
+    /// Resolve the deferred hive partitioning sample path. Requires listing the object storage.
+    void resolveHivePartitioningSamplePathIfDeferred(const ContextPtr & query_context);
+
+    VirtualColumnsDescription createVirtualColumns(ColumnsDescription & columns, const std::string & sample_path, const ContextPtr & context) const;
+
     /// Creates ReadBufferIterator for schema inference implementation.
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,
@@ -233,6 +235,12 @@ protected:
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
+
+    /// Set only in the constructor when hive partitioning detection is deferred to the first use.
+    bool hive_partitioning_sample_path_deferred = false;
+    std::mutex hive_partitioning_resolution_mutex;
+    /// Stays false on a failed resolution, so the next query retries it.
+    bool hive_partitioning_sample_path_resolved TSA_GUARDED_BY(hive_partitioning_resolution_mutex) = false;
 
     LoggerPtr log;
 

@@ -105,7 +105,7 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
     return geo_columns;
 }
 
-inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer, bool precise_float_parsing)
+inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer)
 {
     Float64 x = 0;
     Float64 y = 0;
@@ -118,18 +118,9 @@ inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer, bool precise_float_p
             break;
         in_buffer.ignore();
     }
-    if (precise_float_parsing)
-    {
-        tryReadFloatTextPrecise(x, in_buffer);
-        in_buffer.ignore();
-        readFloatTextPrecise(y, in_buffer);
-    }
-    else
-    {
-        tryReadFloatImpreciseForCompatibility(x, in_buffer);
-        in_buffer.ignore();
-        readFloatImpreciseForCompatibility(y, in_buffer);
-    }
+    tryReadFloatText(x, in_buffer);
+    in_buffer.ignore();
+    readFloatText(y, in_buffer);
     return {x, y};
 }
 
@@ -158,40 +149,40 @@ inline bool readItemEnding(ReadBuffer & in_buffer)
     }
 }
 
-inline LineString<CartesianPoint> parseWKTLine(ReadBuffer & in_buffer, bool precise_float_parsing)
+inline LineString<CartesianPoint> parseWKTLine(ReadBuffer & in_buffer)
 {
     LineString<CartesianPoint> ls;
     readOpenBracket(in_buffer);
     while (true)
     {
-        ls.push_back(parseWKTPoint(in_buffer, precise_float_parsing));
+        ls.push_back(parseWKTPoint(in_buffer));
         if (readItemEnding(in_buffer))
             break;
     }
     return ls;
 }
 
-inline Ring<CartesianPoint> parseWKTRing(ReadBuffer & in_buffer, bool precise_float_parsing)
+inline Ring<CartesianPoint> parseWKTRing(ReadBuffer & in_buffer)
 {
     Ring<CartesianPoint> ring;
     readOpenBracket(in_buffer);
     while (true)
     {
-        ring.push_back(parseWKTPoint(in_buffer, precise_float_parsing));
+        ring.push_back(parseWKTPoint(in_buffer));
         if (readItemEnding(in_buffer))
             break;
     }
     return ring;
 }
 
-inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer, bool precise_float_parsing)
+inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer)
 {
     Polygon<CartesianPoint> poly;
     readOpenBracket(in_buffer);
     bool should_complete_outer = true;
     while (true)
     {
-        auto parsed_line = parseWKTRing(in_buffer, precise_float_parsing);
+        auto parsed_line = parseWKTRing(in_buffer);
         if (should_complete_outer)
         {
             should_complete_outer = false;
@@ -207,33 +198,33 @@ inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer, bool prec
     return poly;
 }
 
-inline MultiLineString<CartesianPoint> parseWKTMultiLineString(ReadBuffer & in_buffer, bool precise_float_parsing)
+inline MultiLineString<CartesianPoint> parseWKTMultiLineString(ReadBuffer & in_buffer)
 {
     MultiLineString<CartesianPoint> result;
     readOpenBracket(in_buffer);
     while (true)
     {
-        result.push_back(parseWKTLine(in_buffer, precise_float_parsing));
+        result.push_back(parseWKTLine(in_buffer));
         if (readItemEnding(in_buffer))
             break;
     }
     return result;
 }
 
-inline MultiPolygon<CartesianPoint> parseWKTMultiPolygon(ReadBuffer & in_buffer, bool precise_float_parsing)
+inline MultiPolygon<CartesianPoint> parseWKTMultiPolygon(ReadBuffer & in_buffer)
 {
     MultiPolygon<CartesianPoint> poly;
     readOpenBracket(in_buffer);
     while (true)
     {
-        poly.push_back(parseWKTPolygon(in_buffer, precise_float_parsing));
+        poly.push_back(parseWKTPolygon(in_buffer));
         if (readItemEnding(in_buffer))
             break;
     }
     return poly;
 }
 
-GeometricObject parseWKTFormat(ReadBuffer & in_buffer, bool precise_float_parsing)
+GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
 {
     std::string type;
     while (true)
@@ -253,16 +244,16 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer, bool precise_float_parsin
     if (type == "POINT")
     {
         readOpenBracket(in_buffer);
-        return parseWKTPoint(in_buffer, precise_float_parsing);
+        return parseWKTPoint(in_buffer);
     }
     if (type == "LINESTRING")
-        return parseWKTLine(in_buffer, precise_float_parsing);
+        return parseWKTLine(in_buffer);
     if (type == "POLYGON")
-        return parseWKTPolygon(in_buffer, precise_float_parsing);
+        return parseWKTPolygon(in_buffer);
     if (type == "MULTILINESTRING")
-        return parseWKTMultiLineString(in_buffer, precise_float_parsing);
+        return parseWKTMultiLineString(in_buffer);
     if (type == "MULTIPOLYGON")
-        return parseWKTMultiPolygon(in_buffer, precise_float_parsing);
+        return parseWKTMultiPolygon(in_buffer);
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: type {}", type);
 }
