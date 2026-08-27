@@ -106,6 +106,8 @@ SELECT tokens('abc', 'splitByRegexp', 'a(b)c', 1);
 SELECT tokens('abc', 'splitByRegexp', 'z*', 1);
 -- Scanning does not stop at the first empty match; later non-empty matches are still found
 SELECT tokens('123x45', 'splitByRegexp', '[0-9]*', 1);
+-- An empty-matching alternative listed first does not shadow a non-empty one at the same position
+SELECT tokens('a', 'splitByRegexp', '|a', 1);
 -- Multi-byte UTF-8 is preserved inside the capture group (byte offsets must not slice a character)
 SELECT tokens('k:héllo k:wörld', 'splitByRegexp', 'k:(\\p{L}+)', 1);
 -- `\w` is ASCII-only in RE2, so it stops at the first multi-byte character
