@@ -43,35 +43,49 @@ GRANT SELECT ON ${CLICKHOUSE_DATABASE}.pv_def TO ${reader}, ${full};
 GRANT SELECT ON ${CLICKHOUSE_DATABASE}.base1 TO ${full};
 "
 
-# Print 'OK' only when the query succeeds, 'ACCESS_DENIED' when it is rejected for access reasons,
-# and the full unexpected error otherwise (which makes the reference diff fail) so that a positive
-# case that starts throwing a different exception cannot silently pass. The queries go over HTTP:
-# a debug-build client takes seconds just to start, which would push the test over the time limit.
+# Print 'OK' only when the request succeeds end to end: `curl` must exit 0 and the body must carry
+# no exception, so a transport failure or timeout cannot pass as a successful query. Denials print
+# 'ACCESS_DENIED' (classified from the body, which ClickHouse fills before the HTTP status), and any
+# other failure prints the exit code and the full body, which makes the reference diff fail - a case
+# that starts failing differently cannot silently pass.
+# The queries go over HTTP: a debug-build client takes seconds just to start, which would push the
+# test over the time limit.
 run() {
     local user="$1"
     local label="$2"
     local query="$3"
     local out
+    local rc
     out=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&enable_analyzer=0" --data-binary "${query}" 2>&1)
-    if ! echo "${out}" | grep -q "DB::Exception"; then
-        echo "${label}: OK"
-    elif echo "${out}" | grep -q "ACCESS_DENIED"; then
+    rc=$?
+    if echo "${out}" | grep -q "ACCESS_DENIED"; then
         echo "${label}: ACCESS_DENIED"
-    else
+    elif [ "${rc}" -ne 0 ]; then
+        echo "${label}: TRANSPORT ERROR: curl exited with ${rc}: ${out}"
+    elif echo "${out}" | grep -q "DB::Exception"; then
         echo "${label}: UNEXPECTED ERROR: ${out}"
+    else
+        echo "${label}: OK"
     fi
 }
 
 # Every shape below must give the reader the same answer for `EXPLAIN` as for the real `SELECT`.
+# The five probes of a shape are independent, so they run concurrently: one probe on a loaded
+# debug-build server can take many seconds, and serially the total exceeded the time limit.
 check() {
     local label="$1"
     local query="$2"
     echo "-- ${label}"
-    run "${reader}" "  reader SELECT"                "${query}"
-    run "${reader}" "  reader EXPLAIN SYNTAX"        "EXPLAIN SYNTAX ${query}"
-    run "${reader}" "  reader EXPLAIN AST optimize"  "EXPLAIN AST optimize = 1 ${query}"
-    run "${full}"   "  full SELECT"                  "${query}"
-    run "${full}"   "  full EXPLAIN SYNTAX"          "EXPLAIN SYNTAX ${query}"
+    local dir
+    dir=$(mktemp -d "${CLICKHOUSE_TMP}/probes_XXXXXX")
+    run "${reader}" "  reader SELECT"                "${query}" > "${dir}/1" &
+    run "${reader}" "  reader EXPLAIN SYNTAX"        "EXPLAIN SYNTAX ${query}" > "${dir}/2" &
+    run "${reader}" "  reader EXPLAIN AST optimize"  "EXPLAIN AST optimize = 1 ${query}" > "${dir}/3" &
+    run "${full}"   "  full SELECT"                  "${query}" > "${dir}/4" &
+    run "${full}"   "  full EXPLAIN SYNTAX"          "EXPLAIN SYNTAX ${query}" > "${dir}/5" &
+    wait
+    cat "${dir}/1" "${dir}/2" "${dir}/3" "${dir}/4" "${dir}/5"
+    rm -r "${dir}"
 }
 
 db="${CLICKHOUSE_DATABASE}"
