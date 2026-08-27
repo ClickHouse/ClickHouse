@@ -152,8 +152,8 @@ def existing_kafka_topic(admin_client, topic_name, max_retries=50):
 
 
 def get_admin_client(kafka_cluster, retries=15):
-    # A broker that is not up yet surfaces as NoBrokersAvailable when the readiness
-    # probe is cluster-wide, and as NodeNotReadyError when it targets a specific node.
+    # A broker that is not up yet surfaces as `NoBrokersAvailable` when the readiness
+    # probe is cluster-wide, and as `NodeNotReadyError` when it targets a specific node.
     errors = []
     for _ in range(retries):
         try:
