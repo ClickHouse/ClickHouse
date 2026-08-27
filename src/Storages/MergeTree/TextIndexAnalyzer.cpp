@@ -167,7 +167,9 @@ void TextIndexAnalyzer::QueryBuilder::addPostings(std::string_view token, const 
         markFailed();
 }
 
-TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text)
+TextIndexAnalyzer::TextIndexAnalyzer(
+    const MergeTreeIndexConditionText & condition_text,
+    const std::optional<JSONPathValues::IndexConfiguration> & part_configuration)
 {
     global_search_mode = condition_text.getGlobalSearchMode();
 
@@ -175,6 +177,15 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
     {
         auto & query_builder = query_builders[hash];
         query_builder.query = query;
+
+        if (!condition_text.canUseQueryWithPartConfiguration(*query, part_configuration))
+        {
+            query_builder.is_bypassed = true;
+            query_builder.is_unavailable = true;
+            for (const auto & token : query->getTokens())
+                queries_by_token.try_emplace(token);
+            continue;
+        }
 
         for (const auto & token : query->getTokens())
         {

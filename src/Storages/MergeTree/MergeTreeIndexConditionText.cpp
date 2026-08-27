@@ -272,6 +272,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         {
             all_search_tokens_set.insert(search_query->getTokens().begin(), search_query->getTokens().end());
             all_search_queries[search_query->getHash()] = search_query;
+            if (element.json_path)
+                json_query_paths[search_query->getHash()] = *element.json_path;
         }
 
         if (requiresReadingAllTokens(element))
@@ -402,7 +404,26 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
     if (rpn_element.text_search_queries.size() != 1)
         return nullptr;
 
-    return rpn_element.text_search_queries.front();
+    auto query = rpn_element.text_search_queries.front();
+    if (rpn_element.json_path)
+        json_query_paths[query->getHash()] = *rpn_element.json_path;
+    return query;
+}
+
+bool MergeTreeIndexConditionText::canUseQueryWithPartConfiguration(
+    const TextSearchQuery & query,
+    const std::optional<JSONPathValues::IndexConfiguration> & part_configuration) const
+{
+    if (!json_path_values_configuration)
+        return !part_configuration;
+
+    if (!part_configuration
+        || part_configuration->token_format_version != JSONPathValues::TOKEN_FORMAT_VERSION
+        || part_configuration->max_token_bytes != json_path_values_configuration->max_token_bytes)
+        return false;
+
+    auto it = json_query_paths.find(query.getHash());
+    return it != json_query_paths.end() && part_configuration->path_matcher->shouldIndex(it->second);
 }
 
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
@@ -464,6 +485,9 @@ bool queryMayBeTrueInRange(
     /// Failure dominates bypass — a proven-empty query stays empty even when pattern analysis is incomplete.
     if (query_builder.is_failed)
         return false;
+
+    if (query_builder.is_unavailable)
+        return true;
 
     /// Pattern bypass means analysis is incomplete, so conservatively return true.
     if (query_builder.is_bypassed && query.hasPatternLookup())

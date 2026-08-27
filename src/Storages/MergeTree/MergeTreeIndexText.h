@@ -91,6 +91,7 @@ struct MergeTreeIndexTextParams
     ASTPtr preprocessor;
     ASTPtr postprocessor;
     MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
+    std::optional<JSONPathValues::IndexConfiguration> json_path_values_configuration;
 };
 
 using PostingList = roaring::Roaring;
@@ -327,6 +328,7 @@ struct TextIndexHeader
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
     /// Persisted for version >= V2_WithPositions.
     bool has_positions = false;
+    std::optional<JSONPathValues::IndexConfiguration> json_path_values_configuration;
     DictionarySparseIndex sparse_index;
 };
 
@@ -356,7 +358,13 @@ struct TextIndexSerialization
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
     /// Reject a token the reader would refuse (throws `TOO_LARGE_STRING_SIZE`); call before copying a token elsewhere.
     static void checkTokenSize(size_t token_size);
-    static void serializeHeader(MergeTreeTextIndexSerializationVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, WriteBuffer & ostr);
+    static void serializeHeader(
+        MergeTreeTextIndexSerializationVersion version,
+        const DictionarySparseIndex & sparse_index,
+        IPostingListCodec::Type posting_list_codec_type,
+        bool has_positions,
+        WriteBuffer & ostr,
+        const std::optional<JSONPathValues::IndexConfiguration> & json_path_values_configuration = std::nullopt);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
     /// Reads only the version and posting list codec from the start of the header, without the

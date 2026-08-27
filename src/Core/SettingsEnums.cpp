@@ -489,7 +489,8 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"v0_initial", MergeTreeTextIndexSerializationVersion::V0_Initial},
      {"v1_with_codec", MergeTreeTextIndexSerializationVersion::V1_WithCodec},
-     {"v2_with_positions", MergeTreeTextIndexSerializationVersion::V2_WithPositions}})
+     {"v2_with_positions", MergeTreeTextIndexSerializationVersion::V2_WithPositions},
+     {"v3_with_tokenizer_config", MergeTreeTextIndexSerializationVersion::V3_WithTokenizerConfig}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreePartMinMaxIndexColumns,

@@ -152,6 +152,10 @@ public:
     TokenizerPtr getTokenizer() const { return tokenizer; }
     MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
     MergeTreeIndexTextPostprocessorPtr getPostprocessor() const { return postprocessor; }
+    bool canUseQueryWithPartConfiguration(
+        const TextSearchQuery & query,
+        const std::optional<JSONPathValues::IndexConfiguration> & part_configuration) const;
+    bool isJSONPathValuesQuery(const TextSearchQuery & query) const { return json_query_paths.contains(query.getHash()); }
 
 private:
     /// Uses RPN like KeyCondition
@@ -179,6 +183,7 @@ private:
 
         Function function = FUNCTION_UNKNOWN;
         std::vector<TextSearchQueryPtr> text_search_queries;
+        std::optional<String> json_path;
     };
 
     using RPN = std::vector<RPNElement>;
@@ -261,6 +266,7 @@ private:
     std::vector<String> all_search_tokens;
     /// Search queries from all RPN elements
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
+    mutable std::unordered_map<UInt128, String> json_query_paths;
     /// Mapping from virtual column (optimized for direct read from text index) to search query.
     std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query;
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.
