@@ -7,6 +7,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/System/StorageSystemSettingsChanges.h>
 
+#include <base/EnumReflection.h>
+
 namespace DB
 {
 
@@ -37,8 +39,9 @@ ColumnsDescription StorageSystemSettingsChanges::getColumnsDescription()
                  std::make_shared<DataTypeString>(),
                  std::make_shared<DataTypeString>(),
                  std::make_shared<DataTypeString>(),
+                 std::make_shared<DataTypeString>(),
                  std::make_shared<DataTypeString>()},
-             Names{"name", "previous_value", "new_value", "reason"})), "The list of changes in settings which changed the behaviour of ClickHouse."},
+             Names{"name", "previous_value", "new_value", "reason", "compatibility_mode"})), "The list of changes in settings which changed the behaviour of ClickHouse."},
     };
 }
 
@@ -51,7 +54,7 @@ void StorageSystemSettingsChanges::fillData(MutableColumns & res_columns, Contex
         res_columns[1]->insert(it->first.toString());
         Array changes;
         for (const auto & change : it->second)
-            changes.push_back(Tuple{change.name, fieldToString(change.previous_value), fieldToString(change.new_value), change.reason});
+            changes.push_back(Tuple{change.name, fieldToString(change.previous_value), fieldToString(change.new_value), change.reason, magic_enum::enum_name(change.compatibility_mode)});
         res_columns[2]->insert(changes);
     }
 
@@ -62,7 +65,7 @@ void StorageSystemSettingsChanges::fillData(MutableColumns & res_columns, Contex
         res_columns[1]->insert(it->first.toString());
         Array changes;
         for (const auto & change : it->second)
-            changes.push_back(Tuple{change.name, fieldToString(change.previous_value), fieldToString(change.new_value), change.reason});
+            changes.push_back(Tuple{change.name, fieldToString(change.previous_value), fieldToString(change.new_value), change.reason, magic_enum::enum_name(change.compatibility_mode)});
         res_columns[2]->insert(changes);
     }
 }

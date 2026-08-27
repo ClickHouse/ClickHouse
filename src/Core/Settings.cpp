@@ -9527,6 +9527,7 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
 
     ClickHouseVersion version(compatibility_value);
     const auto & settings_changes_history = getSettingsChangesHistory();
+    UnorderedSetWithMemoryTracking<std::string_view> blocked_settings;
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting
     for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
@@ -9539,6 +9540,12 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         {
             /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
             auto final_name = SettingsTraits::resolveName(change.name);
+
+            if (change.compatibility_mode == SettingsChangesHistory::SettingChange::CompatibilityMode::StartUsingNew)
+                blocked_settings.insert(final_name);
+
+            if (blocked_settings.contains(final_name))
+                continue;
 
             if (getTier(final_name) == SettingsTierType::OBSOLETE)
                 continue;
