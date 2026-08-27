@@ -218,9 +218,11 @@
               "pages": [
                 "concepts/features/interfaces/overview",
                 "concepts/features/interfaces/http",
+                "concepts/features/interfaces/framing-formats",
                 "concepts/features/interfaces/tcp",
                 "concepts/features/interfaces/adbc",
                 "concepts/features/interfaces/jdbc",
+                "concepts/features/interfaces/mongo",
                 "concepts/features/interfaces/mysql",
                 { "$ref": "features/interfaces/odbc/navigation.json" },
                 "concepts/features/interfaces/postgresql",

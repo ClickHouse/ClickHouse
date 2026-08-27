@@ -18,6 +18,7 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
+#include <Common/SilkFiberScheduler.h>
 #include <Common/UntrackedMemoryRegistry.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -1112,11 +1113,12 @@ void AsynchronousMetrics::processWarningForMemoryOverload(const AsynchronousMetr
 void AsynchronousMetrics::processWarningForCPUOverload(const AsynchronousMetricValues & new_values) const
 {
     const auto * idle_ptr = getAsynchronousMetricValue(new_values, "OSIdleTimeNormalized");
-    if (!idle_ptr)
+    const auto * io_wait_ptr = getAsynchronousMetricValue(new_values, "OSIOWaitTimeNormalized");
+    if (!idle_ptr || !io_wait_ptr)
         return;
 
     /// ensure that the value is always in [0.0, 1.0]
-    const double busy_time = std::clamp(1.0 - idle_ptr->value, 0.0, 1.0);
+    const double busy_time = std::clamp(1.0 - idle_ptr->value - io_wait_ptr->value, 0.0, 1.0);
 
     const auto & cfg = context->getConfigRef();
     const double cpu_warn_ratio = cfg.getDouble("resource_overload_warnings.cpu_overload_warn_ratio", 0.9);
@@ -2745,6 +2747,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 = {"channel", std::move(async_logging_queue_sizes),
                    "Number of async messages queued pending for logging, keyed by the logging channel name."};
     }
+
+#if USE_SILK
+    for (const auto & [counter_name, counter_value] : Silk::getRuntimeCounters())
+        new_values[fmt::format("Silk{}", counter_name)] = { counter_value,
+            "Value of the eponymous low-level counter of the silk fiber runtime, accumulated since the fiber scheduler initialization. "
+            "Counters with Time in the name are in nanoseconds." };
+#endif
 
     /// Add more metrics as you wish.
 

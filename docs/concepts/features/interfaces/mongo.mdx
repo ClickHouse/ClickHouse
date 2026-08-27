@@ -1,0 +1,232 @@
+---
+description: 'Documentation for the MongoDB wire protocol and the MongoDB query dialect'
+sidebarTitle: 'MongoDB interface'
+slug: /interfaces/mongo
+title: 'MongoDB interface'
+doc_type: 'reference'
+---
+
+ClickHouse can accept queries written for MongoDB in two ways:
+
+- as a **wire protocol endpoint**, so that MongoDB drivers and tools connect to ClickHouse as if it were a MongoDB server;
+- as a **query dialect**, so that MongoDB shell syntax can be sent over the usual ClickHouse interfaces.
+
+Both are experimental and cover only a subset of MongoDB. They are useful for pointing an existing MongoDB application at ClickHouse without rewriting its queries, not as a MongoDB replacement.
+
+## MongoDB wire protocol {#mongodb-wire-protocol}
+
+Add a `mongo_port` to the server configuration to accept MongoDB connections:
+
+```xml
+<clickhouse>
+    <mongo_port>27017</mongo_port>
+</clickhouse>
+```
+
+Then connect with any MongoDB client. Only the `PLAIN` authentication mechanism is supported, because it is the only one that provides the cleartext password that ClickHouse needs to authenticate a user:
+
+```bash
+mongosh "mongodb://default:@localhost:27017/default?authMechanism=PLAIN"
+```
+
+```python
+import pymongo
+client = pymongo.MongoClient("mongodb://default:@localhost:27017/default?authMechanism=PLAIN")
+client["my_database"]["my_collection"].find({"age": {"$gt": 20}})
+```
+
+The user name is taken from the authentication payload sent by the client, not from the authentication database, so the database in the connection string may be any value.
+
+:::note
+The wire protocol port is plaintext. Do not expose it outside a trusted network.
+:::
+
+### Mapping of MongoDB concepts {#mapping-of-mongodb-concepts}
+
+| MongoDB     | ClickHouse                                                                  |
+|-------------|-----------------------------------------------------------------------------|
+| database    | database                                                                    |
+| collection  | table                                                                       |
+| document    | row                                                                         |
+| field       | path of the `json` column, or the column of the same name of an existing table |
+| `_id`       | the `_id` column, which is the primary key                                  |
+| index       | data skipping index of type `bloom_filter`                                  |
+
+Collections with the same name in different MongoDB databases are different ClickHouse tables, and the database is created on demand by the first insert into it.
+
+A collection this endpoint creates keeps whole documents in one [`JSON`](/sql-reference/data-types/newjson) column, because a MongoDB collection has no schema - see [Schemas](#schemas). A table that was created in ClickHouse keeps its own columns, and a field of a query names the column of the same name there, so an application can also be pointed at a table that already holds the data.
+
+What a driver reads back has the shape and the types of what it inserted: a nested document returns as the nested document it is, a date as a BSON date, and an integer as a BSON `int32`/`int64` of its width.
+
+### Supported commands {#supported-commands}
+
+`insert`, `find`, `aggregate`, `distinct`, `count`, `update`, `delete`, `create`, `drop`, `dropDatabase`, `createIndexes`, `listDatabases`, `listCollections`, `isMaster`, `buildInfo`, `ping`, `connectionStatus`, `killCursors`, `endSessions` and `saslStart`.
+
+A `find` supports a filter, a projection, `limit`, `skip` and `sort`. A projection may compute `$add`, `$sub`, `$mul` and `$div`. A `count` supports a `query` filter and the `limit` and `skip` bounds.
+
+#### Filters {#filters}
+
+A filter - of a `find`, a `delete`, an `update` or a `$match` stage - supports:
+
+- the comparisons `$eq`, `$ne`, `$lt`, `$lte`, `$gt` and `$gte`;
+- the set membership tests `$in` and `$nin`;
+- the connectives `$and`, `$or`, `$nor` and `$not`;
+- `$regex` with the options `i`, `m`, `s` and `x`, which is matched as a regular expression rather than as a `LIKE` pattern;
+- `$expr`, which uses the aggregation expression language and so can compare two fields of the same document;
+- `$mod`, and the bitwise `$bitsAllSet`, `$bitsAnySet`, `$bitsAllClear` and `$bitsAnyClear`, whose mask is a number or the list of the bit positions that make it up;
+- on an array, `$size`, `$all` and `$elemMatch`;
+- `$exists`, which asks whether the field holds a value: the columns of a table are fixed, so what a document can leave out is the value, and `{"$exists": false}` is a `NULL`;
+- `$comment`, which carries no condition;
+- the Extended JSON wrappers `$numberInt`, `$numberLong`, `$numberDouble`, `$numberDecimal`, `$oid` and `$date`, which the drivers send for the types JSON cannot represent. A `$date` is the number of milliseconds since the epoch, the canonical `{"$numberLong": "<milliseconds>"}` of it, or an ISO 8601 string; another document there names no instant and is an error.
+
+Several operators on the same field all have to hold, so a range is written the way MongoDB writes it:
+
+```javascript
+{"EventDate": {"$gte": {"$date": "2013-07-01"}, "$lte": {"$date": "2013-07-31"}}}
+```
+
+#### Aggregation pipelines {#aggregation-pipelines}
+
+An `aggregate` translates its pipeline into a chain of `SELECT`s: each stage fills a clause of the query being built, and a stage that needs a clause already filled continues on top of a subquery. The stages `$match`, `$group`, `$project`, `$set` (`$addFields`), `$unset`, `$sort`, `$sortByCount`, `$skip`, `$limit`, `$sample`, `$count`, `$unwind`, `$replaceRoot` (`$replaceWith`) and `$unionWith` are supported.
+
+```javascript
+db.hits.aggregate([
+    {"$match": {"SearchPhrase": {"$ne": ""}}},
+    {"$group": {"_id": "$SearchPhrase", "c": {"$sum": 1}}},
+    {"$sort": {"c": -1}},
+    {"$limit": 10}
+])
+```
+
+`$group` supports the accumulators `$sum`, `$avg`, `$min`, `$max`, `$first`, `$last`, `$firstN`, `$lastN`, `$push`, `$addToSet`, `$count`, `$stdDevPop` and `$stdDevSamp`. A `_id` of `null` aggregates the whole stream into one document, and a `_id` that is a document groups by each of its fields, which become the `_id.<field>` columns of the result.
+
+`$first`, `$last`, `$push`, `$firstN` and `$lastN` read the documents of a group in the order of the stream, which is what a `$sort` right before a `$group` establishes - the way MongoDB asks for the earliest or the latest document of each key:
+
+```javascript
+db.events.aggregate([
+    {"$sort": {"ts": 1}},
+    {"$group": {"_id": "$user", "first": {"$first": "$page"}, "trail": {"$push": "$page"}}}
+])
+```
+
+Those accumulators are then translated through the keys of the `$sort`. Two orders cannot be: keys that do not share one direction, because the documents are compared by the tuple of the keys, which has a single order; and keys that a `$project` or a `$group` in between left out of the documents it builds, because they are no longer fields the `$group` can name. Both are an error rather than an arbitrary document of the group. Without a preceding `$sort` the order of a group is unspecified, in MongoDB as well, and the accumulators read the rows in whatever order the query produces them.
+
+`$unwind` is an `ARRAY JOIN`, so it drops a document whose array is empty unless `preserveNullAndEmptyArrays` asks to keep it, and `includeArrayIndex` adds the position of the element counted from zero.
+
+Inside a stage, an expression may use:
+
+| Category | Operators |
+|----------|-----------|
+| Arithmetic | `$add`, `$subtract`, `$multiply`, `$divide`, `$mod`, `$pow`, `$abs`, `$ceil`, `$floor`, `$round`, `$trunc`, `$sqrt`, `$exp`, `$ln`, `$log`, `$log10`, `$rand` |
+| String | `$concat`, `$strLenBytes`, `$strLenCP`, `$toUpper`, `$toLower`, `$split`, `$substr`, `$substrBytes`, `$substrCP`, `$indexOfBytes`, `$indexOfCP`, `$trim`, `$ltrim`, `$rtrim`, `$replaceOne`, `$replaceAll`, `$regexMatch`, `$regexFind` |
+| Array | `$size`, `$first`, `$last`, `$arrayElemAt`, `$indexOfArray`, `$in`, `$slice`, `$range`, `$reverseArray`, `$concatArrays`, `$map`, `$filter` |
+| Set | `$setUnion`, `$setIntersection`, `$setDifference`, `$setEquals`, `$anyElementTrue`, `$allElementsTrue` |
+| Date | `$year`, `$month`, `$dayOfMonth`, `$dayOfWeek`, `$isoDayOfWeek`, `$dayOfYear`, `$week`, `$isoWeek`, `$isoWeekYear`, `$hour`, `$minute`, `$second`, `$millisecond`, `$dateTrunc`, `$dateAdd`, `$dateSubtract`, `$dateDiff`, `$dateToString`, `$dateFromString` |
+| Conditional | `$cond`, `$switch`, `$ifNull` |
+| Comparison and boolean | `$eq`, `$ne`, `$lt`, `$lte`, `$gt`, `$gte`, `$cmp`, `$and`, `$or`, `$not` |
+| Type conversion | `$toString`, `$toInt`, `$toLong`, `$toDouble`, `$toDecimal`, `$toBool`, `$toDate`, `$literal` |
+
+`$map` and `$filter` bind their element to the variable named by `as`, which defaults to `$$this`. `$$NOW` is the current time; the other system variables are not supported.
+
+A `$regexFind` becomes the `match`, `idx` and `captures` fields of its result document, following the same mapping of a nested field onto an `a.b` column as everywhere else:
+
+```javascript
+db.hits.aggregate([
+    {"$set": {"k": {"$regexFind": {"input": "$Referer", "regex": "^https?://([^/]+)/"}}}},
+    {"$group": {"_id": {"$first": "$k.captures"}, "c": {"$sum": 1}}}
+])
+```
+
+### Schemas {#schemas}
+
+MongoDB collections have no schema, while ClickHouse tables do. A collection this endpoint creates - by the first `insert` into it, or by `createCollection` - is therefore a table of whole documents:
+
+```sql
+CREATE TABLE db.users (`_id` String, `json` JSON) ENGINE = MergeTree ORDER BY `_id`
+```
+
+The document goes into the [`JSON`](/sql-reference/data-types/newjson) column, whose paths are its fields, and the object id of the document into the `_id` column, which is the primary key - so a read by `_id`, which is how a driver addresses a document it inserted, reads by the key. A document that arrives without an `_id` is given one, as a MongoDB server gives it.
+
+There is nothing about the documents that arrive later for such a schema to contradict: a document may hold a field that no document before it had, may leave out a field another document has, and `$exists` answers what it means - a path a document does not have reads as `NULL`. A field is queried as the path of the document that holds it, so `{"profile.name": "x"}` reads `json.profile.name`, and the same query over a table created in ClickHouse reads the column `profile.name` instead.
+
+Creating a collection that already exists is the `NamespaceExists` error, as it is in MongoDB.
+
+The values are stored as the [`JSON` type infers them](/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns), so a date arrives as a date and reads back as a BSON date. A string that is written the way a date is - `"2019-01-01 00:00:00"` - is stored as a date as well, and reads back as one rather than as the string it was.
+
+A collection that does not exist reads as empty, as it does in MongoDB: `find` returns an empty cursor, `count` returns `0`, `distinct` returns no values and `aggregate` returns an empty cursor. An `update` or a `delete` of such a collection matches no document and is a no-op rather than an error, also as in MongoDB.
+
+### Limitations {#limitations}
+
+The limitations of a collection of documents - the shape this endpoint creates - are:
+
+- An `update` of it is not supported yet: it changes the paths of a document rather than the columns of a row, so it is a rewrite of the whole document, and it is refused with an error rather than answered by writing columns the collection does not have. An `update` of a table created in ClickHouse works as described below.
+- Equality and `$in` compare the value a field holds, so they do not match an element of an array the way MongoDB does: the array functions ClickHouse would need for that do not accept the `Dynamic` value a path of a document is. Over a field that holds an array there is then no comparison to make - an array and a scalar have none - so such a filter is an error rather than a wrong answer. Over a table created in ClickHouse the match is element-wise, as described below.
+- `createIndexes` needs a column to index and a path of a document is not one, so an index over such a collection is an error.
+- A value that a projection or a pipeline computes is returned with the type its JSON carries - a number, a string, a boolean - rather than the type of the path it came from: only the documents that a `find` reads as they are stored keep their dates.
+- A stage that reads a path as something other than a value - `$unwind`, which walks an array, and the accumulators `$sum`, `$avg`, `$min` and `$max`, which read a number - is an error over such a collection: a path of a document is a `Dynamic` value, whose type is a property of the row rather than of the column, and those functions ask for a type of the column.
+- A `$numberDecimal` reads back as the string of its digits rather than as a `decimal128`, and an explicitly inserted `null` is not read back at all: the `JSON` type infers the type of a path from its value, and it has neither a decimal among the types it infers nor a path that holds nothing but a `null`.
+- The `mongo` dialect addresses the columns of a table, so a document collection cannot be queried through it yet; the wire protocol is the way to read one.
+- The `_id` column is the primary key of the table, and a `MergeTree` primary key is not unique: an `insert` of a document whose `_id` another document already has is accepted rather than answered with MongoDB's duplicate-key error. Two documents of one `insert` command that share an object id are refused, because that command writes them together. The object id is stored as text, so ids of different BSON types that are written the same way - the number `1` and the string `"1"`, an `ObjectId` and its hexadecimal digits - address one and the same document.
+
+The limitations that hold for either shape are:
+
+- An `update` is translated into `ALTER TABLE ... UPDATE`, which is asynchronous: the new value does not have to be visible to the next `find`.
+- The number of documents affected by `update` and `delete` is always reported as `0`.
+- Cursors are not implemented, so the whole result of a `find` or an `aggregate` is returned in the first batch. A result whose reply would exceed the advertised `maxBsonObjectSize` (16 MiB) is an error rather than an oversized reply: ask for less at a time, with a filter, a projection, `limit` and `skip`. The replies to `distinct`, `listCollections` and `listDatabases` have the same bound.
+- A `Float32` or `Float64` column that holds `NaN` or an infinity reads back as a BSON double with that value, but such a value cannot be inserted over the wire protocol: BSON extended JSON has no plain-JSON form for it here, so the insert is an error.
+- An explicitly inserted `null` becomes a `Dynamic` column when it is the first value of its field, and the default of the column type otherwise: a typed column always has a value.
+- A `$numberDecimal` becomes a `Decimal128` column of the scale of the value, so its digits are kept exactly; a value that fits no `Decimal128` of any scale - an exponent far from zero, or more than 38 digits - is an error rather than a rounded approximation. An array of decimals of different scales becomes a column of the widest of them, so its values read back padded to that scale.
+- `$in` and `$nin` on an array field test its elements, as MongoDB does; what they cannot express is a candidate that is itself an array (the whole-array match), and a field of nested arrays is flattened through every level rather than one. Equality has the same element-wise meaning: `{"tags": "red"}` and `{"tags": {"$eq": "red"}}` match a `tags` array that holds `"red"`, with the same two caveats. `distinct` on an array field is element-wise the same way, with the same nested-array caveat.
+- `$toDecimal` keeps the exact scale of a constant argument, the way `$numberDecimal` keeps the scale of its value; a constant that fits no `Decimal128` of any scale is an error. Of a non-constant value it is only supported for integers and booleans, whose conversion is exact at scale 0.
+- `$size` matches arrays only, so a string of the right length is not a match; on a column whose type has no length at all - a number, for instance - it is an error rather than an empty match.
+- `$currentDate` supports `true` and `{"$type": "date"}`; the BSON `timestamp` type does not exist here, so `{"$type": "timestamp"}` is rejected.
+- A projection lists exactly the fields it names: `_id` is not added to it implicitly, because a ClickHouse table has no implicit `_id` column. An exclusion of `_id` inside an inclusion projection, as in `{"name": 1, "_id": 0}`, is accepted and has nothing left to do; an exclusion of any other field there is an error, as it is in MongoDB.
+- An `update` supports `$set`, `$unset`, `$inc`, `$mul`, `$min`, `$max`, `$rename`, `$currentDate`, `$push`, `$addToSet`, `$pop`, `$pull` and `$pullAll`. A row always has a value for every column, so `$unset` - and the field a `$rename` leaves behind - writes the default of the column type, which is the value an insert that leaves the field out writes. The value of an update operator is data rather than an aggregation expression, as in MongoDB: `{"$set": {"name": "$other"}}` stores the string `$other`, and a document assigns the `a.b` columns its fields name - so `{"$set": {"profile": {}}}`, which names no column, is an error.
+- A `UInt64` value above the signed 64-bit maximum reads back as a BSON `decimal128`, which holds it exactly, because BSON has no unsigned 64-bit integer and a `double` would lose its low digits. The smaller values read back as `int64`, like every other integer column.
+- A document larger than the advertised `maxBsonObjectSize` (16 MiB) is refused, both in a reply and in a request: a message can carry several documents and may be larger than one of them, so the limit of a message does not bound a document.
+- `createIndexes` creates a data skipping index of type `bloom_filter`, which may speed up equality filters but carries none of the other MongoDB index semantics. An index option it cannot honor - `unique`, `expireAfterSeconds`, `sparse` and the rest - a compound key, and a key value other than `1` and `-1` (a `text` or `hashed` index, for instance) are errors rather than acknowledged no-ops. The index is created on a column, so the field has to be one: MongoDB creates an index on a collection that does not exist - which creates the collection - and on a field no document has, while here both have nothing to index and are an error that asks for a document to be inserted first.
+- The `query` of a `distinct` must be a document, as the filter of a `find` and of a `count` must be: a value that is not one is a malformed request rather than no filter at all, which would answer with the distinct values of the whole collection.
+- `$lookup`, `$facet`, `$out`, `$merge` and the other pipeline stages not listed above are not supported, and neither are transactions, change streams and the `OP_COMPRESSED` message.
+- A `$replaceRoot` takes a document as its new root; a field path there would name a column rather than a subdocument.
+- An `aggregate` of a collection that does not exist reads as empty only when its pipeline reads no other collection: the documents a `$unionWith` contributes do not depend on the aggregated collection, and there is no source of the right shape to read in its place, so that combination is an error rather than a wrong answer.
+- A write goes to one table and is acknowledged when it is written, so the only write concerns a write command accepts are `{w: 1}` and `{w: "majority"}` (and a `wtimeout`, which bounds a wait that never happens). `{w: 0}` asks for a write the client is not told about, which every write here contradicts by answering with its result, and a `j` or an `fsync` that asks for a commit to the journal cannot be honoured; all of them are errors rather than an `ok` for a different contract. The same check applies to `drop`, `dropDatabase` and `createIndexes`, which write as much as an `insert` does. A `readConcern` is checked the same way: a read sees everything written to the table, which is what `local`, `available` and `majority` ask for, while a `snapshot` or a `linearizable` read is an error.
+- A read command accepts only the fields it implements. `find` takes `filter`, `projection`, `sort`, `limit`, `skip`, `singleBatch` and `hint`, `count` takes `query`, `limit`, `skip` and `hint`, `distinct` takes `key`, `query` and `hint`, and `aggregate` takes `pipeline`, `cursor`, `allowDiskUse` and `hint`; the fields a driver attaches to every command - the target database, the session, the read preference, the version of the API - are accepted as well. Anything else, such as a `collation`, which decides which documents a filter matches, a `batchSize`, which bounds a batching that does not happen because the whole result is answered in the first batch, or a non-zero `maxTimeMS`, which bounds a run that nothing here stops, is an error rather than a silently dropped option.
+- A write command is checked the same way. `insert` takes `documents` and `ordered`, `update` takes `updates` and `ordered`, `delete` takes `deletes` and `ordered`, `createIndexes` takes `indexes`, and `create`, `drop` and `dropDatabase` take nothing beyond the command itself; anything else, such as a non-zero `maxTimeMS` or a `commitQuorum`, is an error rather than an `ok` for a write that ignored it.
+- `listCollections` and `listDatabases` honour `nameOnly`, and `authorizedCollections` / `authorizedDatabases` ask for the listing the authenticated user gets here anyway, because `SHOW TABLES` and `SHOW DATABASES` list exactly what that user is allowed to see. Their `filter` is honoured as an equality on `name` - which is how a driver probes for one collection - and any other filter is an error rather than an ignored option.
+- Database and collection names must consist of letters, digits, `_` and `-`.
+
+## MongoDB dialect {#mongodb-dialect}
+
+Set the [`dialect`](/operations/settings/settings#dialect) setting to `mongo` to write MongoDB shell syntax over any ClickHouse interface. The dialect is experimental, so it also requires the `allow_experimental_mongo_dialect` setting:
+
+```sql
+SET allow_experimental_mongo_dialect = 1;
+SET dialect = 'mongo';
+
+db.users.find({"age" : {"$gt" : 20}});
+db.users.find({}, {"name" : 1, "age" : 1});
+db.users.find({"$projection" : {"name" : "name", "total" : {"$add" : ["price", "tax"]}}});
+db.users.find({}).limit(10).sort({"age" : 1});
+db.users.aggregate([{"$group" : {"_id" : "$city", "c" : {"$sum" : 1}}}, {"$sort" : {"c" : -1}}]);
+db.users.insertOne({"name" : "a", "age" : 20});
+db.users.insertMany([{"name" : "a", "age" : 20}, {"name" : "b", "age" : 30}]);
+```
+
+An `insertOne` or `insertMany` writes into an existing table: the fields of the documents name its columns, and a subdocument writes the `a.b` columns its leaves name. A top level `_id` is kept when the table has an `_id` column; otherwise it is dropped. The dialect does not write document collections created by the MongoDB wire endpoint. Every document of one `insertMany` must consist of the same fields, because the rows of one `INSERT` share a column list.
+
+An embedded document that is a value rather than a set of paths - an element of an array, or the document `$push` and `$addToSet` append - is written as a `JSON` value, so an `Array(JSON)` column, which is what the wire protocol infers for an array of documents, is written the same way through either surface. An Extended JSON wrapper nested inside such a document becomes the value it wraps, as it does on the wire path, so a `{"$date": ...}` there is stored as the date it names rather than as a `JSON` object with a `$`-named field.
+
+The first name of a query is the database. The literal `db`, as written by the MongoDB shell, means the current database; any other name addresses that database explicitly:
+
+```sql
+SET allow_experimental_mongo_dialect = 1;
+SET dialect = 'mongo';
+
+analytics.users.find({"age" : 20});
+```
+
+The dialect is available only in builds that include `rapidjson`; otherwise setting `dialect = 'mongo'` fails with `SUPPORT_IS_DISABLED`.
+
+## See also {#see-also}
+
+- [MongoDB table engine](/engines/table-engines/integrations/mongodb) - to read from a real MongoDB server from ClickHouse.
