@@ -120,13 +120,14 @@ GTEST_TEST(Field, DeeplyNestedCopyAndDestroyDoesNotOverflowStack)
 }
 
 
-/// Comparing two deeply nested containers must visit each element once. A comparison expressed by
-/// probing both `a < b` and `b < a` per level costs 2^depth on a value whose children are equal, so
-/// this depth cannot finish without a one-pass comparison. `operator<=` is covered here rather than
-/// through SQL because no query reaches a `Field`-to-`Field` `<=` today.
-GTEST_TEST(Field, DeeplyNestedComparisonVisitsEachElementOnce)
+/// Every ordering relation over a nested container agrees with the others and with `operator==`,
+/// including the shorter-prefix and the differing-element-type cases. `operator<=` is covered here
+/// rather than through SQL because no query reaches a `Field`-to-`Field` `<=` today.
+GTEST_TEST(Field, NestedContainerOrdering)
 {
-    static constexpr size_t depth = 60;
+    /// A comparison that probes both directions per level costs 2^levels, so this stays small: a
+    /// regression must make the arms below fail rather than hang.
+    static constexpr size_t depth = 12;
 
     auto make_deep = [](UInt64 leaf)
     {
@@ -223,13 +224,14 @@ void expectOrderingThrows(Compare && compare)
 }
 
 
-/// Completing at a fixed depth rejects a comparison that doubles per nesting level, but it admits
-/// any merely sub-exponential one, and it only ever descends the `Array` chain. Counting the probes
-/// a comparison makes on one leaf pins the contract exactly and separately per container arm: a
-/// one-pass comparison asks the leaf for its order once per direction at any depth.
+/// Counting the probes a comparison makes on one leaf pins the linear-visit contract exactly, and
+/// separately per container arm: a one-pass comparison asks the leaf for its order once per
+/// direction at any depth, so nothing here depends on how long a comparison takes.
 GTEST_TEST(Field, DeeplyNestedComparisonProbesEachLeafOnce)
 {
-    static constexpr size_t depth = 30;
+    /// Small for the same reason as in `NestedContainerOrdering`; the `Map` chain adds a `Map` and a
+    /// `Tuple` level per step, so a doubling comparison costs 2^(2*depth) on that arm.
+    static constexpr size_t depth = 12;
 
     size_t probes = 0;
     /// Two impls sharing one counter, so nothing upstream can halve the count by recognising that
