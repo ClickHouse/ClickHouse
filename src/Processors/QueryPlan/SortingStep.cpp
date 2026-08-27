@@ -334,8 +334,23 @@ static void checkScatterConnectionLimit(size_t threads, size_t streams)
             threads, streams, connection_count_limit);
 }
 
+Names SortingStep::getPartitionByColumnNames() const
+{
+    Names names;
+    names.reserve(partition_by_description.size());
+    for (const auto & column : partition_by_description)
+        names.push_back(column.column_name);
+    return names;
+}
+
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
 {
+    /// The input streams already carry disjoint sets of the partition key values (each stream holds whole
+    /// partitions), so reshuffling rows across streams is redundant: sorting every stream independently
+    /// already keeps each partition contiguous and sorted.
+    if (skip_scatter_by_partition)
+        return;
+
     /// For a hash-sharded merge join the partition count is fixed (see `convertToScatteredFullSort`), so
     /// both sides of the join scatter into the same number of shards even if they read a different number
     /// of streams; otherwise fall back to the pipeline's thread count (window-frame partitioned sort).
@@ -666,6 +681,9 @@ void SortingStep::describeActions(FormatSettings & settings) const
     if (limit)
         settings.out << prefix << "Limit " << limit << '\n';
 
+    if (skip_scatter_by_partition)
+        settings.out << prefix << "Skip scatter by partition: 1\n";
+
     if (!limit_by_columns.empty() && !(type == Type::FinishSorting && prefix_description.size() < result_description.size()))
     {
         settings.out << prefix << "Per-stream LIMIT BY columns: ";
@@ -697,6 +715,9 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
 
     if (limit)
         map.add("Limit", limit);
+
+    if (skip_scatter_by_partition)
+        map.add("Skip scatter by partition", true);
 
     if (!limit_by_columns.empty() && !(type == Type::FinishSorting && prefix_description.size() < result_description.size()))
     {

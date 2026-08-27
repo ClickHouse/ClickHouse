@@ -96,6 +96,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_IOBufferAllocBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المخصصة لمخازن IO المؤقتة (لـ ReadBuffer/WriteBuffer).
 * `ProfileEvent_ArenaAllocChunks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المقاطع المخصصة لذاكرة Arena (المستخدمة في GROUP BY والعمليات المشابهة)
 * `ProfileEvent_ArenaAllocBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المخصصة لذاكرة Arena (المستخدمة في GROUP BY والعمليات المشابهة)
+* `ProfileEvent_FiberStackAllocs` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المكدسات المخصصة للألياف (تُستخدم الألياف للاتصال غير المتزامن بالنسخ المتماثلة البعيدة).
+* `ProfileEvent_FiberStackAllocBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المخصصة لمكدسات الألياف، بما في ذلك صفحات الحماية (تُستخدم صفحات الحماية فقط في إصدارات التصحيح والإصدارات المزودة بأدوات sanitizer).
+* `ProfileEvent_FiberStackAllocNanoseconds` ([UInt64](/ar/reference/data-types/int-uint)) — مقدار الوقت المستغرَق في تخصيص مكدسات الألياف. تُستخدم النانوثواني لأن عملية التخصيص الواحدة تكون عادةً أسرع من ميكروثانية، ما لم يكن مخصّص الذاكرة أو النواة موضع تنازع.
+* `ProfileEvent_FiberStackFreeNanoseconds` ([UInt64](/ar/reference/data-types/int-uint)) — مقدار الوقت المستغرَق في إلغاء تخصيص مكدسات الألياف.
 * `ProfileEvent_FunctionExecute` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات دوال SQL العادية (تُستدعى دوال SQL على مستوى كل كتلة، لذا يمثّل هذا الرقم عدد الكتل).
 * `ProfileEvent_TableFunctionExecute` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات دوال الجدول.
 * `ProfileEvent_DefaultImplementationForNullsRows` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف التي عالجها التنفيذ الافتراضي لقيم NULL أثناء تنفيذ الدالة
@@ -263,14 +267,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_QueryRemoteReadThrottlerBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي مرّت عبر throttler الخاص بـ `max_remote_read_network_bandwidth`.
 * `ProfileEvent_QueryRemoteReadThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضاه الاستعلام في الانتظار للامتثال لآلية throttling الخاصة بـ `max_remote_read_network_bandwidth`.
 * `ProfileEvent_ReaderExecutorSourceRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الطلبات المفتوحة من جهة المصدر بواسطة ReaderExecutor (باستثناء إعادة استخدام المخزن المؤقت النشط).
-* `ProfileEvent_ReaderExecutorBytesFromSource` ([UInt64](/ar/reference/data-types/int-uint)) — البايتات الفعلية التي طلبها ReaderExecutor من المصدر بعد الإخفاق في جميع مستويات ذاكرة التخزين المؤقت (الجلب المسبق في المقدمة والخلفية، بما في ذلك بايتات الجلب المسبق المهدرة بسبب استبعاد لاحق)؛ وليست البايتات المقدَّمة للمستهلك — راجع ReaderExecutorRequestedBytes.
-* `ProfileEvent_ReaderExecutorRequestedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — البايتات المفيدة التي سلّمها ReaderExecutor إلى طلبات القراءة (حمولة النافذة المطلوبة، باستثناء القراءة الزائدة والكتابة العكسية إلى ذاكرة التخزين المؤقت). وهي مقام مؤشر الأداء الرئيسي لتكلفة البايت المصممة (ReaderExecutorModeledCostMicroseconds / ReaderExecutorRequestedBytes).
+* `ProfileEvent_ReaderExecutorBytesFromSource` ([UInt64](/ar/reference/data-types/int-uint)) — البايتات الفعلية التي طلبها ReaderExecutor من المصدر بعد الإخفاق في جميع مستويات ذاكرة التخزين المؤقت (الجلب المسبق في المقدمة والخلفية، بما في ذلك بايتات الجلب المسبق المهدرة بسبب استبعاد لاحق)؛ وليست البايتات المقدَّمة للمستهلك — راجع ReaderExecutorDeliveredBytes.
+* `ProfileEvent_ReaderExecutorDeliveredBytes` ([UInt64](/ar/reference/data-types/int-uint)) — البايتات المفيدة التي سلّمها ReaderExecutor إلى طلبات القراءة (حمولة النافذة المطلوبة، باستثناء القراءة الزائدة والكتابة العكسية إلى ذاكرة التخزين المؤقت). وهي مقام مؤشر الأداء الرئيسي لتكلفة البايت المصممة (ReaderExecutorModeledCostMicroseconds / ReaderExecutorDeliveredBytes).
 * `ProfileEvent_ReaderExecutorCacheGetRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات ICacheHandle::get في ReaderExecutor. يساوي صفرًا إلى أن تُقدَّم مستويات ذاكرة التخزين المؤقت لـ ReaderExecutor.
 * `ProfileEvent_ReaderExecutorCachePopulateRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات ICacheHandle::put في ReaderExecutor. القيمة صفر إلى أن تُقدَّم مستويات ذاكرة التخزين المؤقت لـ ReaderExecutor.
 * `ProfileEvent_ReaderExecutorIncompleteConnections` ([UInt64](/ar/reference/data-types/int-uint)) — عدد اتصالات المصدر التي أسقطها ReaderExecutor قبل استنزافها حتى حدها الأيمن؛ لا يمكن إعادة استخدامها في المجمّع، مما يفرض إعادة إنشائها. القيمة صفر إلى أن يُقدَّم دعم إعادة الاستخدام المباشر لمخزن المصدر المؤقت في ReaderExecutor.
 * `ProfileEvent_ReaderExecutorWorkMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي وقت الساعة الفعلي المستغرَق داخل ReaderExecutor::readNextWindow (فتح النافذة المقدَّمة والبحث فيها وقراءتها). يساهم مباشرةً في زمن استجابة قراءة الاستعلام.
 * `ProfileEvent_ReaderExecutorDecryptMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت الذي قضاه ReaderExecutor في فك تشفير الحمولة المقدَّمة في موضعها (CTR، قابل للعنونة حسب الموضع). القيمة صفر للقراءات غير المشفرة وفي الإصدارات التي لا تتضمن SSL.
-* `ProfileEvent_ReaderExecutorModeledCostMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — تكلفة الإدخال/الإخراج المُنمذجة لقراءات ReaderExecutor: مؤشر أداء رئيسي اصطناعي بديل لمثالية مسار القراءة، وليس زمن استجابة مقاسًا. مجموع مرجّح للعدادات أعلاه باستخدام أوزان S3 استدلالية: 30 مللي ثانية لكل طلب مصدر + 5 مللي ثانية لكل اتصال غير مكتمل + 20 مللي ثانية لكل MiB منقول من المصدر (الحمولة المفيدة بالإضافة إلى القراءة الزائدة) + 0.1 مللي ثانية لكل cache put + 0.05 مللي ثانية لكل cache get. اقسم على ReaderExecutorRequestedBytes للحصول على تكلفة لكل بايت مستقلة عن الحمل. تجريبي، ويتتبع ReaderExecutor التجريبي.
+* `ProfileEvent_ReaderExecutorModeledCostMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — تكلفة الإدخال/الإخراج المُنمذجة لقراءات ReaderExecutor: مؤشر أداء رئيسي اصطناعي بديل لمثالية مسار القراءة، وليس زمن استجابة مقاسًا. مجموع مرجّح للعدادات أعلاه باستخدام أوزان S3 استدلالية: 30 مللي ثانية لكل طلب مصدر + 5 مللي ثانية لكل اتصال غير مكتمل + 20 مللي ثانية لكل MiB منقول من المصدر (الحمولة المفيدة بالإضافة إلى القراءة الزائدة) + 0.1 مللي ثانية لكل cache put + 0.05 مللي ثانية لكل cache get. اقسم على ReaderExecutorDeliveredBytes للحصول على تكلفة لكل بايت مستقلة عن الحمل. تجريبي، ويتتبع ReaderExecutor التجريبي.
 * `ProfileEvent_ReaderExecutorLongConnectionOpened` ([UInt64](/ar/reference/data-types/int-uint)) — عدد اتصالات المصدر الطويلة التي فتحها ReaderExecutor لتحسين القراءة التسلسلية.
 * `ProfileEvent_ReaderExecutorLongConnectionHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد النوافذ التي قدّمها ReaderExecutor بالقراءة من اتصال مصدر طويل مفتوح مسبقًا.
 * `ProfileEvent_ReaderExecutorLongConnectionFallbacks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أراد فيها ReaderExecutor اتصالًا طويلًا لكنه عاد إلى قراءة لمرة واحدة لعدم توفر فتحة.
@@ -292,6 +296,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_PatchesAppliedInAllReadTasks` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لأجزاء التصحيح المطبَّقة عبر جميع مهام القراءة
 * `ProfileEvent_PatchesMergeAppliedInAllReadTasks` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لأجزاء التصحيح المطبَّقة بوضع Merge عبر جميع مهام القراءة
 * `ProfileEvent_PatchesJoinAppliedInAllReadTasks` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لأجزاء التصحيح المطبَّقة بوضع Join عبر جميع مهام القراءة
+* `ProfileEvent_PatchesMergeOnKeyAppliedInAllReadTasks` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لأجزاء التصحيح المطبَّقة بوضع MergeOnKey ‏(v2) عبر جميع مهام القراءة
 * `ProfileEvent_PatchesReadRows` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي للصفوف المقروءة من أجزاء التصحيح
 * `ProfileEvent_PatchesReadUncompressedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي للبايتات غير المضغوطة المقروءة من أجزاء التصحيح
 * `ProfileEvent_PatchesJoinRowsAddedToHashTable` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي للصفوف المضافة إلى جداول التجزئة عند تطبيق أجزاء التصحيح بوضع Join
@@ -299,6 +304,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ReadPatchesMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في قراءة أجزاء التصحيح
 * `ProfileEvent_BuildPatchesMergeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في بناء الفهارس لتطبيق أجزاء التصحيح بوضع Merge
 * `ProfileEvent_BuildPatchesJoinMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في بناء الفهارس وجداول التجزئة لتطبيق أجزاء التصحيح بوضع Join
+* `ProfileEvent_ApplyPatchMergeOnKeyMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق داخل حلقات دمج مفاتيح الفرز applyPatchesMergeOnKey
 * `ProfileEvent_AnalyzePatchRangesMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في تحليل فهرس أجزاء التصحيح
 * `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمهام القراءة التي طُبِّقت عليها أي عملية تعديل أثناء التنفيذ
 * `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لعمليات التعديل المطبَّقة أثناء التنفيذ عبر جميع مهام القراءة
@@ -897,6 +903,21 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ExternalDataSourceLocalCacheReadBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المقروءة من المخزن المؤقت المحلي في RemoteReadBufferCache
 * `ProfileEvent_MainConfigLoads` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات إعادة تحميل التهيئة الرئيسية.
 * `ProfileEvent_AggregationPreallocatedElementsInHashTables` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العناصر التي خُصصت مسبقًا في جداول التجزئة لأغراض التجميع.
+* `ProfileEvent_AdaptiveAggregationLocalFreezes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد جداول التجزئة المحلية التي جمّدها التجميع التكيفي عند عتبة التجميد.
+* `ProfileEvent_AdaptiveAggregationGiveUps` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الخيوط التي تخلّت عن التجميد في التجميع التكيفي لأن تدفقها احتوى على عدد قليل من المفاتيح المميزة.
+* `ProfileEvent_AdaptiveAggregationPressureStandDowns` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الخيوط في التجميع التكيفي التي غادرت مرحلة التعلّم نهائيًا لأن ضغط الذاكرة تجاوز عتبة التجميع الخارجي، فتُفرّغ جداولها المحلية إلى القرص عبر التجميع الخارجي العادي.
+* `ProfileEvent_AdaptiveAggregationThaws` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي ألغى فيها التجميع التكيفي تجميد الجداول المحلية لأن التدفق المرحلي ثبتت هيمنة التكرارات عليه.
+* `ProfileEvent_AdaptiveAggregationProbeBypasses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الخيوط التي توقفت عن فحص جدولها المحلي المجمّد في التجميع التكيفي لأن أي صف تقريبًا لم يطابقه.
+* `ProfileEvent_AdaptiveAggregationStagedRecords` ([UInt64](/ar/reference/data-types/int-uint)) — عدد السجلات المؤجلة التي جهّزها التجميع التكيفي قبل إزالة التكرار.
+* `ProfileEvent_AdaptiveAggregationStagedRecordsMerged` ([UInt64](/ar/reference/data-types/int-uint)) — عدد السجلات المرحلية التي أزال التجميع التكيفي تكرارها بسبب مفاتيح مكررة عند النشر والإغلاق.
+* `ProfileEvent_AdaptiveAggregationStagedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد بايتات المفاتيح التي جهّزها التجميع التكيفي للتصريف وقت الدمج.
+* `ProfileEvent_AdaptiveAggregationSealedChunks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المقاطع المدمجة التي أغلقها التجميع التكيفي من دفعات التنظيم المؤقت المخزنة.
+* `ProfileEvent_AdaptiveAggregationSealNormalizations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي وحّد فيها إغلاق التجميع التكيفي تمثيلات الأعمدة بسبب اختلاف الدفعات المخزنة في موضع وسيطة واحد.
+* `ProfileEvent_AdaptiveAggregationDrainedRecords` ([UInt64](/ar/reference/data-types/int-uint)) — عدد السجلات المؤجلة التي صرّفها التجميع التكيفي إلى الجدول المشترك وقت الدمج.
+* `ProfileEvent_AdaptiveAggregationPressureSweeps` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي صرّف فيها التجميع التكيفي السجلات المرحلية مبكرًا بسبب ضغط الذاكرة.
+* `ProfileEvent_AdaptiveAggregationPressureDrainedRecords` ([UInt64](/ar/reference/data-types/int-uint)) — عدد السجلات المرحلية التي صرّفها التجميع التكيفي مبكرًا تحت ضغط الذاكرة.
+* `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الحاويات ثنائية المستوى التي حُررت ذاكرتها العاملة (فتحة Arena، ومراجع المقاطع المرحلية) مباشرةً بعد اكتمال دمجها وتحويلها، قبل انتهاء الدمج بالكامل.
+* `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الحاويات ثنائية المستوى التي حُوّلت عبر اختيار Top-K المحلي للحاوية (تحسين خطة aggregationBucketTopK).
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/ar/reference/data-types/int-uint)) — عدد جداول التجزئة التي هُيئت بمستويين لأغراض التجميع.
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي حُوِّل فيها جدول تجزئة للتجميع أحادي المستوى إلى مستويين أثناء وقت التشغيل.
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الكتل التي طُبّق عليها تحسين النطاقات المتساوية للمفاتيح
@@ -1101,6 +1122,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_MergerMutatorSelectRangePartsCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الأجزاء في النطاق المحدد للدمج
 * `ProfileEvent_ConnectionPoolIsFullMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في انتظار فتحة شاغرة في مجمع الاتصالات.
 * `ProfileEvent_AsyncLoaderWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضاه الاستعلام في انتظار jobs الخاصة بالمُحمِّل غير المتزامن.
+* `ProfileEvent_AsyncLoaderSpawnFailures` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تعذر فيها على المُحمِّل غير المتزامن إنشاء عامل لأن مجمّع الخيوط العام لم يتمكن من توفير خيط. تُنفَّذ المهام الموضوعة في قائمة الانتظار عندئذٍ بواسطة عامل موجود بالفعل في المجمّع: إما عامل قيد التشغيل، أو عامل يستأنف عمله بعد انتظار مهمة من مجمّع آخر.
 * `ProfileEvent_DistrCacheServerSwitches` ([UInt64](/ar/reference/data-types/int-uint)) — حدث مخزن القراءة لـ Distributed Cache. عدد مرات التبديل بين خوادم Distributed Cache في ذاكرة التخزين المؤقت للقراءة/الكتابة المباشرة
 * `ProfileEvent_DistrCacheReadMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — حدث مخزن القراءة لـ Distributed Cache. الوقت المستغرَق في القراءة من Distributed Cache
 * `ProfileEvent_DistrCacheFallbackReadMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — حدث مخزن القراءة لـ Distributed Cache. الوقت المستغرَق في القراءة من المخزن المؤقت البديل بدلًا من Distributed Cache
@@ -1286,6 +1308,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperLogsEntryReadFromCommitReadAhead` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إدخالات السجل المقدَّمة إلى خيط commit من النافذة مفكوكة الترميز لقارئ القراءة الاستباقية لـ commit (سحب المسار السريع أو سحب التصريف لأول عنصر في النافذة)
 * `ProfileEvent_KeeperChangelogWrittenBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المكتوبة إلى changelog في Keeper
 * `ProfileEvent_KeeperChangelogFileSyncMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في `fsync` لـ changelog الخاص بـ Keeper (السجلات غير المضغوطة فقط)
+* `ProfileEvent_KeeperChangelogStartupReadMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت الساعة الفعلي المستغرَق في القراءة المتوازية لسجل التغييرات أثناء بدء تشغيل Keeper
+* `ProfileEvent_KeeperChangelogStartupStitchMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت الساعة الفعلي المستغرَق في دمج نتائج القراءة المتوازية عند بدء التشغيل لكل ملف في حالة LogEntryStorage
+* `ProfileEvent_KeeperChangelogStartupReadEntries` ([UInt64](/ar/reference/data-types/int-uint)) — عدد سجلات changelog التي تحقّق منها قارئ بدء تشغيل Keeper المتوازي
+* `ProfileEvent_KeeperChangelogStartupReadBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات الفعلية (المجموع الاختباري + الترويسة + blob) المقروءة من ملفات changelog بواسطة قارئ بدء تشغيل Keeper المتوازي
 * `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المكتوبة إلى ملفات snapshot في Keeper
 * `ProfileEvent_KeeperSnapshotFileSyncMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في `fsync` لملفات snapshot الخاصة بـ Keeper
 * `ProfileEvent_StorageConnectionsCreated` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاتصالات المُنشأة لوحدات التخزين
@@ -1377,6 +1403,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ExecutableUserDefinedFunctionPoolWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في انتظار tryBorrowObject عند استنفاد مجمّع الدوال المعرفة من قبل المستخدم من نوع executable&#95;pool، بالميكروثانية.
 * `ProfileEvent_ParquetReadRowGroups` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمجموعات الصفوف المقروءة من بيانات Parquet
 * `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمجموعات الصفوف التي تم استبعادها من بيانات Parquet
+* `ProfileEvent_ParquetReadPages` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لصفحات بيانات Parquet المقروءة
 * `ProfileEvent_ParquetPrunedPages` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي للصفحات التي تم استبعادها من بيانات Parquet باستخدام فهرس الأعمدة
 * `ProfileEvent_ParquetDecodingTasks` ([UInt64](/ar/reference/data-types/int-uint)) — المهام التي أصدرها قارئ Parquet
 * `ProfileEvent_ParquetDecodingTaskBatches` ([UInt64](/ar/reference/data-types/int-uint)) — مجموعات المهام التي أرسلها قارئ Parquet إلى مجمّع خيوط
@@ -1741,6 +1768,9 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `CurrentMetric_KeeperChangelogReadAheadThreads` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط في مجمع الخيوط لمهام تعبئة القراءة الاستباقية لسجل التغييرات في Keeper.
 * `CurrentMetric_KeeperChangelogReadAheadThreadsActive` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط النشطة في مجمع الخيوط لمهام تعبئة القراءة الاستباقية لسجل التغييرات في Keeper.
 * `CurrentMetric_KeeperChangelogReadAheadThreadsScheduled` ([Int64](/ar/reference/data-types/int-uint)) — عدد المهام الموجودة في قائمة الانتظار أو النشطة في مجمع الخيوط لمهام تعبئة القراءة الاستباقية لسجل التغييرات في Keeper.
+* `CurrentMetric_KeeperChangelogStartupReadThreads` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط في مجمع الخيوط لعمليات القراءة المتوازية لسجل التغييرات في Keeper عند بدء التشغيل.
+* `CurrentMetric_KeeperChangelogStartupReadThreadsActive` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط النشطة في مجمع الخيوط لعمليات القراءة المتوازية لسجل التغييرات في Keeper عند بدء التشغيل.
+* `CurrentMetric_KeeperChangelogStartupReadThreadsScheduled` ([Int64](/ar/reference/data-types/int-uint)) — عدد المهام الموجودة في قائمة الانتظار أو النشطة في مجمع الخيوط لعمليات القراءة المتوازية لسجل التغييرات في Keeper عند بدء التشغيل.
 * `CurrentMetric_KeeperBlockCacheBytes` ([Int64](/ar/reference/data-types/int-uint)) — الحجم الإجمالي للكتل في ذاكرة التخزين المؤقت للكتل في تخزين Keeper، بالبايت.
 * `CurrentMetric_KeeperBlockCacheBlocks` ([Int64](/ar/reference/data-types/int-uint)) — عدد الكتل في ذاكرة التخزين المؤقت للكتل في تخزين Keeper.
 * `CurrentMetric_DistributedBytesToInsert` ([Int64](/ar/reference/data-types/int-uint)) — عدد البايتات المعلّقة المطلوب معالجتها للإدراج غير المتزامن في جداول Distributed. ويُجمع عدد البايتات لكل shard.
@@ -1767,6 +1797,8 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `CurrentMetric_PartsCompact` ([Int64](/ar/reference/data-types/int-uint)) — الأجزاء المدمجة.
 * `CurrentMetric_MMappedFiles` ([Int64](/ar/reference/data-types/int-uint)) — العدد الإجمالي للملفات المعيّنة بالذاكرة.
 * `CurrentMetric_MMappedFileBytes` ([Int64](/ar/reference/data-types/int-uint)) — إجمالي حجم مناطق الملفات المعيّنة بالذاكرة.
+* `CurrentMetric_FiberStacks` ([Int64](/ar/reference/data-types/int-uint)) — عدد مكدسات الألياف المخصّصة حاليًا (تُستخدم الألياف للاتصال غير المتزامن بالنسخ المتماثلة البعيدة).
+* `CurrentMetric_FiberStackBytes` ([Int64](/ar/reference/data-types/int-uint)) — إجمالي حجم مكدسات الألياف المخصّصة حاليًا.
 * `CurrentMetric_AsynchronousReadWait` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط التي تنتظر القراءة غير المتزامنة.
 * `CurrentMetric_PendingAsyncInsert` ([Int64](/ar/reference/data-types/int-uint)) — عدد عمليات الإدراج غير المتزامنة التي تنتظر التفريغ.
 * `CurrentMetric_KafkaConsumers` ([Int64](/ar/reference/data-types/int-uint)) — عدد مستهلكي Kafka النشطين

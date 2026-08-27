@@ -66,7 +66,8 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, MergeTreeMapSerializationVersion) \
     M(CLASS_NAME, MergeTreePartMinMaxIndexColumns) \
     M(CLASS_NAME, SearchOrphanedPartsDisks) \
-    M(CLASS_NAME, TextIndexPostingListCodec)
+    M(CLASS_NAME, TextIndexPostingListCodec) \
+    M(CLASS_NAME, MergeTreeTextIndexSerializationVersion)
 
 MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, DECLARE_SETTING_TRAIT)
 

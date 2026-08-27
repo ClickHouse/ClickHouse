@@ -120,6 +120,12 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
+        name="clickhouse/wasm-builder",
+        path="./ci/docker/wasm-builder",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/stateless-test",
         path="./ci/docker/stateless-test",
         platforms=Docker.Platforms.arm_amd,
@@ -241,12 +247,6 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/wasm-builder",
-        path="./ci/docker/integration/wasm_builder",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
         name="clickhouse/arrowflight-server-test",
         path="./ci/docker/integration/arrowflight",
         platforms=Docker.Platforms.arm_amd,
@@ -364,6 +364,10 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     # binary builds, and `clickhouse local` runs under Node.js >= 24 and in browsers.
     # The CI job pins the binary target (see build_clickhouse.py).
     WASM64 = "wasm64"
+    # The standalone WebAssembly build of just the SQL parser (`utils/wasm-parser`), for a
+    # browser. A CMake project of its own rather than a target of this tree, with its own
+    # toolchain and its own job script - see `build_wasm_parser.py`.
+    WASM_PARSER = "wasm_parser"
     ARM_FUZZERS = "arm_fuzzers"
     AMD_CFI = "amd_cfi"
 
@@ -383,7 +387,9 @@ class JobNames:
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
+    SIGN_MACOS = "Sign macOS binary"
     DOCS_MINTLIFY = "Docs check (Mintlify)"
+    DOCS_EXAMPLES = "Docs examples"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"
@@ -395,6 +401,7 @@ class JobNames:
     # Utils.normalize_string, and '+' is not a valid id character.
     SQLANCER_PP = "SQLancerPP"
     LLVM_COVERAGE = "LLVM Coverage"
+    PROMQL_COMPLIANCE = "PromQL Compliance"
     BUILD_PROFILE_DIFF = "Build profile diff"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
@@ -431,6 +438,7 @@ class JobNames:
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
+    PARSER_MEMORY_CHECK = "Parser memory check"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
     COLLECT_CLICKHOUSE_PROFILES = "Collect ClickHouse Profiles (PGO, BOLT)"
@@ -471,6 +479,10 @@ class ArtifactNames:
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
     CH_ARM_DARWIN_BIN = "CH_ARM_DARWIN_BIN"
+    CH_AMD_DARWIN_PLAIN = "CH_AMD_DARWIN_PLAIN"
+    CH_ARM_DARWIN_PLAIN = "CH_ARM_DARWIN_PLAIN"
+    CH_AMD_DARWIN_SIGNED = "CH_AMD_DARWIN_SIGNED"
+    CH_ARM_DARWIN_SIGNED = "CH_ARM_DARWIN_SIGNED"
     CH_ARM_V80COMPAT = "CH_ARMV80C_DARWIN_BIN"
     CH_AMD_FREEBSD = "CH_ARM_FREEBSD_BIN"
     CH_PPC64LE = "CH_PPC64LE_BIN"
@@ -480,6 +492,7 @@ class ArtifactNames:
     CH_S390X = "CH_S390X_BIN"
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
     CH_WASM64 = "CH_WASM64_BIN"
+    CH_WASM_PARSER = "CH_WASM_PARSER_BIN"
 
     FAST_TEST = "FAST_TEST"
 
@@ -614,6 +627,27 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_CFI,
         ]
     )
+    clickhouse_darwin_plain_binaries = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/programs/clickhouse",
+        compress_zst=True,
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_DARWIN_PLAIN,
+            ArtifactNames.CH_ARM_DARWIN_PLAIN,
+        ]
+    )
+    clickhouse_darwin_signed_zips = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-macos.zip",
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_DARWIN_SIGNED,
+            ArtifactNames.CH_ARM_DARWIN_SIGNED,
+        ]
+    )
     llvm_profdata_file = Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
@@ -685,6 +719,18 @@ class ArtifactConfigs:
         path=[
             f"{TEMP_DIR}/build/programs/clickhouse.js",
             f"{TEMP_DIR}/build/programs/clickhouse.wasm",
+        ],
+    )
+    # The two configurations of the standalone SQL parser that `Build (wasm_parser)` publishes:
+    # everything, and the smallest build the project offers (no formatting, no access management).
+    # No JavaScript sidecar, unlike the Emscripten build above - the module is a WASI reactor, and
+    # the consumer supplies the preview1 imports. See utils/wasm-parser/README.md.
+    wasm_parser = Artifact.Config(
+        name=ArtifactNames.CH_WASM_PARSER,
+        type=Artifact.Type.S3,
+        path=[
+            f"{TEMP_DIR}/build/parser.wasm",
+            f"{TEMP_DIR}/build/parser-no-formatting-no-dcl.wasm",
         ],
     )
     fuzzers = Artifact.Config(

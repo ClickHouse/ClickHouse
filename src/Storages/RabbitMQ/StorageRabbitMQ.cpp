@@ -267,10 +267,13 @@ StorageRabbitMQ::StorageRabbitMQ(
     try
     {
         connection = std::make_unique<RabbitMQConnection>(configuration, log);
-        if (connection->connect())
-            initRabbitMQ();
-        else if (mode <= LoadingStrictnessLevel::CREATE)
-            throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "Cannot connect to {}", connection->connectionInfoForLog());
+        if (!getContext()->getMessageQueueDisableInsertion())
+        {
+            if (connection->connect())
+                initRabbitMQ();
+            else if (mode <= LoadingStrictnessLevel::CREATE)
+                throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "Cannot connect to {}", connection->connectionInfoForLog());
+        }
     }
     catch (...)
     {
@@ -984,6 +987,13 @@ SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr
 
 void StorageRabbitMQ::startup()
 {
+    if (getContext()->getMessageQueueDisableInsertion())
+    {
+        StreamingStorageRegistry::instance().registerTable(getStorageID());
+        LOG_INFO(log, "Streaming to views is disabled");
+        return;
+    }
+
     if (initialized)
     {
         streaming_task->activateAndSchedule();
@@ -1031,6 +1041,13 @@ void StorageRabbitMQ::shutdown(bool)
     deactivateTask(streaming_task, true, false);
     LOG_TRACE(log, "Deactivating looping task");
     deactivateTask(looping_task, true, true);
+
+    if (getContext()->getMessageQueueDisableInsertion())
+    {
+        StreamingStorageRegistry::instance().unregisterTable(getStorageID(), /* if_exists */ true);
+        LOG_TRACE(log, "Shutdown finished");
+        return;
+    }
 
     LOG_TRACE(log, "Cleaning up RabbitMQ after table usage");
 

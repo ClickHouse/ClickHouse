@@ -483,7 +483,7 @@ FROM otel_logs
 <Info>
   **تجنب Nullable**
 
-  تجنب استخدام [Nullable](/ar/reference/data-types/nullable) في ClickHouse لبيانات Observability. فنادرًا ما تكون هناك حاجة في logs وtraces إلى التمييز بين القيمة الفارغة وNULL. وتضيف هذه الميزة عبئًا إضافيًا على التخزين، كما تؤثر سلبًا في query performance. راجع [هنا](/ar/guides/clickhouse/data-modelling/schema-design#optimizing-types) لمزيد من التفاصيل.
+  تجنب استخدام [Nullable](/ar/reference/data-types/nullable) في ClickHouse لبيانات الأوبزرفابيليتي. فنادرًا ما تكون هناك حاجة في السجلات وعمليات التتبّع إلى التمييز بين القيمة الفارغة وNULL. وتضيف هذه الميزة عبئًا إضافيًا على التخزين، كما تؤثر سلبًا في query performance. راجع [هنا](/ar/guides/clickhouse/data-modelling/schema-design#optimizing-types) لمزيد من التفاصيل.
 </Info>
 
 <div id="choosing-a-primary-ordering-key">
