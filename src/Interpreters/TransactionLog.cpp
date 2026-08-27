@@ -287,7 +287,9 @@ void TransactionLog::removeOldEntries()
     /// because if a transaction released snapshot, then CSN is already written into metadata.
     /// Why almost? Because on server startup we do not have the oldest snapshot (it's simply equal to the latest one),
     /// but it's possible that some CSNs are not written into data parts (and we will write them during startup).
-    if (!global_context->isServerCompletelyStarted())
+    /// Only a server has a startup to wait for, and only a server ever sets the flag.
+    if (global_context->getApplicationType() != Context::ApplicationType::SERVER
+        || !global_context->isServerCompletelyStarted())
         return;
 
     /// Because `loadTableFromMetadataAsync` is running asynchronously, it is possible that the outdated parts are loading while the `tail_ptr` is updated here.

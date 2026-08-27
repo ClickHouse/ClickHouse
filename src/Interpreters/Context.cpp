@@ -6016,7 +6016,8 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
                 ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
         }
 
-        if (isServerCompletelyStarted())
+        /// The flag is only ever set in a server process, so the question has no meaning in any other application.
+        if (getApplicationType() == ApplicationType::SERVER && isServerCompletelyStarted())
             shared->zookeeper->setServerCompletelyStarted();
         LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
     }
