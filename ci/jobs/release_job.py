@@ -9,7 +9,6 @@ reuse. The repo is always shallow at the start (hence the unconditional
 """
 
 import argparse
-import json
 import os
 import re
 import shlex
