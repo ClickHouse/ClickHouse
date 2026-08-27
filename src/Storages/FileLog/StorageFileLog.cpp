@@ -226,7 +226,7 @@ StorageFileLog::StorageFileLog(
         if (path_is_directory)
             directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, *this, getContext());
 
-        auto thread = getContext()->getSchedulePool()->createTask(getStorageID(), log->name(), [this] { threadFunc(); });
+        auto thread = getContext()->getSchedulePool().createTask(getStorageID(), log->name(), [this] { threadFunc(); });
         task = std::make_shared<TaskContext>(std::move(thread));
     }
     catch (...)
@@ -455,7 +455,7 @@ void StorageFileLog::drop()
 {
     try
     {
-        disk->removeRecursive(metadata_base_path);
+        (void)std::filesystem::remove_all(metadata_base_path);
     }
     catch (...)
     {
@@ -943,9 +943,9 @@ Engine arguments:
 
 Optional parameters:
 
-- `poll_timeout_ms` - Timeout for single poll from log file. Default: [stream_poll_timeout_ms](/reference/settings/session-settings/stream#stream_poll_timeout_ms).
-- `poll_max_batch_size` — Maximum amount of records to be polled in a single poll. Default: [max_block_size](/reference/settings/session-settings/max#max_block_size).
-- `max_block_size` — The maximum batch size (in records) for poll. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
+- `poll_timeout_ms` - Timeout for single poll from log file. Default: [stream_poll_timeout_ms](../../../operations/settings/settings.md#stream_poll_timeout_ms).
+- `poll_max_batch_size` — Maximum amount of records to be polled in a single poll. Default: [max_block_size](/operations/settings/settings#max_block_size).
+- `max_block_size` — The maximum batch size (in records) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `max_threads` - Number of max threads to parse files, default is 0, which means the number will be max(1, physical_cpu_cores / 4).
 - `poll_directory_watch_events_backoff_init` - The initial sleep value for watch directory thread. Default: `500`.
 - `poll_directory_watch_events_backoff_max` - The max sleep value for watch directory thread. Default: `32000`.
@@ -956,7 +956,7 @@ Optional parameters:
 
 The delivered records are tracked automatically, so each record in a log file is only counted once.
 
-`SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
+`SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
 1.  Use the engine to create a FileLog table and consider it a data stream.
 2.  Create a table with the desired structure.
@@ -978,9 +978,7 @@ CREATE TABLE daily (
     day Date,
     level String,
     total UInt64
-  ) ENGINE = SummingMergeTree
-  PARTITION BY toYYYYMM(day)
-  ORDER BY (day, level);
+  ) ENGINE = SummingMergeTree(day, (day, level), 8192);
 
 CREATE MATERIALIZED VIEW consumer TO daily
     AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
@@ -1096,12 +1094,6 @@ bool StorageFileLog::updateFileInfos()
 
                     onFileAppeared(file_name, inode);
 
-                    /// An added file is read from offset 0, so any on-disk meta
-                    /// under this name is stale. Drop it to stay consistent with
-                    /// the pos-0 meta set below, else serialize() sees a larger
-                    /// stored offset and raises LOGICAL_ERROR.
-                    disk->removeFileIfExists(getFullMetaPath(file_name));
-
                     if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
                         it->second = FileMeta{.file_name = file_name};
                     else
@@ -1145,12 +1137,8 @@ bool StorageFileLog::updateFileInfos()
                     {
                         auto old_name = it->second.file_name;
                         it->second.file_name = file_name;
-                        /// Meta paths are relative to the disk root, so go through the disk abstraction:
-                        /// std::filesystem would resolve them against the process CWD and silently skip
-                        /// the rename, leaving a stale meta file that collides when the name is reused
-                        /// (e.g. a logrotate rename chain processed in one batch).
-                        if (disk->existsFile(getFullMetaPath(old_name)))
-                            disk->replaceFile(getFullMetaPath(old_name), getFullMetaPath(file_name));
+                        if (std::filesystem::exists(getFullMetaPath(old_name)))
+                            std::filesystem::rename(getFullMetaPath(old_name), getFullMetaPath(file_name));
                     }
                     /// May move from other place, adding new meta info
                     else

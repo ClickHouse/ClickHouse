@@ -7,12 +7,14 @@ INSERT INTO t_merge_temporary VALUES (42);
 -- A database regexp skips it, but still reads the other databases it matches.
 -- Temporary tables are stored under generated names starting with `_tmp_`.
 SELECT * FROM merge(REGEXP('^(_temporary_and_external_tables|system)$'), '^(one|_tmp_)') ORDER BY dummy;
+SELECT * FROM merge(REGEXP('^(_temporary_and_external_tables|system)$'), '^(one|_tmp_)') ORDER BY dummy SETTINGS enable_analyzer = 0;
 
 -- The same for the `Merge` table engine.
 CREATE TABLE t_merge_temporary_engine (dummy UInt8)
     ENGINE = Merge(REGEXP('^(_temporary_and_external_tables|system)$'), '^(one|_tmp_)');
 
 SELECT * FROM t_merge_temporary_engine ORDER BY dummy;
+SELECT * FROM t_merge_temporary_engine ORDER BY dummy SETTINGS enable_analyzer = 0;
 
 DROP TABLE t_merge_temporary_engine;
 

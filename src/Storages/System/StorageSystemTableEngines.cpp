@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -73,6 +72,3 @@ void StorageSystemTableEngines::fillData(MutableColumns & res_columns, ContextPt
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTableEngines) }

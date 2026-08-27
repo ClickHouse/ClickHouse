@@ -1,6 +1,26 @@
-SELECT min(plus(n AS a, 1 AS b)) AS c\nFROM\n(\n    SELECT number AS n\n    FROM numbers(10)\n)\nWHERE and(greater(a, 0), greater(b, 0))\nHAVING greater(c, 0)
+SELECT min(plus(n AS a, 1 AS b)) AS c
+FROM
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+WHERE and(greater(a, 0), greater(b, 0))
+HAVING greater(c, 0)
 2
-SELECT min(plus(n, 1) AS a) AS c\nFROM\n(\n    SELECT number AS n\n    FROM numbers(10)\n)\nWHERE greater(a, 0)\nHAVING greater(c, 0)
+SELECT min(plus(n, 1) AS a) AS c
+FROM
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+WHERE greater(a, 0)
+HAVING greater(c, 0)
 1
-SELECT min(plus(n, 1)) AS c\nFROM\n(\n    SELECT number AS n\n    FROM numbers(10)\n)\nHAVING greater(c, 0)
+SELECT min(plus(n, 1)) AS c
+FROM
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+HAVING greater(c, 0)
 1
