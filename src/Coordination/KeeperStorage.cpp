@@ -613,47 +613,54 @@ KeeperDigest KeeperStorage::preprocessRequest(
 
 void KeeperStorage::endProcessBatch(const KeeperRequestBatch & batch)
 {
+    uint64_t preprocessed_digest = 0;
+    {
+        std::lock_guard lock(transaction_mutex);
+
+        if (uncommitted_batches.empty())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Trying to commit a batch (ZXIDs [{}, {}]) which was not preprocessed",
+                batch.first_zxid, batch.getLastZxid());
+
+        const auto & front_batch = uncommitted_batches.front();
+        if (front_batch.first_zxid != batch.first_zxid || front_batch.last_zxid != batch.getLastZxid())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Trying to commit unexpected batch: ZXIDs [{}, {}], expected: [{}, {}]",
+                batch.first_zxid, batch.getLastZxid(), front_batch.first_zxid, front_batch.last_zxid);
+
+        if (keeper_context->digestEnabled())
+            /// This is extra unexpected to fail as these two digests should already have been
+            /// checked on current server when preprocessing this batch.
+            assertDigest(batch, front_batch.nodes_digest, "committing (checking against preprocess result)");
+
+        preprocessed_digest = front_batch.nodes_digest.value;
+    }
+
     if (keeper_context->digestEnabled())
     {
-        /// Avoid locking transaction_mutex in common case.
-        uint64_t new_digest = batch.digest.value;
-        if (batch.digest.version == KeeperDigestVersion::NO_DIGEST)
-        {
-            std::lock_guard lock(transaction_mutex);
-            new_digest = uncommitted_batches.front().nodes_digest.value;
-        }
+        /// (If the log entry carries no digest, e.g. it came from a server with digests disabled,
+        ///  fall back to the digest we calculated when preprocessing the batch ourselves.)
+        uint64_t new_digest = batch.digest.version == KeeperDigestVersion::NO_DIGEST ? preprocessed_digest : batch.digest.value;
 
         /// Publish the committed digest before popping the batch: preprocessing of the next batch
         /// (on another thread) seeds its digest from the uncommitted digest, which falls back to the
         /// committed one when the uncommitted batch list is empty.
-        {
-            std::lock_guard lock(storage_mutex);
+        std::lock_guard lock(storage_mutex);
 
-            if (keeper_context->digestEnabledOnCommit())
-            {
-                assertDigest(batch, {KEEPER_CURRENT_DIGEST_VERSION, nodes_digest}, "committing");
-            }
-            else
-            {
-                nodes_digest = new_digest;
-            }
+        if (keeper_context->digestEnabledOnCommit())
+        {
+            assertDigest(batch, {KEEPER_CURRENT_DIGEST_VERSION, nodes_digest}, "committing");
+        }
+        else
+        {
+            nodes_digest = new_digest;
         }
     }
 
     {
         std::lock_guard lock(transaction_mutex);
-
-        if (uncommitted_batches.empty() || uncommitted_batches.front().first_zxid != batch.first_zxid || uncommitted_batches.front().last_zxid != batch.getLastZxid())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Trying to commit unexpected batch: ZXIDs [{}, {}], expected: [{}, {}]",
-                batch.first_zxid, batch.getLastZxid(), uncommitted_batches.front().first_zxid, uncommitted_batches.front().last_zxid);
-
-        if (keeper_context->digestEnabled())
-            /// This is extra unexpected to fail as these two digests should already have been
-            /// checked on current server when preprocessing this batch.
-            assertDigest(batch, uncommitted_batches.front().nodes_digest, "committing (checking against preprocess result)");
-
         uncommitted_batches.pop_front();
     }
 }

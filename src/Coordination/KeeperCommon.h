@@ -119,7 +119,8 @@ using KeeperRequestBatchPtr = std::shared_ptr<KeeperRequestBatch>;
 
 bool checkDigest(const KeeperDigest & first, const KeeperDigest & second);
 
-/// If `batch.digest` and `actual` are presend but different, logs and error and crashes.
+/// If `batch.digest` and `actual` are comparable (same version, not NO_DIGEST) but different,
+/// logs an error and crashes.
 void assertDigest(const KeeperRequestBatch & batch, const KeeperDigest & actual, const char * operation);
 
 inline static constexpr std::string_view tmp_keeper_file_prefix = "tmp_";

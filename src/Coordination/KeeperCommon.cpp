@@ -58,7 +58,19 @@ void assertDigest(const KeeperRequestBatch & batch, const KeeperDigest & actual,
 
 std::string KeeperRequestBatch::toString() const
 {
-    asdqwe, include getOpNum(), session_id, request->toString();
+    std::string res = fmt::format("batch of {} request(s), first zxid {}, log idx {}", requests.size(), first_zxid, log_idx);
+    for (size_t i = 0; i < requests.size(); ++i)
+    {
+        const auto & request_for_session = requests[i];
+        res += fmt::format(
+            "\nrequest #{}: zxid {}, session id {}, op '{}'\n{}",
+            i,
+            getZxid(i),
+            request_for_session.session_id,
+            Coordination::opNumToString(request_for_session.request->getOpNum()),
+            request_for_session.request->toString());
+    }
+    return res;
 }
 
 bool isLocalDisk(const IDisk & disk)

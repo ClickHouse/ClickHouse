@@ -1892,7 +1892,7 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processOneRequest(
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
-    /// (The request's membership in the current batch was validated by beginProcessBatch.
+    /// (The request's membership in the current batch is validated by endProcessBatch.
     ///  Skipping or reordering commits within the batch would trip the delta order chassert
     ///  below: deltas are committed strictly from the front.)
     int64_t commit_zxid = 0;
