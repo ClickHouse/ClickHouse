@@ -524,28 +524,27 @@ Int64 MemoryTracker::decrementLocalUsage(Int64 size, Int64 * owned_by_the_server
     }
     else
     {
-        Int64 new_amount = amount.fetch_sub(accounted_size, std::memory_order_relaxed) - accounted_size;
-
         /** Sometimes, query could free some data, that was allocated outside of query context.
           * Example: cache eviction.
-          * To avoid negative memory usage, we "saturate" amount.
-          * Memory usage will be calculated with some error.
-          * NOTE: The code is not atomic. Not worth to fix.
+          * To avoid negative memory usage, take only what is there. Done with a compare-exchange rather than a
+          * subtract and a correction, so that a concurrent free cannot make the two disagree and leave this
+          * reporting more than `size` as never held, which would send a negative size up the parent chain.
           */
-        if (unlikely(new_amount < 0))
+        Int64 current = amount.load(std::memory_order_relaxed);
+        do
         {
-            amount.fetch_sub(new_amount, std::memory_order_relaxed);
-            accounted_size += new_amount;
+            accounted_size = std::clamp<Int64>(current, 0, size);
+        }
+        while (!amount.compare_exchange_weak(current, current - accounted_size, std::memory_order_relaxed));
 
-            /// This tracker never held these bytes: a nested group (view, merge) leaves them charged to the
-            /// tracker above it, but a query freeing another query's data of its own user credits the global tracker.
-            if (owned_by_the_server)
+        /// This tracker never held the rest: a nested group (view, merge) leaves them charged to the tracker
+        /// above it, but a query freeing another query's data of its own user credits the global tracker.
+        if (owned_by_the_server && accounted_size < size)
+        {
+            if (auto * loaded_parent = parent.load(std::memory_order_relaxed);
+                loaded_parent && loaded_parent->level == VariableContext::User)
             {
-                if (auto * loaded_parent = parent.load(std::memory_order_relaxed);
-                    loaded_parent && loaded_parent->level == VariableContext::User)
-                {
-                    *owned_by_the_server = -new_amount;
-                }
+                *owned_by_the_server = size - accounted_size;
             }
         }
     }

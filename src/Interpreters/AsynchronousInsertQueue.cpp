@@ -607,7 +607,15 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
 
     /// Query parameters make sense only for format Values.
     if (insert_query.format == "Values")
+    {
+        /// The queue holds on to these until the flush, just like the data, so they are charged the same way
+        /// and handed over with it. A parameter can carry the whole payload of the insert.
+        std::optional<MemoryTrackerSwitcher> switcher;
+        if (entry->queued_data_tracker)
+            switcher.emplace(entry->queued_data_tracker.get());
+
         entry->query_parameters = query_context->getQueryParameters();
+    }
 
     const auto & client_info = query_context->getClientInfo();
     InsertQuery key{
