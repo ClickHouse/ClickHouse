@@ -59,6 +59,8 @@ struct QueryPlanOptimizationSettings
     bool merge_expressions;
     bool merge_filters;
     bool filter_push_down;
+    bool fuse_filter_into_array_join;
+    bool short_circuit_function_evaluation_disabled;
     bool push_down_volume_reducing_functions;
     bool convert_outer_join_to_inner_join;
     bool short_circuit_constant_false_join;
@@ -68,6 +70,8 @@ struct QueryPlanOptimizationSettings
     bool aggregate_partitions_independently;
     bool limit_by_partitions_independently;
     bool distinct_partitions_independently;
+    bool window_partitions_independently;
+    bool force_window_partitions_independently;
     bool creating_set_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
@@ -108,7 +112,6 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache;
     bool use_query_condition_cache_for_top_k;
     bool read_in_order_through_join;
-    bool read_in_order_through_spilling_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;
