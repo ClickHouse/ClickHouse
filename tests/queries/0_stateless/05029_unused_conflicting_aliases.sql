@@ -3,7 +3,7 @@
 -- Aliases that only give names to nested expressions (e.g. to the elements of named tuples) can repeat.
 -- https://github.com/ClickHouse/ClickHouse/issues/89201
 
--- The relaxation is implemented only in the new analyzer; the old analyzer still rejects
+-- The relaxation is implemented only in the analyzer; the old analyzer still rejects
 -- every repeated alias with `MULTIPLE_EXPRESSIONS_FOR_ALIAS`.
 SET enable_analyzer = 1;
 
