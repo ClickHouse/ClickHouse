@@ -10,11 +10,6 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
-#include <algorithm>
-#include <array>
-#include <span>
-#include <string_view>
-
 #if USE_AZURE_BLOB_STORAGE
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
@@ -29,7 +24,6 @@ namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::S3AuthSetting
@@ -84,29 +78,6 @@ private:
     ffi::EngineBuilder * builder = nullptr;
 };
 
-/// Strip "<scheme>://<authority>/" from an absolute location: "s3://bucket/table/" -> "table/".
-/// `allowed_schemes` rejects a location which the caller cannot map onto its object storage.
-std::string stripSchemeAndAuthority(const std::string & path, std::span<const std::string_view> allowed_schemes)
-{
-    static constexpr std::string_view scheme_separator = "://";
-
-    auto scheme_end = path.find(scheme_separator);
-    if (scheme_end == std::string::npos)
-        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected path format: {}", path);
-
-    const auto scheme = std::string_view(path).substr(0, scheme_end);
-    if (std::ranges::find(allowed_schemes, scheme) == allowed_schemes.end())
-        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", scheme);
-
-    const auto authority_begin = scheme_end + scheme_separator.size();
-    const auto authority_end = path.find('/', authority_begin);
-    /// The table is located at the root of the bucket / container.
-    if (authority_end == std::string::npos)
-        return "";
-
-    return path.substr(authority_end + 1);
-}
-
 }
 
 /// A helper class to manage S3-compatible storage types.
@@ -139,13 +110,6 @@ public:
     const std::string & getTableLocation() const override { return table_location; }
 
     const std::string & getDataPath() const override { return url.key; }
-
-    std::string getRelativePath(const std::string & absolute_path) const override
-    {
-        /// The same helper serves GCS, which delta-kernel-rs addresses with the "gcs" scheme.
-        static constexpr std::array<std::string_view, 2> schemes{"s3", "gcs"};
-        return stripSchemeAndAuthority(absolute_path, schemes);
-    }
 
     DB::UInt128 getCredentialsFingerprint() const override
     {
@@ -400,29 +364,6 @@ public:
 
     const std::string & getDataPath() const override { return data_path; }
 
-    std::string getRelativePath(const std::string & absolute_path) const override
-    {
-        /// URL schemes which delta-kernel-rs (object_store) recognizes as Azure Blob Storage.
-        static constexpr std::array<std::string_view, 7> schemes{"az", "azure", "abfs", "abfss", "adl", "wasb", "wasbs"};
-        auto path = stripSchemeAndAuthority(absolute_path, schemes);
-
-        /// `ContainerClientWrapper` prepends the endpoint prefix to every blob name, while the
-        /// table location passed to delta-kernel-rs spells it out, so strip it back off here.
-        auto prefix = connection_params.endpoint.prefix;
-        if (prefix.empty())
-            return path;
-
-        if (!prefix.ends_with('/'))
-            prefix += '/';
-
-        if (!path.starts_with(prefix))
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "Expected path '{}' to start with the container prefix '{}'", path, prefix);
-
-        return path.substr(prefix.size());
-    }
-
     ffi::EngineBuilder * createBuilder() const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
@@ -474,16 +415,6 @@ public:
     const std::string & getTableLocation() const override { return table_location; }
 
     const std::string & getDataPath() const override { return path; }
-
-    std::string getRelativePath(const std::string & absolute_path) const override
-    {
-        /// Local paths are absolute, so only the scheme is stripped: "file:///table/" -> "/table/".
-        static constexpr std::string_view scheme = "file://";
-        if (!absolute_path.starts_with(scheme))
-            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected path format: {}", absolute_path);
-
-        return absolute_path.substr(scheme.size());
-    }
 
     ffi::EngineBuilder * createBuilder() const override
     {

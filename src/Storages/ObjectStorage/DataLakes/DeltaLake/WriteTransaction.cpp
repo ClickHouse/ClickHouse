@@ -179,29 +179,21 @@ void WriteTransaction::create(const DB::Names & partition_columns, const DB::Nam
             ffi::get_unpartitioned_write_context(transaction.get(), engine.get()),
             "get_unpartitioned_write_context");
         write_schema = DeltaLake::getWriteSchema(unpartitioned_write_context.get(), engine.get());
-
-        std::unique_ptr<std::string> write_path_raw(static_cast<std::string *>(
-            ffi::get_write_path(unpartitioned_write_context.get(), DeltaLake::KernelUtils::allocateString)));
-        if (!write_path_raw)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to get write path");
-
-        write_path = *write_path_raw;
     }
     else
     {
         /// delta-kernel exposes no partitioned write context via FFI (TODO(#2355)), so derive the
-        /// write schema and path directly; per-partition values are handled when committing.
+        /// write schema directly; per-partition values are handled when committing.
         write_schema = table_schema;
-        write_path = kernel_helper->getTableLocation();
     }
 
-    /// Data files are written by ClickHouse itself, not by delta-kernel-rs,
-    /// so the write path has to be translated into an object storage path.
-    path_prefix = kernel_helper->getRelativePath(write_path);
+    /// The reader resolves every committed `add.path` against `getDataPath`, so write under it too.
+    path_prefix = kernel_helper->getDataPath();
+    /// `add.path` is the written file path with the prefix cut off, which needs the separator.
+    if (!path_prefix.empty() && !path_prefix.ends_with('/'))
+        path_prefix += '/';
 
-    LOG_TEST(
-        log, "Write path: {}, data prefix: {} schema: {}",
-        write_path, path_prefix, write_schema.toString());
+    LOG_TEST(log, "Data prefix: {}, schema: {}", path_prefix, write_schema.toString());
 }
 
 void WriteTransaction::validateSchema(const DB::Block & header) const

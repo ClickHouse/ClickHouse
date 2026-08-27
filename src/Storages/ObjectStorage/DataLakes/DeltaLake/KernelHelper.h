@@ -42,9 +42,6 @@ public:
     /// (while full location would be "s3://bucket/path/to/table/data")
     virtual const std::string & getDataPath() const = 0;
 
-    /// Convert a delta-kernel-rs location into an `IObjectStorage` path: "s3://bucket/table/" -> "table/".
-    virtual std::string getRelativePath(const std::string & absolute_path) const = 0;
-
     /// Create "EngineBuilder" which allows to work with
     /// delta-kernel-rs ffi api and performs all interactions
     /// with object storage layer.
