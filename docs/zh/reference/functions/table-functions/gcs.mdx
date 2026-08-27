@@ -36,15 +36,15 @@ gcs(named_collection[, option=value [,..]])
   ## 参数
 </div>
 
-| 参数                           | 描述                                                                                                                                                                                            |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`                        | 指向文件的存储桶路径。在只读模式下支持以下通配符：`*`、`**`、`?`、`{abc,def}` 和 `{N..M}`，其中 `N`、`M` 表示数字，`'abc'`、`'def'` 表示字符串。                                                                                           |
-| `NOSIGN`                     | 如果提供此关键字来代替认证凭据，则所有请求都不会被签名。                                                                                                                                                                  |
-| `hmac_key` and `hmac_secret` | 用于指定给定端点所使用认证凭据的键。可选。                                                                                                                                                                         |
-| `format`                     | 文件的[格式](/zh/reference/formats/index)。                                                                                                                                                            |
-| `structure`                  | 表的结构。格式为 `'column1_name column1_type, column2_name column2_type, ...'`。                                                                                                                       |
-| `compression_method`         | 此参数可选。支持的值有：`none`、`gzip` 或 `gz`、`brotli` 或 `br`、`xz` 或 `LZMA`、`zstd` 或 `zst`。默认会根据文件扩展名自动检测压缩方法。                                                                                             |
-| `partition_strategy`         | 可选。支持的值有：`wildcard` 或 `hive`。`wildcard` 要求路径中包含 `{_partition_id}`。当路径包含 `{_partition_id}` 时，`wildcard` 是默认值 (这是唯一与此类路径兼容的策略) ；当 `compatibility` 早于 `26.6` 时也是默认值；否则，包括使用当前默认设置时，默认值均为 `hive`。 |
+| 参数                           | 描述                                                                                                                                                                                                                                                  |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                        | 指向文件的存储桶路径。在只读模式下支持以下通配符：`*`、`**`、`?`、`{abc,def}` 和 `{N..M}`，其中 `N`、`M` 表示数字，`'abc'`、`'def'` 表示字符串。                                                                                                                                                 |
+| `NOSIGN`                     | 如果提供此关键字来代替认证凭据，则所有请求都不会被签名。                                                                                                                                                                                                                        |
+| `hmac_key` and `hmac_secret` | 用于指定给定端点所使用认证凭据的键。可选。                                                                                                                                                                                                                               |
+| `format`                     | 文件的[格式](/zh/reference/formats/index)。                                                                                                                                                                                                                  |
+| `structure`                  | 表的结构。格式为 `'column1_name column1_type, column2_name column2_type, ...'`。                                                                                                                                                                             |
+| `compression_method`         | 此参数可选。支持的值有：`none`、`gzip` 或 `gz`、`brotli` 或 `br`、`xz` 或 `LZMA`、`zstd` 或 `zst`。默认会根据文件扩展名自动检测压缩方法。                                                                                                                                                   |
+| `partition_strategy`         | 可选。支持的值有：`wildcard` 或 `hive`。`wildcard` 要求路径中包含 `{_partition_id}`。未显式指定策略时，包含 `{_partition_id}` 的路径使用 `wildcard`。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不包含 glob 的路径在 `file_like_engine_default_partition_strategy` 为 `hive` 时使用 `hive`；否则不使用分区策略。 |
 
 <Info>
   **GCS**
@@ -210,7 +210,7 @@ FROM gcs(creds, url='https://s3-object-url.csv')
 
 如果在向 `GCS` 表插入数据时指定了 `PARTITION BY` 表达式，系统会为每个分区值分别创建一个文件。将数据拆分到不同文件中，有助于提升读取操作的效率。
 
-包含 `{_partition_id}` 的路径意味着使用 `wildcard` 分区策略，因此以下示例中显式设置 `partition_strategy='wildcard'` 是可选的。对于不含该占位符的路径，当 `compatibility` 为 `26.6` 或更高版本 (包括当前默认设置) 时，默认策略为 `hive`；请参阅 `file_like_engine_default_partition_strategy` 设置。
+包含 `{_partition_id}` 的路径意味着使用 `wildcard` 分区策略，因此以下示例中显式设置 `partition_strategy='wildcard'` 是可选的。包含其他 glob 的路径不使用分区策略，并会忽略 `PARTITION BY`。不含 glob 的路径在 `file_like_engine_default_partition_strategy` 为 `hive` 时使用 `hive`；否则不使用分区策略。
 
 **示例**
 

@@ -24,6 +24,12 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />لا يسري هذا الإعداد إلا في ClickHouse Cloud. يتيح القراءة من ذاكرة التخزين المؤقت الموزعة. وهو مفتاح على مستوى الخادم يُطبَّق دون إعادة تشغيل، بحيث تتبعه أيضًا العمليات التي تعمل في الخلفية ولا تملك ملف تعريف استعلام خاصًا بها (عمليات الدمج والطفرات وعمليات تفريغ جدول `Buffer`). ويمكن للاستعلامات الفردية تجاوز هذا الإعداد باستخدام الإعداد `force_read_through_distributed_cache`.
 
+<div id="enable_silk_runtime">
+  ## enable_silk_runtime
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />تفعيل الدعم التجريبي لبيئة تشغيل ألياف silk: يهيّئ مُجدول ألياف silk عند بدء تشغيل الخادم، مما يتيح للأنظمة الفرعية التي تدعمها تشغيل مهامها على الألياف
+
 <div id="enable_webterminal">
   ## enable_webterminal
 </div>

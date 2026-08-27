@@ -34,7 +34,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 * `account_key` - se `storage&#95;account&#95;url` for usado, a chave da conta pode ser especificada aqui
 * `format` — O [formato](/pt-BR/reference/formats/index) do arquivo.
 * `compression` — Valores compatíveis: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Por padrão, a compressão será detectada automaticamente pela extensão do arquivo. (equivale a definir como `auto`).
-* `partition_strategy` – Opções: `wildcard` ou `hive`. `wildcard` exige um `{_partition_id}` no caminho, que é substituído pela chave de partição. `hive` não permite curingas, pressupõe que o caminho seja a raiz da tabela e gera diretórios particionados no estilo Hive com Snowflake IDs como nomes de arquivo e o formato do arquivo como extensão. Se o caminho contiver um placeholder `{_partition_id}`, o padrão será `wildcard` — a única estratégia compatível com esse caminho. Caso contrário, o padrão será a configuração `file_like_engine_default_partition_strategy` (`wildcard` em configurações de `compatibility` anteriores a `26.6`, `hive` caso contrário).
+* `partition_strategy` – Opções: `wildcard` ou `hive`. `wildcard` exige um `{_partition_id}` no caminho, que é substituído pela chave de partição. `hive` não permite curingas, pressupõe que o caminho seja a raiz da tabela e gera diretórios particionados no estilo Hive com Snowflake IDs como nomes de arquivo e o formato do arquivo como extensão. Sem uma estratégia explícita, um caminho com `{_partition_id}` usa `wildcard`. Um caminho com outro glob não usa estratégia de particionamento e ignora `PARTITION BY`. Um caminho sem glob usa `hive` quando `file_like_engine_default_partition_strategy` é `hive`; caso contrário, não usa estratégia de particionamento.
 * `partition_columns_in_data_file` - Usado apenas com a estratégia de particionamento `hive`. Informa ao ClickHouse se deve esperar que as colunas de partição sejam gravadas no arquivo de dados. O padrão é `false`.
 * `extra_credentials` - Use `client_id` e `tenant_id` para autenticação. Se `extra&#95;credentials` forem fornecidas, elas terão prioridade sobre `account_name` e `account_key`.
 
@@ -121,7 +121,9 @@ Para particionar por mês, use a expressão `toYYYYMM(date_column)`, em que `dat
   #### Estratégia de particionamento
 </div>
 
-`wildcard`: substitui o caractere curinga `{_partition_id}` no caminho do arquivo pela chave de partição real. A leitura não é suportada. É selecionada por padrão quando o caminho contém um placeholder `{_partition_id}` (a única estratégia compatível com esse caminho) e, caso contrário, em configurações de `compatibility` anteriores à `26.6`; nos demais casos, o padrão é `hive` (consulte a configuração `file_like_engine_default_partition_strategy`).
+`wildcard`: substitui o caractere curinga `{_partition_id}` no caminho do arquivo pela chave de partição real. A leitura não é suportada. É selecionada por padrão quando o caminho contém `{_partition_id}`.
+
+Quando nenhuma `partition_strategy` é definida, um caminho com outro glob não usa estratégia de particionamento e ignora `PARTITION BY`. Um caminho sem glob usa `hive` quando `file_like_engine_default_partition_strategy` é `hive`; caso contrário, não usa estratégia de particionamento.
 
 `hive` implementa o particionamento no estilo Hive para leituras &amp; gravações. A leitura é implementada com um padrão glob recursivo. A gravação gera arquivos no seguinte formato: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 

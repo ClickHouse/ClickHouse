@@ -602,7 +602,7 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "hive"},{"label": "تغيير استراتيجية التقسيم الافتراضية لمحركات الجداول المشابهة للملفات (S3 وAzureBlobStorage وما إلى ذلك) من `wildcard` إلى `hive` عند عدم توفير `partition_strategy`."}]}]} />
 
-استراتيجية التقسيم الافتراضية للمحركات المشابهة للملفات. تُطبّق فقط عندما لا يحتوي المسار على عنصر نائب `{_partition_id}`: إذ لا يتوافق هذا المسار إلا مع استراتيجية `wildcard`، لذا فهو يشير دائمًا إلى `wildcard`.
+استراتيجية التقسيم الافتراضية للمحركات المشابهة للملفات. تُطبّق فقط على استعلامات `CREATE` التي يكون مسارها خاليًا من نمط glob وعنصر النائب `{_partition_id}`. يستخدم المسار الذي يحتوي على `{_partition_id}` استراتيجية `wildcard` دائمًا. أما المسار الذي يحتوي على نمط glob آخر، فلا يستخدم أي استراتيجية تقسيم ويتجاهل `PARTITION BY`. إذا كان هذا الإعداد هو `wildcard` ولم يحتوِ المسار على `{_partition_id}`، فلن تُستخدم أي استراتيجية تقسيم؛ وترفض محركات الجداول التي لا تستطيع حفظ هذا القرار في وسيطات محركها (مثل `HDFS`) استعلام `CREATE` هذا.
 
 <div id="filesystem_prefetches_limit">
   ## filesystem_prefetches_limit

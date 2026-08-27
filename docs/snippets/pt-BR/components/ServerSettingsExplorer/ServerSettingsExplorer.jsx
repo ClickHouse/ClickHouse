@@ -311,10 +311,11 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 4,
+      count: 5,
       settings: [
         { name: "enable_azure_sdk_logging", path: "/enable#enable_azure_sdk_logging", default: "0" },
         { name: "enable_read_through_distributed_cache", path: "/enable#enable_read_through_distributed_cache", default: "0" },
+        { name: "enable_silk_runtime", path: "/enable#enable_silk_runtime", default: "0" },
         { name: "enable_webterminal", path: "/enable#enable_webterminal", default: "1" },
         { name: "enable_write_through_distributed_cache", path: "/enable#enable_write_through_distributed_cache", default: "0" }
       ],

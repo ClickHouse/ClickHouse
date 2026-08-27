@@ -602,7 +602,7 @@ ClickHouse は、テーブルの古いレプリカの中から最も適切なも
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "hive"},{"label": "`partition_strategy` が指定されていない場合、ファイル系テーブルエンジン（S3、AzureBlobStorage など）のデフォルトのパーティション方式を `wildcard` から `hive` に変更しました。"}]}]} />
 
-ファイル系テーブルエンジンのデフォルトのパーティション方式。パスに `{_partition_id}` プレースホルダーが含まれていない場合にのみ適用されます。このようなパスは `wildcard` 戦略とのみ互換性があるため、常に `wildcard` を意味します。
+ファイル系テーブルエンジンのデフォルトのパーティション方式。glob または `{_partition_id}` プレースホルダーを含まないパスを持つ `CREATE` クエリにのみ適用されます。`{_partition_id}` を含むパスでは常に `wildcard` が使用されます。別の glob を含むパスではパーティション方式は使用されず、`PARTITION BY` は無視されます。この設定が `wildcard` であってもパスに `{_partition_id}` がない場合は、パーティション方式は使用されません。この決定をエンジン引数に永続化できないテーブルエンジン (例: `HDFS`) は、このような `CREATE` を拒否します。
 
 <div id="filesystem_prefetches_limit">
   ## filesystem_prefetches_limit

@@ -610,7 +610,7 @@ Contient l’historique des valeurs des métriques des tables `system.metrics` e
   2. Utilisation d’une autre méthode de compression.
   3. Algorithme de compression non déterministe (très improbable).
   4. Algorithme de fusion non déterministe en raison d’une erreur logique dans le code.
-  5. Corruption des données en mémoire due à un bug dans le code.
+  5. Corruption des données en mémoire due à un bogue dans le code.
   6. Corruption des données en mémoire due à un problème matériel.
   7. Modification manuelle des données source après le démarrage du serveur.
   8. Modification manuelle des sommes de contrôle stockées dans ZooKeeper.
@@ -1518,6 +1518,7 @@ Contient l’historique des valeurs des métriques des tables `system.metrics` e
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de granules examinées pour l’élagage lors de la lecture par les JOIN Runtime Filters
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de granules élaguées lors de la lecture par les JOIN Runtime Filters
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps écoulé pour les étapes de post-traitement après la construction du côté droit du JOIN.
+* `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps écoulé pour transformer la charge utile du côté droit du JOIN au format orienté lignes.
 * `ProfileEvent_AIInputTokens` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre total de tokens de prompt consommés par l&#39;ensemble des appels à la fonction IA dans la requête.
 * `ProfileEvent_AIOutputTokens` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre total de tokens de complétion consommés par l&#39;ensemble des appels à la fonction IA dans la requête.
 * `ProfileEvent_AIAPICalls` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes HTTP envoyées aux fournisseurs d&#39;IA.

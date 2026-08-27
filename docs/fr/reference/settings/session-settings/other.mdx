@@ -602,7 +602,7 @@ Par défaut, 1 (activé).
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "hive"},{"label": "Modifie la stratégie de partitionnement par défaut des moteurs de table de type fichier (S3, AzureBlobStorage, etc.), qui passe de `wildcard` à `hive` lorsqu’aucun `partition_strategy` n’est fourni."}]}]} />
 
-Stratégie de partitionnement par défaut pour les moteurs de type fichier. S’applique uniquement lorsque le chemin ne contient pas d’espace réservé `{_partition_id}` : un tel chemin n’est compatible qu’avec la stratégie `wildcard` et implique donc toujours `wildcard`.
+Stratégie de partitionnement par défaut pour les moteurs de type fichier. S’applique uniquement aux requêtes `CREATE` dont le chemin ne contient ni glob ni espace réservé `{_partition_id}`. Un chemin contenant `{_partition_id}` utilise toujours `wildcard`. Un chemin contenant un autre glob n’utilise aucune stratégie de partitionnement et ignore `PARTITION BY`. Si ce paramètre est défini sur `wildcard`, mais que le chemin ne contient pas `{_partition_id}`, aucune stratégie de partitionnement n’est utilisée ; les moteurs de table qui ne peuvent pas conserver cette décision dans les arguments de leur moteur (par ex. `HDFS`) rejettent alors ce `CREATE`.
 
 <div id="filesystem_prefetches_limit">
   ## filesystem_prefetches_limit

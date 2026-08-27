@@ -312,7 +312,8 @@ ClickHouse 工作负载 目前处于公开预览阶段。以下限制仅反映�
   ### 访问和身份
 </div>
 
-* **角色变更会在下次打开时生效。** 打开 ClickHouse 项目时，您的 ClickHouse 组织角色会根据您在 Fabric 工作区中的角色进行映射。Fabric 无法将角色变更通知给 ClickHouse，因此工作区角色变更会在您下次打开该项目时生效，而不会立即生效。
+* **角色变更会在下次打开时生效。** 每次打开 ClickHouse 项目时，您的 ClickHouse 组织角色都会根据您在 Fabric 工作区中的角色进行映射。Fabric 无法将角色变更通知给 ClickHouse，因此工作区角色变更不会立即生效。
+* **在 Fabric 中移除或降级用户不会撤销其 ClickHouse 访问权限。** 由于角色仅在用户打开 ClickHouse 项目时才会应用，被从工作区移除或降级的用户可能会保留其在 ClickHouse Cloud 端的现有访问权限；如果他们之后从未再次打开该项目，该变更将完全不会传播。要立即可靠地撤销访问权限，请在 ClickHouse Cloud 控制台中将该用户从组织中移除。
 * **工作区级访问。** 工作区中的所有成员都可以使用其中的 ClickHouse 项目。目前不支持从 OneLake 同步细粒度的表级权限。
 * **Console SSO 要求您的 Entra 配置文件中设置电子邮件地址。** ClickHouse Cloud 用户必须具有电子邮件地址；如果您的 Microsoft Entra 配置文件中未设置电子邮件地址，登录 Cloud 控制台 将会失败。
 

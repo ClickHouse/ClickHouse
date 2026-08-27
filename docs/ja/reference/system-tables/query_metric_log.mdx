@@ -361,16 +361,16 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_ZooKeeperCreate` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への &#39;create&#39; リクエスト回数。
 * `ProfileEvent_ZooKeeperRemove` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への &#39;remove&#39; リクエスト回数。
 * `ProfileEvent_ZooKeeperExists` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への &#39;exists&#39; リクエスト回数。
-* `ProfileEvent_ZooKeeperGet` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への `get` リクエスト数。
-* `ProfileEvent_ZooKeeperSet` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への `set` リクエスト数。
-* `ProfileEvent_ZooKeeperMulti` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への `multi` リクエスト数 (複合トランザクション) 。
-* `ProfileEvent_ZooKeeperMultiRead` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への読み取り `multi` リクエスト数 (複合トランザクション) 。
-* `ProfileEvent_ZooKeeperMultiWrite` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への書き込み `multi` リクエスト数 (複合トランザクション) 。
-* `ProfileEvent_ZooKeeperCheck` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への `check` リクエスト数。通常、これらは単独では意味をなさず、複雑なトランザクションの一部としてのみ使われます。
-* `ProfileEvent_ZooKeeperSync` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への `sync` リクエスト数。これらのリクエストが必要になったり有用だったりすることはまれです。
-* `ProfileEvent_ZooKeeperReconfig` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への `reconfig` リクエスト数。
+* `ProfileEvent_ZooKeeperGet` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への &#39;get&#39; リクエスト数。
+* `ProfileEvent_ZooKeeperSet` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への &#39;set&#39; リクエスト数。
+* `ProfileEvent_ZooKeeperMulti` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への &#39;multi&#39; リクエスト数 (複合トランザクション) 。
+* `ProfileEvent_ZooKeeperMultiRead` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への読み取り &#39;multi&#39; リクエスト数 (複合トランザクション) 。
+* `ProfileEvent_ZooKeeperMultiWrite` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への書き込み &#39;multi&#39; リクエスト数 (複合トランザクション) 。
+* `ProfileEvent_ZooKeeperCheck` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への &#39;check&#39; リクエスト数。通常、これらは単独では意味をなさず、複雑なトランザクションの一部としてのみ使われます。
+* `ProfileEvent_ZooKeeperSync` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への &#39;sync&#39; リクエスト数。これらのリクエストが必要になったり有用だったりすることはまれです。
+* `ProfileEvent_ZooKeeperReconfig` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への &#39;reconfig&#39; リクエスト数。
 * `ProfileEvent_ZooKeeperClose` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper との接続が自発的に閉じられた回数。
-* `ProfileEvent_ZooKeeperGetACL` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への `getACL` リクエスト数。
+* `ProfileEvent_ZooKeeperGetACL` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper への &#39;getACL&#39; リクエスト数。
 * `ProfileEvent_ZooKeeperWatchResponse` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper から watch 通知を受信した回数。
 * `ProfileEvent_ZooKeeperWatchCallbackDurationMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper watch コールバック内で費やされた合計時間 (ネットワークスレッド) 。
 * `ProfileEvent_ZooKeeperWatchCallbackErrors` ([UInt64](/ja/reference/data-types/int-uint)) — ZooKeeper watch コールバックからスローされた例外数。
@@ -1524,6 +1524,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/ja/reference/data-types/int-uint)) — JOIN Runtime Filters による読み取り時のプルーニング対象として検査されたグラニュール数
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/ja/reference/data-types/int-uint)) — JOIN Runtime Filters により読み取り時にプルーニングされたグラニュール数
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — JOIN の右側を構築した後の後処理ステップの経過時間。
+* `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — JOIN の右側のペイロードを行優先形式に変換するのにかかった経過時間。
 * `ProfileEvent_AIInputTokens` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ内のすべての AI 関数呼び出しで消費されたプロンプトトークンの合計。
 * `ProfileEvent_AIOutputTokens` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ内のすべての AI 関数呼び出しで消費された補完トークンの合計。
 * `ProfileEvent_AIAPICalls` ([UInt64](/ja/reference/data-types/int-uint)) — AI プロバイダーに送出された HTTP リクエスト数。
@@ -1555,7 +1556,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_StatelessWorkerDiscoveryCreateLeaseRequests` ([UInt64](/ja/reference/data-types/int-uint)) — ステートレスワーカー検出サービスが処理した create&#95;lease リクエスト数。
 * `ProfileEvent_StatelessWorkerDiscoveryCreateLeaseErrors` ([UInt64](/ja/reference/data-types/int-uint)) — ステートレスワーカー検出サービスがエラーで応答した create&#95;lease リクエスト数。
 * `ProfileEvent_StatelessWorkerDiscoveryCreateLeaseMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ステートレスワーカー検出サービスが create&#95;lease リクエストの処理に費やした合計時間。
-* `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseRequests` ([UInt64](/ja/reference/data-types/int-uint)) — ステートレスワーカー検出サービスが処理した update&#95;lease リクエスト数。
+* `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseRequests` ([UInt64](/ja/reference/data-types/int-uint)) — ステートレスワーカーディスカバリサービスが処理した update&#95;lease リクエスト数。
 * `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseErrors` ([UInt64](/ja/reference/data-types/int-uint)) — ステートレスワーカーディスカバリサービスがエラーを返した update&#95;lease リクエスト数。
 * `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ステートレスワーカーディスカバリサービスが update&#95;lease リクエストの処理に費やした合計時間。
 * `ProfileEvent_StatelessWorkerDiscoveryGetLeaseRequests` ([UInt64](/ja/reference/data-types/int-uint)) — ステートレスワーカーディスカバリサービスが処理した get&#95;lease リクエスト数。

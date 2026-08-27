@@ -181,6 +181,16 @@ Valores possíveis:
 * 0 — Desabilitado.
 * 1 — Habilitado.
 
+<div id="enable_hash_join_row_store">
+  ## enable_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nova configuração para transformar o payload de um hash join em um layout orientado a linhas."}]}]} />
+
+Habilita a transformação do payload de um hash join em um layout orientado a linhas.
+
 <div id="enable_hdfs_pread">
   ## enable_hdfs_pread
 </div>

@@ -24,6 +24,12 @@ Essas configurações são usadas para configurar o servidor ClickHouse e são g
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Só tem efeito no ClickHouse Cloud. Permite a leitura do cache distribuído. É uma configuração no nível do servidor, aplicada sem reinicialização, para que as operações em segundo plano que não têm um perfil de consulta próprio (mesclagens, mutações, flushes de tabelas `Buffer`) também a respeitem. Consultas individuais podem substituí-la com a configuração `force_read_through_distributed_cache`.
 
+<div id="enable_silk_runtime">
+  ## enable_silk_runtime
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Habilita o suporte experimental ao runtime de fibras silk: inicializa o scheduler de fibras silk na inicialização do servidor, permitindo que os subsistemas compatíveis executem seus jobs em fibras
+
 <div id="enable_webterminal">
   ## enable_webterminal
 </div>

@@ -24,6 +24,12 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />ClickHouse Cloudでのみ有効です。分散キャッシュからの読み取りを許可します。これは再起動なしで適用できるサーバーレベルのスイッチであり、独自のクエリプロファイルを持たないバックグラウンド処理 (マージ、ミューテーション、`Buffer` テーブルのフラッシュ) にも適用されます。個々のクエリでは、`force_read_through_distributed_cache` 設定を使用して異なる動作を指定できます。
 
+<div id="enable_silk_runtime">
+  ## enable_silk_runtime
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />silk fiber runtime の実験的なサポートを有効にします。サーバーの起動時に silk fiber scheduler を初期化し、対応するサブシステムが fiber 上でジョブを実行できるようにします
+
 <div id="enable_webterminal">
   ## enable_webterminal
 </div>

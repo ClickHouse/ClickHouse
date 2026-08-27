@@ -312,9 +312,10 @@ A carga de trabalho do ClickHouse está em prévia pública. As limitações aba
   ### Acesso e identidade
 </div>
 
-* **As alterações de função são aplicadas na próxima abertura.** Sua função na organização do ClickHouse é mapeada a partir da sua função no workspace do Fabric quando você abre um item do ClickHouse. O Fabric não consegue notificar o ClickHouse sobre alterações de função; portanto, uma alteração na função do workspace só entra em vigor na próxima vez que você abrir o item, não imediatamente.
+* **As alterações de função são aplicadas na próxima abertura.** Sua função na organização do ClickHouse é mapeada a partir da sua função no workspace do Fabric cada vez que você abre um item do ClickHouse. O Fabric não consegue notificar o ClickHouse sobre alterações de função; portanto, uma alteração na função do workspace não entra em vigor imediatamente.
+* **Remover ou rebaixar um usuário no Fabric não revoga seu acesso ao ClickHouse.** Como as funções são aplicadas apenas quando um usuário abre um item do ClickHouse, um usuário removido do workspace ou rebaixado pode manter o acesso existente no ClickHouse Cloud e, se nunca abrir o item novamente, essa alteração não será propagada. Para revogar o acesso de forma imediata e confiável, remova o usuário da organização no console do ClickHouse Cloud.
 * **Acesso no nível do workspace.** Todos no workspace podem usar os itens do ClickHouse dele. No momento, não há suporte à sincronização granular de permissões por tabela a partir do OneLake.
-* **O SSO do Console exige um email no seu perfil do Entra.** Os usuários do ClickHouse Cloud precisam de um endereço de email; se não houver um configurado no seu perfil do Microsoft Entra, o login no Console do Cloud falhará.
+* **O SSO do Console exige um email no seu perfil do Entra.** Os usuários do ClickHouse Cloud precisam de um endereço de email; se não houver um configurado no seu perfil do Microsoft Entra, o login no console do ClickHouse Cloud falhará.
 
 <div id="reference">
   ## Referência

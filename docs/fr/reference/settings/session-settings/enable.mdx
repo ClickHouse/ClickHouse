@@ -181,6 +181,16 @@ Valeurs possibles :
 * 0 — Désactivé.
 * 1 — Activé.
 
+<div id="enable_hash_join_row_store">
+  ## enable_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nouveau paramètre permettant de transformer la charge utile d'une jointure de hachage en stockage par lignes."}]}]} />
+
+Active la transformation de la charge utile d&#39;une jointure de hachage en stockage par lignes.
+
 <div id="enable_hdfs_pread">
   ## enable_hdfs_pread
 </div>

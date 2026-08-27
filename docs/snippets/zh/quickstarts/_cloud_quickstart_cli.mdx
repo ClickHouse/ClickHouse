@@ -1,0 +1,239 @@
+---
+title: Cloud 快速入门命令行客户端
+---
+
+本页介绍如何通过 [ClickHouse 命令行客户端](/zh/products/cloud/features/cli) (`clickhousectl`) 在命令行中预配 ClickHouse Cloud 服务、连接到服务并加载数据。命令以非交互方式运行；使用 `--json` 时，`clickhousectl` 将输出 JSON。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+安装 ClickHouse 命令行客户端：
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+您还需要安装 `jq`。
+
+您需要拥有 ClickHouse Cloud 账户。如果尚未注册，运行 `clickhousectl cloud auth signup` 会在浏览器中打开注册页面。
+
+写操作 (创建、删除) 需要使用 [API 密钥进行身份验证](/zh/products/cloud/features/admin-features/api/openapi)；OAuth 登录仅支持只读操作：
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+或者，设置 `CLICKHOUSE_CLOUD_API_KEY` 和 `CLICKHOUSE_CLOUD_API_SECRET` 环境变量。使用 `clickhousectl cloud auth status` 进行验证；预期会显示一条 scope 为 `read/write` 的条目。
+
+<div id="create-service">
+  ## 创建 ClickHouse 服务
+</div>
+
+创建服务并保存响应内容；`default` 用户的密码仅会显示一次：
+
+```bash
+clickhousectl cloud service create \
+  --name quickstart-ch \
+  --region us-east-1 \
+  --json > ch.json
+```
+
+响应中包含服务 ID、端点和生成的密码 (此处已省略部分内容；完整响应还包含扩缩容设置、IP 访问列表和标签) ：
+
+```json
+{
+  "password": "dK7mPq2x_-TzrL9vNw0s",
+  "service": {
+    "id": "4f7b92f3-4163-403a-b538-b9bc6e2e8f66",
+    "name": "quickstart-ch",
+    "provider": "aws",
+    "region": "us-east-1",
+    "state": "provisioning",
+    "endpoints": [
+      {
+        "host": "quickstart-abc123.us-east-1.aws.clickhouse.cloud",
+        "port": 9440,
+        "protocol": "nativesecure"
+      },
+      {
+        "host": "quickstart-abc123.us-east-1.aws.clickhouse.cloud",
+        "port": 8443,
+        "protocol": "https"
+      }
+    ],
+    "numReplicas": 3,
+    "minReplicaMemoryGb": 16.0,
+    "maxReplicaMemoryGb": 120.0
+  }
+}
+```
+
+提取本指南后续内容所需的文件：
+
+```bash
+CH_ID=$(jq -r .service.id ch.json)
+CH_PASSWORD=$(jq -r .password ch.json)
+CH_HOST=$(jq -r '.service.endpoints[] | select(.protocol=="nativesecure") | .host' ch.json)
+```
+
+如果忘记密码，请使用 `clickhousectl cloud service reset-password "$CH_ID"` 生成新密码。
+
+使用 `clickhousectl` 创建的服务默认使用允许所有 IP 地址 (`0.0.0.0/0`) 访问的 IP 访问列表。要限制访问，请在创建服务时传入 `--ip-allow`；请参阅[&quot;设置 IP 过滤器&quot;](/zh/products/cloud/guides/security/connectivity/setting-ip-filters)。
+
+<div id="wait-for-provisioning">
+  ## 等待服务预配完成
+</div>
+
+预配过程约需一分钟。持续轮询，直到状态变为 `running`：
+
+```bash
+while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+  sleep 15
+done
+```
+
+<div id="run-sql">
+  ## 使用 Query API 执行 SQL
+</div>
+
+`clickhousectl cloud service query` 通过 HTTP 执行 SQL，无需本地 `clickhouse` 二进制文件或服务密码。首次调用时会自动创建 Query API 端点和服务范围的 API 密钥：
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --query "SHOW databases"
+```
+
+```text
+Provisioning Query API endpoint + key for service 'quickstart-ch'...
+{"name":"INFORMATION_SCHEMA"}
+{"name":"default"}
+{"name":"information_schema"}
+{"name":"system"}
+```
+
+管道输出默认采用 `JSONEachRow`；如需表格格式的输出，请传入 `--format PrettyCompact`。
+
+<div id="create-database-and-table">
+  ## 创建数据库和表
+</div>
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "CREATE DATABASE IF NOT EXISTS helloworld"
+
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "CREATE TABLE helloworld.my_first_table (
+    user_id UInt32,
+    message String,
+    timestamp DateTime,
+    metric Float32
+  ) ENGINE = MergeTree()
+  PRIMARY KEY (user_id, timestamp)"
+```
+
+两条命令都会输出 `OK`。插入几行数据：
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
+    (101, 'Hello, ClickHouse!', now(), -1.0),
+    (102, 'Insert a lot of rows per batch', yesterday(), 1.41421),
+    (102, 'Sort your data based on your commonly-used queries', today(), 2.718),
+    (101, 'Granules are the smallest chunks of data read', now() + 5, 3.14159)"
+```
+
+验证是否成功：
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp"
+```
+
+```text
+{"user_id":102,"message":"Insert a lot of rows per batch","timestamp":"2026-08-26 00:00:00","metric":1.41421}
+{"user_id":102,"message":"Sort your data based on your commonly-used queries","timestamp":"2026-08-27 00:00:00","metric":2.718}
+{"user_id":101,"message":"Hello, ClickHouse!","timestamp":"2026-08-27 10:41:28","metric":-1}
+{"user_id":101,"message":"Granules are the smallest chunks of data read","timestamp":"2026-08-27 10:41:33","metric":3.14159}
+```
+
+时间戳取决于您执行 insert 的时间，因此会有所不同。
+
+<div id="load-csv-file">
+  ## 加载 CSV 文件
+</div>
+
+假设名为 `data.csv` 的 CSV 文件包含以下文本：
+
+```text title="data.csv"
+102,This is data in a file,2022-02-22 10:43:28,123.45
+101,It is comma-separated,2022-02-23 00:00:00,456.78
+103,Use FORMAT to specify the format,2022-02-21 10:43:30,678.90
+```
+
+`INSERT ... FORMAT` 会从 stdin 读取数据，因此请将查询和文件通过管道传递：
+
+```bash
+printf 'INSERT INTO helloworld.my_first_table FORMAT CSV\n' | cat - data.csv \
+  | clickhousectl cloud service query --id "$CH_ID"
+```
+
+验证新行是否已写入：
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT count() FROM helloworld.my_first_table"
+```
+
+```text
+{"count()":7}
+```
+
+<div id="native-client">
+  ## 使用 clickhouse client 连接
+</div>
+
+您也可以通过[原生协议](/zh/concepts/features/interfaces/client)使用 **clickhouse client** 进行连接。ClickHouse 命令行客户端会为您管理 `clickhouse` 二进制文件，因此无需另行安装客户端：
+
+```bash
+clickhousectl local use latest
+```
+
+这会安装最新的 `clickhouse` 二进制文件，并创建指向 `~/.local/bin/clickhouse` 的符号链接，使 `clickhouse` 命令可通过 `PATH` 在全局使用。
+
+然后，使用创建响应中的主机名和密码进行连接。使用 `--query` 时，客户端会打印结果后退出；不使用时，则会进入交互式提示符 (`:)`)，可通过 `exit` 退出：
+
+```bash
+clickhouse client --host "$CH_HOST" --secure --port 9440 \
+  --user default --password "$CH_PASSWORD" \
+  --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp FORMAT TabSeparated"
+```
+
+```text
+102	Insert a lot of rows per batch	2026-08-26 00:00:00	1.41421
+102	Sort your data based on your commonly-used queries	2026-08-27 00:00:00	2.718
+101	Hello, ClickHouse!	2026-08-27 10:41:28	-1
+101	Granules are the smallest chunks of data read	2026-08-27 10:41:33	3.14159
+103	Use FORMAT to specify the format	2022-02-21 10:43:30	678.9
+102	This is data in a file	2022-02-22 10:43:28	123.45
+101	It is comma-separated	2022-02-23 00:00:00	456.78
+```
+
+同样的命令格式可用于上传文件：
+
+```bash
+clickhouse client --host "$CH_HOST" --secure --port 9440 \
+  --user default --password "$CH_PASSWORD" \
+  --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
+```
+
+<div id="cleanup">
+  ## 清理
+</div>
+
+删除服务会永久删除其所有数据。`--force` 会先停止正在运行的服务：
+
+```bash
+clickhousectl cloud service delete "$CH_ID" --force
+```
+
+若要保留数据但不再为计算资源付费，请改用 `clickhousectl cloud service stop "$CH_ID"` 停止服务。

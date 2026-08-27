@@ -758,7 +758,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_DiskPlainRewritableAzureDirectoryRemoved` ([UInt64](/zh/reference/data-types/int-uint)) — 由 AzureObjectStorage 的 &#39;plain&#95;rewritable&#39; 元数据存储删除的目录数量。
 * `ProfileEvent_DiskPlainRewritableLocalDirectoryCreated` ([UInt64](/zh/reference/data-types/int-uint)) — 由 LocalObjectStorage 的 &#39;plain&#95;rewritable&#39; 元数据存储创建的目录数量。
 * `ProfileEvent_DiskPlainRewritableLocalDirectoryRemoved` ([UInt64](/zh/reference/data-types/int-uint)) — 由 LocalObjectStorage 的 &#39;plain&#95;rewritable&#39; 元数据存储删除的目录数量。
-* `ProfileEvent_DiskPlainRewritableS3DirectoryCreated` ([UInt64](/zh/reference/data-types/int-uint)) — `plain_rewritable` 元数据存储为 S3ObjectStorage 创建的目录数量。
+* `ProfileEvent_DiskPlainRewritableS3DirectoryCreated` ([UInt64](/zh/reference/data-types/int-uint)) — 由 S3ObjectStorage 的 &#39;plain&#95;rewritable&#39; 元数据存储创建的目录数量。
 * `ProfileEvent_DiskPlainRewritableS3DirectoryRemoved` ([UInt64](/zh/reference/data-types/int-uint)) — `plain_rewritable` 元数据存储为 S3ObjectStorage 删除的目录数量。
 * `ProfileEvent_DiskPlainRewritableLegacyLayoutDiskCount` ([UInt64](/zh/reference/data-types/int-uint)) — 使用旧版布局的 `plain_rewritable` 磁盘数量。
 * `ProfileEvent_S3Clients` ([UInt64](/zh/reference/data-types/int-uint)) — 已创建的 S3 客户端数量。
@@ -1518,6 +1518,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/zh/reference/data-types/int-uint)) — JOIN 运行时过滤器为读取时剪枝而检查的粒度数
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/zh/reference/data-types/int-uint)) — JOIN 运行时过滤器在读取时剪枝的粒度数
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 构建 JOIN 右侧后所执行后处理步骤的耗时
+* `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将 JOIN 右侧载荷转换为行主序格式所花费的时间。
 * `ProfileEvent_AIInputTokens` ([UInt64](/zh/reference/data-types/int-uint)) — 查询中所有 AI 函数调用消耗的 prompt 标记总数
 * `ProfileEvent_AIOutputTokens` ([UInt64](/zh/reference/data-types/int-uint)) — 查询中所有 AI 函数调用消耗的补全标记总数
 * `ProfileEvent_AIAPICalls` ([UInt64](/zh/reference/data-types/int-uint)) — 分派给 AI 提供商的 HTTP 请求数

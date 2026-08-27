@@ -1,18 +1,18 @@
 {
   "icon": "/images/icons/icon-reference.svg",
-  "item": "Reference",
+  "item": "Référence",
   "pages": [
     "fr/reference/home",
     {
       "expandable": true,
       "expanded": true,
-      "group": "SQL Reference",
+      "group": "Référence SQL",
       "pages": [
         "fr/reference/syntax",
         {
           "expandable": true,
           "expanded": false,
-          "group": "Statements",
+          "group": "Instructions",
           "pages": [
             "fr/reference/statements/index",
             {
@@ -108,6 +108,7 @@
                 },
                 "fr/reference/statements/create/masking-policy",
                 "fr/reference/statements/create/function",
+                "fr/reference/statements/create/handler",
                 "fr/reference/statements/create/named-collection",
                 "fr/reference/statements/create/quota",
                 "fr/reference/statements/create/role",
@@ -192,7 +193,7 @@
         {
           "expandable": true,
           "expanded": false,
-          "group": "Operators",
+          "group": "Opérateurs",
           "pages": [
             "fr/reference/operators/index",
             "fr/reference/operators/exists",
@@ -204,12 +205,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Data Types",
+      "group": "Types de données",
       "pages": [
         "fr/reference/data-types/index",
         {
           "expanded": false,
-          "group": "Numeric types",
+          "group": "Types numériques",
           "pages": [
             "fr/reference/data-types/int-uint",
             "fr/reference/data-types/float",
@@ -219,7 +220,7 @@
         },
         {
           "expanded": false,
-          "group": "String types",
+          "group": "Types String",
           "pages": [
             "fr/reference/data-types/string",
             "fr/reference/data-types/fixedstring"
@@ -227,7 +228,7 @@
         },
         {
           "expanded": false,
-          "group": "Date and time types",
+          "group": "Types de date et d’heure",
           "pages": [
             "fr/reference/data-types/date",
             "fr/reference/data-types/date32",
@@ -239,7 +240,7 @@
         },
         {
           "expanded": false,
-          "group": "Network types",
+          "group": "Types réseau",
           "pages": [
             "fr/reference/data-types/ipv4",
             "fr/reference/data-types/ipv6"
@@ -247,7 +248,7 @@
         },
         {
           "expanded": false,
-          "group": "Composite types",
+          "group": "Types composites",
           "pages": [
             "fr/reference/data-types/array",
             "fr/reference/data-types/tuple",
@@ -257,7 +258,7 @@
         },
         {
           "expanded": false,
-          "group": "Semi-structured types",
+          "group": "Types semi-structurés",
           "pages": [
             "fr/reference/data-types/newjson",
             "fr/reference/data-types/dynamic",
@@ -266,7 +267,7 @@
         },
         {
           "expanded": false,
-          "group": "Nullable and optional types",
+          "group": "Types Nullable et optionnels",
           "pages": [
             "fr/reference/data-types/nullable",
             "fr/reference/data-types/lowcardinality"
@@ -274,7 +275,7 @@
         },
         {
           "expanded": false,
-          "group": "Specialized types",
+          "group": "Types spécialisés",
           "pages": [
             "fr/reference/data-types/uuid",
             "fr/reference/data-types/enum",
@@ -285,7 +286,7 @@
         },
         {
           "expanded": false,
-          "group": "Aggregate function types",
+          "group": "Types de fonctions d’agrégation",
           "pages": [
             "fr/reference/data-types/aggregatefunction",
             "fr/reference/data-types/simpleaggregatefunction"
@@ -293,7 +294,7 @@
         },
         {
           "expanded": false,
-          "group": "Special Data Types",
+          "group": "Types de données spéciaux",
           "pages": [
             "fr/reference/data-types/special-data-types/index",
             "fr/reference/data-types/special-data-types/expression",
@@ -303,7 +304,7 @@
           ]
         },
         {
-          "group": "Binary encoding",
+          "group": "Encodage binaire",
           "pages": [
             "fr/reference/data-types/data-types-binary-encoding"
           ]
@@ -313,17 +314,17 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Engines",
+      "group": "Moteurs",
       "pages": [
         "fr/reference/engines/engines",
         {
           "expanded": false,
-          "group": "Table Engines",
+          "group": "Moteurs de table",
           "pages": [
             "fr/reference/engines/table-engines/index",
             {
               "expanded": false,
-              "group": "Integrations",
+              "group": "Intégrations",
               "pages": [
                 "fr/reference/engines/table-engines/integrations/index",
                 "fr/reference/engines/table-engines/integrations/arrowflight",
@@ -357,7 +358,7 @@
             },
             {
               "expanded": false,
-              "group": "Log Family",
+              "group": "Famille Log",
               "pages": [
                 "fr/reference/engines/table-engines/log-family/index",
                 "fr/reference/engines/table-engines/log-family/log",
@@ -367,7 +368,7 @@
             },
             {
               "expanded": false,
-              "group": "MergeTree Family",
+              "group": "Famille MergeTree",
               "pages": [
                 "fr/reference/engines/table-engines/mergetree-family/index",
                 "fr/reference/engines/table-engines/mergetree-family/mergetree",
@@ -386,7 +387,7 @@
             },
             {
               "expanded": false,
-              "group": "Special",
+              "group": "Spécial",
               "pages": [
                 "fr/reference/engines/table-engines/special/index",
                 "fr/reference/engines/table-engines/special/alias",
@@ -413,7 +414,7 @@
         },
         {
           "expanded": false,
-          "group": "Database Engines",
+          "group": "Moteurs de base de données",
           "pages": [
             "fr/reference/engines/database-engines/index",
             "fr/reference/engines/database-engines/atomic",
@@ -433,12 +434,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Functions",
+      "group": "Fonctions",
       "pages": [
         "fr/reference/functions/index",
         {
           "expanded": false,
-          "group": "Regular functions",
+          "group": "Fonctions régulières",
           "pages": [
             "fr/reference/functions/regular-functions/overview",
             "fr/reference/functions/regular-functions/ai-functions",
@@ -460,7 +461,7 @@
             "fr/reference/functions/regular-functions/functions-for-nulls",
             {
               "expanded": false,
-              "group": "Geo",
+              "group": "géo",
               "pages": [
                 "fr/reference/functions/regular-functions/geo/index",
                 "fr/reference/functions/regular-functions/geo/coordinates",
@@ -504,7 +505,7 @@
         },
         {
           "expanded": false,
-          "group": "Aggregate Functions",
+          "group": "Fonctions d’agrégation",
           "pages": [
             "fr/reference/functions/aggregate-functions/index",
             "fr/reference/functions/aggregate-functions/combinators",
@@ -512,7 +513,7 @@
             "fr/reference/functions/aggregate-functions/parametric-functions",
             {
               "expanded": false,
-              "group": "Reference",
+              "group": "Référence",
               "pages": [
                 "fr/reference/functions/aggregate-functions/reference-index",
                 "fr/reference/functions/aggregate-functions/aggThrow",
@@ -680,7 +681,7 @@
         },
         {
           "expanded": false,
-          "group": "Table functions",
+          "group": "Fonctions de table",
           "pages": [
             "fr/reference/functions/table-functions/index",
             "fr/reference/functions/table-functions/arrowflight",
@@ -747,7 +748,7 @@
         },
         {
           "expanded": false,
-          "group": "Window functions",
+          "group": "Fonctions de fenêtre",
           "pages": [
             "fr/reference/functions/window-functions/index",
             "fr/reference/functions/window-functions/cume_dist",
@@ -767,7 +768,7 @@
           ]
         },
         {
-          "group": "User Defined Functions",
+          "group": "Fonctions définies par l’utilisateur",
           "pages": [
             "fr/reference/functions/regular-functions/udf",
             "fr/reference/functions/regular-functions/wasm_udf"
@@ -974,7 +975,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Settings",
+      "group": "Paramètres",
       "pages": [
         "fr/reference/settings/index",
         {
@@ -995,7 +996,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "System Tables",
+      "group": "Tables système",
       "pages": [
         "fr/reference/system-tables/overview",
         "fr/reference/system-tables/aggregate_function_combinators",
@@ -1174,7 +1175,7 @@
       ]
     },
     {
-      "group": "Data Lakes",
+      "group": "Lacs de données",
       "pages": [
         "fr/reference/datalakes"
       ]

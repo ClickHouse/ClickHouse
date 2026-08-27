@@ -592,7 +592,7 @@ ClickHouse는 테이블의 오래된 레플리카 중에서 가장 적합한 레
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "hive"},{"label": "`partition_strategy`가 지정되지 않은 경우, 파일 계열 테이블 엔진(S3, AzureBlobStorage 등)의 기본 파티션 전략이 `wildcard`에서 `hive`로 변경됩니다."}]}]} />
 
-파일 계열 엔진의 기본 파티션 전략입니다. 경로에 `{_partition_id}` 자리 표시자가 없을 때만 적용됩니다. 이러한 경로는 `wildcard` 전략과만 호환되므로 항상 `wildcard`를 의미합니다.
+파일 계열 엔진의 기본 파티션 전략입니다. 글롭이나 `{_partition_id}` 자리 표시자가 없는 경로를 사용하는 `CREATE` 쿼리에만 적용됩니다. `{_partition_id}`가 있는 경로는 항상 `wildcard`를 사용합니다. 다른 글롭이 있는 경로에는 파티션 전략이 적용되지 않으며 `PARTITION BY`는 무시됩니다. 이 설정이 `wildcard`인데 경로에 `{_partition_id}`가 없으면 파티션 전략이 적용되지 않습니다. 이 결정을 엔진 인수에 유지할 수 없는 테이블 엔진(예: `HDFS`)은 이러한 `CREATE`를 거부합니다.
 
 <div id="filesystem_prefetches_limit">
   ## filesystem_prefetches_limit

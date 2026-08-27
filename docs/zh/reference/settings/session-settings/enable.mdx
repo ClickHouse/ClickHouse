@@ -181,6 +181,16 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * 0 — 已禁用。
 * 1 — 已启用。
 
+<div id="enable_hash_join_row_store">
+  ## enable_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置，用于将哈希连接的载荷转换为行主序布局。"}]}]} />
+
+启用将哈希连接的载荷转换为行主序布局。
+
 <div id="enable_hdfs_pread">
   ## enable_hdfs_pread
 </div>

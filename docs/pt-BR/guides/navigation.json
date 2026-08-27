@@ -1,11 +1,11 @@
 {
   "groups": [
     {
-      "group": "ClickHouse guides",
+      "group": "Guias do ClickHouse",
       "pages": [
         "pt-BR/guides/clickhouse/index",
         {
-          "group": "Data formats",
+          "group": "Formatos de dados",
           "pages": [
             "pt-BR/guides/clickhouse/data-formats/intro",
             "pt-BR/guides/clickhouse/data-formats/csv-tsv",
@@ -29,7 +29,7 @@
           ]
         },
         {
-          "group": "Data modelling",
+          "group": "Modelagem de dados",
           "pages": [
             "pt-BR/guides/clickhouse/data-modelling/index",
             "pt-BR/guides/clickhouse/data-modelling/schema-design",
@@ -41,7 +41,7 @@
             "pt-BR/guides/clickhouse/data-modelling/generating-test-data",
             {
               "expanded": false,
-              "group": "Compression",
+              "group": "Compressão",
               "pages": [
                 "pt-BR/guides/clickhouse/data-modelling/compression/compression-in-clickhouse",
                 "pt-BR/guides/clickhouse/data-modelling/compression/compression-modes"
@@ -52,7 +52,7 @@
           ]
         },
         {
-          "group": "Performance & monitoring",
+          "group": "Desempenho e monitoramento",
           "pages": [
             "pt-BR/guides/clickhouse/performance-and-monitoring/query-optimization",
             "pt-BR/guides/clickhouse/performance-and-monitoring/analyzer",
@@ -62,7 +62,7 @@
         },
         {
           "expanded": false,
-          "group": "Aggregate combinator examples",
+          "group": "Exemplos de combinadores de agregação",
           "pages": [
             "pt-BR/guides/clickhouse/examples/aggregate-function-combinators/anyIf",
             "pt-BR/guides/clickhouse/examples/aggregate-function-combinators/argMaxIf",
@@ -94,7 +94,7 @@
         },
         "pt-BR/guides/oss/update",
         {
-          "group": "OSS best practices",
+          "group": "Melhores práticas para OSS",
           "pages": [
             "pt-BR/guides/oss/best-practices/sizing-and-hardware-recommendations",
             "pt-BR/guides/oss/best-practices/tips"
@@ -102,7 +102,7 @@
         },
         {
           "expanded": false,
-          "group": "Deployment and scaling",
+          "group": "Implantação e escalonamento",
           "pages": [
             "pt-BR/guides/oss/deployment-and-scaling/terminology",
             "pt-BR/guides/oss/deployment-and-scaling/shards",
@@ -119,7 +119,7 @@
             },
             {
               "expanded": false,
-              "group": "Monitoring",
+              "group": "Monitoramento",
               "pages": [
                 "pt-BR/guides/oss/deployment-and-scaling/monitoring/monitoring",
                 "pt-BR/guides/oss/deployment-and-scaling/monitoring/opentelemetry"
@@ -127,7 +127,7 @@
             },
             {
               "expanded": false,
-              "group": "Examples",
+              "group": "Exemplos",
               "pages": [
                 "pt-BR/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas",
                 "pt-BR/guides/oss/deployment-and-scaling/examples/2-shards-1-replica",
@@ -140,15 +140,15 @@
     },
     {
       "expanded": true,
-      "group": "Use case guides",
+      "group": "Guias de casos de uso",
       "pages": [
         "pt-BR/guides/use-cases/index",
         {
-          "group": "Real-time analytics",
+          "group": "Analytics em tempo real",
           "pages": [
             {
               "expanded": false,
-              "group": "Time series",
+              "group": "Séries temporais",
               "pages": [
                 "pt-BR/guides/use-cases/real-time-analytics/time-series/index",
                 "pt-BR/guides/use-cases/real-time-analytics/time-series/date-time-data-types",
@@ -163,13 +163,13 @@
           ]
         },
         {
-          "group": "Observability",
+          "group": "Observabilidade",
           "pages": [
             "pt-BR/guides/use-cases/observability/index",
             "pt-BR/guides/use-cases/observability/cloud-monitoring",
             "pt-BR/guides/use-cases/observability/self-managed-monitoring",
             {
-              "group": "Build your own",
+              "group": "Crie o seu próprio",
               "pages": [
                 "pt-BR/guides/use-cases/observability/build-your-own/index",
                 "pt-BR/guides/use-cases/observability/build-your-own/introduction",
@@ -183,11 +183,11 @@
           ]
         },
         {
-          "group": "Data warehousing",
+          "group": "Armazenamento de dados",
           "pages": [
             "pt-BR/guides/use-cases/data-warehousing/index",
             {
-              "group": "Getting started",
+              "group": "Primeiros passos",
               "pages": [
                 "pt-BR/guides/use-cases/data-warehousing/getting-started/overview",
                 "pt-BR/guides/use-cases/data-warehousing/getting-started/querying-directly",
@@ -198,7 +198,7 @@
               ]
             },
             {
-              "group": "Catalogs",
+              "group": "Catálogos",
               "pages": [
                 "pt-BR/guides/use-cases/data-warehousing/reference/index",
                 "pt-BR/guides/use-cases/data-warehousing/glue-catalog",
@@ -217,13 +217,13 @@
           ]
         },
         {
-          "group": "AI/ML",
+          "group": "IA/ML",
           "pages": [
             "pt-BR/guides/use-cases/ai-ml/index",
             "pt-BR/guides/use-cases/ai-ml/vector-search",
             "pt-BR/guides/use-cases/ai-ml/ai-powered-sql-generation",
             {
-              "group": "Data exploration",
+              "group": "Exploração de dados",
               "pages": [
                 "pt-BR/guides/use-cases/ai-ml/data-exploration/jupyter-notebook",
                 "pt-BR/guides/use-cases/ai-ml/data-exploration/marimo-notebook"
@@ -240,7 +240,7 @@
                 "pt-BR/guides/use-cases/ai-ml/MCP/ollama",
                 "pt-BR/guides/use-cases/ai-ml/MCP/janai",
                 {
-                  "group": "AI agent libraries",
+                  "group": "Bibliotecas para agentes de IA",
                   "pages": [
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno",
@@ -268,5 +268,5 @@
     }
   ],
   "icon": "/images/icons/icon-guides.svg",
-  "item": "Guides"
+  "item": "Guias"
 }

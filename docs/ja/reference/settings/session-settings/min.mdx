@@ -126,6 +126,16 @@ String 型の URL カラム (値 1 つあたりの平均サイズが 60 バイ�
 
 `Resize` ノードの分割を無効にするには、この設定を 0 に設定します。これにより、パイプライン生成時に `Resize` ノードが分割されなくなり、より小さなノードに分けられることなく、元の構造を維持できます。
 
+<div id="min_rows_ratio_for_hash_join_row_store">
+  ## min_rows_ratio_for_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Double" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "ハッシュ結合のペイロードを行優先形式に変換できるようにするための、結合出力行とビルド側行の推定比率の最小値を制御する新しい設定。0 は変換が常に許可されることを意味します。"}]}]} />
+
+ハッシュ結合のペイロードを行優先形式に変換できるようにするための、結合出力行とビルド側行の推定比率の最小値。0 は変換が常に許可されることを意味します。
+
 <div id="min_table_rows_to_use_projection_index">
   ## min_table_rows_to_use_projection_index
 </div>

@@ -24,6 +24,12 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Действует только в ClickHouse Cloud. Разрешает чтение из распределённого кэша. Это переключатель уровня сервера, применяемый без перезапуска; ему также подчиняются фоновые операции без собственного профиля запроса (слияния, мутации, сбросы таблиц `Buffer`). Отдельные запросы могут переопределять его с помощью настройки `force_read_through_distributed_cache`.
 
+<div id="enable_silk_runtime">
+  ## enable_silk_runtime
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Включает экспериментальную поддержку среды выполнения волокон Silk: при запуске сервера инициализируется планировщик волокон Silk, что позволяет поддерживающим его подсистемам выполнять задачи на волокнах.
+
 <div id="enable_webterminal">
   ## enable_webterminal
 </div>

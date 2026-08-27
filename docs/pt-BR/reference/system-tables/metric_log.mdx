@@ -1518,6 +1518,7 @@ Contém o histórico dos valores das métricas das tabelas `system.metrics` e `s
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de grânulos examinados para poda durante a leitura pelos JOIN Runtime Filters
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de grânulos podados durante a leitura pelos JOIN Runtime Filters
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo decorrido nas etapas de pós-processamento após a construção do lado direito do JOIN.
+* `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo decorrido para transformar o payload do lado direito do JOIN em formato orientado a linhas.
 * `ProfileEvent_AIInputTokens` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Total de tokens de prompt consumidos em todas as chamadas da função de IA na consulta.
 * `ProfileEvent_AIOutputTokens` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Total de completion tokens consumidos em todas as chamadas da função de IA na consulta.
 * `ProfileEvent_AIAPICalls` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de requisições HTTP enviadas aos provedores de IA.

@@ -181,6 +181,16 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 — Отключено.
 * 1 — Включено.
 
+<div id="enable_hash_join_row_store">
+  ## enable_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая настройка, включающая преобразование полезной нагрузки hash JOIN в построчный формат."}]}]} />
+
+Включает преобразование полезной нагрузки hash JOIN в построчный формат.
+
 <div id="enable_hdfs_pread">
   ## enable_hdfs_pread
 </div>

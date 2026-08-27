@@ -1524,6 +1524,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/ru/reference/data-types/int-uint)) — Количество гранул, рассмотренных JOIN Runtime Filters для отсечения при чтении
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/ru/reference/data-types/int-uint)) — Количество гранул, отсечённых JOIN Runtime Filters при чтении
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на этапы постобработки после построения правой стороны JOIN.
+* `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на преобразование полезной нагрузки правой стороны JOIN в построчный формат.
 * `ProfileEvent_AIInputTokens` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество токенов промпта, использованных во всех вызовах функции ИИ в запросе.
 * `ProfileEvent_AIOutputTokens` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество выходных токенов, использованных во всех вызовах функции ИИ в запросе.
 * `ProfileEvent_AIAPICalls` ([UInt64](/ru/reference/data-types/int-uint)) — Количество HTTP-запросов, отправленных провайдерам ИИ.

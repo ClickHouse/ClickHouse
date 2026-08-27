@@ -36,15 +36,15 @@ gcs(named_collection[, option=value [,..]])
   ## 인수
 </div>
 
-| 인수                           | 설명                                                                                                                                                                                                                                         |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `url`                        | 파일의 버킷 경로입니다. readonly 모드에서는 다음 wildcards를 지원합니다: `*`, `**`, `?`, `{abc,def}`, `{N..M}`. 여기서 `N`, `M`은 숫자이고 `'abc'`, `'def'`는 문자열입니다.                                                                                                      |
-| `NOSIGN`                     | 이 키워드를 자격 증명 대신 지정하면 모든 요청에 서명하지 않습니다.                                                                                                                                                                                                     |
-| `hmac_key` and `hmac_secret` | 지정된 endpoint와 함께 사용할 자격 증명을 지정하는 키입니다. 선택 사항입니다.                                                                                                                                                                                           |
-| `format`                     | 파일의 [포맷](/ko/reference/formats/index)입니다.                                                                                                                                                                                                     |
-| `structure`                  | 테이블의 구조입니다. 포맷은 `'column1_name column1_type, column2_name column2_type, ...'`입니다.                                                                                                                                                          |
-| `compression_method`         | 이 매개변수는 선택 사항입니다. 지원되는 값은 `none`, `gzip` 또는 `gz`, `brotli` 또는 `br`, `xz` 또는 `LZMA`, `zstd` 또는 `zst`입니다. 기본적으로 파일 확장자를 기준으로 압축 방식을 자동 감지합니다.                                                                                                |
-| `partition_strategy`         | 선택 사항입니다. 지원되는 값은 `wildcard` 또는 `hive`입니다. `wildcard`는 경로에 `{_partition_id}`가 있어야 합니다. 경로에 `{_partition_id}`가 포함된 경우(이러한 경로와 호환되는 유일한 전략) 또는 `compatibility`가 `26.6`보다 이전 버전인 경우 이것이 기본값이며, 그 밖의 경우에는 현재 기본값이 적용되는 경우를 포함해 기본값은 `hive`입니다. |
+| 인수                           | 설명                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                        | 파일의 버킷 경로입니다. readonly 모드에서는 다음 wildcards를 지원합니다: `*`, `**`, `?`, `{abc,def}`, `{N..M}`. 여기서 `N`, `M`은 숫자이고 `'abc'`, `'def'`는 문자열입니다.                                                                                                                                                                                |
+| `NOSIGN`                     | 이 키워드를 자격 증명 대신 지정하면 모든 요청에 서명하지 않습니다.                                                                                                                                                                                                                                                                               |
+| `hmac_key` and `hmac_secret` | 지정된 endpoint와 함께 사용할 자격 증명을 지정하는 키입니다. 선택 사항입니다.                                                                                                                                                                                                                                                                     |
+| `format`                     | 파일의 [포맷](/ko/reference/formats/index)입니다.                                                                                                                                                                                                                                                                               |
+| `structure`                  | 테이블의 구조입니다. 포맷은 `'column1_name column1_type, column2_name column2_type, ...'`입니다.                                                                                                                                                                                                                                    |
+| `compression_method`         | 이 매개변수는 선택 사항입니다. 지원되는 값은 `none`, `gzip` 또는 `gz`, `brotli` 또는 `br`, `xz` 또는 `LZMA`, `zstd` 또는 `zst`입니다. 기본적으로 파일 확장자를 기준으로 압축 방식을 자동 감지합니다.                                                                                                                                                                          |
+| `partition_strategy`         | 선택 사항입니다. 지원되는 값은 `wildcard` 또는 `hive`입니다. `wildcard`는 경로에 `{_partition_id}`가 있어야 합니다. 명시적 전략이 없으면 `{_partition_id}`가 포함된 경로는 `wildcard`를 사용합니다. 다른 글롭이 포함된 경로는 파티션 전략을 사용하지 않으며 `PARTITION BY`를 무시합니다. 글롭이 없는 경로는 `file_like_engine_default_partition_strategy`가 `hive`일 때 `hive`를 사용하며, 그렇지 않으면 파티션 전략을 사용하지 않습니다. |
 
 <Info>
   **GCS**
@@ -210,7 +210,7 @@ FROM gcs(creds, url='https://s3-object-url.csv')
 
 `GCS` 테이블에 데이터를 삽입할 때 `PARTITION BY` 표현식을 지정하면 각 파티션 값별로 별도의 파일이 생성됩니다. 데이터를 파일별로 분할하면 읽기 작업의 효율을 높이는 데 도움이 됩니다.
 
-`{_partition_id}`를 포함하는 경로는 `wildcard` 파티션 전략을 의미하므로, 아래 예시의 명시적인 `partition_strategy='wildcard'`는 선택 사항입니다. 자리 표시자가 없는 경로의 경우 `compatibility`가 `26.6` 이상이면(현재 기본값 포함) 기본값은 `hive`입니다. `file_like_engine_default_partition_strategy` 설정을 참조하십시오.
+`{_partition_id}`를 포함하는 경로는 `wildcard` 파티션 전략을 의미하므로, 아래 예시의 명시적인 `partition_strategy='wildcard'`는 선택 사항입니다. 다른 글롭을 포함하는 경로는 파티션 전략을 사용하지 않으며 `PARTITION BY`를 무시합니다. 글롭이 없는 경로는 `file_like_engine_default_partition_strategy`가 `hive`이면 `hive`를 사용하고, 그렇지 않으면 파티션 전략을 사용하지 않습니다.
 
 **예시**
 

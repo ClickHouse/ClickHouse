@@ -1524,6 +1524,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/zh/reference/data-types/int-uint)) — JOIN 运行时过滤器为读取时剪枝而检查的粒度数量
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/zh/reference/data-types/int-uint)) — JOIN 运行时过滤器在读取时剪枝的粒度数量
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 构建 JOIN 右侧后，各后处理步骤的耗时。
+* `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将 JOIN 右侧载荷转换为行式格式所花费的时间。
 * `ProfileEvent_AIInputTokens` ([UInt64](/zh/reference/data-types/int-uint)) — 查询中所有 AI 函数调用消耗的 prompt 标记总数。
 * `ProfileEvent_AIOutputTokens` ([UInt64](/zh/reference/data-types/int-uint)) — 查询中所有 AI 函数调用消耗的补全标记总数。
 * `ProfileEvent_AIAPICalls` ([UInt64](/zh/reference/data-types/int-uint)) — 发送到 AI 提供商的 HTTP 请求数。

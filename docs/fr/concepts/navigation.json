@@ -5,7 +5,7 @@
     "fr/concepts/index",
     {
       "expanded": true,
-      "group": "Fundamentals",
+      "group": "Fondamentaux",
       "pages": [
         "fr/concepts/core-concepts/index",
         "fr/concepts/core-concepts/glossary",
@@ -19,11 +19,11 @@
     },
     {
       "expanded": true,
-      "group": "ClickHouse concepts",
+      "group": "Concepts ClickHouse",
       "pages": [
         "fr/concepts/features/index",
         {
-          "group": "Materialized views",
+          "group": "Vues matérialisées",
           "pages": [
             "fr/concepts/features/materialized-views/index",
             "fr/concepts/features/materialized-views/incremental-materialized-view",
@@ -32,7 +32,7 @@
           ]
         },
         {
-          "group": "Dictionaries",
+          "group": "Dictionnaires",
           "pages": [
             "fr/concepts/features/dictionaries/index",
             "fr/concepts/features/dictionaries/best-practices"
@@ -46,7 +46,7 @@
           ]
         },
         {
-          "group": "Performance",
+          "group": "Performances",
           "pages": [
             "fr/concepts/features/performance/index",
             "fr/concepts/features/performance/prewhere",
@@ -62,7 +62,7 @@
               ]
             },
             {
-              "group": "Skipping-indexes",
+              "group": "Index de saut",
               "pages": [
                 "fr/concepts/features/performance/skip-indexes/skipping-indexes",
                 "fr/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -70,7 +70,7 @@
             },
             "fr/concepts/features/performance/lazy-materialization",
             {
-              "group": "Troubleshooting",
+              "group": "Dépannage",
               "pages": [
                 "fr/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "fr/concepts/features/performance/troubleshoot/oom-canary",
@@ -81,10 +81,10 @@
           ]
         },
         {
-          "group": "Operations",
+          "group": "Opérations",
           "pages": [
             {
-              "group": "Insert",
+              "group": "Insertion",
               "pages": [
                 "fr/concepts/features/operations/insert/inserting-data",
                 "fr/concepts/features/operations/insert/asyncinserts",
@@ -95,13 +95,13 @@
               ]
             },
             {
-              "group": "Select",
+              "group": "Sélection",
               "pages": [
                 "fr/concepts/features/operations/select/joining-tables"
               ]
             },
             {
-              "group": "Update",
+              "group": "Mise à jour",
               "pages": [
                 "fr/concepts/features/operations/update/index",
                 "fr/concepts/features/operations/update/overview",
@@ -109,7 +109,7 @@
               ]
             },
             {
-              "group": "Delete",
+              "group": "Suppression",
               "pages": [
                 "fr/concepts/features/operations/delete/index",
                 "fr/concepts/features/operations/delete/overview",
@@ -125,7 +125,7 @@
           "group": "Configuration",
           "pages": [
             {
-              "group": "Settings",
+              "group": "Paramètres",
               "pages": [
                 "fr/concepts/features/configuration/settings/overview",
                 "fr/concepts/features/configuration/settings/settings-query-level",
@@ -141,7 +141,7 @@
               ]
             },
             {
-              "group": "Server config",
+              "group": "Configuration du serveur",
               "pages": [
                 "fr/concepts/features/configuration/server-config/configuration-files",
                 "fr/concepts/features/configuration/server-config/storing-data",
@@ -156,7 +156,7 @@
           ]
         },
         {
-          "group": "Security and auth",
+          "group": "Sécurité et authentification",
           "pages": [
             "fr/concepts/features/security/index",
             "fr/concepts/features/security/access-rights",
@@ -170,7 +170,7 @@
               ]
             },
             {
-              "group": "External authenticators",
+              "group": "Authentificateurs externes",
               "pages": [
                 "fr/concepts/features/security/external-authenticators/index",
                 {
@@ -195,7 +195,7 @@
           ]
         },
         {
-          "group": "Backup and restore",
+          "group": "Sauvegarde et restauration",
           "pages": [
             "fr/concepts/features/backup-restore/overview",
             "fr/concepts/features/backup-restore/restore-settings",
@@ -214,10 +214,11 @@
             "fr/concepts/features/interfaces/client",
             "fr/concepts/features/interfaces/mcp",
             {
-              "group": "Drivers and interfaces",
+              "group": "Pilotes et interfaces",
               "pages": [
                 "fr/concepts/features/interfaces/overview",
                 "fr/concepts/features/interfaces/http",
+                "fr/concepts/features/interfaces/framing-formats",
                 "fr/concepts/features/interfaces/tcp",
                 "fr/concepts/features/interfaces/adbc",
                 "fr/concepts/features/interfaces/jdbc",
@@ -241,7 +242,7 @@
             "fr/concepts/features/interfaces/web-ui-result-shaping",
             "fr/concepts/features/interfaces/web-terminal",
             {
-              "group": "Third-party clients",
+              "group": "Clients tiers",
               "pages": [
                 "fr/concepts/features/interfaces/third-party/index"
               ]
@@ -249,7 +250,7 @@
           ]
         },
         {
-          "group": "Tools and utilities",
+          "group": "Outils et utilitaires",
           "pages": [
             "fr/concepts/features/tools-and-utilities/index",
             "fr/concepts/features/tools-and-utilities/backupview",
@@ -269,7 +270,7 @@
     },
     {
       "expanded": true,
-      "group": "Best practices",
+      "group": "Bonnes pratiques",
       "pages": [
         "fr/concepts/best-practices/index",
         "fr/concepts/best-practices/choosing-a-primary-key",

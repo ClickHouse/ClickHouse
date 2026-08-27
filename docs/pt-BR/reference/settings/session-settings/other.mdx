@@ -602,7 +602,7 @@ Por padrão, 1 (habilitado).
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "hive"},{"label": "Altera a estratégia de partição padrão dos motores de tabela semelhantes a arquivos (S3, AzureBlobStorage etc.) de `wildcard` para `hive` quando nenhum `partition_strategy` é informado."}]}]} />
 
-Estratégia de partição padrão para motores semelhantes a arquivos. Aplicada apenas quando o caminho não contém um placeholder `{_partition_id}`: esse tipo de caminho é compatível apenas com a estratégia `wildcard`, portanto sempre implica `wildcard`.
+Estratégia de partição padrão para motores semelhantes a arquivos. Aplicada apenas a consultas `CREATE` com um caminho que não contenha glob nem o placeholder `{_partition_id}`. Um caminho com `{_partition_id}` sempre usa `wildcard`. Um caminho com outro glob não usa estratégia de partição e ignora `PARTITION BY`. Se essa configuração for `wildcard`, mas o caminho não tiver `{_partition_id}`, nenhuma estratégia de partição será usada; motores de tabela que não conseguem persistir essa decisão nos argumentos do motor (por exemplo, `HDFS`) rejeitam esse `CREATE`.
 
 <div id="filesystem_prefetches_limit">
   ## filesystem_prefetches_limit

@@ -180,6 +180,16 @@ WITH 문을 UNION 쿼리와 모든 서브쿼리에 전파합니다
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
+<div id="enable_hash_join_row_store">
+  ## enable_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "해시 조인의 페이로드를 행 중심 레이아웃으로 변환할 수 있는 새로운 설정입니다."}]}]} />
+
+해시 조인의 페이로드를 행 중심 레이아웃으로 변환할 수 있도록 합니다.
+
 <div id="enable_hdfs_pread">
   ## enable_hdfs_pread
 </div>

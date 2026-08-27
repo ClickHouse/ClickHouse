@@ -312,9 +312,10 @@ La charge de travail ClickHouse est disponible en préversion publique. Les limi
   ### Accès et identité
 </div>
 
-* **Les changements de rôle prennent effet à la prochaine ouverture.** Votre rôle au sein de l’organisation ClickHouse est associé à votre rôle dans l’espace de travail Fabric lorsque vous ouvrez un élément ClickHouse. Fabric ne peut pas informer ClickHouse des changements de rôle. Un changement de rôle dans l’espace de travail prend donc effet lors de la prochaine ouverture de l’élément, et non immédiatement.
+* **Les changements de rôle prennent effet à la prochaine ouverture.** Votre rôle au sein de l’organisation ClickHouse est associé à votre rôle dans l’espace de travail Fabric chaque fois que vous ouvrez un élément ClickHouse. Fabric ne peut pas informer ClickHouse des changements de rôle. Un changement de rôle dans l’espace de travail ne prend donc pas effet immédiatement.
+* **La suppression ou la rétrogradation d’un utilisateur dans Fabric ne révoque pas son accès à ClickHouse.** Comme les rôles ne sont appliqués que lorsqu’un utilisateur ouvre un élément ClickHouse, un utilisateur supprimé de l’espace de travail ou rétrogradé peut conserver son accès existant du côté de ClickHouse Cloud et, s’il n’ouvre plus jamais l’élément, ce changement ne se propage pas du tout. Pour révoquer l’accès immédiatement et de manière fiable, supprimez l’utilisateur de l’organisation dans la console ClickHouse Cloud.
 * **Accès au niveau de l’espace de travail.** Toutes les personnes de l’espace de travail peuvent utiliser ses éléments ClickHouse. La synchronisation granulaire des autorisations par table depuis OneLake n’est actuellement pas prise en charge.
-* **Le SSO de la Console nécessite une adresse e-mail dans votre profil Entra.** Les utilisateurs de ClickHouse Cloud doivent disposer d’une adresse e-mail ; si aucune adresse n’est renseignée dans votre profil Microsoft Entra, la connexion à la console Cloud échouera.
+* **Le SSO de la Console nécessite une adresse e-mail dans votre profil Entra.** Les utilisateurs de ClickHouse Cloud doivent disposer d’une adresse e-mail ; si aucune adresse n’est renseignée dans votre profil Microsoft Entra, la connexion à la console ClickHouse Cloud échouera.
 
 <div id="reference">
   ## Référence

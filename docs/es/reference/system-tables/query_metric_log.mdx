@@ -1524,6 +1524,7 @@ de forma predeterminada). Los datos también se recopilan cuando finaliza la con
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/es/reference/data-types/int-uint)) — Número de gránulos examinados para la poda durante la lectura mediante filtros de runtime de JOIN
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/es/reference/data-types/int-uint)) — Número de gránulos descartados durante la lectura mediante filtros de runtime de JOIN
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo transcurrido en los pasos de posprocesamiento tras construir el lado derecho del JOIN.
+* `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo transcurrido al transformar la carga útil del lado derecho del JOIN a un formato orientado a filas.
 * `ProfileEvent_AIInputTokens` ([UInt64](/es/reference/data-types/int-uint)) — Total de tokens de prompt consumidos en todas las llamadas a la función de IA de la consulta.
 * `ProfileEvent_AIOutputTokens` ([UInt64](/es/reference/data-types/int-uint)) — Total de tokens de salida consumidos en todas las llamadas a la función de IA de la consulta.
 * `ProfileEvent_AIAPICalls` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes HTTP enviadas a proveedores de IA.

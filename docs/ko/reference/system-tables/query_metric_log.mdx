@@ -764,8 +764,8 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_DiskPlainRewritableLocalDirectoryCreated` ([UInt64](/ko/reference/data-types/int-uint)) — LocalObjectStorage용 &#39;plain&#95;rewritable&#39; 메타데이터 저장소에서 생성한 디렉터리 수.
 * `ProfileEvent_DiskPlainRewritableLocalDirectoryRemoved` ([UInt64](/ko/reference/data-types/int-uint)) — LocalObjectStorage용 &#39;plain&#95;rewritable&#39; 메타데이터 저장소에서 제거한 디렉터리 수.
 * `ProfileEvent_DiskPlainRewritableS3DirectoryCreated` ([UInt64](/ko/reference/data-types/int-uint)) — S3ObjectStorage용 &#39;plain&#95;rewritable&#39; 메타데이터 저장소에서 생성한 디렉터리 수.
-* `ProfileEvent_DiskPlainRewritableS3DirectoryRemoved` ([UInt64](/ko/reference/data-types/int-uint)) — S3ObjectStorage용 `plain_rewritable` 메타데이터 저장소에서 제거한 디렉터리 수입니다.
-* `ProfileEvent_DiskPlainRewritableLegacyLayoutDiskCount` ([UInt64](/ko/reference/data-types/int-uint)) — 레거시 레이아웃을 사용하는 `plain_rewritable` 디스크 수입니다.
+* `ProfileEvent_DiskPlainRewritableS3DirectoryRemoved` ([UInt64](/ko/reference/data-types/int-uint)) — S3ObjectStorage용 &#39;plain&#95;rewritable&#39; 메타데이터 저장소에서 제거한 디렉터리 수.
+* `ProfileEvent_DiskPlainRewritableLegacyLayoutDiskCount` ([UInt64](/ko/reference/data-types/int-uint)) — 레거시 레이아웃을 사용하는 &#39;plain&#95;rewritable&#39; 디스크 수.
 * `ProfileEvent_S3Clients` ([UInt64](/ko/reference/data-types/int-uint)) — 생성된 S3 클라이언트 수입니다.
 * `ProfileEvent_TinyS3Clients` ([UInt64](/ko/reference/data-types/int-uint)) — 다른 클라이언트의 기존 인증 공급자를 재사용하는 S3 클라이언트 복사본 수입니다.
 * `ProfileEvent_EngineFileLikeReadFiles` ([UInt64](/ko/reference/data-types/int-uint)) — 파일을 사용하는 테이블 엔진(File/S3/URL/HDFS 등)에서 읽은 파일 수입니다.
@@ -1523,6 +1523,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/ko/reference/data-types/int-uint)) — JOIN Runtime Filters가 읽기 시점 프루닝을 위해 검사한 그래뉼 수
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/ko/reference/data-types/int-uint)) — JOIN Runtime Filters가 읽기 시점에 프루닝한 그래뉼 수
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 오른쪽 JOIN 측을 빌드한 뒤 후처리 단계에 소요된 시간
+* `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 오른쪽 JOIN 측 페이로드를 행 우선 형식으로 변환하는 데 소요된 시간입니다.
 * `ProfileEvent_AIInputTokens` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리의 모든 AI 함수 호출에서 사용된 전체 프롬프트 토큰 수
 * `ProfileEvent_AIOutputTokens` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리의 모든 AI 함수 호출에서 사용된 전체 completion 토큰 수
 * `ProfileEvent_AIAPICalls` ([UInt64](/ko/reference/data-types/int-uint)) — AI 프로바이더에 전달된 HTTP 요청 수
@@ -1540,7 +1541,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_StatelessWorkerGetLeaseRequests` ([UInt64](/ko/reference/data-types/int-uint)) — 임대된 worker 목록을 갱신하기 위해 stateless worker 디스커버리 서비스에 전송한 get&#95;lease 요청 수
 * `ProfileEvent_StatelessWorkerGetLeaseMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스에 대한 get&#95;lease 요청에 소요된 총 시간
 * `ProfileEvent_StatelessWorkerGetLeaseErrors` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스에 대한 get&#95;lease 요청이 실패한 횟수입니다(오류 또는 timeout).
-* `ProfileEvent_StatelessWorkerUpdateLeaseRequests` ([UInt64](/ko/reference/data-types/int-uint)) — worker lease를 갱신하기 위해 stateless worker 디스커버리 서비스로 전송된 update&#95;lease 요청 수입니다.
+* `ProfileEvent_StatelessWorkerUpdateLeaseRequests` ([UInt64](/ko/reference/data-types/int-uint)) — worker lease를 갱신하기 위해 stateless worker 디스커리 서비스로 전송된 update&#95;lease 요청 수입니다.
 * `ProfileEvent_StatelessWorkerUpdateLeaseMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스에 대한 update&#95;lease 요청에 소요된 총 시간입니다.
 * `ProfileEvent_StatelessWorkerUpdateLeaseErrors` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스에 대한 update&#95;lease 요청이 실패한 횟수입니다(오류 또는 timeout).
 * `ProfileEvent_StatelessWorkerServerRegisterRequests` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker가 stateless worker 디스커버리 서비스로 전송한 등록 요청 수입니다.
@@ -1575,7 +1576,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_StatelessWorkerDiscoveryListWorkersRequests` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스가 처리한 list&#95;workers 요청 수입니다.
 * `ProfileEvent_StatelessWorkerDiscoveryListWorkersErrors` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스가 오류를 반환한 list&#95;workers 요청 수입니다.
 * `ProfileEvent_StatelessWorkerDiscoveryListWorkersMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스가 list&#95;workers 요청을 처리하는 데 소요한 총 시간입니다.
-* `ProfileEvent_StatelessWorkerDiscoveryTenantRequests` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스가 처리한 테넌트 관리 요청(테넌트 생성, 업데이트, 삭제, 조회 또는 목록 조회) 수입니다.
+* `ProfileEvent_StatelessWorkerDiscoveryTenantRequests` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커리 서비스가 처리한 테넌트 관리 요청(테넌트 생성, 업데이트, 삭제, 조회 또는 목록 조회) 수입니다.
 * `ProfileEvent_StatelessWorkerDiscoveryTenantErrors` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스가 오류를 반환한 테넌트 관리 요청 수입니다.
 * `ProfileEvent_StatelessWorkerDiscoveryTenantMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스가 테넌트 관리 요청을 처리하는 데 소요한 총 시간입니다.
 * `ProfileEvent_StatelessWorkerDiscoveryInternalErrors` ([UInt64](/ko/reference/data-types/int-uint)) — 잘못된 요청을 거부해서가 아니라 내부 오류(예외 또는 조정 스토어 오류)로 인해 stateless worker 디스커버리 서비스가 처리하지 못한 요청 수입니다.

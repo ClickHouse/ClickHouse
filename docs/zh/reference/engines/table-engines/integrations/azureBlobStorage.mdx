@@ -34,7 +34,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 * `account_key` - 如果使用了 storage&#95;account&#95;url，则可在此指定 account key
 * `format` — 文件的 [format](/zh/reference/formats/index)。
 * `compression` — 支持的值：`none`、`gzip/gz`、`brotli/br`、`xz/LZMA`、`zstd/zst`。默认会根据文件扩展名自动检测压缩方式。 (等同于设置为 `auto`) 。
-* `partition_strategy` – 可选值：`wildcard` 或 `hive`。`wildcard` 要求路径中包含 `{_partition_id}`，其会被替换为分区键。`hive` 不允许使用通配符，假定该路径为表根目录，并生成 Hive 风格的分区目录，以 Snowflake ID 作为文件名、文件格式作为扩展名。如果路径包含 `{_partition_id}` 占位符，则默认使用 `wildcard`——这是唯一与此类路径兼容的策略。否则默认值为 `file_like_engine_default_partition_strategy` 设置 (`26.6` 之前的 `compatibility` 设置下为 `wildcard`，否则为 `hive`)。
+* `partition_strategy` – 可选值：`wildcard` 或 `hive`。`wildcard` 要求路径中包含 `{_partition_id}`，其会被替换为分区键。`hive` 不允许使用通配符，假定该路径为表根目录，并生成 Hive 风格的分区目录，以 Snowflake ID 作为文件名、文件格式作为扩展名。未显式指定策略时，包含 `{_partition_id}` 的路径使用 `wildcard`。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不含 glob 的路径会在 `file_like_engine_default_partition_strategy` 为 `hive` 时使用 `hive`；否则不使用分区策略。
 * `partition_columns_in_data_file` - 仅在 `hive` 分区策略下使用。用于告知 ClickHouse 是否应预期分区列会写入数据文件中。默认为 `false`。
 * `extra_credentials` - 使用 `client_id` 和 `tenant_id` 进行身份验证。如果提供了 extra&#95;credentials，则其优先级高于 `account_name` 和 `account_key`。
 
@@ -121,7 +121,9 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
   #### 分区策略
 </div>
 
-`wildcard`：将文件路径中的 `{_partition_id}` 通配符替换为实际的分区键。不支持读取。当路径包含 `{_partition_id}` 占位符时 (唯一与此类路径兼容的策略) 默认选用；否则在 `compatibility` 设置早于 `26.6` 时默认选用；其余情况下默认值为 `hive` (参见 `file_like_engine_default_partition_strategy` 设置) 。
+`wildcard`：将文件路径中的 `{_partition_id}` 通配符替换为实际的分区键。不支持读取。当路径包含 `{_partition_id}` 时默认选用。
+
+未设置 `partition_strategy` 时，包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不含 glob 的路径在 `file_like_engine_default_partition_strategy` 为 `hive` 时使用 `hive`；否则不使用分区策略。
 
 `hive` 对读写采用 hive 风格分区。读取通过递归 glob pattern 实现。写入会按以下格式生成文件：`<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`。
 

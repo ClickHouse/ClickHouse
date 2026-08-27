@@ -560,7 +560,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_MergedIntoWideParts` ([UInt64](/ru/reference/data-types/int-uint)) — Количество частей, объединённых в формате Wide.
 * `ProfileEvent_MergedIntoCompactParts` ([UInt64](/ru/reference/data-types/int-uint)) — Количество частей, объединённых в формате Compact.
 * `ProfileEvent_MergeTreeDataProjectionWriterRows` ([UInt64](/ru/reference/data-types/int-uint)) — Количество строк, INSERTed в проекцию таблиц MergeTree.
-* `ProfileEvent_MergeTreeDataProjectionWriterUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Несжатые байты (для столбцов в том виде, в котором они хранятся в памяти), INSERTed в проекцию таблиц MergeTree.
+* `ProfileEvent_MergeTreeDataProjectionWriterUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Несжатые байты (для столбцов в том виде, в каком они хранятся в памяти), INSERTed в проекцию таблиц MergeTree.
 * `ProfileEvent_MergeTreeDataProjectionWriterCompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Байты, записанные в filesystem для данных, INSERTed в проекцию таблиц MergeTree.
 * `ProfileEvent_MergeTreeDataProjectionWriterBlocks` ([UInt64](/ru/reference/data-types/int-uint)) — Количество блоков, INSERTed в проекцию таблиц MergeTree. Каждый блок образует часть данных нулевого уровня.
 * `ProfileEvent_MergeTreeDataProjectionWriterBlocksAlreadySorted` ([UInt64](/ru/reference/data-types/int-uint)) — Количество блоков, вставленных в проекцию таблиц MergeTree, которые уже были отсортированы.
@@ -1518,6 +1518,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/ru/reference/data-types/int-uint)) — Количество гранул, проверенных JOIN Runtime Filters для отсечения во время чтения
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/ru/reference/data-types/int-uint)) — Количество гранул, отсечённых JOIN Runtime Filters во время чтения
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Затраченное время на этапы постобработки после построения правой части JOIN.
+* `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Затраченное время на преобразование полезной нагрузки правой части JOIN в построчный формат.
 * `ProfileEvent_AIInputTokens` ([UInt64](/ru/reference/data-types/int-uint)) — Общее число токенов промпта, использованных во всех вызовах функции ИИ в рамках запроса.
 * `ProfileEvent_AIOutputTokens` ([UInt64](/ru/reference/data-types/int-uint)) — Общее число выходных токенов, использованных во всех вызовах функции ИИ в рамках запроса.
 * `ProfileEvent_AIAPICalls` ([UInt64](/ru/reference/data-types/int-uint)) — Число HTTP-запросов, отправленных AI-провайдерам.

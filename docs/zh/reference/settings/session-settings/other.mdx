@@ -592,7 +592,7 @@ ClickHouse 会从该表的过时副本中选择最合适的一个。
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "hive"},{"label": "未提供 `partition_strategy` 时，将类文件表引擎（S3、AzureBlobStorage 等）的默认分区策略从 `wildcard` 改为 `hive`。"}]}]} />
 
-类文件表引擎的默认分区策略。仅当路径不包含 `{_partition_id}` 占位符时适用：此类路径仅兼容 `wildcard` 策略，因此始终采用 `wildcard`。
+类文件表引擎的默认分区策略。仅适用于路径中不含 glob 或 `{_partition_id}` 占位符的 `CREATE` 查询。包含 `{_partition_id}` 的路径始终使用 `wildcard`。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。如果此设置为 `wildcard`，但路径中没有 `{_partition_id}`，则不使用分区策略；无法将此选择持久化到引擎参数中的表引擎 (例如 `HDFS`) 将拒绝此类 `CREATE`。
 
 <div id="filesystem_prefetches_limit">
   ## filesystem_prefetches_limit

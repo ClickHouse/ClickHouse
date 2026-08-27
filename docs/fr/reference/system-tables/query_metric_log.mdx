@@ -351,7 +351,7 @@ par défaut). Les données sont également collectées à la fin de la requête 
 * `ProfileEvent_DistributedDelayedInsertsMilliseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre total de millisecondes passées pendant lesquelles l’INSERT d’un bloc dans une table Distributed a été bridé en raison d’un nombre élevé d’octets en attente.
 * `ProfileEvent_DuplicatedInsertedBlocks` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’insertions synchrones dans une table *MergeTree qui ont été dédupliquées.
 * `ProfileEvent_SelfDuplicatedAsyncInserts` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’async inserts dans le bloc inséré dans une table ReplicatedMergeTree qui ont été auto-dédupliquées.
-* `ProfileEvent_DuplicatedAsyncInserts` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’async inserts dans le bloc inséré dans une table ReplicatedMergeTree qui ont été dédupliquées.
+* `ProfileEvent_DuplicatedAsyncInserts` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’async inserts dans le bloc inséré dans une table ReplicatedMergeTree qui ont été déduquées.
 * `ProfileEvent_DuplicationElapsedMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps total passé à vérifier les doublons des blocs insérés dans les tables *MergeTree.
 * `ProfileEvent_DuplicationDataHashComputations` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de calculs de hash de données par colonne effectués lors de la déduplication des blocs insérés dans les tables *MergeTree (échecs de cache dans le hash de déduplication unifié).
 * `ProfileEvent_ZooKeeperInit` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de fois où une connexion à ZooKeeper a été établie.
@@ -1524,6 +1524,7 @@ par défaut). Les données sont également collectées à la fin de la requête 
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de granules examinées pour l’élagage lors de la lecture par les JOIN Runtime Filters
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de granules élaguées lors de la lecture par les JOIN Runtime Filters
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps écoulé pour les étapes de post-traitement après la construction du côté droit du JOIN.
+* `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps écoulé pour transformer la charge utile du côté droit du JOIN au format orienté lignes.
 * `ProfileEvent_AIInputTokens` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre total de tokens de prompt consommés par l’ensemble des appels à la fonction IA dans la requête.
 * `ProfileEvent_AIOutputTokens` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre total de tokens de complétion consommés par l’ensemble des appels à la fonction IA dans la requête.
 * `ProfileEvent_AIAPICalls` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de requêtes HTTP acheminées vers des fournisseurs d’IA.

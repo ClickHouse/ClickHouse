@@ -24,6 +24,12 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />仅在 ClickHouse Cloud 中有效。允许从分布式缓存读取。这是一个无需重启即可生效的服务器级开关，因此没有自身查询 profile 的后台操作 (合并、变更、`Buffer` 表刷写) 也会遵循此设置。各个查询可通过 `force_read_through_distributed_cache` 设置覆盖此设置。
 
+<div id="enable_silk_runtime">
+  ## enable_silk_runtime
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />启用对 silk fiber 运行时的实验性支持：在服务器启动时初始化 silk fiber 调度器，使支持该运行时的子系统能够在 fiber 上运行其作业
+
 <div id="enable_webterminal">
   ## enable_webterminal
 </div>

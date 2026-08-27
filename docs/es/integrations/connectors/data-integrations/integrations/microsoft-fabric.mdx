@@ -312,7 +312,8 @@ La carga de trabajo de ClickHouse está en versión preliminar pública. Las lim
   ### Acceso e identidad
 </div>
 
-* **Los cambios de rol se aplican la próxima vez que abras un elemento.** Tu rol en la organización de ClickHouse se asigna según tu rol en el espacio de trabajo de Fabric al abrir un elemento de ClickHouse. Fabric no puede notificar a ClickHouse los cambios de rol, por lo que un cambio en el rol del espacio de trabajo surte efecto la próxima vez que abras el elemento, no de inmediato.
+* **Los cambios de rol se aplican la próxima vez que abras un elemento.** Tu rol en la organización de ClickHouse se asigna según tu rol en el espacio de trabajo de Fabric cada vez que abres un elemento de ClickHouse. Fabric no puede notificar a ClickHouse los cambios de rol, por lo que un cambio en el rol del espacio de trabajo no surte efecto de inmediato.
+* **Eliminar o degradar a un usuario en Fabric no revoca su acceso a ClickHouse.** Como los roles solo se aplican cuando un usuario abre un elemento de ClickHouse, un usuario que se elimina del espacio de trabajo o cuyo rol se degrada puede conservar su acceso existente en ClickHouse Cloud y, si nunca vuelve a abrir el elemento, ese cambio no se propaga en absoluto. Para revocar el acceso de inmediato y de forma fiable, elimina al usuario de la organización en la consola de ClickHouse Cloud.
 * **Acceso a nivel de espacio de trabajo.** Todos los usuarios del espacio de trabajo pueden usar sus elementos de ClickHouse. Actualmente no se admite la sincronización granular de permisos por tabla desde OneLake.
 * **El SSO de Console requiere una dirección de correo electrónico en tu perfil de Entra.** Los usuarios de ClickHouse Cloud necesitan una dirección de correo electrónico; si no tienes una configurada en tu perfil de Microsoft Entra, no podrás iniciar sesión en la consola de Cloud.
 

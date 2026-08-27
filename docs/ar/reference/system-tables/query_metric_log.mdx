@@ -1524,6 +1524,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الوحدات الحبيبية التي فُحصت للاستبعاد في وقت القراءة بواسطة مرشحات وقت تشغيل JOIN
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الوحدات الحبيبية المستبعَدة في وقت القراءة بواسطة مرشحات وقت تشغيل JOIN
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الزمن المنقضي لخطوات المعالجة اللاحقة بعد بناء الجانب الأيمن من JOIN.
+* `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الزمن المنقضي لتحويل حمولة الجانب الأيمن من JOIN إلى تنسيق الصفوف الرئيسي.
 * `ProfileEvent_AIInputTokens` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي رموز prompt المستهلَكة عبر جميع استدعاءات AI function في الاستعلام.
 * `ProfileEvent_AIOutputTokens` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي رموز الإكمال المستهلَكة عبر جميع استدعاءات AI function في الاستعلام.
 * `ProfileEvent_AIAPICalls` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات HTTP التي أُرسلت إلى موفري خدمات الذكاء الاصطناعي.

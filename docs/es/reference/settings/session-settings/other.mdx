@@ -602,7 +602,7 @@ De forma predeterminada, 1 (habilitado).
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "hive"},{"label": "Cambia la estrategia de partición predeterminada de los motores de tabla tipo archivo (S3, AzureBlobStorage, etc.) de `wildcard` a `hive` cuando no se proporciona `partition_strategy`."}]}]} />
 
-Estrategia de partición predeterminada para motores tipo archivo. Se aplica solo cuando la ruta no contiene un marcador de posición `{_partition_id}`: dicha ruta solo es compatible con la estrategia `wildcard`, por lo que siempre implica `wildcard`.
+Estrategia de partición predeterminada para motores tipo archivo. Se aplica solo a consultas `CREATE` con una ruta que no contiene ningún patrón glob ni el marcador de posición `{_partition_id}`. Una ruta con `{_partition_id}` siempre usa `wildcard`. Una ruta con otro patrón glob no utiliza ninguna estrategia de partición e ignora `PARTITION BY`. Si esta configuración es `wildcard`, pero la ruta no contiene `{_partition_id}`, no se utiliza ninguna estrategia de partición; los motores de tabla que no pueden persistir esta decisión en sus argumentos de motor (por ejemplo, `HDFS`) rechazan dicho `CREATE`.
 
 <div id="filesystem_prefetches_limit">
   ## filesystem_prefetches_limit
