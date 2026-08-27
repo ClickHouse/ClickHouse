@@ -3,11 +3,13 @@ slug: /cloud/managed-postgres/upgrades
 sidebarTitle: 'Upgrades'
 title: 'Upgrades'
 description: 'How PostgreSQL version upgrades work in ClickHouse Managed Postgres'
-keywords: ['managed postgres upgrades', 'postgres version', 'minor upgrade', 'major upgrade', 'maintenance window']
+keywords: ['managed postgres upgrades', 'postgres version', 'minor upgrade', 'major upgrade', 'maintenance window', 'scheduled upgrades']
 doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
 
@@ -25,12 +27,98 @@ These are performed via failover and typically result in only a brief disconnect
 
 For instances with [standbys](/products/managed-postgres/high-availability) enabled, the upgrade is applied to the standby first, followed by a failover to minimize downtime.
 
-## Maintenance windows {#maintenance-windows}
+## Scheduled upgrades {#scheduled-upgrades}
 
-Default maintenance window is 14:00 to 16:00 UTC on Sunday.
-Expected downtime is less than 1 minute within the window.
+<ScalePlanFeatureBadge feature="Scheduled upgrades" linking_verb_are="true"/>
 
-For Enterprise Tier organizations, ClickHouse Managed Postgres supports maintenance windows so that upgrades and other maintenance operations can be scheduled at a time that's least disruptive to your workload. UI and API support for configuring maintenance windows is coming soon. In the meantime, contact [support](https://clickhouse.com/support/program) to set up a maintenance window for your instance.
+By default, maintenance is applied to your instance whenever a new release is ready.
+With **scheduled upgrades** you choose a two-hour UTC window during which that
+maintenance may be applied, so the brief failover lands at the time that's least
+disruptive to your workload. Expected downtime is less than 1 minute within the window.
+
+On the Enterprise plan you can also restrict upgrades to specific
+[days of the week](#days-of-the-week). On the Scale plan you choose the time period only,
+and upgrades may be applied on any day within it.
+
+### Configure a schedule {#configure-a-schedule}
+
+<Steps>
+<Step title="Open the instance settings" id="open-settings">
+Select your instance, then select **Settings** from the left menu and scroll to the
+**Configuration** section.
+</Step>
+<Step title="Open the scheduled upgrades flyout" id="open-flyout">
+In the **Scheduled upgrades** subsection, select **Configure schedule**. If a schedule
+is already set, the current schedule is shown and the button reads **Edit schedule**.
+</Step>
+<Step title="Pick a time period" id="pick-time-period">
+Select one of the twelve two-hour UTC windows from the **Time period (UTC)** list. A time
+period is required.
+</Step>
+<Step title="Optionally restrict the days" id="pick-days">
+On the Enterprise plan, select one or more days under **Day(s) of the week**. Leave every
+day unselected to allow upgrades on any day within the time period.
+</Step>
+<Step title="Save" id="save">
+Select **Save**. The schedule takes effect immediately and is shown in the
+**Scheduled upgrades** subsection, for example
+`Scheduled upgrades: Sat, Sun at 12:00 a.m. - 2:00 a.m. UTC`.
+</Step>
+</Steps>
+
+You need the `control-plane:postgres-service:manage` permission on the instance to change
+its schedule. The controls are also disabled while an instance is stopped or is still
+being provisioned.
+
+### Time periods {#time-periods}
+
+Windows are two hours long and are always expressed in UTC — there's no local-timezone
+selection. The available windows are:
+
+| First half of the day (UTC) | Second half of the day (UTC) |
+|-----------------------------|------------------------------|
+| 12:00 a.m. - 2:00 a.m.      | 12:00 p.m. - 2:00 p.m.       |
+| 2:00 a.m. - 4:00 a.m.       | 2:00 p.m. - 4:00 p.m.        |
+| 4:00 a.m. - 6:00 a.m.       | 4:00 p.m. - 6:00 p.m.        |
+| 6:00 a.m. - 8:00 a.m.       | 6:00 p.m. - 8:00 p.m.        |
+| 8:00 a.m. - 10:00 a.m.      | 8:00 p.m. - 10:00 p.m.       |
+| 10:00 a.m. - 12:00 p.m.     | 10:00 p.m. - 12:00 a.m.      |
+
+Custom start times, custom window lengths, and more than one window per instance aren't
+supported.
+
+### Days of the week {#days-of-the-week}
+
+<EnterprisePlanFeatureBadge feature="Restricting upgrades to specific days of the week"/>
+
+Restricting the days is optional:
+
+- **No days selected** — upgrades may be applied on any day, inside the chosen time period.
+- **One or more days selected** — upgrades are only applied on those days, inside the
+  chosen time period. Selecting all seven days is equivalent to selecting none.
+
+### What a schedule applies to {#schedule-scope}
+
+A schedule governs **platform maintenance** only — the minor version upgrades, managed
+service feature updates, and operating system patches described in
+[Maintenance updates](#maintenance-updates).
+
+Changes that you initiate yourself aren't deferred to the window and are applied as soon
+as you make them. This includes [scaling](/products/managed-postgres/scaling) an instance,
+resizing storage, and changing [configuration parameters](/products/managed-postgres/settings).
+
+<Note>
+Scheduled upgrades are best effort. Maintenance may be applied outside your window when it's
+required for the health of your instance — for example when disk usage reaches 95% — or for
+critical security patches and vulnerability fixes. You'll be notified of such exceptions as
+necessary.
+</Note>
+
+### Read replicas {#read-replicas}
+
+[Read replicas](/products/managed-postgres/read-replicas) follow the schedule of their
+primary instance and don't have a schedule of their own, so the **Scheduled upgrades**
+section isn't shown for them.
 
 ## Major version upgrades {#major-version-upgrades}
 

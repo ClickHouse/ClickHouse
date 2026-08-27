@@ -89,7 +89,7 @@ ClickHouse 访问实体包括：
 1. 用户账户的设置。
 2. 用户账户默认角色的设置。如果某项设置在多个角色中都进行了配置，则其生效顺序未定义。
 3. 分配给用户或其默认角色的 SETTINGS PROFILE 中的设置。如果某项设置在多个 profile 中都进行了配置，则其生效顺序未定义。
-4. 默认应用于整个服务器的设置，或来自[默认 profile](/zh/reference/settings/server-settings/settings#default_profile)的设置。
+4. 默认应用于整个服务器的设置，或来自[默认 profile](/zh/reference/settings/server-settings/settings/default#default_profile)的设置。
 
 <div id="role-management">
   ### 角色
@@ -121,11 +121,13 @@ ClickHouse 访问实体包括：
 
 行策略是一种过滤器，用于定义用户或角色可以访问哪些行。行策略包含针对特定表的过滤条件，以及应应用此行策略的角色和/或用户列表。
 
+行策略仅在本地读取表数据时生效。对于 [Distributed](/zh/reference/engines/table-engines/special/distributed) 表，或其他将读取操作委托给远程服务器的表，请在每台服务器的底层表上定义策略：无法将远程表本身的策略应用于发送过去的查询，因此会拒绝通过该表进行读取。当发起方发送已构建的读取计划时，此类底层表策略不会生效，因此，对于必须强制执行行策略的用户，请保持 [`serialize_query_plan = 0`](/zh/reference/settings/session-settings/serialize#serialize_query_plan) (请参阅 [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891)) 。
+
 <Note>
   只有在你拥有只读访问权限时，行策略才有意义。如果你可以修改表，或在表之间复制分区，行策略的限制就会被绕过。
 </Note>
 
-管理查询：
+管理语句：
 
 * [CREATE ROW POLICY](/zh/reference/statements/create/row-policy)
 * [ALTER ROW POLICY](/zh/reference/statements/alter/row-policy)
@@ -165,16 +167,16 @@ SETTINGS PROFILE 是由一组[设置](/zh/reference/settings/index)构成的。S
 * [SHOW QUOTAS](/zh/reference/statements/show#show-quotas)
 
 <div id="enabling-access-control">
-  ### 启用 SQL 驱动的访问控制与账户管理
+  ### 启用 基于 SQL 的访问控制与账户管理
 </div>
 
 * 设置用于存储配置的目录。
 
-  ClickHouse 会将访问实体配置存储在服务器配置参数 [access&#95;control&#95;path](/zh/reference/settings/server-settings/settings#access_control_path) 指定的文件夹中。
+  ClickHouse 会将访问实体配置存储在服务器配置参数 [access&#95;control&#95;path](/zh/reference/settings/server-settings/settings/access-control#access_control_path) 指定的文件夹中。
 
-* 为至少一个用户账户启用 SQL 驱动的访问控制与账户管理。
+* 为至少一个用户账户启用 基于 SQL 的访问控制与账户管理。
 
-  默认情况下，所有用户的 SQL 驱动访问控制与账户管理均处于禁用状态。你需要在 `users.xml` 配置文件中至少配置一个用户，并将 [`access_management`](/zh/concepts/features/configuration/settings/settings-users#access_management-user-setting)、`named_collection_control`、`show_named_collections` 和 `show_named_collections_secrets` 这些设置的值设为 1。
+  默认情况下，所有用户的 基于 SQL 的访问控制与账户管理均处于禁用状态。你需要在 `users.xml` 配置文件中至少配置一个用户，并将 [`access_management`](/zh/concepts/features/configuration/settings/settings-users#access_management-user-setting)、`named_collection_control`、`show_named_collections` 和 `show_named_collections_secrets` 这些设置的值设为 1。
 
 <div id="defining-sql-users-and-roles">
   ## 定义 SQL 用户和角色
