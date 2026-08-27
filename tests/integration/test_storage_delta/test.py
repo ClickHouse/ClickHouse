@@ -3485,51 +3485,124 @@ def test_count_from_cache(started_cluster):
     )
 
 
-def test_writes(started_cluster):
+def delta_engine_definition(started_cluster, storage_type, path):
+    """ENGINE clause for a Delta table which already exists in the object storage."""
+    if storage_type == "s3":
+        return (
+            f"DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
+            f"/{started_cluster.minio_bucket}/{path}/', 'minio', '{minio_secret_key}')"
+        )
+    return (
+        f"DeltaLakeAzure('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', "
+        f"'{started_cluster.azure_container_name}', '{path}', Parquet)"
+    )
+
+
+def delta_table_function(started_cluster, storage_type, path):
+    if storage_type == "s3":
+        return (
+            f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
+            f"/{started_cluster.minio_bucket}/{path}/', 'minio', '{minio_secret_key}')"
+        )
+    return (
+        f"deltaLakeAzure('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', "
+        f"'{started_cluster.azure_container_name}', '{path}', Parquet)"
+    )
+
+
+def data_file_table_function(started_cluster, storage_type, data_file):
+    """Table function reading a single data file, bypassing the Delta metadata."""
+    if storage_type == "s3":
+        return (
+            f"s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
+            f"/{started_cluster.minio_bucket}/{data_file}', 'minio', '{minio_secret_key}')"
+        )
+    return (
+        f"azureBlobStorage('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', "
+        f"'{started_cluster.azure_container_name}', '{data_file}', Parquet)"
+    )
+
+
+def create_empty_delta_table(
+    started_cluster, storage_type, path, schema, partition_by=None
+):
+    empty_table = pa.Table.from_arrays(
+        [pa.array([], type=field.type) for field in schema], schema=schema
+    )
+    if storage_type == "s3":
+        write_deltalake_with_retry(
+            f"s3://{started_cluster.minio_bucket}/{path}",
+            empty_table,
+            storage_options=get_storage_options(started_cluster),
+            mode="overwrite",
+            partition_by=partition_by or [],
+        )
+        return
+
+    # delta-rs cannot write to azurite, so create the table locally and upload it.
+    write_deltalake(
+        f"file:///{path}",
+        empty_table,
+        mode="overwrite",
+        partition_by=partition_by or [],
+    )
+    default_upload_directory(started_cluster, "azure", f"/{path}", "")
+
+
+def list_delta_data_files(started_cluster, storage_type, path):
+    """Data files written by ClickHouse: the ones from delta-rs and spark are *.snappy.parquet."""
+    if storage_type == "s3":
+        names = [
+            obj.object_name
+            for obj in started_cluster.minio_client.list_objects(
+                started_cluster.minio_bucket, path, recursive=True
+            )
+        ]
+    else:
+        names = [
+            blob.name
+            for blob in started_cluster.container_client.list_blobs(
+                name_starts_with=path
+            )
+        ]
+    return sorted(
+        name
+        for name in names
+        if name.endswith("parquet") and not name.endswith("snappy.parquet")
+    )
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+def test_writes(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     instance_disabled_kernel = cluster.instances["node_with_disabled_delta_kernel"]
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
     table_name = randomize_table_name("test_writes")
-    result_file = f"{table_name}_data"
+    path = f"{table_name}_data"
 
     schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
-    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
-    write_deltalake_with_retry(
-        f"s3://root/{result_file}",
-        pa.Table.from_arrays(empty_arrays, schema=schema),
-        storage_options=get_storage_options(started_cluster),
-        mode="overwrite",
-    )
+    create_empty_delta_table(started_cluster, storage_type, path, schema)
 
+    engine = delta_engine_definition(started_cluster, storage_type, path)
+    for node in [instance, instance_disabled_kernel]:
+        node.query(
+            f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = {engine}"
+        )
+
+    table_function = delta_table_function(started_cluster, storage_type, path)
+
+    # A table function insert takes the column names from the select expressions.
     instance.query(
-        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
-    )
-    instance_disabled_kernel.query(
-        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+        f"INSERT INTO TABLE FUNCTION {table_function} SELECT toInt32(number) AS id, toString(number) AS name FROM numbers(10)"
     )
 
-    instance.query(
-        f"INSERT INTO TABLE FUNCTION deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', settings allow_experimental_delta_kernel_rs=1) SELECT number as name, toString(number) as id from numbers(10)"
-    )
-
-    s3_objects = list(minio_client.list_objects(bucket, result_file, recursive=True))
-    file_name = None
-    for obj in s3_objects:
-        print(f"File: {obj.object_name}")
-        if obj.object_name.endswith("parquet") and not obj.object_name.endswith(
-            "snappy.parquet"
-        ):
-            file_name = obj.object_name
-
+    data_files = list_delta_data_files(started_cluster, storage_type, path)
+    assert len(data_files) == 1, f"Data files: {data_files}"
     assert (
-        "0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9"
+        "\n".join(f"{i}\t{i}" for i in range(10))
         == instance.query(
-            f"SELECT * FROM s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{file_name}', 'minio', '{minio_secret_key}')"
+            f"SELECT * FROM {data_file_table_function(started_cluster, storage_type, data_files[0])}"
         ).strip()
     )
-
-    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
     def check_count(expected):
         assert expected == int(instance.query(f"SELECT count() FROM {table_function}"))
@@ -3539,40 +3612,38 @@ def test_writes(started_cluster):
         assert expected == int(instance.query(f"SELECT count() FROM {table_name}"))
 
     def check_data(expected):
+        expected_rows = "\n".join(f"{i}\t{i}" for i in range(expected))
         assert (
-            expected
+            expected_rows
             == instance.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
         )
         assert (
-            expected
+            expected_rows
             == instance_disabled_kernel.query(
                 f"SELECT * FROM {table_name} ORDER BY all"
             ).strip()
         )
         assert (
-            expected
+            expected_rows
             == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
         )
 
     check_count(10)
-    check_data("0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9")
+    check_data(10)
 
     instance.query(
         f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10, 10)"
     )
     check_count(20)
-    check_data(
-        "0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9\n10\t10\n11\t11\n12\t12\n13\t13\n14\t14\n15\t15\n16\t16\n17\t17\n18\t18\n19\t19"
-    )
+    check_data(20)
 
 
-def test_partitioned_writes(started_cluster):
+@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+def test_partitioned_writes(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     instance_disabled_kernel = cluster.instances["node_with_disabled_delta_kernel"]
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
     table_name = randomize_table_name("test_partitioned_writes")
-    result_file = f"{table_name}_data"
+    path = f"{table_name}_data"
     partition_columns = ["id", "comment"]
 
     schema = pa.schema(
@@ -3582,66 +3653,48 @@ def test_partitioned_writes(started_cluster):
             ("comment", pa.string(), False),
         ]
     )
-    empty_arrays = [
-        pa.array([], type=pa.int32()),
-        pa.array([], type=pa.string()),
-        pa.array([], type=pa.string()),
-    ]
-    write_deltalake_with_retry(
-        f"s3://root/{result_file}",
-        pa.Table.from_arrays(empty_arrays, schema=schema),
-        storage_options=get_storage_options(started_cluster),
-        mode="overwrite",
-        partition_by=partition_columns,
+    create_empty_delta_table(
+        started_cluster, storage_type, path, schema, partition_by=partition_columns
     )
 
-    instance.query(
-        f"CREATE TABLE {table_name} (id Int32, name String, comment String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
-    )
-    instance_disabled_kernel.query(
-        f"CREATE TABLE {table_name} (id Int32, name String, comment String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
-    )
+    engine = delta_engine_definition(started_cluster, storage_type, path)
+    for node in [instance, instance_disabled_kernel]:
+        node.query(
+            f"CREATE TABLE {table_name} (id Int32, name String, comment String) ENGINE = {engine}"
+        )
     instance.query(
         f"INSERT INTO {table_name} SELECT number, toString(number), concat('comment-', toString(number % 2)) FROM numbers(10)"
     )
 
     def check_files(expected):
-        s3_objects = list(
-            minio_client.list_objects(bucket, result_file, recursive=True)
-        )
-        file_names = []
-        for obj in s3_objects:
-            print(f"File: {obj.object_name}")
-            if obj.object_name.endswith("parquet") and not obj.object_name.endswith(
-                "snappy.parquet"
-            ):
-                file_names.append(obj.object_name)
-
+        file_names = list_delta_data_files(started_cluster, storage_type, path)
         assert len(file_names) == expected
-        file_names.sort()
-        expected_ids = [str(i) for i in range(expected)]
-        expected_ids.sort()
+
+        expected_ids = sorted(str(i) for i in range(expected))
         for i in range(expected):
             expected_id = expected_ids[i]
             comment_id = int(expected_ids[i]) % 2
             assert file_names[i].startswith(
-                f"{result_file}/id={expected_id}/comment=comment-{comment_id}/"
+                f"{path}/id={expected_id}/comment=comment-{comment_id}/"
+            )
+            data_file = data_file_table_function(
+                started_cluster, storage_type, file_names[i]
             )
             assert (
                 f"{expected_id}\t{expected_id}\tcomment-{comment_id}"
                 == instance.query(
-                    f"SELECT id, name, comment FROM s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{file_names[i]}', 'minio', '{minio_secret_key}') ORDER BY all"
+                    f"SELECT id, name, comment FROM {data_file} ORDER BY all"
                 ).strip()
             )
             assert (
                 f"{expected_id}"
                 == instance.query(
-                    f"SELECT * FROM s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{file_names[i]}', 'minio', '{minio_secret_key}')",
+                    f"SELECT * FROM {data_file}",
                     settings={"use_hive_partitioning": 0},
                 ).strip()
             )
 
-    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    table_function = delta_table_function(started_cluster, storage_type, path)
 
     def check_count(expected):
         assert expected == int(
@@ -3661,158 +3714,35 @@ def test_partitioned_writes(started_cluster):
         )
 
     def check_data(expected):
+        expected_rows = "\n".join(
+            f"{i}\t{i}\tcomment-{i % 2}" for i in range(expected)
+        )
         assert (
-            expected
+            expected_rows
             == instance.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
         )
         # TODO: Fix read with disabled delta-kernel?
         # assert (
-        #    expected
+        #    expected_rows
         #    == instance_disabled_kernel.query(
         #        f"SELECT * FROM {table_name} ORDER BY all"
         #    ).strip()
         # )
         assert (
-            expected
+            expected_rows
             == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
         )
 
     check_files(10)
     check_count(10)
-    check_data(
-        "0\t0\tcomment-0\n1\t1\tcomment-1\n2\t2\tcomment-0\n3\t3\tcomment-1\n4\t4\tcomment-0\n5\t5\tcomment-1\n6\t6\tcomment-0\n7\t7\tcomment-1\n8\t8\tcomment-0\n9\t9\tcomment-1"
-    )
+    check_data(10)
 
     instance.query(
         f"INSERT INTO {table_name} SELECT number, toString(number), concat('comment-', toString(number % 2))  FROM numbers(10, 10)"
     )
     check_count(20)
     check_files(20)
-    check_data(
-        "0\t0\tcomment-0\n1\t1\tcomment-1\n2\t2\tcomment-0\n3\t3\tcomment-1\n4\t4\tcomment-0\n5\t5\tcomment-1\n6\t6\tcomment-0\n7\t7\tcomment-1\n8\t8\tcomment-0\n9\t9\tcomment-1\n10\t10\tcomment-0\n11\t11\tcomment-1\n12\t12\tcomment-0\n13\t13\tcomment-1\n14\t14\tcomment-0\n15\t15\tcomment-1\n16\t16\tcomment-0\n17\t17\tcomment-1\n18\t18\tcomment-0\n19\t19\tcomment-1"
-    )
-
-
-def create_empty_delta_table_on_azure(
-    started_cluster, table_name, schema, partition_by=None
-):
-    """Create an empty Delta table locally and upload it to Azurite."""
-    local_path = f"/{table_name}"
-    empty_arrays = [pa.array([], type=field.type) for field in schema]
-    write_deltalake(
-        f"file://{local_path}",
-        pa.Table.from_arrays(empty_arrays, schema=schema),
-        mode="overwrite",
-        partition_by=partition_by or [],
-    )
-    default_upload_directory(started_cluster, "azure", local_path, "")
-
-
-def list_azure_data_files(started_cluster, prefix):
-    return sorted(
-        blob.name
-        for blob in started_cluster.container_client.list_blobs(
-            name_starts_with=prefix
-        )
-        if blob.name.endswith(".parquet")
-    )
-
-
-def test_writes_azure(started_cluster):
-    instance = started_cluster.instances["node1"]
-    instance_disabled_kernel = started_cluster.instances[
-        "node_with_disabled_delta_kernel"
-    ]
-    table_name = randomize_table_name("test_writes_azure")
-
-    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
-    create_empty_delta_table_on_azure(started_cluster, table_name, schema)
-
-    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
-    container = started_cluster.azure_container_name
-    for node in [instance, instance_disabled_kernel]:
-        node.query(
-            f"""
-            CREATE TABLE {table_name} (id Int32, name String)
-            ENGINE=DeltaLakeAzure('{connection_string}', '{container}', '{table_name}', Parquet)
-            """
-        )
-
-    table_function = (
-        f"deltaLakeAzure('{connection_string}', '{container}', '{table_name}', Parquet)"
-    )
-
-    def check_data(expected):
-        expected_rows = "\n".join(f"{i}\t{i}" for i in range(expected))
-        assert (
-            expected_rows
-            == instance.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
-        )
-        assert (
-            expected_rows
-            == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
-        )
-        assert (
-            expected_rows
-            == instance_disabled_kernel.query(
-                f"SELECT * FROM {table_name} ORDER BY all"
-            ).strip()
-        )
-
-    instance.query(
-        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10)"
-    )
-    check_data(10)
-
-    instance.query(
-        f"INSERT INTO TABLE FUNCTION {table_function} SELECT toInt32(number) AS id, toString(number) AS name FROM numbers(10, 10)"
-    )
     check_data(20)
-
-    # Data files are written next to the delta log, not into some other prefix.
-    data_files = list_azure_data_files(started_cluster, f"{table_name}/")
-    assert len(data_files) == 2, f"Data files: {data_files}"
-    for data_file in data_files:
-        assert "/" not in data_file[len(f"{table_name}/") :], f"File: {data_file}"
-
-
-def test_partitioned_writes_azure(started_cluster):
-    instance = started_cluster.instances["node1"]
-    table_name = randomize_table_name("test_partitioned_writes_azure")
-
-    schema = pa.schema(
-        [
-            ("id", pa.int32(), False),
-            ("name", pa.string(), False),
-            ("comment", pa.string(), False),
-        ]
-    )
-    create_empty_delta_table_on_azure(
-        started_cluster, table_name, schema, partition_by=["id", "comment"]
-    )
-
-    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
-    container = started_cluster.azure_container_name
-    instance.query(
-        f"""
-        CREATE TABLE {table_name} (id Int32, name String, comment String)
-        ENGINE=DeltaLakeAzure('{connection_string}', '{container}', '{table_name}', Parquet)
-        """
-    )
-    instance.query(
-        f"INSERT INTO {table_name} SELECT number, toString(number), concat('comment-', toString(number % 2)) FROM numbers(10)"
-    )
-
-    expected = "\n".join(f"{i}\t{i}\tcomment-{i % 2}" for i in range(10))
-    assert (
-        expected == instance.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
-    )
-
-    data_files = list_azure_data_files(started_cluster, f"{table_name}/")
-    assert len(data_files) == 10, f"Data files: {data_files}"
-    assert sorted(
-        data_file[: data_file.rindex("/") + 1] for data_file in data_files
-    ) == sorted(f"{table_name}/id={i}/comment=comment-{i % 2}/" for i in range(10))
 
 
 @pytest.mark.parametrize("partitioned", [False, True])
