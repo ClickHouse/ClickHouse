@@ -21,7 +21,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserSubstitution parser_substitution;
     ParserExpression parser_expr;
 
-    auto partition = make_intrusive<ASTPartition>();
+    auto partition = std::make_shared<ASTPartition>();
 
     if (s_id.ignore(pos, expected))
     {

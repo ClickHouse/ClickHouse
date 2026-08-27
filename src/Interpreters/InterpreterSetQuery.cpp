@@ -1,13 +1,7 @@
-#include <Backups/BackupSettings.h>
-#include <Backups/RestoreSettings.h>
 #include <Core/Settings.h>
-#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -19,79 +13,21 @@
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
-#include <Common/SettingsChanges.h>
-
-#include <utility>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 namespace Setting
 {
     extern const SettingsDefaultTableEngine default_table_engine;
-    extern const SettingsDefaultTableEngine default_temporary_table_engine;
-    extern const SettingsString input_format;
-    extern const SettingsString format;
-}
-
-namespace
-{
-/// `compression` shapes the HTTP *response body*: `HTTPHandler` sets up the response buffers from it
-/// before the query runs, so by the time an in-query `SETTINGS` clause is interpreted the buffers
-/// are already fixed and the setting has no effect. Reject it with a clear message instead of
-/// silently ignoring it; it must be supplied via the HTTP URL parameter, the URL path file
-/// extension, or a user profile. (The query-construction settings `select`/`filter`/`order`/`sort`/
-/// `page` are applied by the engine on the parsed AST, so they *do* work via an in-query SETTINGS
-/// clause and are not rejected here.)
-void rejectHTTPOnlyConstructionSettings(const ASTSetQuery & set_query)
-{
-    /// Both in-query forms set the setting: `name = value` lands in `changes`, `name = DEFAULT` in
-    /// `default_settings`. A bare `compression = DEFAULT` would otherwise slip through and silently
-    /// reset the setting after the response buffers were already built, so reject both forms.
-    auto reject = [](std::string_view name)
-    {
-        if (name == "compression")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Setting 'compression' shapes the HTTP response body and is consumed before the query "
-                "is executed, so it has no effect when set via an in-query SETTINGS clause. Set it via "
-                "the `compression` HTTP URL parameter, a compressed file extension in the URL path, or "
-                "a user profile instead.");
-    };
-    for (const auto & change : set_query.changes)
-        reject(change.name);
-    for (const auto & name : set_query.default_settings)
-        reject(name);
-}
-
 }
 
 BlockIO InterpreterSetQuery::execute()
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
-    /// Resolve query parameters used as setting values, e.g. `SET max_threads = {threads:UInt64}`.
-    /// Work on a copy so the original AST keeps the placeholders: they are still needed by the
-    /// old-server compatibility rewrite in ClientBase::processOrdinaryQuery.
-    SettingsChanges changes = ast.changes;
-    replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
-    /// A session-wide value would also detach the `SET` that turns it back off,
-    /// which is likely to cause confusion.
-    if (changes.tryGet("run_query_in_background"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "run_query_in_background cannot be changed with SET, because it must be requested per query. "
-            "Pass it as a query setting, or set it at the user or profile level");
-    /// Pass as const on purpose: the non-const checkSettingsConstraints overload rewrites the
-    /// changes (dropping no-op changes), which would lose the "changed" flag for a setting
-    /// explicitly set to its current value. The original code applies const `ast.changes`.
-    getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
-    /// Checked before anything is applied, so that a violation leaves the whole statement without effect.
-    getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
+    getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
-    session_context->applySettingsChanges(changes);
+    session_context->applySettingsChanges(ast.changes);
     session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
     session_context->resetSettingsToDefaultValue(ast.default_settings);
     return {};
@@ -101,18 +37,9 @@ BlockIO InterpreterSetQuery::execute()
 void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constraints)
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
-    /// Resolve query parameters used as setting values, e.g. `SELECT ... SETTINGS max_threads = {threads:UInt64}`.
-    /// Work on a copy so the original AST keeps the placeholders (see the note in execute()).
-    SettingsChanges changes = ast.changes;
-    replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
-    /// const on purpose - see the note in execute().
     if (!ignore_setting_constraints)
-    {
-        getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
-        getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
-        rejectHTTPOnlyConstructionSettings(ast);
-    }
-    getContext()->applySettingsChanges(changes);
+        getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
+    getContext()->applySettingsChanges(ast.changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
 }
 
@@ -132,59 +59,12 @@ static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & sel
 
 namespace
 {
-/// For `CREATE TABLE dst AS src [storage_clauses]` without an explicit ENGINE, the engine is inherited from the
-/// source table `src` (see `InterpreterCreateQuery::setEngine`). Resolve that engine's name so the SETTINGS clause
-/// is split (engine settings vs query settings) against the engine the table will actually have, rather than the
-/// default one: otherwise an engine-specific setting of the inherited engine (for example `join_use_nulls` for a
-/// `Join` source) would be misclassified as a query setting, hoisted into the context, and dropped from the
-/// persisted table definition. Returns nullopt when the source cannot be inspected or has no engine of its own
-/// (for example a table function source); the caller then falls back to the default engine, which matches what
-/// `setEngine` does in those cases.
-std::optional<String> getInheritedEngineName(const ASTCreateQuery & create, ContextMutablePtr context)
-{
-    if (create.as_table.empty())
-        return {};
-
-    auto database = DatabaseCatalog::instance().tryGetDatabase(context->resolveDatabase(create.as_database));
-    if (!database)
-        return {};
-
-    auto as_create_ptr = database->tryGetCreateTableQuery(create.as_table, context);
-    if (!as_create_ptr)
-        return {};
-
-    const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
-
-    /// For a materialized view source the engine and keys live in the inner storage definition.
-    const ASTStorage * as_storage = as_create.is_materialized_view ? as_create.getTargetInnerEngine(ViewTarget::To) : as_create.storage;
-    if (as_storage && as_storage->engine)
-        return as_storage->engine->name;
-
-    return {};
-}
-
 std::optional<String> getTableStorageName(const ASTCreateQuery & create, ContextMutablePtr context)
 {
     if ((create.database && !create.table) || create.isView())
         return {};
     if (create.storage->engine)
         return create.storage->engine->name;
-
-    /// Temporary tables never inherit the source engine: `InterpreterCreateQuery::setEngine` resolves their
-    /// engine to `default_temporary_table_engine` regardless of the `AS` source. Mirror that here so the SETTINGS
-    /// clause is split against the engine the temporary table will actually have, instead of the inherited source
-    /// engine. Otherwise an engine-specific setting of the source (for example `join_use_nulls` for a `Join` source)
-    /// would be kept in the storage definition and then rejected by the actual engine (for example `Memory`).
-    if (create.isTemporary())
-    {
-        auto default_temporary_engine = context->getSettingsRef()[Setting::default_temporary_table_engine];
-        if (default_temporary_engine == DefaultTableEngine::None)
-            return {};
-        return default_temporary_engine.toString();
-    }
-
-    if (auto inherited_engine = getInheritedEngineName(create, context))
-        return inherited_engine;
 
     auto default_engine = context->getSettingsRef()[Setting::default_table_engine];
     if (default_engine == DefaultTableEngine::None)
@@ -229,12 +109,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                     String & name = it->name;
                     if ((!features.supports_settings || !features.has_builtin_setting_fn(name)) && context_settings.has(name))
                     {
-                        /// A value-less `SETTINGS name` in a `CREATE` reaches the context here
-                        /// rather than through `executeForCurrentContext`, and the constraint check
-                        /// below converts the value first, so this has to come before it.
-                        context_settings.checkShorthandChange(*it);
-                        context_->checkSettingsConstraints(*it, SettingSource::QUERY);
-                        context_->applySettingChange(*it);
+                        context_->setSetting(name, it->value);
                         it = engine_settings->changes.erase(it);
                     }
                     else
@@ -244,7 +119,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                 }
 
                 if (engine_settings->changes.empty())
-                    create_query->storage->reset(create_query->storage->settings);
+                    create_query->storage->settings = nullptr;
             }
         }
     }
@@ -270,48 +145,9 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
         context_->setInsertFormat(insert_query->format);
         if (insert_query->settings_ast)
             InterpreterSetQuery(insert_query->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
-        /// Let `input_format` / `format` override the FORMAT used for `input()` schema inference too
-        /// (mirrors `getSourceFromASTInsertQuery`, which resolves the reader format the same way).
-        /// This runs after the INSERT's own `SETTINGS` clause is applied, so a
-        /// `SETTINGS input_format = ...` on the INSERT is taken into account.
-        if (const auto & s = context_->getSettingsRef(); !s[Setting::input_format].value.empty())
-            context_->setInsertFormat(s[Setting::input_format]);
-        else if (!s[Setting::format].value.empty())
-            context_->setInsertFormat(s[Setting::format]);
-    }
-    else if (const auto * backup_query = ast->as<ASTBackupQuery>())
-    {
-        /// `BACKUP`/`RESTORE` queries store their settings in `ASTBackupQuery::settings`
-        /// (not `settings_ast`), so they are not handled by the `settings_ast` branch
-        /// above. We apply only the core query settings here, before `ProcessList::insert`,
-        /// so that the `ProcessListElement` and `CancellationChecker` see the correct
-        /// limits from the start. `BACKUP`/`RESTORE`-specific settings (`async`, `password`, etc.)
-        /// are filtered out and are not applied to the context.
-        ///
-        /// We deliberately use the lightweight `extractCoreSettingsFromQuery` helpers
-        /// here rather than `fromBackupQuery`/`fromRestoreQuery`, because this code path
-        /// also runs on the client side (`ClientBase::processOrdinaryQuery`) BEFORE
-        /// `ReplaceQueryParameterVisitor` has substituted query parameters in the AST.
-        /// `BackupInfo::fromAST` (called from `fromBackupQuery` for `base_backup_name`)
-        /// only accepts `ASTLiteral` arguments and would throw `BAD_ARGUMENTS` on an
-        /// `ASTQueryParameter`. The lightweight helpers do not look at `base_backup_name`
-        /// at all, so they work with parameterized queries. See issue #103324.
-        if (backup_query->settings)
-        {
-            SettingsChanges core_settings = (backup_query->kind == ASTBackupQuery::Kind::BACKUP)
-                ? BackupSettings::extractCoreSettingsFromQuery(*backup_query)
-                : RestoreSettings::extractCoreSettingsFromQuery(*backup_query);
-
-            if (!core_settings.empty())
-            {
-                context_->checkSettingsConstraints(core_settings, SettingSource::QUERY);
-                context_->applySettingsChanges(core_settings);
-            }
-        }
     }
 }
 
-void registerInterpreterSetQuery(InterpreterFactory & factory);
 void registerInterpreterSetQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

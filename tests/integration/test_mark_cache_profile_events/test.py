@@ -1,3 +1,4 @@
+import os
 import time
 import pytest
 import logging
@@ -76,18 +77,18 @@ def setup_cache_test_environment():
 
         # Set a small mark cache size to force evictions
         # This ensures our test is deterministic
-        node.query("SYSTEM CLEAR MARK CACHE")
+        node.query("SYSTEM DROP MARK CACHE")
 
         # Create table with specific settings to control mark file size
         node.query(f"""
             CREATE TABLE {table_name} (
-                id UInt64,
+                id UInt64, 
                 data String,
                 padding String
             )
             ENGINE = MergeTree()
             ORDER BY id
-            SETTINGS
+            SETTINGS 
                 index_granularity = 1024,  -- Smaller granularity = more marks
                 index_granularity_bytes = 0  -- Disable adaptive granularity
         """)
@@ -102,7 +103,7 @@ def setup_cache_test_environment():
             offset = batch * batch_size
             node.query(f"""
                 INSERT INTO {table_name}
-                SELECT
+                SELECT 
                     number + {offset} as id,
                     'data_' || toString(number) as data,
                     repeat('x', 100) as padding  -- Add padding to increase mark file size
@@ -115,8 +116,8 @@ def setup_cache_test_environment():
 
         # Verify table structure
         parts_info = node.query(f"""
-            SELECT count() as part_count, sum(rows) as total_rows
-            FROM system.parts
+            SELECT count() as part_count, sum(rows) as total_rows 
+            FROM system.parts 
             WHERE table = '{table_name}' AND active
         """).strip().split('\t')
 
@@ -147,7 +148,7 @@ def test_mark_cache_eviction_functionality(start_cluster, setup_cache_test_envir
     logger.info(f"Starting test with baseline metrics: {initial_metrics}")
 
     # Clear the mark cache to start fresh
-    node.query("SYSTEM CLEAR MARK CACHE")
+    node.query("SYSTEM DROP MARK CACHE")
 
     # Perform queries that will load many mark files into cache
     # Query different ranges to load different parts and their mark files
@@ -157,8 +158,8 @@ def test_mark_cache_eviction_functionality(start_cluster, setup_cache_test_envir
     for i in range(0, 50000, 2500):  # Query every 2500 records
         end_range = i + 2500
         result = node.query(f"""
-            SELECT count(*), avg(length(data))
-            FROM {table_name}
+            SELECT count(*), avg(length(data)) 
+            FROM {table_name} 
             WHERE id BETWEEN {i} AND {end_range}
         """)
         logger.debug(f"Query range {i}-{end_range}: {result.strip()}")
@@ -174,7 +175,7 @@ def test_mark_cache_eviction_functionality(start_cluster, setup_cache_test_envir
     for start, end in ranges:
         node.query(f"""
             SELECT count(*), sum(length(padding))
-            FROM {table_name}
+            FROM {table_name} 
             WHERE id BETWEEN {start} AND {end}
         """)
 
@@ -189,9 +190,9 @@ def test_mark_cache_eviction_functionality(start_cluster, setup_cache_test_envir
         # Force more cache pressure by querying with PREWHERE (loads more marks)
         for i in range(0, 100000, 1000):
             node.query(f"""
-                SELECT count()
-                FROM {table_name}
-                PREWHERE id % 100 = 0
+                SELECT count() 
+                FROM {table_name} 
+                PREWHERE id % 100 = 0 
                 WHERE id >= {i} AND id < {i + 1000}
             """)
 
@@ -223,7 +224,7 @@ def test_mark_cache_eviction_functionality(start_cluster, setup_cache_test_envir
     assert marks_evicted >= files_evicted, \
         f"Marks evicted ({marks_evicted}) should be >= files evicted ({files_evicted})"
 
-    logger.info("✓ Test passed - Cache eviction metrics working correctly")
+    logger.info(f"✓ Test passed - Cache eviction metrics working correctly")
 
 def test_mark_cache_query_log_integration(start_cluster, setup_cache_test_environment):
     """
@@ -235,10 +236,10 @@ def test_mark_cache_query_log_integration(start_cluster, setup_cache_test_enviro
     node.query("SYSTEM FLUSH LOGS")
 
     # Clear cache and perform operation that should trigger evictions
-    node.query("SYSTEM CLEAR MARK CACHE")
+    node.query("SYSTEM DROP MARK CACHE")
 
     # Get initial metrics
-    get_current_cache_metrics()
+    initial_metrics = get_current_cache_metrics()
 
     # Perform a query that should trigger cache evictions
     node.query(f"""
@@ -250,7 +251,7 @@ def test_mark_cache_query_log_integration(start_cluster, setup_cache_test_enviro
     # More cache pressure
     for i in range(10):
         node.query(f"""
-            SELECT count() FROM {table_name}
+            SELECT count() FROM {table_name} 
             WHERE id >= {i * 10000} AND id < {(i + 1) * 10000}
             AND data LIKE '%{i}%'
         """)

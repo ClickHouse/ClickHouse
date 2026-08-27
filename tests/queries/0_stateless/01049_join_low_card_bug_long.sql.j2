@@ -1,4 +1,4 @@
--- Tags: long, no-msan
+-- Tags: long
 
 DROP TABLE IF EXISTS l;
 DROP TABLE IF EXISTS r;
@@ -23,7 +23,7 @@ INSERT INTO nl VALUES (0, 'str'), (2, 'str_l');
 INSERT INTO l_lc VALUES (0, 'str'), (2, 'str_l');
 
 -- { echoOn }
-{% for enable_analyzer in [1] -%}
+{% for enable_analyzer in [0, 1] -%}
 
 SET enable_analyzer = {{ enable_analyzer }};
 

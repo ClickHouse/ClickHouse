@@ -1,15 +1,10 @@
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
-#include <Storages/System/DatabaseTablesCursor.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -25,15 +20,8 @@
 namespace DB
 {
 StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const StorageID & table_id_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
 {
-    auto creation_datatype = std::make_shared<DataTypeEnum8>(
-        DataTypeEnum8::Values
-        {
-            {"Explicit", static_cast<Int8>(0)},
-            {"Implicit", static_cast<Int8>(1)},
-        });
-
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
         {
@@ -43,25 +31,15 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
             { "type", std::make_shared<DataTypeString>(), "Index type."},
             { "type_full", std::make_shared<DataTypeString>(), "Index type expression from create statement."},
             { "expr", std::make_shared<DataTypeString>(), "Expression for the index calculation."},
-            { "creation", creation_datatype, "Whether the index was created implicitly (via add_minmax_index_for_numeric_columns or similar)"},
             { "granularity", std::make_shared<DataTypeUInt64>(), "The number of granules in the block."},
             { "data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of compressed data, in bytes."},
             { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
-            { "marks_bytes", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."},
+            { "marks_bytes", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."}
         }));
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-VirtualColumnsDescription StorageSystemDataSkippingIndices::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
-
-class DataSkippingIndicesSource final : public ISource
+class DataSkippingIndicesSource : public ISource
 {
 public:
     DataSkippingIndicesSource(
@@ -73,8 +51,9 @@ public:
         : ISource(header)
         , column_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
-        , databases_cursor(std::move(databases_))
+        , databases(std::move(databases_))
         , context(Context::createCopy(context_))
+        , database_idx(0)
     {}
 
     String getName() const override { return "DataSkippingIndices"; }
@@ -82,7 +61,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (!databases_cursor.advanceToNextDatabase())
+        if (database_idx >= databases->size())
             return {};
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
@@ -93,37 +72,42 @@ protected:
         size_t rows_count = 0;
         while (rows_count < max_block_size)
         {
-            if (!databases_cursor.advanceToNextDatabase())
+            if (tables_it && !tables_it->isValid())
+                ++database_idx;
+
+            while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
+            {
+                database_name = databases->getDataAt(database_idx).toString();
+                database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+
+                if (database)
+                    break;
+                ++database_idx;
+            }
+
+            if (database_idx >= databases->size())
                 break;
 
-            const String & database_name = databases_cursor.getDatabaseName();
-
-            if (!databases_cursor.hasTablesIterator())
-                databases_cursor.setTablesIterator(databases_cursor.getDatabase()->getTablesIterator(context));
+            if (!tables_it || !tables_it->isValid())
+                tables_it = database->getTablesIterator(context);
 
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
-            auto & tables_it = databases_cursor.getTablesIterator();
-            for (; rows_count < max_block_size && tables_it.isValid(); tables_it.next())
+            for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
-                auto table_name = tables_it.name();
+                auto table_name = tables_it->name();
                 if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                const auto table = tables_it.table();
+                const auto table = tables_it->table();
                 if (!table)
                     continue;
-
-                if (const auto * alias = table->as<StorageAlias>();
-                    alias && !alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}))
-                    continue;
-
-                const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
                 if (!metadata_snapshot)
                     continue;
                 const auto indices = metadata_snapshot->getSecondaryIndices();
 
-                const auto secondary_index_sizes = table->getSecondaryIndexSizes();
+                auto secondary_index_sizes = table->getSecondaryIndexSizes();
                 for (const auto & index : indices)
                 {
                     ++rows_count;
@@ -161,43 +145,24 @@ protected:
                         else
                             res_columns[res_index++]->insertDefault();
                     }
-
-                    /// 'creation' column
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(index.is_implicitly_created);
-
                     // 'granularity' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(index.granularity);
 
-                    auto secondary_index_size = secondary_index_sizes.find(index.name);
+                    auto & secondary_index_size = secondary_index_sizes[index.name];
 
                     // 'compressed bytes' column
                     if (column_mask[src_index++])
-                    {
-                        if (secondary_index_size != secondary_index_sizes.end())
-                            res_columns[res_index++]->insert(secondary_index_size->second.data_compressed);
-                        else
-                            res_columns[res_index++]->insertDefault();
-                    }
+                        res_columns[res_index++]->insert(secondary_index_size.data_compressed);
 
                     // 'uncompressed bytes' column
+
                     if (column_mask[src_index++])
-                    {
-                        if (secondary_index_size != secondary_index_sizes.end())
-                            res_columns[res_index++]->insert(secondary_index_size->second.data_uncompressed);
-                        else
-                            res_columns[res_index++]->insertDefault();
-                    }
+                        res_columns[res_index++]->insert(secondary_index_size.data_uncompressed);
 
                     /// 'marks_bytes' column
                     if (column_mask[src_index++])
-                    {
-                        if (secondary_index_size != secondary_index_sizes.end())
-                            res_columns[res_index++]->insert(secondary_index_size->second.marks);
-                        else
-                            res_columns[res_index++]->insertDefault();
-                    }
+                        res_columns[res_index++]->insert(secondary_index_size.marks);
                 }
             }
         }
@@ -207,8 +172,12 @@ protected:
 private:
     std::vector<UInt8> column_mask;
     UInt64 max_block_size;
-    DatabaseTablesCursor databases_cursor;
+    ColumnPtr databases;
     ContextPtr context;
+    size_t database_idx;
+    DatabasePtr database;
+    std::string database_name;
+    DatabaseTablesIteratorPtr tables_it;
 };
 
 class ReadFromSystemDataSkippingIndices : public SourceStepWithFilter
@@ -258,13 +227,13 @@ void ReadFromSystemDataSkippingIndices::applyFilters(ActionDAGNodes added_filter
             { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
         };
 
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
         if (dag)
             virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
     }
 }
 
-void StorageSystemDataSkippingIndices::readImpl(
+void StorageSystemDataSkippingIndices::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -292,14 +261,19 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+    const auto databases = DatabaseCatalog::instance().getDatabases();
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue;
-        if (database->isExternal())
+        if (!database->canContainMergeTreeTables())
             continue;
-        column->insert(database_name);
+
+        /// Lazy database can contain only very primitive tables,
+        /// it cannot contain tables with data skipping indices.
+        /// Skip it to avoid unnecessary tables loading in the Lazy database.
+        if (database->getEngineName() != "Lazy")
+            column->insert(database_name);
     }
 
     /// Condition on "database" in a query acts like an index.
@@ -313,6 +287,3 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDataSkippingIndices) }

@@ -9,13 +9,13 @@
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
 
 
 namespace DB
@@ -35,6 +35,8 @@ class AggregateFunctionLast2Samples final :
     public IAggregateFunctionHelper<AggregateFunctionLast2Samples<TimestampType, ValueType>>
 {
 public:
+    static constexpr bool DateTime64Supported = true;
+
     using Base = IAggregateFunctionHelper<AggregateFunctionLast2Samples<TimestampType, ValueType>>;
 
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;
@@ -46,12 +48,11 @@ public:
     }
 
     /// Stores two samples with most recent distinct timestamps
-    /// If there are two samples with the same timestamp, the one with the bigger value is stored;
-    /// a NaN value is stored only if all values at this timestamp are NaN
+    /// If there are two samples with the same timestamp, the one with bigger value is stored
     struct Data
     {
-        ValueType values[2]{};            /// In common scenario values are Float64, so put them first as they need 8-byte alignment
-        TimestampType timestamps[2]{};    /// Timestamps might be stored as DateTime64, DateTime32 or even as 16-bit delta from the base timestamp of the grid
+        ValueType values[2];            /// In common scenario values are Float64, so put them first as they need 8-byte alignment
+        TimestampType timestamps[2];    /// Timestamps might be stored as DateTime64, DateTime32 or even as 16-bit delta from the base timestamp of the grid
         UInt16 filled = 0;              /// Number of samples stored: 0, 1 or 2
 
         void add(TimestampType timestamp, ValueType value)
@@ -77,8 +78,8 @@ public:
                 }
                 else if (timestamp == timestamps[0])
                 {
-                    /// Replace the value with the bigger one
-                    values[0] = timeseriesMaxValueForDuplicateTimestamp(values[0], value);
+                    /// Replace the value with bigger one
+                    values[0] = std::max(value, values[0]);
                 }
                 else
                 {
@@ -107,8 +108,8 @@ public:
                 }
                 else if (timestamp == timestamps[0])
                 {
-                    /// Replace first sample value with the bigger one
-                    values[0] = timeseriesMaxValueForDuplicateTimestamp(values[0], value);
+                    /// Replace first sample value with bigger one
+                    values[0] = std::max(value, values[0]);
                 }
                 else if (timestamp > timestamps[1])
                 {
@@ -118,59 +119,16 @@ public:
                 }
                 else if (timestamp == timestamps[1])
                 {
-                    /// Replace second sample value with the bigger one
-                    values[1] = timeseriesMaxValueForDuplicateTimestamp(values[1], value);
+                    /// Replace second sample value with bigger one
+                    values[1] = std::max(value, values[1]);
                 }
             }
-        }
-
-        /// Bulk `add`, for the batch bucketing kernel of `AggregateFunctionTimeseriesBase`.
-        ALWAYS_INLINE void addMany(const TimestampType * __restrict timestamps_ptr, const ValueType * __restrict values_ptr, size_t count)
-        {
-            for (size_t i = 0; i < count; ++i)
-                add(timestamps_ptr[i], values_ptr[i]);
         }
 
         void merge(const Data & rhs)
         {
             for (size_t i = 0; i < rhs.filled; ++i)
                 add(rhs.timestamps[i], rhs.values[i]);
-        }
-
-        void serialize(WriteBuffer & buf) const
-        {
-            writeBinaryLittleEndian(filled, buf);
-            for (size_t i = 0; i < filled; ++i)
-                writeBinaryLittleEndian(timestamps[i], buf);
-            for (size_t i = 0; i < filled; ++i)
-                writeBinaryLittleEndian(values[i], buf);
-        }
-
-        void deserialize(ReadBuffer & buf)
-        {
-            readBinaryLittleEndian(filled, buf);
-            if (filled > 2)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with more than 2 samples in a bucket");
-
-            for (size_t i = 0; i < filled; ++i)
-                readBinaryLittleEndian(timestamps[i], buf);
-            for (size_t i = 0; i < filled; ++i)
-                readBinaryLittleEndian(values[i], buf);
-
-            if (filled == 2 && timestamps[1] >= timestamps[0])
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Timestamps must be in strictly descending order, but got {} after {}",
-                    static_cast<Int64>(timestamps[1]), static_cast<Int64>(timestamps[0]));
-        }
-
-        template <typename RangeType>
-        void checkTimestampsInRange(const RangeType & range) const
-        {
-            for (size_t i = 0; i < filled; ++i)
-                if (!range.contains(timestamps[i]))
-                    throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "Cannot deserialize data: timestamp {} is outside its bucket's range",
-                        static_cast<Int64>(timestamps[i]));
         }
     };
 
@@ -314,20 +272,51 @@ public:
     {
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void addBatchSparse(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = typeid_cast<const ColumnSparse &>(*columns[0]);
+        const auto * values = &column_sparse.getValuesColumn();
+        const auto & offsets = column_sparse.getOffsetsData();
+
+        size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
+        size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
+
+        for (size_t i = from; i < to; ++i)
+            add(places[offsets[i]] + place_offset, &values, i + 1, arena);
+    }
+
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).merge(data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
+        const Data & data = this->data(place);
+
         writeBinaryLittleEndian(FORMAT_VERSION, buf);
-        data(place).serialize(buf);
+        writeBinaryLittleEndian(data.filled, buf);
+
+        for (size_t i = 0; i < data.filled; ++i)
+        {
+            writeBinaryLittleEndian(data.timestamps[i], buf);
+        }
+
+        for (size_t i = 0; i < data.filled; ++i)
+        {
+            writeBinaryLittleEndian(data.values[i], buf);
+        }
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        UInt16 format_version = 0;
+        UInt16 format_version;
         readBinaryLittleEndian(format_version, buf);
 
         if (format_version != FORMAT_VERSION)
@@ -336,7 +325,29 @@ public:
                 "Cannot deserialize data with different format version, expected {}, got {}",
                 FORMAT_VERSION, format_version);
 
-        data(place).deserialize(buf);
+        Data & data = this->data(place);
+        readBinaryLittleEndian(data.filled, buf);
+
+        if (data.filled > 2)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Cannot deserialize data with different bucket count, expected 2, got {}",
+                data.filled);
+
+        for (size_t i = 0; i < data.filled; ++i)
+        {
+            readBinaryLittleEndian(data.timestamps[i], buf);
+            if (i > 0 && data.timestamps[i] > data.timestamps[i - 1])
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Timestamps must be in descending order, but got {} after {}",
+                    static_cast<Int64>(data.timestamps[i]), static_cast<Int64>(data.timestamps[i - 1]));
+        }
+
+        for (size_t i = 0; i < data.filled; ++i)
+        {
+            readBinaryLittleEndian(data.values[i], buf);
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

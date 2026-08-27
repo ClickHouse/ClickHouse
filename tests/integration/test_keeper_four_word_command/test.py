@@ -111,8 +111,6 @@ def do_some_action(
     fake_ephemeral_event = None
 
     def fake_ephemeral_callback(event):
-        if not keeper_utils.is_znode_watch_event(event):
-            return
         print("Fake watch triggered")
         nonlocal fake_ephemeral_event
         fake_ephemeral_event = event
@@ -146,6 +144,8 @@ def test_cmd_mntr(started_cluster):
         )
 
         data = keeper_utils.send_4lw_cmd(cluster, leader, cmd="mntr")
+
+        # print(data.decode())
         reader = csv.reader(data.split("\n"), delimiter="\t")
         result = {}
 
@@ -166,11 +166,6 @@ def test_cmd_mntr(started_cluster):
         assert int(result["zk_outstanding_requests"]) == 0
 
         assert result["zk_server_state"] == "leader"
-        assert int(result["zk_leader_uptime"]) >= 0
-        assert int(result["zk_sum_leader_unavailable_time"]) >= 0
-        assert int(result["zk_cnt_leader_unavailable_time"]) >= 0
-        assert int(result["zk_sum_election_time"]) >= 0
-        assert int(result["zk_cnt_election_time"]) >= 0
 
         # contains:
         #   10 nodes created by test
@@ -184,10 +179,8 @@ def test_cmd_mntr(started_cluster):
         assert int(result["zk_open_file_descriptor_count"]) > 0
         assert int(result["zk_max_file_descriptor_count"]) > 0
 
-        assert int(result["zk_learners"]) == 2
-        assert int(result["zk_followers"]) == 1
-        assert int(result["zk_synced_followers"]) == 1
-        assert int(result["zk_synced_non_voting_followers"]) == 1
+        assert int(result["zk_followers"]) == 2
+        assert int(result["zk_synced_followers"]) == 2
 
         # contains 31 user request response and some responses for server startup
         assert int(result["zk_packets_sent"]) >= 31
@@ -216,10 +209,6 @@ def test_cmd_srst(started_cluster):
 
     assert int(result["zk_packets_received"]) == 0
     assert int(result["zk_packets_sent"]) == 0
-    assert int(result["zk_sum_leader_unavailable_time"]) == 0
-    assert int(result["zk_cnt_leader_unavailable_time"]) == 0
-    assert int(result["zk_sum_election_time"]) == 0
-    assert int(result["zk_cnt_election_time"]) == 0
 
 
 def test_cmd_conf(started_cluster):
@@ -286,18 +275,6 @@ def test_cmd_conf(started_cluster):
 
     assert result["latest_logs_cache_size_threshold"] == "1073741824"
     assert result["commit_logs_cache_size_threshold"] == "524288000"
-
-    assert result["log_readahead_enabled"] == "true"
-    assert result["log_readahead_window_bytes"] == "67108864"
-    assert result["log_readahead_max_peer_readers"] == "8"
-    assert result["log_readahead_eviction_timeout_ms"] == "30000"
-    assert result["log_readahead_pool_threads"] == "0"
-    assert result["log_readahead_serve_wait_timeout_ms"] == "200"
-    assert result["log_readahead_chunk_size"] == "16"
-    assert result["log_readahead_commit_window_bytes"] == "524288000"
-
-    assert result["log_startup_read_max_streams"] == "0"
-    assert result["log_startup_read_buffer_size"] == "8388608"
 
     assert result["disk_move_retries_wait_ms"] == "1000"
     assert result["disk_move_retries_during_init"] == "100"
@@ -771,7 +748,6 @@ def test_cmd_ydld(started_cluster):
                 )
         assert keeper_utils.is_follower(cluster, node)
 
-
 def test_cmd_lgrq(started_cluster):
     zk = None
     try:
@@ -780,22 +756,22 @@ def test_cmd_lgrq(started_cluster):
         reset_conn_stats()
 
         zk = get_fake_zk(node1.name, timeout=30.0)
-        if not zk.exists("/test_lgrq"):
-            zk.create("/test_lgrq", ephemeral=True)
+        if not zk.exists('/test_lgrq'):
+            zk.create('/test_lgrq', ephemeral=True)
 
-        assert not node1.contains_in_log("Received request:")
-
-        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="lgrq")
-        assert data == "enabled"
-
-        zk.set("/test_lgrq", "newdata".encode())
-        assert node1.contains_in_log("Received request:")
+        assert not node1.contains_in_log('Received request:')
 
         data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="lgrq")
-        assert data == "disabled"
+        assert data == 'enabled'
+
+        zk.set('/test_lgrq', 'newdata'.encode())
+        assert node1.contains_in_log('Received request:')
+
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="lgrq")
+        assert data == 'disabled'
         node1.rotate_logs()
 
-        zk.set("/test_lgrq", "newdata".encode())
-        assert not node1.contains_in_log("Received request:")
+        zk.set('/test_lgrq', 'newdata'.encode())
+        assert not node1.contains_in_log('Received request:')
     finally:
         destroy_zk_client(zk)

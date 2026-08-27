@@ -44,8 +44,8 @@ expression
 // Unary operations have the same precedence as multiplications
 
 vectorOperation
-    : <assoc = right> vectorOperation subqueryOp
-    | <assoc = right> vectorOperation powOp vectorOperation
+    : <assoc = right> vectorOperation powOp vectorOperation
+    | <assoc = right> vectorOperation subqueryOp
     | unaryOp vectorOperation
     | vectorOperation multOp vectorOperation
     | vectorOperation addOp vectorOperation
@@ -66,7 +66,7 @@ powOp
     ;
 
 multOp
-    : (MULT | DIV | MOD | ATAN2) grouping?
+    : (MULT | DIV | MOD) grouping?
     ;
 
 addOp
@@ -90,38 +90,22 @@ subqueryOp
     ;
 
 offsetOp
-    : AT timestamp (OFFSET offsetValue)?
-    | OFFSET offsetValue (AT timestamp)?
+    : AT NUMBER (OFFSET (ADD|SUB)? NUMBER)?
+    | OFFSET (ADD|SUB)? NUMBER (AT NUMBER)?
     ;
 
 vector
     : function_
     | aggregation
     | instantSelector
-    | rangeSelector
-    | selectorWithOffset
+    | matrixSelector
+    | offset
     | literal
     | parens
     ;
 
 parens
     : LEFT_PAREN vectorOperation RIGHT_PAREN
-    ;
-
-// Timestamps and durations
-
-timestamp
-    : NUMBER
-    | START LEFT_PAREN RIGHT_PAREN
-    | END LEFT_PAREN RIGHT_PAREN
-    ;
-
-duration
-    : NUMBER
-    ;
-
-offsetValue
-    : (ADD | SUB)? NUMBER
     ;
 
 // Selectors
@@ -133,7 +117,6 @@ instantSelector
 
 labelMatcher
     : labelName labelMatcherOperator STRING
-    | STRING
     ;
 
 labelMatcherOperator
@@ -147,13 +130,13 @@ labelMatcherList
     : labelMatcher (COMMA labelMatcher)* COMMA?
     ;
 
-rangeSelector
-    : instantSelector SELECTOR_RANGE
+matrixSelector
+    : instantSelector TIME_RANGE
     ;
 
-selectorWithOffset
+offset
     : instantSelector offsetOp
-    | rangeSelector offsetOp
+    | matrixSelector offsetOp
     ;
 
 // Functions
@@ -215,11 +198,10 @@ labelName
     : keyword
     | METRIC_NAME
     | LABEL_NAME
-    | STRING
     ;
 
 labelNameList
-    : LEFT_PAREN (labelName (COMMA labelName)* COMMA?)? RIGHT_PAREN
+    : LEFT_PAREN (labelName (COMMA labelName)*)? RIGHT_PAREN
     ;
 
 metricName
@@ -231,7 +213,6 @@ keyword
     : AND
     | OR
     | UNLESS
-    | ATAN2
     | BY
     | WITHOUT
     | ON
@@ -240,8 +221,6 @@ keyword
     | GROUP_RIGHT
     | OFFSET
     | BOOL
-    | START
-    | END
     | AGGREGATION_OPERATOR
     | FUNCTION
     ;

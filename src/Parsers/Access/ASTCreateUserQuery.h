@@ -51,28 +51,24 @@ public:
     bool add_identified_with = false;
     bool replace_authentication_methods = false;
 
-    boost::intrusive_ptr<ASTUserNamesWithHost> names;
+    std::shared_ptr<ASTUserNamesWithHost> names;
     std::optional<String> new_name;
     String storage_name;
 
-    std::vector<boost::intrusive_ptr<ASTAuthenticationData>> authentication_methods;
+    std::vector<std::shared_ptr<ASTAuthenticationData>> authentication_methods;
 
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
 
-    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
-    boost::intrusive_ptr<ASTRolesOrUsersSet> default_roles;
-    boost::intrusive_ptr<ASTSettingsProfileElements> settings;
-    boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;
-    boost::intrusive_ptr<ASTRolesOrUsersSet> grantees;
+    std::shared_ptr<ASTRolesOrUsersSet> default_roles;
+    std::shared_ptr<ASTSettingsProfileElements> settings;
+    std::shared_ptr<ASTAlterSettingsProfileElements> alter_settings;
+    std::shared_ptr<ASTRolesOrUsersSet> grantees;
 
-    boost::intrusive_ptr<ASTDatabaseOrNone> default_database;
+    std::shared_ptr<ASTDatabaseOrNone> default_database;
 
     ASTPtr global_valid_until;
-    /// If true, `global_valid_until` holds an interval expression coming from `VALID FOR <interval>`
-    /// (the deadline is `now` plus the interval); otherwise it holds a `VALID UNTIL` value.
-    bool global_valid_until_is_interval = false;
 
     String getID(char) const override;
     ASTPtr clone() const override;
@@ -82,7 +78,6 @@ public:
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const override;
-    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
 };
 
 }

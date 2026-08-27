@@ -59,7 +59,7 @@ struct WindowExpressionsCollectorMatcher
 
         if (auto * func = ast->as<ASTFunction>())
         {
-            if (func->isWindowFunction())
+            if (func->is_window_function)
                 return { .window_function_in_subtree = true };
 
             WindowExpressionsCollectorChildInfo result;
@@ -72,7 +72,7 @@ struct WindowExpressionsCollectorMatcher
             // We mark functions if they should be computed after WindowStep
             if (result.window_function_in_subtree)
             {
-                func->setComputeAfterWindowFunctions(true);
+                func->compute_after_window_functions = true;
                 if ((!parent || !parent->as<ASTFunction>()))
                     expressions_with_window_functions.push_back(ast);
             }

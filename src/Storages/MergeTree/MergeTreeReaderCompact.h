@@ -23,7 +23,6 @@ public:
         NamesAndTypesList columns_,
         const VirtualFields & virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
-        const MergeTreeSettingsPtr & storage_settings_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         DeserializationPrefixesCache * deserialization_prefixes_cache_,
@@ -56,24 +55,11 @@ protected:
 
     void readPrefix(size_t column_idx, size_t from_mark, MergeTreeReaderStream & stream, ISerialization::SubstreamsDeserializeStatesCache * cache);
 
-    void readSubcolumnsPrefixes(size_t from_mark);
+    void readSubcolumnsPrefixes(size_t from_mark, size_t current_task_last_mark);
     void initSubcolumnsDeserializationOrder();
 
     void createColumnsForReading(Columns & res_columns) const;
     bool needSkipStream(size_t column_pos, const ISerialization::SubstreamPath & substream) const;
-
-    /// Before dropping the substream/deserialize-state caches at the end of a granule, verify the
-    /// reference counts of the columns shared with the result columns; see `ColumnsOwnershipValidator`
-    /// and https://github.com/ClickHouse/ClickHouse/issues/105626. Shared by both compact readers
-    /// (single- and multi-buffer) so their granule loops stay instrumented identically. Every argument
-    /// except `res_columns` is optional (pass `nullptr` when a reader does not keep that cache alive at
-    /// the check point); the per-reader deserialize-state maps are always included. A no-op in release.
-    void validateColumnsOwnership(
-        const Columns & res_columns,
-        const std::unordered_map<String, ColumnPtr> * columns_cache,
-        const std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
-        const ISerialization::SubstreamsCache * substreams_cache,
-        const std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> * deserialize_states_caches) const;
 
     const ColumnsSubstreams & columns_substreams;
 
@@ -113,15 +99,13 @@ protected:
 
     DeserializationPrefixesCache * deserialization_prefixes_cache;
     DeserializeBinaryBulkStateMap cached_subcolumn_prefixes;
-
 private:
     void readPrefix(
         const NameAndTypePair & name_and_type,
         const SerializationPtr & serialization,
         ISerialization::DeserializeBinaryBulkStatePtr & state,
         const InputStreamGetter & buffer_getter,
-        ISerialization::SubstreamsDeserializeStatesCache * cache,
-        ISerialization::DeserializeBinaryBulkSettings::CheckStreamExistsCallback check_stream_exists_callback = {});
+        ISerialization::SubstreamsDeserializeStatesCache * cache);
 
     NameAndTypePair getColumnConvertedToSubcolumnOfNested(const NameAndTypePair & column);
     void findPositionForMissedNested(size_t pos);

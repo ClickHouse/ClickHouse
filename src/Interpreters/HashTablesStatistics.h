@@ -42,24 +42,13 @@ struct AggregationEntry
     bool shouldBeUpdated(const AggregationEntry & new_entry) const
     {
         return new_entry.sum_of_sizes < sum_of_sizes / 2 || sum_of_sizes < new_entry.sum_of_sizes || new_entry.median_size < median_size / 2
-            || median_size < new_entry.median_size || new_entry.adaptive_staging_repeat_dominated != adaptive_staging_repeat_dominated;
+            || median_size < new_entry.median_size;
     }
 
-    std::string dump() const
-    {
-        return fmt::format(
-            "sum_of_sizes={}, median_size={}, adaptive_staging_repeat_dominated={}",
-            sum_of_sizes,
-            median_size,
-            adaptive_staging_repeat_dominated);
-    }
+    std::string dump() const { return fmt::format("sum_of_sizes={}, median_size={}", sum_of_sizes, median_size); }
 
-    size_t sum_of_sizes = 0; // used to determine if it's better to convert aggregation to two-level from the beginning
-    size_t median_size = 0; // roughly the size we're going to preallocate on each thread
-    /// Whether the adaptive aggregator measured the query's staged stream as repeat-dominated and
-    /// thawed: freezing cannot pay for such a query, so later runs do not engage it at all. Runs
-    /// without an adaptive measurement carry the stored verdict over (see `updateStatistics`).
-    bool adaptive_staging_repeat_dominated = false;
+    size_t sum_of_sizes; // used to determine if it's better to convert aggregation to two-level from the beginning
+    size_t median_size; // roughly the size we're going to preallocate on each thread
 };
 
 struct HashJoinEntry
@@ -91,8 +80,6 @@ public:
     std::optional<DB::HashTablesCacheStatistics> getCacheStats() const;
 
 private:
-    /// Creates the cache on the first call that is configured to keep entries. Returns `nullptr`
-    /// for a caller with `max_entries_for_hash_table_stats == 0`, which must not fix the capacity.
     CachePtr getHashTableStatsCache(const Params & params);
 
     mutable std::mutex mutex;

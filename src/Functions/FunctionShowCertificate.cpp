@@ -1,12 +1,12 @@
 #include "config.h"
 
 #include <memory>
-#include <optional>
 #include <string>
 
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -14,11 +14,11 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <base/scope_guard.h>
 
 #if USE_SSL
     #include <Poco/Net/SSLManager.h>
     #include <Common/Crypto/X509Certificate.h>
-    #include <Server/CertificateReloader.h>
 #endif
 
 namespace DB
@@ -32,29 +32,8 @@ namespace ErrorCodes
 namespace
 {
 
-#if USE_SSL
-/// The certificate that the server currently serves to clients.
-/// It is not always the certificate of the default SSL context: when certificates are provisioned
-/// dynamically (the `<acme>` configuration), that context has no certificate at all, and only
-/// `CertificateReloader` knows the certificate in use.
-std::optional<X509Certificate> getServerCertificate()
-{
-    auto served_certificate = CertificateReloader::instance().getCertificate(Poco::Net::SSLManager::CFG_SERVER_PREFIX);
-    if (served_certificate)
-        return served_certificate;
-
-    X509 * context_certificate = SSL_CTX_get0_certificate(Poco::Net::SSLManager::instance().defaultServerContext()->sslContext());
-    if (!context_certificate)
-        return {};
-
-    /// `SSL_CTX_get0_certificate` does not transfer the ownership, and `X509` is reference counted.
-    X509_up_ref(context_certificate);
-    return X509Certificate(context_certificate);
-}
-#endif
-
 // showCertificate()
-class FunctionShowCertificate final : public IFunction
+class FunctionShowCertificate : public IFunction
 {
 public:
     static constexpr auto name = "showCertificate";
@@ -78,10 +57,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    /// The connection's client certificate, or the executing node's own server certificate.
-    bool isDeterministic() const override { return false; }
-    bool isServerConstant() const override { return true; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override
@@ -98,11 +73,15 @@ public:
         if (input_rows_count)
         {
 #if USE_SSL
-            std::optional<X509Certificate> x509_cert;
+            std::unique_ptr<X509Certificate> x509_cert;
             if (!certificate.empty())
-                x509_cert.emplace(certificate);
-            else
-                x509_cert = getServerCertificate();
+                x509_cert = std::make_unique<X509Certificate>(certificate);
+
+            if (!x509_cert)
+            {
+                const auto * server_context_cert = SSL_CTX_get0_certificate(Poco::Net::SSLManager::instance().defaultServerContext()->sslContext());
+                x509_cert = std::make_unique<X509Certificate>(X509_dup(server_context_cert));
+            }
 
             if (x509_cert)
             {
@@ -164,28 +143,7 @@ public:
 
 REGISTER_FUNCTION(ShowCertificate)
 {
-    FunctionDocumentation::Description description = R"(
-Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured.
-An empty map is returned if the server has no certificate, for example, when the certificate is provisioned with ACME and has not been issued yet.
-See [Configuring TLS](/concepts/features/security/tls/configuring-tls) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
-    )";
-    FunctionDocumentation::Syntax syntax = "showCertificate()";
-    FunctionDocumentation::Arguments arguments = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns map of key-value pairs relating to the configured SSL certificate.", {"Map(String, String)"}};
-    FunctionDocumentation::Examples examples = {{"Usage example",
-        R"(
-SELECT showCertificate() FORMAT LineAsString;
-        )",
-        R"(
-{'version':'1','serial_number':'2D9071D64530052D48308473922C7ADAFA85D6C5','signature_algo':'sha256WithRSAEncryption','issuer':'/CN=marsnet.local CA','not_before':'May  7 17:01:21 2024 GMT','not_after':'May  7 17:01:21 2025 GMT','subject':'/CN=chnode1','pkey_algo':'rsaEncryption'}
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionShowCertificate>(documentation);
+    factory.registerFunction<FunctionShowCertificate>();
 }
 
 }

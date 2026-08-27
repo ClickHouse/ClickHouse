@@ -85,7 +85,7 @@ REGISTER_FUNCTION(ArrayCount)
 Returns the number of elements for which `func(arr1[i], ..., arrN[i])` returns true.
 If `func` is not specified, it returns the number of non-zero elements in the array.
 
-`arrayCount` is a [higher-order function](/reference/functions/regular-functions/overview#higher-order-functions).
+`arrayCount` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
     )";
     FunctionDocumentation::Syntax syntax = "arrayCount([func, ] arr1, ...)";
     FunctionDocumentation::Arguments arguments = {
@@ -96,7 +96,7 @@ If `func` is not specified, it returns the number of non-zero elements in the ar
     FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayCount(x -> (x % 2), groupArray(number)) FROM numbers(10)", "5"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
 
     factory.registerFunction<FunctionArrayCount>(documentation);
 }

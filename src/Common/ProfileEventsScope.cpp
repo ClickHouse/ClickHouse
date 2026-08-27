@@ -1,5 +1,4 @@
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/ProfileEventsScope.h>
 
 namespace DB

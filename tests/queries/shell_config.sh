@@ -6,8 +6,6 @@
 export CLICKHOUSE_WRITE_COVERAGE=${CLICKHOUSE_WRITE_COVERAGE:="coverage"}
 
 export CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:="test"}
-export CLICKHOUSE_DATABASE_1="${CLICKHOUSE_DATABASE}_1"
-export CLICKHOUSE_DATABASE_2="${CLICKHOUSE_DATABASE}_2"
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:="warning"}
 
 # Unique zookeeper path (based on test name and current database) to avoid overlaps
@@ -33,14 +31,6 @@ export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="$(command -v clickhouse)"}
 [ -x "$CLICKHOUSE_BINARY-client" ] && CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY-client}
 [ -x "$CLICKHOUSE_BINARY" ] && CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY client}
 export CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY-client}
-# Say which protocol this run uses instead of letting the client choose: given neither a port nor a TLS
-# mode it probes both the plain and the secure port and uses whichever answers first, and the test server
-# listens on both.
-# A secure run already carries `--secure`, which wins over this anyway. Spelled as an `if` rather than
-# with `&&`, so that a secure run does not leave a non-zero status behind for a caller using `set -e`.
-if [[ " ${CLICKHOUSE_CLIENT_OPT:-} " != *" --secure "* ]]; then
-    CLICKHOUSE_CLIENT_OPT0+=" --no-secure "
-fi
 export CLICKHOUSE_CLIENT_OPT="${CLICKHOUSE_CLIENT_OPT0:-} ${CLICKHOUSE_CLIENT_OPT:-}"
 export CLICKHOUSE_CLIENT_EXPECT_OPT="${CLICKHOUSE_CLIENT_OPT} --disable_suggestion --no-warnings --enable-progress-table-toggle 0 --progress no --output-format-pretty-color 0 --highlight 0"
 export CLICKHOUSE_CLIENT=${CLICKHOUSE_CLIENT:="$CLICKHOUSE_CLIENT_BINARY ${CLICKHOUSE_CLIENT_OPT:-}"}
@@ -58,15 +48,9 @@ export CLICKHOUSE_SERVER_BINARY=${CLICKHOUSE_SERVER_BINARY:="${CLICKHOUSE_BINARY
 export CLICKHOUSE_BENCHMARK_BINARY="${CLICKHOUSE_BENCHMARK_BINARY:=${CLICKHOUSE_BINARY}-benchmark}"
 export CLICKHOUSE_BENCHMARK_OPT="${CLICKHOUSE_BENCHMARK_OPT0:-} ${CLICKHOUSE_BENCHMARK_OPT:-}"
 export CLICKHOUSE_BENCHMARK=${CLICKHOUSE_BENCHMARK:="$CLICKHOUSE_BENCHMARK_BINARY ${CLICKHOUSE_BENCHMARK_OPT:-}"}
-# obfuscator
-[ -x "${CLICKHOUSE_BINARY}-obfuscator" ] && CLICKHOUSE_OBFUSCATOR=${CLICKHOUSE_OBFUSCATOR:="${CLICKHOUSE_BINARY}-obfuscator"}
-[ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_OBFUSCATOR=${CLICKHOUSE_OBFUSCATOR:="${CLICKHOUSE_BINARY} obfuscator"}
+# others
 export CLICKHOUSE_OBFUSCATOR=${CLICKHOUSE_OBFUSCATOR:="${CLICKHOUSE_BINARY}-obfuscator"}
-# compressor
-[ -x "${CLICKHOUSE_BINARY}-compressor" ] && CLICKHOUSE_COMPRESSOR=${CLICKHOUSE_COMPRESSOR:="${CLICKHOUSE_BINARY}-compressor"}
-[ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_COMPRESSOR=${CLICKHOUSE_COMPRESSOR:="${CLICKHOUSE_BINARY} compressor"}
 export CLICKHOUSE_COMPRESSOR=${CLICKHOUSE_COMPRESSOR:="${CLICKHOUSE_BINARY}-compressor"}
-
 
 export CLICKHOUSE_CONFIG_DIR=${CLICKHOUSE_CONFIG_DIR:="/etc/clickhouse-server"}
 export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:="/etc/clickhouse-server/config.xml"}
@@ -110,20 +94,13 @@ export CLICKHOUSE_PORT_POSTGRESQL=${CLICKHOUSE_PORT_POSTGRESQL:=$(${CLICKHOUSE_E
 export CLICKHOUSE_PORT_POSTGRESQL=${CLICKHOUSE_PORT_POSTGRESQL:="9005"}
 export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=keeper_server.tcp_port 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:="9181"}
-export CLICKHOUSE_PORT_SSH=${CLICKHOUSE_PORT_SSH:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=tcp_ssh_port 2>/dev/null)} 2>/dev/null
-export CLICKHOUSE_PORT_SSH=${CLICKHOUSE_PORT_SSH:="9022"}
 
 export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=zookeeper.identity 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY:=""}
 
 # keeper-client
 
-# The default keeper-client timeouts are 10s each. Under heavy sanitizer builds
-# (msan/asan) the keeper handshake or a response can legitimately take longer,
-# which makes keeper-client tests flake with a client-side
-# "Nothing is received in session timeout of 10000 ms" (KEEPER_EXCEPTION).
-# Raise the timeouts so the client waits out a slow-but-alive server.
-KEEPER_CLIENT_DEFAULT_ARGS=" --port $CLICKHOUSE_PORT_KEEPER --connection-timeout 60 --session-timeout 60 --operation-timeout 60"
+KEEPER_CLIENT_DEFAULT_ARGS=" --port $CLICKHOUSE_PORT_KEEPER"
 
 if [ -n "$CLICKHOUSE_KEEPER_IDENTITY" ] && [ "$CLICKHOUSE_KEEPER_IDENTITY" != "" ]
 then
@@ -134,8 +111,7 @@ fi
 [ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY} keeper-client $KEEPER_CLIENT_DEFAULT_ARGS"}
 export CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY}-keeper-client $KEEPER_CLIENT_DEFAULT_ARGS"}
 
-# `--no-secure` is stripped before `--secure`: the pattern of the latter matches inside the former.
-export CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:=$(echo "${CLICKHOUSE_CLIENT}" | sed 's/--no-secure //' | sed 's/--secure //' | sed 's/'"--port=${CLICKHOUSE_PORT_TCP}"'//g; s/$/'"--secure --accept-invalid-certificate --port=${CLICKHOUSE_PORT_TCP_SECURE}"'/g')}
+export CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:=$(echo "${CLICKHOUSE_CLIENT}" | sed 's/--secure //' | sed 's/'"--port=${CLICKHOUSE_PORT_TCP}"'//g; s/$/'"--secure --accept-invalid-certificate --port=${CLICKHOUSE_PORT_TCP_SECURE}"'/g')}
 
 # Add database and log comment to url params
 if [ -n "${CLICKHOUSE_URL_PARAMS:-}" ]
@@ -149,8 +125,13 @@ fi
 
 export CLICKHOUSE_URL=${CLICKHOUSE_URL:="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/"}
 export CLICKHOUSE_URL_HTTPS=${CLICKHOUSE_URL_HTTPS:="https://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTPS}/"}
-export CLICKHOUSE_URL="${CLICKHOUSE_URL}?${CLICKHOUSE_URL_PARAMS}"
-export CLICKHOUSE_URL_HTTPS="${CLICKHOUSE_URL_HTTPS}?${CLICKHOUSE_URL_PARAMS}"
+
+# Add url params to url
+if [ -n "${CLICKHOUSE_URL_PARAMS:-}" ]
+then
+  export CLICKHOUSE_URL="${CLICKHOUSE_URL}?${CLICKHOUSE_URL_PARAMS}"
+  export CLICKHOUSE_URL_HTTPS="${CLICKHOUSE_URL_HTTPS}?${CLICKHOUSE_URL_PARAMS}"
+fi
 
 export CLICKHOUSE_URL_PROMETHEUS=${CLICKHOUSE_URL_PROMETHEUS:="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_PROMTHEUS_PORT}/metrics"}
 
@@ -186,20 +167,6 @@ function clickhouse_client_removed_host_parameter()
     $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub(r'--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
 }
 
-function wait_for_query_to_start()
-{
-    local query_id="$1"
-    local timeout="${2:-120}"
-    local start=$EPOCHSECONDS
-    while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.processes WHERE query_id = '$query_id' SETTINGS use_query_cache = 0") == 0 ]]; do
-        if ((EPOCHSECONDS - start > timeout)); then
-            echo "Timeout waiting for query $query_id to start" >&2
-            exit 1
-        fi
-        sleep 0.1
-    done
-}
-
 function wait_for_queries_to_finish()
 {
     local max_tries="${1:-20}"
@@ -218,9 +185,7 @@ function wait_for_queries_to_finish()
 function random_str()
 {
     local n=$1 && shift
-    # LC_ALL=C: macOS `tr` errors with "Illegal byte sequence" on the non-UTF-8
-    # bytes from /dev/urandom under a UTF-8 locale.
-    LC_ALL=C tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
+    tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
 }
 
 function query_with_retry()
@@ -267,11 +232,8 @@ function with_lock()
 }
 
 # BASH_XTRACEFD is supported only since 4.1
-if [[ -n "${CLICKHOUSE_BASH_TRACING_FILE+x}" ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
-    # Append, not truncate: an expect test spawns bash several times and each spawn sources this
-    # file, so truncating here would keep only the last spawn's trace. clickhouse-test removes the
-    # file once before starting the test, and this redirection re-creates it.
-    exec 3>>"$CLICKHOUSE_BASH_TRACING_FILE"
+if [[ -v CLICKHOUSE_BASH_TRACING_FILE ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
+    exec 3>"$CLICKHOUSE_BASH_TRACING_FILE"
     # It will be also nice to have stderr in the tracing output, but:
     # - exec 2>&3
     #
