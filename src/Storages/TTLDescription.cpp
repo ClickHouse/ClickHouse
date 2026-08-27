@@ -53,12 +53,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_codecs;
-    extern const SettingsBool allow_suspicious_codecs;
-}
-
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
@@ -1355,8 +1349,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     ttl_element->recompression_codec, {},
-                    !skip_validation && !context->getSettingsRef()[Setting::allow_suspicious_codecs],
-                    skip_validation || context->getSettingsRef()[Setting::allow_experimental_codecs]);
+                    skip_validation ? CodecValidationSettings::trusted() : CodecValidationSettings(context->getSettingsRef()));
         }
     }
 

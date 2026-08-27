@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 
@@ -58,22 +57,6 @@ struct AggregateFunctionGiniData
             throwTooLargeArraySize();
     }
 
-    static bool isNaNValue(const Value & value)
-    {
-        if constexpr (std::is_same_v<Value, BFloat16>)
-            return value.isNaN();
-        else
-            return isNaN(value);
-    }
-
-    static bool isFiniteValue(const Value & value)
-    {
-        if constexpr (std::is_same_v<Value, BFloat16>)
-            return value.isFinite();
-        else
-            return isFinite(value);
-    }
-
     static long double toLongDouble(const Value & value)
     {
         if constexpr (is_decimal<Value>)
@@ -87,10 +70,10 @@ struct AggregateFunctionGiniData
     void add(const Value & x)
     {
         /// Skip NaNs as they are not compatible with comparison sorting.
-        if (isNaNValue(x))
+        if (isNaN(x))
             return;
 
-        if (!isFiniteValue(x))
+        if (!isFinite(x))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function `gini` does not support infinite values");
 
         if (x < Value{})
@@ -145,7 +128,7 @@ struct AggregateFunctionGiniData
         pdqsort(array.begin(), array.end());
 
         const Value & maximum = array.back();
-        if (maximum == Value{} || !isFiniteValue(maximum))
+        if (maximum == Value{} || !isFinite(maximum))
             return std::numeric_limits<Float64>::quiet_NaN();
 
         const long double maximum_float = toLongDouble(maximum);
@@ -157,7 +140,7 @@ struct AggregateFunctionGiniData
         for (size_t i = 0; i + 1 < n; ++i)
         {
             long double difference = 0;
-            if constexpr (is_floating_point<Value> || std::is_same_v<Value, BFloat16>)
+            if constexpr (is_floating_point<Value>)
                 difference = toLongDouble(array[i + 1]) - toLongDouble(array[i]);
             else
                 difference = toLongDouble(array[i + 1] - array[i]);
@@ -186,20 +169,6 @@ public:
     {}
 
     bool allocatesMemoryInArena() const override { return false; }
-
-    AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & nested_function,
-        const DataTypes & arguments,
-        const Array & params,
-        const AggregateFunctionProperties &) const override
-    {
-        return std::make_shared<AggregateFunctionNullUnary<false, true>>(nested_function, arguments, params);
-    }
-
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        return {0};
-    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
@@ -234,9 +203,6 @@ AggregateFunctionPtr createAggregateFunctionGini(const std::string & name, const
     assertUnary(name, argument_types);
 
     const DataTypePtr & argument_type = argument_types[0];
-    if (argument_type->onlyNull())
-        return std::make_shared<AggregateFunctionGini<Float64>>(std::make_shared<DataTypeFloat64>());
-
     if (!isNumber(argument_type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal type {} of argument of aggregate function {}, must be a number",
@@ -267,8 +233,7 @@ Calculates the [Gini coefficient](https://en.wikipedia.org/wiki/Gini_coefficient
 
 The result ranges from `0` (perfect equality: all values are the same) to a maximum approaching `1` as `n` grows (perfect inequality: one value holds everything and the rest are zero). For a finite sample of `n` values the maximum is `(n - 1) / n`.
 
-All passed values are collected in their input type and then sorted before a numerically stable final calculation. The coefficient is computed from normalized adjacent pairwise differences and returned as `Float64`, so it is rounded to `Float64` precision. Therefore, the function consumes `O(n)` memory, where `n` is the number of values passed. `NaN` values are skipped, while infinite values are rejected.
-    )";
+All passed values are collected in their input type and then sorted before a numerically stable final calculation. The coefficient is computed from normalized adjacent pairwise differences and returned as `Float64`, so it is rounded to `Float64` precision. Therefore, the function consumes `O(n)` memory, where `n` is the number of values passed. `NaN` values are skipped, while infinite and negative values are rejected.)";
     FunctionDocumentation::Syntax syntax = "gini(expr)";
     FunctionDocumentation::Arguments arguments = {
         {"expr", "Expression resulting in finite, non-negative numeric values.", {"(U)Int*", "Float*", "Decimal"}}
@@ -294,7 +259,7 @@ SELECT gini(x) FROM (SELECT number AS x FROM numbers(10));
         )",
         R"(
 ┌─────────────gini(x)─┐
-│ 0.3666666666666665  │
+│ 0.36666666666666664 │
 └─────────────────────┘
         )"
     }
@@ -302,8 +267,7 @@ SELECT gini(x) FROM (SELECT number AS x FROM numbers(10));
     FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
-    factory.registerFunction("gini", {createAggregateFunctionGini, documentation, properties});
+    factory.registerFunction("gini", {createAggregateFunctionGini, documentation});
 }
 
 }

@@ -1,9 +1,13 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
+#include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
+#include <base/hex.h>
 #include <fmt/ranges.h>
 
 
@@ -20,6 +24,139 @@ namespace ErrorCodes
 namespace
 {
     using Node = PrometheusQueryTree::Node;
+
+    String quotePromQLString(std::string_view str)
+    {
+        String result;
+        result.reserve(str.size() + 2);
+        result.push_back('"');
+
+        for (size_t i = 0; i < str.size();)
+        {
+            const auto c = static_cast<UInt8>(str[i]);
+
+            if (c >= 0x80)
+            {
+                const size_t sequence_length = UTF8::seqLength(c);
+                if (sequence_length <= str.size() - i
+                    && UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data() + i), sequence_length))
+                {
+                    result.append(str.data() + i, sequence_length);
+                    i += sequence_length;
+                    continue;
+                }
+            }
+
+            switch (c)
+            {
+                case '"':
+                case '\\':
+                    result.push_back('\\');
+                    result.push_back(static_cast<char>(c));
+                    break;
+                case '\a': result.append("\\a"); break;
+                case '\b': result.append("\\b"); break;
+                case '\f': result.append("\\f"); break;
+                case '\n': result.append("\\n"); break;
+                case '\r': result.append("\\r"); break;
+                case '\t': result.append("\\t"); break;
+                case '\v': result.append("\\v"); break;
+                default:
+                    if (c < 0x20 || c == 0x7F || c >= 0x80)
+                    {
+                        result.append("\\x");
+                        result += getHexUIntLowercase(c);
+                    }
+                    else
+                    {
+                        result.push_back(static_cast<char>(c));
+                    }
+                    break;
+            }
+
+            ++i;
+        }
+
+        result.push_back('"');
+        return result;
+    }
+
+    bool isLegacyLabelName(std::string_view label)
+    {
+        if (label.empty())
+            return false;
+
+        if (!isAlphaASCII(label.front()) && label.front() != '_')
+            return false;
+
+        for (char c : label.substr(1))
+        {
+            if (!isAlphaNumericASCII(c) && c != '_')
+                return false;
+        }
+
+        return true;
+    }
+
+    bool isLegacyMetricName(std::string_view metric)
+    {
+        if (metric.empty())
+            return false;
+
+        if (!isAlphaASCII(metric.front()) && metric.front() != '_' && metric.front() != ':')
+            return false;
+
+        for (char c : metric.substr(1))
+        {
+            if (!isAlphaNumericASCII(c) && c != '_' && c != ':')
+                return false;
+        }
+
+        return true;
+    }
+
+    /// Keywords which cannot be used as a bare metric name because a parser reading them
+    /// in the position of an operand would treat them as a binary operator or a modifier.
+    /// For example, `foo * on` is not a multiplication of `foo` and the metric `on`,
+    /// it's an incomplete `on (...)` matching modifier. Such names must stay quoted.
+    bool isReservedKeyword(std::string_view name)
+    {
+        static constexpr std::string_view keywords[]
+            = {"and", "or", "unless", "atan2", "by", "without", "on", "ignoring", "group_left", "group_right", "offset", "bool"};
+
+        for (const auto & keyword : keywords)
+        {
+            if (equalsCaseInsensitive(name, keyword))
+                return true;
+        }
+
+        return false;
+    }
+
+    bool canPrintLabelNameUnquoted(std::string_view label)
+    {
+        return isLegacyLabelName(label)
+            && !equalsCaseInsensitive(label, "inf")
+            && !equalsCaseInsensitive(label, "nan");
+    }
+
+    bool canPrintMetricNameUnquoted(std::string_view metric)
+    {
+        return isLegacyMetricName(metric)
+            && !equalsCaseInsensitive(metric, "inf")
+            && !equalsCaseInsensitive(metric, "nan")
+            && !isReservedKeyword(metric);
+    }
+
+    String formatLabelName(const String & label)
+    {
+        return canPrintLabelNameUnquoted(label) ? label : quotePromQLString(label);
+    }
+
+    String formatMetricName(const String & metric)
+    {
+        return canPrintMetricNameUnquoted(metric) ? metric : quotePromQLString(metric);
+    }
 
     template <typename NodeType>
     NodeType * cloneNodeImpl(const NodeType * node, std::vector<std::unique_ptr<Node>> & node_list)
@@ -187,8 +324,21 @@ String PrometheusQueryTree::Subquery::dumpNode(const PrometheusQueryTree & tree,
 String PrometheusQueryTree::Offset::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
     String str = fmt::format("{}Offset:", makeIndent(indent));
-    if (at_timestamp)
-        str += fmt::format("\n{}at: {}", makeIndent(indent + 1), ::DB::toString(*at_timestamp, tree.timestamp_scale));
+    switch (at_modifier)
+    {
+        case AtModifier::None:
+            break;
+        case AtModifier::Timestamp:
+            chassert(at_timestamp);
+            str += fmt::format("\n{}at: {}", makeIndent(indent + 1), ::DB::toString(*at_timestamp, tree.timestamp_scale));
+            break;
+        case AtModifier::Start:
+            str += fmt::format("\n{}at: start()", makeIndent(indent + 1));
+            break;
+        case AtModifier::End:
+            str += fmt::format("\n{}at: end()", makeIndent(indent + 1));
+            break;
+    }
     if (offset_value)
         str += fmt::format("\n{}offset: {}", makeIndent(indent + 1), ::DB::toString(*offset_value, tree.timestamp_scale));
     str += fmt::format("\n{}", getExpression()->dumpNode(tree, indent + 1));
@@ -272,14 +422,6 @@ bool PrometheusQueryTree::tryParse(std::string_view promql_query_, UInt32 timest
 }
 
 
-namespace
-{
-    String quotePromQLString(std::string_view str)
-    {
-        return doubleQuoteString(str);
-    }
-}
-
 String PrometheusQueryTree::Scalar::toString(const PrometheusQueryTree &) const
 {
     if (std::isfinite(scalar))
@@ -307,37 +449,52 @@ String PrometheusQueryTree::StringLiteral::toString(const PrometheusQueryTree &)
 
 String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree &) const
 {
-    bool has_metric_name = false;
+    size_t metric_name_matcher_count = 0;
     size_t metric_name_pos = static_cast<size_t>(-1);
     for (size_t i = 0; i != matchers.size(); ++i)
     {
         const auto & matcher = matchers[i];
-        if ((matcher.label_name == "__name__") && (matcher.matcher_type == MatcherType::EQ))
+        if (matcher.label_name == "__name__")
         {
-            has_metric_name = true;
-            metric_name_pos = i;
-            break;
+            ++metric_name_matcher_count;
+            if (matcher.matcher_type == MatcherType::EQ && metric_name_pos == static_cast<size_t>(-1))
+                metric_name_pos = i;
         }
     }
 
-    String str;
-    if (has_metric_name)
-    {
-        str += matchers[metric_name_pos].label_value;
-    }
+    const bool can_hoist_metric_name
+        = metric_name_matcher_count == 1
+        && metric_name_pos != static_cast<size_t>(-1)
+        && canPrintMetricNameUnquoted(matchers[metric_name_pos].label_value);
 
-    if (!has_metric_name || (matchers.size() - has_metric_name > 0))
+    String str;
+    if (can_hoist_metric_name)
+        str += formatMetricName(matchers[metric_name_pos].label_value);
+
+    if (!can_hoist_metric_name || matchers.size() > 1)
     {
         str += "{";
         bool need_comma = false;
         for (size_t i = 0; i != matchers.size(); ++i)
         {
-            if (i == metric_name_pos)
+            if (i == metric_name_pos && can_hoist_metric_name)
                 continue;
             const auto & matcher = matchers[i];
             if (need_comma)
                 str += ",";
-            str += matcher.label_name;
+
+            const bool is_quoted_metric_name
+                = matcher.label_name == "__name__"
+                && matcher.matcher_type == MatcherType::EQ
+                && !matcher.label_value.empty();
+            if (is_quoted_metric_name)
+            {
+                str += quotePromQLString(matcher.label_value);
+            }
+            else
+            {
+                str += formatLabelName(matcher.label_name);
+            }
             std::string_view matcher_type_str;
             switch (matcher.matcher_type)
             {
@@ -347,8 +504,11 @@ String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree 
                 case MatcherType::NRE: matcher_type_str = "!~"; break;
             }
             chassert(!matcher_type_str.empty());
-            str += matcher_type_str;
-            str += quotePromQLString(matcher.label_value);
+            if (!is_quoted_metric_name)
+            {
+                str += matcher_type_str;
+                str += quotePromQLString(matcher.label_value);
+            }
             need_comma = true;
         }
         str += "}";
@@ -390,10 +550,21 @@ String PrometheusQueryTree::Subquery::toString(const PrometheusQueryTree & tree)
 String PrometheusQueryTree::Offset::toString(const PrometheusQueryTree & tree) const
 {
     String str = getExpression()->toString(tree);
-    if (at_timestamp)
+    switch (at_modifier)
     {
-        str += " @ ";
-        str += DB::toString(Decimal64{*at_timestamp}, tree.timestamp_scale);
+        case AtModifier::None:
+            break;
+        case AtModifier::Timestamp:
+            chassert(at_timestamp);
+            str += " @ ";
+            str += DB::toString(Decimal64{*at_timestamp}, tree.timestamp_scale);
+            break;
+        case AtModifier::Start:
+            str += " @ start()";
+            break;
+        case AtModifier::End:
+            str += " @ end()";
+            break;
     }
     if (offset_value)
     {
@@ -465,7 +636,7 @@ String PrometheusQueryTree::BinaryOperator::toString(const PrometheusQueryTree &
         {
             if (need_comma)
                 str += ", ";
-            str += label;
+            str += formatLabelName(label);
             need_comma = true;
         }
         str += ") ";
@@ -486,7 +657,7 @@ String PrometheusQueryTree::BinaryOperator::toString(const PrometheusQueryTree &
             {
                 if (need_comma)
                     str += ", ";
-                str += label;
+                str += formatLabelName(label);
                 need_comma = true;
             }
             str += ")";
@@ -559,7 +730,7 @@ String PrometheusQueryTree::AggregationOperator::toString(const PrometheusQueryT
         {
             if (need_comma)
                 str += ", ";
-            str += label;
+            str += formatLabelName(label);
             need_comma = true;
         }
         str += ") ";

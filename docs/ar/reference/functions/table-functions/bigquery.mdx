@@ -1,0 +1,168 @@
+---
+description: 'يتيح تنفيذ استعلامات SELECT وINSERT على جدول في Google BigQuery، بما في ذلك مجموعات البيانات العامة.'
+sidebarTitle: 'bigquery'
+slug: /sql-reference/table-functions/bigquery
+title: 'bigquery'
+doc_type: 'reference'
+---
+
+{/*بداية مولّدة تلقائيًا*/}
+
+يسمح بتنفيذ استعلامات `SELECT` و`INSERT` على جدول في [Google BigQuery](https://cloud.google.com/bigquery)، بما في ذلك مجموعات البيانات العامة. يُستنتج مخطط الجدول تلقائيًا من مخطط جدول BigQuery.
+
+تتم القراءة باستخدام واجهة BigQuery REST API (`tabledata.list`)، لذا لا يمكن قراءة سوى الجداول الأصلية (ولا يمكن قراءة العروض أو العروض المادية أو الجداول الخارجية). تتم الكتابة باستخدام عمليات الإدراج المتدفقة (`tabledata.insertAll`)، والتي تتطلب تفعيل الفوترة للمشروع.
+
+<div id="syntax">
+  ## البنية النحوية
+</div>
+
+```sql
+bigquery(project, dataset, table[, access_token][, key = value, ...])
+bigquery(named_collection[, key = value, ...])
+```
+
+<div id="arguments">
+  ## وسيطات الدالة
+</div>
+
+| وسيط الدالة        | الوصف                                                                                                                                           |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project`      | مشروع Google Cloud المالك لمجموعة البيانات. بالنسبة إلى مجموعات البيانات العامة، يكون هذا هو مشروع مجموعة البيانات، مثل `bigquery-public-data`. |
+| `dataset`      | اسم مجموعة البيانات.                                                                                                                            |
+| `table`        | اسم الجدول.                                                                                                                                     |
+| `access_token` | رمز وصول OAuth 2.0 (وسيط دالة موضعي اختياري، راجع [المصادقة](#authentication)).                                                                     |
+
+يمكن أيضًا تحديد وسيطات الدالة `project` و`dataset` و`table` و`access_token` بصيغة `key = value`؛ وتملأ وسيطات الدالة الموضعية هذه الخانات بالترتيب المذكور. ويُعد تحديد وسيط دالة موضعيًا وبصفته مفتاحًا في الوقت نفسه، أو تحديد المفتاح نفسه مرتين، خطأً.
+
+يمكن تحديد وسيطات الدالة التالية بصيغة `key = value` (أو كمفاتيح في مجموعة مسماة):
+
+| المفتاح               | الوصف                                                                                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `access_token`        | رمز وصول OAuth 2.0.                                                                                                                         |
+| `service_account_key` | محتوى ملف مفتاح حساب خدمة Google بتنسيق JSON.                                                                                               |
+| `client_id`           | معرّف عميل OAuth 2.0 (يُستخدم مع `client_secret` و`refresh_token`).                                                                         |
+| `client_secret`       | سر عميل OAuth 2.0.                                                                                                                          |
+| `refresh_token`       | رمز تحديث OAuth 2.0.                                                                                                                        |
+| `billing_project`     | مشروع اختياري تُنسب إليه الحصة والفوترة (يُرسل في الترويسة `X-Goog-User-Project`).                                                          |
+| `base_url`            | نقطة نهاية واجهة برمجة التطبيقات، وهي `https://bigquery.googleapis.com` افتراضيًا. ويمكن تغييرها للاختبارات والمحاكيات.                     |
+| `token_url`           | تجاوز لنقطة نهاية رمز OAuth للاختبارات والمحاكيات. افتراضيًا، تكون `token_uri` لمفتاح حساب الخدمة أو `https://oauth2.googleapis.com/token`. |
+
+<div id="authentication">
+  ## المصادقة
+</div>
+
+يجب توفير طريقة مصادقة واحدة فقط. لا يتيح BigQuery وصولًا مجهول الهوية، لذا تُطلب بيانات الاعتماد حتى لمجموعات البيانات العامة.
+
+1. **رمز الوصول**. أي رمز وصول صالح وفق OAuth 2.0، مثل الرمز الناتج عن `gcloud auth print-access-token`. تنتهي صلاحية الرموز سريعًا (عادةً بعد ساعة واحدة)، لذا تناسب هذه الطريقة الاستخدام التفاعلي.
+2. **مفتاح حساب الخدمة** (موصى به للخوادم). مرّر محتوى ملف مفتاح أُنشئ في Google Cloud IAM باستخدام وسيطة الدالة `service_account_key`. يوقّع ClickHouse رمز JWT بالمفتاح ويستبدله برمز وصول، ويجدده تلقائيًا.
+3. **رمز التحديث**. مرّر `client_id` و`client_secret` و`refresh_token`، مثل القيم المأخوذة من `~/.config/gcloud/application_default_credentials.json` بعد تشغيل `gcloud auth application-default login`.
+
+خزّن بيانات الاعتماد في [مجموعة مسماة](/ar/concepts/features/configuration/server-config/named-collections) لتجنّب تحديدها في كل استعلام. يُسجَّل الجدول الدائم المُنشأ من مجموعة مسماة (باستخدام محرك الجدول `BigQuery` أو `CREATE TABLE ... AS bigquery(...)`) كتبعية للمجموعة، لذا يُحظر `DROP NAMED COLLECTION` ما دام الجدول موجودًا.
+
+<div id="data-type-mapping">
+  ## تعيين أنواع البيانات
+</div>
+
+| نوع BigQuery          | نوع ClickHouse                                                                                                                                                                     |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `STRING`              | [String](/ar/reference/data-types/string)                                                                                                                                             |
+| `BYTES`               | [String](/ar/reference/data-types/string) (بايتات أولية)                                                                                                                              |
+| `INTEGER` / `INT64`   | [Int64](/ar/reference/data-types/int-uint)                                                                                                                                            |
+| `FLOAT` / `FLOAT64`   | [Float64](/ar/reference/data-types/float)                                                                                                                                             |
+| `BOOLEAN` / `BOOL`    | [Bool](/ar/reference/data-types/boolean)                                                                                                                                              |
+| `TIMESTAMP`           | [DateTime64(6, &#39;UTC&#39;)](/ar/reference/data-types/datetime64)                                                                                                                   |
+| `DATE`                | [Date32](/ar/reference/data-types/date32)                                                                                                                                             |
+| `TIME`                | [Time64(6)](/ar/reference/data-types/time64)                                                                                                                                          |
+| `DATETIME`            | [DateTime64(6, &#39;UTC&#39;)](/ar/reference/data-types/datetime64)                                                                                                                   |
+| `NUMERIC` / `DECIMAL` | [Decimal(38, 9)](/ar/reference/data-types/decimal)، أو `Decimal(P, S)` عند تحديد المعلمات                                                                                             |
+| `BIGNUMERIC`          | [Decimal(76, 38)](/ar/reference/data-types/decimal)، أو `Decimal(P, S)` عند تحديد المعلمات                                                                                            |
+| `GEOGRAPHY`           | [Geometry](/ar/reference/data-types/geo#geometry) (يُحلَّل من WKT)                                                                                                                    |
+| `JSON`                | [String](/ar/reference/data-types/string)                                                                                                                                             |
+| `INTERVAL`            | [String](/ar/reference/data-types/string)                                                                                                                                             |
+| `RANGE`               | [String](/ar/reference/data-types/string) (للقراءة فقط)                                                                                                                               |
+| `RECORD` / `STRUCT`   | [Tuple](/ar/reference/data-types/tuple)، أو [Nullable](/ar/reference/data-types/nullable)(`Tuple`) في وضع `NULLABLE`                                                                     |
+| وضع `REPEATED`        | [Array](/ar/reference/data-types/array) من نوع العنصر، على أن يكون العنصر غير `Nullable` (`Array(Tuple(...))` لعنصر `RECORD`)، لأن مصفوفات BigQuery لا يمكن أن تحتوي على عناصر `NULL` |
+| وضع `NULLABLE`        | [Nullable](/ar/reference/data-types/nullable) (باستثناء `GEOGRAPHY`، إذ يمكن لنوع `Geometry` أن يحتوي على `NULL` بمفرده)                                                              |
+
+ملاحظات:
+
+* لا يتضمن `DATETIME` في BigQuery منطقة زمنية؛ لذا يُعيَّن إلى `DateTime64(6, 'UTC')` حتى لا تعتمد القيمة المعروضة على المنطقة الزمنية للخادم.
+* يُعيَّن `RECORD` من النوع `NULLABLE` إلى `Nullable(Tuple(...))`، بحيث يُحفَظ `NULL` للسجل بأكمله بدلاً من اختزاله إلى `Tuple` من القيم الافتراضية. تتحول المصفوفة `NULL` (أو الفارغة) إلى مصفوفة فارغة، إذ لا يمكن أن يكون `Array` داخل `Nullable` في ClickHouse. لا يمكن لمصفوفة BigQuery أن تحتوي على عناصر `NULL` (`ARRAY<T>` مكافئ لـ `ARRAY<T NOT NULL>`)، لذا لا يكون نوع عنصر الحقل `REPEATED` هو `Nullable` (`Array(T)`، أو `Array(Tuple(...))` لعنصر من نوع `RECORD`)؛ ويُرفض عنصر `NULL` في استجابة `tabledata.list` باعتباره إدخالاً غير صالح.
+* تعمل قراءة أعمدة `Nullable(Tuple(...))` وكتابتها عبر دالة الجدول `bigquery` دون إعدادات إضافية. يتطلب إنشاء جدول دائم بمحرك `BigQuery` يحتوي على مثل هذا العمود، سواء استُنتج الهيكل أو صُرّح به صراحةً، الإعداد `enable_nullable_tuple_type`، كما هو الحال مع أي عمود `Nullable(Tuple)`. عند التصريح عن الأعمدة صراحةً، يمكن بدلاً من ذلك التصريح بحقل `RECORD` كـ `Tuple(...)` عادي لتجنب هذا الإعداد، لكن على حساب تحويل `NULL` للسجل بأكمله إلى tuple افتراضي؛ والاختلاف الوحيد المقبول عن النوع المستنتج هو إزالة `Nullable` الذي يغلّف `Tuple` الخاص بـ `RECORD`، وفقط في ذلك السجل نفسه — لا يمكن نقل قابلية القيم الفارغة إلى سجل آخر، داخلياً أو خارجياً.
+* يُعيَّن `GEOGRAPHY` إلى [Geometry](/ar/reference/data-types/geo#geometry). ينقل BigQuery قيمة `GEOGRAPHY` كنص [WKT](https://en.wikipedia.org/wiki/Well-known_text_representation_of_geometry)، ويحللها إلى البديل المطابق من `Geometry` (وهو `Variant` من `Point` و`MultiPoint` و`Ring` و`LineString` و`MultiLineString` و`Polygon` و`MultiPolygon`) عند القراءة، ثم يعيد تسلسلها إلى WKT عند الكتابة. لا يملك `GEOMETRYCOLLECTION` والشكل الهندسي الفارغ، مثل `POINT EMPTY`، مقابلاً في `Geometry`، لذا تؤدي قراءة صف يحتوي على إحدى هذه القيم إلى حدوث خطأ. وبما أن `Variant` يحتوي `NULL` بذاته، يُعيَّن حقل `GEOGRAPHY` من النوع `NULLABLE` إلى `Geometry` وليس إلى `Nullable(Geometry)`، مع الحفاظ على `NULL` عند النقل ذهاباً وإياباً.
+* يُعيَّن `JSON` إلى `String` بدلاً من نوع البيانات [JSON](/ar/reference/data-types/newjson)، لأن نوع `JSON` في ClickHouse لا يقبل في المستوى الأعلى إلا كائناً (`{...}`)، بينما يمكن أن تكون قيمة `JSON` في BigQuery أي قيمة JSON، مثل قيمة scalar أو مصفوفة أو `null`، ولذلك لا يمكن قراءة جدول يحتوي على مثل هذه القيم. إضافةً إلى ذلك، لا يمكن تغليف `JSON` بـ `Nullable`، لذا لن يُحفَظ SQL `NULL` في عمود `NULLABLE`. تعيين `String` لا يفقد البيانات؛ ويمكن تحويل الكائنات في المستوى الأعلى باستخدام `CAST(value AS JSON)`.
+* لا تتسع قيم `BIGNUMERIC` التي يحتوي جزؤها الصحيح على أكثر من 38 رقماً ضمن `Decimal(76, 38)`، وتؤدي إلى حدوث خطأ.
+* قيم `TIMESTAMP` و`DATE` الواقعة خارج نطاق `DateTime64`/`Date32`، أي السنوات 1900-2299، غير مدعومة.
+* أعمدة `RANGE` للقراءة فقط. تتوقع `tabledata.insertAll` قيمة `RANGE<T>` على شكل كائن مهيكل `{start, end}`، ولا يمكن إعادة بنائها من تعيين `String`، لذا تؤدي عملية الإدراج في عمود `RANGE` إلى حدوث خطأ.
+* تُرسل قيم `INT64` إلى `tabledata.insertAll` كسلاسل عشرية، لأن واجهة API تحلل أرقام JSON كقيم ذات دقة مزدوجة، وإلا فقد تتلف القيم الواقعة خارج `[-2^53 + 1, 2^53 - 1]`.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+اقرأ مجموعة بيانات عامة باستخدام رمز مميّز من `gcloud`:
+
+```sql
+SELECT word, sum(word_count) AS c
+FROM bigquery('bigquery-public-data', 'samples', 'shakespeare', '<access token>')
+GROUP BY word
+ORDER BY c DESC
+LIMIT 5;
+```
+
+اقرأ جدولًا خاصًا باستخدام ملف مفتاح حساب خدمة:
+
+```sql
+SELECT count()
+FROM bigquery('my-project', 'my_dataset', 'my_table',
+              service_account_key = '{"type": "service_account", "private_key": "...", "client_email": "...", ...}');
+```
+
+إدراج البيانات (إدراج تدفقي، يتطلب تفعيل الفوترة):
+
+```sql
+INSERT INTO FUNCTION bigquery('my-project', 'my_dataset', 'my_table', '<access token>')
+SELECT number AS id, toString(number) AS name FROM numbers(10);
+```
+
+استخدم مجموعة مُسمّاة:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <my_bigquery>
+            <project>my-project</project>
+            <dataset>my_dataset</dataset>
+            <service_account_key><![CDATA[{"type": "service_account", ...}]]></service_account_key>
+        </my_bigquery>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+SELECT * FROM bigquery(my_bigquery, table = 'my_table');
+```
+
+<div id="limitations">
+  ## القيود
+</div>
+
+* لا يمكن قراءة سوى جداول BigQuery الأصلية. تتطلب طرق العرض والجداول الخارجية تشغيل مهمة استعلام في BigQuery، وهو ما لا تقوم به هذه الدالة.
+* يمكن قراءة أعمدة `RANGE` (بصفتها `String`) ولكن لا يمكن الكتابة إليها: إذ يؤدي الإدراج في عمود `RANGE` إلى حدوث خطأ.
+* لا يمكن تمثيل قيمة `GEOGRAPHY` التي تكون `GEOMETRYCOLLECTION` أو شكلًا هندسيًا فارغًا بالنوع `Geometry`، لذا تؤدي قراءة صف يحتوي على أي منهما إلى حدوث خطأ. تُرفض كتابة `Geometry` بقيمة `NULL` في حقل `GEOGRAPHY` من نوع `REQUIRED`، أو كعنصر في حقل `GEOGRAPHY` من نوع `REPEATED`، لأن BigQuery لا يقبل قيم `NULL` في تلك الحالات.
+* لا تُدفع شروط التصفية إلى المصدر: إذ إن `tabledata.list` لا تسرد سوى صفوف الجدول ولا تحتوي على أي معلمة للتصفية (بل تقبل خيارات ترقيم الصفحات واختيار الأعمدة والتنسيق)، كما أن التصفية تتطلب تشغيل مهمة استعلام في BigQuery، وهو ما لا تقوم به هذه الدالة. لذلك، يُطبَّق شرط `WHERE` في ClickHouse بعد تنزيل الصفوف؛ استخدم اختيار الأعمدة لتقليل البيانات المنقولة.
+* في المقابل، يقلل `LIMIT` مقدار البيانات المقروءة. تُطلب الصفحات عند الحاجة، مع تعيين `maxResults` إلى `max_block_size`، ولا تُطلب صفحات إضافية بمجرد أن يحصل الاستعلام على عدد كافٍ من الصفوف. بالنسبة إلى `LIMIT n` بسيط (من دون `WHERE` أو `GROUP BY` أو `ORDER BY`، ومع كون `n` أقل من `max_block_size`)، يخفض ClickHouse قيمة `max_block_size` إلى `n`، لذا يُجرى طلب واحد فقط للحصول على `n` صفوف بالضبط؛ وإلا، تتوقف القراءة عند أول حد للصفحة بعد الحد، مع تجاوز بأقل من صفحة واحدة.
+* تُثبَّت القراءة على المخطط الذي تمت رؤيته وقت تحليل الاستعلام، عبر تمرير القائمة الصريحة للأعمدة إلى `tabledata.list`. بالنسبة إلى قراءة واسعة جدًا تتجاوز فيها قائمة الأعمدة حد طول URL للطلب (مثل `SELECT *` من جدول يحوي آلاف الأعمدة)، يُرفض الاستعلام بدلًا من القراءة دون تثبيت، لأن القراءة غير المثبتة قد تنحرف بسبب تغيير متزامن في المخطط؛ اختر أعمدة أقل كي تتسع القائمة. ويُتحقق من حد طول URL نفسه قبل كل طلب لصفحة مرقمة (إذ تحمل كل صفحة `pageToken` معتمًا)، لذا تُرفض القراءة التي لا تتسع صفحاتها اللاحقة ضمن الحد بالخطأ نفسه بدلًا من أن تفشل جزئيًا.
+* إذا عُدّل جدول BigQuery بعد قراءة مخططه، يُرفض الاستعلام بدلًا من إرجاع بيانات غير متطابقة أو كتابتها بصمت: يُجلب المخطط الحالي مجددًا ويُقارن بالمخطط الذي حُلّل مباشرةً قبل القراءة، ومرة أخرى قبل أن يبث `INSERT` صفه الأول. ولا يمكن سد النافذة المتبقية، أي تغيير المخطط بين ذلك الفحص والطلبات اللاحقة، لأن المخطط والبيانات يُجلبان عبر طلبات REST منفصلة.
+* تُجرى المقارنة مع لقطة المخطط التي حُلّل الاستعلام باستخدامها، وتُلتقط عند تحديد دالة الجدول لبنيتها أو، بالنسبة إلى جدول دائم (جدول بمحرك `BigQuery`، أو جدول أُنشئ باستخدام `CREATE TABLE ... AS bigquery(...)` ويحتفظ بأعمدته بالطريقة نفسها)، عند أول قراءة أو كتابة له بعد `CREATE` أو `ATTACH` أو إعادة تشغيل الخادم. تحتفظ بيانات تعريف الجدول بأعمدة ClickHouse المُعيَّنة، لا بمخطط BigQuery، لذا يُعتمد تغيير المخطط الذي أُجري أثناء فصل الجدول أو توقف الخادم عند الاستعلام التالي بدلًا من رفضه: إذ تظل الأعمدة المعلنة خاضعة للتحقق مقابل المخطط الحالي، وتُفك شفرة الصفوف وفقًا له، لذلك يُقرأ تغيير يحافظ على أنواع ClickHouse المُعيَّنة (مثلًا من `STRING` إلى `BYTES`) وفق قواعد النوع الجديد مع الإبقاء على نوع العمود نفسه.
+* تصل الصفوف المكتوبة باستخدام عمليات الإدراج المتدفقة إلى المخزن المؤقت للتدفق في BigQuery، وقد تستغرق بعض الوقت قبل أن تصبح مرئية للقراءات اللاحقة.
+* يُرسل `INSERT` كبير إلى `tabledata.insertAll` على دفعات: بحد أقصى 500 صف لكل طلب، ويُقسّم أيضًا بحيث يبقى كل طلب دون حد BigQuery البالغ 10 ميغابايت لحجم الطلب (ويُرفض الصف الواحد الذي يتجاوز هذا الحد برسالة خطأ واضحة).
+* عمليات الكتابة ليست ذرّية، وقد ينجح طلب واحد من `tabledata.insertAll` جزئيًا: إذ يمكن لـ BigQuery تثبيت بعض صفوف الطلب ورفض الصفوف الأخرى مع `insertErrors`. كذلك، تُثبَّت الطلبات بصورة مستقلة عن بعضها، لذا قد تُرفض دفعة لاحقة بعد قبول دفعات سابقة. في كلتا الحالتين، يُبلغ الاستعلام عن خطأ، لكن الصفوف المُثبَّتة بالفعل تبقى في BigQuery. للحد من التكرار، يُرسَل كل صف مع `insertId` ثابت مشتق من معرّف الاستعلام وموضعه الترتيبي في الدفق، ويستخدمه BigQuery لإزالة التكرارات بأفضل جهد ضمن نافذة الإدراج المتدفق. إذا تجاوز `query_id` حد BigQuery البالغ 128 حرفًا لـ `insertId`، يُجزَّأ إلى بادئة ثابتة الطول تظل ثابتة لهذا `query_id`. ولأن `insertId` يعتمد على الموضع الترتيبي، لا تكون إزالة التكرارات موثوقة إلا إذا أنتجت إعادة التشغيل الصفوف بالترتيب نفسه: إعادة محاولة دفعة على مستوى النقل آمنة دائمًا، وإعادة تشغيل `INSERT` نفسه باستخدام `query_id` نفسه لا تزيل التكرارات إلا إذا قدّمت الصفوف بالترتيب نفسه (مثل إدراج أحادي الخيط، أو ترتيب حتمي بطريقة أخرى — اضبط `max_threads = 1` و`max_insert_threads = 1` لعملية `INSERT ... SELECT` متوازية قد يتغير فيها ترتيب المقاطع بين المحاولات).
+
+<div id="related">
+  ## مواضيع ذات صلة
+</div>
+
+* [محرك جدول `BigQuery`](/ar/reference/engines/table-engines/integrations/bigquery)
+
+{/*AUTOGENERATED_END*/}

@@ -20,15 +20,57 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 
 하나의 쿼리에는 쉼표로 구분된 여러 명령을 포함할 수 있습니다.
 
-쿼리 처리의 동기 여부는 [mutations&#95;sync](/ko/reference/settings/session-settings#mutations_sync) 설정으로 정의됩니다. 기본값은 비동기입니다.
+쿼리 처리의 동기 여부는 [mutations&#95;sync](/ko/reference/settings/session-settings/mutations#mutations_sync) 설정으로 정의됩니다. 기본값은 비동기입니다.
 
 **관련 항목**
 
 * [뮤테이션](/ko/reference/statements/alter/index#mutations)
 * [ALTER 쿼리의 동기 여부](/ko/reference/statements/alter/index#synchronicity-of-alter-queries)
-* [mutations&#95;sync](/ko/reference/settings/session-settings#mutations_sync) 설정
+* [mutations&#95;sync](/ko/reference/settings/session-settings/mutations#mutations_sync) 설정
 * [경량 `UPDATE`](/ko/reference/statements/update) - patch parts를 사용하는 대체 경량 업데이트
 * [`APPLY PATCHES`](/ko/reference/statements/alter/apply-patches) - 경량 업데이트의 패치를 수동으로 적용합니다
+
+<div id="materialized-columns">
+  ## Materialized 컬럼
+</div>
+
+표현식에서 업데이트된 컬럼을 읽는 [`MATERIALIZED`](/ko/reference/statements/create/table#materialized) 컬럼은
+뮤테이션에 따라 다시 계산되므로 저장된 값이 새 데이터와 일관성을 유지합니다.
+
+<div id="columns-calculated-from-ephemeral-columns">
+  ### EPHEMERAL 컬럼으로 계산된 컬럼
+</div>
+
+[`EPHEMERAL`](/ko/reference/statements/create/table#ephemeral) 컬럼은 `INSERT`가 수행되는 동안에만 존재하며
+저장되지 않습니다. 따라서 이를 기반으로 계산된 `MATERIALIZED` 컬럼은 뮤테이션으로 다시 계산할 수 없습니다.
+이러한 컬럼은 `INSERT` 시점에 계산된 값을 유지하므로, 이후에는 해당
+표현식과 더 이상 일치하지 않게 됩니다:
+
+```sql
+CREATE TABLE test
+(
+    x Int32,
+    e Int32 EPHEMERAL 0,
+    m Int32 MATERIALIZED x + e
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO test (x, e) VALUES (1, 7);
+
+ALTER TABLE test UPDATE x = 2 WHERE 1;
+
+SELECT x, m FROM test;
+```
+
+```text
+┌─x─┬─m─┐
+│ 2 │ 8 │
+└───┴───┘
+```
+
+`m`은 `INSERT` 중에 계산된 값인 `8`이며, `2 + 7`이 아닙니다. `e`의 값은 이를 제공한
+`INSERT` 외부에서는 사용할 수 없습니다. 이러한 이유로 컬럼을 건너뛸 경우 뮤테이션은 서버 로그에 경고를 기록합니다. 이러한 컬럼을 최신 상태로 업데이트하려면 영향을 받는 행을 다시 `INSERT`하십시오.
 
 <div id="related-content">
   ## 관련 문서
