@@ -30,6 +30,7 @@ FROM (
     FROM t1_04893
     FULL JOIN t2_04893
         ON t1_04893.number = t2_04893.number OR t1_04893.number + 100000 = t2_04893.number
+    SETTINGS max_threads = 8, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
 );
 
 SELECT count(), sum(t2_04893.number), sum(t1_04893.number)

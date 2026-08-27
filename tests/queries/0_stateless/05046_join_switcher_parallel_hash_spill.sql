@@ -30,6 +30,7 @@ SELECT countIf(explain LIKE '%FillingRightJoinSide%') > 1
 FROM (
     EXPLAIN PIPELINE
     SELECT t1.n FROM t05046_l AS t1 INNER JOIN t05046_r AS t2 ON t1.n = t2.n
+    SETTINGS max_threads = 8, query_plan_join_shard_by_pk_ranges = 0, join_algorithm = 'auto', parallel_hash_join_threshold = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
 );
 
 SELECT 'inner';

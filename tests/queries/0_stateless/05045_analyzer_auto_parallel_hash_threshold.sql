@@ -19,6 +19,8 @@ SET collect_hash_table_stats_during_joins = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET explain_query_plan_default = 'legacy';
 SET max_threads = 16;
+-- clickhouse-test ships randomized `--max_threads` with every query, which overrides
+-- session SET. Pin the knobs that decide parallel vs serial fill on the EXPLAIN itself.
 
 DROP TABLE IF EXISTS t05045_l;
 DROP TABLE IF EXISTS t05045_r;
@@ -37,6 +39,7 @@ SELECT coalesce(
 FROM (
     EXPLAIN PIPELINE
     SELECT t1.n FROM t05045_l AS t1 INNER JOIN t05045_r AS t2 ON t1.n = t2.n
+    SETTINGS max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0, enable_analyzer = 0, join_algorithm = 'hash', parallel_hash_join_threshold = 100000
 );
 
 SELECT 'legacy_analyzer_parallel';
@@ -47,6 +50,7 @@ SELECT coalesce(
 FROM (
     EXPLAIN PIPELINE
     SELECT t1.n FROM t05045_l AS t1 INNER JOIN t05045_r AS t2 ON t1.n = t2.n
+    SETTINGS max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0, enable_analyzer = 0, join_algorithm = 'hash', parallel_hash_join_threshold = 1
 );
 
 SELECT 'join_switcher_serial';
@@ -59,6 +63,7 @@ SELECT coalesce(
 FROM (
     EXPLAIN PIPELINE
     SELECT t1.n FROM t05045_l AS t1 INNER JOIN t05045_r AS t2 ON t1.n = t2.n
+    SETTINGS max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0, enable_analyzer = 1, join_algorithm = 'auto', parallel_hash_join_threshold = 100000
 );
 
 SELECT 'join_switcher_parallel';
@@ -69,6 +74,7 @@ SELECT coalesce(
 FROM (
     EXPLAIN PIPELINE
     SELECT t1.n FROM t05045_l AS t1 INNER JOIN t05045_r AS t2 ON t1.n = t2.n
+    SETTINGS max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0, enable_analyzer = 1, join_algorithm = 'auto', parallel_hash_join_threshold = 1
 );
 
 DROP TABLE t05045_l;

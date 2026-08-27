@@ -90,6 +90,9 @@ TEST(JoinUsedFlags, PendingPerRowFlagsMarksRowsOutsideSelectorAsUsed)
 
 TEST(JoinUsedFlags, PendingPerRowFlagsDuplicateBlockNoAcrossWorkersThrows)
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "LOGICAL_ERROR aborts in debug and sanitizer builds";
+#else
     JoinStuff::JoinUsedFlags flags;
     flags.setPendingFlagWorkers(/*num_workers=*/2);
 
@@ -98,4 +101,5 @@ TEST(JoinUsedFlags, PendingPerRowFlagsDuplicateBlockNoAcrossWorkersThrows)
     flags.reinit<KIND, STRICTNESS, PREFER_MAPS_ALL>(/*worker_id=*/1, /*block_no=*/5, /*rows=*/1, ScatteredBlock::Selector(1));
 
     EXPECT_THROW(flags.finalizePerRowFlags(/*num_blocks=*/6), Exception);
+#endif
 }

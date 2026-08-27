@@ -16,6 +16,8 @@ SET collect_hash_table_stats_during_joins = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET explain_query_plan_default = 'legacy';
 SET max_threads = 16;
+-- clickhouse-test ships randomized `--max_threads` with every query, which overrides
+-- session SET. Pin the knobs that decide parallel vs serial fill on the EXPLAIN itself.
 
 SELECT 'default';
 SELECT value FROM system.settings WHERE name = 'join_algorithm';
@@ -42,29 +44,29 @@ SELECT equals(
     (SELECT groupArray(explain) FROM (
         EXPLAIN PIPELINE
         SELECT t1.n FROM t05024_l AS t1 INNER JOIN t05024_r AS t2 ON t1.n = t2.n
-        SETTINGS join_algorithm = 'direct,hash,ie_join'
+        SETTINGS join_algorithm = 'direct,hash,ie_join', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
     )),
     (SELECT groupArray(explain) FROM (
         EXPLAIN PIPELINE
         SELECT t1.n FROM t05024_l AS t1 INNER JOIN t05024_r AS t2 ON t1.n = t2.n
-        SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join'
+        SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
     )));
 SELECT equals(
     (SELECT groupArray(explain) FROM (
         EXPLAIN PIPELINE
         SELECT t1.n FROM t05024_l AS t1 INNER JOIN t05024_r AS t2 ON t1.n = t2.n
-        SETTINGS join_algorithm = 'hash'
+        SETTINGS join_algorithm = 'hash', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
     )),
     (SELECT groupArray(explain) FROM (
         EXPLAIN PIPELINE
         SELECT t1.n FROM t05024_l AS t1 INNER JOIN t05024_r AS t2 ON t1.n = t2.n
-        SETTINGS join_algorithm = 'parallel_hash'
+        SETTINGS join_algorithm = 'parallel_hash', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
     )));
 SELECT countIf(explain LIKE '%FillingRightJoinSide%')
 FROM (
     EXPLAIN PIPELINE
     SELECT t1.n FROM t05024_l AS t1 INNER JOIN t05024_r AS t2 ON t1.n = t2.n
-    SETTINGS join_algorithm = 'direct,hash,ie_join'
+    SETTINGS join_algorithm = 'direct,hash,ie_join', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
 );
 
 SELECT 'plan_inner_parallel';
@@ -72,12 +74,12 @@ SELECT equals(
     (SELECT groupArray(explain) FROM (
         EXPLAIN PLAN actions = 1
         SELECT t1.n FROM t05024_l AS t1 INNER JOIN t05024_r AS t2 ON t1.n = t2.n
-        SETTINGS join_algorithm = 'direct,hash,ie_join'
+        SETTINGS join_algorithm = 'direct,hash,ie_join', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
     )),
     (SELECT groupArray(explain) FROM (
         EXPLAIN PLAN actions = 1
         SELECT t1.n FROM t05024_l AS t1 INNER JOIN t05024_r AS t2 ON t1.n = t2.n
-        SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join'
+        SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
     )));
 
 SELECT 'pipeline_right_parallel';
@@ -85,12 +87,12 @@ SELECT equals(
     (SELECT groupArray(explain) FROM (
         EXPLAIN PIPELINE
         SELECT t1.n, t2.n FROM t05024_l AS t1 RIGHT JOIN t05024_r AS t2 ON t1.n = t2.n
-        SETTINGS join_algorithm = 'direct,hash,ie_join', join_use_nulls = 1
+        SETTINGS join_algorithm = 'direct,hash,ie_join', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0, join_use_nulls = 1
     )),
     (SELECT groupArray(explain) FROM (
         EXPLAIN PIPELINE
         SELECT t1.n, t2.n FROM t05024_l AS t1 RIGHT JOIN t05024_r AS t2 ON t1.n = t2.n
-        SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', join_use_nulls = 1
+        SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0, join_use_nulls = 1
     )));
 
 DROP TABLE IF EXISTS t05024_al;
@@ -105,12 +107,12 @@ SELECT equals(
     (SELECT groupArray(explain) FROM (
         EXPLAIN PIPELINE
         SELECT t1.n FROM t05024_al AS t1 ASOF LEFT JOIN t05024_ar AS t2 ON t1.n = t2.n AND t1.ts >= t2.ts
-        SETTINGS join_algorithm = 'direct,hash,ie_join'
+        SETTINGS join_algorithm = 'direct,hash,ie_join', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
     )),
     (SELECT groupArray(explain) FROM (
         EXPLAIN PIPELINE
         SELECT t1.n FROM t05024_al AS t1 ASOF LEFT JOIN t05024_ar AS t2 ON t1.n = t2.n AND t1.ts >= t2.ts
-        SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join'
+        SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
     )));
 
 SELECT 'pipeline_inner_serial';
@@ -119,29 +121,29 @@ SELECT equals(
     (SELECT groupArray(explain) FROM (
         EXPLAIN PIPELINE
         SELECT t1.n FROM t05024_l AS t1 INNER JOIN t05024_r AS t2 ON t1.n = t2.n
-        SETTINGS join_algorithm = 'direct,hash,ie_join'
+        SETTINGS join_algorithm = 'direct,hash,ie_join', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
     )),
     (SELECT groupArray(explain) FROM (
         EXPLAIN PIPELINE
         SELECT t1.n FROM t05024_l AS t1 INNER JOIN t05024_r AS t2 ON t1.n = t2.n
-        SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join'
+        SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
     )));
 SELECT equals(
     (SELECT groupArray(explain) FROM (
         EXPLAIN PIPELINE
         SELECT t1.n FROM t05024_l AS t1 INNER JOIN t05024_r AS t2 ON t1.n = t2.n
-        SETTINGS join_algorithm = 'hash'
+        SETTINGS join_algorithm = 'hash', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
     )),
     (SELECT groupArray(explain) FROM (
         EXPLAIN PIPELINE
         SELECT t1.n FROM t05024_l AS t1 INNER JOIN t05024_r AS t2 ON t1.n = t2.n
-        SETTINGS join_algorithm = 'parallel_hash'
+        SETTINGS join_algorithm = 'parallel_hash', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
     )));
 SELECT countIf(explain LIKE '%FillingRightJoinSide%')
 FROM (
     EXPLAIN PIPELINE
     SELECT t1.n FROM t05024_l AS t1 INNER JOIN t05024_r AS t2 ON t1.n = t2.n
-    SETTINGS join_algorithm = 'direct,hash,ie_join'
+    SETTINGS join_algorithm = 'direct,hash,ie_join', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
 );
 
 SELECT 'plan_inner_serial';
@@ -149,12 +151,12 @@ SELECT equals(
     (SELECT groupArray(explain) FROM (
         EXPLAIN PLAN actions = 1
         SELECT t1.n FROM t05024_l AS t1 INNER JOIN t05024_r AS t2 ON t1.n = t2.n
-        SETTINGS join_algorithm = 'direct,hash,ie_join'
+        SETTINGS join_algorithm = 'direct,hash,ie_join', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
     )),
     (SELECT groupArray(explain) FROM (
         EXPLAIN PLAN actions = 1
         SELECT t1.n FROM t05024_l AS t1 INNER JOIN t05024_r AS t2 ON t1.n = t2.n
-        SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join'
+        SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', max_threads = 16, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0
     )));
 
 DROP TABLE t05024_l;

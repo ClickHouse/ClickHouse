@@ -1,4 +1,8 @@
 -- Tags: long
+-- This test checks nested-column resolution, not join order. Pin fill and unmatched-right
+-- processing to the serial path: `hash` now shares the parallel layout, and randomized
+-- `max_threads` / `parallel_non_joined_rows_processing` would shuffle unmatched FULL rows.
+-- Random settings limits: max_threads=(1, 1); parallel_non_joined_rows_processing=(0, 0); query_plan_join_shard_by_pk_ranges=(0, 0)
 
 DROP TABLE IF EXISTS ta;
 DROP TABLE IF EXISTS tb;
@@ -35,6 +39,7 @@ INSERT INTO nnnb VALUES (1, [[([([(1,'d')],'d')], 's')]], ['s']);
 
 SET enable_analyzer = 1;
 SET join_algorithm = 'hash'; -- parallel_hash does not guarantee the right order
+SET parallel_non_joined_rows_processing = 0;
 
 {% for join_use_nulls in [0, 1] -%}
 
