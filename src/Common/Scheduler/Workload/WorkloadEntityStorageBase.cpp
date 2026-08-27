@@ -1027,13 +1027,17 @@ void WorkloadEntityStorageBase::backup(
         if (inserted)
         {
             it->second = local_entities;
-            /// Drop the snapshot once the backup operation has collected all its entries (post tasks run at the
-            /// end of collection), so repeated backups do not accumulate snapshots on the storage.
-            backup_entries_collector.addPostTask([this, backup_id]
+            /// Drop the snapshot when the backup operation ends, whether it succeeds or fails. The cleanup runs
+            /// from the scope_guard's destructor, held alive by a post task, so it fires even if a later table's
+            /// backupData() throws before post tasks run (post tasks run only after all backupData() calls
+            /// succeed). Otherwise the snapshot would stay pinned on this shared storage, and a retry reusing the
+            /// same backup_uuid would serve this stale snapshot instead of the current local_entities.
+            auto cleanup = std::make_shared<scope_guard>([this, backup_id]
             {
                 std::lock_guard cleanup_lock{mutex};
                 entities_to_backup.erase(backup_id);
             });
+            backup_entries_collector.addPostTask([cleanup]{});
         }
 
         for (const auto & [entity_name, ast] : it->second)
@@ -1152,14 +1156,22 @@ void WorkloadEntityStorageBase::restore(
 
     /// Register the deferred restore task on every restore() call (i.e. once for each of the two system tables).
     /// The task is idempotent: the first one to run swaps out and creates all entities accumulated for this restore
-    /// operation, and any later task finds the accumulator already drained and does nothing. Registering it
-    /// unconditionally (instead of guarding "added once" via shared storage state) keeps no state that could
-    /// survive a failed restore: an aborted restore retried with the same restore UUID simply re-accumulates its
-    /// entities and restores them normally. Data restore tasks run only after restore() has been called for both
-    /// tables of the operation, so every referenced entity is present by the time entities are created.
+    /// operation, and any later task finds the accumulator already drained and does nothing. Data restore tasks run
+    /// only after restore() has been called for both tables of the operation, so every referenced entity is present
+    /// by the time entities are created.
+    ///
+    /// The accumulator must not outlive the restore operation. A scope_guard held by the restore task drops it when
+    /// the operation ends, on success or failure, so a restore that aborts before the data restore tasks run (e.g.
+    /// another table throws) does not pin these ASTs on this shared storage; a retry reusing the same restore_uuid
+    /// then starts from an empty accumulator instead of mixing in the stale entities.
     auto restore_context = restorer.getContext();
+    auto cleanup = std::make_shared<scope_guard>([this, restore_id]
+    {
+        std::lock_guard lock{mutex};
+        entities_to_restore.erase(restore_id);
+    });
     restorer.addDataRestoreTask(
-        [this, restore_context, restore_id, throw_if_exists, replace_if_exists]
+        [this, restore_context, restore_id, throw_if_exists, replace_if_exists, cleanup]
         { restoreEntitiesAccumulatedFromBackup(restore_context, restore_id, throw_if_exists, replace_if_exists); });
 }
 
