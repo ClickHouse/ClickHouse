@@ -212,8 +212,6 @@ std::optional<PreformattedMessage> isReadFromMergeTreeSupportedForDistributed(co
                 PreformattedMessage::create(
                     "make_distributed_plan does not support a distributed read exposing the {} virtual column", column));
 
-
-
     return std::nullopt;
 }
 
@@ -269,12 +267,11 @@ std::optional<PreformattedMessage> hasAggregationUnsupportedStepForDistributed(Q
     if (enable_cascades_optimizer)
         return {};
 
-    /// Only one source is expected for aggregation step
-    if (node.children.size() != 1)
-        return {};
 
     if (aggregating_step->getParams().max_rows_to_group_by != 0)
-        return PreformattedMessage::create("A global GROUP BY limit can't be enforced once aggregation is split per bucket.");
+        return PreformattedMessage::create(
+            "make_distributed_plan does not support aggregation with a global GROUP BY limit (max_rows_to_group_by): "
+            "the limit cannot be enforced once aggregation is split per bucket");
 
     // Since aggregating_step is not in order and explicit sort is not required, we can use partial aggregation
     if (aggregating_step->isGroupingSets())
@@ -361,7 +358,6 @@ traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPla
                     unsupported_step = std::move(maybe_unsupported);
                     return;
                 }
-
             }
 
             if (const auto * sorting = typeid_cast<const SortingStep *>(frame_node.step.get());sorting && (sorting->getType() == SortingStep::Type::FinishSorting
@@ -373,12 +369,12 @@ traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPla
             }
 
 
-            /// WITH TOTALS, ROLLUP, CUBE, extremes or PASTE JOIN
+            /// WITH TOTALS, extremes or PASTE JOIN
             if (planHasUnsupportedDistributedStep(frame_node))
             {
                 /// These steps produce non-Main pipe streams (totals/extremes) or rely on a single-node
                 unsupported_step = PreformattedMessage::create(
-                    "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE, extremes or PASTE JOIN");
+                    "make_distributed_plan does not support WITH TOTALS, extremes or PASTE JOIN");
                 return;
             }
 
