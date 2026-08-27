@@ -133,7 +133,6 @@ StorageMetadataPtr extendMetadataWithModifiers(const StorageMetadataPtr & metada
 
     auto extended = std::make_shared<StorageInMemoryMetadata>(*metadata);
     extended->virtuals.addEphemeral(std::string(TimeAttributeColumn::name), column->type, "Event-time value of the current row.", VirtualsMaterializationPlace::Streaming);
-    extended->virtuals.addEphemeral(std::string(WatermarkColumn::name), column->type, "Watermark expression value of the current row.", VirtualsMaterializationPlace::Streaming);
     return extended;
 }
 
