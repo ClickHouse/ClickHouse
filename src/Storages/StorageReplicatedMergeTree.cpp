@@ -9260,19 +9260,6 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     assertNoPatchesForParts(src_all_parts, src_patch_parts, "REPLACE PARTITION " + partition_id + " FROM");
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
-    /// For the database `max_rows` limit: rows freed by REPLACE, and rows charged so far for the
-    /// source parts that actually acquired a block number. Parts skipped as already attached
-    /// (deduplicated by their block id below) are not charged, so a duplicate or partially
-    /// duplicated ATTACH PARTITION FROM only pays for the accepted remainder.
-    UInt64 accepted_rows = 0;
-    UInt64 outgoing_rows = 0;
-    if (replace)
-    {
-        const auto destination_parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
-        for (const auto & part : destination_parts)
-            outgoing_rows += part->rows_count;
-    }
-
     /// REPLACE PARTITION FROM a source that has no parts in the requested partition would
     /// silently drop the destination partition's data without writing anything in its place
     /// (see #23727). Reject by default; users who actually want this behavior must opt in via
@@ -9329,6 +9316,22 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
         }
 
         chassert(replace == !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range));
+
+        /// For the database `max_rows` limit: rows freed by REPLACE, and rows charged so far for the
+        /// source parts that actually acquired a block number. Parts skipped as already attached
+        /// (deduplicated by their block id below) are not charged, so a duplicate or partially
+        /// duplicated ATTACH PARTITION FROM only pays for the accepted remainder.
+        /// Both counters live inside the retry loop: a `ZBADVERSION` retry commits nothing, so it
+        /// must start from zero charged rows and a fresh snapshot of the destination partition,
+        /// otherwise a benign concurrent alter would make a valid operation fail with `TOO_MANY_ROWS`.
+        UInt64 accepted_rows = 0;
+        UInt64 outgoing_rows = 0;
+        if (replace)
+        {
+            const auto destination_parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
+            for (const auto & part : destination_parts)
+                outgoing_rows += part->rows_count;
+        }
 
         scope_guard intent_guard;
         if (replace)
