@@ -334,6 +334,40 @@ TEST(BackupInfo, CanCopyS3CredentialsToMatchesCopyS3CredentialsTo)
         "S3('https://s3.example.com/backup', extra_credentials(role_arn = 'ROLEARN'))", "S3(collection)");
     checkCanCopyS3CredentialsInvariant(
         "S3('https://s3.example.com/backup', headers('Authorization' = 'SECRET'))", "S3('https://s3.example.com/base')");
+    checkCanCopyS3CredentialsInvariant(
+        "S3('https://s3.example.com/backup', extra_credentials(role_session_name = 'SESSION'))",
+        "S3('https://s3.example.com/base')");
+}
+
+TEST(BackupInfo, CopyS3CredentialsToRejectsClauseNamingNoRole)
+{
+    /// Only a non-empty `role_arn` makes `getCredentialsProvider` assume a role, so a clause carrying
+    /// just the session name or the external id lends no identity. Copying it would leave the base
+    /// backup unauthenticated instead of failing where the credentials are asked for.
+    for (const auto * source_str :
+         {"S3('https://s3.example.com/backup', extra_credentials(role_session_name = 'SESSION'))",
+          "S3('https://s3.example.com/backup', extra_credentials(external_id = 'EXTERNALID'))",
+          "S3('https://s3.example.com/backup', extra_credentials(role_arn = ''))"})
+    {
+        auto source = BackupInfo::fromString(source_str);
+        auto dest = BackupInfo::fromString("S3('https://s3.example.com/base')");
+
+        EXPECT_FALSE(source.canCopyS3CredentialsTo(dest)) << source_str;
+        expectExceptionCode([&] { source.copyS3CredentialsTo(dest); }, ErrorCodes::BAD_ARGUMENTS);
+    }
+}
+
+TEST(BackupInfo, CopyS3CredentialsToKeepsDestinationCredentialsWhenSourceNamesNoRole)
+{
+    /// The rejection has to come before the destination is cleared: a source that cannot lend anything
+    /// must not cost the destination the credentials it was given.
+    auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', extra_credentials(role_session_name = 'SESSION'))");
+    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base', 'OTHERKEYID', 'OTHERKEYSECRET')");
+    const String dest_before = dest.toString();
+
+    expectExceptionCode([&] { source.copyS3CredentialsTo(dest); }, ErrorCodes::BAD_ARGUMENTS);
+
+    EXPECT_EQ(dest.toString(), dest_before);
 }
 
 TEST(BackupInfo, CopyS3CredentialsToCarriesExtraCredentials)

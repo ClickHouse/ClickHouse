@@ -193,12 +193,28 @@ namespace
         return res;
     }
 
-    /// Whether the trailing function is the `extra_credentials(...)` clause an `S3` locator authenticates
-    /// a role with. No other trailing function is carried over.
-    bool isExtraCredentialsClause(const ASTPtr & function_arg)
+    /// Whether the trailing function is an `extra_credentials(...)` clause that authenticates. Only a
+    /// non-empty `role_arn` makes `getCredentialsProvider` wrap the provider chain in the STS assume-role
+    /// provider, so a clause carrying only `role_session_name` or `external_id` names no identity to lend
+    /// and is not credentials to copy. No other trailing function is carried over either.
+    bool hasRoleToAssume(const ASTPtr & function_arg)
     {
         const auto * func = function_arg ? function_arg->as<const ASTFunction>() : nullptr;
-        return func && func->name == "extra_credentials" && func->arguments && !func->arguments->children.empty();
+        if (!func || func->name != "extra_credentials" || !func->arguments)
+            return false;
+
+        for (const auto & child : func->arguments->children)
+        {
+            auto key = getKeyValueArgName(child);
+            if (!key || *key != "role_arn")
+                continue;
+            /// A value written as an expression is resolved only when the locator is opened, and there is
+            /// no context here to resolve it with; it names a role the same way a literal does.
+            auto value = getKeyValueArgStringValue(child);
+            return !value || !value->empty();
+        }
+
+        return false;
     }
 
     /// Removes the credentials embedded in the URL itself: the userinfo part and the authentication
@@ -332,7 +348,7 @@ bool BackupInfo::canCopyS3CredentialsTo(const BackupInfo & dest) const
     /// Must mirror the conditions checked by `copyS3CredentialsTo`.
     return id_arg.empty() && dest.id_arg.empty()
         && backup_engine_name == "S3" && dest.backup_engine_name == "S3"
-        && (args.size() == 3 || isExtraCredentialsClause(function_arg));
+        && (args.size() == 3 || hasRoleToAssume(function_arg));
 }
 
 void BackupInfo::copyS3CredentialsTo(BackupInfo & dest) const
@@ -346,14 +362,17 @@ void BackupInfo::copyS3CredentialsTo(BackupInfo & dest) const
     if (dest.backup_engine_name != "S3")
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup supported only for S3, got {}", dest.toStringForLogging());
 
-    /// An `S3` locator authenticates with a positional key pair or with `extra_credentials(...)`. Both
-    /// are carried over, so a role-authenticated backup can lend its credentials the way a key pair does.
+    /// An `S3` locator authenticates with a positional key pair or with a role to assume. Both are
+    /// carried over, so a role-authenticated backup can lend its credentials the way a key pair does.
+    /// A clause naming no role authenticates nothing and is rejected, the same way a locator carrying
+    /// no credentials at all is.
     const bool has_key_pair = args.size() == 3;
-    const bool has_extra_credentials = isExtraCredentialsClause(function_arg);
-    if (!has_key_pair && !has_extra_credentials)
+    const bool has_role_to_assume = hasRoleToAssume(function_arg);
+    if (!has_key_pair && !has_role_to_assume)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "use_same_s3_credentials_for_base_backup requires access_key_id and secret_access_key, or extra_credentials, got {}",
+            "use_same_s3_credentials_for_base_backup requires access_key_id and secret_access_key, or extra_credentials naming a "
+            "role_arn, got {}",
             toStringForLogging());
 
     /// Replaced, not merged: a destination keeping part of its own authentication next to the copied one
@@ -370,7 +389,7 @@ void BackupInfo::copyS3CredentialsTo(BackupInfo & dest) const
         dest.args[2] = args[2];
     }
 
-    if (has_extra_credentials)
+    if (has_role_to_assume)
         dest.function_arg = function_arg;
 }
 
