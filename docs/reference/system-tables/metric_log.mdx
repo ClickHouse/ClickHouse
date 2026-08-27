@@ -1738,6 +1738,9 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `CurrentMetric_DestroyAggregatesThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pool for destroy aggregate states.
 - `CurrentMetric_DestroyAggregatesThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pool for destroy aggregate states running a task.
 - `CurrentMetric_DestroyAggregatesThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the thread pool for destroy aggregate states.
+- `CurrentMetric_HashJoinDestroyThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pool for destroying a large HashJoin's stored blocks and arenas.
+- `CurrentMetric_HashJoinDestroyThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pool for destroying a large HashJoin's stored blocks and arenas running a task.
+- `CurrentMetric_HashJoinDestroyThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the thread pool for destroying a large HashJoin's stored blocks and arenas.
 - `CurrentMetric_HashedDictionaryThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the HashedDictionary thread pool.
 - `CurrentMetric_HashedDictionaryThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the HashedDictionary thread pool running a task.
 - `CurrentMetric_HashedDictionaryThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the HashedDictionary thread pool.
