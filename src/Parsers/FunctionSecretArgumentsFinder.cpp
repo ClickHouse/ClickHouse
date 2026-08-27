@@ -517,6 +517,8 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
     /// azureBlobStorageCluster('cluster_name', 'conn_string/storage_account_url', ...) has 'conn_string/storage_account_url' as its second argument.
     size_t url_arg_idx = is_cluster_function ? 1 : 0;
 
+    maskNestedSecretMaps();
+
     if (!is_cluster_function && isNamedCollectionName(0))
     {
         /// azureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
@@ -532,17 +534,32 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
         return;
     }
 
-    if (maskAzureConnectionString(url_arg_idx))
+    std::vector<size_t> positional;
+    for (size_t i = 0; i < function->arguments->size(); ++i)
+    {
+        if (const auto nested = function->arguments->at(i)->getFunction())
+        {
+            if (nested->name() == "extra_credentials")
+                continue;
+            if (nested->name() == "equals")
+                continue;
+        }
+        positional.push_back(i);
+    }
+
+    if (url_arg_idx >= positional.size())
+        return;
+    if (maskAzureConnectionString(positional[url_arg_idx]))
         return;
 
     /// We should check other arguments first because we don't need to do any replacement in case of
     /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
     /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
-    size_t count = function->arguments->size();
+    size_t count = positional.size();
     if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
     {
         String fourth_arg;
-        if (tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
+        if (tryGetStringFromArgument(positional[url_arg_idx + 3], &fourth_arg))
         {
             if (fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg))
                 return;
@@ -551,7 +568,7 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
 
     /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
     if (url_arg_idx + 4 < count)
-        markSecretArgument(url_arg_idx + 4);
+        markSecretArgument(positional[url_arg_idx + 4]);
 }
 
 bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named, size_t start)
@@ -562,7 +579,11 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
         {
             const auto equals_func = function->arguments->at(i)->getFunction();
             if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments() || equals_func->arguments->size() != 2)
+            {
+                if (!equals_func || equals_func->name() != "extra_credentials")
+                    markSecretArgument(i);
                 continue;
+            }
 
             String key;
             if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
@@ -997,6 +1018,8 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
    /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
     size_t url_arg_idx = 0;
 
+    maskNestedSecretMaps();
+
     if (isNamedCollectionName(url_arg_idx))
     {
         /// AzureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
@@ -1006,16 +1029,31 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
         return;
     }
 
-    if (maskAzureConnectionString(url_arg_idx))
+    std::vector<size_t> positional;
+    for (size_t i = 0; i < function->arguments->size(); ++i)
+    {
+        if (const auto nested = function->arguments->at(i)->getFunction())
+        {
+            if (nested->name() == "extra_credentials")
+                continue;
+            if (nested->name() == "equals")
+                continue;
+        }
+        positional.push_back(i);
+    }
+
+    if (positional.empty())
+        return;
+    if (maskAzureConnectionString(positional[url_arg_idx]))
         return;
 
     /// We should check other arguments first because we don't need to do any replacement in case of
     /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
-    size_t count = function->arguments->size();
+    size_t count = positional.size();
     if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
     {
         String fourth_arg;
-        if (tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
+        if (tryGetStringFromArgument(positional[url_arg_idx + 3], &fourth_arg))
         {
             if (fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg))
                 return;
@@ -1024,7 +1062,7 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
 
     /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
     if (url_arg_idx + 4 < count)
-        markSecretArgument(url_arg_idx + 4);
+        markSecretArgument(positional[url_arg_idx + 4]);
 }
 
 void FunctionSecretArgumentsFinder::findRedisFunctionSecretArguments()
