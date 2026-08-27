@@ -325,6 +325,7 @@ When a `CMD` descriptor contains a serialized [Flight SQL protobuf](https://arro
 |---|---|
 | `CommandStatementQuery` | Execute an arbitrary SQL query. `transaction_id` is not supported. |
 | `CommandGetSqlInfo` | Retrieve server metadata (name, version, Arrow version, capabilities). |
+| `CommandGetXdbcTypeInfo` | Retrieve ODBC/JDBC type metadata for supported ClickHouse types. Supports optional `data_type` filter. |
 | `CommandGetCatalogs` | List catalogs. Returns an empty result (ClickHouse does not use catalogs). |
 | `CommandGetDbSchemas` | List databases. Supports optional `db_schema_filter_pattern` (SQL `LIKE` pattern). |
 | `CommandGetTables` | List tables. Supports filters for schema, table name, table types, and optional schema inclusion. |
@@ -397,6 +398,14 @@ for endpoint in info.endpoints:
 All data is transferred in Apache Arrow IPC format. Only the `Arrow` format is supported — specifying other ClickHouse formats (e.g., `FORMAT JSON`, `FORMAT CSV`) results in an error.
 
 ClickHouse data types are mapped to Arrow types during serialization. The setting `output_format_arrow_unsupported_types_as_binary` controls whether unsupported ClickHouse types are serialized as binary blobs.
+
+Flight SQL statement and prepared-statement results include column metadata that preserves the ClickHouse type identity. The schemas embedded by `CommandGetTables` when `include_schema=true` contain the same metadata:
+
+- `ARROW:FLIGHT:SQL:TYPE_NAME` contains the stable ClickHouse type family registered by `CommandGetXdbcTypeInfo`, such as `Date32`, `Enum8`, or `Decimal`. Top-level `Nullable` and `LowCardinality` wrappers are omitted. Unsupported complex types do not set this standard key.
+- `CLICKHOUSE:TYPE_NAME` contains the complete ClickHouse type expression, including wrappers, parameters, enum labels, and time zones.
+- `ARROW:FLIGHT:SQL:PRECISION` and `ARROW:FLIGHT:SQL:SCALE` are included when they can be determined exactly from the ClickHouse type.
+
+This metadata does not change the Arrow physical array type. For example, `Date` and `Date32` are both still encoded as Arrow `date32`, while their `ARROW:FLIGHT:SQL:TYPE_NAME` values distinguish them.
 
 ## Compatibility {#compatibility}
 

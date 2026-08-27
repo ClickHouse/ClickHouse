@@ -23,7 +23,13 @@ from pyarrow import flight
 #   CommandGetSqlInfo, CommandStatementQuery, CommandStatementUpdate,
 #   DoPutUpdateResult, CommandGetCatalogs, CommandGetDbSchemas,
 #   CommandGetTables, CommandGetTableTypes, CommandGetPrimaryKeys,
-#   CommandStatementIngest (with nested TableDefinitionOptions + enums).
+#   CommandGetXdbcTypeInfo, CommandStatementIngest (with nested
+#   TableDefinitionOptions + enums).
+#
+# CommandGetXdbcTypeInfo bytes were generated with descriptor_pb2:
+#   msg.name = "CommandGetXdbcTypeInfo"
+#   field data_type: optional int32 = 1, proto3_optional, oneof _data_type
+#   options.ParseFromString(b'\xc0>\x01')  # experimental = true
 # ---------------------------------------------------------------------------
 from google.protobuf.internal import builder as _builder
 from google.protobuf import descriptor_pool as _descriptor_pool
@@ -76,6 +82,10 @@ _DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
     b'\x12\x16\n\tdb_schema\x18\x02 \x01(\tH\x01\x88\x01\x01'
     b'\x12\r\n\x05table\x18\x03 \x01(\t'
     b':\x03\xc0>\x01B\n\n\x08_catalogB\x0c\n\n_db_schema'
+    # CommandGetXdbcTypeInfo (optional int32 data_type = 1)
+    b'"C\n\x16CommandGetXdbcTypeInfo'
+    b'\x12\x16\n\tdata_type\x18\x01 \x01(\x05H\x00\x88\x01\x01'
+    b':\x03\xc0>\x01B\x0c\n\n_data_type'
     # CommandStatementIngest (with nested TableDefinitionOptions)
     b'"\xb6\x07\n\x16CommandStatementIngest'
     b'\x12j\n\x18table_definition_options\x18\x01 \x01(\x0b2H'
@@ -126,6 +136,7 @@ CommandGetDbSchemas = _globals['CommandGetDbSchemas']
 CommandGetTables = _globals['CommandGetTables']
 CommandGetTableTypes = _globals['CommandGetTableTypes']
 CommandGetPrimaryKeys = _globals['CommandGetPrimaryKeys']
+CommandGetXdbcTypeInfo = _globals['CommandGetXdbcTypeInfo']
 CommandStatementIngest = _globals['CommandStatementIngest']
 
 # ---------------------------------------------------------------------------
@@ -462,11 +473,39 @@ class FlightSQLClient:
         options = self._flight_call_options()
         return self.client.get_flight_info(flight_descriptor(cmd), options)
 
+    def get_xdbc_type_info(self, data_type: Optional[int] = None) -> flight.FlightInfo:
+        """Retrieve XDBC/ODBC type info via CommandGetXdbcTypeInfo."""
+        cmd = CommandGetXdbcTypeInfo()
+        if data_type is not None:
+            cmd.data_type = data_type
+        options = self._flight_call_options()
+        return self.client.get_flight_info(flight_descriptor(cmd), options)
+
+    def get_xdbc_type_info_schema(self, data_type: Optional[int] = None) -> flight.SchemaResult:
+        """Retrieve the CommandGetXdbcTypeInfo result schema."""
+        cmd = CommandGetXdbcTypeInfo()
+        if data_type is not None:
+            cmd.data_type = data_type
+        options = self._flight_call_options()
+        return self.client.get_schema(flight_descriptor(cmd), options)
+
     def get_schema(self, query: str) -> flight.SchemaResult:
         """Retrieve query result schema without executing via GetSchema."""
         cmd = CommandStatementQuery(query=query)
         options = self._flight_call_options()
         return self.client.get_schema(flight_descriptor(cmd), options)
+
+    def get_prepared_statement_schema(self, handle: bytes) -> flight.SchemaResult:
+        """Retrieve a prepared statement result schema via GetSchema."""
+        cmd = CommandPreparedStatementQuery(prepared_statement_handle=handle)
+        options = self._flight_call_options()
+        return self.client.get_schema(flight_descriptor(cmd), options)
+
+    def get_prepared_statement_flight_info(self, handle: bytes) -> flight.FlightInfo:
+        """Execute a prepared statement and return its FlightInfo."""
+        cmd = CommandPreparedStatementQuery(prepared_statement_handle=handle)
+        options = self._flight_call_options()
+        return self.client.get_flight_info(flight_descriptor(cmd), options)
 
     def prepare(self, query: str) -> "PreparedStatement":
         """Create a prepared statement via the CreatePreparedStatement action."""

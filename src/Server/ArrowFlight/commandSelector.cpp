@@ -1,26 +1,30 @@
 #include <Server/ArrowFlight/commandSelector.h>
+#include <Server/ArrowFlight/FlightSqlTypeInfo.h>
 
-#include <Interpreters/Context.h>
-#include <Core/Block.h>
-#include <Core/Settings.h>
-#include <Common/config_version.h>
-#include <Common/quoteString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Core/Block.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
+#include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
+#include <Common/config_version.h>
+#include <Common/quoteString.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/adaptor/transformed.hpp>
 
-#include <arrow/ipc/writer.h>
 #include <arrow/array/builder_binary.h>
 #include <arrow/array/builder_nested.h>
 #include <arrow/array/builder_primitive.h>
 #include <arrow/array/builder_union.h>
 #include <arrow/flight/sql/protocol_internal.h>
+#include <arrow/flight/sql/server.h>
+#include <arrow/ipc/writer.h>
+
+#include <string_view>
 
 namespace DB
 {
@@ -165,6 +169,172 @@ static arrow::Result<std::shared_ptr<arrow::Table>> commandGetSqlInfo(const arro
     ARROW_RETURN_NOT_OK(value);
 
     return arrow::Table::Make(table_schema, {info_name.ValueUnsafe(), value.ValueUnsafe()});
+}
+
+static arrow::Result<std::shared_ptr<arrow::Table>>
+commandGetXdbcTypeInfo(const arrow::flight::protocol::sql::CommandGetXdbcTypeInfo & command, bool schema_only)
+{
+    const auto & schema = arrow::flight::sql::SqlSchema::GetXdbcTypeInfoSchema();
+    arrow::MemoryPool * pool = arrow::default_memory_pool();
+
+    arrow::StringBuilder type_name_builder(pool);
+    arrow::Int32Builder data_type_builder(pool);
+    arrow::Int32Builder column_size_builder(pool);
+    arrow::StringBuilder literal_prefix_builder(pool);
+    arrow::StringBuilder literal_suffix_builder(pool);
+    auto create_params_value_builder = std::make_shared<arrow::StringBuilder>(pool);
+    arrow::ListBuilder create_params_builder(pool, create_params_value_builder, schema->GetFieldByName("create_params")->type());
+    arrow::Int32Builder nullable_builder(pool);
+    arrow::BooleanBuilder case_sensitive_builder(pool);
+    arrow::Int32Builder searchable_builder(pool);
+    arrow::BooleanBuilder unsigned_attribute_builder(pool);
+    arrow::BooleanBuilder fixed_prec_scale_builder(pool);
+    arrow::BooleanBuilder auto_increment_builder(pool);
+    arrow::StringBuilder local_type_name_builder(pool);
+    arrow::Int32Builder minimum_scale_builder(pool);
+    arrow::Int32Builder maximum_scale_builder(pool);
+    arrow::Int32Builder sql_data_type_builder(pool);
+    arrow::Int32Builder datetime_subcode_builder(pool);
+    arrow::Int32Builder num_prec_radix_builder(pool);
+    arrow::Int32Builder interval_precision_builder(pool);
+
+    if (!schema_only)
+    {
+        const bool filter = command.has_data_type();
+        const int32_t filter_data_type = filter ? command.data_type() : 0;
+
+        for (const auto & row : getXdbcTypeInfoRows())
+        {
+            if (filter && row.data_type != filter_data_type)
+                continue;
+
+            ARROW_RETURN_NOT_OK(type_name_builder.Append(std::string(row.type_name)));
+            ARROW_RETURN_NOT_OK(data_type_builder.Append(row.data_type));
+            ARROW_RETURN_NOT_OK(column_size_builder.Append(row.column_size));
+
+            if (row.literal_prefix)
+                ARROW_RETURN_NOT_OK(literal_prefix_builder.Append(row.literal_prefix));
+            else
+                ARROW_RETURN_NOT_OK(literal_prefix_builder.AppendNull());
+
+            if (row.literal_suffix)
+                ARROW_RETURN_NOT_OK(literal_suffix_builder.Append(row.literal_suffix));
+            else
+                ARROW_RETURN_NOT_OK(literal_suffix_builder.AppendNull());
+
+            // NULL when the type has no parameters; otherwise the list of parameter keywords.
+            if (row.create_params.empty())
+            {
+                ARROW_RETURN_NOT_OK(create_params_builder.AppendNull());
+            }
+            else
+            {
+                ARROW_RETURN_NOT_OK(create_params_builder.Append());
+                size_t param_start = 0;
+                while (true)
+                {
+                    const size_t comma = row.create_params.find(',', param_start);
+                    ARROW_RETURN_NOT_OK(create_params_value_builder->Append(
+                        std::string(row.create_params.substr(param_start, comma == std::string_view::npos ? comma : comma - param_start))));
+                    if (comma == std::string_view::npos)
+                        break;
+                    param_start = comma + 1;
+                }
+            }
+
+            ARROW_RETURN_NOT_OK(nullable_builder.Append(XDBC_SQL_NULLABLE));
+            ARROW_RETURN_NOT_OK(case_sensitive_builder.Append(row.case_sensitive));
+            ARROW_RETURN_NOT_OK(searchable_builder.Append(row.searchable));
+            if (row.numeric)
+                ARROW_RETURN_NOT_OK(unsigned_attribute_builder.Append(row.unsigned_attribute));
+            else
+                ARROW_RETURN_NOT_OK(unsigned_attribute_builder.AppendNull());
+            ARROW_RETURN_NOT_OK(fixed_prec_scale_builder.Append(row.fixed_prec_scale));
+            if (row.numeric)
+                ARROW_RETURN_NOT_OK(auto_increment_builder.Append(false));
+            else
+                ARROW_RETURN_NOT_OK(auto_increment_builder.AppendNull());
+            ARROW_RETURN_NOT_OK(local_type_name_builder.Append(std::string(row.type_name)));
+
+            if (row.minimum_scale >= 0)
+                ARROW_RETURN_NOT_OK(minimum_scale_builder.Append(row.minimum_scale));
+            else
+                ARROW_RETURN_NOT_OK(minimum_scale_builder.AppendNull());
+
+            if (row.maximum_scale >= 0)
+                ARROW_RETURN_NOT_OK(maximum_scale_builder.Append(row.maximum_scale));
+            else
+                ARROW_RETURN_NOT_OK(maximum_scale_builder.AppendNull());
+
+            // Datetime rows report the generic SQL_DATETIME in sql_data_type and
+            // the concise type in datetime_subcode; other rows repeat data_type.
+            if (row.datetime_subcode >= 0)
+            {
+                ARROW_RETURN_NOT_OK(sql_data_type_builder.Append(XDBC_SQL_DATETIME));
+                ARROW_RETURN_NOT_OK(datetime_subcode_builder.Append(row.datetime_subcode));
+            }
+            else
+            {
+                ARROW_RETURN_NOT_OK(sql_data_type_builder.Append(row.data_type));
+                ARROW_RETURN_NOT_OK(datetime_subcode_builder.AppendNull());
+            }
+
+            if (row.num_prec_radix >= 0)
+                ARROW_RETURN_NOT_OK(num_prec_radix_builder.Append(row.num_prec_radix));
+            else
+                ARROW_RETURN_NOT_OK(num_prec_radix_builder.AppendNull());
+
+            ARROW_RETURN_NOT_OK(interval_precision_builder.AppendNull());
+        }
+    }
+
+    std::shared_ptr<arrow::Array> type_name;
+    std::shared_ptr<arrow::Array> data_type;
+    std::shared_ptr<arrow::Array> column_size;
+    std::shared_ptr<arrow::Array> literal_prefix;
+    std::shared_ptr<arrow::Array> literal_suffix;
+    std::shared_ptr<arrow::Array> create_params;
+    std::shared_ptr<arrow::Array> nullable;
+    std::shared_ptr<arrow::Array> case_sensitive;
+    std::shared_ptr<arrow::Array> searchable;
+    std::shared_ptr<arrow::Array> unsigned_attribute;
+    std::shared_ptr<arrow::Array> fixed_prec_scale;
+    std::shared_ptr<arrow::Array> auto_increment;
+    std::shared_ptr<arrow::Array> local_type_name;
+    std::shared_ptr<arrow::Array> minimum_scale;
+    std::shared_ptr<arrow::Array> maximum_scale;
+    std::shared_ptr<arrow::Array> sql_data_type;
+    std::shared_ptr<arrow::Array> datetime_subcode;
+    std::shared_ptr<arrow::Array> num_prec_radix;
+    std::shared_ptr<arrow::Array> interval_precision;
+
+    ARROW_RETURN_NOT_OK(type_name_builder.Finish(&type_name));
+    ARROW_RETURN_NOT_OK(data_type_builder.Finish(&data_type));
+    ARROW_RETURN_NOT_OK(column_size_builder.Finish(&column_size));
+    ARROW_RETURN_NOT_OK(literal_prefix_builder.Finish(&literal_prefix));
+    ARROW_RETURN_NOT_OK(literal_suffix_builder.Finish(&literal_suffix));
+    ARROW_RETURN_NOT_OK(create_params_builder.Finish(&create_params));
+    ARROW_RETURN_NOT_OK(nullable_builder.Finish(&nullable));
+    ARROW_RETURN_NOT_OK(case_sensitive_builder.Finish(&case_sensitive));
+    ARROW_RETURN_NOT_OK(searchable_builder.Finish(&searchable));
+    ARROW_RETURN_NOT_OK(unsigned_attribute_builder.Finish(&unsigned_attribute));
+    ARROW_RETURN_NOT_OK(fixed_prec_scale_builder.Finish(&fixed_prec_scale));
+    ARROW_RETURN_NOT_OK(auto_increment_builder.Finish(&auto_increment));
+    ARROW_RETURN_NOT_OK(local_type_name_builder.Finish(&local_type_name));
+    ARROW_RETURN_NOT_OK(minimum_scale_builder.Finish(&minimum_scale));
+    ARROW_RETURN_NOT_OK(maximum_scale_builder.Finish(&maximum_scale));
+    ARROW_RETURN_NOT_OK(sql_data_type_builder.Finish(&sql_data_type));
+    ARROW_RETURN_NOT_OK(datetime_subcode_builder.Finish(&datetime_subcode));
+    ARROW_RETURN_NOT_OK(num_prec_radix_builder.Finish(&num_prec_radix));
+    ARROW_RETURN_NOT_OK(interval_precision_builder.Finish(&interval_precision));
+
+    return arrow::Table::Make(
+        schema,
+        {
+            type_name,      data_type,     column_size,        literal_prefix,   literal_suffix,     create_params,   nullable,
+            case_sensitive, searchable,    unsigned_attribute, fixed_prec_scale, auto_increment,     local_type_name, minimum_scale,
+            maximum_scale,  sql_data_type, datetime_subcode,   num_prec_radix,   interval_precision,
+        });
 }
 
 static SQLSet commandGetCatalogs()
@@ -516,7 +686,7 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
         ")"
         + where_expression;
 
-    auto schema_modifier = [](std::shared_ptr<arrow::Schema> table_schema)
+    auto schema_modifier = [](std::shared_ptr<arrow::Schema> table_schema, const ColumnsWithTypeAndName &)
     {
         const auto & table_schema_field = table_schema->field(4);
         return table_schema->SetField(4, std::make_shared<arrow::Field>(table_schema_field->name(), arrow::binary(), table_schema_field->nullable()));
@@ -548,6 +718,10 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
             auto table_schema = CHColumnToArrowColumn::calculateArrowSchema(
                 table_columns, "Arrow", nullptr,
                 {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
+            auto schema_with_metadata = addFlightSqlTypeMetadata(std::move(table_schema), table_columns);
+            if (!schema_with_metadata.ok())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to add Flight SQL type metadata: {}", schema_with_metadata.status().ToString());
+            table_schema = std::move(schema_with_metadata).ValueUnsafe();
             auto serialized_res = arrow::ipc::SerializeSchema(*table_schema, arrow::default_memory_pool());
             if (!serialized_res.ok())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to serialize Arrow schema: {}", serialized_res.status().ToString());
@@ -575,7 +749,7 @@ static CommandSelectorResult commandStatementQuery(const arrow::flight::protocol
         return arrow::Status::NotImplemented("CommandStatementQuery: transaction_id is not supported");
     if (command.query().empty())
         return arrow::Status::Invalid("CommandStatementQuery: query must not be empty");
-    return SQLSet{command.query(), {}, {}};
+    return SQLSet{command.query(), addFlightSqlTypeMetadata, {}};
 }
 
 static CommandSelectorResult commandStatementUpdate(const arrow::flight::protocol::sql::CommandStatementUpdate & command)
@@ -632,6 +806,13 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
         if (!any_msg.UnpackTo(&command))
             return arrow::Status::SerializationError("Deserialization of sql::CommandGetSqlInfo failed.");
         return commandGetSqlInfo(command, schema_only);
+    }
+    else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetXdbcTypeInfo>())
+    {
+        arrow::flight::protocol::sql::CommandGetXdbcTypeInfo command;
+        if (!any_msg.UnpackTo(&command))
+            return arrow::Status::SerializationError("Deserialization of sql::CommandGetXdbcTypeInfo failed.");
+        return commandGetXdbcTypeInfo(command, schema_only);
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetCrossReference>())
     {
@@ -703,7 +884,7 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
             return arrow::Status::SerializationError("Deserialization of sql::CommandPreparedStatementQuery failed.");
         if (command.prepared_statement_handle().empty())
             return arrow::Status::Invalid("CommandPreparedStatementQuery: prepared_statement_handle must not be empty");
-        return SQLSet{command.prepared_statement_handle(), {}, {}};
+        return SQLSet{command.prepared_statement_handle(), addFlightSqlTypeMetadata, {}};
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandPreparedStatementUpdate>())
     {
