@@ -68,50 +68,38 @@ public:
     /// activity, so size and lock queries have a correct answer that does not require resolving it.
     ActionLock getActionLock(StorageActionBlockType action_type) override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->getActionLock(action_type);
-        return {};
+        auto storage = nestedIfResolved();
+        return storage ? storage->getActionLock(action_type) : ActionLock{};
     }
 
     Strings getDataPaths() const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->getDataPaths();
-        return {};
+        auto storage = nestedIfResolved();
+        return storage ? storage->getDataPaths() : Strings{};
     }
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->totalRows(query_context);
-        return std::nullopt;
+        auto storage = nestedIfResolved();
+        return storage ? storage->totalRows(query_context) : std::nullopt;
     }
 
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->totalBytes(query_context);
-        return std::nullopt;
+        auto storage = nestedIfResolved();
+        return storage ? storage->totalBytes(query_context) : std::nullopt;
     }
 
     std::optional<UInt64> lifetimeRows() const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->lifetimeRows();
-        return std::nullopt;
+        auto storage = nestedIfResolved();
+        return storage ? storage->lifetimeRows() : std::nullopt;
     }
 
     std::optional<UInt64> lifetimeBytes() const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->lifetimeBytes();
-        return std::nullopt;
+        auto storage = nestedIfResolved();
+        return storage ? storage->lifetimeBytes() : std::nullopt;
     }
 
     void startup() override { }
@@ -245,6 +233,15 @@ public:
     void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const override {}
 
 private:
+    /// The nested storage if the table function has already been resolved, otherwise null.
+    /// Never forward while holding `nested_mutex`: a nested size query can read remote metadata,
+    /// and every read and write of this table takes the same mutex.
+    StoragePtr nestedIfResolved() const
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
+    }
+
     mutable std::recursive_mutex nested_mutex;
     mutable GetNestedStorageFunc get_nested;
     mutable StoragePtr nested;
