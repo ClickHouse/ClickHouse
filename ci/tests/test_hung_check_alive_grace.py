@@ -77,6 +77,7 @@ def _env(monkeypatch):
         "process": (True, 588, frozenset({"4242"})),
         "probe_cost": 0.0,
         "probes": [],
+        "process_reads": 0,
     }
 
     def fake_check_server_liveness(_args, max_retries=10):
@@ -85,6 +86,7 @@ def _env(monkeypatch):
         return state["alive"]
 
     def fake_probed_server_process(_args):
+        state["process_reads"] += 1
         return state["process"]
 
     def unexpected_get_server_pid(_args):
@@ -207,6 +209,31 @@ def test_a_server_replaced_on_the_same_port_mid_grace_still_fails_fast(env):
     assert env["monitor"].is_hung() is True
 
 
+def test_a_server_replaced_inside_the_first_failed_probe_still_fails_fast(env):
+    """The swap happens inside the first failed probe's own ~165 s retry
+    window, before anything was pinned.  The port is held again by the time it
+    is inspected, but not by the server the tests were talking to - a
+    still-silent replacement must not inherit the grace."""
+    assert env["monitor"].is_hung() is False  # the original is seen answering
+
+    env["alive"] = False
+    env["probe_cost"] = 165.0
+    env["process"] = (True, 999, frozenset({"7777"}))  # re-bound mid-probe
+    assert env["monitor"].is_hung() is True
+    assert env["probes"] == [10, 10]
+
+
+def test_the_answering_identity_is_refreshed_on_the_interval(env):
+    """While the server answers, the listener identity is kept fresh so a
+    legitimate restart is not mistaken for a mid-probe swap - but reading
+    /proc/net is interval-gated, not per 0.1 s caller turn."""
+    for _ in range(101):  # 10 s of the caller loop's own cadence
+        assert env["monitor"].is_hung() is False
+        env["clock"].advance(0.1)
+    # One read on the first call, one when the interval elapses.
+    assert env["process_reads"] == 2
+
+
 def test_a_replacement_server_answering_does_not_resume_the_run(env):
     """The same swap, but the replacement is already up and answers the probe.
 
@@ -236,10 +263,12 @@ def test_the_same_server_recovering_clears_the_pinned_identity(env):
     assert env["monitor"].is_hung() is False
     assert env["monitor"].grace_holder_inodes is None
 
-    # A restart between two silent stretches is a new server legitimately
+    # A restart that was then seen answering is a new server legitimately
     # starting a new grace, not a replacement caught mid-grace.
-    env["alive"] = False
     env["process"] = (True, 999, frozenset({"7777"}))
+    env["clock"].advance(_ct.HungCheckMonitor.RETRY_INTERVAL)
+    assert env["monitor"].is_hung() is False  # the replacement answers
+    env["alive"] = False
     env["clock"].advance(_ct.HungCheckMonitor.RETRY_INTERVAL)
     assert env["monitor"].is_hung() is False
     assert env["monitor"].grace_holder_inodes == frozenset({"7777"})

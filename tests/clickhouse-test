@@ -5173,6 +5173,12 @@ class HungCheckMonitor:
     the replacement would silently resume the run on a server that lost all
     its state.  When the original listener's sockets are gone the original
     server is gone, and the run aborts - whether or not the port is held again.
+
+    The pin must predate the failed probe: that probe spends its whole retry
+    budget (~165 s) before the port is inspected, so a swap inside that window
+    would otherwise be pinned as if it were the server the tests were talking
+    to.  Hence the listener identity is also tracked while the server answers,
+    and the grace is only ever granted to the listener that was answering.
     """
 
     # Long enough to cover the multi-minute whole-process stalls observed on
@@ -5192,16 +5198,25 @@ class HungCheckMonitor:
         # Socket inodes of the listener the current grace was granted for;
         # None while the server answers.
         self.grace_holder_inodes = None
+        # Socket inodes of the listener seen while the probe was answering -
+        # the only server a grace may be granted to; None when it cannot be
+        # told.  Refreshed on the interval, not per call: the tables under
+        # /proc/net grow with every connection the tests open.
+        self.answering_holder_inodes = None
+        self.last_identity_refresh_at = 0.0
+
+    @staticmethod
+    def _listener_changed(
+        granted: Optional[Set[str]], current: Optional[Set[str]]
+    ) -> bool:
+        """True when the probed port is now held by sockets disjoint from the
+        ones it was held by before: the original server is gone and something
+        else (e.g. a watchdog restart) took the port.  Unknown on either side
+        is not evidence of a swap."""
+        return granted is not None and current is not None and not (current & granted)
 
     def _grace_holder_replaced(self, inodes: Optional[Set[str]]) -> bool:
-        """True when the probed port is now held by sockets disjoint from the
-        ones the grace was granted for: the original server is gone and
-        something else (e.g. a watchdog restart) took the port."""
-        return (
-            self.grace_holder_inodes is not None
-            and inodes is not None
-            and not (inodes & self.grace_holder_inodes)
-        )
+        return self._listener_changed(self.grace_holder_inodes, inodes)
 
     def is_hung(self) -> bool:
         """Probe the server once; True when the silence should abort the run.
@@ -5246,6 +5261,11 @@ class HungCheckMonitor:
                 )
                 self.unresponsive_since = None
                 self.grace_holder_inodes = None
+                self.answering_holder_inodes = inodes
+                self.last_identity_refresh_at = time()
+            elif now - self.last_identity_refresh_at >= self.RETRY_INTERVAL:
+                self.last_identity_refresh_at = now
+                _, _, self.answering_holder_inodes = probed_server_process(self.args)
             return False
 
         if self.unresponsive_since is None:
@@ -5258,8 +5278,20 @@ class HungCheckMonitor:
         if not alive or self._grace_holder_replaced(inodes):
             return True
         if self.grace_holder_inodes is None:
-            # First failed probe of this silent stretch: pin the grace to the
-            # listener it is being granted for.
+            # First failed probe of this silent stretch.  The probe itself
+            # spends its whole retry budget before this point, so the port may
+            # already have changed hands: a still-silent replacement that
+            # re-bound it inside that window must not inherit the grace - the
+            # server that was answering is gone.
+            if self._listener_changed(self.answering_holder_inodes, inodes):
+                print(
+                    "Server did not answer the liveness check, and the "
+                    f"listening socket on port {self.args.http_port} changed "
+                    "hands since it last answered - the server the tests were "
+                    "talking to is gone and was replaced; reporting it dead."
+                )
+                return True
+            # Pin the grace to the listener it is being granted for.
             self.grace_holder_inodes = inodes
         if unresponsive_for >= self.GRACE_WITH_LIVE_PROCESS:
             return True
