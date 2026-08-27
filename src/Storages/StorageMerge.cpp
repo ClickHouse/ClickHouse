@@ -2138,15 +2138,17 @@ std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
     return plans;
 }
 
-std::optional<QueryPlan> ReadFromMerge::expandForParallelReplicas(
+std::optional<std::vector<StorageID>> ReadFromMerge::getExpandableReads(
     const std::function<bool(const ReadFromMergeTree &)> & can_ship_read)
 {
     /// The parallel-replicas plan transformation only understands `ReadFromMergeTree` reads and unions of
     /// them. This step is opaque to it: the per-table subplans are built lazily and their pipelines - not
     /// their plans - are united in `initializePipeline`, so the underlying reads are invisible while the
-    /// plan is transformed. Materialize the very same subplans here and unite them at plan level instead,
-    /// which turns the `Merge` into exactly the shape the transformation already distributes: a union of
-    /// `MergeTree` reads.
+    /// plan is transformed. `expandForParallelReplicas` unites the very same subplans at plan level instead,
+    /// turning the `Merge` into exactly the shape the transformation already distributes: a union of
+    /// `MergeTree` reads. This tells the caller whether that is possible, and which tables the union would
+    /// read, without touching the plan - so that the decision to distribute can be taken before anything is
+    /// rewritten.
     filterTablesAndCreateChildrenPlans();
 
     if (selected_tables.empty() || child_plans->empty())
@@ -2166,9 +2168,10 @@ std::optional<QueryPlan> ReadFromMerge::expandForParallelReplicas(
     ///
     /// The last word on whether a read can be distributed belongs to the caller, whose `can_ship_read` says
     /// no for a table which is not replicated while `parallel_replicas_for_non_replicated_merge_tree` is off,
-    /// and for the target of a refreshable materialized view. Asking it here, instead of letting the reads be
-    /// dropped once the union is already in the plan, is what keeps "cannot be distributed" equal to "the
-    /// plan is left as it is" - and keeps the two decisions from drifting apart.
+    /// and for the target of a refreshable materialized view.
+    std::vector<StorageID> storage_ids;
+    storage_ids.reserve(child_plans->size());
+
     auto table_it = selected_tables.begin();
     for (const auto & child : *child_plans)
     {
@@ -2178,16 +2181,29 @@ std::optional<QueryPlan> ReadFromMerge::expandForParallelReplicas(
         if (!storage->isMergeTree() || !child.plan.isInitialized())
             return {};
 
-        /// Descend the converting expressions and the row policy filters the child plan puts on top of the
-        /// read (`convertAndFilterSourceStream`), all of which have a single input.
+        /// Descend the steps the child plan puts on top of the read - the converting expressions and the
+        /// row policy filter of `convertAndFilterSourceStream`. Anything else means the child is not read
+        /// by a plain read, whatever its leaf turns out to be.
         const auto * node = child.plan.getRootNode();
-        while (node && node->children.size() == 1 && !typeid_cast<const ReadFromMergeTree *>(node->step.get()))
+        while (node && node->children.size() == 1
+               && (typeid_cast<const ExpressionStep *>(node->step.get()) || typeid_cast<const FilterStep *>(node->step.get())))
             node = node->children.front();
 
         const auto * reading = node ? typeid_cast<const ReadFromMergeTree *>(node->step.get()) : nullptr;
         if (!reading || reading->isQueryWithFinal() || !can_ship_read(*reading))
             return {};
+
+        storage_ids.push_back(reading->getMergeTreeData().getStorageID());
     }
+
+    return storage_ids;
+}
+
+QueryPlan ReadFromMerge::expandForParallelReplicas()
+{
+    /// Precondition: `getExpandableReads` returned a value, so the child plans exist and every one of them
+    /// is a plain `MergeTree` read this union may distribute.
+    chassert(child_plans && !child_plans->empty());
 
     SharedHeaders input_headers;
     std::vector<std::unique_ptr<QueryPlan>> plans;
@@ -2223,15 +2239,6 @@ std::optional<QueryPlan> ReadFromMerge::expandForParallelReplicas(
     union_plan.addResources(std::move(resources));
 
     return union_plan;
-}
-
-void ReadFromMerge::resetChildPlansForRebuild()
-{
-    /// The plans themselves were moved into the union, so what is left of them is unusable. Everything the
-    /// build depends on lives on this step - the pushed down filters and the filter DAG `applyFilters` set -
-    /// so `filterTablesAndCreateChildrenPlans` produces the same children again when it is next called.
-    child_plans.reset();
-    selected_tables.clear();
 }
 
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const

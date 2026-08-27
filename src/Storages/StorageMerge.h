@@ -207,19 +207,18 @@ public:
     /// plans are returned as `nullptr` so that callers can pair tables with their plans.
     std::vector<QueryPlan *> getAllChildPlans();
 
-    /// For parallel replicas only: expand this opaque `Merge` read into a plan-level `UnionStep` over the
-    /// per-table child plans, so that the parallel-replicas plan transformation can coordinate the
-    /// underlying `MergeTree` reads and distribute the steps above them. Returns `nullopt` when the `Merge`
-    /// is not eligible (a child which is not a plain `MergeTree` read, a `FINAL` read, nothing to read, or a
-    /// read which `can_ship_read` rejects); the caller then leaves this step untouched and the `Merge` is
-    /// read by a single replica. `can_ship_read` is the caller's own rule for a read it would distribute, so
-    /// that the expansion never happens for a `Merge` the caller would leave local anyway.
-    std::optional<QueryPlan> expandForParallelReplicas(const std::function<bool(const ReadFromMergeTree &)> & can_ship_read);
+    /// For parallel replicas only: the tables this `Merge` read would be expanded into, or `nullopt` when
+    /// it cannot be expanded (a child which is not a plain `MergeTree` read, a `FINAL` read, nothing to
+    /// read, or a read which `can_ship_read` - the caller's own rule for a read it would distribute -
+    /// rejects). Answering this without touching the plan lets the caller decide whether the query is
+    /// distributed at all before anything is rewritten.
+    std::optional<std::vector<StorageID>> getExpandableReads(const std::function<bool(const ReadFromMergeTree &)> & can_ship_read);
 
-    /// Undo of `expandForParallelReplicas`, for a caller which put this step back into the plan because the
-    /// reads it exposed are not distributed after all. The child plans were moved into the union, so they are
-    /// dropped here and built again on the next read of them.
-    void resetChildPlansForRebuild();
+    /// Replace this opaque `Merge` read with a plan-level `UnionStep` over the per-table child plans, so
+    /// that the parallel-replicas plan transformation can coordinate the underlying `MergeTree` reads and
+    /// distribute the steps above them. Only call it when `getExpandableReads` returned a value; the child
+    /// plans are moved out of this step, which the caller then replaces.
+    QueryPlan expandForParallelReplicas();
 
     void addFilter(FilterDAGInfo filter);
 
