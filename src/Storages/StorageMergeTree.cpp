@@ -352,12 +352,23 @@ StorageMergeTree::~StorageMergeTree()
         tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot shut down `StorageMergeTree` during destruction");
     }
 
-    /// Stop assignees before derived member destruction in case shutdown did
-    /// not (flushAndPrepareForShutdown early-returns on flush_called).
-    /// finish is idempotent.
+    /// A rejected shutdown (see above) returns before it has stopped any of the
+    /// background machinery: the deduplication log throws first, so nothing after it
+    /// ran. Members are destroyed in reverse declaration order, which destroys
+    /// `deduplication_log` before `cleanup_thread`; a cleanup pass still scheduled
+    /// would then reach the destroyed log through `dropPartNoWaitNoThrow`. Stop all
+    /// of it here, before member destruction begins. Every call is idempotent, so
+    /// after a successful shutdown this repeats work harmlessly
+    /// (flushAndPrepareForShutdown early-returns on flush_called).
+    if (refresh_parts_task)
+        refresh_parts_task->deactivate();
+    if (refresh_stats_task)
+        refresh_stats_task->deactivate();
+    stopOutdatedAndUnexpectedDataPartsLoadingTask();
     background_operations_assignee.finish();
     background_streaming_assignee.finish();
     background_moves_assignee.finish();
+    cleanup_thread.stop();
 }
 
 void StorageMergeTree::read(
