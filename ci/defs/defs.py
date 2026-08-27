@@ -36,6 +36,7 @@ class RunnerLabels:
     MACOS_AMD_SMALL = ["self-hosted", "amd_macos_m1"]
     STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
     STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
+    RELEASE_RUNNER = ["self-hosted", "release-runner"]
 
 
 class CIFiles:
