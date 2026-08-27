@@ -11,7 +11,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Common/AsyncTaskExecutor.h>
+#include <Common/FiberLocal.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -49,8 +49,8 @@ namespace
 namespace OpenTelemetry
 {
 
-/// This code can be executed inside fibers, we should use fiber local tracing context.
-static FiberLocal<TracingContextOnThread> & current_trace_context = FiberLocal<TracingContextOnThread>::instance();
+/// This code can be executed inside coroutines, we should use coroutine local tracing context.
+static constinit FiberLocal<TracingContextOnThread, FiberLocalSlot::TRACE_CONTEXT> current_trace_context;
 
 bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
 {
@@ -135,7 +135,9 @@ SpanHolder::SpanHolder(
     /// Use try-catch to make sure the ctor is exception safe.
     try
     {
-        if (!current_trace_context->isTraceEnabled())
+        TracingContextOnThread & trace_context = *current_trace_context;
+
+        if (!trace_context.isTraceEnabled())
         {
             if (!create_trace_if_not_exists)
             {
@@ -144,14 +146,14 @@ SpanHolder::SpanHolder(
 
             trace_created = true;
 
-            current_trace_context->trace_id = TracingContext::generateTraceId();
-            current_trace_context->span_id = 0;
-            current_trace_context->trace_flags = TRACE_FLAG_SAMPLED;
-            current_trace_context->span_log = getSpanLog();
+            trace_context.trace_id = TracingContext::generateTraceId();
+            trace_context.span_id = 0;
+            trace_context.trace_flags = TRACE_FLAG_SAMPLED;
+            trace_context.span_log = getSpanLog();
         }
 
-        this->trace_id = current_trace_context->trace_id;
-        this->parent_span_id = current_trace_context->span_id;
+        this->trace_id = trace_context.trace_id;
+        this->parent_span_id = trace_context.span_id;
         this->span_id = TracingContext::generateSpanId();
         this->operation_name = _operation_name;
         this->kind = _kind;
@@ -160,7 +162,7 @@ SpanHolder::SpanHolder(
 
         this->addAttribute("clickhouse.thread_id", getThreadId());
 
-        this->old_trace_flags = current_trace_context->trace_flags;
+        this->old_trace_flags = trace_context.trace_flags;
     }
     catch (...)
     {
@@ -190,15 +192,17 @@ void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
     if (!this->isTraceEnabled())
         return;
 
-    // First of all, restore old value of current span.
-    chassert(current_trace_context->span_id == span_id);
-    current_trace_context->span_id = parent_span_id;
+    TracingContextOnThread & trace_context = *current_trace_context;
 
-    current_trace_context->trace_flags = old_trace_flags;
+    // First of all, restore old value of current span.
+    chassert(trace_context.span_id == span_id);
+    trace_context.span_id = parent_span_id;
+
+    trace_context.trace_flags = old_trace_flags;
 
     try
     {
-        auto log = current_trace_context->span_log.lock();
+        auto log = trace_context.span_log.lock();
 
         /// The log might be disabled, check it before use
         if (log)
@@ -217,7 +221,7 @@ void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
 
     if (trace_created)
     {
-        current_trace_context->reset();
+        trace_context.reset();
     }
 
     trace_id = UUID();
@@ -373,9 +377,12 @@ TracingContextHolder::TracingContextHolder(
 {
     /// Use try-catch to make sure the ctor is exception safe.
     /// If any exception is raised during the construction, the tracing is not enabled on current thread.
+    TracingContextOnThread * trace_context = nullptr;
     try
     {
-        if (current_trace_context->isTraceEnabled())
+        trace_context = &*current_trace_context;
+
+        if (trace_context->isTraceEnabled())
         {
             ///
             /// This is not the normal case,
@@ -388,15 +395,15 @@ TracingContextHolder::TracingContextHolder(
             /// So this branch ensures this class can be instantiated multiple times on one same thread safely.
             ///
             this->is_context_owner = false;
-            this->root_span.trace_id = current_trace_context->trace_id;
-            this->root_span.parent_span_id = current_trace_context->span_id;
+            this->root_span.trace_id = trace_context->trace_id;
+            this->root_span.parent_span_id = trace_context->span_id;
             this->root_span.span_id = thread_local_rng();
             this->root_span.operation_name = _operation_name;
             this->root_span.start_time_us
                 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
             /// Set the root span as parent of other spans created on current thread
-            current_trace_context->span_id = this->root_span.span_id;
+            trace_context->span_id = this->root_span.span_id;
             return;
         }
 
@@ -435,11 +442,11 @@ TracingContextHolder::TracingContextHolder(
     }
 
     /// Set up trace context on current thread only when the root span is successfully initialized.
-    *current_trace_context = _parent_trace_context;
-    current_trace_context->span_id = this->root_span.span_id;
+    *trace_context = _parent_trace_context;
+    trace_context->span_id = this->root_span.span_id;
     /// Reset the flags instead of inheriting them: the parent context may come from an untrusted client
-    current_trace_context->trace_flags = TRACE_FLAG_SAMPLED;
-    current_trace_context->span_log = _span_log;
+    trace_context->trace_flags = TRACE_FLAG_SAMPLED;
+    trace_context->span_log = _span_log;
 }
 
 TracingContextHolder::~TracingContextHolder()
