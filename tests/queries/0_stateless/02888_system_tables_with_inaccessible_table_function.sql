@@ -56,9 +56,15 @@ SELECT lifetime_rows, lifetime_bytes FROM system.tables WHERE database = current
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.mem (x UInt64) ENGINE = Memory;
 INSERT INTO {CLICKHOUSE_DATABASE:Identifier}.mem SELECT number FROM numbers(5);
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc08 (x UInt64) AS merge(currentDatabase(), '^mem$');
-SELECT total_rows, isNotNull(total_bytes) FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc08';
+SELECT total_rows,
+       total_bytes = (SELECT total_bytes FROM system.tables
+                      WHERE database = currentDatabase() AND name = 'mem')
+    FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc08';
 SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.tablefunc08;
-SELECT total_rows, isNotNull(total_bytes) FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc08';
+SELECT total_rows,
+       total_bytes = (SELECT total_bytes FROM system.tables
+                      WHERE database = currentDatabase() AND name = 'mem')
+    FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc08';
 
 -- A resolved table function answers with the nested storage's own data paths.
 INSERT INTO FUNCTION file(currentDatabase() || '_02888_data_paths.tsv', TSVWithNamesAndTypes, 'x UInt64')
@@ -66,9 +72,20 @@ INSERT INTO FUNCTION file(currentDatabase() || '_02888_data_paths.tsv', TSVWithN
 -- No structure argument, so the nested storage is built lazily and the header supplies both the
 -- column name and its type.
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc09 (x UInt64) AS file(currentDatabase() || '_02888_data_paths.tsv', TSVWithNamesAndTypes);
-SELECT notEmpty(data_paths) FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc09';
+SELECT length(data_paths) = 1
+    AND position(data_paths[1], currentDatabase() || '_02888_data_paths.tsv') > 0
+    FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc09';
 SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.tablefunc09;
-SELECT notEmpty(data_paths) FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc09';
+SELECT length(data_paths) = 1
+    AND position(data_paths[1], currentDatabase() || '_02888_data_paths.tsv') > 0
+    FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc09';
+
+-- A never resolved proxy reports an unknown row count, so the emptiness interlock no longer
+-- refuses it. Only the proxy's own name goes away; the rows it would have read are untouched.
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc10 (x UInt64) AS merge(currentDatabase(), '^mem$');
+DROP TABLE IF EMPTY {CLICKHOUSE_DATABASE:Identifier}.tablefunc10;
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc10';
+SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.mem;
 
 -- Not covered: `lifetime_rows`/`lifetime_bytes` (only `Buffer` reports them) and a forwarded lock (only a `timeSeries*` target holds one).
 
