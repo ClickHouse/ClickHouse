@@ -654,7 +654,10 @@ function navigationDocumentLabel(document, group) {
     }
     return label;
   }
-  return group.useDocumentTitle ? document.title : document.name;
+  const label = group.useDocumentTitle ? document.title : document.name;
+  return document.entityKind === 'system-table' && label.startsWith('system.')
+    ? label.slice('system.'.length)
+    : label;
 }
 
 function excludedSourcePathSet(definition) {

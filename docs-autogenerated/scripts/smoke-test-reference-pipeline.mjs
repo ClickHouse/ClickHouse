@@ -58,7 +58,7 @@ function findNavigationNode(node, id) {
     }
     return null;
   }
-  if (node.id === id) return node;
+  if (node.id === id || node.documentId === id) return node;
   return findNavigationNode(node.children, id);
 }
 
@@ -240,6 +240,13 @@ async function main() {
       path.join(generatedDirectory, 'mintlify/docs/reference/statements/select.mdx'),
       'utf8',
     );
+    const systemTablePage = await readFile(
+      path.join(
+        generatedDirectory,
+        'mintlify/docs/reference/system-tables/background_schedule_pool_log.mdx',
+      ),
+      'utf8',
+    );
     const latestManifest = await readJson(path.join(artifactDirectory, 'manifest.json'));
     const testManifest = await readJson(path.join(testArtifactDirectory, 'manifest.json'));
     const versionedVersions = await readJson(
@@ -270,6 +277,22 @@ async function main() {
     const routes = new Set(documents.map((document) => document.route));
     const searchTitles = new Set(search.map((record) => record.title));
     const redirectMap = new Map(redirects.map(({ from, to }) => [from, to]));
+    const systemTableDocument = documents.find(
+      ({ id }) => id === 'reference:system-tables/background_schedule_pool_log',
+    );
+    const systemTableNavigation = findNavigationNode(
+      navigation.root,
+      'reference:system-tables/background_schedule_pool_log',
+    );
+
+    requireValue(
+      systemTableDocument?.title === 'system.background_schedule_pool_log'
+        && systemTableNavigation?.label === 'background_schedule_pool_log'
+        && systemTablePage.includes('title: "system.background_schedule_pool_log"')
+        && systemTablePage.includes('sidebarTitle: "background_schedule_pool_log"')
+        && searchTitles.has('system.background_schedule_pool_log'),
+      'System table navigation labels do not omit only the `system.` prefix',
+    );
 
     requireValue(
       versions.schemaVersion === 2
