@@ -275,6 +275,26 @@ def test_series_allows_select_on_configured_time_series_table():
     assert {entry["host"] for entry in data} == {"server1", "server2"}
 
 
+@pytest.mark.parametrize(
+    "params, expected_labels",
+    [
+        ({}, ["__name__", "datacenter", "host", "http.status_code", "method", "service", "status"]),
+        ({"match[]": "cpu_usage"}, ["__name__", "datacenter", "host"]),
+        (
+            [("match[]", "cpu_usage"), ("match[]", "http_requests_total")],
+            ["__name__", "datacenter", "host", "method", "status"],
+        ),
+    ],
+)
+def test_labels_allows_select_on_configured_time_series_table(params, expected_labels):
+    data = get_json_from_api(
+        "/combined/api/v1/labels",
+        params=params,
+        auth=("metadata_select_time_series", ""),
+    )
+    assert data["data"] == expected_labels
+
+
 @pytest.mark.parametrize("path", ["/combined/api/v1/format_query", "/combined/api/v1/parse_query"])
 def test_parser_endpoints_do_not_require_time_series_select(path):
     response = requests.get(

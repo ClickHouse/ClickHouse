@@ -592,11 +592,12 @@ public:
             }
             else if (auto label_name = extractLabelValuesName(uri_path))
             {
-                String match = params->get("match[]", "");
+                Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
+                UInt64 limit = getLimitParam();
 
-                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end);
+                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end, limit, query_finish_callback);
             }
             else
             {

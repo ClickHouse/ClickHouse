@@ -213,6 +213,72 @@ String makeMatchCondition(const Strings & match_params, const std::unordered_map
     return fmt::format("({})", makeASTForLogicalOr(std::move(selector_conditions))->formatWithSecretsOneLine());
 }
 
+/// Prometheus escapes label names that are not legacy names ([a-zA-Z_][a-zA-Z0-9_]*) using the "values"
+/// escaping scheme before putting them into the /api/v1/label/<name>/values path: e.g. the tag
+/// http.status_code is requested as U__http_2e_status__code. Decode it back so the endpoint looks up
+/// the real stored tag key; otherwise dotted/slashed tag names are unqueryable. This mirrors Prometheus'
+/// model.UnescapeName for ValueEncoding: a name is decoded only when it starts with U__; then __ is an
+/// escaped underscore and _<hex>_ is an escaped code point. A malformed escape leaves the name unchanged.
+String unescapePrometheusLabelName(const String & name)
+{
+    static constexpr std::string_view prefix = "U__";
+    if (!name.starts_with(prefix))
+        return name;
+
+    String result;
+    result.reserve(name.size());
+    size_t i = prefix.size();
+    while (i < name.size())
+    {
+        char c = name[i];
+        if (c != '_')
+        {
+            result += c;
+            ++i;
+            continue;
+        }
+
+        /// __ means a literal underscore.
+        if (i + 1 < name.size() && name[i + 1] == '_')
+        {
+            result += '_';
+            i += 2;
+            continue;
+        }
+
+        /// _<hex>_ means the code point with that value. Prometheus accepts at most six hex
+        /// digits here, which is enough to represent the largest Unicode code point.
+        size_t closing = name.find('_', i + 1);
+        if (closing == String::npos || closing == i + 1)
+            return name;
+        if (closing - (i + 1) > 6)
+            return name;
+
+        UInt32 code_point = 0;
+        for (size_t j = i + 1; j < closing; ++j)
+        {
+            if (!isHexDigit(name[j]))
+                return name;
+            char h = name[j];
+            UInt32 digit = (h >= '0' && h <= '9') ? (h - '0') : ((h | 0x20) - 'a' + 10);
+            code_point = code_point * 16 + digit;
+        }
+
+        /// convertCodePointToUTF8() does not reject values outside the Unicode scalar range,
+        /// including UTF-16 surrogate code points, so validate them before converting.
+        if (code_point > 0x10FFFF || UTF8::isSurrogateCodePoint(code_point))
+            return name;
+
+        char utf8_bytes[4];
+        size_t utf8_length = UTF8::convertCodePointToUTF8(static_cast<int>(code_point), utf8_bytes, sizeof(utf8_bytes));
+        if (utf8_length == 0)
+            return name;
+        result.append(utf8_bytes, utf8_length);
+        i = closing + 1;
+    }
+    return result;
+}
+
 /// Closes the "data" array of a metadata endpoint response. When the optional `limit` parameter cut
 /// the result short, the response carries the same warning Prometheus produces for a truncated
 /// /api/v1/series, /api/v1/labels or /api/v1/label/<name>/values result.
@@ -364,6 +430,33 @@ ASTPtr makeSelectFromSubquery(ASTs select_list, ASTPtr subquery, bool distinct, 
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
     return select_with_union_query;
 }
+
+String makeMapTagValuesExpression(const String & tag_name)
+{
+    const String labels_expr = fmt::format(
+        "arrayZip(mapKeys({0}), mapValues({0}))",
+        TimeSeriesColumnNames::Tags);
+    return fmt::format(
+        "arrayMap(x -> x.2, arrayFilter(x -> (x.1 = {0} AND x.2 != ''), {1}))",
+        quoteString(tag_name),
+        labels_expr);
+}
+
+String makeTagCarrierConflictCondition(const String & tag_name, const String & column_name)
+{
+    String column_expr = fmt::format("coalesce(toString({}), '')", backQuoteIfNeed(column_name));
+    String map_values_expr = makeMapTagValuesExpression(tag_name);
+    return fmt::format(
+        "(arrayUniq({0}) > 1) OR (({1} != '') AND (arrayUniq(arrayConcat([{1}], {0})) > 1))",
+        map_values_expr,
+        column_expr);
+}
+
+String makeMapTagConflictCondition(const String & tag_name)
+{
+    return fmt::format("arrayUniq({}) > 1", makeMapTagValuesExpression(tag_name));
+}
+
 }
 
 PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_)
@@ -784,6 +877,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     }
 
     auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, getContext());
+    const auto & time_series_table_id = time_series_storage->getStorageID();
 
     /// Each `match[]` value must be an instant selector; the result is the union of the series matched by each selector.
     auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
@@ -811,6 +905,24 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
         auto select_ids_query = StorageTimeSeriesSelector::makeSelectIDsQuery(
             tags_table_id, matchers, *time_series_settings, min_time, max_time, timestamp_data_type);
         const auto & select_ids = typeid_cast<const ASTSelectWithUnionQuery &>(*select_ids_query);
+
+        /// Authorize the tags read through the configured TimeSeries table, as for the other metadata endpoints.
+        auto table_expression = make_intrusive<ASTTableExpression>();
+        table_expression->table_function = makeASTFunction(
+            "timeSeriesTags",
+            make_intrusive<ASTLiteral>(time_series_table_id.database_name),
+            make_intrusive<ASTLiteral>(time_series_table_id.table_name));
+        table_expression->children.push_back(table_expression->table_function);
+
+        auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+        table->table_expression = table_expression;
+        table->children.push_back(std::move(table_expression));
+
+        auto tables = make_intrusive<ASTTablesInSelectQuery>();
+        tables->children.push_back(std::move(table));
+        auto & select_query = typeid_cast<ASTSelectQuery &>(*select_ids.list_of_selects->children.at(0));
+        select_query.setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
         list_of_selects->children.push_back(select_ids.list_of_selects->children.at(0));
     }
 
@@ -1513,13 +1625,213 @@ void PrometheusHTTPProtocolAPI::getLabels(
 
 void PrometheusHTTPProtocolAPI::getLabelValues(
     WriteBuffer & response,
-    const String & /* label_name */,
-    const String & /* match_param */,
-    const String & /* start_param */,
-    const String & /* end_param */)
+    const String & label_name_param,
+    const Strings & match_params,
+    const String & start_param,
+    const String & end_param,
+    UInt64 limit,
+    QueryFinishCallback query_finish_callback)
 {
-    UNUSED(response);
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The label values endpoint is not implemented");
+    auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
+    auto tags_metadata = tags_table->getInMemoryMetadataPtr(getContext(), false);
+    auto make_unique_alias = [&tags_metadata](String alias)
+    {
+        while (tags_metadata->columns.has(alias))
+            alias += "_";
+        return alias;
+    };
+
+    const String label_value_alias = make_unique_alias("__prometheus_label_value");
+    const String metric_name_empty_alias = make_unique_alias("__prometheus_metric_name_empty");
+    const String metric_name_invalid_utf8_alias = make_unique_alias("__prometheus_metric_name_invalid_utf8");
+    const String metric_name_carrier_conflict_alias = make_unique_alias("__prometheus_metric_name_carrier_conflict");
+    const String label_carrier_conflict_alias = make_unique_alias("__prometheus_label_carrier_conflict");
+
+    const auto & time_series_table_id = time_series_storage->getStorageID();
+    const String tags_table_expression = fmt::format(
+        "timeSeriesTags({}, {})",
+        quoteString(time_series_table_id.database_name),
+        quoteString(time_series_table_id.table_name));
+
+    /// Prometheus escapes non-legacy label names in the path. Decode them before comparing against
+    /// tags_to_columns or indexing the tags Map.
+    const String label_name = unescapePrometheusLabelName(label_name_param);
+    if (label_name.empty()
+        || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid label name: {}", quoteString(label_name_param));
+
+    auto tag_columns = getConfiguredTagColumns();
+    const String metric_name_carrier_conflict_condition
+        = makeTagCarrierConflictCondition(TimeSeriesTagNames::MetricName, TimeSeriesColumnNames::MetricName);
+
+    String query;
+    String label_value_expr;
+    String label_carrier_conflict_condition = "0";
+    /// Collect WHERE conditions and join them, so the query stays valid regardless of which branch is taken.
+    std::vector<String> conditions;
+
+    if (label_name == "__name__")
+    {
+        /// Keep empty metric names in the result so a matched malformed row is rejected below instead of
+        /// being silently treated as an absent __name__ label.
+        label_value_expr = TimeSeriesColumnNames::MetricName;
+    }
+    else
+    {
+        /// If the label is configured in tags_to_columns, prefer its dedicated column and fall back
+        /// to the tags Map for older or external rows that carry the label only there.
+        String column_name;
+        for (const auto & [tag_name, col_name] : tag_columns)
+        {
+            if (tag_name == label_name)
+            {
+                column_name = col_name;
+                break;
+            }
+        }
+
+        if (!column_name.empty())
+        {
+            /// A supported external tags table can still contain the configured tag only in the
+            /// residual Map with the dedicated column empty or NULL, so fall back to the Map. A row
+            /// with conflicting non-empty carriers is rejected instead of silently choosing one value.
+            String column_expr = fmt::format("coalesce(toString({}), '')", backQuoteIfNeed(column_name));
+            String map_value_expr = fmt::format("arrayElement({}, 1)", makeMapTagValuesExpression(label_name));
+            label_value_expr = fmt::format(
+                "if({0} != '', {0}, {1})",
+                column_expr,
+                map_value_expr);
+            label_carrier_conflict_condition = makeTagCarrierConflictCondition(label_name, column_name);
+            conditions.push_back(fmt::format("{} != ''", label_value_expr));
+        }
+        else
+        {
+            /// A key stored with an empty value is treated as an absent label.
+            label_value_expr = fmt::format("arrayElement({}, 1)", makeMapTagValuesExpression(label_name));
+            label_carrier_conflict_condition = makeMapTagConflictCondition(label_name);
+            conditions.push_back(fmt::format("{} != ''", label_value_expr));
+        }
+    }
+
+    /// Group by the value returned by this endpoint instead of carrying a metric name through the
+    /// DISTINCT/sort pipeline. The validation flags are aggregated across every selected row, so
+    /// fail-closed validation still sees malformed data even when multiple series share one value.
+    query = fmt::format(
+        "SELECT {0} AS `{1}`, max({2} = '') AS `{3}`, "
+        "max(isValidUTF8({2}) = 0) AS `{4}`, max({5}) AS `{6}`, max({7}) AS `{8}` FROM {9}",
+        label_value_expr,
+        label_value_alias,
+        TimeSeriesColumnNames::MetricName,
+        metric_name_empty_alias,
+        metric_name_invalid_utf8_alias,
+        metric_name_carrier_conflict_condition,
+        metric_name_carrier_conflict_alias,
+        label_carrier_conflict_condition,
+        label_carrier_conflict_alias,
+        tags_table_expression);
+
+    std::unordered_map<String, String> column_name_by_tag_name(tag_columns.begin(), tag_columns.end());
+    if (String match_condition = makeMatchCondition(match_params, column_name_by_tag_name); !match_condition.empty())
+        conditions.push_back(match_condition);
+    appendTimeRangeConditions(conditions, tags_table, start_param, end_param);
+
+    for (size_t i = 0; i < conditions.size(); ++i)
+        query += (i == 0 ? " WHERE " : " AND ") + conditions[i];
+
+    query += fmt::format(" GROUP BY `{}` ORDER BY `{}`", label_value_alias, label_value_alias);
+
+    /// The limit is enforced while collecting values for the response. The query still reads all matching
+    /// rows so the conflicting-carrier check cannot be skipped just because the response limit was reached.
+    LOG_TRACE(log, "Prometheus label values query: {}", query);
+
+    auto [ast, io] = executeQuery(query, getContext(), {}, QueryProcessingStage::Complete);
+
+    try
+    {
+        PullingAsyncPipelineExecutor executor(io.pipeline);
+        Block result_block;
+
+        /// Materialize the values before writing the success envelope. External String columns can
+        /// contain invalid UTF-8, while both Prometheus and the JSON serializer require valid UTF-8.
+        std::vector<String> values_to_write;
+        UInt64 emitted = 0;
+        bool truncated = false;
+        while (executor.pull(result_block))
+        {
+            if (result_block.rows() == 0)
+                continue;
+
+            const auto & value_col = result_block.getByName(label_value_alias).column;
+            const auto & metric_name_empty_col = result_block.getByName(metric_name_empty_alias).column;
+            const auto & metric_name_invalid_utf8_col = result_block.getByName(metric_name_invalid_utf8_alias).column;
+            const auto & metric_name_carrier_conflict_col = result_block.getByName(metric_name_carrier_conflict_alias).column;
+            const auto & label_carrier_conflict_col = result_block.getByName(label_carrier_conflict_alias).column;
+
+            for (size_t i = 0; i < result_block.rows(); ++i)
+            {
+                if (metric_name_empty_col->getUInt(i))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Found empty metric name in a row of the 'tags' table");
+
+                if (metric_name_invalid_utf8_col->getUInt(i))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Found invalid UTF-8 in a metric name in a row of the 'tags' table");
+
+                if (metric_name_carrier_conflict_col->getUInt(i))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Found two tags with the same name {} but different values in a row of the 'tags' table",
+                        quoteString(TimeSeriesTagNames::MetricName));
+
+                if (label_carrier_conflict_col->getUInt(i))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Found two tags with the same name {} but different values in a row of the 'tags' table",
+                        quoteString(label_name));
+
+                auto value = value_col->getDataAt(i);
+                if (value.empty())
+                    continue;
+
+                if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Found invalid UTF-8 in a label value in a row of the 'tags' table");
+
+                if (limit && emitted == limit)
+                {
+                    truncated = true;
+                    continue;
+                }
+
+                values_to_write.emplace_back(value.data(), value.size());
+                ++emitted;
+            }
+        }
+
+        writeString(R"({"status":"success","data":[)", response);
+        for (size_t i = 0; i < values_to_write.size(); ++i)
+        {
+            if (i > 0)
+                writeString(",", response);
+            writeJSONString(std::string_view(values_to_write[i]), response, format_settings);
+        }
+        writeMetadataResponseFooter(response, truncated);
+
+        /// Store the buffered result in the query result cache now. The executor destructor cancels
+        /// pipeline processors, so leaving this until destruction would discard the pending write.
+        io.pipeline.finalizeWriteInQueryResultCache();
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
+    }
+
+    /// Release the query slot and record QueryFinish after the pipeline has been exhausted.
+    finishExecutedQuery(io, query_finish_callback);
 }
 
 
