@@ -26,14 +26,12 @@ void TTLDeleteAlgorithm::execute(Block & block)
     /// algorithm runs on every merge of a value-combining mode, where the common case is that
     /// nothing expires - and then the block is handed on untouched.
     const size_t rows = block.rows();
-    extractTimestamps(ttl_column.get(), rows, timestamps);
-
     IColumn::Filter filter(rows);
     size_t removed = 0;
 
     for (size_t i = 0; i < rows; ++i)
     {
-        Int64 cur_ttl = timestamps[i];
+        Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
         bool where_filter_passed = !where_column || where_column->getBool(i);
         bool remove = isTTLExpired(cur_ttl) && where_filter_passed;
 
