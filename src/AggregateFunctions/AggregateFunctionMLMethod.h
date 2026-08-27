@@ -135,8 +135,12 @@ public:
     /// Used for serialization when necessary
     virtual void write(WriteBuffer &) const {}
 
-    /// Used for serialization when necessary
-    virtual void read(ReadBuffer &) {}
+    /// Used for serialization when necessary. The state comes from the data, so the updaters that
+    /// store vectors must check them against `expected_size` (the size of the gradient, that is,
+    /// the number of weights plus one for the bias): the updaters index these vectors by the
+    /// weight number during `merge` and `addToBatch`. An empty vector is also valid: versions
+    /// before 23.2 serialized the vectors empty until the first update.
+    virtual void read(ReadBuffer &, UInt64 /* expected_size */) {}
 };
 
 
@@ -162,7 +166,7 @@ public:
 
     void write(WriteBuffer & buf) const override;
 
-    void read(ReadBuffer & buf) override;
+    void read(ReadBuffer & buf, UInt64 expected_size) override;
 
 private:
     Float64 alpha{0.1};
@@ -194,7 +198,7 @@ public:
 
     void write(WriteBuffer & buf) const override;
 
-    void read(ReadBuffer & buf) override;
+    void read(ReadBuffer & buf, UInt64 expected_size) override;
 
 private:
     const Float64 alpha = 0.9;
@@ -231,7 +235,7 @@ public:
 
     void write(WriteBuffer & buf) const override;
 
-    void read(ReadBuffer & buf) override;
+    void read(ReadBuffer & buf, UInt64 expected_size) override;
 
 private:
     /// beta1 and beta2 hyperparameters have such recommended values
@@ -267,7 +271,10 @@ public:
 
     void write(WriteBuffer & buf) const;
 
-    void read(ReadBuffer & buf);
+    /// `expected_param_num` is the number of features declared by the type: the state comes from
+    /// the data and must agree with it, because everything downstream indexes the weights by the
+    /// feature number.
+    void read(ReadBuffer & buf, UInt64 expected_param_num);
 
     void predict(
         ColumnVector<Float64>::Container & container,
@@ -366,7 +373,10 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override { this->data(place).write(buf); }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override { this->data(place).read(buf); }
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    {
+        this->data(place).read(buf, param_num);
+    }
 
     void predictValues(
         ConstAggregateDataPtr __restrict place,
