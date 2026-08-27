@@ -552,6 +552,18 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                   .withDelayInit(false)
                   .create(creds);
 
+    /// Make the shutdown cancellation (`ReplicatedFetchList::cancelAll`) effective from the very
+    /// first read of the response body: the part header (sizes, TTL infos, part type, UUID,
+    /// projection count) is read below before the fetch is registered in the list, and a sender
+    /// stalled in that prefix would otherwise pin the fetch worker until the HTTP timeouts fire.
+    /// The callback is replaced by `ReplicatedFetchReadCallback` after the registration.
+    auto & replicated_fetch_list = data.getContext()->getReplicatedFetchList();
+    in->setNextCallback([&replicated_fetch_list, part_name](size_t)
+    {
+        if (replicated_fetch_list.isAllCancelled())
+            throw Exception(ErrorCodes::ABORTED, "Fetching of part {} was cancelled", part_name);
+    });
+
     int server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
     String remote_fs_metadata = parse<String>(in->getResponseCookie("remote_fs_metadata", ""));
 
@@ -652,7 +664,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     /// the callback aborts the fetch with `ABORTED` on the next buffer refill after the entry is cancelled.
     auto storage_id = data.getStorageID();
     String new_part_path = fs::path(data.getFullPathOnDisk(disk)) / part_name / "";
-    auto entry = data.getContext()->getReplicatedFetchList().insert(
+    auto entry = replicated_fetch_list.insert(
         storage_id.getDatabaseName(), storage_id.getTableName(),
         part_info.getPartitionId(), part_name, new_part_path,
         replica_path, uri, to_detached, sum_files_size);

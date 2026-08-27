@@ -130,8 +130,8 @@ def test_shutdown_cancels_running_fetch(started_cluster):
     assert elapsed < 90, f"Shutdown took {elapsed} seconds"
 
     # The fetch was aborted by the cancellation of the `ReplicatedFetchList`
-    # entry (the message includes the part name), not by anything else.
-    assert node2.contains_in_log("Fetching of part all_")
+    # entry (the `ABORTED` message includes the part name), not by anything else.
+    assert node2.contains_in_log("Fetching of part all_.* was cancelled")
 
     node2.start_clickhouse()
 
@@ -192,9 +192,9 @@ def test_shutdown_cancels_running_zero_copy_fetch(started_cluster):
     assert elapsed < 90, f"Shutdown took {elapsed} seconds"
 
     # The fetch took the zero-copy branch and was aborted by the cancellation
-    # of the `ReplicatedFetchList` entry.
+    # of the `ReplicatedFetchList` entry (the `ABORTED` message).
     assert node4.contains_in_log("metadata onto disk")
-    assert node4.contains_in_log("Fetching of part all_")
+    assert node4.contains_in_log("Fetching of part all_.* was cancelled")
 
     node3.query("SYSTEM DISABLE FAILPOINT replicated_sends_sleep_before_file_send")
     node4.start_clickhouse()

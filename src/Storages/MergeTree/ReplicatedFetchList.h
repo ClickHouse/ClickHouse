@@ -98,6 +98,11 @@ public:
         : Parent(CurrentMetrics::ReplicatedFetch)
     {}
 
+    /// Whether `cancelAll` has been called (the server is shutting down).
+    /// Checked in `fetchSelectedPart` while reading the part header, before the fetch
+    /// is registered in the list and gets its own per-entry `is_cancelled` flag.
+    bool isAllCancelled() const { return all_cancelled; }
+
     /// Cancel all current fetches, and also all inserted later.
     /// Used on server shutdown, when their results would be discarded anyway.
     void cancelAll()
