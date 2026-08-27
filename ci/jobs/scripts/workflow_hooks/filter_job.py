@@ -60,6 +60,7 @@ REVIEW_THREADS_BUILD_JOBS = [
     + JobConfigs.special_build_jobs
     + JobConfigs.build_llvm_coverage_job
     + JobConfigs.toolchain_build_jobs
+    + JobConfigs.wasm_parser_build_jobs
 ]
 
 INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
