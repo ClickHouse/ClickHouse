@@ -11,7 +11,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Core/Block.h>
-#include <Core/Defines.h>
 
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -68,14 +67,20 @@ std::vector<size_t> collectAttachedPositions(const Block & left_header, const Bl
     return positions;
 }
 
-const ColumnUInt64 * keyColumn(const IColumn & column)
-{
-    return assert_cast<const ColumnUInt64 *>(&column);
-}
-
 MutableColumnPtr exchangeWithEmpty(MutableColumnPtr & column)
 {
     return std::exchange(column, column->cloneEmpty());
+}
+
+int compareKeys(UInt64 left_number, UInt64 left_offset, UInt64 right_number, UInt64 right_offset)
+{
+    if (left_number != right_number)
+        return left_number < right_number ? -1 : 1;
+
+    if (left_offset != right_offset)
+        return left_offset < right_offset ? -1 : 1;
+
+    return 0;
 }
 
 class StreamAligner
@@ -85,37 +90,48 @@ class StreamAligner
         if (left_columns.empty())
             return;
 
-        const auto * left_block_numbers = keyColumn(*left_columns[left_block_number_pos]);
-        const auto * left_block_offsets = keyColumn(*left_columns[left_block_offset_pos]);
-        const auto * right_block_numbers = keyColumn(*data_columns[right_block_number_pos]);
-        const auto * right_block_offsets = keyColumn(*data_columns[right_block_offset_pos]);
+        const auto & left_block_numbers = assert_cast<const ColumnUInt64 &>(*left_columns[left_block_number_pos]).getData();
+        const auto & left_block_offsets = assert_cast<const ColumnUInt64 &>(*left_columns[left_block_offset_pos]).getData();
+        const auto & right_block_numbers = assert_cast<const ColumnUInt64 &>(*data_columns[right_block_number_pos]).getData();
+        const auto & right_block_offsets = assert_cast<const ColumnUInt64 &>(*data_columns[right_block_offset_pos]).getData();
         const size_t left_rows = left_columns.front()->size();
+        const size_t right_rows = data_columns.front()->size();
 
-        while (left_row < left_rows && hasPendingRightRows())
+        const auto compare_at = [&](size_t left, size_t right)
         {
-            const std::pair left_key{left_block_numbers->getElement(left_row), left_block_offsets->getElement(left_row)};
-            const std::pair right_key{right_block_numbers->getElement(matched), right_block_offsets->getElement(matched)};
+            return compareKeys(left_block_numbers[left], left_block_offsets[left], right_block_numbers[right], right_block_offsets[right]);
+        };
 
-            if (left_key > right_key)
+        while (processed_left < left_rows && matched_right < right_rows)
+        {
+            const int comparison = compare_at(processed_left, matched_right);
+
+            if (comparison > 0)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "A data stream row of AlignStreams has no matching metadata stream row (block number {}, block offset {})",
-                    right_key.first, right_key.second);
+                    right_block_numbers[matched_right], right_block_offsets[matched_right]);
             }
-            else if (left_key == right_key)
+            else if (comparison == 0)
             {
-                for (size_t i = 0; i < attached_positions.size(); ++i)
-                    attached_columns[i]->insertFrom(*left_columns[attached_positions[i]], left_row);
+                size_t eq_range_len = 1;
+                while (processed_left + eq_range_len < left_rows && matched_right + eq_range_len < right_rows
+                    && compare_at(processed_left + eq_range_len, matched_right + eq_range_len) == 0)
+                    ++eq_range_len;
 
-                ++matched;
+                for (size_t i = 0; i < attached_positions.size(); ++i)
+                    attached_columns[i]->insertRangeFrom(*left_columns[attached_positions[i]], processed_left, eq_range_len);
+
+                matched_right += eq_range_len;
+                processed_left += eq_range_len - 1;
             }
             else
             {
-                ++left_row;
+                ++processed_left;
             }
         }
 
-        if (left_row == left_rows)
+        if (processed_left == left_rows)
             dropPendingLeftRows();
     }
 
@@ -135,22 +151,20 @@ public:
     }
 
     bool hasPendingLeftRows() const { return !left_columns.empty(); }
-    bool hasPendingRightRows() const { return matched < data_columns.front()->size(); }
-    bool hasMatchedRows() const { return matched > 0; }
+    bool hasPendingRightRows() const { return !data_columns.front()->empty(); }
 
     void addRightChunk(Chunk chunk)
     {
-        const size_t rows = chunk.getNumRows();
-        if (rows == 0)
+        chassert(data_columns.front()->empty());
+        if (chunk.getNumRows() == 0)
             return;
 
-        /// The rows are copied with insertRangeFrom, which requires plain full source columns.
         convertToFullIfSparse(chunk);
         convertToFullIfConst(chunk);
 
-        const auto & source_columns = chunk.getColumns();
+        auto source_columns = chunk.detachColumns();
         for (size_t i = 0; i < data_columns.size(); ++i)
-            data_columns[i]->insertRangeFrom(*source_columns[i], 0, rows);
+            data_columns[i] = IColumn::mutate(std::move(source_columns[i]));
 
         matchPending();
     }
@@ -161,12 +175,11 @@ public:
         if (chunk.getNumRows() == 0)
             return;
 
-        /// The rows are read with getElement/insertFrom, which require plain full source columns.
         convertToFullIfSparse(chunk);
         convertToFullIfConst(chunk);
 
         left_columns = chunk.detachColumns();
-        left_row = 0;
+        processed_left = 0;
 
         matchPending();
     }
@@ -174,31 +187,35 @@ public:
     void dropPendingLeftRows()
     {
         left_columns.clear();
-        left_row = 0;
+        processed_left = 0;
     }
 
-    std::optional<Chunk> flushMatched(size_t min_rows = 0)
+    Chunk flushMatched()
     {
-        if (matched == 0 || matched < min_rows)
-            return std::nullopt;
+        if (matched_right == 0)
+            return {};
 
         const size_t total = data_columns.front()->size();
-        const size_t rows = std::exchange(matched, 0);
 
         Columns columns;
         columns.reserve(data_columns.size() + attached_columns.size());
+        const size_t rows = std::exchange(matched_right, 0);
 
         for (auto & column : data_columns)
         {
-            columns.push_back(column->cut(0, rows));
-            column = IColumn::mutate(column->cut(rows, total - rows));
+            if (rows == total)
+            {
+                columns.push_back(exchangeWithEmpty(column));
+            }
+            else
+            {
+                columns.push_back(column->cut(0, rows));
+                column = IColumn::mutate(column->cut(rows, total - rows));
+            }
         }
 
         for (auto & column : attached_columns)
-        {
-            chassert(column->size() == rows);
             columns.push_back(exchangeWithEmpty(column));
-        }
 
         return Chunk(std::move(columns), rows);
     }
@@ -212,20 +229,20 @@ private:
 
     /// Left stream data
     Columns left_columns;
-    size_t left_row = 0;
+    size_t processed_left = 0;
 
     /// Right stream data
     MutableColumns data_columns;
     MutableColumns attached_columns;
-    size_t matched = 0;
+    size_t matched_right = 0;
 };
 
 class AlignStreamsProcessor final : public IProcessor
 {
-    void enqueueChunk(std::optional<Chunk> chunk)
+    void enqueueChunk(Chunk chunk)
     {
-        if (chunk.has_value())
-            ready_chunks.push(std::move(*chunk));
+        if (!chunk.empty())
+            ready_chunks.push(std::move(chunk));
     }
 
     void enqueueInfos(Chunk::ChunkInfoCollection && infos)
@@ -293,7 +310,7 @@ public:
             right_chunk = right_input.pull(/*set_not_needed=*/true);
         }
 
-        const bool has_work = left_chunk.has_value() || right_chunk.has_value() || aligner.hasPendingLeftRows() || aligner.hasPendingRightRows() || aligner.hasMatchedRows();
+        const bool has_work = left_chunk.has_value() || right_chunk.has_value() || aligner.hasPendingLeftRows() || aligner.hasPendingRightRows();
 
         if (!has_work)
         {
@@ -328,6 +345,8 @@ public:
             left_chunk.reset();
         }
 
+        enqueueChunk(aligner.flushMatched());
+
         /// Data rows left without metadata coverage - invariant is broken.
         if (left_input.isFinished() && !aligner.hasPendingLeftRows() && aligner.hasPendingRightRows())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The metadata stream of AlignStreams ended before all data stream rows were matched");
@@ -335,9 +354,6 @@ public:
         /// The data stream ended - the pending metadata tail can never match.
         if (right_input.isFinished() && !right_chunk.has_value() && !aligner.hasPendingRightRows())
             aligner.dropPendingLeftRows();
-
-        const bool streams_done = left_input.isFinished() && right_input.isFinished();
-        enqueueChunk(aligner.flushMatched(streams_done ? 0 : DEFAULT_BLOCK_SIZE));
     }
 
 private:
