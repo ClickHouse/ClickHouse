@@ -1,10 +1,10 @@
-play announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed
-docs announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed
-dashboard announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed
-merges announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed
-schema announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed
-jemalloc announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed
-processors-profile announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed
-binary announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed
+play announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
+docs announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
+dashboard announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
+merges announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
+schema announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
+jemalloc announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
+processors-profile announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
+binary announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
 webterminal handshake=yes accepts=yes origins=exact
 play docs_relay=yes direct_docs_opener=no relay_trust_guard=yes relay_ordering_guard=yes

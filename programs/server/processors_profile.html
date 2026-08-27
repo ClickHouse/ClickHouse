@@ -424,8 +424,12 @@
 
         function readConnectionParams() {
             host = document.getElementById('url').value || host;
-            user = document.getElementById('user').value || user;
-            password = document.getElementById('password').value || password;
+            /// Read verbatim, with no fallback to the previous credentials: an empty input is a real
+            /// value, not a request to keep the old one. A connection handed over by a host page clears
+            /// both inputs when it carries no credentials, and the old credentials must not outlive the
+            /// connection they belong to - the same rule `dashboard.html` and `jemalloc.html` follow.
+            user = document.getElementById('user').value;
+            password = document.getElementById('password').value;
         }
 
         /// Build a URL carrying only credential and format params. The SQL itself is sent in the POST body

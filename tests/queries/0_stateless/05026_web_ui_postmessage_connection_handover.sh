@@ -72,7 +72,13 @@ do
     default_endpoint=$(echo "$content" | grep -qF "function defaultServerAddress()" \
         && ! echo "$content" | grep -qE "= location.protocol != 'file:' \\? location.origin" \
         && echo prefixed || echo origin)
-    echo "${page} announces=${announces} accepts=${accepts} origins=${origins} endpoint_query=${endpoint_query} default_endpoint=${default_endpoint}"
+    # A handover replaces the credentials wholesale: when it carries none, the page clears the `user`
+    # and `password` inputs, and reading them back must yield nothing. A page that falls back to the
+    # previously configured value on an empty input (`... .value || user`) would keep authenticating to
+    # the newly handed-over server with the credentials of the old one, which is the very leak the
+    # handover exists to prevent.
+    credentials=$(echo "$content" | grep -qE "\|\| (user|password)\b" && echo sticky || echo replaced)
+    echo "${page} announces=${announces} accepts=${accepts} origins=${origins} endpoint_query=${endpoint_query} default_endpoint=${default_endpoint} credentials=${credentials}"
 done
 
 content=$(fetch_page webterminal)
