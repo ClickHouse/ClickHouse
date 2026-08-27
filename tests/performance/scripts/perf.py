@@ -256,6 +256,13 @@ parser.add_argument(
     help="For how many seconds to profile a query for which the performance has changed.",
 )
 parser.add_argument(
+    "--profile-all-queries",
+    action="store_true",
+    help="Profile every query of every test, not only the ones whose performance has "
+    "changed. Costs --profile-seconds per query per server. A single test can ask for "
+    'the same with <test profile_all_queries="1">.',
+)
+parser.add_argument(
     "--long", action="store_true", help="Do not skip the tests tagged as long."
 )
 parser.add_argument(
@@ -620,6 +627,11 @@ ignored_relative_change = 0.05
 if "max_ignored_relative_change" in root.attrib:
     ignored_relative_change = float(root.attrib["max_ignored_relative_change"])
     print(f"report-threshold\t{ignored_relative_change}")
+
+# Opt-in per run or per test: profile every query, not only those whose timings changed.
+profile_all_queries = args.profile_all_queries or root.attrib.get(
+    "profile_all_queries", "0"
+) not in ("0", "false", "")
 
 # Opt-in per test: run every query, ignoring the --max-queries sampling.
 run_all_queries = root.attrib.get("run_all_queries", "0") not in ("0", "false", "")
@@ -1106,7 +1118,7 @@ for query_index in queries_to_run:
     median = [statistics.median(t) for t in all_server_times]
     print(f"median\t{query_index}\t{median[0]}")
 
-    # Run additional profiling queries to collect profile data, but only if test times appeared to be different.
+    # Run additional profiling queries to collect profile data, by default only if test times appeared to be different.
     # We have to do it after normal runs because otherwise it will affect test statistics too much
     if len(all_server_times) != 2:
         continue
@@ -1123,7 +1135,9 @@ for query_index in queries_to_run:
     # difference we use in report (max(median) / min(median)).
     relative_diff = (median[1] - median[0]) / median[0]
     print(f"diff\t{query_index}\t{median[0]}\t{median[1]}\t{relative_diff}\t{pvalue}")
-    if abs(relative_diff) < ignored_relative_change or pvalue > 0.05:
+    if not profile_all_queries and (
+        abs(relative_diff) < ignored_relative_change or pvalue > 0.05
+    ):
         continue
 
     if q_item["kind"] == "shell":

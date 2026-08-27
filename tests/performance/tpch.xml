@@ -1,6 +1,7 @@
 <!-- https://clickhouse.com/docs/getting-started/example-datasets/tpch -->
 <!-- Scale factor: 10 -->
-<test run_all_queries="1">
+<!-- profile_all_queries: always collect trace-log metrics and flame graphs for all 22 queries, at 10 s per query per server. -->
+<test profile_all_queries="1" run_all_queries="1">
 
 <settings file="../benchmarks/tpc-h/settings.json"/>
 <settings>
