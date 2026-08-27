@@ -15,6 +15,20 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+bool isNumericFieldType(Field::Types::Which which)
+{
+    return isInt64OrUInt64orBoolFieldType(which)
+        || Field::isDecimal(which)
+        || which == Field::Types::Float64
+        || which == Field::Types::UInt128 || which == Field::Types::Int128
+        || which == Field::Types::UInt256 || which == Field::Types::Int256;
+}
+
+}
+
 std::string WindowFunctionDescription::dump() const
 {
     WriteBufferFromOwnString ss;
@@ -90,14 +104,9 @@ void WindowFrame::toString(WriteBuffer & buf) const
 
 void WindowFrame::checkValid() const
 {
-    // Check the validity of offsets. Note that while the offsets for ROWS and
-    // GROUPS are specified in numbers of rows and must be integer, the offsets
-    // for RANGE are specified in units of the ORDER BY column and can be
-    // fractional. For example, we might want to order by time and consider the
-    // rows no further than 0.5 seconds from the given one.
-    // The preliminary check for ROWS and GROUPS frames is done here, and the
-    // RANGE offsets are coerced to the ORDER BY column type and checked for
-    // validity by the window transform itself.
+    // `ROWS` and `GROUPS` offsets count rows and must be integer. `RANGE` offsets are in
+    // units of the `ORDER BY` column and may be fractional, so their value is checked by
+    // the window transform after coercion to that column's type.
     if (type == FrameType::ROWS || type == FrameType::GROUPS)
     {
         if (begin_type == BoundaryType::Offset
@@ -121,6 +130,31 @@ void WindowFrame::checkValid() const
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Frame end offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
+                            type,
+                            applyVisitor(FieldVisitorToString(), end_offset),
+                            end_offset.getType());
+        }
+    }
+    else
+    {
+        // Checked here rather than after coercion: a non-numeric offset would reach the
+        // comparators as the wrong `Field` alternative, and coercion to a lower scale can
+        // truncate a negative offset to zero.
+        if (begin_type == BoundaryType::Offset
+            && (!isNumericFieldType(begin_offset.getType()) || accurateLess(begin_offset, Field(0))))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Frame start offset for '{}' frame must be a nonnegative number, '{}' of type '{}' given",
+                            type,
+                            applyVisitor(FieldVisitorToString(), begin_offset),
+                            begin_offset.getType());
+        }
+
+        if (end_type == BoundaryType::Offset
+            && (!isNumericFieldType(end_offset.getType()) || accurateLess(end_offset, Field(0))))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Frame end offset for '{}' frame must be a nonnegative number, '{}' of type '{}' given",
                             type,
                             applyVisitor(FieldVisitorToString(), end_offset),
                             end_offset.getType());

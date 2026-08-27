@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
@@ -88,12 +89,10 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
     const auto * reference_column = assert_cast<const ColumnType *>(
         _reference_column);
 
-    // NativeType<> is to get the underlying integer type for Decimal columns,
-    // which have value type Decimal<>.
+    // A `Decimal` column's value type is `Decimal<>`; the arithmetic below needs the underlying integer.
     using ValueType = NativeType<typename ColumnType::ValueType>;
     // Note that the storage type of offset returned by get<> is different, so
-    // we need to specify the type explicitly. In case of Decimals, this becomes
-    // a series of even three casts: DecimalField<Decimal<int>> to Decimal<int> to int.
+    // we need to specify the type explicitly.
     const ValueType offset = static_cast<typename ColumnType::ValueType>(_offset.safeGet<typename ColumnType::ValueType>());
     chassert(offset >= 0);
 
@@ -193,14 +192,21 @@ APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int32>) \
 APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int64>) \
 APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int128>) \
 \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnDecimal<Decimal32>) \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnDecimal<Decimal64>) \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnDecimal<Decimal128>) \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnDecimal<Decimal256>) \
+\
 APPLY_FOR_ONE_NEST_TYPE(FUNCTION##Float, ColumnVector<Float32>) \
 APPLY_FOR_ONE_NEST_TYPE(FUNCTION##Float, ColumnVector<Float64>) \
 \
 else \
 { \
+    /* Dereferencing inside typeid() would trip -Wpotentially-evaluated-expression. */ \
+    const IColumn * nest_column_for_error = nest_compared_column.get(); \
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, \
         "The RANGE OFFSET frame for '{}' ORDER BY nest column is not implemented", \
-        demangle(typeid(nest_compared_column).name())); \
+        demangle(typeid(*nest_column_for_error).name())); \
 }
 
 // A specialization of compareValuesWithOffset for nullable.
@@ -268,6 +274,8 @@ APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int128>) \
 \
 APPLY_FOR_ONE_TYPE(FUNCTION, ColumnDecimal<Decimal32>) \
 APPLY_FOR_ONE_TYPE(FUNCTION, ColumnDecimal<Decimal64>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnDecimal<Decimal128>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnDecimal<Decimal256>) \
 \
 APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<Float32>) \
 APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<Float64>) \
@@ -370,10 +378,8 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         // Convert the offsets to the ORDER BY column type. We can't just check
         // that the type matches, because e.g. the int literals are always
         // (U)Int64, but the column might be Int8 and so on.
-        // Also reject invalid values here (negative or NaN): the comparison
-        // functions downstream assume a valid nonnegative offset. A Float
-        // ORDER BY column can carry a NaN offset, which is not ordered, so
-        // check it explicitly instead of relying on comparison semantics.
+        // The comparison functions downstream assume a nonnegative offset. NaN is
+        // unordered, so a comparison against zero cannot reject it.
         auto is_nan_offset = [](const Field & offset)
         {
             return offset.getType() == Field::Types::Float64 && std::isnan(offset.safeGet<Float64>());
@@ -404,7 +410,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
                 || accurateLess(window_description.frame.end_offset, Field(0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window frame start offset must be nonnegative, {} given",
+                    "Window frame end offset must be nonnegative, {} given",
                     window_description.frame.end_offset);
             }
         }
