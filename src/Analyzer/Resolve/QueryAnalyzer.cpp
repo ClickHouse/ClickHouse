@@ -3440,15 +3440,17 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     }
                 }
 
-                /// Keep the original five-placeholder `message_format_string` for `text_log`
-                /// (see `03096_text_log_format_string_args_not_empty`) and attach the optional
-                /// `FROM`-clause hint via `addMessage` so the format string stays stable.
-                Exception exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}",
+                /// The typo hint goes before the formatted query, which can be many kilobytes long, so that
+                /// the actionable part of the message does not end up behind it. The optional `FROM`-clause
+                /// hint is still attached via `addMessage` to keep the number of placeholders in
+                /// `message_format_string` for `text_log` at five
+                /// (see `03096_text_log_format_string_args_not_empty`).
+                Exception exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {}{}. In scope {}",
                     toStringLowercase(IdentifierLookupContext::EXPRESSION),
                     message_clarification,
                     backQuote(unresolved_identifier.getFullName()),
-                    scope.scope_node->formatASTForErrorMessage(),
-                    getHintsErrorMessageSuffix(hints));
+                    getHintsErrorMessageSuffix(hints),
+                    scope.scope_node->formatASTForErrorMessage());
                 if (!from_clause_hint.empty())
                     exception.addMessage(from_clause_hint);
                 throw exception; /// NOLINT(hicpp-exception-baseclass,cert-err09-cpp,cert-err61-cpp,misc-throw-by-value-catch-by-reference)
@@ -4259,13 +4261,13 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                         = IdentifierResolver::tryGetTableNameHint(from_table_identifier.getIdentifier(), scope.context);
                     if (!hint_database_name.empty())
                         throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                            "Unknown table expression identifier '{}' in scope {}. Maybe you meant {}.{}?",
+                            "Unknown table expression identifier '{}'. Maybe you meant {}.{}? In scope {}",
                             from_table_identifier.getIdentifier().getFullName(),
-                            scope.scope_node->formatASTForErrorMessage(),
                             backQuoteIfNeed(hint_database_name),
-                            backQuoteIfNeed(hint_table_name));
+                            backQuoteIfNeed(hint_table_name),
+                            scope.scope_node->formatASTForErrorMessage());
                     throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                        "Unknown table expression identifier '{}' in scope {}",
+                        "Unknown table expression identifier '{}'. In scope {}",
                         from_table_identifier.getIdentifier().getFullName(),
                         scope.scope_node->formatASTForErrorMessage());
                 }
