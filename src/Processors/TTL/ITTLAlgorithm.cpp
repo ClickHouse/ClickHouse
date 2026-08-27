@@ -60,8 +60,8 @@ void ITTLAlgorithm::extractTimestamps(
     timestamps.resize_exact(num_rows);
 
     /// Sparse columns must be converted to dense before type dispatch, since typeid_cast does not
-    /// see through the ColumnSparse wrapper. Materializing once is the right trade here; the row-at-a-time
-    /// version instead binary-searches per row, because materializing there would be O(N) per row.
+    /// see through the ColumnSparse wrapper. Unreachable in practice - every caller gets its column
+    /// from executeExpressionAndGetColumn, which converts - but kept so the mapping stays total.
     ColumnPtr dense;
     if (typeid_cast<const ColumnSparse *>(ttl_column))
     {

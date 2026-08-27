@@ -35,14 +35,15 @@ public:
     bool isMinTTLExpired() const { return force || isTTLExpired(old_ttl_info.min); }
     bool isMaxTTLExpired() const { return isTTLExpired(old_ttl_info.max); }
 
-    /** This function is needed to avoid a conflict between already calculated columns and columns that needed to execute TTL.
-      * If result column is absent in block, all required columns are copied to new block and expression is executed on new block.
-      */
     /// Resolve the column type once and fill `timestamps` for the whole block. This is the only
-    /// place that knows how a TTL result column maps to a Unix timestamp.
+    /// place in the TTL code that knows how a TTL result column maps to a Unix timestamp.
+    /// `MergeTreeDataWriter` still has its own copy - see the note on that in the PR.
     static void extractTimestamps(
         const IColumn * column, size_t num_rows, const DateLUTImpl & date_lut, PaddedPODArray<Int64> & timestamps);
 
+    /** This function is needed to avoid a conflict between already calculated columns and columns that needed to execute TTL.
+      * If result column is absent in block, all required columns are copied to new block and expression is executed on new block.
+      */
     static ColumnPtr executeExpressionAndGetColumn(
         const ExpressionActionsPtr & expression, const Block & block, const String & result_column);
 
