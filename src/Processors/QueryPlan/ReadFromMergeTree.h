@@ -337,7 +337,8 @@ public:
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
-    /// Analyze ranges for cardinality estimation without enforcing row limits or memoizing the result.
+    /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
+    /// or memoizing the result. The executed read analyzes again after its final mode is known.
     AnalysisResultPtr selectRangesToReadForEstimation() const;
 
     /// Analyze the ranges to read for a throwaway pre-plan estimate, without consulting or populating
@@ -445,14 +446,15 @@ public:
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
     /// In distributed query plan, this step will be executed in a distributed manner - shards will be read in parallel.
     void setDistributedRead(size_t bucket_count);
-    /// Splits the analyzed marks into up to `target_buckets` distributed-read buckets and records them. A
-    /// non-FINAL read is sliced into contiguous mark-balanced buckets; a FINAL read is split into
-    /// primary-key-range layers (one merge per layer, per partition when FINAL does not merge across
-    /// partitions). Returns the bucket count, or 0 (read serially) when a FINAL read cannot be range-split
-    /// (SAMPLE, unsafe or mixed-order primary key, a single layer) or the split exceeds `max_total_buckets`.
+    /// Ceiling for the tasks of one distributed read (lanes per task are unbounded).
+    static constexpr size_t max_distributed_read_buckets = 256;
+
+    /// Splits the analyzed marks into up to `target_buckets` distributed-read buckets: mark-balanced
+    /// slices for a plain read, primary-key-range layers grouped into the buckets for `FINAL`. Returns
+    /// the bucket count, or 0 (read serially) when a `FINAL` read cannot be split safely.
     size_t setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets);
     /// Serializes each bucket (its marks, the merge flag, and a merge layer's borders + index) into a
-    /// per-bucket blob shipped as the `read_bucket` task parameter; empty unless this is a distributed read.
+    /// per-bucket blob shipped as the per-read bucket task parameter; empty unless this is a distributed read.
     std::vector<String> serializeDistributedReadBuckets() const;
     /// Makes a list of shards to read in parallel in distributed query plan
     Strings getShardsForDistributedRead() const;
@@ -489,6 +491,11 @@ public:
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
+    /// The task-parameter key under which this read's bucket marks travel. Unique per read so several
+    /// bucketed reads can share one worker fragment (e.g. a broadcast join's partitioned probe side and
+    /// its replicated build side) without their bucket blobs colliding in the shared parameter map.
+    const String & getDistributedReadParamName() const { return distributed_read_param_name; }
+    void setDistributedReadParamName(String param_name) { distributed_read_param_name = std::move(param_name); }
     bool getEnableVerticalFinal() const { return enable_vertical_final; }
 
     /// Whether a FINAL read must merge parts within each partition independently instead of globally
@@ -686,13 +693,15 @@ private:
     std::optional<TopKFilterInfo> top_k_filter_info;
     ProjectionIndexReadDescription projection_index_read_desc;
     /// Number of tasks when this leaf read is distributed; each worker reads the lanes described by its
-    /// `read_bucket` parameter.
+    /// per-read bucket parameter.
     size_t distributed_read_bucket_count = 0;
+    /// Per-read task-parameter key for this read's bucket marks (see getDistributedReadParamName).
+    String distributed_read_param_name;
     /// Initiator side: every virtual bucket across all tasks; `serializeDistributedReadBuckets` groups
-    /// `distributed_read_lanes_per_task` of them into each task's `read_bucket` parameter. Empty on a worker.
+    /// `distributed_read_lanes_per_task` of them into each task's bucket parameter. Empty on a worker.
     std::vector<DistributedReadBucket> distributed_read_buckets;
     size_t distributed_read_lanes_per_task = 1;
-    /// Worker side: the virtual buckets (lanes) of this worker's task, filled from its `read_bucket`
+    /// Worker side: the virtual buckets (lanes) of this worker's task, filled from its bucket
     /// parameter. A FINAL worker builds one merge/non-merge pipe per lane and unites them.
     std::vector<DistributedReadBucket> distributed_read_task_buckets;
 };

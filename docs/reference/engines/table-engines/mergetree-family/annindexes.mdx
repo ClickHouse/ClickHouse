@@ -319,7 +319,7 @@ In practical use cases, the latter case is rather unlikely.
 
 *Additional filters can be evaluated using skipping index*
 
-If additional filter conditions can be evaluated using [skipping indexes](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) (minmax index, set index, etc.), Clickhouse performs post-filtering.
+If additional filter conditions can be evaluated using [skipping indexes](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) (minmax index, set index, etc.), ClickHouse performs post-filtering.
 In such cases, the vector similarity index is evaluated first as it is expected to remove the most rows relative to other skipping indexes.
 
 For finer control over post-filtering vs. pre-filtering, two settings can be used:

@@ -879,6 +879,17 @@ Minimal amount of data parts which merge selector can pick to merge at once
     DECLARE(Bool, apply_patches_on_merge, true, R"(
 If true patch parts are applied on merges
 )", 0) \
+    DECLARE(MergeTreePatchPartsVersion, patch_parts_version, "v2", R"(
+On-disk serialization version for patch parts produced by lightweight UPDATE queries.
+
+Possible values:
+- `v1` - legacy format: patch parts contain `_part, _part_offset` system columns and are sorted by
+`(_part, _part_offset)`. In the worst case, memory usage during apply is bounded by the size of the whole patch part.
+- `v2` - patch parts carry the main table's sort-key columns and are sorted by
+`(sorting_key_columns..., _block_number, _block_offset)`. Memory usage during apply is bounded by the largest equal-sort-key run.
+
+Old-format patches on disk remain readable regardless of this setting.
+)", 0) \
     \
     DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
 The maximum uncompressed size of data in all patch parts in bytes.

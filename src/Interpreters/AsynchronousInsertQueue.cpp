@@ -8,6 +8,7 @@
 #include <Columns/IColumn.h>
 #include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
+#include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Core/Settings.h>
@@ -320,6 +321,18 @@ void AsynchronousInsertQueue::flushAndShutdown()
         LOG_TRACE(log, "Shutting down the asynchronous insertion queue");
         shutdown = true;
 
+        if (flush_on_shutdown)
+        {
+            try
+            {
+                flushAll();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Cannot flush async inserts on shutdown");
+            }
+        }
+
         for (size_t i = 0; i < pool_size; ++i)
         {
             auto & shard = queue_shards[i];
@@ -328,18 +341,14 @@ void AsynchronousInsertQueue::flushAndShutdown()
             chassert(dump_by_first_update_threads[i].joinable());
             dump_by_first_update_threads[i].join();
 
-            if (flush_on_shutdown)
-            {
-                for (auto & [_, elem] : shard.queue)
-                    scheduleDataProcessingJob(elem.key, std::move(elem.data), getContext(), i);
-            }
-            else
-            {
-                for (auto & [_, elem] : shard.queue)
-                    for (const auto & entry : elem.data->entries)
-                        entry->finish(
-                            std::make_exception_ptr(Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout exceeded)")));
-            }
+            std::lock_guard lock(shard.mutex);
+            for (const auto & [_, elem] : shard.queue)
+                for (const auto & entry : elem.data->entries)
+                    entry->finish(
+                        std::make_exception_ptr(Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout exceeded)")));
+
+            shard.iterators.clear();
+            shard.queue.clear();
         }
 
         pool.wait();
@@ -349,19 +358,30 @@ void AsynchronousInsertQueue::flushAndShutdown()
     {
         tryLogCurrentException(log);
         pool.wait();
+        clear();
     }
 }
 
 AsynchronousInsertQueue::~AsynchronousInsertQueue()
 {
-    for (const auto & shard : queue_shards)
+    clear();
+}
+
+void AsynchronousInsertQueue::clear()
+{
+    for (auto & shard : queue_shards)
     {
+        /// Note, not required, but it is not a hot path
+        std::lock_guard lock(shard.mutex);
         for (const auto & [first_update, elem] : shard.queue)
         {
             const auto & insert_query = elem.key.query->as<const ASTInsertQuery &>();
             LOG_WARNING(log, "Has unprocessed async insert for {}.{}",
                         backQuoteIfNeed(insert_query.getDatabase()), backQuoteIfNeed(insert_query.getTable()));
         }
+
+        shard.iterators.clear();
+        shard.queue.clear();
     }
 }
 
@@ -588,7 +608,17 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         }
 
         if (inserted)
-            it->second = shard.queue.emplace(now + timeout_ms, Container{key, std::make_unique<InsertData>(timeout_ms)});
+        {
+            try
+            {
+                it->second = shard.queue.emplace(now + timeout_ms, Container{key, std::make_unique<InsertData>(timeout_ms)});
+            }
+            catch (...)
+            {
+                shard.iterators.erase(it);
+                throw;
+            }
+        }
 
         auto queue_it = it->second;
         auto & data = queue_it->second.data;
@@ -596,9 +626,24 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 
         chassert(data);
         auto size_in_bytes = data->size_in_bytes;
-        data->size_in_bytes += entry_data_size;
         /// We rely on the fact that entries are being added to the list in order of creation time in `scheduleDataProcessingJob()`
-        data->entries.emplace_back(entry);
+        try
+        {
+            data->entries.emplace_back(entry);
+        }
+        catch (...)
+        {
+            if (inserted)
+            {
+                NOEXCEPT_SCOPE({
+                    shard.queue.erase(queue_it);
+                    shard.iterators.erase(it);
+                });
+            }
+
+            throw;
+        }
+        data->size_in_bytes += entry_data_size;
         progress_future = entry->getFuture();
 
         LOG_TRACE(log, "Have {} pending inserts in shard {} with total {} bytes of data",
@@ -612,11 +657,11 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 
         auto max_busy_timeout_exceeded = [&shard, &settings, &now, &flush_time_points]() -> bool
         {
-            if (!settings[Setting::async_insert_use_adaptive_busy_timeout] || !shard.last_insert_time || !flush_time_points.first)
+            if (!settings[Setting::async_insert_use_adaptive_busy_timeout] || !TSA_SUPPRESS_WARNING_FOR_READ(shard.last_insert_time) || !flush_time_points.first)
                 return false;
 
             auto max_ms = Milliseconds(settings[Setting::async_insert_busy_timeout_max_ms].totalMilliseconds());
-            return *shard.last_insert_time + max_ms < now && *flush_time_points.first + max_ms < *flush_time_points.second;
+            return *TSA_SUPPRESS_WARNING_FOR_READ(shard.last_insert_time) + max_ms < now && *flush_time_points.first + max_ms < *flush_time_points.second;
         };
 
         /// Here we check whether we have hit the limit on the maximum data size in the buffer or
@@ -631,8 +676,11 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
                       "maximum busy wait timeout exceeded");
             data->timeout_ms = Milliseconds::zero();
             data_to_process = std::move(data);
-            shard.iterators.erase(it);
-            shard.queue.erase(queue_it);
+
+            NOEXCEPT_SCOPE({
+                shard.iterators.erase(it);
+                shard.queue.erase(queue_it);
+            });
         }
 
         shard.last_insert_time = now;
@@ -761,8 +809,8 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
 
         for (size_t i = 0; i < pool_size; ++i)
         {
-            std::lock_guard lock(queue_shards[i].mutex);
             auto & shard = queue_shards[i];
+            std::lock_guard lock(shard.mutex);
             auto & queue = shard.queue;
 
             for (auto it = queue.begin(); it != queue.end();)
@@ -778,8 +826,10 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
 
                 affected_set.emplace(storage.getNameForLogs());
                 queues_to_flush[i].emplace(it->first, std::move(it->second));
-                shard.iterators.erase(it->second.key.hash);
-                it = queue.erase(it);
+                NOEXCEPT_SCOPE({
+                    shard.iterators.erase(it->second.key.hash);
+                    it = queue.erase(it);
+                });
             }
         }
 
@@ -867,7 +917,7 @@ void AsynchronousInsertQueue::flushAll()
     LOG_DEBUG(log, "Finished flushing of asynchronous insert queue");
 }
 
-void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
+void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     auto & shard = queue_shards[shard_num];
 
@@ -882,7 +932,7 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
             shard.are_tasks_available.wait_for(
                 lock,
                 rel_time,
-                [&shard, this]
+                [&shard, this] TSA_NO_THREAD_SAFETY_ANALYSIS
                 {
                     if (shutdown)
                         return true;
@@ -910,10 +960,17 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
                 auto it = shard.queue.begin();
                 size_in_bytes += it->second.data->size_in_bytes;
 
-                shard.iterators.erase(it->second.key.hash);
+                NOEXCEPT_SCOPE({
+                    /// The only exception that is possible here is MEMORY_LIMIT_EXCEEDED, by blocking them it is highly unlikely that we will fail here.
+                    /// Besides it is not possible to write exception safe code here even with proper rollback, since the object can be moved out already (we can do copy, but this is more costly)
+                    MemoryTrackerBlockerInThread lock_memory_tracker;
 
-                entries_to_flush.emplace_back(std::move(it->second));
-                shard.queue.erase(it);
+                    shard.iterators.erase(it->second.key.hash);
+
+                    entries_to_flush.emplace_back(std::move(it->second));
+
+                    shard.queue.erase(it);
+                });
             }
 
             if (!entries_to_flush.empty())

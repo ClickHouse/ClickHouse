@@ -285,7 +285,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-# This function mirrors the PR description checks in ClickhousePullRequestTrigger.
+# This function mirrors the PR description checks in ClickHousePullRequestTrigger.
 # Returns None if the PR should not be mentioned in changelog.
 def generate_description(item: PullRequest, repo: Repository) -> Optional[Description]:
     backport_number = item.number

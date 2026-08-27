@@ -1746,24 +1746,41 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     metadata_copy.column_ttls_by_name.clear();
     for (const auto & [name, ast] : column_ttl_asts)
     {
-        auto new_ttl_entry = TTLDescription::getTTLFromAST(
-            ast,
-            metadata_copy.columns,
-            context,
-            metadata_copy.primary_key,
-            context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
-                                                                                 : TTLValidationMode::Validate);
-        metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
+        try
+        {
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(
+                ast,
+                metadata_copy.columns,
+                context,
+                metadata_copy.primary_key,
+                context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
+                                                                                     : TTLValidationMode::Validate);
+            metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
+        }
+        catch (const Exception & exception)
+        {
+            throw Exception(
+                exception.code(), "Cannot apply ALTER because it breaks the TTL of column {}: {}", backQuote(name), exception.message());
+        }
     }
 
     if (metadata_copy.table_ttl.definition_ast != nullptr)
-        metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            metadata_copy.table_ttl.definition_ast,
-            metadata_copy.columns,
-            context,
-            metadata_copy.primary_key,
-            context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
-                                                                                 : TTLValidationMode::Validate);
+    {
+        try
+        {
+            metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                metadata_copy.table_ttl.definition_ast,
+                metadata_copy.columns,
+                context,
+                metadata_copy.primary_key,
+                context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
+                                                                                     : TTLValidationMode::Validate);
+        }
+        catch (const Exception & exception)
+        {
+            throw Exception(exception.code(), "Cannot apply ALTER because it breaks the TTL of the table: {}", exception.message());
+        }
+    }
 
     metadata = std::move(metadata_copy);
 }

@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 
+#include <Columns/ColumnsNumber.h>
 #include <Functions/TimeSeries/TimeSeriesTagsFunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -59,10 +60,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
-        auto groups = tags_collector->getGroupByID(arguments[0].column);
-        chassert(groups.size() == input_rows_count);
-
-        return TimeSeriesTagsFunctionHelpers::makeColumnForGroup(groups);
+        auto res = ColumnUInt64::create();
+        tags_collector->getGroupByID(arguments[0].column, res->getData());
+        chassert(res->size() == input_rows_count);
+        return res;
     }
 
 private:

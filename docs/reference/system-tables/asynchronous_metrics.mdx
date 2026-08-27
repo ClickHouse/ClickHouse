@@ -998,7 +998,7 @@ Sum of per-user query memory peaks across all users tracked in `ProcessList`, in
 
 ### ReaderExecutorModeledCostMsPerRequestedMiB {#readerexecutormodeledcostmsperrequestedmib}
 
-Experimental ReaderExecutor read-path efficiency: modeled cost (ms) per MiB of requested bytes over the last update interval, instance-wide -- the ratio of the deltas of ProfileEvents ReaderExecutorModeledCostMicroseconds and ReaderExecutorRequestedBytes. Lower is better: the bandwidth floor is ~20 (a clean source read), cache hits trend to 0, over-fetch and incomplete connections push it up. 0 means no executor reads in the interval.
+Experimental ReaderExecutor read-path efficiency: modeled cost (ms) per MiB of requested bytes over the last update interval, instance-wide -- the ratio of the deltas of ProfileEvents ReaderExecutorModeledCostMicroseconds and ReaderExecutorDeliveredBytes. Lower is better: the bandwidth floor is ~20 (a clean source read), cache hits trend to 0, over-fetch and incomplete connections push it up. 0 means no executor reads in the interval.
 
 ### ReplicasMaxAbsoluteDelay {#replicasmaxabsolutedelay}
 

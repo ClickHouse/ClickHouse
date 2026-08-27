@@ -72,8 +72,8 @@ namespace QueryPlanSerializationSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static bool memoryBoundMergingWillBeUsed(
@@ -1160,20 +1160,9 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
 
 void AggregatingStep::serialize(Serialization & ctx) const
 {
-    if (!sort_description_for_merging.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep optimized for in-order is not supported.");
-
-    if (explicit_sorting_required_for_aggregation_in_order)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep explicit_sorting_required_for_aggregation_in_order is not supported.");
-
-    /// If you wonder why something is serialized using settings, and other is serialized using flags, considerations are following:
-    /// * flags are something that may change data format returning from the step
-    /// * settings are something which already was in settings[QueryPlanSerializationSetting::h] and, usually, is passed to Aggregator unchanged
-    /// Flags `final` and `group_by_use_nulls` change types, and `overflow_row` appends additional block to results.
-    /// Settings like `max_rows_to_group_by` or `empty_result_for_aggregation_by_empty_set` affect the result,
-    /// but does not change data format.
-    /// Overall, the rule is not strict.
-
+    /// Flags encode boolean properties that affect the data format or plan structure.
+    /// Bit layout: 1=final, 2=overflow_row, 4=group_by_use_nulls, 8=grouping_sets,
+    ///             16=stats_key, 32=in_order_aggregation, 64=explicit_sorting_required.
     UInt8 flags = 0;
     if (final && !ctx.for_cache_key)
         flags |= 1;
@@ -1183,15 +1172,27 @@ void AggregatingStep::serialize(Serialization & ctx) const
         flags |= 4;
     if (!grouping_sets_params.empty())
         flags |= 8;
-    /// Ideally, key should be calculated from QueryPlan on the follower.
-    /// So, let's have a flag to disable sending/reading pre-calculated value.
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         flags |= 16;
+    if (!sort_description_for_merging.empty())
+        flags |= 32;
+    if (explicit_sorting_required_for_aggregation_in_order)
+        flags |= 64;
+
+    /// The in-order aggregation payload exists only since query plan serialization version 2.
+    /// Throw rather than send bytes the other side would misread (deserialize checks the same).
+    if ((flags & (32 | 64)) && ctx.version < 2)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "In-order aggregation in a distributed plan requires query plan serialization "
+            "version >= 2; all nodes must run the same version");
 
     writeIntBinary(flags, ctx.out);
 
-    if (explicit_sorting_required_for_aggregation_in_order)
+    if (!sort_description_for_merging.empty())
+    {
+        serializeSortDescription(sort_description_for_merging, ctx.out);
         serializeSortDescription(group_by_sort_description, ctx.out);
+    }
 
     writeVarUInt(params.keys.size(), ctx.out);
     for (const auto & key : params.keys)
@@ -1228,6 +1229,23 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     bool group_by_use_nulls = bool(flags & 4);
     bool has_grouping_sets = bool(flags & 8);
     bool has_stats_key = bool(flags & 16);
+    bool has_in_order = bool(flags & 32);
+    bool explicit_sorting_required = bool(flags & 64);
+
+    /// The in-order aggregation payload exists only since query plan serialization version 2;
+    /// on an older stream these bits are garbage, so reject them (serialize checks the same).
+    if ((has_in_order || explicit_sorting_required) && ctx.version < 2)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "In-order aggregation flags in a version {} query plan stream; they require version >= 2",
+            ctx.version);
+
+    SortDescription sort_description_for_merging;
+    SortDescription group_by_sort_description;
+    if (has_in_order)
+    {
+        deserializeSortDescription(sort_description_for_merging, ctx.in);
+        deserializeSortDescription(group_by_sort_description, ctx.in);
+    }
 
     UInt64 num_keys = 0;
     readVarUInt(num_keys, ctx.in);
@@ -1301,8 +1319,6 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold]};
 
-    SortDescription sort_description_for_merging;
-
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),
         std::move(params),
@@ -1315,10 +1331,10 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         false, // storage_has_evenly_distributed_read, TODO: later
         group_by_use_nulls,
         std::move(sort_description_for_merging),
-        SortDescription{},
+        std::move(group_by_sort_description),
         ctx.settings[QueryPlanSerializationSetting::aggregation_sort_result_by_bucket_number],
         ctx.settings[QueryPlanSerializationSetting::aggregation_in_order_memory_bound_merging],
-        false,
+        explicit_sorting_required,
         false);
 
     return aggregating_step;

@@ -1311,6 +1311,15 @@ void Reader::preparePrewhere()
         if (sample_block_to_output_columns_idx[i].has_value() == prewhere_output_column_idxs.contains(i))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column in sample block: {}", extended_sample_block.getByPosition(i).name);
     }
+
+    /// A primitive whose output slot is past `sample_block` is discarded by `applyPrewhere` after the
+    /// last step, and no step above claimed this one, so nothing can read it. Never schedule it:
+    /// the main step would decode into a slot that is already gone.
+    for (auto & pc : primitive_columns)
+        if (pc.first_step_to_calculate == 0
+            && pc.idx_in_output_block < extended_sample_block.columns()
+            && pc.idx_in_output_block >= sample_block->columns())
+            pc.first_step_to_calculate = SIZE_MAX;
 }
 
 void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info)

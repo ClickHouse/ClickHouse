@@ -2173,8 +2173,20 @@ class QueryProgressElement extends HTMLElement
         this._stats.innerText = '';
         this._progress.style.display = 'none';
         this._progressText.innerText = '';
-        this.style.setProperty('--progress', '0%');
+        this.clearBar();
         this.resetResources();
+    }
+
+    /// Remove the progress-bar fill, leaving the line as plain gray text. Used once the query has
+    /// finished, when the bar no longer carries information but its final stats stay on screen.
+    /// The value must carry the `%` unit: `--progress` is substituted into the color stops and into
+    /// a `calc` of both gradients of `#progress`, and a unitless `0` is a `<number>` there, which
+    /// makes the gradients - and with them the whole `background` - invalid. That drops the text
+    /// mask which colors the line, and as the text itself is transparent and only shows through
+    /// that mask, the entire line, final stats included, would be rendered invisible.
+    clearBar()
+    {
+        this.style.setProperty('--progress', '0%');
     }
 
     /// Reset the realtime resource meters (CPU/memory/disk). CPU usage is derived from the
@@ -9840,7 +9852,7 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
         progressEl.finish();
         paintDownloadCopy(tab);
         progressEl.updateText(el.rowCount, el.elapsedNs, el.incompleteResult);
-        progressEl.style.setProperty('--progress', '0');
+        progressEl.clearBar();
         document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
     }
 
@@ -10063,7 +10075,7 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
             progressEl.finish();
             elapsed_ns = tab.finalStats.elapsedNs;
             progressEl.updateText(total_rows, tab.finalStats.elapsedNs, any_incomplete);
-            progressEl.style.setProperty('--progress', '0');
+            progressEl.clearBar();
             document.documentElement.style.setProperty('--background-color-rotate', queryToColor(parsed[0].query));
         }
     }
@@ -11286,7 +11298,7 @@ function syncActiveTabChrome() {
         progressEl.finish();
         if (tab.progress) progressEl.updateProgress(tab.progress);
         progressEl.updateText(tab.finalStats.rowCount, tab.finalStats.elapsedNs, tab.finalStats.incomplete);
-        progressEl.style.setProperty('--progress', '0');
+        progressEl.clearBar();
     }
 
     /// The resource meters (CPU/RAM/disk) are tab-owned - profile-event increments keep

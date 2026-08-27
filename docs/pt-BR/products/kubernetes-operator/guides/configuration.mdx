@@ -598,7 +598,7 @@ O operador coloca a reconciliação de volta na fila enquanto o Secret é invál
   ## Portas adicionais
 </div>
 
-O operador expõe um conjunto fixo de portas em cada pod do Kubernetes do ClickHouse e em seu Service headless: `8123` HTTP, `9000` native, `9009` interserver, `9001` management, `9363` métricas do Prometheus e as variantes TLS `8443`/`9440` quando o TLS estiver habilitado. Para fazer o ClickHouse aceitar conexões em protocolos adicionais — MySQL, PostgreSQL, gRPC ou qualquer porta personalizada — declare-as em `spec.additionalPorts`:
+O operador expõe um conjunto fixo de portas em cada pod do Kubernetes do ClickHouse e em seu Service headless público: `8123` HTTP, `9000` native, `9009` interserver, `9001`/`9002` management, `9363` métricas do Prometheus e as variantes TLS `8443`/`9440` quando o TLS estiver habilitado. As portas `interserver` e de management também são expostas por meio dos Services internos por réplica, para que as réplicas e o operador possam se comunicar antes de uma réplica se tornar Ready. Para fazer o ClickHouse aceitar conexões em protocolos adicionais — MySQL, PostgreSQL, gRPC ou qualquer porta personalizada — declare-as em `spec.additionalPorts`:
 
 ```yaml
 spec:
@@ -611,7 +611,8 @@ spec:
       port: 9100
 ```
 
-O operador adiciona essas portas às `containerPorts` do pod do Kubernetes e ao Service headless. O exemplo completo está em [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
+O operador adiciona essas portas às `containerPorts` do pod do Kubernetes e ao Service headless público.
+O exemplo completo está em [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
 
 <Warning>
   `additionalPorts` apenas abre as portas no lado do Kubernetes. Isso **não** configura o servidor ClickHouse para escutar nessas portas. Você também precisa habilitar o protocolo correspondente em `spec.settings.extraConfig.protocols`. Sem isso, a porta fica aberta no Service, mas nada dentro do pod do Kubernetes está respondendo.
@@ -978,6 +979,12 @@ spec:
 ```
 
 Quando ativado, o operator sincroniza as tabelas Replicated e de integração para novas réplicas.
+
+Todo pod de réplica carrega o readiness gate `clickhouse.com/ReplicaInitialized`, de modo que uma nova réplica só é publicada por meio do Service headless público depois que o operador conclui sua inicialização: o banco de dados `default` é convertido para o mecanismo Replicated e o schema é sincronizado. Até lá, o operador e as demais réplicas acessam essa réplica por meio do seu Service interno. Com `enableDatabaseSync: false`, o operador marca as réplicas como inicializadas imediatamente, então o readiness passa a seguir apenas as probes do contêiner.
+
+O operador nunca descarta um banco de dados `default` não Replicated que já contenha dados. Uma réplica assim ainda passa a atender tráfego de clientes após a preparação do schema, mas o cluster reporta `SchemaInSync=False` com o reason `DefaultDatabaseNotReplicated` até que você resolva esse banco de dados por conta própria.
+
+Antes de uma réplica ser removida em um scale-down, o operador primeiro descarrega o tráfego de clientes dela, aguarda até que ela deixe de ser publicada, replica seus dados remanescentes para as réplicas sobreviventes e só então a exclui.
 
 <div id="server-logging">
   ### Logging do servidor

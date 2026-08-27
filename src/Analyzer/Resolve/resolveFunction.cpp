@@ -929,11 +929,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         !scope.context->getSettingsRef()[Setting::transform_null_in] &&
         !scope.in_prewhere)
     {
-        if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
-
         const bool is_function_not_in = function_name == "notIn";
 
         auto & function_in_arguments_nodes = function_node_ptr->getArguments().getNodes();
@@ -966,6 +961,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (in_second_argument->as<QueryNode>())
             {
+                /// The rewrite below produces a correlated subquery, so it requires the setting.
+                /// Checked here (not at the gate) so constant/tuple `IN` is never rejected.
+                if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
+
                 /// An array subquery on the right of IN is the set of its elements (see
                 /// `flattenArraySubqueryOnRightOfIn`). Flatten it with arrayJoin before building the
                 /// EXISTS rewrite, so the comparison below is `x = <element>` rather than `x = <array>`.

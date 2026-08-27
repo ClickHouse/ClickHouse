@@ -225,6 +225,51 @@ def test_create_from_omits_child_info_by_default():
     assert r.info == ""
 
 
+def test_update_sub_result_drops_only_heavy_ext_keys():
+    """Embedding a job as a workflow sub-result drops the heavy `metrics`
+    timeline but keeps every lightweight key, so the workflow report and the
+    embedded-node fallback in json.html keep their warnings/errors/notes/run_url."""
+    workflow = Result("wf", Result.Status.PENDING, results=[Result("job", Result.Status.PENDING)])
+    job = Result("job", Result.Status.OK)
+    job.ext = {
+        "labels": ["release"],
+        "hlabels": [["flaky", "seen before"]],
+        "storage_usage": {"uploaded": 42, "uploaded_details": {"a.deb": 42}},
+        "metrics": {"heavy": list(range(1000))},
+        "warnings": [{"message": "w", "from": "job"}],
+        "errors": [{"message": "e", "from": "job"}],
+        "notes": [{"message": "n", "from": "job"}],
+        "run_url": "https://example/run",
+    }
+
+    workflow.update_sub_result(job, drop_nested_results=True)
+
+    embedded_ext = workflow.results[0].ext
+    assert "metrics" not in embedded_ext
+    assert set(embedded_ext) == {
+        "labels",
+        "hlabels",
+        "storage_usage",
+        "warnings",
+        "errors",
+        "notes",
+        "run_url",
+    }
+    # The job's own result is untouched - its full report is uploaded separately.
+    assert "metrics" in job.ext
+
+
+def test_update_sub_result_preserves_full_ext_without_dropping():
+    """The default path (drop_nested_results=False) keeps the ext as is."""
+    workflow = Result("wf", Result.Status.PENDING, results=[Result("job", Result.Status.PENDING)])
+    job = Result("job", Result.Status.OK)
+    job.ext = {"metrics": {"heavy": 1}, "labels": ["release"]}
+
+    workflow.update_sub_result(job)
+
+    assert workflow.results[0].ext == {"metrics": {"heavy": 1}, "labels": ["release"]}
+
+
 def test_unfinished_job_carries_its_own_error_in_the_workflow_report(
     tmp_path, monkeypatch
 ):

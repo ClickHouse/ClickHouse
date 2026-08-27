@@ -809,6 +809,18 @@ ClickHouse Keeper におけるキー用メモリアリーナのサイズをバ�
 
 ClickHouse Keeper における最後にコミット済みのログの索引。
 
+<div id="keeperlastleaderelectiontime">
+  ### KeeperLastLeaderElectionTime
+</div>
+
+この ClickHouse Keeper インスタンスがリーダーになった時点で終了した、ローカルで最後に観測されたリーダー不在期間 (ミリ秒) 。サンプリングされたリーダー不在状態が観測されないリーダー移行は記録されません。このインスタンスがアクティブなリーダーでない場合、または完了した期間が記録されていない場合は`0`。
+
+<div id="keeperlastleaderunavailabletime">
+  ### KeeperLastLeaderUnavailableTime
+</div>
+
+このClickHouse Keeperリーダーがローカルで観測した、直近で完了したリーダー不在期間の継続時間 (ミリ秒) 。このインスタンスがアクティブなリーダーでない場合、または完了したリーダー不在期間が記録されていない場合は`0`。
+
 <div id="keeperlastlogidx">
   ### KeeperLastLogIdx
 </div>

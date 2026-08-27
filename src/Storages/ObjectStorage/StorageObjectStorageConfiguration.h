@@ -284,7 +284,7 @@ public:
 
     virtual bool optimize(ObjectStoragePtr /*object_storage*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
-        return false;
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support optimize", getTypeName());
     }
 
     virtual bool supportsPrewhere() const

@@ -6,6 +6,7 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -25,9 +26,6 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
-#if CLICKHOUSE_CLOUD
-#include <Processors/QueryPlan/LogicalExchangeStep.h>
-#endif
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -77,8 +75,8 @@ namespace Setting
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
 }
 
-RelationStats getDummyStats(ContextPtr context, const String & table_name);
-RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name);
+RelationStats parseTableStatsHint(ContextPtr context, const String & table_name);
+RelationStats parseTableStatsHint(const String & stats_hint_json, const String & table_name);
 RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header);
 
 namespace QueryPlanOptimizations
@@ -99,6 +97,7 @@ struct ValueHop
 {
     bool propagates = false;  /// output inherits the source NDV of children[0]
     UInt64 ndv_delta = 0;     /// extra distinct values the hop can introduce over the source
+    bool preserves_width = false;  /// output value bytes equal the source's (relabel or same-type hop)
 };
 
 /// A node propagates a source column's NDV when it just relabels (ALIAS) or applies a value-
@@ -106,7 +105,7 @@ struct ValueHop
 static ValueHop describeValueHop(const ActionsDAG::Node & node)
 {
     if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-        return {.propagates = true};
+        return {.propagates = true, .preserves_width = true};
 
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
         return {};
@@ -122,12 +121,23 @@ static ValueHop describeValueHop(const ActionsDAG::Node & node)
     /// result (e.g. `isNull`, or `CAST` dropping nullability) maps NULL to one extra counted value.
     const bool collapses_null = isNullableOrLowCardinalityNullable(node.children[0]->result_type)
         && !isNullableOrLowCardinalityNullable(node.result_type);
-    return {.propagates = true, .ndv_delta = collapses_null ? 1u : 0u};
+    /// NDV can survive a value-changing hop (`toString(k)` has k's NDV), but the value bytes cannot;
+    /// only a hop that keeps the underlying type keeps the width. `Nullable`/`LowCardinality`
+    /// wrapping (the analyzer's `toNullable`/`CAST` around join keys) leaves the value bytes intact.
+    const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
+        ->equals(*removeLowCardinalityAndNullable(node.children[0]->result_type));
+    return {.propagates = true, .ndv_delta = collapses_null ? 1u : 0u, .preserves_width = preserves_width};
 }
 
-/// For each output column that traces back to `input_name`, return how much to add to the source
-/// NDV to bound the output NDV.
-static std::unordered_map<String, UInt64> backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
+/// How an output column relates to the source input column it traces back to.
+struct BackTrackedColumn
+{
+    UInt64 ndv_offset = 0;   /// add to the source NDV to bound the output NDV
+    bool preserves_width = true; /// value bytes unchanged along the whole path
+};
+
+/// For each output column that traces back to `input_name`, describe the path to it.
+static std::unordered_map<String, BackTrackedColumn> backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
 {
     std::unordered_set<const ActionsDAG::Node *> input_nodes;
     for (const auto * node : actions.getInputs())
@@ -136,9 +146,9 @@ static std::unordered_map<String, UInt64> backTrackColumnsInDag(const String & i
             input_nodes.insert(node);
     }
 
-    /// Offset from a node down to a source input, or nullopt if it does not trace back to one.
+    /// Path from a node down to a source input, or nullopt if it does not trace back to one.
     /// Memoized so every node, including shared intermediates, is resolved once regardless of order.
-    std::unordered_map<const ActionsDAG::Node *, std::optional<UInt64>> offset_to_input;
+    std::unordered_map<const ActionsDAG::Node *, std::optional<BackTrackedColumn>> path_to_input;
 
     /// Iterative post-order DFS (explicit stack to avoid deep recursion on long expression chains).
     /// Each entry is a node paired with whether its source child has already been pushed.
@@ -150,14 +160,14 @@ static std::unordered_map<String, UInt64> backTrackColumnsInDag(const String & i
         {
             auto [node, child_pushed] = nodes_to_process.top();
 
-            if (offset_to_input.contains(node))
+            if (path_to_input.contains(node))
             {
                 nodes_to_process.pop();
                 continue;
             }
             if (input_nodes.contains(node))
             {
-                offset_to_input[node] = 0;
+                path_to_input[node] = BackTrackedColumn{};
                 nodes_to_process.pop();
                 continue;
             }
@@ -170,24 +180,26 @@ static std::unordered_map<String, UInt64> backTrackColumnsInDag(const String & i
                 continue;
             }
 
-            std::optional<UInt64> result;
+            std::optional<BackTrackedColumn> result;
             if (hop.propagates)
             {
-                if (auto source_offset = offset_to_input[node->children[0]])
-                    result = *source_offset + hop.ndv_delta;
+                if (auto source_path = path_to_input[node->children[0]])
+                    result = BackTrackedColumn{
+                        .ndv_offset = source_path->ndv_offset + hop.ndv_delta,
+                        .preserves_width = source_path->preserves_width && hop.preserves_width};
             }
-            offset_to_input[node] = result;
+            path_to_input[node] = result;
             nodes_to_process.pop();
         }
     }
 
-    std::unordered_map<String, UInt64> output_offsets;
+    std::unordered_map<String, BackTrackedColumn> output_paths;
     for (const auto * out_node : actions.getOutputs())
     {
-        if (auto offset = offset_to_input[out_node])
-            output_offsets[out_node->result_name] = *offset;
+        if (auto path = path_to_input[out_node])
+            output_paths[out_node->result_name] = *path;
     }
-    return output_offsets;
+    return output_paths;
 }
 
 /// If we have stats for column names for storage we need to find corresponding internal column names
@@ -195,14 +207,18 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
 {
     std::unordered_map<String, ColumnStats> original = std::move(mapped);
     mapped = {};
-    for (const auto & [name, value] : original)
+    for (const auto & [name, source_stats] : original)
     {
-        for (const auto & [remapped, ndv_offset] : backTrackColumnsInDag(name, actions))
+        for (const auto & [remapped, back_tracked] : backTrackColumnsInDag(name, actions))
         {
-            ColumnStats stats = value;
+            ColumnStats stats = source_stats;
             /// Add the offset, guarding against overflow when the source NDV is near the maximum.
-            if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - ndv_offset)
-                stats.num_distinct_values += ndv_offset;
+            if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - back_tracked.ndv_offset)
+                stats.num_distinct_values += back_tracked.ndv_offset;
+            /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
+            /// width to unknown.
+            if (!back_tracked.preserves_width)
+                stats.avg_bytes = 0;
             mapped[remapped] = stats;
         }
     }
@@ -363,9 +379,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         String table_display_name = reading->getStorageID().getTableName();
 
-        /// Run partition/PK analysis up front: statistics must be composed over the parts
-        /// surviving pruning, not over all active parts (issue #110281), and the index-based
-        /// fallback below needs the same analysis result anyway.
+        /// Analyze partition and primary-key ranges before estimating the relation so column
+        /// statistics come only from parts that can satisfy the query. Reuse the result for
+        /// the index-based fallback below.
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
         if (!analyzed_result)
         {
@@ -374,25 +390,23 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 = (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
                 || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
 
-            /// Join-order estimation needs these ranges before `optimizeReadInOrder` runs. Both variants
-            /// perform the same partition/PK/index analysis; the normal one memoizes its result for later
-            /// consumers. Since `optimizeReadInOrder` may exempt the final read from row limits, under
-            /// throwing limits analyze locally without checking them, then let the final read analyze and
-            /// memoize the ranges after its input order is known.
+            /// Range analysis normally enforces throwing read limits and memoizes its result.
+            /// At this stage, however, later planning may make the executed read exempt from those
+            /// limits. In that case use an estimation-only analysis; execution will analyze again
+            /// after its final read mode is known.
             analyzed_result = has_throwing_row_limit
                 ? reading->selectRangesToReadForEstimation()
                 : reading->selectRangesToRead();
         }
 
-        /// `has_exact_ranges` is a deterministic index-analysis result, not a confidence estimate.
-        /// If it selects zero rows, the read is provably empty. Early empty returns have no
-        /// `index_stats`, so preserve zero here instead of degrading to unknown in the fallback.
+        /// An exact empty range selection proves that the relation is empty. Other empty
+        /// analysis results can be placeholders for deferred work, so only propagate zero
+        /// when `has_exact_ranges` is set.
         if (analyzed_result && analyzed_result->has_exact_ranges && analyzed_result->selected_rows == 0)
             return RelationStats{.estimated_rows = 0, .table_name = table_display_name};
 
-        /// `STREAM` reads intentionally defer index analysis to `MergeTreeCommitOrderSequentialSource`,
-        /// so the empty `AnalysisResult` is not an exact empty relation. Do not expose its sentinel
-        /// zero as a join cardinality estimate.
+        /// `STREAM` defers range analysis until execution. Its placeholder result has zero
+        /// selected rows but does not mean that the relation is empty.
         if (reading->getQueryInfo().isStream() && analyzed_result && analyzed_result->selected_rows == 0)
         {
             return RelationStats{
@@ -421,8 +435,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 return stats;
             }
         }
-        if (auto dummy_stats = getDummyStats(reading->getContext(), table_display_name); !dummy_stats.table_name.empty())
-            return dummy_stats;
+        if (auto stats_hint = parseTableStatsHint(reading->getContext(), table_display_name); !stats_hint.table_name.empty())
+            return stats_hint;
 
         if (!analyzed_result)
             return RelationStats{.estimated_rows = {}, .table_name = table_display_name, .imprecise_estimate = true, .source = RowEstimateSource::NoStatistics};
@@ -539,10 +553,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return stats;
     }
 
-#if CLICKHOUSE_CLOUD
+    /// Estimates must see through exchanges: they do not change row counts, and an
+    /// already-distributed subtree would otherwise report unknown cardinality, degrading
+    /// broadcast-vs-shuffle and join order decisions.
     if (dynamic_cast<LogicalExchangeStep *>(step))
         return estimateReadRowsCount(*node.children.front(), filter);
-#endif
 
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
@@ -667,7 +682,7 @@ struct QueryGraphBuilder
         RuntimeHashStatisticsContext statistics_context;
         JoinSettings join_settings;
         SortingStep::Settings sorting_settings;
-        String dummy_stats;
+        String stats_hint;
         UInt64 effective_randomize_seed = 0;
 
         BuilderContext(
@@ -1629,7 +1644,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     }
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
-    query_graph_builder.context->dummy_stats = join_step->getDummyStats();
+    query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);

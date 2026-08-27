@@ -294,6 +294,7 @@
     M(PatchesAppliedInAllReadTasks, "Total number of applied patch parts among all read tasks", ValueType::Number) \
     M(PatchesMergeAppliedInAllReadTasks, "Total number of applied patch parts with Merge mode among all read tasks", ValueType::Number) \
     M(PatchesJoinAppliedInAllReadTasks, "Total number of applied patch parts with Join mode among all read tasks", ValueType::Number) \
+    M(PatchesMergeOnKeyAppliedInAllReadTasks, "Total number of applied patch parts with MergeOnKey mode (v2) among all read tasks", ValueType::Number) \
     M(PatchesReadRows, "Total number of rows read from patch parts", ValueType::Number) \
     M(PatchesReadUncompressedBytes, "Total number of uncompressed bytes read from patch parts", ValueType::Number) \
     M(PatchesJoinRowsAddedToHashTable, "Total number of rows added to hash tables when applying patch parts with Join mode", ValueType::Number) \
@@ -301,6 +302,7 @@
     M(ReadPatchesMicroseconds, "Total time spent reading patch parts", ValueType::Number) \
     M(BuildPatchesMergeMicroseconds, "Total time spent building indexes for applying patch parts with Merge mode", ValueType::Number) \
     M(BuildPatchesJoinMicroseconds, "Total time spent building indexes and hash tables for applying patch parts with Join mode", ValueType::Number) \
+    M(ApplyPatchMergeOnKeyMicroseconds, "Total time spent inside applyPatchesMergeOnKey sort-key merge loops", ValueType::Number) \
     M(AnalyzePatchRangesMicroseconds, "Total time spent analyzing index of patch parts", ValueType::Number) \
     M(ReadTasksWithAppliedMutationsOnFly, "Total number of read tasks for which there was any mutation applied on fly", ValueType::Number) \
     M(MutationsAppliedOnFlyInAllReadTasks, "Total number of applied mutations on-fly among all read tasks", ValueType::Number) \
@@ -1210,6 +1212,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ConnectionPoolIsFullMicroseconds, "Total time spent waiting for a slot in connection pool.", ValueType::Microseconds) \
     M(AsyncLoaderWaitMicroseconds, "Total time a query was waiting for async loader jobs.", ValueType::Microseconds) \
+    M(AsyncLoaderSpawnFailures, "Number of times the async loader could not spawn a worker because the global thread pool could not provide a thread. Queued jobs are then run by a worker the pool already has: one that is running, or one resuming from a wait on a job of another pool.", ValueType::Number) \
     \
     M(DistrCacheServerSwitches, "Distributed Cache read buffer event. Number of server switches between distributed cache servers in read/write-through cache", ValueType::Number) \
     M(DistrCacheReadMicroseconds, "Distributed Cache read buffer event. Time spent reading from distributed cache", ValueType::Microseconds) \

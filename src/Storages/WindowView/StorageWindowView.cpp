@@ -329,6 +329,87 @@ namespace
         }
     }
 
+    /// The same as `addTime`, but it requires the time to actually move in the requested direction.
+    /// The arithmetic of `addTime` wraps around, so an interval whose span is a multiple of the range
+    /// of the type - such as `INTERVAL 2147483648 DAY`, which is `43200 * 2^32` seconds - does not
+    /// change the time at all, and an interval slightly smaller than the range wraps to the other
+    /// side. Every loop advancing a window bound by a fixed interval relies on the time moving:
+    /// without this check such a loop never reaches its bound and spins forever.
+    UInt32 addTimeStrictly(UInt32 time_sec, IntervalKind::Kind kind, Int64 num_units, const DateLUTImpl & time_zone)
+    {
+        UInt32 res = addTime(time_sec, kind, num_units, time_zone);
+
+        if ((num_units > 0 && res <= time_sec) || (num_units < 0 && res >= time_sec))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Time overflow in the window view: adding {} {} to {} gives {}, which does not move the time",
+                num_units,
+                IntervalKind(kind).toString(),
+                time_sec,
+                res);
+
+        return res;
+    }
+
+    /// `ALLOWED_LATENESS` is a lower bound, so one before the epoch means that no rows can be
+    /// late yet. Saturate an underflow instead of turning a valid early-epoch timestamp into an
+    /// exception. The interval itself is validated separately when the view is created or attached.
+    UInt32 subtractTimeSaturating(UInt32 time_sec, IntervalKind::Kind kind, Int64 num_units, const DateLUTImpl & time_zone)
+    {
+        UInt32 res = addTime(time_sec, kind, -num_units, time_zone);
+        return res < time_sec ? res : 0;
+    }
+
+    /// Rejects a window definition whose interval cannot be represented by `DateTime32`, so that
+    /// a window view fails at creation instead of breaking later, when its bounds are advanced.
+    void checkIntervalAdvancesTime(IntervalKind::Kind kind, Int64 num_units, const DateLUTImpl & time_zone)
+    {
+        constexpr UInt32 max_datetime32 = std::numeric_limits<UInt32>::max();
+        constexpr UInt32 max_day_num = max_datetime32 / 86400;
+
+        UInt32 max_num_units = max_day_num;
+        switch (kind)
+        {
+            case IntervalKind::Kind::Second:
+                max_num_units = max_datetime32;
+                break;
+            case IntervalKind::Kind::Minute:
+                max_num_units = max_datetime32 / 60;
+                break;
+            case IntervalKind::Kind::Hour:
+                max_num_units = max_datetime32 / 3600;
+                break;
+            case IntervalKind::Kind::Day:
+                break;
+            case IntervalKind::Kind::Week:
+            case IntervalKind::Kind::Month:
+            case IntervalKind::Kind::Quarter:
+            case IntervalKind::Kind::Year:
+                /// Calendar intervals need an additional check below because their duration varies.
+                break;
+            case IntervalKind::Kind::Nanosecond:
+            case IntervalKind::Kind::Microsecond:
+            case IntervalKind::Kind::Millisecond:
+                break;
+        }
+
+        if (num_units > max_num_units)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Time overflow in the window view: interval {} {} is outside the representable DateTime32 range",
+                num_units,
+                IntervalKind(kind).toString());
+
+        if (kind > IntervalKind::Kind::Day && addTime(0, kind, num_units, time_zone) > max_day_num)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Time overflow in the window view: interval {} {} is outside the representable DateTime32 range",
+                num_units,
+                IntervalKind(kind).toString());
+
+        addTimeStrictly(0, kind, num_units, time_zone);
+    }
+
     class AddingAggregatedChunkInfoTransform final : public ISimpleTransform
     {
     public:
@@ -425,7 +506,7 @@ UInt32 StorageWindowView::getCleanupBound()
 
     auto w_bound = max_fired_watermark;
     if (allowed_lateness)
-        w_bound = addTime(w_bound, lateness_kind, -lateness_num_units, *time_zone);
+        w_bound = subtractTimeSaturating(w_bound, lateness_kind, lateness_num_units, *time_zone);
     return getWindowLowerBound(w_bound);
 }
 
@@ -493,7 +574,7 @@ void StorageWindowView::alter(
 
     shutdown(false);
 
-    auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
+    auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context, true);
 
     output_header.clear();
 
@@ -583,7 +664,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
             /// windows will split into [1], [2], [3]... We compute each split window into
             /// mergeable state and merge them when the window is triggering.
             func_array ->arguments->children.push_back(make_intrusive<ASTLiteral>(w_end));
-            w_end = addTime(w_end, window_kind, -slice_num_units, *time_zone);
+            w_end = addTimeStrictly(w_end, window_kind, -slice_num_units, *time_zone);
         }
         filter_function = makeASTFunction("has", func_array, make_intrusive<ASTIdentifier>(window_id_name));
     }
@@ -934,8 +1015,8 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
         if (is_tumble) \
             return ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, window_num_units, *time_zone); \
         UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
-        UInt32 w_end = AddTime<IntervalKind::Kind::KIND>::execute(w_start, hop_num_units, *time_zone);\
-        return AddTime<IntervalKind::Kind::KIND>::execute(w_end, -window_num_units, *time_zone);\
+        UInt32 w_end = addTimeStrictly(w_start, IntervalKind::Kind::KIND, hop_num_units, *time_zone);\
+        return addTimeStrictly(w_end, IntervalKind::Kind::KIND, -window_num_units, *time_zone);\
     }
         CASE_WINDOW_KIND_ADD_TIME(Second)
         CASE_WINDOW_KIND_ADD_TIME(Minute)
@@ -948,8 +1029,8 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
         if (is_tumble) \
             return ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, window_num_units, *time_zone); \
         UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
-        UInt32 w_end = AddTime<IntervalKind::Kind::KIND>::execute(static_cast<UInt16>(w_start), hop_num_units, *time_zone);\
-        return AddTime<IntervalKind::Kind::KIND>::execute(static_cast<UInt16>(w_end), -window_num_units, *time_zone);\
+        UInt32 w_end = addTimeStrictly(w_start, IntervalKind::Kind::KIND, hop_num_units, *time_zone);\
+        return addTimeStrictly(w_end, IntervalKind::Kind::KIND, -window_num_units, *time_zone);\
     }
         CASE_WINDOW_KIND_ADD_DATE(Week)
         CASE_WINDOW_KIND_ADD_DATE(Month)
@@ -972,7 +1053,7 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
     case IntervalKind::Kind::KIND: \
     { \
         UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, slide_num_units, *time_zone); \
-        return AddTime<IntervalKind::Kind::KIND>::execute(w_start, slide_num_units, *time_zone); \
+        return addTimeStrictly(w_start, IntervalKind::Kind::KIND, slide_num_units, *time_zone); \
     }
         CASE_WINDOW_KIND_ADD_TIME(Second)
         CASE_WINDOW_KIND_ADD_TIME(Minute)
@@ -983,7 +1064,7 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
     case IntervalKind::Kind::KIND: \
     { \
         UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, slide_num_units, *time_zone); \
-        return AddTime<IntervalKind::Kind::KIND>::execute(static_cast<UInt16>(w_start), slide_num_units, *time_zone); \
+        return addTimeStrictly(w_start, IntervalKind::Kind::KIND, slide_num_units, *time_zone); \
     }
         CASE_WINDOW_KIND_ADD_DATE(Week)
         CASE_WINDOW_KIND_ADD_DATE(Month)
@@ -1026,18 +1107,18 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
         while (max_watermark < watermark)
         {
             fire_signal.push_back(max_watermark);
-            max_watermark = addTime(max_watermark, slide_kind, slide_num_units, *time_zone);
+            max_watermark = addTimeStrictly(max_watermark, slide_kind, slide_num_units, *time_zone);
         }
     }
     else // strictly || bounded
     {
-        UInt32 max_watermark_bias = addTime(max_watermark, watermark_kind, watermark_num_units, *time_zone);
+        UInt32 max_watermark_bias = addTimeStrictly(max_watermark, watermark_kind, watermark_num_units, *time_zone);
         updated = max_watermark_bias <= watermark;
         while (max_watermark_bias <= max_timestamp)
         {
             fire_signal.push_back(max_watermark);
-            max_watermark = addTime(max_watermark, slide_kind, slide_num_units, *time_zone);
-            max_watermark_bias = addTime(max_watermark, slide_kind, slide_num_units, *time_zone);
+            max_watermark = addTimeStrictly(max_watermark, slide_kind, slide_num_units, *time_zone);
+            max_watermark_bias = addTimeStrictly(max_watermark, watermark_kind, watermark_num_units, *time_zone);
         }
     }
 
@@ -1115,7 +1196,7 @@ void StorageWindowView::threadFuncFireProc()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
         max_fired_watermark = next_fire_signal;
-        auto slide_interval = addTime(0, slide_kind, slide_num_units, *time_zone);
+        auto slide_interval = addTimeStrictly(0, slide_kind, slide_num_units, *time_zone);
         /// Convert DayNum into seconds when the slide interval is larger than Day
         if (slide_kind > IntervalKind::Kind::Day)
             slide_interval *= 86400;
@@ -1290,7 +1371,18 @@ StorageWindowView::StorageWindowView(
     /// Extract information about watermark, lateness.
     eventTimeParser(query);
 
-    auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_);
+    const bool validate_intervals = mode < LoadingStrictnessLevel::ATTACH;
+    auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_, validate_intervals);
+
+    /// Window, slide, and slice intervals from old metadata remain attach-compatible: their
+    /// runtime advancement paths fail closed. Bounded watermark and allowed lateness intervals
+    /// must instead be rejected even during `ATTACH`: a wrapped watermark is advanced from
+    /// `WatermarkTransform`'s noexcept destructor, while wrapped lateness silently changes the
+    /// retention semantics.
+    if (is_watermark_bounded)
+        checkIntervalAdvancesTime(watermark_kind, watermark_num_units, *time_zone);
+    if (allowed_lateness)
+        checkIntervalAdvancesTime(lateness_kind, lateness_num_units, *time_zone);
 
     if (auto * inner_storage = query.getTargetInnerEngine(ViewTarget::Inner))
         inner_table_engine = inner_storage->clone();
@@ -1340,7 +1432,7 @@ StorageWindowView::StorageWindowView(
     fire_task->deactivate();
 }
 
-ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr context_)
+ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr context_, bool validate_intervals)
 {
     select_query = query.clone();
     output_header.clear();
@@ -1359,7 +1451,7 @@ ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr contex
     select_table_id = StorageID(select_database_name, select_table_name);
 
     /// Extract all info from query; substitute Function_tumble and Function_hop with Function_windowID.
-    auto inner_query = innerQueryParser(query);
+    auto inner_query = innerQueryParser(query, validate_intervals);
 
     /// Parse mergeable query
     mergeable_query = inner_query->clone();
@@ -1382,7 +1474,7 @@ ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr contex
     return inner_query;
 }
 
-ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
+ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query, bool validate_intervals)
 {
     if (!query.groupBy())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "GROUP BY query is required for {}", getName());
@@ -1448,6 +1540,14 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
     }
     else
         time_zone = &DateLUT::serverTimezoneInstance();
+
+    if (validate_intervals)
+    {
+        checkIntervalAdvancesTime(window_kind, window_num_units, *time_zone);
+        checkIntervalAdvancesTime(slide_kind, slide_num_units, *time_zone);
+        if (!is_tumble)
+            checkIntervalAdvancesTime(window_kind, slice_num_units, *time_zone);
+    }
 
     return result;
 }
@@ -1526,12 +1626,12 @@ void StorageWindowView::writeIntoWindowView(
     // Filter outdated data
     if (window_view.allowed_lateness && t_max_timestamp != 0)
     {
-        lateness_bound = addTime(t_max_timestamp, window_view.lateness_kind, -window_view.lateness_num_units, *window_view.time_zone);
+        lateness_bound = subtractTimeSaturating(t_max_timestamp, window_view.lateness_kind, window_view.lateness_num_units, *window_view.time_zone);
 
         if (window_view.is_watermark_bounded)
         {
             UInt32 watermark_lower_bound
-                = addTime(t_max_watermark, window_view.slide_kind, -window_view.slide_num_units, *window_view.time_zone);
+                = addTimeStrictly(t_max_watermark, window_view.slide_kind, -window_view.slide_num_units, *window_view.time_zone);
 
             lateness_bound = std::min(watermark_lower_bound, lateness_bound);
         }
@@ -1635,16 +1735,31 @@ void StorageWindowView::writeIntoWindowView(
     if (!window_view.is_proctime)
     {
         UInt32 block_max_timestamp = 0;
-        if (window_view.is_watermark_bounded || window_view.allowed_lateness)
-        {
-            const auto & timestamp_column = *block.getByName(window_view.timestamp_column_name).column;
-            const auto & timestamp_data = typeid_cast<const ColumnUInt32 &>(timestamp_column).getData();
-            for (const auto & timestamp : timestamp_data)
-                block_max_timestamp = std::max(timestamp, block_max_timestamp);
-        }
+        const auto & timestamp_column = *block.getByName(window_view.timestamp_column_name).column;
+        const auto & timestamp_data = typeid_cast<const ColumnUInt32 &>(timestamp_column).getData();
+        for (const auto & timestamp : timestamp_data)
+            block_max_timestamp = std::max(timestamp, block_max_timestamp);
 
         if (block_max_timestamp)
+        {
+            /// `ToStartOfTransform` can produce a bucket start below the input timestamp before
+            /// the interval addition wraps. Verify the final bound against the live timestamp,
+            /// not merely against that bucket start.
+            const UInt32 window_upper_bound = window_view.getWindowUpperBound(block_max_timestamp);
+            if (window_upper_bound <= block_max_timestamp)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Time overflow in the window view: upper bound {} does not follow timestamp {}",
+                    window_upper_bound,
+                    block_max_timestamp);
+
+            /// A bounded watermark and allowed lateness can be representable at the epoch but
+            /// wrap when they are applied close to the limits of `DateTime32`.
+            if (window_view.is_watermark_bounded)
+                addTimeStrictly(
+                    block_max_timestamp, window_view.watermark_kind, window_view.watermark_num_units, *window_view.time_zone);
             window_view.updateMaxTimestamp(block_max_timestamp);
+        }
     }
 
     UInt32 lateness_upper_bound = 0;

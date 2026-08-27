@@ -28,6 +28,21 @@ from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
 
+# Matched against the pull's stderr. Transport-class phrases only: must never match a
+# permanent failure (`manifest unknown`, `pull access denied`, `no matching manifest`).
+_IMAGE_PULL_RETRY_ERRORS = [
+    "connection reset by peer",
+    "connection refused",
+    "TLS handshake timeout",
+    "i/o timeout",
+    "unexpected EOF",
+    # What `timeout --verbose` writes when it kills a stalled attempt. Plain `timeout`
+    # writes nothing, so without this entry a stall is not retried.
+    "sending signal TERM to command",
+]
+_IMAGE_PULL_TIMEOUT_S = 300  # per attempt, matching prefetch-integration-test-images
+_IMAGE_PULL_RETRIES = 3
+
 
 class Runner:
     @staticmethod
@@ -466,6 +481,29 @@ class Runner:
             print(f"Custom --workers [{workers}] will be passed to job's script")
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
+
+        if job.run_in_docker and not no_docker:
+            # Retry the pull `docker run` would otherwise do implicitly and only once.
+            # Bounded per attempt: job.timeout only starts with TeePopen below. Guarded:
+            # a present image needs no registry. Non-fatal: local-only images have no pull.
+            if not Shell.check(f"docker image inspect {docker}", verbose=False):
+
+                def _warn_pull_retried(matched, attempt, attempts):
+                    # `env` is this frame's object and nothing dumps it after this
+                    # point, so the message survives. Info() would read a second
+                    # copy from disk, which a later stale dump can silently drop.
+                    env.add_workflow_warning(
+                        f"Job image pull failed with [{matched}] and was retried "
+                        f"({attempt}/{attempts}): {docker}"
+                    )
+
+                Shell.run(
+                    f"timeout --verbose {_IMAGE_PULL_TIMEOUT_S} docker pull {docker}",
+                    retries=_IMAGE_PULL_RETRIES,
+                    retry_errors=_IMAGE_PULL_RETRY_ERRORS,
+                    verbose=True,
+                    on_retry=_warn_pull_retried,
+                )
 
         # Sample whole-VM CPU/RAM usage in the background for the duration of the
         # job (see HostMetricsCollector). Runs on the host, so metrics cover the

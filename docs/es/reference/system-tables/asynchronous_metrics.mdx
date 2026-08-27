@@ -810,6 +810,18 @@ El tamaño en bytes del área de memoria para las claves en ClickHouse Keeper.
 
 Índice del último log confirmado en ClickHouse Keeper.
 
+<div id="keeperlastleaderelectiontime">
+  ### KeeperLastLeaderElectionTime
+</div>
+
+Duración, en milisegundos, de la ventana sin leader más reciente observada localmente, que finalizó cuando esta instancia de ClickHouse Keeper asumió el liderazgo. No se registran las transferencias de liderazgo que no exponen un estado sin leader muestreado. `0` si esta instancia no es el leader activo o no tiene registrada ninguna ventana completada.
+
+<div id="keeperlastleaderunavailabletime">
+  ### KeeperLastLeaderUnavailableTime
+</div>
+
+Duración, en milisegundos, de la ventana sin líder completado más reciente observado localmente por este leader de ClickHouse Keeper. `0` si esta instancia no es el leader activo o no tiene registrado ningún período sin líder completado.
+
 <div id="keeperlastlogidx">
   ### KeeperLastLogIdx
 </div>

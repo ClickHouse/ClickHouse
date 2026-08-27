@@ -1150,7 +1150,7 @@ The Iceberg Table Engine is available but may have limitations. ClickHouse wasn'
 For optimal compatibility, we suggest using the Iceberg Table Function while we continue to improve support for the Iceberg Table Engine.
 :::
 
-This engine provides a read-only *data* integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
+This engine provides a *data* integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
 
 ## Create table {#create-table}
 
@@ -1433,7 +1433,7 @@ ts = now();
   SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
 ```
 
-In Clickhouse the behavior is consistent with Spark. You can mentally replace Spark Select queries with Clickhouse Select queries and it will work the same way.
+In ClickHouse the behavior is consistent with Spark. You can mentally replace Spark Select queries with ClickHouse Select queries and it will work the same way.
 
 ## Metadata file resolution {#metadata-file-resolution}
 When using the `Iceberg` table engine in ClickHouse, the system needs to locate the correct metadata.json file that describes the Iceberg table structure. Here's how this resolution process works:
@@ -1549,7 +1549,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Apache Iceberg tables stored in Amazon S3 or S3-compatible object storage.",
+            .description = "Provides an integration with existing Apache Iceberg tables stored in Amazon S3 or S3-compatible object storage.",
             .syntax = "ENGINE = IcebergS3(url [, access_key_id, secret_access_key])",
             .related = {"Iceberg"}});
 #    endif
@@ -1588,7 +1588,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Apache Iceberg tables stored in Microsoft Azure Blob Storage.",
+            .description = "Provides an integration with existing Apache Iceberg tables stored in Microsoft Azure Blob Storage.",
             .syntax = "ENGINE = IcebergAzure(connection_string | storage_account_url, container_name, blobpath)",
             .related = {"Iceberg"}});
 #    endif
@@ -1609,7 +1609,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Apache Iceberg tables stored in HDFS.",
+            .description = "Provides an integration with existing Apache Iceberg tables stored in HDFS.",
             .syntax = "ENGINE = IcebergHDFS(uri)",
             .related = {"Iceberg"}});
 #    endif
@@ -1647,7 +1647,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Apache Iceberg tables stored on the local filesystem.",
+            .description = "Provides an integration with existing Apache Iceberg tables stored on the local filesystem.",
             .syntax = "ENGINE = IcebergLocal(path)",
             .related = {"Iceberg"}});
 }

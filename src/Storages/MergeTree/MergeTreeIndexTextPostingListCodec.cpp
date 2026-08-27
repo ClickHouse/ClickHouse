@@ -241,7 +241,7 @@ void PostingListCodecNone::decode(ReadBuffer & in, PostingList & postings, Padde
 {
     size_t num_bytes = 0;
     readVarUInt(num_bytes, in);
-    postings = PostingList::read(readContiguousBytes(in, num_bytes, buffer));
+    postings = PostingList::readSafe(readContiguousBytes(in, num_bytes, buffer), num_bytes);
 }
 
 }

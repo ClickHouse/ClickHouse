@@ -633,6 +633,126 @@ def main():
         ]
         assert all(not page.children for page in representative_pages)
 
+        stable_manifest = {
+            "anchorRoutes": {
+                "select_sequential_consistency": (
+                    "/reference/settings/session-settings/other"
+                ),
+                "sort_overflow_mode": (
+                    "/reference/settings/session-settings/other"
+                ),
+                "stable_alpha": (
+                    "/reference/settings/session-settings/stable"
+                ),
+                "stable_beta": (
+                    "/reference/settings/session-settings/stable"
+                ),
+            },
+            "routes": [
+                {
+                    "prefix": "stable",
+                    "mode": "token",
+                    "target": "/reference/settings/session-settings/stable",
+                },
+                {
+                    "prefix": "",
+                    "mode": "raw",
+                    "target": "/reference/settings/session-settings/other",
+                },
+            ],
+        }
+        stable_pages = mod.group_session_settings([
+            mod.SettingSection(name, name, name)
+            for name in [
+                "select",
+                "select_sequential_consistency",
+                "sort",
+                "sort_overflow_mode",
+                "stable_alpha",
+                "stable_beta",
+                "stable_gamma",
+                "brand_new_alpha",
+                "brand_new_beta",
+            ]
+        ], previous_manifest=stable_manifest)
+        stable_pages_by_route = {
+            page.route: page for page in stable_pages
+        }
+        assert "/reference/settings/session-settings/select" not in \
+            stable_pages_by_route
+        assert "/reference/settings/session-settings/sort" not in \
+            stable_pages_by_route
+        assert [
+            section.name for section in stable_pages_by_route[
+                "/reference/settings/session-settings/other"
+            ].sections
+        ] == [
+            "select",
+            "select_sequential_consistency",
+            "sort",
+            "sort_overflow_mode",
+        ]
+        assert [
+            section.name for section in stable_pages_by_route[
+                "/reference/settings/session-settings/stable"
+            ].sections
+        ] == ["stable_alpha", "stable_beta", "stable_gamma"]
+        assert [
+            section.name for section in stable_pages_by_route[
+                "/reference/settings/session-settings/brand-new"
+            ].sections
+        ] == ["brand_new_alpha", "brand_new_beta"]
+        shrunk_pages = mod.group_session_settings([
+            mod.SettingSection(
+                "stable_alpha", "stable_alpha", "stable_alpha")
+        ], previous_manifest=stable_manifest)
+        assert len(shrunk_pages) == 1
+        assert shrunk_pages[0].route == \
+            "/reference/settings/session-settings/stable"
+
+        with tempfile.TemporaryDirectory() as stable_temp:
+            stable_docs = Path(stable_temp)
+            stable_dest = (
+                stable_docs / "reference/settings/session-settings.mdx"
+            )
+            stable_manifest_path = (
+                stable_docs
+                / "reference/settings/session-settings/manifest.json"
+            )
+            stable_manifest_path.parent.mkdir(parents=True)
+            stable_manifest_path.write_text(
+                json.dumps(stable_manifest), encoding="utf-8")
+            stable_artifacts = mod.split_session_settings_page(
+                stable_dest,
+                generated_page([
+                    "select",
+                    "select_sequential_consistency",
+                    "sort",
+                    "sort_overflow_mode",
+                ]),
+                stable_docs,
+            )
+            stable_artifacts_by_path = {
+                artifact.path: artifact.content
+                for artifact in stable_artifacts
+            }
+            assert (
+                stable_docs / "reference/settings/session-settings/select.mdx"
+            ) not in stable_artifacts_by_path
+            assert (
+                stable_docs / "reference/settings/session-settings/sort.mdx"
+            ) not in stable_artifacts_by_path
+            stable_other = stable_artifacts_by_path[
+                stable_docs / "reference/settings/session-settings/other.mdx"
+            ]
+            assert "## select {#select}" in stable_other
+            assert (
+                "## select_sequential_consistency "
+                "{#select_sequential_consistency}"
+            ) in stable_other
+            assert "## sort {#sort}" in stable_other
+            assert "## sort_overflow_mode {#sort_overflow_mode}" in stable_other
+
         large_prefix_pages = mod.group_session_settings([
             mod.SettingSection(
                 f"large_group_{index}",

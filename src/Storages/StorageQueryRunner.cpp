@@ -23,7 +23,6 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/QueryRunnerSettings.h>
 #include <Storages/StorageFactory.h>
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
@@ -75,7 +74,7 @@ namespace QueryRunnerSetting
     extern const QueryRunnerSettingsUInt64 max_queue_size;
     extern const QueryRunnerSettingsQueryRunnerMode mode;
     extern const QueryRunnerSettingsString shard;
-    extern const QueryRunnerSettingsUInt64 threads;
+    extern const QueryRunnerSettingsNonZeroUInt64 threads;
 }
 
 namespace ErrorCodes
@@ -208,14 +207,34 @@ private:
     size_t remaining;
 };
 
+class QueryRunnerJobCompletion
+{
+public:
+    QueryRunnerJobCompletion(PrefixLatch & pending_, std::shared_ptr<CountDownLatch> batch_)
+        : pending(pending_), batch(std::move(batch_)), seq(pending.issue())
+    {
+    }
+
+    ~QueryRunnerJobCompletion()
+    {
+        if (batch)
+            batch->countDown();
+        pending.retire(seq);
+    }
+
+private:
+    PrefixLatch & pending;
+    const std::shared_ptr<CountDownLatch> batch;
+    const UInt64 seq;
+};
+
 struct QueryRunnerJob
 {
     String query;
     String database;
     SettingsChanges settings_changes;
     std::shared_ptr<const QueryRunnerJobOrigin> origin;
-    std::shared_ptr<CountDownLatch> batch;
-    UInt64 seq = 0;
+    std::shared_ptr<QueryRunnerJobCompletion> completion;
 };
 
 /// Used to cancel the remote queries and unblock the dispatcher's workers on shutdown.
@@ -307,52 +326,32 @@ public:
         : WithContext(global_context_)
         , cluster_name(cluster_name_)
         , shard_selector(shard_selector_)
-        , queue(max_queue_size_)
-        , num_threads(num_threads_)
         , max_queue_size(max_queue_size_)
         , log(log_)
-        , pool(CurrentMetrics::QueryRunnerThreads, CurrentMetrics::QueryRunnerThreadsActive, CurrentMetrics::QueryRunnerThreadsScheduled, num_threads_)
+        , pool(
+              CurrentMetrics::QueryRunnerThreads,
+              CurrentMetrics::QueryRunnerThreadsActive,
+              CurrentMetrics::QueryRunnerThreadsScheduled,
+              num_threads_,
+              0,
+              num_threads_ + max_queue_size_)
     {
         client_info.client_name = String(client_name);
         client_info.setInitialQuery();
     }
 
-    void start()
-    {
-        try
-        {
-            for (size_t i = 0; i < num_threads; ++i)
-                pool.scheduleOrThrowOnError([this] { workerLoop(); });
-        }
-        catch (...)
-        {
-            shutdown();
-            throw;
-        }
-    }
-
     void submit(QueryRunnerJob job)
     {
-        job.seq = pending.issue();
-        const auto batch = job.batch;
-        const UInt64 seq = job.seq;
-        try
-        {
-            if (queue.tryPush(std::move(job)))
-                return;
-        }
-        catch (...)
-        {
-            finishJob(batch, seq);
-            throw;
-        }
+        if (pool.trySchedule([this, scheduled_job = std::move(job)] { runJob(scheduled_job); }))
+            return;
 
-        if (queue.isFinished())
+        if (shutdown_called)
             LOG_WARNING(log, "The table is shutting down, discarding the query");
         else
-            LOG_ERROR(LogFrequencyLimiter(log, 5), "The queue is full (max_queue_size = {}), discarding the query", max_queue_size);
-        finishJob(batch, seq);
+            LOG_ERROR(LogFrequencyLimiter(log, 5), "Cannot schedule the query (max_queue_size = {}), discarding it", max_queue_size);
     }
+
+    PrefixLatch & getPending() { return pending; }
 
     void waitForAllPending(const QueryStatusPtr & query_status)
     {
@@ -364,41 +363,23 @@ public:
         if (shutdown_called.exchange(true))
             return;
 
-        queue.finish();
-
-        QueryRunnerJob job;
-        while (queue.tryPop(job))
-            finishJob(job.batch, job.seq);
-
+        pool.finish();
         cluster_executors.cancelAll();
         pool.wait();
     }
 
 private:
-    void finishJob(const std::shared_ptr<CountDownLatch> & batch, UInt64 seq)
-    {
-        if (batch)
-            batch->countDown();
-        pending.retire(seq);
-    }
-
-    void workerLoop()
+    void runJob(const QueryRunnerJob & job)
     {
         setThreadName(ThreadName::QUERY_RUNNER);
 
-        QueryRunnerJob job;
-        while (queue.pop(job))
+        try
         {
-            try
-            {
-                executeJob(job);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Failed to execute a query");
-            }
-
-            finishJob(job.batch, job.seq);
+            executeJob(job);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to execute a query");
         }
     }
 
@@ -642,15 +623,12 @@ private:
     const String cluster_name;
     const ShardSelector shard_selector;
     ClientInfo client_info;
-    ConcurrentBoundedQueue<QueryRunnerJob> queue;
-    const size_t num_threads;
     const size_t max_queue_size;
     LoggerPtr log;
+    PrefixLatch pending;
     ThreadPool pool;
 
     std::atomic<bool> shutdown_called = false;
-
-    PrefixLatch pending;
 
     std::mutex pools_mutex;
     std::map<std::pair<UInt64, String>, ConnectionPoolWithFailoverPtr> pools TSA_GUARDED_BY(pools_mutex);
@@ -717,7 +695,7 @@ public:
             }
 
             job.origin = origin;
-            job.batch = batch;
+            job.completion = std::make_shared<QueryRunnerJobCompletion>(dispatcher.getPending(), batch);
 
             dispatcher.submit(std::move(job));
         }
@@ -781,11 +759,6 @@ StorageQueryRunner::StorageQueryRunner(
 }
 
 StorageQueryRunner::~StorageQueryRunner() = default;
-
-void StorageQueryRunner::startup()
-{
-    dispatcher->start();
-}
 
 void StorageQueryRunner::shutdown(bool /*is_drop*/)
 {
@@ -918,7 +891,7 @@ void registerStorageQueryRunner(StorageFactory & factory)
         settings.loadFromQuery(*args.storage_def);
 
         const UInt64 num_threads = settings[QueryRunnerSetting::threads];
-        if (num_threads < 1 || num_threads > 1024)
+        if (num_threads > 1024)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'threads' setting of the QueryRunner engine must be in the range [1, 1024], got {}", num_threads);
 
         const UInt64 max_queue_size = settings[QueryRunnerSetting::max_queue_size];

@@ -16,6 +16,8 @@ struct ColumnStats
     /// TODO: Support min max
     /// Field min_value, max_value;
     UInt64 num_distinct_values = 0;
+    /// Average uncompressed size of one value; 0 means unknown.
+    Float64 avg_bytes = 0;
 };
 
 struct RelationProfile
@@ -63,8 +65,10 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
     RelationProfile estimateRelationProfile() const;
 
+    /// Return true if the estimator was built from a different ordered sequence of data parts.
     bool isStale(const std::vector<DataPartPtr> & data_parts) const;
-    /// Same check against a query's analyzed part set, without materializing a parts vector.
+    /// Perform the same check against an analyzed query part set. Mark ranges are intentionally
+    /// ignored because the estimator contains whole-part statistics.
     bool isStale(const RangesInDataParts & parts) const;
 
     struct RPNElement

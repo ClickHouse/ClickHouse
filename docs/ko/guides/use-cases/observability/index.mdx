@@ -3,9 +3,11 @@ slug: /use-cases/observability
 title: '관측성'
 sidebarTitle: '개요'
 description: '관측성 사용 사례 가이드를 위한 랜딩 페이지'
-keywords: ['관측성', 'logs', 'traces', '메트릭', 'OpenTelemetry', 'Grafana', 'OTel']
+keywords: ['관측성', '로그', '트레이스', '메트릭', 'OpenTelemetry', 'Grafana', 'OTel']
 doc_type: 'guide'
 ---
+
+import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 ClickHouse는 관측성 워크로드에 탁월한 속도, 확장성, 비용 효율성을 제공합니다. 이 가이드는 요구 사항에 따라 두 가지 경로를 안내합니다:
 
@@ -43,3 +45,11 @@ ClickHouse Observability Stack은 대부분의 사용자에게 **권장하는 �
 | [OpenTelemetry 통합](/ko/guides/use-cases/observability/build-your-own/integrating-opentelemetry) | ClickHouse와 함께 OpenTelemetry를 사용해 로그와 트레이스를 수집하고 내보내는 방법을 설명합니다.                                         |
 | [시각화 도구 사용](/ko/guides/use-cases/observability/build-your-own/grafana)                          | HyperDX와 Grafana를 포함한 ClickHouse용 관측성 시각화 도구 사용 방법을 알아보십시오.                                              |
 | [데모 애플리케이션](/ko/guides/use-cases/observability/build-your-own/demo-application)                 | 로그와 트레이스에 대해 ClickHouse와 함께 작동하도록 포크된 OpenTelemetry 데모 애플리케이션을 살펴보십시오.                                   |
+
+<div id="prometheus-metrics">
+  ## Prometheus 메트릭
+</div>
+
+<CloudNotSupportedBadge />
+
+ClickHouse는 Prometheus 메트릭을 [`TimeSeries`](/ko/reference/engines/table-engines/integrations/time-series) 테이블에 저장하고 PromQL 쿼리를 실행할 수 있습니다. 수집, 쿼리 및 시각화 구성에 대해서는 [Prometheus 프로토콜 및 PromQL](/ko/interfaces/prometheus)을 참조하십시오.

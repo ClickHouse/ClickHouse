@@ -4380,8 +4380,12 @@
     "source": "/integrations/data-ingestion/dbms/"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion/odbc-with-clickhouse",
+    "destination": "/reference/engines/table-engines/integrations/odbc",
     "source": "/integrations/data-ingestion/dbms/odbc-with-clickhouse"
+  },
+  {
+    "destination": "/reference/engines/table-engines/integrations/odbc",
+    "source": "/integrations/connectors/data-ingestion/odbc-with-clickhouse"
   },
   {
     "destination": "/integrations/home",
@@ -54362,5 +54366,65 @@
   {
     "destination": "/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
     "source": "/cloud/guides/security/migrating-rbac-custom-roles"
+  },
+  {
+    "destination": "/ar/concepts/features/interfaces/prometheus",
+    "source": "/ar/interfaces/prometheus"
+  },
+  {
+    "destination": "/ar/reference/functions/table-functions/prometheusQuery",
+    "source": "/ar/sql-reference/table-functions/prometheusQuery"
+  },
+  {
+    "destination": "/ar/reference/functions/table-functions/prometheusQueryRange",
+    "source": "/ar/sql-reference/table-functions/prometheusQueryRange"
+  },
+  {
+    "destination": "/es/concepts/features/interfaces/prometheus",
+    "source": "/es/interfaces/prometheus"
+  },
+  {
+    "destination": "/es/reference/functions/table-functions/prometheusQuery",
+    "source": "/es/sql-reference/table-functions/prometheusQuery"
+  },
+  {
+    "destination": "/es/reference/functions/table-functions/prometheusQueryRange",
+    "source": "/es/sql-reference/table-functions/prometheusQueryRange"
+  },
+  {
+    "destination": "/fr/concepts/features/interfaces/prometheus",
+    "source": "/fr/interfaces/prometheus"
+  },
+  {
+    "destination": "/fr/reference/functions/table-functions/prometheusQuery",
+    "source": "/fr/sql-reference/table-functions/prometheusQuery"
+  },
+  {
+    "destination": "/fr/reference/functions/table-functions/prometheusQueryRange",
+    "source": "/fr/sql-reference/table-functions/prometheusQueryRange"
+  },
+  {
+    "destination": "/ja/concepts/features/interfaces/prometheus",
+    "source": "/ja/interfaces/prometheus"
+  },
+  {
+    "destination": "/ja/reference/functions/table-functions/prometheusQuery",
+    "source": "/ja/sql-reference/table-functions/prometheusQuery"
+  },
+  {
+    "destination": "/ja/reference/functions/table-functions/prometheusQueryRange",
+    "source": "/ja/sql-reference/table-functions/prometheusQueryRange"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/interfaces/prometheus",
+    "source": "/pt-BR/interfaces/prometheus"
+  },
+  {
+    "destination": "/pt-BR/reference/functions/table-functions/prometheusQuery",
+    "source": "/pt-BR/sql-reference/table-functions/prometheusQuery"
+  },
+  {
+    "destination": "/pt-BR/reference/functions/table-functions/prometheusQueryRange",
+    "source": "/pt-BR/sql-reference/table-functions/prometheusQueryRange"
   }
 ]

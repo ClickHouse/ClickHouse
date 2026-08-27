@@ -1,5 +1,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -187,8 +188,10 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
+bool planHasInOrderAggregation(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
+void checkCascadesSupported(const QueryPlan::Node & root);
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
@@ -351,11 +354,17 @@ void optimizeTreeSecondPass(
         && !planContainsLogicalExchange(root);
 
     /// WITH TOTALS / ROLLUP / CUBE / extremes produce extra streams the exchange protocol does not
-    /// carry, so such plans cannot be distributed. make_distributed_plan is explicit, so fail rather
-    /// than silently running single-node.
+    /// carry, and PASTE JOIN pairs rows by position, which exchanges do not preserve, so such plans
+    /// cannot be distributed. make_distributed_plan is explicit, so fail rather than silently
+    /// running single-node.
     if (make_distributed_plan && planHasUnsupportedDistributedStep(root))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE or extremes");
+            "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE, extremes or PASTE JOIN");
+    /// An in-order aggregation (from `force_aggregation_in_order`) relies on its input order,
+    /// which the exchanges do not preserve.
+    if (make_distributed_plan && planHasInOrderAggregation(root))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support in-order aggregation");
     /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
     if (make_distributed_plan)
         checkDistributedReadSupported(root);
@@ -363,13 +372,16 @@ void optimizeTreeSecondPass(
     /// read-bucket vectors from them. The tryMakeDistributed* pass below uses the raw setting values.
     if (make_distributed_plan)
         validateDistributedPlanBucketCounts(optimization_settings);
+    /// Cascades runs only when both settings are on (see below); `enable_cascades_optimizer`
+    /// alone (with `make_distributed_plan = 0`) keeps the normal single-node optimizer.
+    const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer;
 
     traverseQueryPlan(stack, root,
         [&](auto &) {},
         [&](auto & frame_node)
         {
             /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
-            if (make_distributed_plan)
+            if (make_distributed_plan && !optimization_settings.enable_cascades_optimizer)
             {
                 tryMakeDistributedJoin(frame_node, nodes, optimization_settings);
                 tryMakeDistributedAggregation(frame_node, nodes, optimization_settings);
@@ -395,6 +407,17 @@ void optimizeTreeSecondPass(
         optimize_join_lazy_indexing();
     }
 
+    /// Run Cascades optimizer after all push down and join order optimizations.
+    /// Only `convertToDistributed` can execute the exchange steps Cascades produces;
+    /// without `make_distributed_plan` they would build as no-op pipeline steps (e.g.
+    /// partial aggregation states reaching consumers unmerged).
+    if (make_distributed_plan && optimization_settings.enable_cascades_optimizer)
+    {
+        checkCascadesSupported(root);
+        CascadesOptimizer cascades_optimizer(query_plan, optimization_settings);
+        cascades_optimizer.optimize();
+    }
+
     stack.push_back({.node = &root});
     while (!stack.empty())
     {
@@ -414,7 +437,9 @@ void optimizeTreeSecondPass(
                 if (optimization_settings.query_plan_optimize_count_from_text_index)
                     optimizeTrivialCountFromTextIndex(*frame.node, nodes, optimization_settings);
 
-                if (optimization_settings.aggregation_in_order)
+                /// Exchanges do not preserve the order an in-order aggregation needs, so keep
+                /// hash aggregation whenever a distributed plan is intended.
+                if (optimization_settings.aggregation_in_order && !optimization_settings.make_distributed_plan)
                     optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
             }
 
@@ -467,10 +492,13 @@ void optimizeTreeSecondPass(
             if (optimization_settings.distinct_partitions_independently)
                 optimizeDistinctPerPartition(frame_node, nodes, optimization_settings);
 
-            if (optimization_settings.read_in_order)
+            /// Skip when Cascades is enabled: it treats sorting as a physical property and
+            /// strips `SortingStep::Full`, which this heuristic would otherwise rewrite to
+            /// `FinishSorting` first.
+            if (optimization_settings.read_in_order && !cascades_active)
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
-            if (optimization_settings.distinct_in_order)
+            if (optimization_settings.distinct_in_order && !cascades_active)
                 optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.limit_by_in_order)

@@ -179,6 +179,14 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             }
         },
         {
+            "notHas",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                return true;
+            }
+        },
+        {
             "nullIn",
             [] (RPNElement & out, const Field &)
             {
@@ -439,7 +447,7 @@ static bool monotonicChainSupportsNullAtom(const KeyCondition::MonotonicFunction
 /// insert into test values ('2020-01-02', 1, '');
 /// select * from test where d != '2020-01-01'; -- If relaxed, no record will return
 static const std::set<std::string_view> no_relaxed_atom_functions
-    = {"notLike", "notIn", "globalNotIn", "notNullIn", "globalNotNullIn", "notEquals", "notEmpty"};
+    = {"notLike", "notIn", "globalNotIn", "notNullIn", "globalNotNullIn", "notEquals", "notEmpty", "notHas"};
 
 static const std::map<std::string, std::string> inverse_relations =
 {
@@ -465,7 +473,29 @@ static const std::map<std::string, std::string> inverse_relations =
     {"notILike", "ilike"},
     {"empty", "notEmpty"},
     {"notEmpty", "empty"},
+    {"has", "notHas"},
+    {"notHas", "has"},
 };
+
+/// `KeyCondition` can only build a set atom out of `has(constant_array, key)`, so that is the only shape where
+/// folding `NOT has(...)` into the single `notHas` leaf buys anything. `has(column, needle)` is deliberately left
+/// as `not(has(...))`: the text index and the bloom filter index analyzers recognize `has` but not `notHas`, so
+/// folding would turn the atom into `FUNCTION_UNKNOWN` for them. Their granule filtering does not suffer from that
+/// - a negated containment atom can never prune those indexes - but the condition becomes always unknown or true,
+/// which drops the index from the useful ones and, for a text index, takes the direct read from it down as well.
+static bool canFoldToInverseRelation(const std::string & name, const ActionsDAG::NodeRawConstPtrs & children)
+{
+    if (name != "has")
+        return true;
+
+    if (children.size() != 2)
+        return false;
+
+    /// The haystack must be constant, which is what `tryPrepareSetIndexForHas` requires of it. This mirrors
+    /// `RPNBuilderTreeNode::isConstant`; aliases need no unwrapping because `cloneDAGWithInversionPushDown`
+    /// elides them while cloning the arguments.
+    return children[0]->column != nullptr;
+}
 
 /// Returns the comparison operator after reversing comparison direction.
 ///
@@ -1237,7 +1267,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false, child_boolean_context);
 
                 auto it = inverse_relations.find(name);
-                if (it != inverse_relations.end())
+                if (it != inverse_relations.end() && canFoldToInverseRelation(name, children))
                 {
                     const auto & func_name = need_inversion ? it->second : it->first;
                     auto function_builder = FunctionFactory::instance().get(func_name, context);
@@ -2545,10 +2575,11 @@ static bool tryPrepareSetColumnsForIndex(
         if (!key_column_type->canBeInsideNullable())
             return false;
 
-        const NullMap * set_column_null_map = nullptr;
-
-        // Keep a reference to the original set_column to ensure the data remains valid
-        ColumnPtr original_set_column = set_column;
+        /// Marks the elements that are NULL in the set itself, e.g. the NULL in `notHas([1, NULL], x)`
+        /// or a NULL row of a subquery set. Stays nullptr when the set element type is not Nullable.
+        /// `Nothing` is another representation of an all-NULL literal array and is handled below.
+        const NullMap * source_null_map = nullptr;
+        const bool source_is_nothing = WhichDataType(*set_element_type).isNothing();
 
         if (isNullableOrLowCardinalityNullable(set_element_type))
         {
@@ -2560,47 +2591,47 @@ static bool tryPrepareSetColumnsForIndex(
 
             set_element_type = removeNullable(set_element_type);
 
-            // Obtain the nullable column without reassigning set_column immediately
-            const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
-            if (!set_column_nullable)
+            const auto * source_nullable_column = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
+            if (!source_nullable_column)
                 return false;
 
-            const NullMap & null_map_data = set_column_nullable->getNullMapData();
-            if (!null_map_data.empty())
-                set_column_null_map = &null_map_data;
-
-            ColumnPtr nested_column = set_column_nullable->getNestedColumnPtr();
-
-            // Reassign set_column after we have obtained necessary references
-            set_column = nested_column;
+            source_null_map = &source_nullable_column->getNullMapData();
+            set_column = source_nullable_column->getNestedColumnPtr();
         }
 
-        ColumnPtr nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
-        const auto * nullable_set_column_typed = typeid_cast<const ColumnNullable *>(nullable_set_column.get());
-        if (!nullable_set_column_typed)
+        /// Cast to the key column type, writing NULL where the value cannot be represented in it
+        /// (e.g. 256 for a UInt8 key), so the null map of the result marks the cast failures.
+        ColumnPtr cast_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
+        const auto * cast_nullable_column = typeid_cast<const ColumnNullable *>(cast_column.get());
+        if (!cast_nullable_column)
             return false;
 
-        const NullMap & nullable_set_column_null_map = nullable_set_column_typed->getNullMapData();
-        size_t nullable_set_column_null_map_size = nullable_set_column_null_map.size();
+        const NullMap & cast_failure_null_map = cast_nullable_column->getNullMapData();
+        size_t set_size = cast_failure_null_map.size();
 
-        if (set_column_null_map)
+        const bool key_is_nullable = key_column_type->isNullable();
+
+        /// A NULL set element can match a Nullable key, so preserve it in that case. Otherwise it
+        /// cannot match any key value - under regular `IN`, `nullIn` and `has` semantics alike.
+        for (size_t i = 0; i < set_size; ++i)
         {
-            for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
-            {
-                if (nullable_set_column_null_map_size < set_column_null_map->size())
-                    filter[i] &= (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
-                else
-                    filter[i] &= !nullable_set_column_null_map[i];
-            }
+            const bool null_in_source = source_null_map && (*source_null_map)[i];
+            if ((!key_is_nullable && null_in_source) || (cast_failure_null_map[i] && !source_is_nothing))
+                filter[i] = 0;
+        }
 
-            set_column = nullable_set_column;
+        if (key_is_nullable && (source_null_map || source_is_nothing))
+        {
+            auto null_map = ColumnUInt8::create();
+            null_map->getData().assign(cast_failure_null_map);
+            auto nullable_set_column = ColumnNullable::create(cast_nullable_column->getNestedColumn().cloneResized(set_size), std::move(null_map));
+            if (source_null_map)
+                nullable_set_column->applyNullMap(*source_null_map);
+            set_column = std::move(nullable_set_column);
         }
         else
         {
-            for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
-                filter[i] &= !nullable_set_column_null_map[i];
-
-            set_column = nullable_set_column_typed->getNestedColumnPtr();
+            set_column = cast_nullable_column->getNestedColumnPtr();
         }
         filter_used = true;
 
@@ -2722,7 +2753,7 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     const BuildInfo & info,
     RPNElement & out)
 {
-    chassert(func.getFunctionName() == "has");
+    chassert(func.getFunctionName() == "has" || func.getFunctionName() == "notHas");
     chassert(func.getArgumentsSize() == 2);
 
     /// Check if key usable
@@ -2757,11 +2788,30 @@ bool KeyCondition::tryPrepareSetIndexForHas(
 
     const DataTypePtr & array_nested_type = array_data_type->getNestedType();
 
+    /// `has` uses accurate equality for array elements, while MergeTreeSetIndex compares floating-point
+    /// keys with ColumnVector::compareAt. In particular, `has([nan], nan)` is false but the set index
+    /// considers the two NaNs equal. Do not build a set atom for arrays with floating-point elements,
+    /// including nested tuple elements: using it under `notHas` could otherwise prune rows that satisfy
+    /// the predicate.
+    bool array_contains_float = WhichDataType(*array_nested_type).isFloat();
+    if (!array_contains_float)
+    {
+        array_nested_type->forEachChild([&array_contains_float](const IDataType & child)
+        {
+            if (!array_contains_float && WhichDataType(child).isFloat())
+                array_contains_float = true;
+        });
+    }
+
+    if (array_contains_float)
+        return false;
+
     const auto array_elements = array_col->getDataPtr();
     if (array_elements->empty())
     {
-        /// has([], x) is always false – we can mark the condition as always false
-        out.function = RPNElement::ALWAYS_FALSE;
+        /// has([], x) is always false and notHas([], x) is always true - we can fold the condition
+        /// to a constant.
+        out.function = func.getFunctionName() == "has" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE;
         return true;
     }
 
@@ -3776,12 +3826,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     return false;
             }
 
-            if (func_name == "has")
+            if (func_name == "has" || func_name == "notHas")
             {
                 if (tryPrepareSetIndexForHas(func, info, out))
                 {
-                    /// Found empty array constant in has([], x) -> always false
-                    if (out.function == RPNElement::ALWAYS_FALSE)
+                    /// Found empty array constant: has([], x) is always false, notHas([], x) is always true.
+                    if (out.function == RPNElement::ALWAYS_FALSE || out.function == RPNElement::ALWAYS_TRUE)
                         return true;
 
                     const auto atom_it = atom_map.find(func_name);

@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTSubquery.h>
@@ -409,6 +410,29 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     return predicate_value > 0;
 }
 
+const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node)
+{
+    static const Names no_aliases;
+
+    QueryTreeNodePtr current = query_or_union_node;
+    while (current)
+    {
+        if (const auto * query_node = current->as<QueryNode>())
+            /// On a resolved node the stored list can be longer than the projection, because column
+            /// pruning shrinks the projection columns but not the list.
+            return query_node->isResolved() ? no_aliases : query_node->getProjectionAliasesToOverride();
+
+        const auto * union_node = current->as<UnionNode>();
+        if (!union_node)
+            return no_aliases;
+
+        const auto & queries = union_node->getQueries().getNodes();
+        current = queries.empty() ? nullptr : queries[0];
+    }
+
+    return no_aliases;
+}
+
 static ASTPtr convertIntoTableExpressionAST(
     const QueryTreeNodePtr & table_expression_node,
     const ConvertToASTOptions & convert_to_ast_options
@@ -446,6 +470,19 @@ static ASTPtr convertIntoTableExpressionAST(
     if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
     {
         result_table_expression->subquery = result_table_expression->children.back();
+
+        /// Restore the subquery column alias list, e.g. `(SELECT 1) AS t(x)`.
+        const auto & column_aliases = getColumnAliasesToRestore(table_expression_node);
+        if (!column_aliases.empty())
+        {
+            auto column_aliases_ast = make_intrusive<ASTExpressionList>();
+            column_aliases_ast->children.reserve(column_aliases.size());
+            for (const auto & column_alias : column_aliases)
+                column_aliases_ast->children.push_back(make_intrusive<ASTIdentifier>(column_alias));
+
+            result_table_expression->column_aliases = std::move(column_aliases_ast);
+            result_table_expression->children.push_back(result_table_expression->column_aliases);
+        }
     }
     else if (node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::IDENTIFIER)
     {

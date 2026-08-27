@@ -1,10 +1,4 @@
 1
 1
-SELECT `1`
-FROM view(
-    SELECT 1
-)
-SELECT `1`
-FROM remote(\'127.0.0.1\', view(
-    SELECT 1
-))
+SELECT `1`\nFROM view(\n    SELECT 1\n)
+SELECT `1`\nFROM remote(\'127.0.0.1\', view(\n    SELECT 1\n))

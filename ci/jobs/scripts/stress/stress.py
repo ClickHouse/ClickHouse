@@ -249,7 +249,11 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         options.append("--no-random-settings")
         options.append("--no-random-merge-tree-settings")
 
-    # allow constraint
+    # The stress test profile constrains enable_analyzer to >= 1 (stress_tests.lib) so neither the
+    # AST fuzzer nor a test spends the run on the old interpreter. Send the setting explicitly so the
+    # randomized compatibility below cannot revert it: compatibility only rewrites settings that are
+    # not `changed`, and a constraint cannot catch that revert because there is no explicit change to
+    # check. The profile pins the same value server-side for the queries this does not cover.
     client_options.append("enable_analyzer=1")
 
     if i > 0:
