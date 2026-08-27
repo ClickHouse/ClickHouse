@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
@@ -65,6 +66,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool enable_parallel_single_level_merge;
     extern const QueryPlanSerializationSettingsBool enable_adaptive_aggregator;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
+    extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
 }
@@ -72,8 +74,8 @@ namespace QueryPlanSerializationSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static bool memoryBoundMergingWillBeUsed(
@@ -124,6 +126,17 @@ bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys,
     }
 
     return false;
+}
+
+bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name)
+{
+    const auto * node = dag.tryFindInOutputs(name);
+    if (!node)
+        return false;
+
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node->type == ActionsDAG::ActionType::INPUT && node->result_name == name;
 }
 
 Block appendGroupingSetColumn(Block header)
@@ -210,6 +223,11 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
+}
+
+void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k)
+{
+    params.top_k = std::move(top_k);
 }
 
 std::vector<size_t> AggregatingStep::getStepGroups() const
@@ -805,6 +823,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
+    /// An aggregation without keys produces at most one row, so fanning its output out to
+    /// multiple streams would only add processors and scheduling overhead to every downstream
+    /// step (and to the whole pipeline execution) without any parallelism to gain.
+    const size_t streams_after_aggregation = (should_produce_results_in_order_of_bucket_number || params.keys.empty()) ? 1 : max_threads;
+
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
     {
@@ -833,7 +856,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     dataflow_cache_updater);
             });
 
-        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads, false, settings.min_outstreams_per_resize_after_split);
+        pipeline.resize(streams_after_aggregation, false, settings.min_outstreams_per_resize_after_split);
 
         aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
     }
@@ -842,7 +865,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         pipeline.addSimpleTransform([&](const SharedHeader & header)
                                     { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater); });
 
-        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads);
+        pipeline.resize(streams_after_aggregation);
 
         aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
     }
@@ -861,6 +884,10 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
         settings.out << '\n';
     }
     settings.out << prefix << "Skip merging: " << skip_merging << '\n';
+
+    if (params.bucket_top_k)
+        settings.out << prefix << "Bucket top-K: " << params.bucket_top_k << (params.bucket_top_k_ascending ? " ascending" : " descending")
+                     << '\n';
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -868,6 +895,13 @@ void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
     params.explain(map);
     if (!sort_description_for_merging.empty())
         map.add("Order", dumpSortDescription(sort_description_for_merging));
+    if (params.bucket_top_k)
+    {
+        auto bucket_top_k_map = std::make_unique<JSONBuilder::JSONMap>();
+        bucket_top_k_map->add("Limit", params.bucket_top_k);
+        bucket_top_k_map->add("Ascending", params.bucket_top_k_ascending);
+        map.add("Bucket Top-K", std::move(bucket_top_k_map));
+    }
     map.add("Skip merging", skip_merging);
 }
 
@@ -1113,6 +1147,8 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     {
         settings[QueryPlanSerializationSetting::enable_adaptive_aggregator] = params.enable_adaptive_aggregator;
         settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold] = params.adaptive_aggregator_freeze_threshold;
+        settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]
+            = params.adaptive_aggregator_freeze_threshold_bytes;
     }
 
     /// Both values, every version: a peer predating the name serializes String keys the way `false` does, so
@@ -1160,20 +1196,9 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
 
 void AggregatingStep::serialize(Serialization & ctx) const
 {
-    if (!sort_description_for_merging.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep optimized for in-order is not supported.");
-
-    if (explicit_sorting_required_for_aggregation_in_order)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep explicit_sorting_required_for_aggregation_in_order is not supported.");
-
-    /// If you wonder why something is serialized using settings, and other is serialized using flags, considerations are following:
-    /// * flags are something that may change data format returning from the step
-    /// * settings are something which already was in settings[QueryPlanSerializationSetting::h] and, usually, is passed to Aggregator unchanged
-    /// Flags `final` and `group_by_use_nulls` change types, and `overflow_row` appends additional block to results.
-    /// Settings like `max_rows_to_group_by` or `empty_result_for_aggregation_by_empty_set` affect the result,
-    /// but does not change data format.
-    /// Overall, the rule is not strict.
-
+    /// Flags encode boolean properties that affect the data format or plan structure.
+    /// Bit layout: 1=final, 2=overflow_row, 4=group_by_use_nulls, 8=grouping_sets,
+    ///             16=stats_key, 32=in_order_aggregation, 64=explicit_sorting_required.
     UInt8 flags = 0;
     if (final && !ctx.for_cache_key)
         flags |= 1;
@@ -1183,15 +1208,27 @@ void AggregatingStep::serialize(Serialization & ctx) const
         flags |= 4;
     if (!grouping_sets_params.empty())
         flags |= 8;
-    /// Ideally, key should be calculated from QueryPlan on the follower.
-    /// So, let's have a flag to disable sending/reading pre-calculated value.
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         flags |= 16;
+    if (!sort_description_for_merging.empty())
+        flags |= 32;
+    if (explicit_sorting_required_for_aggregation_in_order)
+        flags |= 64;
+
+    /// The in-order aggregation payload exists only since query plan serialization version 2.
+    /// Throw rather than send bytes the other side would misread (deserialize checks the same).
+    if ((flags & (32 | 64)) && ctx.version < 2)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "In-order aggregation in a distributed plan requires query plan serialization "
+            "version >= 2; all nodes must run the same version");
 
     writeIntBinary(flags, ctx.out);
 
-    if (explicit_sorting_required_for_aggregation_in_order)
+    if (!sort_description_for_merging.empty())
+    {
+        serializeSortDescription(sort_description_for_merging, ctx.out);
         serializeSortDescription(group_by_sort_description, ctx.out);
+    }
 
     writeVarUInt(params.keys.size(), ctx.out);
     for (const auto & key : params.keys)
@@ -1228,6 +1265,23 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     bool group_by_use_nulls = bool(flags & 4);
     bool has_grouping_sets = bool(flags & 8);
     bool has_stats_key = bool(flags & 16);
+    bool has_in_order = bool(flags & 32);
+    bool explicit_sorting_required = bool(flags & 64);
+
+    /// The in-order aggregation payload exists only since query plan serialization version 2;
+    /// on an older stream these bits are garbage, so reject them (serialize checks the same).
+    if ((has_in_order || explicit_sorting_required) && ctx.version < 2)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "In-order aggregation flags in a version {} query plan stream; they require version >= 2",
+            ctx.version);
+
+    SortDescription sort_description_for_merging;
+    SortDescription group_by_sort_description;
+    if (has_in_order)
+    {
+        deserializeSortDescription(sort_description_for_merging, ctx.in);
+        deserializeSortDescription(group_by_sort_description, ctx.in);
+    }
 
     UInt64 num_keys = 0;
     readVarUInt(num_keys, ctx.in);
@@ -1299,9 +1353,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge],
         ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
-        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold]};
-
-    SortDescription sort_description_for_merging;
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]};
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),
@@ -1315,10 +1368,10 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         false, // storage_has_evenly_distributed_read, TODO: later
         group_by_use_nulls,
         std::move(sort_description_for_merging),
-        SortDescription{},
+        std::move(group_by_sort_description),
         ctx.settings[QueryPlanSerializationSetting::aggregation_sort_result_by_bucket_number],
         ctx.settings[QueryPlanSerializationSetting::aggregation_in_order_memory_bound_merging],
-        false,
+        explicit_sorting_required,
         false);
 
     return aggregating_step;

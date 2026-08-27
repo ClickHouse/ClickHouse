@@ -16,6 +16,8 @@ struct ColumnStats
     /// TODO: Support min max
     /// Field min_value, max_value;
     UInt64 num_distinct_values = 0;
+    /// Average uncompressed size of one value; 0 means unknown.
+    Float64 avg_bytes = 0;
 };
 
 struct RelationProfile
@@ -63,8 +65,10 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
     RelationProfile estimateRelationProfile() const;
 
+    /// Return true if the estimator was built from a different ordered sequence of data parts.
     bool isStale(const std::vector<DataPartPtr> & data_parts) const;
-    /// Same check against a query's analyzed part set, without materializing a parts vector.
+    /// Perform the same check against an analyzed query part set. Mark ranges are intentionally
+    /// ignored because the estimator contains whole-part statistics.
     bool isStale(const RangesInDataParts & parts) const;
 
     struct RPNElement
@@ -120,6 +124,13 @@ private:
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
+
+    /// Selectivity of `column IN (set)` derived from the size of the set rather than from its contents:
+    /// the share of rows inside the set's bounding range, capped by the share of distinct values the set
+    /// can possibly cover. Costs one pass for the bounds and a single statistics probe, where turning the
+    /// set into ranges costs a `Field` per element, a sort and one probe per element.
+    Selectivity estimateSelectivityFromSetSize(
+        const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements, bool negative) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.

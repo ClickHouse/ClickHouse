@@ -16,7 +16,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
+#include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/processColumnTransformers.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -122,6 +125,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int LOGICAL_ERROR;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -1107,13 +1111,18 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// query will be executed on all nodes of the cluster
     auto src_cluster = src_storage_cluster->getCluster(local_context);
 
-    /// Actually the query doesn't change, we just serialize it to string
+    /// Actually the query doesn't change, we just serialize it to string. Strip the initiator-only
+    /// settings from the forwarded query text (both `changes` and `default_settings`, across the INSERT
+    /// and its source SELECT) so those names — including the new HTTP table-as-file settings — do not reach
+    /// the shards and trip `UNKNOWN_SETTING` on a rolling upgrade; the per-shard context is stripped below.
+    auto query_to_send = query.clone();
+    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
     String query_str;
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
             /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
-        query.IAST::format(buf, ast_format_settings);
+        query_to_send->IAST::format(buf, ast_format_settings);
         query_str = buf.str();
     }
 
@@ -1121,45 +1130,83 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
     query_context->setSetting("skip_unavailable_shards", true);
+    /// Same contract as the other remote paths: the inter-server settings packet must not carry the
+    /// initiator-only settings either.
+    {
+        Settings stripped_settings = query_context->getSettingsRef();
+        ClusterProxy::stripInitiatorOnlySettings(stripped_settings);
+        query_context->setSettings(stripped_settings);
+    }
 
     src_storage_cluster->updateExternalDynamicMetadataIfExists(local_context);
 
+    const auto src_metadata_snapshot = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
+
     std::optional<ActionsDAG> filter_dag;
     const ActionsDAG::Node * predicate = nullptr;
-    if (select_query)
+    if (select_query && (select_query->prewhere() || select_query->where()))
     {
-        ASTPtr condition_ast;
-        if (select_query->prewhere() && select_query->where())
-            condition_ast = makeASTOperator("and", select_query->prewhere()->clone(), select_query->where()->clone());
-        else if (select_query->prewhere())
-            condition_ast = select_query->prewhere()->clone();
-        else if (select_query->where())
-            condition_ast = select_query->where()->clone();
+        /// The metadata and the snapshot are acquired outside of the `try` block below:
+        /// a failure here is a real storage-side problem rather than an expected miss of
+        /// the best-effort condition analysis, so it has to propagate.
+        const auto snapshot = src_storage_cluster->getStorageSnapshot(src_metadata_snapshot, local_context);
+        const auto columns = snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
 
-        if (condition_ast)
+        try
         {
-            try
-            {
-                const auto metadata = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
-                const auto snapshot = src_storage_cluster->getStorageSnapshot(metadata, local_context);
-                const auto columns = snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
-                auto syntax = TreeRewriter(local_context).analyze(condition_ast, columns);
-                filter_dag = ExpressionAnalyzer(condition_ast, syntax, local_context).getActionsDAG(true, true);
-                predicate = filter_dag->getOutputs().at(0);
-            }
-            catch (...)
-            {
-                /// Filter extraction is best-effort: if DAG construction fails for any reason
-                /// (e.g. the predicate references columns or functions not available in this
-                /// isolated analysis pass), silently fall back to no pruning so the query
-                /// still executes correctly.
-                tryLogCurrentException(logger, "Failed to build filter DAG for partition pruning in INSERT ... SELECT; continuing without pruning");
-                filter_dag.reset();
-                predicate = nullptr;
-            }
+            /// `PREWHERE` and `WHERE` can reference aliases introduced in the `WITH` clause or in the `SELECT` list,
+            /// as in `WITH splitByChar(' ', line) AS values SELECT ... WHERE length(values) >= 3`.
+            /// The condition is analyzed here in isolation from the rest of the query, so the aliases have to be
+            /// substituted first - otherwise the analysis below would not be able to resolve them.
+            /// It is done on a copy, because the original AST has already been serialized for the remote nodes.
+            NameSet source_columns_set;
+            for (const auto & column : columns)
+                source_columns_set.insert(column.name);
+
+            ASTPtr select_copy = select_query->clone();
+            Aliases aliases;
+            QueryAliasesVisitor(aliases).visit(select_copy);
+            MarkTableIdentifiersVisitor::Data mark_identifiers_data{aliases};
+            MarkTableIdentifiersVisitor(mark_identifiers_data).visit(select_copy);
+            QueryNormalizer::Data normalizer_data(
+                aliases,
+                source_columns_set,
+                /*ignore_alias_=*/ false,
+                QueryNormalizer::ExtractedSettings(settings),
+                /*allow_self_aliases_=*/ true);
+            QueryNormalizer(normalizer_data).visit(select_copy);
+
+            const auto & normalized_select = select_copy->as<ASTSelectQuery &>();
+
+            ASTPtr condition_ast;
+            if (normalized_select.prewhere() && normalized_select.where())
+                condition_ast = makeASTOperator("and", normalized_select.prewhere()->clone(), normalized_select.where()->clone());
+            else if (normalized_select.prewhere())
+                condition_ast = normalized_select.prewhere()->clone();
+            else
+                condition_ast = normalized_select.where()->clone();
+
+            auto syntax = TreeRewriter(local_context).analyze(condition_ast, columns);
+            filter_dag = ExpressionAnalyzer(condition_ast, syntax, local_context).getActionsDAG(true, true);
+            predicate = filter_dag->getOutputs().at(0);
+        }
+        catch (...)
+        {
+            /// Filter extraction is best-effort: the condition is analyzed here in isolation
+            /// from the rest of the query, so the analysis can legitimately fail (e.g. the
+            /// predicate references columns qualified with a table alias, which is not
+            /// resolvable in this isolated pass). Fall back to no pruning so the query still
+            /// executes correctly. This is an expected outcome for some queries rather than
+            /// an error, hence the low log level. A logical error, however, indicates a bug
+            /// rather than an expected miss, so it is logged prominently.
+            tryLogCurrentException(
+                logger,
+                "Cannot build the filter expression for pruning in INSERT ... SELECT; continuing without pruning",
+                getCurrentExceptionCode() == ErrorCodes::LOGICAL_ERROR ? LogsLevel::error : LogsLevel::debug);
+            filter_dag.reset();
+            predicate = nullptr;
         }
     }
-    const auto src_metadata_snapshot = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
     auto extension = src_storage_cluster->getTaskIteratorExtension(
         predicate, filter_dag ? &*filter_dag : nullptr, local_context, src_cluster, src_metadata_snapshot);
 
@@ -1211,15 +1258,15 @@ BlockIO InterpreterInsertQuery::execute()
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
         && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {
-        /// Allow inserts into external table engines (object storage, message queues, external databases)
-        /// as they don't create merge tasks on the server replica
-        bool is_external_storage =
-            table->isObjectStorage() ||     /// S3, Azure, GCS, HDFS, etc.
-            table->isDataLake() ||           /// Iceberg, DeltaLake, Hudi
-            table->isMessageQueue() ||       /// Kafka, RabbitMQ, NATS
-            table->isExternalDatabase();     /// MySQL, PostgreSQL, MongoDB, Hive, YTsaurus
+        /// Allow inserts that write out to external storage (object storage, message queues,
+        /// external databases): they create no merge tasks on this replica.
+        /// Background streaming pushes (`no_destination`) skip the external table and feed attached
+        /// materialized views instead, producing `MergeTree` parts, so they are not exempt.
+        bool writes_out_to_external_storage = !no_destination
+            && (table->isObjectStorage() || table->isDataLake()
+                || table->isMessageQueue() || table->isExternalDatabase());
 
-        if (!is_external_storage)
+        if (!writes_out_to_external_storage)
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
     }
 
