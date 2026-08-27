@@ -1159,21 +1159,23 @@ TEST_F(ConnectionPoolTest, ProxyTunnelDialsTheCallerResolvedAddress)
     proxy_config.port = proxy_port;
     session.setProxyConfig(proxy_config);
 
-    bool refused = false;
+    /// On Linux the connect to the unbound 127.0.0.99 is refused immediately; on macOS such
+    /// loopback addresses time out instead. Either way the dialed peer address in the message
+    /// proves the tunnel used the caller-resolved address; a regression would reach the listener
+    /// on 127.0.0.1 and fail later in the CONNECT exchange, naming that address instead.
+    bool dialed_the_pinned_address = false;
     try
     {
         session.connect(Poco::Net::SocketAddress("127.0.0.99", proxy_port));
-        FAIL() << "Expected the tunnel connect to be refused";
-    }
-    catch (const Poco::Net::ConnectionRefusedException &)
-    {
-        refused = true;
+        FAIL() << "Expected the tunnel connect to fail";
     }
     catch (const Poco::Exception & e)
     {
-        FAIL() << "The tunnel did not dial the caller-resolved address: " << e.displayText();
+        dialed_the_pinned_address = e.displayText().find("127.0.0.99") != std::string::npos;
+        if (!dialed_the_pinned_address)
+            FAIL() << "The tunnel did not dial the caller-resolved address: " << e.displayText();
     }
-    ASSERT_TRUE(refused);
+    ASSERT_TRUE(dialed_the_pinned_address);
 }
 #endif
 
