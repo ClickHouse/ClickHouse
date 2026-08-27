@@ -433,11 +433,13 @@ SETTINGS max_block_size=10000, max_threads=1, max_execution_time=5,
         ## The LC scan pauses at row 4096 with rows [0, 4096) already committed.
         wait_failpoint(LC_FAULT_NAME)
 
-        ## Hold past max_execution_time so the deadline expires mid-hold. With the default
-        ## interactive_delay the pull loop observes it via checkTimeLimitSoft() and cancels the
-        ## pipeline with CancelledByTimeout (`cancel_reason` stays UNDEFINED), then joins the
-        ## pipeline thread, which is still blocked at the failpoint.
-        time.sleep(30)
+        ## Hold past max_execution_time so the deadline expires mid-hold. In break mode the
+        ## `CancellationChecker` only calls `checkTimeLimit()` (which for `overflow_mode = BREAK` returns
+        ## false and sets no cancel reason), so it never hard-cancels; the executor's `checkTimeLimitSoft`
+        ## is the sole observer and cancels with `CancelledByTimeout` (`cancel_reason` stays UNDEFINED).
+        ## The test is therefore deterministic: the re-armed failpoint below can only be reached via the
+        ## executor-side soft-timeout path.
+        time.sleep(8)
 
         ## Arm the buildFilter failpoint, then let the LC scan resume. `is_cancelled` is set, so the
         ## scan returns a partial mask for [0, 4096). With the fix the chunk is kept (the executor-

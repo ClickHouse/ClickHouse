@@ -625,7 +625,12 @@ void DistinctTransform::transform(Chunk & chunk)
             /// key columns stay aligned; a soft timeout already latched upstream must not truncate here,
             /// otherwise the already-committed prefix would be dropped.
             constexpr size_t filter_chunk_rows = 1u << 13; /// 8192
-            size_t truncated_at = num_rows;
+            /// When the soft timeout was already latched upstream (pre-latched), the null-marking prepass
+            /// committed a prefix of length `num_kept` (it zeroed the tail of `keep`); start the
+            /// materialization limit at that prefix so the monolithic `column->filter` is not asked to walk
+            /// the all-zero tail, which would break the break-mode latency contract by doing almost a full
+            /// chunk of work after the deadline.
+            size_t truncated_at = filter_pre_latched ? num_kept : num_rows;
             for (auto & column : columns)
             {
                 FailPointInjection::pauseFailPoint("distinct_transform_filter_pause");
@@ -638,7 +643,7 @@ void DistinctTransform::transform(Chunk & chunk)
                     return;
                 }
 
-                if (num_rows <= filter_chunk_rows)
+                if (num_rows <= filter_chunk_rows && !filter_pre_latched)
                 {
                     column = column->filter(keep, num_kept);
                     continue;
