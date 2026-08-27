@@ -35,13 +35,6 @@ public:
 
     void applyOrder(SortDescription input_sort_description);
     const SortDescription & getSortDescription() const override;
-
-    /// Declares that the input comes from an operator (e.g. a join above a pushed-down partial
-    /// aggregation) that is not aggregation-aware: its chunks carry no `AggregatedChunkInfo`
-    /// (treated as single-level data; without this an un-annotated chunk is a wiring bug and
-    /// the merging transform throws an exception) and may use special column representations
-    /// (sparse, const, lazy), which get materialized before merging.
-    void allowInputWithoutAggregatedChunkInfo() { allow_input_without_aggregated_chunk_info = true; }
     const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
 
     bool memoryBoundMergingWillBeUsed() const;
@@ -72,9 +65,6 @@ private:
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     const bool should_produce_results_in_order_of_bucket_number;
     const bool memory_bound_merging_of_aggregation_results_enabled;
-
-    /// See `allowInputWithoutAggregatedChunkInfo`.
-    bool allow_input_without_aggregated_chunk_info = false;
 };
 
 }

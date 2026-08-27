@@ -8,14 +8,17 @@
 -- (see `AggregationPushdown::buildPushdownAlternative`) actually firing when it honestly should.
 
 -- Pushdown-enabled twin of `03836_tpch_join_order_plans`, trimmed to `Q18`
--- (`rewrite_in_to_join`): it used to be the only TPC-H query whose plan legitimately differed
--- with `cascades_aggregation_pushdown` on. The gate now rejects that pushdown too: the outer
+-- (`rewrite_in_to_join`): the only TPC-H query whose plan legitimately differs with
+-- `cascades_aggregation_pushdown` on. The cardinality gate still rejects pushing the outer
 -- aggregation's widened `GROUP BY` key set (`c_name`, `c_custkey`, `o_orderkey`, `o_orderdate`,
--- `o_totalprice`) is, at SF100, close to cardinality-unique - the proven composite bound on its
--- output offers no guaranteed shrinkage, so the plan below is now identical whether the setting
--- is on or off; kept as a plan-shape regression pin for the gate's conservatism, not as a
--- pushdown-vs-off demonstration (see the customer/nation query near the end of this file for
--- that role instead).
+-- `o_totalprice`) into the orders/customer side - at SF100 it is close to cardinality-unique,
+-- so the proven composite bound offers no guaranteed shrinkage. What fires instead is the
+-- lineitem-side variant A: no `GROUP BY` key comes from `lineitem`, so the pushed key set is
+-- just the join-condition column `l_orderkey` (NDV 150M vs 600M rows - a proven 4x shrinkage,
+-- and 4x fewer rows through the shuffle below the top join). It wins because the merge-only
+-- `Aggregating` above the join takes the Shuffle strategy directly on the join's `o_orderkey`
+-- partitioning, with no extra exchange - a plan the previous `MergingAggregatedStep`-based merge
+-- (no distribution strategies, full gather below it) could not express.
 -- Every other TPC-H query is already asserted pushdown-off by `03836`; their pushdown-on shapes
 -- turned out to sit on near-ties in the Cascades cost model that resolve differently per build
 -- flavor/machine, so asserting them here produced environment-flaky failures rather than

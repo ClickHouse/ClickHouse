@@ -7,19 +7,19 @@ DelayedCreatingSets
           Sorting
             Expression ((Before ORDER BY + Projection))
               Aggregating
-                Expression ((Before GROUP BY + ))
-                  JoinLogical (Shuffle HashJoin  swapped)
-                    Expression ((WHERE + Change column names to column identifiers))
-                      ShuffleExchange
+                JoinLogical (Shuffle HashJoin  swapped)
+                  ShuffleExchange
+                    Aggregating
+                      Expression ((WHERE + Change column names to column identifiers))
                         ReadFromMergeTree (ParallelRead default.lineitem)
-                    ShuffleExchange
-                      JoinLogical (Shuffle HashJoin  swapped)
-                        Expression ((WHERE + Change column names to column identifiers))
-                          ShuffleExchange
-                            ReadFromMergeTree (ParallelRead default.orders)
-                        Expression (Change column names to column identifiers)
-                          ShuffleExchange
-                            ReadFromMergeTree (ParallelRead default.customer)
+                  ShuffleExchange
+                    JoinLogical (Shuffle HashJoin  swapped)
+                      Expression ((WHERE + Change column names to column identifiers))
+                        ShuffleExchange
+                          ReadFromMergeTree (ParallelRead default.orders)
+                      Expression (Change column names to column identifiers)
+                        ShuffleExchange
+                          ReadFromMergeTree (ParallelRead default.customer)
 -- Q18 rewrite_in_to_join
 Expression (Project names)
   Limit (preliminary LIMIT)
@@ -52,7 +52,7 @@ Expression (Project names)
 Expression (Project names)
   Expression ((Before ORDER BY + Projection))
     Sorting
-      MergingAggregated
+      Aggregating
         JoinLogical (Local HashJoin  swapped)
           Expression (Change column names to column identifiers)
             ReadFromMergeTree (default.nation)

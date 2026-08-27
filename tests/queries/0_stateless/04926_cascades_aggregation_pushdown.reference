@@ -1,6 +1,6 @@
 -- 1. huge left side, few distinct keys: partial aggregation is pushed below the LEFT JOIN
 Expression ((Project names + Projection))
-  MergingAggregated
+  Aggregating
     GatherExchange
       JoinLogical (Broadcast HashJoin )
         Aggregating
@@ -21,7 +21,7 @@ Expression ((Project names + Projection))
               ReadFromMergeTree (ReplicatedRead default.t_push_dims)
 -- 2. same with INNER JOIN
 Expression ((Project names + Projection))
-  MergingAggregated
+  Aggregating
     JoinLogical (Local HashJoin  swapped)
       BuildRuntimeFilter (Build runtime join filter on __table2.key)
         Expression (Change column names to column identifiers)
@@ -90,7 +90,7 @@ Expression ((Project names + Projection))
               ReadFromMergeTree (ReplicatedRead default.t_push_dims)
 -- 5a. aggregate with an argument: sum is pushed
 Expression ((Project names + Projection))
-  MergingAggregated
+  Aggregating
     GatherExchange
       JoinLogical (Broadcast HashJoin )
         Aggregating
@@ -100,7 +100,7 @@ Expression ((Project names + Projection))
           ReadFromMergeTree (ReplicatedRead default.t_push_dims)
 -- 5b. additional GROUP BY key from the right side: still pushed
 Expression ((Project names + Projection))
-  MergingAggregated
+  Aggregating
     JoinLogical (Local HashJoin )
       GatherExchange
         Aggregating
@@ -172,7 +172,7 @@ Expression ((Project names + Projection))
 Expression (Project names)
   Expression ((Before ORDER BY + Projection))
     Sorting
-      MergingAggregated
+      Aggregating
         JoinLogical (Local HashJoin )
           GatherExchange
             Aggregating
@@ -194,7 +194,7 @@ Expression (Project names)
 Expression (Project names)
   Expression ((Before ORDER BY + Projection))
     Sorting
-      MergingAggregated
+      Aggregating
         JoinLogical (Local HashJoin  swapped swapped)
           GatherExchange
             Aggregating
@@ -228,7 +228,7 @@ Expression (Project names)
 5	50
 -- 12. push-right: RIGHT JOIN with a huge right side
 Expression ((Project names + Projection))
-  MergingAggregated
+  Aggregating
     GatherExchange
       JoinLogical (Broadcast HashJoin )
         Aggregating
@@ -238,7 +238,7 @@ Expression ((Project names + Projection))
           ReadFromMergeTree (ReplicatedRead default.t_push_dims)
 -- 13. push-right: INNER JOIN, cost pushes the huge right side
 Expression ((Project names + Projection))
-  MergingAggregated
+  Aggregating
     JoinLogical (Local HashJoin  swapped)
       BuildRuntimeFilter (Build runtime join filter on __table1.key)
         Expression (Change column names to column identifiers)
@@ -247,7 +247,7 @@ Expression ((Project names + Projection))
         Aggregating
           Filter
             ReadFromMergeTree (ParallelRead default.t_push_facts)
--- 14. variant B: LEFT SEMI with join keys subset of GROUP BY keys, no MergingAggregated above the join
+-- 14. variant B: LEFT SEMI with join keys subset of GROUP BY keys, no merge step above the join
 Expression ((Project names + Projection))
   JoinLogical (Local HashJoin  swapped)
     BuildRuntimeFilter (Build runtime join filter on __table2.key)
@@ -291,7 +291,7 @@ Expression ((Project names + Projection))
             ReadFromMergeTree (ParallelRead default.t_push_facts)
 -- 18. B-dominance negative: a GROUP BY key from the other side falls back to variant A
 Expression ((Project names + Projection))
-  MergingAggregated
+  Aggregating
     JoinLogical (Local HashJoin  swapped)
       Expression (Change column names to column identifiers)
         ReadFromMergeTree (default.t_push_dims)
@@ -301,7 +301,7 @@ Expression ((Project names + Projection))
             ReadFromMergeTree (ParallelRead default.t_push_facts)
 -- 19. variant A for LEFT SEMI: the join key is not a GROUP BY key
 Expression ((Project names + Projection))
-  MergingAggregated
+  Aggregating
     GatherExchange
       JoinLogical (Broadcast HashJoin  swapped swapped)
         Aggregating
@@ -312,7 +312,7 @@ Expression ((Project names + Projection))
             ReadFromMergeTree (ReplicatedRead default.t_push_dims)
 -- 20. variant A for LEFT ANTI: a GROUP BY key from the other side falls back to variant A
 Expression ((Project names + Projection))
-  MergingAggregated
+  Aggregating
     JoinLogical (Local HashJoin  swapped)
       BuildRuntimeFilter (Build runtime join filter on __table2.key)
         Expression (Change column names to column identifiers)
@@ -323,7 +323,7 @@ Expression ((Project names + Projection))
             ReadFromMergeTree (ParallelRead default.t_push_facts)
 -- 21. variant A for RIGHT SEMI, push-right: a GROUP BY key from the other side falls back to variant A
 Expression ((Project names + Projection))
-  MergingAggregated
+  Aggregating
     JoinLogical (Local HashJoin  swapped)
       BuildRuntimeFilter (Build runtime join filter on __table1.key)
         Expression (Change column names to column identifiers)
@@ -334,7 +334,7 @@ Expression ((Project names + Projection))
             ReadFromMergeTree (ParallelRead default.t_push_facts)
 -- 22. variant A for RIGHT ANTI, push-right: a GROUP BY key from the other side falls back to variant A
 Expression ((Project names + Projection))
-  MergingAggregated
+  Aggregating
     JoinLogical (Local HashJoin  swapped)
       BuildRuntimeFilter (Build runtime join filter on __table1.key)
         Expression (Change column names to column identifiers)

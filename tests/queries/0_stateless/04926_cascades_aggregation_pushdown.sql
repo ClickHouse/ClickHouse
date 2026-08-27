@@ -2,8 +2,9 @@
 -- no-old-analyzer: distributed planning requires the analyzer.
 
 -- The `cascades_aggregation_pushdown` transformation offers a partial aggregation pushed below
--- a join as a cost-based alternative: `MergingAggregated` above the join, `Aggregating` below
--- on the pushed input. It wins when the pushed side is huge but has few distinct keys.
+-- a join as a cost-based alternative: a merge-only `Aggregating` above the join, a partial
+-- `Aggregating` below on the pushed input. It wins when the pushed side is huge but has few
+-- distinct keys.
 
 DROP TABLE IF EXISTS t_push_facts;
 DROP TABLE IF EXISTS t_push_dims;
@@ -142,7 +143,7 @@ EXPLAIN SELECT count() FROM t_push_dims AS t1 RIGHT JOIN t_push_facts AS t2 ON t
 SELECT '-- 13. push-right: INNER JOIN, cost pushes the huge right side';
 EXPLAIN SELECT count() FROM t_push_dims AS t1 INNER JOIN t_push_facts AS t2 ON t1.key = t2.key GROUP BY t2.key;
 
-SELECT '-- 14. variant B: LEFT SEMI with join keys subset of GROUP BY keys, no MergingAggregated above the join';
+SELECT '-- 14. variant B: LEFT SEMI with join keys subset of GROUP BY keys, no merge step above the join';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT SEMI JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;
 
 SELECT '-- 15. variant B: LEFT ANTI';

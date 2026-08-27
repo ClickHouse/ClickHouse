@@ -7,7 +7,6 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Core/Joins.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
@@ -55,7 +54,7 @@ struct JoinOutputBindings
 /// `cascades_aggregation_pushdown`. Variant A (partial pushdown, shown for pushed side S = L;
 /// push-right is the mirror image):
 ///
-///     Aggregating(final, keys=G, aggs=F)      MergingAggregated(keys=G, only-merge F)
+///     Aggregating(final, keys=G, aggs=F)      Aggregating(only_merge, keys=G, aggs=F)
 ///             |                                            |
 ///           Join(L, R)                =>                 Join'(L', R)
 ///           /      \                                     /      \
@@ -705,20 +704,30 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
     /// post-join states of a different shape than the original aggregation the key was stamped
     /// for, so a shared key would cross-contaminate `HashTablesStatistics`.
     merge_params.stats_collecting_params.setKey(0);
-    auto merge_step = std::make_unique<MergingAggregatedStep>(
+    /// A merge-only `AggregatingStep` rather than a `MergingAggregatedStep`: its `only_merge`
+    /// consume path (`mergeOnBlock`) reads keys and states positionally and never requires
+    /// `AggregatedChunkInfo` on input, so the rebuilt join's output needs no chunk annotation.
+    /// The full `Params` copy above keeps the spill and two-level settings alive for the merge.
+    /// Input-LAYOUT properties of the original aggregation (the sort descriptions, the
+    /// evenly-distributed-read flag) describe the ORIGINAL input and must not be carried onto a
+    /// merge over rebuilt join output; behavior toggles are copied from the original step.
+    auto merge_step = std::make_unique<AggregatingStep>(
         new_join_step->getOutputHeader(),
         std::move(merge_params),
-        agg_step.getGroupingSetsParamsList(),
+        GroupingSetsParamsList{}, /// `checkPattern` bails on grouping sets
         /*final_=*/true,
-        memo.getContext().distributed_aggregation_memory_efficient,
-        agg_step.getTemporaryDataMergeThreads(),
-        agg_step.shouldProduceResultsInBucketOrder(),
         agg_step.getMaxBlockSize(),
         agg_step.getMaxBlockSizeForAggregationInOrder(),
-        agg_step.usingMemoryBoundMerging());
-    /// The join between the partial aggregation and this merge does not annotate chunks with
-    /// `AggregatedChunkInfo`; un-annotated state data is treated as single-level.
-    merge_step->allowInputWithoutAggregatedChunkInfo();
+        agg_step.getMergeThreads(),
+        agg_step.getTemporaryDataMergeThreads(),
+        /*storage_has_evenly_distributed_read_=*/false,
+        agg_step.isGroupByUseNulls(),
+        SortDescription{},
+        SortDescription{},
+        agg_step.shouldProduceResultsInBucketOrder(),
+        agg_step.usingMemoryBoundMerging(),
+        /*explicit_sorting_required_for_aggregation_in_order_=*/false,
+        /*enable_sharding_aggregator_=*/false);
     merge_step->setStepDescription(fmt::format("Merge: {}", agg_step.getStepDescription()), 200);
 
     if (!check_header(*merge_step->getOutputHeader()))

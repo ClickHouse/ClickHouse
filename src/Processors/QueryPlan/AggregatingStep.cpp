@@ -78,6 +78,11 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+/// First query-plan serialization version with the `only_merge` flag (bit 128), set on the merge
+/// step synthesized by the Cascades aggregation pushdown. Gated on both sides so a mixed-version
+/// cluster fails at plan time.
+static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION = 10;
+
 static bool memoryBoundMergingWillBeUsed(
     bool should_produce_results_in_order_of_bucket_number,
     bool memory_bound_merging_of_aggregation_results_enabled,
@@ -1198,7 +1203,8 @@ void AggregatingStep::serialize(Serialization & ctx) const
 {
     /// Flags encode boolean properties that affect the data format or plan structure.
     /// Bit layout: 1=final, 2=overflow_row, 4=group_by_use_nulls, 8=grouping_sets,
-    ///             16=stats_key, 32=in_order_aggregation, 64=explicit_sorting_required.
+    ///             16=stats_key, 32=in_order_aggregation, 64=explicit_sorting_required,
+    ///             128=only_merge.
     UInt8 flags = 0;
     if (final && !ctx.for_cache_key)
         flags |= 1;
@@ -1214,6 +1220,13 @@ void AggregatingStep::serialize(Serialization & ctx) const
         flags |= 32;
     if (explicit_sorting_required_for_aggregation_in_order)
         flags |= 64;
+    /// Deliberately NOT stripped under `for_cache_key`, in contrast to `final` above: `only_merge`
+    /// changes how the input is interpreted (state columns vs argument columns), so two plans
+    /// differing only in it must not share a stats/preallocation cache key. It also cannot break
+    /// the Auto-PR single-node vs distributed hash matching `final` is stripped for: both of those
+    /// builds merge via `MergingAggregatedStep`, never a merge-only `AggregatingStep`.
+    if (params.only_merge)
+        flags |= 128;
 
     /// The in-order aggregation payload exists only since query plan serialization version 2.
     /// Throw rather than send bytes the other side would misread (deserialize checks the same).
@@ -1221,6 +1234,21 @@ void AggregatingStep::serialize(Serialization & ctx) const
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "In-order aggregation in a distributed plan requires query plan serialization "
             "version >= 2; all nodes must run the same version");
+
+    /// The `only_merge` flag exists only since query plan serialization version 10. Throw rather
+    /// than send a bit the other side would ignore, failing at runtime instead (deserialize checks
+    /// the same). Distributed task fragments are always serialized at the current version
+    /// (`serializeQueryPlan` in `DistributedPlanExecutor.cpp`), so this gate cannot fire there -
+    /// an older worker instead rejects the stream's leading version before reaching this step. The
+    /// client-to-server transport negotiates `min(peer, current)` (`Connection::sendQueryPlan` ->
+    /// `QueryPlan::serialize`), so an older server IS reachable through this gate.
+    if ((flags & 128) && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Merge-only aggregation in a distributed plan requires query plan serialization "
+            "version >= {}, but the plan is serialized at version {}; "
+            "`cascades_aggregation_pushdown = 0` avoids producing this plan shape (on a mixed-version "
+            "distributed cluster the plan version itself must also be supported by all workers)",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION, ctx.version);
 
     writeIntBinary(flags, ctx.out);
 
@@ -1267,6 +1295,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     bool has_stats_key = bool(flags & 16);
     bool has_in_order = bool(flags & 32);
     bool explicit_sorting_required = bool(flags & 64);
+    bool only_merge = bool(flags & 128);
 
     /// The in-order aggregation payload exists only since query plan serialization version 2;
     /// on an older stream these bits are garbage, so reject them (serialize checks the same).
@@ -1274,6 +1303,13 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "In-order aggregation flags in a version {} query plan stream; they require version >= 2",
             ctx.version);
+
+    /// The `only_merge` flag exists only since query plan serialization version 10; on an older
+    /// stream the bit is garbage, so reject it (serialize checks the same).
+    if (only_merge && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The merge-only aggregation flag in a version {} query plan stream; it requires version >= {}",
+            ctx.version, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION);
 
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
@@ -1344,7 +1380,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::min_count_to_compile_aggregate_expression],
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
         ctx.settings[QueryPlanSerializationSetting::enable_software_prefetch_in_aggregation],
-        /* only_merge */ false,
+        only_merge,
         ctx.settings[QueryPlanSerializationSetting::optimize_group_by_constant_keys],
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,

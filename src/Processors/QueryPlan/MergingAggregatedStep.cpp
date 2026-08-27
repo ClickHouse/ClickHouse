@@ -1,7 +1,5 @@
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/Context.h>
-#include <Columns/ColumnSparse.h>
-#include <Processors/ISimpleTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -9,7 +7,6 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
-#include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
@@ -45,12 +42,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
-    extern const int SUPPORT_IS_DISABLED;
 }
-
-/// First query-plan serialization version with the `allow_input_without_aggregated_chunk_info`
-/// flag (bit 64). Gated on both sides so a mixed-version cluster fails at plan time.
-static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO = 10;
 
 static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_of_bucket_number)
 {
@@ -101,39 +93,8 @@ void MergingAggregatedStep::applyOrder(SortDescription input_sort_description)
     group_by_sort_description = std::move(input_sort_description);
 }
 
-/// Adapts chunks of an operator that is not aggregation-aware for merging: attaches a default
-/// single-level `AggregatedChunkInfo` to chunks that carry no chunk info, and materializes
-/// special column representations (sparse, const, lazy), which the merge path does not expect.
-/// See `MergingAggregatedStep::allowInputWithoutAggregatedChunkInfo`.
-class AttachAggregatedChunkInfoTransform : public ISimpleTransform
-{
-public:
-    explicit AttachAggregatedChunkInfoTransform(SharedHeader header)
-        : ISimpleTransform(header, header, false)
-    {
-    }
-
-    String getName() const override { return "AttachAggregatedChunkInfo"; }
-
-    void transform(Chunk & chunk) override
-    {
-        const size_t num_rows = chunk.getNumRows();
-        auto columns = chunk.detachColumns();
-        for (auto & column : columns)
-            column = removeSpecialRepresentations(column)->convertToFullColumnIfConst();
-        chunk.setColumns(std::move(columns), num_rows);
-
-        if (!chunk.getChunkInfos().get<AggregatedChunkInfo>() && !chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
-            chunk.getChunkInfos().add(std::make_shared<AggregatedChunkInfo>());
-    }
-};
-
 void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    if (allow_input_without_aggregated_chunk_info)
-        pipeline.addSimpleTransform(
-            [](const SharedHeader & header) { return std::make_shared<AttachAggregatedChunkInfoTransform>(header); });
-
     /// Update values from settings if plan was deserialized.
     /// An optimizer rewrite can build this step from the params of a deserialized `AggregatingStep`,
     /// which carries the "resolve locally later" sentinel 0 for both thread counts.
@@ -259,7 +220,6 @@ QueryPlanStepPtr MergingAggregatedStep::clone() const
         memory_bound_merging_max_block_bytes,
         memory_bound_merging_of_aggregation_results_enabled);
     cloned->group_by_sort_description = group_by_sort_description;
-    cloned->allow_input_without_aggregated_chunk_info = allow_input_without_aggregated_chunk_info;
     return cloned;
 }
 
@@ -321,23 +281,6 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
         flags |= 16;
     if (memory_bound_merging_of_aggregation_results_enabled)
         flags |= 32;
-    if (allow_input_without_aggregated_chunk_info)
-        flags |= 64;
-
-    /// The flag exists only since query plan serialization version 10. Throw rather than send a
-    /// bit the other side would ignore, failing at runtime instead (deserialize checks the same).
-    /// Distributed task fragments are always serialized at the current version
-    /// (`serializeQueryPlan` in `DistributedPlanExecutor.cpp`), so this gate cannot fire there -
-    /// an older worker instead rejects the stream's leading version before reaching this step. The
-    /// client-to-server transport negotiates `min(peer, current)` (`Connection::sendQueryPlan` ->
-    /// `QueryPlan::serialize`), so an older server IS reachable through this gate.
-    if ((flags & 64) && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Merging aggregated data produced by a non-aggregating operator requires query plan "
-            "serialization version >= {}, but the plan is serialized at version {}; "
-            "`cascades_aggregation_pushdown = 0` avoids producing this plan shape (on a mixed-version "
-            "distributed cluster the plan version itself must also be supported by all workers)",
-            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO, ctx.version);
 
     writeIntBinary(flags, ctx.out);
 
@@ -379,15 +322,6 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     const bool has_stats_key = bool(flags & 8);
     const bool should_produce_results_in_order_of_bucket_number = bool(flags & 16);
     const bool memory_bound_merging_of_aggregation_results_enabled = bool(flags & 32);
-    const bool allow_input_without_aggregated_chunk_info = bool(flags & 64);
-
-    /// The flag exists only since query plan serialization version 10; on an older stream the bit
-    /// is garbage, so reject it (serialize checks the same).
-    if (allow_input_without_aggregated_chunk_info
-        && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO)
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "The no-chunk-info merging flag in a version {} query plan stream; it requires version >= {}",
-            ctx.version, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO);
 
     UInt64 num_keys = 0;
     readVarUInt(num_keys, ctx.in);
@@ -461,8 +395,6 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
         memory_bound_merging_of_aggregation_results_enabled);
 
     merging_aggregated_step->applyOrder(std::move(group_by_sort_description));
-    if (allow_input_without_aggregated_chunk_info)
-        merging_aggregated_step->allowInputWithoutAggregatedChunkInfo();
 
     return merging_aggregated_step;
 }

@@ -95,9 +95,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// per-field version gate; the rest rely on the whole stream being rejected by its leading version.
 /// Version 9 registers the `Rollup` and `Cube` steps, so a plan with `GROUP BY ... WITH ROLLUP`
 /// or `WITH CUBE` can be shipped under `make_distributed_plan`.
-/// Version 10 adds the `allow_input_without_aggregated_chunk_info` flag on `MergingAggregatedStep`
-/// (set by the Cascades aggregation-pushdown transformation). Both sides gate the flag on the
-/// version, so a mixed-version cluster fails at plan time instead of at runtime.
+/// Version 10 adds the `only_merge` flag (bit 128) on `AggregatingStep`, set on the merge step
+/// synthesized by the Cascades aggregation-pushdown transformation. Both sides gate the flag on
+/// the version, so a mixed-version cluster fails at plan time instead of at runtime.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 10;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front

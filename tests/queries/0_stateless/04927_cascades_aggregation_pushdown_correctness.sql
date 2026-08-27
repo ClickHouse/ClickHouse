@@ -64,26 +64,30 @@ SET param__internal_join_table_stat_hints = '{"t_corr_left": {"cardinality": 100
 
 -- Canaries: prove the stat hints above actually steer the cascades optimizer to the pushed
 -- shapes for this file's tables, not to a classic plan that would make every on/off pair below
--- compare classic-vs-classic while staying green. Presence of `JoinLogical`/`Aggregating`/
--- `MergingAggregated` lines is not enough: the classic distributed plan (two-stage split) has all
--- three too, and classic shuffle aggregation drops `MergingAggregated` without being pushed
--- either, so `MergingAggregated` presence/absence alone cannot tell pushed from classic. The
--- robust, churn-insensitive discriminator is line ORDER in the top-down `EXPLAIN` output: in every
--- pushed shape (A and B) the first `JoinLogical` line is ABOVE the first `Aggregating` line;
--- classic two-stage AND classic shuffle both place `Aggregating` above the join. `minIf` returns
--- the default value on no match, so the order check alone would be illegible on an absent node -
--- hence the explicit presence conjuncts alongside it. `trimLeft(explain) LIKE 'Aggregating%'`
--- (anchored, like 04926's task-budget case) rather than a bare substring keeps working even if
--- some step's descriptive text ever contains the word `Aggregating`; `explain_query_plan_default
--- = 'legacy'` is pinned on the explained query because the anchor relies on plain-text indentation,
--- not this file's default pretty tree-drawing prefix.
+-- compare classic-vs-classic while staying green. The discriminators work on `Aggregating` line
+-- COUNT and ORDER in the top-down `EXPLAIN` output. Pushed variant A is an aggregation sandwich -
+-- the merge-only `Aggregating` ABOVE the join, the partial `Aggregating` BELOW it - and the only
+-- shape with two `Aggregating` lines (classic two-stage and classic shuffle both have exactly
+-- one: the classic merge prints as `MergingAggregated`); the order conjuncts pin the sandwich.
+-- Pushed variant B keeps a single `Aggregating` with the first `JoinLogical` line ABOVE it, while
+-- classic places its `Aggregating` above the join, so the order conjunct separates B from classic
+-- and the count conjunct separates B from A. No `MergingAggregated` conjunct anywhere: pushed
+-- variant B legitimately contains one `MergingAggregated` (the two-stage split of the pushed
+-- final aggregation below the join), so its absence is not even a valid sanity check. `minIf`
+-- returns the default value on no match, so the order checks alone would be illegible on an
+-- absent node - hence the explicit presence conjuncts alongside them. `trimLeft(explain) LIKE
+-- 'Aggregating%'` (anchored, like 04926's task-budget case) rather than a bare substring keeps
+-- working even if some step's descriptive text ever contains the word `Aggregating`;
+-- `explain_query_plan_default = 'legacy'` is pinned on the explained query because the anchor
+-- relies on plain-text indentation, not this file's default pretty tree-drawing prefix.
 SELECT '-- canary: variant A (partial pushdown) fires for case 1''s query';
 SELECT
     countIf(explain LIKE '%JoinLogical%') > 0 AS has_join,
-    countIf(trimLeft(explain) LIKE 'Aggregating%') > 0 AS has_aggregation,
-    countIf(explain LIKE '%MergingAggregated%') >= 1 AS has_merging_aggregated,
+    countIf(trimLeft(explain) LIKE 'Aggregating%') >= 2 AS has_merge_and_partial,
     minIf(rn, explain LIKE '%JoinLogical%')
-        < minIf(rn, trimLeft(explain) LIKE 'Aggregating%') AS join_above_aggregation
+        < maxIf(rn, trimLeft(explain) LIKE 'Aggregating%') AS partial_below_join,
+    minIf(rn, trimLeft(explain) LIKE 'Aggregating%')
+        < minIf(rn, explain LIKE '%JoinLogical%') AS merge_above_join
 FROM
 (
     SELECT explain, rowNumberInAllBlocks() AS rn
@@ -94,11 +98,10 @@ FROM
     )
 ) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
-SELECT '-- canary: variant B (full pushdown) fires for case 13''s query (no MergingAggregated above the join)';
+SELECT '-- canary: variant B (full pushdown) fires for case 13''s query (single Aggregating, below the join)';
 SELECT
     countIf(explain LIKE '%JoinLogical%') > 0 AS has_join,
-    countIf(trimLeft(explain) LIKE 'Aggregating%') > 0 AS has_aggregation,
-    countIf(explain LIKE '%MergingAggregated%') = 0 AS no_merging_aggregated,
+    countIf(trimLeft(explain) LIKE 'Aggregating%') = 1 AS single_aggregation,
     minIf(rn, explain LIKE '%JoinLogical%')
         < minIf(rn, trimLeft(explain) LIKE 'Aggregating%') AS join_above_aggregation
 FROM
