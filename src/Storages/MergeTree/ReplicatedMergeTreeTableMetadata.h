@@ -55,7 +55,8 @@ struct ReplicatedMergeTreeTableMetadata
     static ReplicatedMergeTreeTableMetadata parseAndNormalize(
         const String & s,
         const ColumnsDescription & columns,
-        const IndicesDescription & local_indices,
+        bool add_minmax_index_for_numeric_columns,
+        bool add_minmax_index_for_string_columns,
         ContextPtr context);
 
     void write(WriteBuffer & out) const;

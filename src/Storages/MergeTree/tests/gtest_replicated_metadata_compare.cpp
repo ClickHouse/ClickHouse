@@ -169,7 +169,7 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, ImmutableKeyMismatchThrows)
     EXPECT_ANY_THROW(diffOf(local, other_partition));
 }
 
-TEST(ReplicatedMergeTreeTableMetadataCompare, NormalizeImplicitIndicesUsesLocalOrigin)
+TEST(ReplicatedMergeTreeTableMetadataCompare, NormalizeImplicitIndicesUsesAutomaticIndexSettings)
 {
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
@@ -182,53 +182,32 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, NormalizeImplicitIndicesUsesLocalO
     /// is built with `makeASTFunction`, so it carries an (empty) argument list and formats as `minmax()`.
     fields.indices = "auto_minmax_index_x x TYPE minmax() GRANULARITY 1";
     const auto serialized = makeMetadata(fields).toString();
-    auto local_indices = IndicesDescription::parse(fields.indices, columns, /* escape_index_filenames */ true, getContext().context);
 
-    /// The automatic-index prefix is legal for an explicitly declared index while the setting is
-    /// disabled. It must remain in the Keeper metadata instead of being guessed implicit.
-    auto explicit_metadata = ReplicatedMergeTreeTableMetadata::parseAndNormalize(serialized, columns, local_indices, getContext().context);
-    EXPECT_EQ(explicit_metadata.skip_indices, fields.indices);
-
-    /// An index known to be implicitly created is omitted because current replicas do not store
-    /// implicit indexes in Keeper metadata.
-    local_indices.front().is_implicitly_created = true;
-    auto implicit_metadata = ReplicatedMergeTreeTableMetadata::parseAndNormalize(serialized, columns, local_indices, getContext().context);
+    /// While the automatic-index setting for the column's category is enabled, an explicitly
+    /// declared index with the reserved prefix is rejected at CREATE/ALTER time, so the entry can
+    /// only be legacy pre-25.12 implicit metadata and is stripped.
+    auto implicit_metadata = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+        serialized, columns,
+        /* add_minmax_index_for_numeric_columns */ true, /* add_minmax_index_for_string_columns */ false,
+        getContext().context);
     EXPECT_TRUE(implicit_metadata.skip_indices.empty());
 
-    /// A joining replica with automatic indices disabled has no local counterpart. The exact
-    /// canonical pre-25.12 implicit definition must still be removed.
-    auto disabled_metadata = ReplicatedMergeTreeTableMetadata::parseAndNormalize(serialized, columns, {}, getContext().context);
-    EXPECT_TRUE(disabled_metadata.skip_indices.empty());
-}
+    /// The reserved prefix is legal for an explicitly declared index exactly while both settings
+    /// are disabled. Nothing is stripped then, so an explicit index stays visible to the metadata
+    /// comparison even when the Keeper entry is newer than the local snapshot.
+    auto explicit_metadata = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+        serialized, columns,
+        /* add_minmax_index_for_numeric_columns */ false, /* add_minmax_index_for_string_columns */ false,
+        getContext().context);
+    EXPECT_EQ(explicit_metadata.skip_indices, fields.indices);
 
-TEST(ReplicatedMergeTreeTableMetadataCompare, NewerRemoteExplicitAutoMinMaxIndexIsNotStripped)
-{
-    tryRegisterFunctions();
-    tryRegisterAggregateFunctions();
-
-    /// Two columns of the same category: a pre-25.12 replica would have written an implicit index
-    /// for both of them, so a Keeper entry holding only one of them is not legacy metadata.
-    ColumnsDescription columns;
-    columns.add(ColumnDescription("x", std::make_shared<DataTypeUInt64>()));
-    columns.add(ColumnDescription("y", std::make_shared<DataTypeUInt64>()));
-
-    MetadataFields fields;
-    /// An index a user is allowed to declare while `add_minmax_index_for_numeric_columns = 0`,
-    /// added on another replica and not applied locally yet.
-    fields.indices = "auto_minmax_index_x x TYPE minmax() GRANULARITY 1";
-    const auto serialized = makeMetadata(fields).toString();
-
-    /// The local snapshot has no counterpart because this is exactly the change to apply. The
-    /// index must survive normalization, otherwise the comparison misses the metadata change.
-    auto from_zk = ReplicatedMergeTreeTableMetadata::parseAndNormalize(serialized, columns, {}, getContext().context);
-    EXPECT_EQ(from_zk.skip_indices, fields.indices);
-
-    /// The same entry is recognized as legacy implicit metadata once it covers the whole category.
-    MetadataFields legacy = fields;
-    legacy.indices = "auto_minmax_index_x x TYPE minmax() GRANULARITY 1, auto_minmax_index_y y TYPE minmax() GRANULARITY 1";
-    auto legacy_from_zk = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
-        makeMetadata(legacy).toString(), columns, {}, getContext().context);
-    EXPECT_TRUE(legacy_from_zk.skip_indices.empty());
+    /// Only the setting matching the column's category strips the entry: a numeric column's index
+    /// is untouched when only the string setting is enabled.
+    auto other_category_metadata = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+        serialized, columns,
+        /* add_minmax_index_for_numeric_columns */ false, /* add_minmax_index_for_string_columns */ true,
+        getContext().context);
+    EXPECT_EQ(other_category_metadata.skip_indices, fields.indices);
 }
 
 TEST(ReplicatedMergeTreeTableMetadataCompare, TTLSemanticsOutsideExpressionAreSignificant)
