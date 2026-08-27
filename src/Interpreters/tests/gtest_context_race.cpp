@@ -236,17 +236,19 @@ TEST(Context, MakeQueryContextDoesNotInheritPrivileges)
 /// Context::getWriteSettings() and a concurrent settings write.
 ///
 /// The writers this test exercises (`Context::setSetting` -> `setSettingWithLock`) hold
-/// Context::mutex exclusively, while the two getters read 56 settings between them through the
-/// unsynchronized `getSettingsRef()` accessor. A background thread with no query context resolves free
+/// Context::mutex exclusively, while the two getters read dozens of settings between them through
+/// the unsynchronized `getSettingsRef()` accessor. A background thread with no query context resolves free
 /// `DB::getReadSettings()` to the global context, so it reads the same block a settings write
 /// mutates. `local_filesystem_read_method` is a `SettingFieldString`, so the reader can also
 /// observe a torn `std::string`.
 ///
 /// ThreadSanitizer reports races per memory address, so the writer mutates a setting behind every
 /// read that is expected to be synchronized: the ones the two getters read directly, and the four
-/// bandwidths the throttler getters read. Keeping all four bandwidths non-zero also makes every
-/// throttler getter take its own exclusive lock on each call, which must not overlap the settings
-/// read, or this test deadlocks.
+/// bandwidths. The readers also call the four throttler getters directly, because that is the only
+/// path on which a getter reads a bandwidth under its own lock: from `getReadSettings` and
+/// `getWriteSettings` the value arrives as an argument. Keeping all four bandwidths non-zero also
+/// makes every throttler getter take its own exclusive lock on each call, which must not overlap the
+/// settings read, or this test deadlocks.
 ///
 /// This test only carries signal on a ThreadSanitizer build, where it reports a race between
 /// `Context::getReadSettings` and `SettingsImpl::set` without the fix. On every other build it
@@ -276,6 +278,10 @@ TEST(Context, GetReadSettingsRace)
                 {
                     (void)context->getReadSettings();
                     (void)context->getWriteSettings();
+                    (void)context->getRemoteReadThrottler();
+                    (void)context->getLocalReadThrottler();
+                    (void)context->getRemoteWriteThrottler();
+                    (void)context->getLocalWriteThrottler();
                 }
                 catch (...) // Ok: a torn read of a string setting throws UNKNOWN_READ_METHOD  // NOLINT(bugprone-empty-catch)
                 {

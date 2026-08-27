@@ -2154,11 +2154,14 @@ public:
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
 
-    ThrottlerPtr getRemoteReadThrottler() const;
-    ThrottlerPtr getRemoteWriteThrottler() const;
+    /// `bandwidth` is the matching `max_*_bandwidth` setting, read by the caller under the settings
+    /// lock and passed in once that lock is released, never while it is held: these getters take
+    /// `mutex` exclusively themselves. Without it the setting is read here under a shared lock.
+    ThrottlerPtr getRemoteReadThrottler(std::optional<UInt64> bandwidth = {}) const;
+    ThrottlerPtr getRemoteWriteThrottler(std::optional<UInt64> bandwidth = {}) const;
 
-    ThrottlerPtr getLocalReadThrottler() const;
-    ThrottlerPtr getLocalWriteThrottler() const;
+    ThrottlerPtr getLocalReadThrottler(std::optional<UInt64> bandwidth = {}) const;
+    ThrottlerPtr getLocalWriteThrottler(std::optional<UInt64> bandwidth = {}) const;
 
     ThrottlerPtr getBackupsThrottler() const;
 

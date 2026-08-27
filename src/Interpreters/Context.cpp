@@ -5723,7 +5723,7 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
     return shared->replicated_sends_throttler;
 }
 
-ThrottlerPtr Context::getRemoteReadThrottler() const
+ThrottlerPtr Context::getRemoteReadThrottler(std::optional<UInt64> bandwidth) const
 {
     ThrottlerPtr throttler;
     {
@@ -5736,23 +5736,23 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
         addThrottler(throttler, process_list_element->getUserNetworkThrottler());
 
     /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
-    UInt64 bandwidth = 0;
+    if (!bandwidth)
     {
         SharedLockGuard settings_lock(mutex);
         bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth];
     }
 
-    if (bandwidth)
+    if (*bandwidth)
     {
         std::lock_guard lock(mutex);
         if (!remote_read_query_throttler)
-            remote_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteReadThrottlerBytes, ProfileEvents::QueryRemoteReadThrottlerSleepMicroseconds);
+            remote_read_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryRemoteReadThrottlerBytes, ProfileEvents::QueryRemoteReadThrottlerSleepMicroseconds);
         throttler = remote_read_query_throttler;
     }
     return throttler;
 }
 
-ThrottlerPtr Context::getRemoteWriteThrottler() const
+ThrottlerPtr Context::getRemoteWriteThrottler(std::optional<UInt64> bandwidth) const
 {
     ThrottlerPtr throttler;
     {
@@ -5765,23 +5765,23 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
         addThrottler(throttler, process_list_element->getUserNetworkThrottler());
 
     /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
-    UInt64 bandwidth = 0;
+    if (!bandwidth)
     {
         SharedLockGuard settings_lock(mutex);
         bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth];
     }
 
-    if (bandwidth)
+    if (*bandwidth)
     {
         std::lock_guard lock(mutex);
         if (!remote_write_query_throttler)
-            remote_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteWriteThrottlerBytes, ProfileEvents::QueryRemoteWriteThrottlerSleepMicroseconds);
+            remote_write_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryRemoteWriteThrottlerBytes, ProfileEvents::QueryRemoteWriteThrottlerSleepMicroseconds);
         throttler = remote_write_query_throttler;
     }
     return throttler;
 }
 
-ThrottlerPtr Context::getLocalReadThrottler() const
+ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) const
 {
     ThrottlerPtr throttler;
     {
@@ -5790,23 +5790,23 @@ ThrottlerPtr Context::getLocalReadThrottler() const
     }
 
     /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
-    UInt64 bandwidth = 0;
+    if (!bandwidth)
     {
         SharedLockGuard settings_lock(mutex);
         bandwidth = getSettingsRef()[Setting::max_local_read_bandwidth];
     }
 
-    if (bandwidth)
+    if (*bandwidth)
     {
         std::lock_guard lock(mutex);
         if (!local_read_query_throttler)
-            local_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
+            local_read_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
         throttler = local_read_query_throttler;
     }
     return throttler;
 }
 
-ThrottlerPtr Context::getLocalWriteThrottler() const
+ThrottlerPtr Context::getLocalWriteThrottler(std::optional<UInt64> bandwidth) const
 {
     ThrottlerPtr throttler;
     {
@@ -5815,17 +5815,17 @@ ThrottlerPtr Context::getLocalWriteThrottler() const
     }
 
     /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
-    UInt64 bandwidth = 0;
+    if (!bandwidth)
     {
         SharedLockGuard settings_lock(mutex);
         bandwidth = getSettingsRef()[Setting::max_local_write_bandwidth];
     }
 
-    if (bandwidth)
+    if (*bandwidth)
     {
         std::lock_guard lock(mutex);
         if (!local_write_query_throttler)
-            local_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalWriteThrottlerBytes, ProfileEvents::QueryLocalWriteThrottlerSleepMicroseconds);
+            local_write_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryLocalWriteThrottlerBytes, ProfileEvents::QueryLocalWriteThrottlerSleepMicroseconds);
         throttler = local_write_query_throttler;
     }
     return throttler;
@@ -8782,12 +8782,16 @@ ReadSettings Context::getReadSettings() const
     res.distributed_cache_settings.validate();
 #endif
 
+    /// Read here so that the throttler getters below do not have to take this lock again.
+    const UInt64 remote_bandwidth = settings_ref[Setting::max_remote_read_network_bandwidth];
+    const UInt64 local_bandwidth = settings_ref[Setting::max_local_read_bandwidth];
+
     lock.unlock();
 
     res.page_cache_settings.cache = getPageCache();
     res.local_fs_settings.mmap_cache = getMMappedFileCache().get();
-    res.remote_throttler = getRemoteReadThrottler();
-    res.local_throttler = getLocalReadThrottler();
+    res.remote_throttler = getRemoteReadThrottler(remote_bandwidth);
+    res.local_throttler = getLocalReadThrottler(local_bandwidth);
 
     return res;
 }
@@ -8814,10 +8818,14 @@ WriteSettings Context::getWriteSettings() const
     res.distributed_cache_settings.load(settings_ref);
 #endif
 
+    /// Read here so that the throttler getters below do not have to take this lock again.
+    const UInt64 remote_bandwidth = settings_ref[Setting::max_remote_write_network_bandwidth];
+    const UInt64 local_bandwidth = settings_ref[Setting::max_local_write_bandwidth];
+
     lock.unlock();
 
-    res.remote_throttler = getRemoteWriteThrottler();
-    res.local_throttler = getLocalWriteThrottler();
+    res.remote_throttler = getRemoteWriteThrottler(remote_bandwidth);
+    res.local_throttler = getLocalWriteThrottler(local_bandwidth);
 
     return res;
 }
