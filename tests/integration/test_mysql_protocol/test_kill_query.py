@@ -10,14 +10,14 @@ MYSQL_PORT = 9001
 
 FAULT_NAME = "mysql_output_format_mid_loop_pause"
 
-ROW_COUNT = 1000
+ROW_COUNT = 10
 
 # The row index `MySQLOutputFormat::consume` parks on when the failpoint is enabled.
 PAUSE_AT_ROW = 5
 
 # `max_block_size` equal to the row count clamps `numbers` to one stream, so the whole result
 # arrives as one chunk and only the per-row cancellation check can leave the row loop early.
-SELECT_FROM_NUMBERS = f"""SELECT toString(number), repeat('x', 2000) FROM numbers({ROW_COUNT})
+SELECT_FROM_NUMBERS = f"""SELECT toString(number), repeat('x', 160000) FROM numbers({ROW_COUNT})
 SETTINGS max_block_size = {ROW_COUNT}"""
 
 cluster = ClickHouseCluster(__file__)
@@ -120,10 +120,10 @@ def test_kill_query_during_output(started_cluster):
     assert client_error[0] is not None, "the client did not observe an error"
     assert "Query was cancelled" in client_error[0], client_error[0]
 
-    # Rows up to and including the parked one are already on their way, and the next per-row
-    # check has to end the loop. Without that check the whole chunk is written and the client
-    # receives all ROW_COUNT rows before the same cancellation error.
-    assert rows_seen[0] <= PAUSE_AT_ROW + 1, rows_seen[0]
+    # Rows up to and including the parked one are already on their way and the next per-row
+    # check ends the loop, so the count is exact. Without that check the whole chunk is
+    # written and the client receives all ROW_COUNT rows before the same cancellation error.
+    assert rows_seen[0] == PAUSE_AT_ROW + 1, rows_seen[0]
 
     result = node.query(
         f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'",

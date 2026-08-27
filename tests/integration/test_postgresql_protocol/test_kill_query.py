@@ -10,14 +10,14 @@ server_port = 5433
 
 FAULT_NAME = "postgresql_output_format_mid_loop_pause"
 
-ROW_COUNT = 1000
+ROW_COUNT = 10
 
 # The row index `PostgreSQLOutputFormat::consume` parks on when the failpoint is enabled.
 PAUSE_AT_ROW = 5
 
 # `max_block_size` equal to the row count clamps `numbers` to one stream, so the whole result
 # arrives as one chunk and only the per-row cancellation check can leave the row loop early.
-SELECT_FROM_NUMBERS = f"""SELECT toString(number), repeat('x', 2000) FROM numbers({ROW_COUNT})
+SELECT_FROM_NUMBERS = f"""SELECT toString(number), repeat('x', 160000) FROM numbers({ROW_COUNT})
 SETTINGS max_block_size = {ROW_COUNT}"""
 
 cluster = ClickHouseCluster(__file__)
@@ -127,10 +127,9 @@ def test_kill_query_during_output(started_cluster):
     assert int(result.strip()) == 0
 
     node.query("SYSTEM FLUSH LOGS", user="default", password="123")
-    # Counts only bytes flushed while the query context was attached. The rows the loop
-    # buffered reach the wire later, on the handler's `ErrorResponse` flush, once the
-    # `QueryScope` has unwound. The result is deliberately larger than the 1 MiB socket
-    # buffer, so a cancellation observed late in the chunk must cross a flush counted here.
+    # Counts only bytes flushed while the query context was attached; the rows the loop
+    # buffered reach the wire later, once the `QueryScope` has unwound. One row beyond the
+    # parked one overflows the 1 MiB socket buffer, so 0 bounds the loop at PAUSE_AT_ROW + 1.
     sent_bytes = node.query(
         "SELECT ProfileEvents['NetworkSendBytes'] FROM system.query_log "
         f"WHERE query_id='{query_id}' AND type = 'ExceptionWhileProcessing'",
