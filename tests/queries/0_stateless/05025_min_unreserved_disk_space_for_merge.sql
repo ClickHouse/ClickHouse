@@ -42,3 +42,37 @@ OPTIMIZE TABLE t_min_unreserved_rep;
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_min_unreserved_rep' AND active;
 
 DROP TABLE t_min_unreserved_rep;
+
+-- OPTIMIZE with FINAL or with an explicit PARTITION bypasses the cap, so the protected
+-- headroom never blocks a merge the user asked for.
+DROP TABLE IF EXISTS t_min_unreserved_final;
+CREATE TABLE t_min_unreserved_final (x UInt64) ENGINE = MergeTree ORDER BY x
+    SETTINGS min_unreserved_disk_space_for_merge = 1125899906842624;
+
+INSERT INTO t_min_unreserved_final VALUES (1);
+INSERT INTO t_min_unreserved_final VALUES (2);
+
+OPTIMIZE TABLE t_min_unreserved_final FINAL;
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_min_unreserved_final' AND active;
+
+DROP TABLE t_min_unreserved_final;
+
+-- Same for the replicated engine: the queue must not re-apply the cap to these entries,
+-- otherwise it postpones them forever and the query hangs.
+DROP TABLE IF EXISTS t_min_unreserved_rep_final;
+CREATE TABLE t_min_unreserved_rep_final (x UInt64)
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_min_unreserved_rep_final', '1') ORDER BY x
+    SETTINGS min_unreserved_disk_space_for_merge = 1125899906842624;
+
+INSERT INTO t_min_unreserved_rep_final VALUES (1);
+INSERT INTO t_min_unreserved_rep_final VALUES (2);
+
+OPTIMIZE TABLE t_min_unreserved_rep_final PARTITION tuple();
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_min_unreserved_rep_final' AND active;
+
+INSERT INTO t_min_unreserved_rep_final VALUES (3);
+
+OPTIMIZE TABLE t_min_unreserved_rep_final FINAL;
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_min_unreserved_rep_final' AND active;
+
+DROP TABLE t_min_unreserved_rep_final;

@@ -70,22 +70,26 @@ UInt64 estimateAtLeastAvailableSpace(const PartsRange & range)
     return static_cast<UInt64>(static_cast<double>(bytes_size) * DISK_USAGE_COEFFICIENT_TO_SELECT);
 }
 
-UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data)
+UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data, bool respect_min_unreserved_space)
 {
     size_t scheduled_tasks_count = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
 
     auto max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
-    return getMaxSourcePartsBytesForMerge(data, max_tasks_count, scheduled_tasks_count);
+    return getMaxSourcePartsBytesForMerge(data, max_tasks_count, scheduled_tasks_count, respect_min_unreserved_space);
 }
 
-UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data, size_t max_count, size_t scheduled_tasks_count)
+UInt64 getMaxSourcePartsBytesForMerge(
+    const MergeTreeData & data, size_t max_count, size_t scheduled_tasks_count, bool respect_min_unreserved_space)
 {
     const auto data_settings = data.getSettings();
 
     /// Keep some unreserved space out of merges' reach, so that they cannot starve inserts (see #80006).
     size_t max_unreserved_free_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
-    size_t space_to_protect = (*data_settings)[MergeTreeSetting::min_unreserved_disk_space_for_merge];
-    max_unreserved_free_space -= std::min(max_unreserved_free_space, space_to_protect);
+    if (respect_min_unreserved_space)
+    {
+        size_t space_to_protect = (*data_settings)[MergeTreeSetting::min_unreserved_disk_space_for_merge];
+        max_unreserved_free_space -= std::min(max_unreserved_free_space, space_to_protect);
+    }
 
     return getMaxSourcePartsBytesForMerge(
         /*max_count=*/max_count,

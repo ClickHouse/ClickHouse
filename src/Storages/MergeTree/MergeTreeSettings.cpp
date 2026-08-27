@@ -519,8 +519,9 @@ Unlike `keep_free_space_bytes`, the protected space remains usable by
 ClickHouse itself - it is only excluded from merge scheduling. The setting has
 no effect on disks with unlimited space (such as object storage).
 
-Merges initiated by [OPTIMIZE FINAL](/reference/statements/optimize) ignore
-this setting (only the free disk space is taken into account).
+Merges initiated by [OPTIMIZE](/reference/statements/optimize) with `FINAL` or
+with an explicit `PARTITION` ignore this setting (only the free disk space is
+taken into account).
 )", 0) \
     DECLARE(UInt64, max_replicated_merges_in_queue, 1000, R"(
 How many tasks of merging and mutating parts are allowed simultaneously in
