@@ -1,0 +1,16 @@
+Without SELECT on the source table
+ACCESS_DENIED
+Without SELECT on the source table, structure only
+ACCESS_DENIED
+With SELECT on a single column of the source table
+ACCESS_DENIED
+ACCESS_DENIED
+With SELECT on every column of the source table
+a	['LZ4']
+b	['LZ4']
+part_name
+column
+substream
+data_compressed_bytes
+data_uncompressed_bytes
+codec_block_counts

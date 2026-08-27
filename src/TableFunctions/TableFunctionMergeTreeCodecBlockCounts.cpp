@@ -71,6 +71,11 @@ ColumnsDescription TableFunctionMergeTreeCodecBlockCounts::getActualTableStructu
 {
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
 
+    /// Resolving the structure is a read of the source table, so it needs the same access as reading it.
+    /// Checked before anything is derived from the table, so that a user without `SELECT` on it cannot learn
+    /// its engine from the error below. `StorageMergeTreeCodecBlockCounts::read` checks again for the read itself.
+    StorageMergeTreeCodecBlockCounts::checkSourceTableAccess(source_table, context);
+
     const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
     if (!merge_tree)
         throw Exception(
@@ -124,6 +129,8 @@ Reports, per (part, column, substream) of a MergeTree table, how many compressed
 Selecting `codec_block_counts` reads `.bin` data files, not just metadata. The other columns are metadata-only.
 
 Parts that do not record their substreams in `columns_substreams.txt` are not listed.
+
+Every reported value is derived from the table's data, so reading any column of the result requires the `SELECT` privilege on all columns of the table. A grant that covers only some of the columns is not enough. The privilege is also required to resolve the structure of the function, e.g. by `DESCRIBE`.
 
 If a row policy applies to the table for the current user, reading `codec_block_counts` throws `ACCESS_DENIED`, because the counts would cover rows the policy hides. The other columns stay readable, `system.parts_columns` reports them regardless of row policies.
 
