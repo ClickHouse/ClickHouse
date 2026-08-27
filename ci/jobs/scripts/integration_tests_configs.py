@@ -443,6 +443,7 @@ test_keeper_back_to_back/test.py	73390
 test_file_schema_inference_cache/test.py	73190
 test_mark_cache_profile_events/test.py	72942
 test_storage_kafka_sasl/test.py	72696
+test_catboost_evaluate/test.py	72539
 test_multi_access_storage_role_management/test.py	72168
 test_keeper_disks/test.py	72149
 test_replicated_table_attach/test.py	72006
