@@ -44,30 +44,6 @@ public:
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isSpatialPredicate() const override { return std::is_same_v<Point, CartesianPoint>; }
-
-    /// executeImpl below only calls `boost::geometry::correct` before `boost::geometry::intersects`,
-    /// never `boost::geometry::is_valid` -- unlike `pointInPolygon`, this predicate never validates
-    /// topology at all, so an invalid constant polygon argument can never make it raise.
-    bool requiresValidConstGeometry() const override { return false; }
-
-    /// Both arguments must be `Ring`/`Polygon`/`MultiPolygon` (see the documented argument types
-    /// below) -- unlike `pointInPolygon`, there is no argument position where a `Point` is ever
-    /// legitimate. `callOnGeometryDataType`'s dispatch on the argument's actual type rejects any
-    /// other named kind with `ILLEGAL_TYPE_OF_ARGUMENT`, regardless of argument position -- and a
-    /// WKB-encoded `String` payload (reported under the kind name `String`, see `constGeoKindName`
-    /// in `Common/GeoBbox.h`) with `BAD_ARGUMENTS`, so it must fail bbox-pruning closed too.
-    bool rejectsConstGeometryKind(std::string_view kind_name) const override
-    {
-        return kind_name == "Point" || kind_name == "LineString" || kind_name == "MultiLineString"
-            || kind_name == "MultiPoint" || kind_name == "String";
-    }
-
-    /// Every argument must be a geometry: `callOnGeometryDataType` dispatches on the argument's
-    /// actual type and raises `Unknown geometry type ...` for anything that is not one -- a number,
-    /// a `FixedString`, a `Date` -- but only while EXECUTING, so bbox pruning has to fail closed for
-    /// it, exactly as for an explicitly rejected geometry kind above.
-    bool rejectsNonGeometryArgument(size_t /*arg_index*/) const override { return true; }
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
