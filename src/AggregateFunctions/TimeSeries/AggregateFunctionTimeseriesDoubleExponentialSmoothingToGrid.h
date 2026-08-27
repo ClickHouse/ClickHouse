@@ -120,6 +120,8 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
 
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` collects their timestamps and values.
     using Bucket = Samples;
+
+    static constexpr UInt16 FORMAT_VERSION = 1;
 };
 
 
@@ -156,7 +158,6 @@ public:
         return Aggregator{smoothing_factor, trend_factor};
     }
 
-    static constexpr UInt16 FORMAT_VERSION = 1;
     static constexpr bool DateTime64Supported = true;
 
 protected:
