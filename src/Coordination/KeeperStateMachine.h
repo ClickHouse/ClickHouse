@@ -99,7 +99,7 @@ public:
     /// patched_fields_offset - where the leader-patched fields live: for batch entries it is
     /// BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET; for legacy entries it is the request end position
     /// (which of the fields are present there follows from `serialization_version`).
-    std::shared_ptr<KeeperRequestBatch> parseRequestBatch(
+    KeeperRequestBatchPtr parseRequestBatch(
         nuraft::buffer & data,
         bool final,
         ZooKeeperLogSerializationVersion * serialization_version = nullptr,
@@ -264,13 +264,9 @@ private:
     /// for request.
     mutable std::mutex process_and_responses_lock;
 
-    /// Serialize the request as a log entry in the legacy single-request format.
-    /// Used only by serializeRequestBatch when the batched format is disabled.
     static nuraft::ptr<nuraft::buffer> serializeRequestInOldFormat(const KeeperRequestForSession & request_for_session);
 
-    /// Parse a legacy single-request log entry as a batch of one, going through
-    /// parsed_batch_cache. Used only by parseRequestBatch.
-    std::shared_ptr<KeeperRequestBatch> parseRequestInOldFormat(
+    KeeperRequestBatchPtr parseRequestInOldFormat(
         nuraft::buffer & data,
         bool final,
         ZooKeeperLogSerializationVersion * serialization_version,
@@ -283,7 +279,7 @@ private:
     /// Cache of parsed batch log entries, keyed by (session_id, xid) of the batch's first request.
     /// Entries of closed sessions are erased on Close commit in case something strange happened.
     //TODO(keeper-batch2) Replace this cache by plumbing the parsed batch through nuraft as an opaque pointer attached to the log entry, instead of re-parsing (and caching) the exact buffer we serialized microseconds earlier in the same process.
-    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, std::shared_ptr<KeeperRequestBatch>>> parsed_batch_cache;
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestBatchPtr>> parsed_batch_cache;
     uint64_t min_request_size_to_cache{0};
     /// we only need to protect the access to the map itself
     /// batches can be modified from anywhere without lock because a single batch

@@ -423,7 +423,7 @@ bool KeeperStateMachine::shouldCacheParsedEntry(int64_t session_id, int64_t xid,
             non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
 }
 
-std::shared_ptr<KeeperRequestBatch> KeeperStateMachine::parseRequestInOldFormat(
+KeeperRequestBatchPtr KeeperStateMachine::parseRequestInOldFormat(
     nuraft::buffer & data,
     bool final,
     ZooKeeperLogSerializationVersion * serialization_version,
@@ -633,7 +633,7 @@ void KeeperStateMachine::patchSerializedRequestBatch(
     write_buf.finalize();
 }
 
-std::shared_ptr<KeeperRequestBatch> KeeperStateMachine::parseRequestBatch(
+KeeperRequestBatchPtr KeeperStateMachine::parseRequestBatch(
     nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * patched_fields_offset)
 {
     ReadBufferFromNuraftBuffer buffer(data);
