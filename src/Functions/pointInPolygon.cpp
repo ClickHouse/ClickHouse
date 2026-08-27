@@ -239,6 +239,19 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool isSpatialPredicate() const override { return true; }
 
+    /// The first argument is the point being tested; a constant there (`WHERE
+    /// pointInPolygon((0.5, 0.5), poly)` with `poly` indexed) is common and, unlike the polygon
+    /// arguments, has a well-defined single-point bbox: `(x, y, x, y)`. `extractBboxFromFieldValue`
+    /// (`Common/GeoBbox.h`) otherwise treats a raw `(Float64, Float64)` Tuple field as opaque,
+    /// since no other spatial predicate's argument accepts a bare point there; this override tells
+    /// it to derive a zero-area bbox from the first argument's constant instead of giving up.
+    ///
+    /// This is the only part of the spatial contract `pointInPolygon` needs to state: it merely
+    /// ENABLES pruning and cannot hide an exception. Every argument it refuses, it refuses in
+    /// `getReturnTypeImpl` below, during analysis, before any granule is read -- so no amount of
+    /// pruning can turn such a refusal into a silent `0`, and there is nothing to fail closed for.
+    bool treatsConstTupleAsPoint(size_t arg_index) const override { return arg_index == 0; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)

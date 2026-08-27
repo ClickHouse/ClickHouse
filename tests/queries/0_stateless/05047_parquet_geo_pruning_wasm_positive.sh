@@ -4,10 +4,10 @@
 # Positive coverage for the `LANGUAGE WASM` UDF path of `Parquet`/GeoParquet row-group pruning
 # (`extractSpatialFilters` in `src/Processors/Formats/Impl/Parquet/GeoFilter.cpp`).
 #
-# The rest of the UDF-on-`Parquet` coverage (`04511`, `04871`, `04872`, `04886`, `04888`) is all
-# fail-closed: it proves the reader does NOT prune for multi-input predicates, invalid constants, or
-# rejected geometry kinds. All of it would still pass if UDF extraction on this path regressed to
-# "never produce a spatial filter at all". `04059_parquet_geo_spatial_pruning.sh` proves the builtin
+# The rest of the UDF-on-`Parquet` coverage (`04511`, `04871`, `04872`) is all fail-closed: it
+# proves the reader does NOT prune for multi-input predicates or invalid constants. All of it would
+# still pass if UDF extraction on this path regressed to "never produce a spatial filter at all".
+# `04059_parquet_geo_spatial_pruning.sh` proves the builtin
 # path and `04853_spatial_bbox_wasm_real_predicate.sh` proves the `MergeTree` UDF path; this test
 # proves that a well-behaved single-input `is_spatial_predicate = 1` UDF actually prunes row groups
 # on `Parquet`.
