@@ -5,6 +5,8 @@ set enable_analyzer=1;
 set mutations_sync=1;
 set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimize_use_projection_filtering = 1;
+-- A `WHERE` moved to `PREWHERE` renders as `Expression`, not `Filter`, in the plans asserted below.
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 drop table if exists test;
 
