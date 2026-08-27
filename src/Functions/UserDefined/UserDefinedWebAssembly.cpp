@@ -535,11 +535,6 @@ public:
         return GeoBboxDetail::declaredGeoRepresentationName(*expected_arguments[arg_index]) == "Point";
     }
 
-    /// Every rejection above is decided by `getReturnTypeImpl` from the argument's `DataType`, before
-    /// a single row is read, so a lenient `Variant`/`Dynamic` adaptor turns it into NULL rather than
-    /// an exception. See `IFunctionBase::rejectsColumnGeometryKindDuringBuild`.
-    bool rejectsColumnGeometryKindDuringBuild(size_t /*arg_index*/) const override { return true; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /* arguments */) const override { return false; }
     size_t getNumberOfArguments() const override { return user_defined_function->getArguments().size(); }
 

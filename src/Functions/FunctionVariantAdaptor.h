@@ -78,35 +78,29 @@ public:
 
     bool isSpatialPredicate() const override { return function_overload_resolver->isSpatialPredicate(); }
 
-    /// These delegate to the resolver rather than a per-alternative concrete function: for the
-    /// builtins that answer them non-trivially (e.g. `pointInPolygon`), the underlying IFunction is
-    /// already constructed (from settings such as `validate_polygons`) before overload resolution
-    /// ever wraps it here, so the resolver's answer is the same regardless of which Variant
-    /// alternative ends up dispatched to at the row level -- there is no dependency on the concrete
-    /// alternative type, only on the constant Field arguments and construction-time settings.
-    bool requiresValidConstGeometry() const override { return function_overload_resolver->requiresValidConstGeometry(); }
-    bool rejectsConstGeometryKind(std::string_view kind_name) const override { return function_overload_resolver->rejectsConstGeometryKind(kind_name); }
+    /// These delegate to the resolver rather than a per-alternative concrete function: the
+    /// underlying IFunction is already constructed before overload resolution ever wraps it here,
+    /// so the resolver's answer is the same regardless of which Variant alternative ends up
+    /// dispatched to at the row level -- there is no dependency on the concrete alternative type,
+    /// only on the constant Field arguments and construction-time settings.
+    ///
     /// A geometry kind the wrapped function rejects normally means "evaluating this argument is
     /// guaranteed to raise `ILLEGAL_TYPE_OF_ARGUMENT`", which is what makes `spatial_bbox` pruning
     /// fail closed (see `hasDeferredGeometryKindRejection` in `Common/GeoBbox.h`). That holds only
     /// while this adaptor actually raises: with `variant_throw_on_type_mismatch` off,
-    /// `ExecutableFunctionVariantAdaptor` swallows the build-time `ILLEGAL_TYPE_OF_ARGUMENT` for an incompatible alternative and
-    /// resolves those rows to NULL instead, so there is no exception left for pruning to hide and
-    /// reporting a rejection would cost pruning for nothing. Only a BUILD-time rejection at the
-    /// argument this adaptor dispatches per alternative is covered: an execute-time one (see
-    /// `rejectsColumnGeometryKindDuringBuild`) still escapes leniency, and so does a rejection at
-    /// any other argument position, which the wrapped function raises itself.
-    bool rejectsColumnGeometryKindDuringBuild(size_t arg_index) const override { return function_overload_resolver->rejectsColumnGeometryKindDuringBuild(arg_index); }
+    /// `ExecutableFunctionVariantAdaptor` swallows the build-time `ILLEGAL_TYPE_OF_ARGUMENT` for an
+    /// incompatible alternative and resolves those rows to NULL instead, so there is no exception
+    /// left for pruning to hide and reporting a rejection would cost pruning for nothing. Only the
+    /// argument this adaptor dispatches per alternative is covered; a rejection at any other
+    /// argument position the wrapped function raises itself.
     bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override
     {
-        if (!throw_on_type_mismatch && arg_index == variant_argument_index
-            && function_overload_resolver->rejectsColumnGeometryKindDuringBuild(arg_index))
+        if (!throw_on_type_mismatch && arg_index == variant_argument_index)
             return false;
 
         return function_overload_resolver->rejectsColumnGeometryKind(kind_name, arg_index);
     }
     bool treatsConstTupleAsPoint(size_t arg_index) const override { return function_overload_resolver->treatsConstTupleAsPoint(arg_index); }
-    bool rejectsNonGeometryArgument(size_t arg_index) const override { return function_overload_resolver->rejectsNonGeometryArgument(arg_index); }
 
 private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Variant column.

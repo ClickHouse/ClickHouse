@@ -143,17 +143,10 @@ inline bool buildPolygon(const Array & array, Polygon<CartesianPoint> & out_poly
 /// Extract bbox from a single Field value (not a column).
 /// Handles Tuple (native geometry points), Array (nested geometry collections),
 /// and String (WKB-encoded geometry).
-/// `require_valid` mirrors the predicate's own `IFunctionBase::requiresValidConstGeometry()`:
-/// when false, the predicate's own evaluation never runs a topology check on this argument either
-/// (e.g. `pointInPolygon` with `validate_polygons = 0`), so an invalid ring/polygon/multipolygon
-/// must still contribute a bbox from its raw coordinates rather than failing closed -- only
-/// structural parse failures (a ring that can't even be assembled, a WKB payload that doesn't
-/// parse) remain unconditional, since those aren't validity checks and would fail at evaluation
-/// time regardless of `require_valid`.
 /// `allow_point_tuple` mirrors `IFunctionBase::treatsConstTupleAsPoint(arg_index)` for the
 /// specific argument this field came from: true only for `pointInPolygon`'s own first (point)
 /// argument, see the `Tuple` branch below.
-static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc, bool require_valid = true, bool allow_point_tuple = false)
+static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc, bool allow_point_tuple = false)
 {
     using namespace GeoBboxDetail;
     const auto type = field.getType();
@@ -212,19 +205,9 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
         /// away. A top-level empty array -- `CAST([], 'Ring')` -- is the same value seen from one
         /// level up, and must be reported as failed rather than as no information, or a sibling
         /// conjunct can still hide the exception.
-        ///
-        /// With `require_valid` false -- `validate_polygons = 0`, where `pointInPolygon` skips
-        /// `bg::is_valid` and answers `0` for an empty geometry instead of raising (see
-        /// `00500_point_in_polygon_empty_bound`) -- there is no exception left to preserve, so
-        /// failing closed only costs pruning. The empty piece then simply contributes nothing: a
-        /// top-level empty array yields no bbox at all (`NoInfo`, leaving sibling conjuncts free to
-        /// prune), and an empty hole, which removes nothing from its shell, leaves the surrounding
-        /// polygon's bbox to the non-empty pieces -- exactly the geometry the predicate evaluates.
-        /// Mirrors the `require_valid` guards on the assembled-geometry branches below.
         if (array.empty())
         {
-            if (require_valid)
-                acc.valid = false;
+            acc.valid = false;
             return false;
         }
 
@@ -241,14 +224,11 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
                 return false;
             }
             boost::geometry::correct(polygon);
-            if (require_valid)
+            std::string failure_message;
+            if (!boost::geometry::is_valid(polygon, failure_message))
             {
-                std::string failure_message;
-                if (!boost::geometry::is_valid(polygon, failure_message))
-                {
-                    acc.valid = false;
-                    return false;
-                }
+                acc.valid = false;
+                return false;
             }
             acc.addAll(polygon.outer());
             return acc.found;
@@ -263,14 +243,11 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
                 return false;
             }
             boost::geometry::correct(polygon);
-            if (require_valid)
+            std::string failure_message;
+            if (!boost::geometry::is_valid(polygon, failure_message))
             {
-                std::string failure_message;
-                if (!boost::geometry::is_valid(polygon, failure_message))
-                {
-                    acc.valid = false;
-                    return false;
-                }
+                acc.valid = false;
+                return false;
             }
             acc.addAll(polygon.outer());
             return acc.found;
@@ -289,14 +266,11 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
                 }
             }
             boost::geometry::correct(multi_polygon);
-            if (require_valid)
+            std::string failure_message;
+            if (!boost::geometry::is_valid(multi_polygon, failure_message))
             {
-                std::string failure_message;
-                if (!boost::geometry::is_valid(multi_polygon, failure_message))
-                {
-                    acc.valid = false;
-                    return false;
-                }
+                acc.valid = false;
+                return false;
             }
             for (const auto & poly : multi_polygon)
                 acc.addAll(poly.outer());
@@ -304,7 +278,7 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
         }
 
         for (const auto & elem : array)
-            extractBboxFromFieldValue(elem, acc, require_valid);
+            extractBboxFromFieldValue(elem, acc);
         return acc.found;
     }
 
@@ -331,18 +305,14 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
                 {
                     /// Validate the same way the Array-literal ring/polygon branches above do --
                     /// a self-intersecting or otherwise invalid WKB polygon is guaranteed to raise
-                    /// on evaluation, so it must fail closed rather than silently contribute no bbox
-                    /// -- unless require_valid is false, mirroring those branches too.
+                    /// on evaluation, so it must fail closed rather than silently contribute no bbox.
                     Polygon<CartesianPoint> polygon = g;
                     boost::geometry::correct(polygon);
-                    if (require_valid)
+                    std::string failure_message;
+                    if (!boost::geometry::is_valid(polygon, failure_message))
                     {
-                        std::string failure_message;
-                        if (!boost::geometry::is_valid(polygon, failure_message))
-                        {
-                            geometry_valid = false;
-                            return;
-                        }
+                        geometry_valid = false;
+                        return;
                     }
                     acc.addAll(polygon.outer());
                 }
@@ -355,14 +325,11 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
                 {
                     MultiPolygon<CartesianPoint> multi_polygon = g;
                     boost::geometry::correct(multi_polygon);
-                    if (require_valid)
+                    std::string failure_message;
+                    if (!boost::geometry::is_valid(multi_polygon, failure_message))
                     {
-                        std::string failure_message;
-                        if (!boost::geometry::is_valid(multi_polygon, failure_message))
-                        {
-                            geometry_valid = false;
-                            return;
-                        }
+                        geometry_valid = false;
+                        return;
                     }
                     for (const auto & poly : multi_polygon)
                         acc.addAll(poly.outer());
@@ -419,7 +386,7 @@ enum class NodeBboxStatus
 };
 
 /// Get the geometry-domain type name of a constant `ActionsDAG` node, needed to tell whether a
-/// constant is explicitly typed as a kind `IFunctionBase::rejectsConstGeometryKind` says this
+/// constant is explicitly typed as a kind `IFunctionBase::rejectsColumnGeometryKind` says this
 /// predicate is guaranteed to reject -- either the node's own
 /// custom name (a constant explicitly typed e.g. `LineString`), or, if the node's type is a
 /// `Variant` (e.g. `Geometry`, which is a `Variant` over `Point`/`Ring`/`Polygon`/`LineString`/
@@ -438,7 +405,7 @@ enum class NodeBboxStatus
 /// perfectly well whether it accepts one -- none of the builtins does (`pointInPolygon` raises
 /// `ILLEGAL_TYPE_OF_ARGUMENT`, `polygonsIntersectCartesian`/`polygonsWithinCartesian` raise
 /// `BAD_ARGUMENTS` from `callOnGeometryDataType`'s dispatch), while an `isSpatialPredicate()` WASM
-/// UDF reading raw WKB does, and keeps its default `rejectsConstGeometryKind` of false. Without
+/// UDF reading raw WKB does, and keeps its default `rejectsColumnGeometryKind` of false. Without
 /// this, the WKB branch of `extractBboxFromFieldValue` derived a bbox from a payload the predicate
 /// is guaranteed to reject at execution time; see the `String` kind's own note there.
 inline std::string geoKindNameOfType(const IDataType & type)
@@ -503,7 +470,7 @@ inline bool rejectsAnyGeometryKind(const IFunctionBase & function, size_t arg_in
 {
     /// Probing the geometry kinds tells a predicate that rejects some kind apart from one that
     /// accepts everything and can never raise on kind grounds -- e.g. a WASM UDF reading raw WKB,
-    /// which keeps its default `rejectsConstGeometryKind` of false and must keep pruning.
+    /// which keeps its default `rejectsColumnGeometryKind` of false and must keep pruning.
     static constexpr std::array kind_names
         = {"Point", "Ring", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon", "String"};
     return std::ranges::any_of(
@@ -622,17 +589,6 @@ inline bool isDeferredGeometryKindType(const IDataType & type)
 {
     const IDataType & inner = unwrapGeoKindWrappers(type);
     return typeid_cast<const DataTypeVariant *>(&inner) || typeid_cast<const DataTypeDynamic *>(&inner);
-}
-
-/// Whether `type` is no geometry at all: neither a named geometry kind (`geoKindNameOfType`, which
-/// also reports a WKB-carrying `String` under the name `String`), nor an unnamed one resolvable by
-/// shape (`structuralGeoKindName`), nor a `Dynamic`/`Variant` whose kind is only known per row.
-/// Those three are handled by the kind checks in `extractSpatialPredicateNodeBbox`; everything else
-/// -- a number, a `FixedString`, a `Date`, a `Tuple` of the wrong arity -- is what
-/// `rejectsNonGeometryArgument` speaks about.
-inline bool isNonGeometryType(const IDataType & type)
-{
-    return geoKindNameOfType(type).empty() && structuralGeoKindName(type).empty() && !isDeferredGeometryKindType(type);
 }
 
 }
@@ -784,31 +740,10 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         Field field;
     };
     std::vector<ConstGeoField> const_fields;
-    /// Whether evaluating this predicate actually runs a topology check on its constant geometry
-    /// argument(s) at all (e.g. `pointInPolygon`'s `validate_polygons` setting) -- see
-    /// extractBboxFromFieldValue's `require_valid` parameter.
-    const bool require_valid = node.function_base->requiresValidConstGeometry();
-
     size_t arg_index = 0;
     for (const auto * child : node.children)
     {
         const size_t this_arg_index = arg_index++;
-
-        /// Checked for EVERY child, whatever its node type: a predicate that accepts only geometry
-        /// arguments (`polygonsIntersectCartesian`/`polygonsWithinCartesian`) still builds for a
-        /// number, a `FixedString`, or any other non-geometry type and only raises
-        /// `Unknown geometry type ...` from `callOnGeometryDataType` once a block is evaluated. Both
-        /// paths below would otherwise let that through: a non-geometry INPUT falls to
-        /// `has_extra_non_constant`, and a non-geometry constant is declined by
-        /// `extractBboxFromFieldValue` as "not geometry-shaped" without poisoning `acc.valid`. Either
-        /// way the node is downgraded to `NoInfo`/`NotApplicable` and a sibling conjunct's bbox can
-        /// prune every granule away, turning the exception into a silent `0`.
-        if (child->result_type && node.function_base->rejectsNonGeometryArgument(this_arg_index)
-            && GeoBboxDetail::isNonGeometryType(*child->result_type))
-        {
-            any_kind_rejected = true;
-            continue;
-        }
 
         if (child->type == ActionsDAG::ActionType::INPUT)
         {
@@ -872,8 +807,8 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         /// This must fail closed like a structural extraction failure below, not be silently
         /// dropped as "not geometry-shaped": a predicate that genuinely doesn't know whether it
         /// accepts a given kind (e.g. a WASM UDF) never reaches here, since
-        /// `rejectsConstGeometryKind` defaults to false for it. Uses the position-aware
-        /// `rejectsColumnGeometryKind` (not `rejectsConstGeometryKind` directly), for the same
+        /// `rejectsColumnGeometryKind` defaults to false for it. Uses the position-aware
+        /// `rejectsColumnGeometryKind`, for the same
         /// reason as the column check above: `pointInPolygon`'s first argument legitimately
         /// accepts an explicitly `Point`-typed constant, exactly as it does an explicitly
         /// `Point`-typed column.
@@ -955,7 +890,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         {
             BboxAccumulator field_acc;
             bool extracted = extractBboxFromFieldValue(
-                entry.field, field_acc, require_valid, node.function_base->treatsConstTupleAsPoint(entry.arg_index));
+                entry.field, field_acc, node.function_base->treatsConstTupleAsPoint(entry.arg_index));
             if (!field_acc.valid)
                 return NodeBboxStatus::Failed;
             if (extracted)
@@ -992,7 +927,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
 
         BboxAccumulator acc;
         bool extracted = extractBboxFromFieldValue(
-            const_fields[0].field, acc, require_valid, node.function_base->treatsConstTupleAsPoint(const_fields[0].arg_index));
+            const_fields[0].field, acc, node.function_base->treatsConstTupleAsPoint(const_fields[0].arg_index));
         if (!acc.valid)
             return NodeBboxStatus::Failed;
         if (!extracted)
