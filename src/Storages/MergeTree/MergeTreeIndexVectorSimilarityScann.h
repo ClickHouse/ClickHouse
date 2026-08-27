@@ -135,6 +135,8 @@ class MergeTreeIndexVectorSimilarityScann final : public IMergeTreeIndex
 public:
     MergeTreeIndexVectorSimilarityScann(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_, const ScannIndexParams & params_);
 
+    static void checkCPUSupport();
+
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 

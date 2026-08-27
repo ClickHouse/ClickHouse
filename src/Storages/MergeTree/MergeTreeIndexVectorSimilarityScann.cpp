@@ -10,6 +10,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/CPUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -81,6 +82,7 @@ extern const int ILLEGAL_COLUMN;
 extern const int LOGICAL_ERROR;
 extern const int INVALID_SETTING_VALUE;
 extern const int FORMAT_VERSION_TOO_OLD;
+extern const int SUPPORT_IS_DISABLED;
 }
 
 // ---------------------------------------------------------------------------
@@ -792,6 +794,8 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
         return;
     }
 
+    MergeTreeIndexVectorSimilarityScann::checkCPUSupport();
+
     /// For cosine distance, normalize vectors to unit length in place.
     /// Reject zero-magnitude vectors: cosineDistance([0,...], x) = NaN in exact mode,
     /// but after normalization ScaNN would report a finite distance instead.
@@ -1013,6 +1017,8 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized(const 
             "Drop and recreate the index.",
             num_vectors);
     }
+
+    MergeTreeIndexVectorSimilarityScann::checkCPUSupport();
 
     research_scann::SingleMachineFactoryOptions opts;
     size_t restored_searcher_owned_memory_bytes = 0;
@@ -1353,6 +1359,8 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
         return result;
     }
 
+    MergeTreeIndexVectorSimilarityScann::checkCPUSupport();
+
     size_t topk            = parameters->limit;
     const size_t pd        = granule->padded_dim;
     const size_t orig_dims = index_params.dimensions;
@@ -1501,6 +1509,16 @@ MergeTreeIndexVectorSimilarityScann::MergeTreeIndexVectorSimilarityScann(
     : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
     , params(params_)
 {
+}
+
+void MergeTreeIndexVectorSimilarityScann::checkCPUSupport()
+{
+#if defined(__x86_64__)
+    if (!CPU::haveSSE41() || !CPU::haveAVX())
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "ScaNN vector similarity indexes require SSE4.1 and AVX support on x86-64 CPUs");
+#endif
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexVectorSimilarityScann::createIndexGranule() const

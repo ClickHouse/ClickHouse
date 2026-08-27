@@ -4,7 +4,6 @@
 
 #if USE_SCANN
 #    include <Storages/MergeTree/MergeTreeIndexVectorSimilarityScann.h>
-#    include <Common/CPUID.h>
 #endif
 
 #include <ranges>
@@ -79,7 +78,6 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -93,18 +91,6 @@ const std::set<String> methods = {
     "scann",
 #endif
 };
-
-#if USE_SCANN
-void checkScannCPUSupport()
-{
-#if defined(__x86_64__)
-    if (!CPU::haveSSE41() || !CPU::haveAVX())
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "ScaNN vector similarity indexes require SSE4.1 and AVX support on x86-64 CPUs");
-#endif
-}
-#endif
 
 #if USE_USEARCH
 /// Maps from user-facing name to internal name
@@ -672,8 +658,6 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snaps
     const String & method = args[0].safeGet<String>();
     if (method == "scann")
     {
-        checkScannCPUSupport();
-
         ScannIndexParams p;
         p.distance_name = args[1].safeGet<String>();
         p.dimensions    = args[2].safeGet<UInt64>();
@@ -788,7 +772,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, [[maybe_unus
                 "Vector similarity index with method 'scann' can only be created on columns of type Array(Float32) or Array(Float64)");
 
         if (!attach)
-            checkScannCPUSupport();
+            MergeTreeIndexVectorSimilarityScann::checkCPUSupport();
         return;
     }
 #endif
