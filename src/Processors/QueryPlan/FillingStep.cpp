@@ -152,6 +152,13 @@ void FillingStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
 {
+    /// The registry dispatches by step name, so a stream that predates this step can still name it.
+    /// Fail closed at the version boundary instead of building a step the stream cannot describe.
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "FillingStep is not part of query plan serialization version {}; the first version that "
+            "carries it is {}", ctx.version, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP);
+
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "FillingStep must have one input stream");
 

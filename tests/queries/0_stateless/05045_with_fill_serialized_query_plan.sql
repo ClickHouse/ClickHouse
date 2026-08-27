@@ -12,6 +12,9 @@ DROP TABLE IF EXISTS t_fill_ser;
 CREATE TABLE t_fill_ser (id UInt32, g UInt16) ENGINE = MergeTree ORDER BY g;
 INSERT INTO t_fill_ser VALUES (10, 1), (20, 2), (30, 3), (40, 5);
 
+-- `SelectStreamFactory::createForShardImpl` builds and ships a `QueryPlan` only with the analyzer; the
+-- old-analyzer run would silently fall back to shipping SQL text and never exercise the serialization.
+SET enable_analyzer = 1;
 SET serialize_query_plan = 1;
 SET prefer_localhost_replica = 0;
 -- The row multiplicity below is per shard, so keep the reads out of parallel replicas: the
