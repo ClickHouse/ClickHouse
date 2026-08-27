@@ -112,7 +112,7 @@ bool pinToCPU(unsigned cpu)
 /// benchmark in the binary, so a leaked pin would confine all subsequent ones to a single core.
 struct AffinityRestorer
 {
-    cpu_set_t saved;
+    cpu_set_t saved{};
     bool valid = false;
     AffinityRestorer() { valid = pthread_getaffinity_np(pthread_self(), sizeof(saved), &saved) == 0; }
     ~AffinityRestorer()
@@ -264,7 +264,13 @@ struct LatencyHist
 void BM_ProfileEventsReadLatency(benchmark::State & state)
 {
     const int64_t reader_period_us = state.range(0);
-    const size_t batch = static_cast<size_t>(state.range(1));
+    const int64_t batch_arg = state.range(1);
+    if (batch_arg <= 0)
+    {
+        state.SkipWithError("batch size must be positive");
+        return;
+    }
+    const size_t batch = static_cast<size_t>(batch_arg);
     const bool with_reader = reader_period_us >= 0;
 
     const uint32_t num_cpus = PerCPU::getNumCPUs();
