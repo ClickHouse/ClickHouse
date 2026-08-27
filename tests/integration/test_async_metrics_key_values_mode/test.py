@@ -15,17 +15,32 @@ LEGACY_NAME = "DiskTotal_default"
 MODE_CONFIG_PATH = "/etc/clickhouse-server/config.d/key_values.xml"
 
 node_key_values = cluster.add_instance(
-    "node_key_values", main_configs=["configs/prometheus.xml"]
+    "node_key_values",
+    main_configs=["configs/prometheus.xml", "configs/asynchronous_metric_log.xml"],
 )
 node_legacy_names = cluster.add_instance(
     "node_legacy_names",
-    main_configs=["configs/prometheus.xml", "configs/legacy_names.xml"],
+    main_configs=[
+        "configs/prometheus.xml",
+        "configs/asynchronous_metric_log.xml",
+        "configs/legacy_names.xml",
+    ],
 )
 node_both = cluster.add_instance(
-    "node_both", main_configs=["configs/prometheus.xml", "configs/both.xml"]
+    "node_both",
+    main_configs=[
+        "configs/prometheus.xml",
+        "configs/asynchronous_metric_log.xml",
+        "configs/both.xml",
+    ],
 )
 node_reload = cluster.add_instance(
-    "node_reload", main_configs=["configs/prometheus.xml", "configs/key_values.xml"]
+    "node_reload",
+    main_configs=[
+        "configs/prometheus.xml",
+        "configs/asynchronous_metric_log.xml",
+        "configs/key_values.xml",
+    ],
 )
 
 
