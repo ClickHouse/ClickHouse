@@ -52,7 +52,9 @@ CREATE TABLE t_stats_clear_column (id Int64, c Int64, e Enum8('a' = 1, 'b' = 2) 
 ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1;
 
 INSERT INTO t_stats_clear_column (id, c) VALUES (1, 10), (2, 20);
-ALTER TABLE t_stats_clear_column MODIFY COLUMN e Int8 MATERIALIZED 2;
+-- The new expression must read the cleared column, because CLEAR COLUMN recomputes only the
+-- dependency closure of the cleared columns.
+ALTER TABLE t_stats_clear_column MODIFY COLUMN e Int8 MATERIALIZED c + 2;
 ALTER TABLE t_stats_clear_column CLEAR COLUMN c;
 SELECT id, c, e, d FROM t_stats_clear_column ORDER BY id;
 SELECT `estimates.cardinality`, `estimates.min`, `estimates.max` FROM system.parts_columns
