@@ -28,8 +28,7 @@ struct ThreadEventData
     /// Per-packet byte deltas for the live IO/network rates. IO covers block-device reads/writes
     /// (`OSReadBytes`/`OSWriteBytes`) and object-storage reads/writes (S3, Azure); network covers
     /// ClickHouse's own network traffic (`NetworkReceiveBytes`/`NetworkSendBytes`).
-    UInt64 io_read_bytes  = 0;
-    UInt64 io_write_bytes = 0;
+    UInt64 io_bytes = 0;
     UInt64 net_read_bytes  = 0;
     UInt64 net_write_bytes = 0;
 
@@ -105,8 +104,7 @@ private:
     double getCPUUsage();
     /// IO (disk + object storage) and network read/write rates in bytes per second
     /// (0 when the server does not report the underlying counters).
-    double getIOReadRate();
-    double getIOWriteRate();
+    double getIORate();
     double getNetReadRate();
     double getNetWriteRate();
 
@@ -130,8 +128,7 @@ private:
     bool write_progress_on_update = false;
 
     EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average cpu utilization last 2 second, skip first 4 points
-    EventRateMeter io_read_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average IO read rate last 2 seconds
-    EventRateMeter io_write_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average IO write rate last 2 seconds
+    EventRateMeter io_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average IO (disk + object storage) rate last 2 seconds
     EventRateMeter net_read_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average network read rate last 2 seconds
     EventRateMeter net_write_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average network write rate last 2 seconds
     HostToTimesMap hosts_data;

@@ -44,8 +44,7 @@ void ProgressIndication::resetProgress()
         std::lock_guard lock(profile_events_mutex);
         watch.restart();
         cpu_usage_meter.reset(static_cast<double>(getElapsedNanoseconds()));
-        io_read_meter.reset(static_cast<double>(getElapsedNanoseconds()));
-        io_write_meter.reset(static_cast<double>(getElapsedNanoseconds()));
+        io_meter.reset(static_cast<double>(getElapsedNanoseconds()));
         net_read_meter.reset(static_cast<double>(getElapsedNanoseconds()));
         net_write_meter.reset(static_cast<double>(getElapsedNanoseconds()));
         hosts_data.clear();
@@ -69,23 +68,20 @@ void ProgressIndication::updateThreadEventData(HostToTimesMap & new_hosts_data)
     constexpr UInt64 us_to_ns = 1000;
 
     UInt64 total_cpu_ns = 0;
-    UInt64 total_io_read_bytes = 0;
-    UInt64 total_io_write_bytes = 0;
+    UInt64 total_io_bytes = 0;
     UInt64 total_net_read_bytes = 0;
     UInt64 total_net_write_bytes = 0;
     for (auto & new_host : new_hosts_data)
     {
         total_cpu_ns += us_to_ns * new_host.second.time();
-        total_io_read_bytes += new_host.second.io_read_bytes;
-        total_io_write_bytes += new_host.second.io_write_bytes;
+        total_io_bytes += new_host.second.io_bytes;
         total_net_read_bytes += new_host.second.net_read_bytes;
         total_net_write_bytes += new_host.second.net_write_bytes;
         hosts_data[new_host.first] = new_host.second;
     }
     double now_ns = static_cast<double>(getElapsedNanoseconds());
     cpu_usage_meter.add(now_ns, static_cast<double>(total_cpu_ns));
-    io_read_meter.add(now_ns, static_cast<double>(total_io_read_bytes));
-    io_write_meter.add(now_ns, static_cast<double>(total_io_write_bytes));
+    io_meter.add(now_ns, static_cast<double>(total_io_bytes));
     net_read_meter.add(now_ns, static_cast<double>(total_net_read_bytes));
     net_write_meter.add(now_ns, static_cast<double>(total_net_write_bytes));
 }
@@ -96,17 +92,11 @@ double ProgressIndication::getCPUUsage()
     return cpu_usage_meter.rate(static_cast<double>(getElapsedNanoseconds()));
 }
 
-double ProgressIndication::getIOReadRate()
+double ProgressIndication::getIORate()
 {
     std::lock_guard lock(profile_events_mutex);
     /// The meter yields bytes per nanosecond; scale to bytes per second.
-    return io_read_meter.rate(static_cast<double>(getElapsedNanoseconds())) * 1e9;
-}
-
-double ProgressIndication::getIOWriteRate()
-{
-    std::lock_guard lock(profile_events_mutex);
-    return io_write_meter.rate(static_cast<double>(getElapsedNanoseconds())) * 1e9;
+    return io_meter.rate(static_cast<double>(getElapsedNanoseconds())) * 1e9;
 }
 
 double ProgressIndication::getNetReadRate()
@@ -218,13 +208,12 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
     double cpu_usage = getCPUUsage();
     auto [memory_usage, max_host_usage, peak_usage] = getMemoryUsage();
     auto [temp_data_on_disk_usage, max_host_temp_data_on_disk_usage] = getTempDataOnDiskUsage();
-    double io_read_rate = getIOReadRate();
-    double io_write_rate = getIOWriteRate();
+    double io_rate = getIORate();
     double net_read_rate = getNetReadRate();
     double net_write_rate = getNetWriteRate();
 
     if (cpu_usage > 0 || memory_usage > 0 || temp_data_on_disk_usage > 0
-        || io_read_rate > 0 || io_write_rate > 0 || net_read_rate > 0 || net_write_rate > 0)
+        || io_rate > 0 || net_read_rate > 0 || net_write_rate > 0)
     {
         WriteBufferFromOwnString profiling_msg_builder;
 
@@ -241,10 +230,8 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(temp_data_on_disk_usage) << " disk";
         if (max_host_temp_data_on_disk_usage < temp_data_on_disk_usage)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(max_host_temp_data_on_disk_usage) << " max/host";
-        if (io_read_rate > 0)
-            profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(io_read_rate) << "/s read IO";
-        if (io_write_rate > 0)
-            profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(io_write_rate) << "/s write IO";
+        if (io_rate > 0)
+            profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(io_rate) << "/s IO";
         if (net_read_rate > 0)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(net_read_rate) << "/s net read";
         if (net_write_rate > 0)

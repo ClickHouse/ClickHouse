@@ -2145,11 +2145,10 @@ void ClientBase::onProfileEvents(Block & block)
             /// Keep the literal in sync with TemporaryDataOnDiskScope::USAGE_EVENT_NAME.
             else if (event_name == "TemporaryDataOnDiskUsage")
                 thread_times[host_name].temp_data_on_disk_usage = value;
-            /// IO reads/writes: local block devices (OS) plus object storage (S3, Azure).
-            else if (event_name == os_read_bytes_name || event_name == s3_read_bytes_name || event_name == azure_read_bytes_name)
-                thread_times[host_name].io_read_bytes += value;
-            else if (event_name == os_write_bytes_name || event_name == s3_write_bytes_name)
-                thread_times[host_name].io_write_bytes += value;
+            /// IO: local block devices (OS) plus object storage (S3, Azure), reads and writes summed.
+            else if (event_name == os_read_bytes_name || event_name == s3_read_bytes_name || event_name == azure_read_bytes_name
+                || event_name == os_write_bytes_name || event_name == s3_write_bytes_name)
+                thread_times[host_name].io_bytes += value;
             /// Network reads/writes: ClickHouse's own network traffic.
             else if (event_name == net_read_bytes_name)
                 thread_times[host_name].net_read_bytes += value;
