@@ -50,6 +50,13 @@ struct RequestSettings
     bool read_only = false;
     size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
     size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
+
+    /// Reject upload size settings that would otherwise produce an internal error
+    /// (e.g. a failed assertion in `BufferAllocationPolicy`) deep inside the write path.
+    /// Invoked only when the multipart blob writer (`WriteBufferFromAzureBlobStorage`) is
+    /// constructed, so it is never applied to endpoints that route to
+    /// `WriteBufferFromAzureDataLakeStorage` (ADLS Gen2 / OneLake), which ignore these settings.
+    void validateUploadSettings() const;
 };
 
 struct Endpoint
