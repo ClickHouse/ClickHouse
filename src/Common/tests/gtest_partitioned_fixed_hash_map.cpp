@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <Common/CacheLine.h>
 #include <Common/HashTable/PartitionedFixedHashMap.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <bit>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -49,9 +49,9 @@ size_t routedBucket(const Map & map, typename Map::key_type key)
 }
 
 template <typename Map>
-constexpr size_t cellsPerLine()
+constexpr size_t cellSize()
 {
-    return std::bit_floor(std::max<size_t>(1, DB::CH_CACHE_LINE_SIZE / sizeof(typename Map::cell_type)));
+    return sizeof(typename Map::cell_type);
 }
 
 /// Collected the way `NotJoinedHash::fillColumns` does, through the iterator's raw cell pointer.
@@ -218,18 +218,48 @@ TEST(PartitionedFixedHashMap, EveryKeyRoutesToExactlyOneBucketAndRoutingIsStable
 
 TEST(PartitionedFixedHashMap, ACacheLineNeverSpansTwoBuckets)
 {
-    /// Why routing shifts the key first: otherwise two locks let two threads write one cache line.
+    /// Keys whose cells start on the same cache line must share a bucket. `sizeof(Cell)` for
+    /// `Mapped = UInt64` divides the line, so this is the aligned case.
     constexpr size_t size_bits = 16;
     using Map = Partitioned<UInt32, size_bits, 8>;
-    constexpr size_t cells_per_line = cellsPerLine<Map>();
     Map map;
+    constexpr size_t cell_size = cellSize<Map>();
 
-    for (UInt32 line_start = 0; line_start < (1U << size_bits); line_start += cells_per_line)
+    for (UInt32 key = 1; key < (1U << size_bits); ++key)
     {
-        const size_t expected = routedBucket(map, line_start);
-        for (size_t i = 1; i < cells_per_line; ++i)
-            ASSERT_EQ(routedBucket(map, static_cast<UInt32>(line_start + i)), expected)
-                << "cache line starting at " << line_start << " spans two buckets";
+        if (((key - 1) * cell_size) / DB::CH_CACHE_LINE_SIZE != (key * cell_size) / DB::CH_CACHE_LINE_SIZE)
+            continue;
+        ASSERT_EQ(routedBucket(map, key), routedBucket(map, key - 1))
+            << "keys " << (key - 1) << " and " << key << " start on one cache line but route apart";
+    }
+}
+
+
+TEST(PartitionedFixedHashMap, MapsOneSizedCellsKeepAStartedCacheLineUnderOneLock)
+{
+    /// `HashJoin::MapsOne` stores `RowRef` (8 bytes, align 4) in `FixedHashMapCell`, so the cell is
+    /// 12 bytes and `64 / 12` is not a power of two. Keys 3 and 4 start at offsets 36 and 48.
+    struct alignas(4) MapsOneMapped
+    {
+        UInt32 a = 0;
+        UInt32 b = 0;
+    };
+    using Cell = FixedHashMapCell<UInt8, MapsOneMapped>;
+    static_assert(sizeof(Cell) == 12);
+    using Map = PartitionedFixedHashMap<UInt8, MapsOneMapped, 8, 8>;
+    Map map;
+    ASSERT_EQ(sizeof(typename Map::cell_type), 12u);
+
+    ASSERT_EQ(routedBucket(map, static_cast<UInt8>(3)), routedBucket(map, static_cast<UInt8>(4)));
+
+    for (UInt16 key = 1; key < 256; ++key)
+    {
+        const size_t prev_line = ((key - 1) * 12) / DB::CH_CACHE_LINE_SIZE;
+        const size_t line = (key * 12) / DB::CH_CACHE_LINE_SIZE;
+        if (prev_line != line)
+            continue;
+        ASSERT_EQ(routedBucket(map, static_cast<UInt8>(key)), routedBucket(map, static_cast<UInt8>(key - 1)))
+            << "keys " << (key - 1) << " and " << key;
     }
 }
 
