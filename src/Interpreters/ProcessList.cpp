@@ -303,6 +303,17 @@ ProcessList::EntryPtr ProcessList::insert(
         if (starts_a_new_period)
             user_process_list.startNewPeriod();
 
+        /// Track memory usage for all simultaneously running queries from single user. Set before this query's
+        /// group is attached to the user below, so that what the query already allocated, and anything a group
+        /// of the previous period allocates meanwhile, is held to this query's limit rather than to the one left
+        /// behind. The first query of a period writes it instead of raising it, so that a lower one takes effect.
+        if (starts_a_new_period)
+            user_process_list.user_memory_tracker.setHardLimit(settings[Setting::max_memory_usage_for_user]);
+        else
+            user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
+        user_process_list.user_memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator_for_user]);
+        user_process_list.user_memory_tracker.setDescription("User");
+
         /// Actualize thread group info
         CurrentThread::attachQueryForLog(query_);
         auto thread_group = CurrentThread::getGroup();
@@ -411,16 +422,6 @@ ProcessList::EntryPtr ProcessList::insert(
         {
             ++user_process_list.non_internal_queries;
         }
-
-        /// Track memory usage for all simultaneously running queries from single user. The first query of a
-        /// period writes the limit instead of raising it, so that a lower one takes effect without the tracker
-        /// ever being left unlimited while groups of the previous period are still allocating.
-        if (starts_a_new_period)
-            user_process_list.user_memory_tracker.setHardLimit(settings[Setting::max_memory_usage_for_user]);
-        else
-            user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
-        user_process_list.user_memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator_for_user]);
-        user_process_list.user_memory_tracker.setDescription("User");
 
         if (!total_network_throttler && settings[Setting::max_network_bandwidth_for_all_users])
         {

@@ -250,16 +250,18 @@ AsynchronousInsertQueue::InsertData::Entry::Entry(
 void AsynchronousInsertQueue::InsertData::Entry::resetChunk()
 {
     /// Released against the user that pushed the data, never the flush, whose user is whoever's insert it
-    /// happens to be flushing.
+    /// happens to be flushing. The parameters were charged the same way and go with it.
     if (queued_data_tracker)
     {
         MemoryTrackerSwitcher switcher(queued_data_tracker.get());
         chunk = {};
+        query_parameters.clear();
         return;
     }
 
     MemoryTrackerBlockerInThread queued_data_not_charged_to_the_flush;
     chunk = {};
+    query_parameters.clear();
 }
 
 void AsynchronousInsertQueue::InsertData::Entry::finish(ResultProgress result)
