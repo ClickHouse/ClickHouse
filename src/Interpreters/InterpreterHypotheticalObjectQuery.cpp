@@ -9,15 +9,16 @@
 #include <Parsers/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Disks/IDisk.h>
 
 #include <fmt/ranges.h>
@@ -39,13 +40,27 @@ namespace Setting
     extern const SettingsBool allow_suspicious_indices;
 }
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
-}
-
 namespace
 {
+
+/// drive the real `ALTER TABLE ... ADD PROJECTION` validation, which covers the merging-mode,
+/// UNIQUE KEY and projection-property checks (commit_order, block number/offset columns)
+void checkProjectionIsAddable(
+    const MergeTreeData & merge_tree, const ASTHypotheticalObjectQuery & query, const ContextPtr & context)
+{
+    auto command_ast = make_intrusive<ASTAlterCommand>();
+    command_ast->type = ASTAlterCommand::ADD_PROJECTION;
+    command_ast->set(command_ast->projection_decl, query.projection_decl->clone());
+    command_ast->if_not_exists = query.if_not_exists;
+
+    auto command = AlterCommand::parse(command_ast.get());
+    if (!command)
+        return;
+
+    AlterCommands commands;
+    commands.push_back(std::move(*command));
+    merge_tree.checkAlterIsPossible(commands, context);
+}
 
 /// Mirrors `ALTER TABLE ... ADD PROJECTION`: the descriptor is built and validated the same way,
 /// so EXPLAIN WHATIF can never report a benefit for a projection the user could not materialize
@@ -80,20 +95,9 @@ BlockIO createHypotheticalProjection(
     if (!projection_desc.required_columns.empty())
         context->checkAccess(AccessType::SELECT, table_id, projection_desc.required_columns);
 
-    /// Mirror `checkAlterIsPossible`: on a non-Ordinary merging mode a projection can only be
-    /// added when merges are allowed to drop or rebuild it
-    if (merge_tree.merging_params.mode != MergeTreeData::MergingParams::Mode::Ordinary
-        && (*merge_tree.getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::THROW)
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Hypothetical projections are not supported in {} with deduplicate_merge_projection_mode = throw. "
-            "Please set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
-            merge_tree.getName());
-
-    if (metadata->hasUniqueKey())
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Hypothetical projections are not supported on tables with UNIQUE KEY");
+    /// run the engine's own ADD PROJECTION validation rather than copying its checks, so a
+    /// definition that could not be materialized is rejected here too
+    checkProjectionIsAddable(merge_tree, query, context);
 
     if (metadata->projections.has(projection_desc.name))
         throw Exception(

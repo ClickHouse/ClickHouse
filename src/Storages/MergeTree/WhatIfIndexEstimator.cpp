@@ -16,6 +16,8 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
@@ -77,10 +79,9 @@ StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & contex
 
 /// projections are stored but not estimated yet, so report them instead of dropping them
 void appendProjectionCandidates(
-    WhatIfResult & result, const HypotheticalObjectStore & store, const StorageID & table_id,
-    const StorageMetadataPtr & metadata, const ContextPtr & context)
+    WhatIfResult & result, const HypotheticalObjectStore & store, const MergeTreeData & data, const ContextPtr & context)
 {
-    for (const auto & projection : store.getProjectionsForTable(table_id))
+    for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
     {
         WhatIfCandidateResult r;
         r.name = projection.name;
@@ -88,15 +89,24 @@ void appendProjectionCandidates(
         r.status = WhatIfCandidateResult::NotApplicable;
         r.not_applicable_reason = "EXPLAIN WHATIF does not estimate hypothetical projections yet";
 
-        /// rebuild from the stored AST so an ALTER since CREATE surfaces as schema drift
+        /// re-run the same ADD PROJECTION validation as CREATE did, so both a dropped column and a
+        /// later MODIFY SETTING that disables the projection's features surface as drift
         try
         {
-            ProjectionDescription::getProjectionFromAST(
-                projection.definition_ast, metadata->getColumns(), &metadata->partition_key, context);
+            auto command_ast = make_intrusive<ASTAlterCommand>();
+            command_ast->type = ASTAlterCommand::ADD_PROJECTION;
+            command_ast->set(command_ast->projection_decl, projection.definition_ast->clone());
+
+            if (auto command = AlterCommand::parse(command_ast.get()))
+            {
+                AlterCommands commands;
+                commands.push_back(std::move(*command));
+                data.checkAlterIsPossible(commands, context);
+            }
         }
         catch (const Exception &)
         {
-            r.not_applicable_reason = "Hypothetical projection no longer matches the current table schema: "
+            r.not_applicable_reason = "Hypothetical projection can no longer be added to this table: "
                 + getCurrentExceptionMessage(false);
         }
 
@@ -131,8 +141,7 @@ WhatIfResult buildResultWithoutScan(
         r.not_applicable_reason = reason;
         result.candidates.push_back(std::move(r));
     }
-    auto metadata = data.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
-    appendProjectionCandidates(result, store, data.getStorageID(), metadata, context);
+    appendProjectionCandidates(result, store, data, context);
     if (result.candidates.empty())
         appendNoCandidatesRow(result);
     return result;
@@ -564,7 +573,7 @@ WhatIfResult estimateHypotheticalIndexes(
         result.candidates.push_back(std::move(combined));
     }
 
-    appendProjectionCandidates(result, store, data.getStorageID(), read_step->getStorageMetadata(), context);
+    appendProjectionCandidates(result, store, data, context);
 
     if (result.candidates.empty())
         appendNoCandidatesRow(result);
