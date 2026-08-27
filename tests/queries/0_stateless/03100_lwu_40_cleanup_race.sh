@@ -73,7 +73,7 @@ $CLICKHOUSE_CLIENT --query "
     SELECT _part, * FROM t_lwu_cleanup_1 ORDER BY k;
     SELECT _part, * FROM t_lwu_cleanup_2 ORDER BY k;
 
-    SELECT table, name FROM system.parts
+    SELECT table, replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name FROM system.parts
     WHERE database = currentDatabase() AND table IN ('t_lwu_cleanup_1', 't_lwu_cleanup_2') AND active
     ORDER BY table, name;
 
@@ -103,7 +103,7 @@ $CLICKHOUSE_CLIENT --query "
     SELECT _part, * FROM t_lwu_cleanup_1 ORDER BY k;
     SELECT _part, * FROM t_lwu_cleanup_2 ORDER BY k;
 
-    SELECT table, name FROM system.parts
+    SELECT table, replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name FROM system.parts
     WHERE database = currentDatabase() AND table IN ('t_lwu_cleanup_1', 't_lwu_cleanup_2') AND active
     ORDER BY table, name;
 
