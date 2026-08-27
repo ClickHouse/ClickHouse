@@ -31,8 +31,17 @@ mkdir -p "${TABLE_PATH}"
 #     TBLPROPERTIES ('format-version' = '2', 'write.format.default' = 'Parquet');
 #   INSERT INTO dec_min SELECT 1, decimal(42.42);
 #
-# repacked here without the Spark checksum files, as `tar czf - . | base64`.
-base64 --decode <<'EOF' | tar --exclude='._*' -xzf - -C "${TABLE_PATH}"
+# repacked here without the Spark checksum files. Python is used so the fixture setup does not depend
+# on platform specific base64 or tar command line options.
+python3 - "${TABLE_PATH}" <<'PY'
+import base64
+import io
+from pathlib import Path
+import sys
+import tarfile
+
+table_path = Path(sys.argv[1])
+archive = base64.b64decode("""
 H4sIAHiigGoAA+1ce6wcVRnfuxa81raB2l1u9aqHja1t3NnOcx9NMW0EQqEt2FuwUpu9Z2dme4fu
 ziw7s71cmmv4AwyaILYlBCuBGCAh+od/+EhETQpqjIFGLIkVAwkRYqJ/4IOqMcToOXPmcWZ2Znbn
 du8t2j3pvZc9853vdc535ved7yylbQq04LZSncWNYZlaWVZYoVlm5FpVZsSKgLoUgWfKDVjly1yT
@@ -104,7 +113,12 @@ HJWqH9F0lX59FISSVJIov3U6zDCT43DydjZ7av3Hzn2SgKRdHYi2Z7CbPAJcqVriwBYUgG3NAjVZ
 ZZtyk4XNSkOVm7wElVpTrtXKstCACg+bitxUBEFxd8GiG1ykLs/YddHkd9ho709Hv3KorWtUKf/x
 FBE5MLwp/foPEQZJcg/x6MH2BeNh/R4+ty4QdcZnF8O0YP5P4oqZQ/ijZKn3DP5few/V0uf/FZQV
 jPH/irRx/n9ZNzr/X57oHxz/LMuF839JqozjfyUaf6kVGLdxG7dxG7dL0v4LwMIm5ABsAAA=
-EOF
+""")
+
+with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as fixture:
+    filter_options = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
+    fixture.extractall(table_path, **filter_options)
+PY
 
 # Any filter makes the manifest bounds be parsed; it does not have to touch the decimal column.
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM icebergLocal('${TABLE_PATH}') WHERE id > 0"
