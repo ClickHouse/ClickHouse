@@ -15,7 +15,7 @@
   *
   *     SELECT keys..., agg(...) FROM t GROUP BY keys ORDER BY agg(...) [DESC] LIMIT n
   *
-  * where `agg` declares a `MergedValueBound` (`count`, `uniqExact`, `min`, `max`).
+  * where `agg` declares a `MergedValueBound` (`count`, the unsigned `sum`, `uniqExact`, `min`, `max`).
   *
   * After the parallel aggregation each thread holds a two-level hash table with partial states.
   * A bucket of the two-level split holds the same groups in every table, so the ordinary merge
@@ -41,7 +41,7 @@
   *
   * The merge and the materialization become sublinear in the number of groups. The extremum
   * bounds of `min`/`max` converge right after the top k candidates are found for any number of
-  * tables; the summing bound of `count`/`uniqExact` serves the single-table case (a pure
+  * tables; the summing bound of `count`/`sum`/`uniqExact` serves the single-table case (a pure
   * selection - see the commit gate below for why it is not worth committing to across several
   * tables). A pop budget with a bucket-shared verdict backstops the walks that fail to converge.
   */

@@ -474,6 +474,18 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    /// The sum of unsigned integers qualifies for the `Subadditive` bound: the merged value is
+    /// the modular sum of the partial values, which never exceeds their saturating sum - even
+    /// when the accumulator wraps around. Signed and floating-point sums do not qualify
+    /// (negative addends break the bound), and neither do the decimal and wide-integer results
+    /// (the bound's arithmetic works on `UInt64` values).
+    MergedValueBound getMergedValueBound() const override
+    {
+        if constexpr (is_unsigned_v<T> && std::is_same_v<TResult, UInt64>)
+            return MergedValueBound::Subadditive;
+        return MergedValueBound::Unknown;
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
