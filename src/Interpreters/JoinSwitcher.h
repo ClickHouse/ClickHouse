@@ -1,6 +1,8 @@
 #pragma once
 
 #include <atomic>
+#include <mutex>
+#include <shared_mutex>
 
 #include <Core/Block.h>
 #include <Interpreters/HashTablesStatistics.h>
@@ -20,6 +22,10 @@ namespace DB
 /// Concurrent fill takes a shared lock; draining onto `MergeJoin` takes an exclusive lock
 /// because `MergeJoin::addBlockToJoin` is not concurrent. After a switch, probe is serialized
 /// for the same reason: `supportParallelJoin` is fixed at plan time.
+///
+/// Every access to `join` after construction takes `switch_mutex`. Totals live on this wrapper:
+/// `FillingRightJoinSideTransform` calls `setTotals` on every filler at EOF, including while
+/// another filler is still inserting and may replace `join`.
 class JoinSwitcher : public IJoin
 {
 public:
@@ -33,38 +39,79 @@ public:
 
     std::string getName() const override { return "JoinSwitcher"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
-    bool anyTakeLastRow() const override { return join->anyTakeLastRow(); }
+    bool anyTakeLastRow() const override
+    {
+        std::shared_lock lock(switch_mutex);
+        return join->anyTakeLastRow();
+    }
 
     /// Add block of data from right hand of JOIN into current join object.
     /// If join-in-memory memory limit exceeded switches to join-on-disk and continue with it.
     /// @returns false, if join-on-disk disk limit exceeded
     bool addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits) override;
 
-    void checkTypesOfKeys(const Block & block) const override { join->checkTypesOfKeys(block); }
+    void checkTypesOfKeys(const Block & block) const override
+    {
+        std::shared_lock lock(switch_mutex);
+        join->checkTypesOfKeys(block);
+    }
 
     JoinResultPtr joinBlock(Block block) override;
 
-    const Block & getTotals() const override { return join->getTotals(); }
+    const Block & getTotals() const override
+    {
+        std::shared_lock lock(switch_mutex);
+        return IJoin::getTotals();
+    }
 
-    void setTotals(const Block & block) override { join->setTotals(block); }
+    void setTotals(const Block & block) override
+    {
+        std::lock_guard lock(switch_mutex);
+        IJoin::setTotals(block);
+    }
 
-    size_t getTotalRowCount() const override { return join->getTotalRowCount(); }
+    size_t getTotalRowCount() const override
+    {
+        std::shared_lock lock(switch_mutex);
+        return join->getTotalRowCount();
+    }
 
-    size_t getTotalByteCount() const override { return join->getTotalByteCount(); }
+    size_t getTotalByteCount() const override
+    {
+        std::shared_lock lock(switch_mutex);
+        return join->getTotalByteCount();
+    }
 
-    bool alwaysReturnsEmptySet() const override { return join->alwaysReturnsEmptySet(); }
+    bool alwaysReturnsEmptySet() const override
+    {
+        std::shared_lock lock(switch_mutex);
+        return IJoin::getTotals().empty() && join->alwaysReturnsEmptySet();
+    }
 
-    StepAnalysisReport getAnalysisReport() const override { return join->getAnalysisReport(); }
+    StepAnalysisReport getAnalysisReport() const override
+    {
+        std::shared_lock lock(switch_mutex);
+        return join->getAnalysisReport();
+    }
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override
     {
+        std::shared_lock lock(switch_mutex);
         return join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
 
-    IBlocksStreamPtr getDelayedBlocks() override { return join->getDelayedBlocks(); }
+    IBlocksStreamPtr getDelayedBlocks() override
+    {
+        std::shared_lock lock(switch_mutex);
+        return join->getDelayedBlocks();
+    }
 
-    bool hasDelayedBlocks() const override { return join->hasDelayedBlocks(); }
+    bool hasDelayedBlocks() const override
+    {
+        std::shared_lock lock(switch_mutex);
+        return join->hasDelayedBlocks();
+    }
 
     /// May switch to PartialMergeJoin at runtime, which re-sorts left blocks by the join key.
     /// The read-in-order decision is made at plan time (before any switch), so we must be
@@ -74,15 +121,35 @@ public:
     bool supportParallelJoin() const override { return use_parallel_layout && max_threads > 1; }
     size_t getMaxBuildThreads() const override { return max_threads; }
 
-    void onBuildPhaseFinish() override { join->onBuildPhaseFinish(); }
+    void onBuildPhaseFinish() override
+    {
+        std::shared_lock lock(switch_mutex);
+        join->onBuildPhaseFinish();
+    }
 
-    void onProbePhaseFinish(size_t matched_right_rows) override { join->onProbePhaseFinish(matched_right_rows); }
+    void onProbePhaseFinish(size_t matched_right_rows) override
+    {
+        std::shared_lock lock(switch_mutex);
+        join->onProbePhaseFinish(matched_right_rows);
+    }
 
-    bool hasPostBuildPhase() const override { return join->hasPostBuildPhase(); }
+    bool hasPostBuildPhase() const override
+    {
+        std::shared_lock lock(switch_mutex);
+        return join->hasPostBuildPhase();
+    }
 
-    void runPostBuildPhase() override { join->runPostBuildPhase(); }
+    void runPostBuildPhase() override
+    {
+        std::shared_lock lock(switch_mutex);
+        join->runPostBuildPhase();
+    }
 
-    void setEnableLazyColumnsIndexing(bool value) override { join->setEnableLazyColumnsIndexing(value); }
+    void setEnableLazyColumnsIndexing(bool value) override
+    {
+        std::shared_lock lock(switch_mutex);
+        join->setEnableLazyColumnsIndexing(value);
+    }
 
 private:
     JoinPtr join;

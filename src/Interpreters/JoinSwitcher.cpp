@@ -96,7 +96,11 @@ bool JoinSwitcher::addBlockToJoin(const Block & block, size_t num_rows, size_t w
 JoinResultPtr JoinSwitcher::joinBlock(Block block)
 {
     if (!switched.load(std::memory_order_acquire))
-        return join->joinBlock(std::move(block));
+    {
+        std::shared_lock lock(switch_mutex);
+        if (!switched.load(std::memory_order_relaxed))
+            return join->joinBlock(std::move(block));
+    }
 
     std::unique_lock lock(switch_mutex);
     return std::make_unique<ExclusiveJoinResult>(std::move(lock), join->joinBlock(std::move(block)));
