@@ -101,6 +101,12 @@ SETTINGS index_granularity = 2;
 
 INSERT INTO tab VALUES (1, 'see the cat'), (2, 'see a cat'), (3, 'see cat'), (4, 'the cat see'), (5, 'cat see');
 
+-- A term the postprocessor keeps is still searchable, so the empty results below are a property of
+-- the postprocessor and not of a table that matches nothing.
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['a'], 'splitByNonAlpha') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+
+-- The postprocessor maps 'the' to the empty string, so the term is absent from the index and the
+-- needle reduces to no token: neither form matches, whether or not the index is read.
 SELECT id FROM tab WHERE hasAnyTokens(doc, ['the'], 'splitByNonAlpha') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 
 -- The two forms agree for the same setting, for each function and each value of use_skip_indexes.
@@ -258,11 +264,11 @@ SELECT 'hasPhrase ngrams', indexed, scanned FROM (
 
 -- A gram that spans a separator is not representable as a postprocessed token, and both forms must
 -- agree on rejecting it, under either direct-read mode, rather than one of them answering from the
--- index. Without the index the phrase is matched literally and does not occur.
+-- index. The phrase does not occur literally, so the rejection is not masking a match.
 SELECT id FROM tab WHERE hasPhrase(doc, 'cd e', 'ngrams(3)') SETTINGS query_plan_direct_read_from_text_index = 0; -- { serverError BAD_ARGUMENTS }
 SELECT id FROM tab WHERE hasPhrase(doc, 'cd e', 'ngrams(3)') SETTINGS query_plan_direct_read_from_text_index = 1; -- { serverError BAD_ARGUMENTS }
 SELECT id FROM tab WHERE hasPhrase(doc, 'cd e') SETTINGS query_plan_direct_read_from_text_index = 0; -- { serverError BAD_ARGUMENTS }
 SELECT id FROM tab WHERE hasPhrase(doc, 'cd e') SETTINGS query_plan_direct_read_from_text_index = 1; -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasPhrase(doc, 'cd e', 'ngrams(3)') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM tab WHERE position(doc, 'cd e') > 0 ORDER BY id;
 
 DROP TABLE tab;

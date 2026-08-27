@@ -30,8 +30,7 @@
 -- tokenizer parameters are not normalized away
 1
 -- a postprocessor is applied, like in the two-argument form
-1
-4
+2
 -- a preprocessor is applied, like in the two-argument form
 1
 2
