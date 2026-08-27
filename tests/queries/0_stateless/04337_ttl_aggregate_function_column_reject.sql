@@ -525,11 +525,12 @@ SET variant_throw_on_type_mismatch = 1;
 
 -- The Variant function adaptor also consults `variant_throw_on_type_mismatch` while *building* the
 -- expression: when none of the alternatives is compatible with the consumer, the build itself either
--- throws (strict) or resolves the result to constant NULL (lenient). A lenient build must not slip through
--- DDL validation, because the resulting TTL is a constant NULL that does nothing and would only fail later,
--- on the first strict rebuild (a default-settings INSERT, or a TTL merge under the background profile).
--- The validation build therefore always runs strict, and a lenient session gets the same rejection a strict
--- one does.
+-- throws (strict) or resolves the result to constant NULL (lenient). The lenient build must not slip
+-- through DDL validation: the constant fold prunes the referenced column from the stored TTL column list,
+-- so every later rebuild of the TTL expression fails with "Missing columns" (broken INSERTs and merges),
+-- and the table cannot be re-attached on restart (loading has no query context, so the adaptor is strict
+-- and throws). The validation build therefore always runs strict, and a lenient session gets the same
+-- rejection a strict one does.
 SET variant_throw_on_type_mismatch = 0;
 
 CREATE TABLE test_ttl_agg_variant_lenient_build
@@ -542,9 +543,8 @@ ENGINE = MergeTree()
 ORDER BY key
 TTL d + INTERVAL 1 DAY DELETE WHERE isNull(length(v)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- The escape hatch stays available: with `allow_suspicious_ttl_expressions` the all-incompatible consumer
--- resolves to NULL at build time and the CREATE is accepted. Such a table still loads on restart, see
--- `04691_ttl_expression_rebuild_after_constant_fold`.
+-- The escape hatch keeps the plain session behavior: with `allow_suspicious_ttl_expressions` the lenient
+-- session resolves the all-incompatible consumer to NULL at build time and the CREATE is accepted.
 SET allow_suspicious_ttl_expressions = 1;
 
 CREATE TABLE test_ttl_agg_variant_lenient_build_suspicious
@@ -809,51 +809,9 @@ DROP TABLE test_ttl_agg_array_dynamic_suspicious;
 
 SET allow_suspicious_ttl_expressions = 0;
 
--- A carrier hidden under a Nullable wrapper (Nullable(Tuple(..., Dynamic))) must be probed with a
--- non-NULL row too: the default Nullable row is NULL, so the consumer would otherwise never see the
--- nested payload at DDL time, yet still throw during TTL execution once a non-NULL row stores a state.
-SET enable_nullable_tuple_type = 1;
-
-CREATE TABLE test_ttl_agg_nullable_tuple_dynamic
-(
-    key UInt64,
-    tup Nullable(Tuple(UInt32, Dynamic)),
-    d DateTime
-)
-ENGINE = MergeTree()
-ORDER BY key
-TTL d + INTERVAL 1 DAY DELETE WHERE tup = tup; -- { serverError BAD_TTL_EXPRESSION }
-
--- Valid: a type-agnostic consumer over the Nullable wrapper is accepted.
-CREATE TABLE test_ttl_agg_nullable_tuple_agnostic
-(
-    key UInt64,
-    tup Nullable(Tuple(UInt32, Dynamic)),
-    d DateTime
-)
-ENGINE = MergeTree()
-ORDER BY key
-TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(tup);
-
-DROP TABLE test_ttl_agg_nullable_tuple_agnostic;
-
--- The escape hatch also covers the Nullable-wrapped carrier.
-SET allow_suspicious_ttl_expressions = 1;
-
-CREATE TABLE test_ttl_agg_nullable_tuple_suspicious
-(
-    key UInt64,
-    tup Nullable(Tuple(UInt32, Dynamic)),
-    d DateTime
-)
-ENGINE = MergeTree()
-ORDER BY key
-TTL d + INTERVAL 1 DAY DELETE WHERE tup = tup;
-
-DROP TABLE test_ttl_agg_nullable_tuple_suspicious;
-
-SET allow_suspicious_ttl_expressions = 0;
-SET enable_nullable_tuple_type = 0;
+-- Note: the master version of this test also covers a carrier hidden under a Nullable wrapper
+-- (Nullable(Tuple(..., Dynamic))), but the `enable_nullable_tuple_type` setting does not exist
+-- in 26.5 (Nullable(Tuple) is rejected unconditionally), so that section is omitted here.
 
 -- A direct AggregateFunction state nested in a container (not through a Variant/Dynamic carrier) must be
 -- probed with a non-empty row too: the default Array/Map value is empty, so an element-level consumer

@@ -11,14 +11,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # free-memory limiter actually kicks in, then count parallel stages from the
 # `EXPLAIN PIPELINE` output.
 
+CONFIG_FILE=$(mktemp -p "${CLICKHOUSE_TMP:-.}" 04117_config.XXXXXX.xml)
+trap 'rm -f "$CONFIG_FILE"' EXIT
+
+cat > "$CONFIG_FILE" <<'EOF'
+<clickhouse>
+    <max_server_memory_usage>4G</max_server_memory_usage>
+</clickhouse>
+EOF
+
 run_local() {
-    local server_opts=(
-        --max_server_memory_usage=4G
-        # we cannot use cgroups since this will sum RSS of all processes and clickhouse-local may fail with MEMORY_LIMIT_EXCEEDED
-        --memory_worker_use_cgroup=0
-        --memory_worker_dynamic_hard_limit=false
-    )
-    ${CLICKHOUSE_LOCAL} "$@" -- "${server_opts[@]}"
+    ${CLICKHOUSE_LOCAL} --config-file "$CONFIG_FILE" "$@"
 }
 
 # `EXPLAIN PIPELINE SELECT ...` produces text output where the source stage
@@ -43,7 +46,7 @@ max_pipeline_parallelism() {
     awk 'BEGIN{m=1} match($0, /× [0-9]+/) {n=substr($0, RSTART+2, RLENGTH-2)+0; if (n>m) m=n} END{print m}'
 }
 
-for analyzer in 1; do
+for analyzer in 0 1; do
     echo "=== enable_analyzer=${analyzer} ==="
 
     echo "-- SELECT, limiter disabled --"

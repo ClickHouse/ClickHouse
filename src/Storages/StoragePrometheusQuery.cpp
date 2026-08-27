@@ -1,8 +1,6 @@
 #include <Storages/StoragePrometheusQuery.h>
 
 #include <Common/logger_useful.h>
-#include <Columns/IColumn.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -10,7 +8,6 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
@@ -18,7 +15,6 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 
 namespace DB
@@ -28,31 +24,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
-namespace Setting
-{
-    extern const SettingsBool enable_materialized_cte;
-}
-
-namespace
-{
-
-/// Read a required String literal argument as a value, without materializing a `Field`.
-String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, std::string_view arg_name)
-{
-    const auto value = evaluateConstantExpressionAsColumn(arg, context);
-    /// Accept `Nullable`/`LowCardinality` wrappers: the previous `Field`-based code read the value
-    /// via `operator[]`, which flattens wrappers, so a non-NULL `Nullable(String)`/
-    /// `LowCardinality(String)` constant passed the String check. Preserve that, and still reject a
-    /// NULL value as before.
-    if (!isStringOrFixedString(removeLowCardinalityAndNullable(value.getType())))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got {}", arg_name, value.getType()->getName());
-    if (value.isNull())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got NULL", arg_name);
-    return String(value.getDataAt());
-}
-
 }
 
 StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(ASTs & args, const ContextPtr & context, bool over_range)
@@ -92,28 +63,46 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
         if (args.size() == min_num_args)
         {
             /// prometheusQuery( 'my_time_series_table', ... )
-            time_series_storage_id.table_name = getStringConstArgument(args[argument_index++], context, "table_name");
+            auto table_name_field = evaluateConstantExpression(args[argument_index++], context).first;
+
+            if (table_name_field.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_name' must be a literal with type String, got {}", table_name_field.getType());
+
+            time_series_storage_id.table_name = table_name_field.safeGet<String>();
         }
         else
         {
             /// prometheusQuery( 'mydb', 'my_time_series_table', ... )
-            time_series_storage_id.database_name = getStringConstArgument(args[argument_index++], context, "database_name");
-            time_series_storage_id.table_name = getStringConstArgument(args[argument_index++], context, "table_name");
+            auto database_name_field = evaluateConstantExpression(args[argument_index++], context).first;
+            auto table_name_field = evaluateConstantExpression(args[argument_index++], context).first;
+
+            if (database_name_field.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'database_name' must be a literal with type String, got {}", database_name_field.getType());
+
+            if (table_name_field.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_name' must be a literal with type String, got {}", table_name_field.getType());
+
+            time_series_storage_id.database_name = database_name_field.safeGet<String>();
+            time_series_storage_id.table_name = table_name_field.safeGet<String>();
         }
     }
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
-    auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
-        time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, context)->getInMemoryMetadataPtr(context, false);
+    auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
+    auto scalar_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
-    PrometheusQueryTree promql_query{getStringConstArgument(args[argument_index++], context, "promql_query"), timestamp_scale};
+    auto promql_query_field = evaluateConstantExpression(args[argument_index++], context).first;
+    if (promql_query_field.getType() != Field::Types::String)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'promql_query' must be a literal with type String, got {}", promql_query_field.getType());
 
-    PrometheusQueryEvaluationMode mode = {};
+    PrometheusQueryTree promql_query{promql_query_field.safeGet<String>(), timestamp_scale};
+
+    PrometheusQueryEvaluationMode mode;
     DateTime64 start_time;
     DateTime64 end_time;
     Decimal64 step;
@@ -192,19 +181,7 @@ void StoragePrometheusQuery::readImpl(
 
     LOG_INFO(log, "Will execute query:\n{}", select_query->formatForLogging());
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
-
-    /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
-    /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
-    /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
-    auto query_context = context;
-    if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
-    {
-        auto context_copy = Context::createCopy(context);
-        context_copy->setSetting("enable_materialized_cte", true);
-        query_context = context_copy;
-    }
-
-    InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
+    InterpreterSelectQueryAnalyzer interpreter(select_query, context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
 }

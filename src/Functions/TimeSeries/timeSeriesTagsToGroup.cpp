@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesTagsToGroup([('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...)
 /// returns a group assigned to the specified set of tags.
-class FunctionTimeSeriesTagsToGroup final : public IFunction
+class FunctionTimeSeriesTagsToGroup : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesTagsToGroup";
@@ -83,7 +83,7 @@ REGISTER_FUNCTION(TimeSeriesTagsToGroup)
 Returns a group of tags associated with specified tags.
 If the same group of tags is found multiple times during the query execution, the function returns the same group.
 For an empty set of tags the function always returns 0.
-See also function [timeSeriesGroupToTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
+See also function [timeSeriesGroupToTags()](/sql-reference/functions/time-series-functions#timeSeriesGroupToTags).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesTagsToGroup(tags_array, tag_name_1, tag_value_1, tag_name2, tag_value2, ...)";
     FunctionDocumentation::Arguments arguments = {

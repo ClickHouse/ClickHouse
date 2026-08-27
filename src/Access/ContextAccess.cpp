@@ -22,6 +22,7 @@
 #include <Common/logger_useful.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
+#include <cassert>
 #include <unordered_set>
 
 
@@ -63,8 +64,8 @@ namespace
             return element;
 
         // Columns imply a resolved table and database (current DB is already substituted upstream).
-        chassert(!element.table.empty());
-        chassert(!element.database.empty());
+        assert(!element.table.empty());
+        assert(!element.database.empty());
 
         if (access.isGranted(AccessType::SHOW_COLUMNS, element.database, element.table, element.columns))
             return element;
@@ -215,8 +216,6 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             "database_engines",
             "table_engines",
             "table_functions",
-            "disk_types",
-            "dictionary_layouts",
             "aggregate_function_combinators",
             "completions",
 
@@ -237,13 +236,6 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         for (const auto * table_name : always_accessible_tables)
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
 
-        /// `system.user_query_log` shows each user only their own query log records, so SELECT on it is
-        /// granted implicitly to everyone - but only while the feature is enabled and the name is actually
-        /// backed by `StorageSystemUserQueryLog`. When it is disabled, the name can back a regular table
-        /// (or the raw query log via `query_log.table = user_query_log`), which must not become world-readable.
-        if (access_control.isUserQueryLogEnabled())
-            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "user_query_log");
-
         if (max_flags.contains(AccessType::SHOW_USERS))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "users");
 
@@ -258,9 +250,6 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if (max_flags.contains(AccessType::SHOW_QUOTAS))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "quotas");
-
-        if (max_flags.contains(AccessType::SHOW_MASKING_POLICIES))
-            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "masking_policies");
     }
     else
     {
@@ -354,13 +343,11 @@ void ContextAccess::initialize()
 
     subscription_for_user_change = access_control->subscribeForChanges(
         *params.user_id,
-        [weak_ptr = weak_from_this()](const std::vector<AccessChangesNotifier::Change> & changes)
+        [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr & entity)
         {
             auto ptr = weak_ptr.lock();
             if (!ptr)
                 return;
-            /// All changes are for the same user id; the last one reflects its current state.
-            const auto & entity = changes.back().entity;
             UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
             std::lock_guard lock2{ptr->mutex};
             ptr->setUser(changed_user);
@@ -439,7 +426,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
     {
         subscription_for_initial_user_change = access_control->subscribeForChanges(
             *params.initial_user_id,
-            [weak_ptr = weak_from_this()](const std::vector<AccessChangesNotifier::Change> &)
+            [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr &)
             {
                 if (auto ptr = weak_ptr.lock())
                 {
@@ -454,7 +441,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
 
 void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const
 {
-    chassert(roles_info_);
+    assert(roles_info_);
     roles_info = roles_info_;
 
     enabled_row_policies = access_control->getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
@@ -564,9 +551,6 @@ RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, co
         }
     }
 
-    if (filter)
-        checkRowPolicyFilterExpression(filter->expression);
-
     if (filter && filter->policies.empty())
     {
         if (access_control->shouldThrowOnUnmatchedRowPolicies())
@@ -618,12 +602,13 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 }
 
 
-std::vector<QuotaUsage> ContextAccess::getQuotaUsages() const
+std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 {
     auto quota = getQuota();
-    if (!quota)
+    if (!quota) /// Detected by fuzzer
         return {};
-    return quota->getAllUsage();
+    else
+        return quota->getUsage();
 }
 
 SettingsChanges ContextAccess::getDefaultSettings() const
@@ -692,11 +677,8 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
     auto access_granted = [&]
     {
-        /// Record every granted access, regardless of whether the caller is the throwing entry point
-        /// (`checkAccess` / `checkGrantOption`) or the non-throwing one (`isGranted`, used internally by
-        /// `checkAccessWithFilter`). Without this, an `isGranted`-driven success leaves no trace in
-        /// system.query_log.used_privileges even though the privilege was effectively required by the query.
-        context->addQueryPrivilegesInfo(AccessRightsElement{flags, args...}.toStringWithoutOptions(), true);
+        if constexpr (throw_if_denied)
+            context->addQueryPrivilegesInfo(AccessRightsElement{flags, args...}.toStringWithoutOptions(), true);
         return true;
     };
 
@@ -731,7 +713,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     }
 
     auto acs = getAccessRightsWithImplicit();
-    bool granted = false;
+    bool granted;
     if constexpr (wildcard)
     {
         if constexpr (grant_option)
@@ -809,16 +791,15 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
         const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
         const AccessFlags workload_ddl = AccessType::CREATE_WORKLOAD | AccessType::DROP_WORKLOAD;
         const AccessFlags resource_ddl = AccessType::CREATE_RESOURCE | AccessType::DROP_RESOURCE;
-        const AccessFlags handler_ddl = AccessType::CREATE_HANDLER | AccessType::ALTER_HANDLER | AccessType::DROP_HANDLER;
         const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
         const AccessFlags table_and_dictionary_and_function_ddl = table_ddl | dictionary_ddl | function_ddl;
         const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
         const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
 
-        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | workload_ddl | resource_ddl | handler_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
+        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | workload_ddl | resource_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
         const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE;
 
-        const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl | workload_ddl | resource_ddl | handler_ddl;
+        const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl | workload_ddl | resource_ddl;
         const AccessFlags introspection_flags = AccessType::INTROSPECTION;
     };
     static const PrecalculatedFlags precalc;
@@ -873,7 +854,7 @@ bool ContextAccess::checkAccessImpl(const ContextPtr & context, const AccessFlag
 template <bool throw_if_denied, bool grant_option, bool wildcard>
 bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, const AccessRightsElement & element) const
 {
-    chassert(!element.grant_option || grant_option);
+    assert(!element.grant_option || grant_option);
     if (element.isGlobalWithParameter())
     {
         if (element.anyParameter())
@@ -1095,10 +1076,10 @@ void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_id
     }
 }
 
-bool ContextAccess::isGrantedWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
+void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
 {
     if (isGranted(context, flags, parameter))
-        return true;
+        return;
 
     if (!to_check_by_filter.empty())
     {
@@ -1107,19 +1088,10 @@ bool ContextAccess::isGrantedWithFilter(const ContextPtr & context, const Access
         for (const auto & filter : filters)
         {
             if (re2::RE2::FullMatch(to_check_by_filter, filter.path) && filter.access_flags.contains(flags))
-                return true;
+                return;
         }
     }
 
-    return false;
-}
-
-void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
-{
-    if (isGrantedWithFilter(context, flags, parameter, to_check_by_filter))
-        return;
-
-    /// Not granted: let the regular check produce the exception with a proper message.
     checkAccess(context, flags, parameter);
 }
 

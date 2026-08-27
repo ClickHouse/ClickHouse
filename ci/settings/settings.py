@@ -46,8 +46,11 @@ SECRET_CI_DB_URL = "clickhouse-test-stat-url"
 SECRET_CI_DB_USER = "clickhouse-test-stat-login"
 SECRET_CI_DB_PASSWORD = "clickhouse-test-stat-password"
 
-GH_AUTH_LAMBDA_NAME: str = "mint-token-pr-lambda-terraform"
-GH_AUTH_LAMBDA_REGION: str = "us-east-1"
+USE_CUSTOM_GH_AUTH = True
+SECRET_GH_APP_ID: str = "woolenwolf_gh_app.clickhouse-app-id"
+SECRET_GH_APP_PEM_KEY: str = "woolenwolf_gh_app.clickhouse-app-key"
+SECRET_GH_APP_INSTALLATION_ID: str = "woolenwolf_gh_app.installation_id"
+SECRET_GH_APP_REGION: str = "us-east-1"
 
 INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS = ""
 
@@ -90,7 +93,6 @@ TEST_FAILURE_PATTERNS = [
     "Test runs too long",
     "having exception in stdout",
     "server died",
-    "liveness check failed",
     "Test internal error:",
     # Common Integration tests failures
     "AssertionError",

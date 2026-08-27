@@ -1,7 +1,5 @@
-#include <Core/ProtocolDefines.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -28,7 +26,6 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const QueryPlanSerializationSettingsBool distributed_aggregation_memory_efficient;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
-    extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
 }
 
 namespace Setting
@@ -93,23 +90,8 @@ void MergingAggregatedStep::applyOrder(SortDescription input_sort_description)
     group_by_sort_description = std::move(input_sort_description);
 }
 
-void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    /// Update values from settings if plan was deserialized.
-    /// An optimizer rewrite can build this step from the params of a deserialized `AggregatingStep`,
-    /// which carries the "resolve locally later" sentinel 0 for both thread counts.
-    if (max_threads == 0)
-        max_threads = settings.max_threads;
-    if (params.max_threads == 0)
-        params.max_threads = settings.max_threads;
-
-    /// Read only under `memory_efficient_aggregation`, which `applyParallelReplicas` hardcodes off
-    /// and `makeDistributed` forwards from the setting.
-    if (memory_efficient_merge_threads == 0)
-        memory_efficient_merge_threads = settings.aggregation_memory_efficient_merge_threads;
-    if (memory_efficient_merge_threads == 0)
-        memory_efficient_merge_threads = max_threads;
-
     if (memoryBoundMergingWillBeUsed())
     {
         if (input_headers.front()->has("__grouping_set") || !grouping_sets_params.empty())
@@ -174,11 +156,6 @@ void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
     params.explain(settings);
 
-    /// The memory-efficient mode merges bucket by bucket via `GroupingAggregatedTransform`
-    /// instead of collecting everything into one hash table; make the planned mode visible.
-    if (memory_efficient_aggregation)
-        settings.out << settings.detail_prefix << "Mode: memory-efficient\n";
-
     if (!group_by_sort_description.empty())
     {
         const String & prefix = settings.detail_prefix;
@@ -191,8 +168,6 @@ void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     params.explain(map);
-    if (memory_efficient_aggregation)
-        map.add("Mode", "memory-efficient");
     if (!group_by_sort_description.empty())
         map.add("Order", dumpSortDescription(group_by_sort_description));
 }
@@ -201,23 +176,6 @@ void MergingAggregatedStep::updateOutputHeader()
 {
     const auto & in_header = input_headers.front();
     output_header = std::make_shared<const Block>(MergingAggregatedTransform::appendGroupingIfNeeded(*in_header, params.getHeader(*in_header, final)));
-}
-
-QueryPlanStepPtr MergingAggregatedStep::clone() const
-{
-    auto cloned = std::make_unique<MergingAggregatedStep>(
-        input_headers.front(),
-        params,
-        grouping_sets_params,
-        final,
-        memory_efficient_aggregation,
-        memory_efficient_merge_threads,
-        should_produce_results_in_order_of_bucket_number,
-        max_block_size,
-        memory_bound_merging_max_block_bytes,
-        memory_bound_merging_of_aggregation_results_enabled);
-    cloned->group_by_sort_description = group_by_sort_description;
-    return cloned;
 }
 
 bool MergingAggregatedStep::memoryBoundMergingWillBeUsed() const
@@ -233,7 +191,7 @@ const SortDescription & MergingAggregatedStep::getSortDescription() const
     return IQueryPlanStep::getSortDescription();
 }
 
-void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
     settings[QueryPlanSerializationSetting::aggregation_in_order_max_block_bytes] = memory_bound_merging_max_block_bytes;
@@ -242,25 +200,6 @@ void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & s
     settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats] = params.stats_collecting_params.max_entries_for_hash_table_stats;
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation] = params.stats_collecting_params.max_size_to_preallocate;
     settings[QueryPlanSerializationSetting::distributed_aggregation_memory_efficient] = memory_efficient_aggregation;
-    settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte] = params.serialize_string_with_zero_byte;
-
-    /// A peer whose query-plan serialization version knows the name receives the value whenever the legacy method is
-    /// requested; towards an older peer it is written only when this step can actually choose the single-`String`
-    /// method - see the corresponding condition in `AggregatingStep::serializeSettings`.
-    ///
-    /// Unlike there, no two-level-threshold narrowing applies to the old-peer condition, not even for
-    /// `memory_efficient_aggregation = false`. This step's method choice is not local to the server that merges:
-    /// `Aggregator::mergeBlocks` inserts a bucketed input chunk into `impls[bucket]` under the *producer's* bucket
-    /// number, but re-buckets the single-level (`bucket_num = -1`) chunks by the *local* method's hash. Sources
-    /// sharing one plan can still legitimately mix the two (only the sources whose state grew past the threshold
-    /// converted), and then a merging peer on the other method splits one key across two sub-tables and returns it
-    /// twice. Whether the inputs can be two-level is a property of the producing steps' thresholds, which this step's
-    /// merge `params` does not carry, so there is no sound local condition to narrow on - the old-peer gate stays
-    /// keyed on the method choice alone.
-    if (!params.enable_packed_string_keys
-        && (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING
-            || aggregationCanUsePackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params)))
-        settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
 }
 
 void MergingAggregatedStep::serialize(Serialization & ctx) const
@@ -310,7 +249,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "MergingAggregatedStep must have one input stream");
 
-    UInt8 flags = 0;
+    UInt8 flags;
     readIntBinary(flags, ctx.in);
 
     const bool final = bool(flags & 1);
@@ -320,7 +259,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     const bool should_produce_results_in_order_of_bucket_number = bool(flags & 16);
     const bool memory_bound_merging_of_aggregation_results_enabled = bool(flags & 32);
 
-    UInt64 num_keys = 0;
+    UInt64 num_keys;
     readVarUInt(num_keys, ctx.in);
     Names keys(num_keys);
     for (auto & key : keys)
@@ -329,12 +268,12 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     GroupingSetsParamsList grouping_sets_params;
     if (has_grouping_sets)
     {
-        UInt64 num_groups = 0;
+        UInt64 num_groups;
         readVarUInt(num_groups, ctx.in);
         for (size_t group_num = 0; group_num < num_groups; ++group_num)
         {
             auto & grouping_set = grouping_sets_params.emplace_back();
-            UInt64 num_used_keys = 0;
+            UInt64 num_used_keys;
             readVarUInt(num_used_keys, ctx.in);
             grouping_set.used_keys.resize(num_used_keys);
             NameSet used_keys_set;
@@ -352,7 +291,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     }
 
     AggregateDescriptions aggregates;
-    deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
+    deserializeAggregateDescriptions(aggregates, ctx.in);
 
     SortDescription group_by_sort_description;
     deserializeSortDescription(group_by_sort_description, ctx.in);
@@ -376,8 +315,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
         settings[Setting::max_threads],
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
-        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],
-        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation]);
+        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte]);
 
     auto merging_aggregated_step = std::make_unique<MergingAggregatedStep>(
         ctx.input_headers.front(),
@@ -396,7 +334,6 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     return merging_aggregated_step;
 }
 
-void registerMergingAggregatedStep(QueryPlanStepRegistry & registry);
 void registerMergingAggregatedStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("MergingAggregated", MergingAggregatedStep::deserialize);

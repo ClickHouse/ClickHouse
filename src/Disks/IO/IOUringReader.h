@@ -36,7 +36,7 @@ private:
     bool is_supported;
 
     std::mutex mutex;
-    struct io_uring ring{};
+    struct io_uring ring;
     uint32_t cq_entries;
     size_t tracked_ring_size = 0;
 

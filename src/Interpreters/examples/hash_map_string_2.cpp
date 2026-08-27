@@ -3,7 +3,6 @@
 #include <vector>
 
 #include <Common/Stopwatch.h>
-#include <Examples/clickhouse_examples.h>
 
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 #define DBMS_HASH_MAP_DEBUG_RESIZES
@@ -607,7 +606,7 @@ void NO_INLINE bench(const std::vector<std::string_view> & data, const char * na
 
     Map map;
     typename Map::LookupResult it;
-    bool inserted = {};
+    bool inserted;
 
     for (const auto & value : data)
     {

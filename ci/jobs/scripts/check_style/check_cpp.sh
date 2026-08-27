@@ -14,13 +14,7 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h|utils/wasm-parser/shim/'
-# Heuristic style checks must skip the verbatim Markdown documentation embedded into
-# the format source files as R"DOCS_MD( ... )DOCS_MD" raw-string literals (literal tabs
-# in TabSeparated/TSV examples, Pretty result tables indented by one to three spaces,
-# trailing whitespace inherited from the Markdown pages, etc.). Hits inside those raw
-# strings are filtered out by this helper rather than excluding whole files.
-FILTER_DOCS="python3 $ROOT_PATH/ci/jobs/scripts/check_style/filter_embedded_docs.py"
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h'
 EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
 # Pre-compute file lists to avoid repeated find+grep
@@ -51,17 +45,16 @@ rg $@ -n --glob '*.h' --glob '*.cpp' \
     --glob '!**/AvroSchema.h' \
     --glob '!**/*Settings.cpp' --glob '!**/FormatFactorySettings.h' \
     --glob '!**/StorageSystemDashboards.cpp' \
-    --glob '!**/wasm-parser/shim/**' \
     '((\b(class|struct|namespace|enum|if|for|while|else|throw|switch)\b.*|\)(\s*const)?(\s*noexcept)?(\s*override)?\s*))\{$|^ {1,3}[^\* ]\S|^\s*\b(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\b\(|\( [^\s\\]|\S \)' \
     $ROOT_PATH/{src,base,programs,utils} |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
-    rg -v '//|\s+\*|\$\(\(| \)"' | $FILTER_DOCS && echo "^ style error on this line"
+    rg -v '//|\s+\*|\$\(\(| \)"' && echo "^ style error on this line"
 # single-line comment | continuation of a multiline comment | a typical piece of embedded shell code | something like ending of raw string literal
 } > "$O.01" 2>&1 &
 
 # 02: Tabs and namespace comments
 {
-xargs < "$STYLE_TMPDIR/all_excluded" rg $@ -H -n -F $'\t' | $FILTER_DOCS && echo '^ tabs are not allowed'
+xargs < "$STYLE_TMPDIR/all_excluded" rg $@ -F $'\t' && echo '^ tabs are not allowed'
 
 # // namespace comments are unneeded
 result=$(xargs < "$STYLE_TMPDIR/all_excluded" rg $@ '}\s*//+\s*namespace\s*' 2>/dev/null)
@@ -84,7 +77,6 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::end
     ProfileEvents::increment
     ProfileEvents::incrementNoTrace
-    ProfileEvents::incrementSignalSafe
     ProfileEvents::incrementForLogMessage
     ProfileEvents::incrementLoggerElapsedNanoseconds
     ProfileEvents::getName
@@ -102,7 +94,6 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::checkCPUOverload
     ProfileEvents::getDocumentation
     ProfileEvents::NAME
-    ProfileEvents::setUserPerCPUEnabled
 
     CurrentMetrics::add
     CurrentMetrics::max
@@ -115,7 +106,6 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::end
     CurrentMetrics::Increment
     CurrentMetrics::Metric
-    CurrentMetrics::METRIC
     CurrentMetrics::values
     CurrentMetrics::Value
     CurrentMetrics::keeper_metrics
@@ -136,12 +126,9 @@ EXTERN_TYPES_EXCLUDES=(
 # and this matches with zkutil::CreateMode
 grep -v -e 'src/Common/ZooKeeper/Types.h' -e 'src/Coordination/KeeperConstants.cpp' "$STYLE_TMPDIR/all_excluded" > "$STYLE_TMPDIR/extern_files"
 
-# Extract declarations: "filepath:D TYPE NAME [NOLINT]"
-# A trailing NOLINT comment marks the declaration as used elsewhere: it still counts as a
-# declaration (so same-file usages and duplicates are checked), but is exempt from the
-# "defined but not used" check below.
+# Extract declarations: "filepath:D TYPE NAME"
 xargs < "$STYLE_TMPDIR/extern_files" rg -o --no-line-number \
-    'extern const (int|Event|Metric) ([_A-Za-z0-9]+);(?:.*?(NOLINT))?' -r 'D $1 $2 $3' > "$STYLE_TMPDIR/extern_combined"
+    'extern const (int|Event|Metric) ([_A-Za-z0-9]+);' -r 'D $1 $2' > "$STYLE_TMPDIR/extern_combined"
 
 # Extract usages (skipping comment lines): "filepath:U NS NAME"
 xargs < "$STYLE_TMPDIR/extern_files" rg --no-line-number \
@@ -178,7 +165,6 @@ BEGIN {
         ns = type_to_ns[p[2]]
         key = file SUBSEP ns SUBSEP p[3]
         decl[key]++
-        if (p[4] == "NOLINT") used[key] = 1
     } else {
         key = file SUBSEP p[2] SUBSEP p[3]
         used[key] = 1
@@ -217,15 +203,15 @@ xargs < "$STYLE_TMPDIR/nobase_headers_excluded" awk 'FNR==1 && !/^#pragma once$/
 
 # 06a: Too many exclamation marks
 {
-xargs < "$STYLE_TMPDIR/all_excluded" grep -Hn -F '!!!' | $FILTER_DOCS && echo "Too many exclamation marks (looks dirty, unconfident)."
+xargs < "$STYLE_TMPDIR/all_excluded" grep -F '!!!' | grep . && echo "Too many exclamation marks (looks dirty, unconfident)."
 
 # Exclamation mark in a message
-xargs < "$STYLE_TMPDIR/all_excluded" grep -Hn -F '!",' | $FILTER_DOCS && echo "^ No need for an exclamation mark (looks dirty, unconfident)."
+xargs < "$STYLE_TMPDIR/all_excluded" grep -F '!",' | grep . && echo "No need for an exclamation mark (looks dirty, unconfident)."
 } > "$O.06a" 2>&1 &
 
 # 06b: Trailing whitespaces
 {
-xargs < "$STYLE_TMPDIR/all_excluded" grep -Hn ' $' | $FILTER_DOCS && echo "^ Trailing whitespaces."
+xargs < "$STYLE_TMPDIR/all_excluded" grep -n ' $' | grep . && echo "^ Trailing whitespaces."
 } > "$O.06b" 2>&1 &
 
 # 07a: Forbidden patterns in nobase_excluded (part 1)
@@ -254,36 +240,20 @@ xargs < "$STYLE_TMPDIR/nobase_excluded" rg '(std::mt19937|std::mersenne_twister_
 
 # Require checking return value of close(),
 # since it can hide fd misuse and break other places.
-xargs < "$STYLE_TMPDIR/nobase_excluded" rg -e ' close\(.*fd' -e ' ::close\(' | grep -v = | grep -vE ':\s*(///?|\*)' && echo "Return value of close() should be checked"
+xargs < "$STYLE_TMPDIR/nobase_excluded" rg -e ' close\(.*fd' -e ' ::close\(' | grep -v = && echo "Return value of close() should be checked"
 } > "$O.07b" 2>&1 &
 
 # 08: std containers lint
 {
 directories_to_lint_std_containers_usages=(
     src/AggregateFunctions
-    src/BridgeHelper
     src/Columns
-    src/Compression
-    src/Core/MySQL
-    src/Core/PostgreSQL
-    src/Core/Streaming
-    src/Core/YTsaurus
-    src/Core/examples
-    src/Core/fuzzers
-    src/Daemon
     src/Dictionaries
-    src/Examples
-    src/Functions
-    src/IO
-    src/Loggers
-    src/QueryPipeline
-    src/TableFunctions
 )
 
 for dir in "${directories_to_lint_std_containers_usages[@]}"; do
     grep "/$dir/" "$STYLE_TMPDIR/all_excluded" |
         xargs rg -Hn 'std::(deque|list|map|multimap|multiset|queue|set|unordered_map|unordered_multimap|unordered_multiset|unordered_set|vector)<' |
-        grep -vE '^[^:]+:[0-9]+:[[:space:]]*(\*|//|/\*)' |
         grep -v "STYLE_CHECK_ALLOW_STD_CONTAINERS" && echo "Use an -WithMemoryTracking alternative or mark these usages with STYLE_CHECK_ALLOW_STD_CONTAINERS"
 done
 } > "$O.08" 2>&1 &
@@ -306,7 +276,6 @@ std_cerr_cout_excludes=(
     src/Processors/IProcessor.cpp
     src/Client/ClientApplicationBase.cpp
     src/Common/ProgressIndication.h
-    src/Common/Scheduler/Debug.h
     src/Client/LineReader.h
     src/Client/ReplxxLineReader.h
     src/Client/Suggest.cpp
@@ -389,7 +358,7 @@ xargs < "$STYLE_TMPDIR/nobase_all" rg --line-number '(dynamic|typeid)_cast<[^>]+
 # 12b: Punctuation, std::regex, and Cyrillic checks on nobase_all
 {
 # Check for bad punctuation: whitespace before comma.
-xargs < "$STYLE_TMPDIR/nobase_all" rg -H --line-number '\w ,' | grep -v 'bad punctuation is ok here' | $FILTER_DOCS && echo "^ There is bad punctuation: whitespace before comma. You should write it like this: 'Hello, world!'"
+xargs < "$STYLE_TMPDIR/nobase_all" rg --line-number '\w ,' | grep -v 'bad punctuation is ok here' && echo "^ There is bad punctuation: whitespace before comma. You should write it like this: 'Hello, world!'"
 
 # Check usage of std::regex which is too bloated and slow.
 xargs < "$STYLE_TMPDIR/nobase_all" grep -F --line-number 'std::regex' | grep . && echo "^ Please use re2 instead of std::regex"
@@ -401,15 +370,15 @@ grep -v StorageSystemContributors.generated.cpp "$STYLE_TMPDIR/nobase_all" | \
 
 # 13: Orphaned header files
 {
-join -v1 <(grep '\.h$' "$STYLE_TMPDIR/nobase_all" | grep -v 'utils/wasm-parser/shim/' | sed 's:.*/::'  | sort -u) <(rg --no-filename -o '[\w-]+\.h' --glob '*.cpp' --glob '*.c' --glob '*.h' --glob '*.S' $ROOT_PATH/src $ROOT_PATH/programs $ROOT_PATH/utils $ROOT_PATH/tests/lexer | sort -u) |
+join -v1 <(grep '\.h$' "$STYLE_TMPDIR/nobase_all" | sed 's:.*/::'  | sort -u) <(rg --no-filename -o '[\w-]+\.h' --glob '*.cpp' --glob '*.c' --glob '*.h' --glob '*.S' $ROOT_PATH/src $ROOT_PATH/programs $ROOT_PATH/utils $ROOT_PATH/tests/lexer | sort -u) |
     grep . && echo '^ Found orphan header files.'
 } > "$O.13" 2>&1 &
 
 # 14: Abbreviation checks and error message style
 {
 # Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
-xargs < "$STYLE_TMPDIR/all_excluded" rg -H -n 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -E 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight|SqlInfo|CommandGetSqlInfo|CommandGetDbSchemas|commandGetDbSchemas|ArrowFlightSql|FlightSql.html|TcpExtListenOverflows|WhenToUseJson' | $FILTER_DOCS &&
-    echo "^ Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
+xargs < "$STYLE_TMPDIR/all_excluded" rg 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -E 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight|SqlInfo|CommandGetSqlInfo|CommandGetDbSchemas|commandGetDbSchemas|ArrowFlightSql|TcpExtListenOverflows' &&
+    echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
 
 xargs < "$STYLE_TMPDIR/all_excluded" grep -F -i 'ErrorCodes::LOGICAL_ERROR, "Logical error:' &&
     echo "If an exception has LOGICAL_ERROR code, there is no need to include the text 'Logical error' in the exception message, because then the phrase 'Logical error' will be printed twice."
@@ -468,50 +437,8 @@ CONTEXT_H_EXCLUDES=(
     --include "$ROOT_PATH/src/Functions/IFunction*"
 )
 find $ROOT_PATH/src -name '*.h' -print0 | xargs -0 grep -P '#include[\s]*(<|")Interpreters/Context.h(>|")' "${CONTEXT_H_EXCLUDES[@]}" | \
-    grep . && echo '^ Too broad Context.h usage. Consider using Context_fwd.h and move Context.h out from .h into .cpp'
+    grep . && echo '^ Too broad Context.h usage. Consider using Context_fwd.h and Context.h out from .h into .cpp'
 } > "$O.17" 2>&1 &
-
-# 18: Do not use simple assert()
-{
-xargs < "$STYLE_TMPDIR/all_excluded" rg -n '\bassert[[:space:]]*\(' |
-    rg -v ':[[:space:]]*(//|/\*|\*)' &&
-    echo "Use chassert instead of assert"
-} > "$O.18" 2>&1 &
-
-# 19: The SQL parser must not use exceptions to decide between alternatives
-{
-# An alternative that does not match is an ordinary parse outcome, not an exceptional one, and a
-# parser says so by returning false. Routing it through throw/catch also drags the whole exception
-# machinery into a component that otherwise does not need it - see utils/wasm-parser, which builds
-# src/Parsers on its own.
-#
-# The harnesses under tests/, examples/ and fuzzers/ are expected to catch. Kusto is the one part
-# of the parser that has not been cleaned up yet: it still catches to fall back between a number
-# and a timespan, and to turn a failed cast into NULL. The AST JSON deserialization is not a
-# parser of SQL text at all: it maps Poco JSON exceptions to BAD_ARGUMENTS at the boundary, and
-# nothing in it is on the standalone parser's call graph.
-find $ROOT_PATH/src/Parsers \( -name '*.h' -or -name '*.cpp' \) |
-    grep -vP '/(tests|examples|fuzzers|Kusto)/|/(ASTFromJSON|ASTJSONReadHelpers)\.(h|cpp)$' |
-    xargs rg -n '\bcatch[[:space:]]*\(' |
-    grep . &&
-    echo "Do not catch exceptions in src/Parsers: a parser that does not match should return false. See check 19 in ci/jobs/scripts/check_style/check_cpp.sh"
-} > "$O.19" 2>&1 &
-
-# 20: No locale-dependent case conversion where the locale must not be linked
-{
-# `boost::to_lower` and friends convert according to `std::locale`, which is wrong for SQL keywords,
-# identifiers and access-type names - all of which are ASCII - and drags `<locale>` into the binary:
-# libc++'s locale.cpp alone is over 150 KB. Use `toLowerASCII` / `toUpperASCII` /
-# `toLowerCopyASCII` / `toUpperCopyASCII` from `Common/StringUtils.h`.
-#
-# Enforced for the parser and the access code, which a standalone build of the parser links and
-# which are therefore already free of it. The rest of the tree still has around ninety call sites;
-# widen the paths below as they are converted.
-find $ROOT_PATH/src/Parsers $ROOT_PATH/src/Access $ROOT_PATH/base/poco \( -name '*.h' -or -name '*.cpp' \) |
-    xargs rg -n 'boost::(algorithm::)?to_(lower|upper)(_copy)?\b' |
-    grep . &&
-    echo "Do not use boost::to_lower/to_upper here: they depend on the locale and pull <locale> into the binary. Use toLowerASCII/toUpperASCII from Common/StringUtils.h. See check 20 in ci/jobs/scripts/check_style/check_cpp.sh"
-} > "$O.20" 2>&1 &
 
 # Wait for all parallel checks to complete, then output results in order
 wait

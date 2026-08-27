@@ -12,8 +12,7 @@ ENGINE = MergeTree
 ORDER BY Time
 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
--- Keep this row count small: each left row multiplies the large `attributes` fan-out (800K/300K rows per key), so it drives the join's peak memory.
-INSERT INTO events SELECT number % 3 + 2, concat('Payload_', toString(number)), toDateTime('2024-01-01 00:00:00') + INTERVAL number MINUTES FROM numbers(12);
+INSERT INTO events SELECT number % 3 + 2, concat('Payload_', toString(number)), toDateTime('2024-01-01 00:00:00') + INTERVAL number MINUTES FROM numbers(100);
 INSERT INTO events SELECT NULL, concat('Payload_NULL', toString(number)), toDateTime('2024-01-01 00:00:00') + INTERVAL number MINUTES FROM numbers(10);
 
 DROP TABLE IF EXISTS attributes;

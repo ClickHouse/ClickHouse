@@ -58,7 +58,7 @@ ColumnPtr FlatDictionary::getColumn(
     DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     ColumnPtr result;
 
@@ -433,7 +433,7 @@ ColumnPtr FlatDictionary::getDescendants(
     PaddedPODArray<UInt64> keys_backup;
     const auto & keys = getColumnVectorData(this, key_column, keys_backup);
 
-    size_t keys_found = 0;
+    size_t keys_found;
     auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
@@ -819,7 +819,6 @@ Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, siz
     return result;
 }
 
-void registerDictionaryFlat(DictionaryFactory & factory);
 void registerDictionaryFlat(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & full_name,
@@ -858,51 +857,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
         return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
-    factory.registerLayout("flat", create_layout, false, false, Documentation{
-        .description = R"DOCS_MD(
-# flat dictionary layout
-
-With the `flat` layout, the dictionary is completely stored in memory in the form of flat arrays.
-The amount of memory used is proportional to the size of the largest key (in space used).
-
-<Tip>
-This layout type provides the best performance among all available methods of storing a dictionary.
-</Tip>
-
-The dictionary key has the [UInt64](/reference/data-types/int-uint) type and the value is limited to `max_array_size` (by default — 500,000).
-If a larger key is discovered when creating the dictionary, ClickHouse throws an exception and does not create the dictionary.
-The initial size of dictionary flat arrays are controlled by the `initial_array_size` setting (by default — 1024).
-
-All types of sources are supported.
-When updating the dictionary, data (from a file or from a table) is read in its entirety.
-
-Configuration example:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<layout>
-  <flat>
-    <initial_array_size>50000</initial_array_size>
-    <max_array_size>5000000</max_array_size>
-  </flat>
-</layout>
-```
-
-</Tab>
-</Tabs>
-<br/>
-)DOCS_MD",
-        .syntax = "LAYOUT(FLAT([INITIAL_ARRAY_SIZE n] [MAX_ARRAY_SIZE n]))",
-        .related = {"hashed"}});
+    factory.registerLayout("flat", create_layout, false, false);
 }
 
 

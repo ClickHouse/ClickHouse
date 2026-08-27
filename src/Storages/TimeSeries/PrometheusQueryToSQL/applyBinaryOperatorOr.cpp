@@ -5,7 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorSet.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorAnd.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
 
@@ -14,10 +14,7 @@ namespace DB::PrometheusQueryToSQL
 {
 
 SQLQueryPiece applyBinaryOperatorOr(
-    const PrometheusQueryTree::BinaryOperator * operator_node,
-    SQLQueryPiece && left_argument,
-    SQLQueryPiece && right_argument,
-    ConverterContext & context)
+    const PQT::BinaryOperator * operator_node, SQLQueryPiece && left_argument, SQLQueryPiece && right_argument, ConverterContext & context)
 {
     checkArgumentTypesForSetBinaryOperator(operator_node, left_argument, right_argument, context);
 
@@ -37,19 +34,17 @@ SQLQueryPiece applyBinaryOperatorOr(
     }
 
     left_argument = toVectorGrid(std::move(left_argument), context);
-    /// The left grid is read twice - by the per-group presence step (Step 1) and by the final merge join (Step 3) -
-    /// so it's added as a materialized CTE to be evaluated once.
-    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::MATERIALIZED_TABLE});
+    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::TABLE});
     String left = context.subqueries.back().name;
 
     right_argument = toVectorGrid(std::move(right_argument), context);
     context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
     String right = context.subqueries.back().name;
 
-    /// Step 1: Build the per-step presence mask per `join_group` on the left side.
+    /// Step 1: Count the non-NULL values per `join_group` on the left side, per timestamp.
     ///
     /// SELECT timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
-    ///        groupBitOrForEach(arrayMap(x -> isNotNull(x), values)) AS join_presence
+    ///        countForEach(values) AS join_count
     /// GROUP BY join_group
     /// FROM left
     ///
@@ -65,8 +60,8 @@ SQLQueryPiece applyBinaryOperatorOr(
             left_metric_name_dropped));
         builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
 
-        builder.select_list.push_back(makePresenceMask(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
-        builder.select_list.back()->setAlias(ColumnNames::JoinPresence);
+        builder.select_list.push_back(makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+        builder.select_list.back()->setAlias(ColumnNames::JoinCount);
 
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
 
@@ -82,7 +77,7 @@ SQLQueryPiece applyBinaryOperatorOr(
     /// Rows whose `join_group` is absent from the left side pass through unchanged.
     ///
     /// SELECT group,
-    ///        if(notEmpty(join_presence), arrayMap(x, y -> if(x = 0, y, NULL), join_presence, values), values) AS values
+    ///        if(notEmpty(join_count), arrayMap(x, y -> if(x = 0, y, NULL), join_count, values), values) AS values
     /// FROM step1 RIGHT ANY JOIN right
     /// ON join_group == timeSeriesRemoveAllTagsExcept(group, on_tags)
     ///
@@ -94,7 +89,7 @@ SQLQueryPiece applyBinaryOperatorOr(
 
         builder.select_list.push_back(makeASTFunction(
             "if",
-            makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::JoinPresence)),
+            makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::JoinCount)),
             makeASTFunction(
                 "arrayMap",
                 makeASTFunction(
@@ -105,7 +100,7 @@ SQLQueryPiece applyBinaryOperatorOr(
                         makeASTFunction("equals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(0u)),
                         make_intrusive<ASTIdentifier>("y"),
                         make_intrusive<ASTLiteral>(Field{} /* NULL */))),
-                make_intrusive<ASTIdentifier>(ColumnNames::JoinPresence),
+                make_intrusive<ASTIdentifier>(ColumnNames::JoinCount),
                 make_intrusive<ASTIdentifier>(ColumnNames::Values)),
             make_intrusive<ASTIdentifier>(ColumnNames::Values)));
 
@@ -179,8 +174,6 @@ SQLQueryPiece applyBinaryOperatorOr(
             make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::Values})));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
-        /// If the left grid is not materialized (the setting `enable_materialized_cte` is disabled), it's evaluated
-        /// here a second time, which is still correct because group ids are the same within one query.
         builder.from_table = left;
         builder.join_kind = JoinKind::Full;
         builder.join_strictness = JoinStrictness::All;

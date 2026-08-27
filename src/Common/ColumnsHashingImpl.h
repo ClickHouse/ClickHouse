@@ -8,8 +8,6 @@
 #include <Interpreters/KeysNullMap.h>
 #include <Common/HashTable/Prefetching.h>
 
-#include <cstring>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -22,7 +20,7 @@ namespace ColumnsHashing
 
 struct HashMethodContextSettings
 {
-    size_t max_threads{};
+    size_t max_threads;
     bool serialize_string_with_zero_byte = false;
 
     /// Whether software prefetching of hash-table buckets is enabled for this run.
@@ -102,28 +100,19 @@ struct LastElementCache<Value, false> : public LastElementCacheBase
     bool check(const Value & rhs) const { return value == rhs; }
 };
 
-template <typename Mapped, typename Value>
+template <typename Mapped>
 class EmplaceResultImpl
 {
-    using Key = std::decay_t<decltype(std::declval<Value>().first)>;
-
     Mapped & value;
     Mapped & cached_value;
     bool inserted;
-    Key key;
 
 public:
-    EmplaceResultImpl(Mapped & value_, Mapped & cached_value_, bool inserted_, Key key_ = {})
-        : value(value_)
-        , cached_value(cached_value_)
-        , inserted(inserted_)
-        , key(std::move(key_))
-    {
-    }
+    EmplaceResultImpl(Mapped & value_, Mapped & cached_value_, bool inserted_)
+            : value(value_), cached_value(cached_value_), inserted(inserted_) {}
 
     bool isInserted() const { return inserted; }
     auto & getMapped() const { return value; }
-    const Key & getKey() const { return key; }
 
     void setMapped(const Mapped & mapped)
     {
@@ -132,19 +121,14 @@ public:
     }
 };
 
-template <typename Value>
-class EmplaceResultImpl<void, Value>
+template <>
+class EmplaceResultImpl<void>
 {
-    /// A set cell's value is the key itself.
-    using Key = std::decay_t<Value>;
-
     bool inserted;
-    Key key;
 
 public:
-    explicit EmplaceResultImpl(bool inserted_, Key key_ = {}) : inserted(inserted_), key(std::move(key_)) {}
+    explicit EmplaceResultImpl(bool inserted_) : inserted(inserted_) {}
     bool isInserted() const { return inserted; }
-    const Key & getKey() const { return key; }
 };
 
 /// FindResult optionally may contain pointer to value and offset in hashtable buffer.
@@ -204,7 +188,7 @@ template <typename Derived, typename Value, typename Mapped, bool consecutive_ke
 class HashMethodBase
 {
 public:
-    using EmplaceResult = EmplaceResultImpl<Mapped, Value>;
+    using EmplaceResult = EmplaceResultImpl<Mapped>;
     using FindResult = FindResultImpl<Mapped, need_offset>;
     static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
     using Cache = LastElementCache<Value, nullable>;
@@ -218,10 +202,7 @@ public:
     {
         if constexpr (nullable)
         {
-            /// Per-block fast path: if a one-time `memchr` at construction proved that the block
-            /// contains no nulls, the compiler can fold this branch away entirely. Otherwise we
-            /// load the cached `null_map_data` directly, avoiding the virtual `IColumn::getBool`.
-            if (!block_has_no_nulls && null_map_data[row]) [[unlikely]]
+            if (isNullAt(row))
             {
                 if constexpr (consecutive_keys_optimization)
                 {
@@ -270,8 +251,7 @@ public:
     {
         if constexpr (nullable)
         {
-            /// See note in `emplaceKey` about `block_has_no_nulls` and the cached `null_map_data`.
-            if (!block_has_no_nulls && null_map_data[row]) [[unlikely]]
+            if (isNullAt(row))
             {
                 bool has_null_key = data.hasNullKeyData();
 
@@ -370,8 +350,7 @@ public:
     {
         if constexpr (nullable)
         {
-            /// Use the cached raw pointer; avoids the virtual `IColumn::getBool` per call.
-            return !block_has_no_nulls && null_map_data[row];
+            return null_map->getBool(row);
         }
         else
         {
@@ -381,12 +360,7 @@ public:
 
 protected:
     Cache cache;
-    /// Cached raw pointer to the null map bytes for the current block. Each element is 0/1.
-    /// Bypasses the virtual `IColumn` dispatch on the per-row hot path in `emplaceKey` / `findKey`.
-    const UInt8 * null_map_data = nullptr;
-    /// Per-block flag set by a single `memchr` at construction time. When true, every row in the
-    /// block has a zero null-map byte, so the per-row null check can be statically skipped.
-    bool block_has_no_nulls = true;
+    const IColumn * null_map = nullptr;
     bool has_null_data = false;
 
     /// column argument only for nullable column
@@ -405,43 +379,7 @@ protected:
         }
 
         if constexpr (nullable)
-        {
-            const auto & null_map_column = checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
-            const auto & null_map_container = null_map_column.getData();
-            null_map_data = null_map_container.data();
-            /// Scan the null map once per block. `PaddedPODArray<UInt8>` stores 0/1 bytes, so
-            /// finding a single 0x01 byte is enough to know the block contains a null. We use
-            /// `memchr` which is typically vectorized in libc and amortizes well for blocks of
-            /// the usual aggregation size (`max_block_size` = 65505). For tiny blocks the cost
-            /// is dominated by the function-call overhead, but the per-row payload saves a
-            /// virtual call and a branch, so the break-even is small.
-            const size_t size = null_map_container.size();
-            block_has_no_nulls = (size == 0) || (std::memchr(null_map_data, 1, size) == nullptr);
-        }
-    }
-
-    /// Build results from the consecutive-keys cache without touching the hash table.
-    /// The caller must ensure the cache holds the result for the sought key: `!cache.empty`
-    /// for `getCachedFindResult`, `cache.found` for `getCachedEmplaceResult` (an emplace can
-    /// reuse the cache only when the key is known to be in the table already).
-    /// Also used by derived methods that can prove key equality with the cached entry without
-    /// calculating the key (see the raw-bytes shortcut in `HashMethodHashed`).
-    ALWAYS_INLINE EmplaceResult getCachedEmplaceResult()
-    {
-        static_assert(consecutive_keys_optimization);
-        if constexpr (has_mapped)
-            return EmplaceResult(cache.value.second, cache.value.second, false);
-        else
-            return EmplaceResult(false);
-    }
-
-    ALWAYS_INLINE FindResult getCachedFindResult()
-    {
-        static_assert(consecutive_keys_optimization);
-        if constexpr (has_mapped)
-            return FindResult(&cache.value.second, cache.found, 0);
-        else
-            return FindResult(cache.found, 0);
+            null_map = &checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
     }
 
     template <bool compute_hash, typename Data, typename KeyHolder>
@@ -450,12 +388,16 @@ protected:
         if constexpr (consecutive_keys_optimization)
         {
             if (cache.found && cache.check(keyHolderGetKey(key_holder)))
-                return getCachedEmplaceResult();
+            {
+                if constexpr (has_mapped)
+                    return EmplaceResult(cache.value.second, cache.value.second, false);
+                else
+                    return EmplaceResult(false);
+            }
         }
 
         typename Data::LookupResult it;
         bool inserted = false;
-        auto key = keyHolderGetKey(key_holder);
 
         if constexpr (compute_hash)
             data.emplace(key_holder, it, inserted);
@@ -483,22 +425,20 @@ protected:
 
             if constexpr (has_mapped)
             {
-                /// The cache stores the internal key type; the parameterless `getKey` may return
-                /// a converted external representation (e.g. `std::string_view` for `PackedStringRef`).
-                cache.value.first = it->getKey(it->getValue());
+                cache.value.first = it->getKey();
                 cache.value.second = it->getMapped();
                 cached = &cache.value.second;
             }
             else
             {
-                cache.value = it->getValue();
+                cache.value = it->getKey();
             }
         }
 
         if constexpr (has_mapped)
-            return EmplaceResult(it->getMapped(), *cached, inserted, std::move(key));
+            return EmplaceResult(it->getMapped(), *cached, inserted);
         else
-            return EmplaceResult(inserted, std::move(key));
+            return EmplaceResult(inserted);
     }
 
     template <typename Data, typename Key>
@@ -510,7 +450,12 @@ protected:
             /// Now there's not place where we need this options enabled together
             static_assert(!FindResult::has_offset, "`consecutive_keys_optimization` and `has_offset` are conflicting options");
             if (likely(!cache.empty) && cache.check(key))
-                return getCachedFindResult();
+            {
+                if constexpr (has_mapped)
+                    return FindResult(&cache.value.second, cache.found, 0);
+                else
+                    return FindResult(cache.found, 0);
+            }
         }
 
         auto it = data.find(key);
