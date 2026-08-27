@@ -1,5 +1,6 @@
 #include <Client/BuzzHouse/Generator/RandomSettings.h>
 #include <Common/ProfileEvents.h>
+#include <Core/Defines.h>
 
 namespace DB
 {
@@ -2148,15 +2149,17 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "parallel_hash_join_threshold",
            "partial_merge_join_rows_in_right_blocks",
            "query_plan_max_limit_for_lazy_materialization",
-           "reader_executor_window_size",
            "statistics_max_set_size_for_exact_selectivity_estimation"};
     /// NonZeroUInt64 block-size settings — must not receive 0
     DB::Strings nonzero_block_sizes = {"input_format_parquet_max_block_size", "max_block_size", "max_insert_block_size"};
-    DB::Strings max_block_sizes = {"reader_executor_block_size",
-            "join_runtime_filter_blocks_to_skip_before_reenabling",
+    DB::Strings max_block_sizes = {"join_runtime_filter_blocks_to_skip_before_reenabling",
             "max_compress_block_size",
             "min_compress_block_size"/*,
             "output_format_orc_compression_block_size" can give std::exception */};
+    /// Context::getReadSettings() rejects these below MIN_READER_EXECUTOR_SIZE even with
+    /// use_reader_executor disabled, so anything under the floor dies in settings loading
+    /// instead of reaching the reader-executor paths.
+    DB::Strings reader_executor_sizes = {"reader_executor_block_size", "reader_executor_window_size"};
     DB::Strings max_columns_values;
 
     if (!fc.allow_query_oracles)
@@ -2276,6 +2279,16 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     {
         performanceSettings.insert({{entry, CHSetting(highRangeNonZero, {"1024", "2048", "4096", "8192", "16384"}, false)}});
         serverSettings.insert({{entry, CHSetting(highRangeNonZero, blockSizes, false)}});
+    }
+    const auto readerExecutorSizeRange = [](RandomGenerator & rg, FuzzConfig &)
+    {
+        return std::to_string(
+            rg.thresholdGenerator<uint64_t>(0.2, 0.2, MIN_READER_EXECUTOR_SIZE, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024)));
+    };
+    for (const auto & entry : reader_executor_sizes)
+    {
+        performanceSettings.insert({{entry, CHSetting(readerExecutorSizeRange, {"4096", "16384", "1048576", "'10M'"}, false)}});
+        serverSettings.insert({{entry, CHSetting(readerExecutorSizeRange, {"4096", "8192", "16384", "65536", "1048576"}, false)}});
     }
     for (const auto & entry : max_columns_values)
     {
