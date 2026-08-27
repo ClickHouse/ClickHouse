@@ -296,6 +296,7 @@ public:
     bool supportParallelJoin() const override { return use_parallel_layout && max_threads > 1; }
     size_t getMaxBuildThreads() const override { return max_threads; }
 
+    /// False when `num_slots == 1` (including `use_parallel_layout && max_threads == 1`).
     bool supportParallelNonJoinedBlocksProcessing() const override;
     /// `FilledJoinStep`, which probes a StorageJoin, has no `NonJoinedBlocksTransform` to run.
     bool isParallelNonJoinedProcessingEnabled() const override

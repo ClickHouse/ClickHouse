@@ -2207,9 +2207,10 @@ bool anyClauseHasRightKeys(const TableJoin & table_join)
 
 bool HashJoin::supportParallelNonJoinedBlocksProcessing() const
 {
-    /// With one slot the extra streams produce nothing while reordering the unmatched rows against
-    /// the matched ones. `parallel_hash` gated this the same way, from its own join only.
-    return use_parallel_layout && table_join->allowParallelNonJoinedRowsProcessing()
+    /// `use_parallel_layout` can still be true with `max_threads = 1` (`num_slots == 1`).
+    /// There is then no bucket split, so unmatched rows stay on the serial JoiningTransform
+    /// path. `supportParallelJoin()` is `use_parallel_layout && max_threads > 1`.
+    return supportParallelJoin() && table_join->allowParallelNonJoinedRowsProcessing()
         && JoinCommon::hasNonJoinedBlocks(*table_join) && anyClauseHasRightKeys(*table_join);
 }
 
