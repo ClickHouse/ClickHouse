@@ -385,7 +385,7 @@ When creating a table, the following settings are applied:
 
 #### Persistent {#persistent}
 
-Disables persistency for the Set and [Join](/reference/engines/table-engines/special/join) table engines.
+Disables persistency for the Set and [Join](/engines/table-engines/special/join) table engines.
 
 Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
 
