@@ -1712,9 +1712,9 @@ def test_main_first_arm_reproduction_does_not_build_a_second_arm(monkeypatch, tm
 def test_main_escalates_to_the_next_build_type_when_the_first_finds_nothing(
     monkeypatch, tmp_path
 ):
-    # The first arm ran every touched test and none failed — inconclusive, not a
-    # refutation — so the next build type is configured, compiled and run, and its
-    # reproduction is what decides the job.
+    # The first arm ran every touched test and none failed, which is inconclusive
+    # rather than a refutation, so the next build type is configured, compiled and run,
+    # and its reproduction is what decides the job.
     job, finalized, calls = _drive_main_arms(
         monkeypatch,
         tmp_path,
@@ -1821,7 +1821,7 @@ def test_per_arm_build_step_log_paths_are_distinct(monkeypatch, tmp_path):
     # praktika names each log from the Result NAME
     # (`from_commands_run`: {TEMP_DIR}/{normalize_string(name)}.log), so two arms sharing
     # one name write one file and the second silently overwrites the first arm's
-    # configure and compile logs — the evidence for the arm that started the escalation.
+    # configure and compile logs, the evidence for the arm that started the escalation.
     import ci.jobs.unit_tests_bugfix_validation_job as job
     from ci.praktika.utils import Utils
 
@@ -1845,6 +1845,98 @@ def test_per_arm_build_step_log_paths_are_distinct(monkeypatch, tmp_path):
     assert len(names) == 2 * len(job.BEFORE_BUILD_TYPES)
     log_paths = [Utils.normalize_string(n) for n in names]
     assert len(set(log_paths)) == len(log_paths), f"log paths collide: {log_paths}"
+
+
+# --------------------------------------------------------------------------
+# set_sanitizer_symbolizer_options: the sanitizer runtimes must symbolize a report
+# without falling back to addr2line, which does not finish on unit_tests_dbms.
+# --------------------------------------------------------------------------
+def _isolate_sanitizer_option_vars(monkeypatch, job):
+    """Pin every `*SAN_OPTIONS` var the helper writes, so no arm can leak one.
+
+    `ci/tests` runs in one pytest process and later modules subprocess sanitizer builds, so a
+    surviving `external_symbolizer_path` would change how they symbolize. `setenv` is what
+    records the pre-state when a var is absent (`delenv(raising=False)` records nothing, so a
+    value the helper then writes would survive the arm), and an empty value is what the helper
+    reads for an unset var anyway.
+    """
+    for var in job._SANITIZER_OPTION_VARS:
+        monkeypatch.setenv(var, "")
+
+
+def test_symbolizer_options_pin_every_sanitizer_runtime(monkeypatch):
+    # A report is symbolized by the runtime that produced it, so every sanitizer an arm can be
+    # built with has to be pinned, not only the one the job starts with.
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    _isolate_sanitizer_option_vars(monkeypatch, job)
+    monkeypatch.setattr(job.shutil, "which", lambda name: "/usr/bin/llvm-symbolizer")
+
+    job.set_sanitizer_symbolizer_options()
+
+    for var in job._SANITIZER_OPTION_VARS:
+        assert os.environ[var] == "external_symbolizer_path=/usr/bin/llvm-symbolizer"
+
+
+def test_symbolizer_options_fall_back_to_the_pinned_compiler_version(monkeypatch):
+    # binary-builder installs `llvm-symbolizer-<version>` without the unversioned symlink, so
+    # the fallback is the branch that fires there, and the version it looks for is the one the
+    # build is pinned to rather than a literal.
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    _isolate_sanitizer_option_vars(monkeypatch, job)
+    versioned = f"llvm-symbolizer-{job.ToolSet.COMPILER_C.rsplit('-', 1)[-1]}"
+    asked = []
+
+    def fake_which(name):
+        asked.append(name)
+        return None if name == "llvm-symbolizer" else f"/usr/bin/{name}"
+
+    monkeypatch.setattr(job.shutil, "which", fake_which)
+
+    job.set_sanitizer_symbolizer_options()
+
+    assert asked == ["llvm-symbolizer", versioned]
+    assert os.environ["TSAN_OPTIONS"] == f"external_symbolizer_path=/usr/bin/{versioned}"
+
+
+def test_symbolizer_options_warn_and_change_nothing_when_none_is_found(monkeypatch, capsys):
+    # Failing open is deliberate: the helper runs on every arm of every run while only a small
+    # minority of runs emit a sanitizer report, so refusing to run would withhold a verdict
+    # from runs that never needed a symbolizer, and an inconclusive run does not block a merge.
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    _isolate_sanitizer_option_vars(monkeypatch, job)
+    monkeypatch.setenv("TSAN_OPTIONS", "halt_on_error=1")
+    monkeypatch.setattr(job.shutil, "which", lambda name: None)
+
+    assert job.set_sanitizer_symbolizer_options() is None
+
+    assert "WARNING" in capsys.readouterr().out
+    for var in job._SANITIZER_OPTION_VARS:
+        assert "external_symbolizer_path" not in os.environ[var]
+    assert os.environ["TSAN_OPTIONS"] == "halt_on_error=1"
+
+
+def test_symbolizer_options_keep_a_preset_path_and_preset_options(monkeypatch):
+    # `run_gtests` calls this once per arm and the environment may already carry sanitizer
+    # options, so a repeated call must neither duplicate the option nor drop what was there.
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    _isolate_sanitizer_option_vars(monkeypatch, job)
+    monkeypatch.setenv("TSAN_OPTIONS", "external_symbolizer_path=/custom/sym")
+    monkeypatch.setenv("ASAN_OPTIONS", "detect_leaks=1")
+    monkeypatch.setattr(job.shutil, "which", lambda name: "/usr/bin/llvm-symbolizer")
+
+    job.set_sanitizer_symbolizer_options()
+
+    assert os.environ["TSAN_OPTIONS"] == "external_symbolizer_path=/custom/sym"
+    assert os.environ["TSAN_OPTIONS"].count("external_symbolizer_path") == 1
+    assert (
+        os.environ["ASAN_OPTIONS"]
+        == "detect_leaks=1 external_symbolizer_path=/usr/bin/llvm-symbolizer"
+    )
+
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

@@ -16,16 +16,22 @@ introduces (the typical case is a call site adapted to a changed function signat
 the unit side then has nothing it can judge at runtime, the PR author cannot avoid the
 adaptation, and the job reports the build failure as expected (XFAIL, nothing to
 validate) instead of staying red forever. Any other build failure is an infrastructure
-or attribution problem and stays an ERROR (inconclusive).
+or attribution problem and stays an ERROR (inconclusive). The "before" binary is built and
+judged once per build type in `BEFORE_BUILD_TYPES`: a build type on which every touched
+test passes cannot observe a failure mode specific to another one, so a clean arm escalates
+to the next build type and only the last one refutes.
 
 Like the functional/integration validators, this job only checks the "before" side.
 The complementary "the touched tests PASS on the PR binary" side is delegated to the
 regular `Unit tests (asan_ubsan)` job, which compiles and runs the full suite —
 including the new test — on the PR binary; a regression test that is itself broken
-makes that job red and blocks the PR.  Delegating it lets this job avoid requiring the
-PR's `UNITTEST_AMD_ASAN_UBSAN` artifact, so it is not gated behind `build_amd_asan_ubsan`
-and builds the "before" binary in parallel with the build matrix (it starts as early as
-the functional/integration validators, which only need `config_workflow` + dockers).
+makes that job red and blocks the PR.  That delegation is per-arm: the counterpart of the
+arm that reproduced is the `Unit tests (<that arm's sanitizer>)` job, so a bug reproduced
+on the `amd_tsan` arm is complemented by `Unit tests (tsan)`.  Delegating it lets this job
+avoid requiring the PR's `UNITTEST_AMD_ASAN_UBSAN` artifact, so it is not gated behind
+`build_amd_asan_ubsan` and builds the "before" binary in parallel with the build matrix (it
+starts as early as the functional/integration validators, which only need `config_workflow`
++ dockers).
 
 See ci/jobs/functional_tests.py:invert_bugfix_validation_status for the analogous
 functional-test logic.
@@ -916,7 +922,7 @@ def main():
                         f"Could not empty {BEFORE_SRC}/build before configuring "
                         f"{build_type}; refusing to configure on top of the "
                         f"{arms_tried[-1]} CMakeCache.txt, which would build one sanitizer "
-                        "and report another. This is an infrastructure error — NOT a "
+                        "and report another. This is an infrastructure error, NOT a "
                         "reproduction."
                     ),
                 )
@@ -1083,7 +1089,7 @@ def main():
         if len(arms_tried) < len(BEFORE_BUILD_TYPES):
             before_result.set_info(
                 f"All touched unit tests PASS on the {build_type} before-binary, which "
-                f"cannot observe a failure mode specific to another build type — not a "
+                f"cannot observe a failure mode specific to another build type, not a "
                 f"refutation. Escalating to {BEFORE_BUILD_TYPES[len(arms_tried)]}."
             )
             results.append(before_result)
