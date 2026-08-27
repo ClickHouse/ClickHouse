@@ -1838,10 +1838,13 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         if (havePendingPatchPartsForMutation(entry, out_postpone_reason, committing_blocks, state_lock))
             return false;
 
-        /// min_unreserved_disk_space_for_merge is a selection-time limit: honouring it here would postpone
-        /// explicitly ordered OPTIMIZE PARTITION / OPTIMIZE FINAL entries forever (see #80006).
+        /// min_unreserved_disk_space_for_merge is a selection-time limit, but the executing replica's
+        /// disks can be tighter than the assigning replica's were, so the queue re-derives the limit for
+        /// background merges. Entries ordered by OPTIMIZE ... FINAL / OPTIMIZE ... PARTITION were
+        /// selected without the headroom and carry bypass_min_unreserved_space, because honouring it
+        /// here would postpone them forever (see #80006).
         UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS
-            ? CompactionStatistics::getMaxSourcePartsBytesForMerge(data, /*respect_min_unreserved_space=*/false)
+            ? CompactionStatistics::getMaxSourcePartsBytesForMerge(data, /*respect_min_unreserved_space=*/!entry.bypass_min_unreserved_space)
             : CompactionStatistics::getMaxSourcePartBytesForMutation(data);
         /** If there are enough free threads in background pool to do large merges (maximal size of merge is allowed),
           * then ignore value returned by getMaxSourcePartsBytesForMerge() and execute merge of any size,
