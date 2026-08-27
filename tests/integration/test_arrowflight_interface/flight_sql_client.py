@@ -495,6 +495,18 @@ class FlightSQLClient:
         options = self._flight_call_options()
         return self.client.get_schema(flight_descriptor(cmd), options)
 
+    def get_prepared_statement_schema(self, handle: bytes) -> flight.SchemaResult:
+        """Retrieve a prepared statement result schema via GetSchema."""
+        cmd = CommandPreparedStatementQuery(prepared_statement_handle=handle)
+        options = self._flight_call_options()
+        return self.client.get_schema(flight_descriptor(cmd), options)
+
+    def get_prepared_statement_flight_info(self, handle: bytes) -> flight.FlightInfo:
+        """Execute a prepared statement and return its FlightInfo."""
+        cmd = CommandPreparedStatementQuery(prepared_statement_handle=handle)
+        options = self._flight_call_options()
+        return self.client.get_flight_info(flight_descriptor(cmd), options)
+
     def prepare(self, query: str) -> "PreparedStatement":
         """Create a prepared statement via the CreatePreparedStatement action."""
         req = ActionCreatePreparedStatementRequest(query=query)

@@ -1,4 +1,5 @@
 #include <Server/ArrowFlight/commandSelector.h>
+#include <Server/ArrowFlight/FlightSqlTypeInfo.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -6,7 +7,6 @@
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
@@ -171,186 +171,9 @@ static arrow::Result<std::shared_ptr<arrow::Table>> commandGetSqlInfo(const arro
     return arrow::Table::Make(table_schema, {info_name.ValueUnsafe(), value.ValueUnsafe()});
 }
 
-/// ODBC SQL type codes used by CommandGetXdbcTypeInfo.
-static constexpr int32_t SQL_GUID = -11;
-static constexpr int32_t SQL_BIT = -7;
-static constexpr int32_t SQL_TINYINT = -6;
-static constexpr int32_t SQL_BIGINT = -5;
-static constexpr int32_t SQL_BINARY = -2;
-static constexpr int32_t SQL_NUMERIC = 2;
-static constexpr int32_t SQL_DECIMAL = 3;
-static constexpr int32_t SQL_INTEGER = 4;
-static constexpr int32_t SQL_SMALLINT = 5;
-static constexpr int32_t SQL_REAL = 7;
-static constexpr int32_t SQL_DOUBLE = 8;
-static constexpr int32_t SQL_VARCHAR = 12;
-static constexpr int32_t SQL_TYPE_DATE = 91;
-static constexpr int32_t SQL_TYPE_TIMESTAMP = 93;
-
-/// Verbose SQL data type used in sql_data_type for datetime rows,
-/// with the concise type reported in datetime_subcode (see FlightSQL.proto).
-static constexpr int32_t SQL_DATETIME = 9;
-static constexpr int32_t SQL_CODE_DATE = 1;
-static constexpr int32_t SQL_CODE_TIMESTAMP = 3;
-
-static constexpr int32_t SQL_NULLABLE = 1;
-static constexpr int32_t SQL_SEARCHABLE_BASIC = 2;
-static constexpr int32_t SQL_SEARCHABLE_FULL = 3;
-
-/// One row of GetXdbcTypeInfo. Rows must be ordered by (data_type, type_name)
-/// per Flight SQL protocol (SQL_GUID=-11 is first).
-struct XdbcTypeInfoRow
-{
-    std::string_view type_name;
-    int32_t data_type = 0;
-    int32_t column_size = 0;
-    const char * literal_prefix = nullptr;
-    const char * literal_suffix = nullptr;
-    /// Comma-separated parameter keywords (e.g. "precision,scale"); empty means NULL.
-    std::string_view create_params = {};
-    bool case_sensitive = false;
-    int32_t searchable = SQL_SEARCHABLE_BASIC;
-    bool numeric = false;
-    bool unsigned_attribute = false;
-    bool fixed_prec_scale = false;
-    /// -1 means NULL; when set, sql_data_type is SQL_DATETIME and this is the subcode.
-    int32_t datetime_subcode = -1;
-    int32_t minimum_scale = -1; /// -1 means NULL
-    int32_t maximum_scale = -1;
-    int32_t num_prec_radix = -1;
-};
-
 static arrow::Result<std::shared_ptr<arrow::Table>>
 commandGetXdbcTypeInfo(const arrow::flight::protocol::sql::CommandGetXdbcTypeInfo & command, bool schema_only)
 {
-    // Ordered by data_type ascending, then type_name (protocol requirement).
-    static constexpr XdbcTypeInfoRow kTypeInfoRows[] = {
-        // UUID
-        {.type_name = "UUID", .data_type = SQL_GUID, .column_size = 36},
-        // Bool
-        {.type_name = "Bool", .data_type = SQL_BIT, .column_size = 1},
-        // Int8 / UInt8
-        {.type_name = "Int8", .data_type = SQL_TINYINT, .column_size = 3, .numeric = true, .num_prec_radix = 10},
-        {.type_name = "UInt8",
-         .data_type = SQL_TINYINT,
-         .column_size = 3,
-         .numeric = true,
-         .unsigned_attribute = true,
-         .num_prec_radix = 10},
-        // Int64 / UInt64 (SQL_BIGINT = -5; must sort between TINYINT and BINARY)
-        {.type_name = "Int64", .data_type = SQL_BIGINT, .column_size = 19, .numeric = true, .num_prec_radix = 10},
-        {.type_name = "UInt64",
-         .data_type = SQL_BIGINT,
-         .column_size = 20,
-         .numeric = true,
-         .unsigned_attribute = true,
-         .num_prec_radix = 10},
-        // FixedString
-        {.type_name = "FixedString",
-         .data_type = SQL_BINARY,
-         .column_size = MAX_FIXEDSTRING_SIZE,
-         .create_params = "length",
-         .case_sensitive = true,
-         .searchable = SQL_SEARCHABLE_FULL},
-        // Wide integers as NUMERIC (max number of decimal digits)
-        {.type_name = "Int128", .data_type = SQL_NUMERIC, .column_size = 39, .numeric = true, .num_prec_radix = 10},
-        {.type_name = "Int256", .data_type = SQL_NUMERIC, .column_size = 77, .numeric = true, .num_prec_radix = 10},
-        {.type_name = "UInt128",
-         .data_type = SQL_NUMERIC,
-         .column_size = 39,
-         .numeric = true,
-         .unsigned_attribute = true,
-         .num_prec_radix = 10},
-        {.type_name = "UInt256",
-         .data_type = SQL_NUMERIC,
-         .column_size = 78,
-         .numeric = true,
-         .unsigned_attribute = true,
-         .num_prec_radix = 10},
-        // Decimal
-        {.type_name = "Decimal",
-         .data_type = SQL_DECIMAL,
-         .column_size = 76,
-         .create_params = "precision,scale",
-         .numeric = true,
-         .minimum_scale = 0,
-         .maximum_scale = 76,
-         .num_prec_radix = 10},
-        // Int32 / UInt32
-        {.type_name = "Int32", .data_type = SQL_INTEGER, .column_size = 10, .numeric = true, .num_prec_radix = 10},
-        {.type_name = "UInt32",
-         .data_type = SQL_INTEGER,
-         .column_size = 10,
-         .numeric = true,
-         .unsigned_attribute = true,
-         .num_prec_radix = 10},
-        // Int16 / UInt16
-        {.type_name = "Int16", .data_type = SQL_SMALLINT, .column_size = 5, .numeric = true, .num_prec_radix = 10},
-        {.type_name = "UInt16",
-         .data_type = SQL_SMALLINT,
-         .column_size = 5,
-         .numeric = true,
-         .unsigned_attribute = true,
-         .num_prec_radix = 10},
-        // Floats
-        {.type_name = "Float32", .data_type = SQL_REAL, .column_size = 24, .numeric = true, .num_prec_radix = 2},
-        {.type_name = "Float64", .data_type = SQL_DOUBLE, .column_size = 53, .numeric = true, .num_prec_radix = 2},
-        // Enums / String as VARCHAR
-        {.type_name = "Enum16",
-         .data_type = SQL_VARCHAR,
-         .column_size = MAX_FIXEDSTRING_SIZE,
-         .literal_prefix = "'",
-         .literal_suffix = "'",
-         .case_sensitive = true,
-         .searchable = SQL_SEARCHABLE_FULL},
-        {.type_name = "Enum8",
-         .data_type = SQL_VARCHAR,
-         .column_size = MAX_FIXEDSTRING_SIZE,
-         .literal_prefix = "'",
-         .literal_suffix = "'",
-         .case_sensitive = true,
-         .searchable = SQL_SEARCHABLE_FULL},
-        {.type_name = "String",
-         .data_type = SQL_VARCHAR,
-         .column_size = arrow::StringBuilder::memory_limit(),
-         .literal_prefix = "'",
-         .literal_suffix = "'",
-         .case_sensitive = true,
-         .searchable = SQL_SEARCHABLE_FULL},
-        // Dates
-        {.type_name = "Date",
-         .data_type = SQL_TYPE_DATE,
-         .column_size = 10,
-         .literal_prefix = "'",
-         .literal_suffix = "'",
-         .datetime_subcode = SQL_CODE_DATE},
-        {.type_name = "Date32",
-         .data_type = SQL_TYPE_DATE,
-         .column_size = 10,
-         .literal_prefix = "'",
-         .literal_suffix = "'",
-         .datetime_subcode = SQL_CODE_DATE},
-        // DateTime / DateTime64
-        {.type_name = "DateTime",
-         .data_type = SQL_TYPE_TIMESTAMP,
-         .column_size = 19,
-         .literal_prefix = "'",
-         .literal_suffix = "'",
-         .create_params = "timezone",
-         .datetime_subcode = SQL_CODE_TIMESTAMP,
-         .minimum_scale = 0,
-         .maximum_scale = 0},
-        {.type_name = "DateTime64",
-         .data_type = SQL_TYPE_TIMESTAMP,
-         .column_size = 29,
-         .literal_prefix = "'",
-         .literal_suffix = "'",
-         .create_params = "precision,timezone",
-         .datetime_subcode = SQL_CODE_TIMESTAMP,
-         .minimum_scale = 0,
-         .maximum_scale = 9},
-    };
-
     const auto & schema = arrow::flight::sql::SqlSchema::GetXdbcTypeInfoSchema();
     arrow::MemoryPool * pool = arrow::default_memory_pool();
 
@@ -380,7 +203,7 @@ commandGetXdbcTypeInfo(const arrow::flight::protocol::sql::CommandGetXdbcTypeInf
         const bool filter = command.has_data_type();
         const int32_t filter_data_type = filter ? command.data_type() : 0;
 
-        for (const auto & row : kTypeInfoRows)
+        for (const auto & row : getXdbcTypeInfoRows())
         {
             if (filter && row.data_type != filter_data_type)
                 continue;
@@ -419,7 +242,7 @@ commandGetXdbcTypeInfo(const arrow::flight::protocol::sql::CommandGetXdbcTypeInf
                 }
             }
 
-            ARROW_RETURN_NOT_OK(nullable_builder.Append(SQL_NULLABLE));
+            ARROW_RETURN_NOT_OK(nullable_builder.Append(XDBC_SQL_NULLABLE));
             ARROW_RETURN_NOT_OK(case_sensitive_builder.Append(row.case_sensitive));
             ARROW_RETURN_NOT_OK(searchable_builder.Append(row.searchable));
             if (row.numeric)
@@ -447,7 +270,7 @@ commandGetXdbcTypeInfo(const arrow::flight::protocol::sql::CommandGetXdbcTypeInf
             // the concise type in datetime_subcode; other rows repeat data_type.
             if (row.datetime_subcode >= 0)
             {
-                ARROW_RETURN_NOT_OK(sql_data_type_builder.Append(SQL_DATETIME));
+                ARROW_RETURN_NOT_OK(sql_data_type_builder.Append(XDBC_SQL_DATETIME));
                 ARROW_RETURN_NOT_OK(datetime_subcode_builder.Append(row.datetime_subcode));
             }
             else
@@ -863,7 +686,7 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
         ")"
         + where_expression;
 
-    auto schema_modifier = [](std::shared_ptr<arrow::Schema> table_schema)
+    auto schema_modifier = [](std::shared_ptr<arrow::Schema> table_schema, const ColumnsWithTypeAndName &)
     {
         const auto & table_schema_field = table_schema->field(4);
         return table_schema->SetField(4, std::make_shared<arrow::Field>(table_schema_field->name(), arrow::binary(), table_schema_field->nullable()));
@@ -895,6 +718,10 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
             auto table_schema = CHColumnToArrowColumn::calculateArrowSchema(
                 table_columns, "Arrow", nullptr,
                 {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
+            auto schema_with_metadata = addFlightSqlTypeMetadata(std::move(table_schema), table_columns);
+            if (!schema_with_metadata.ok())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to add Flight SQL type metadata: {}", schema_with_metadata.status().ToString());
+            table_schema = std::move(schema_with_metadata).ValueUnsafe();
             auto serialized_res = arrow::ipc::SerializeSchema(*table_schema, arrow::default_memory_pool());
             if (!serialized_res.ok())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to serialize Arrow schema: {}", serialized_res.status().ToString());
@@ -922,7 +749,7 @@ static CommandSelectorResult commandStatementQuery(const arrow::flight::protocol
         return arrow::Status::NotImplemented("CommandStatementQuery: transaction_id is not supported");
     if (command.query().empty())
         return arrow::Status::Invalid("CommandStatementQuery: query must not be empty");
-    return SQLSet{command.query(), {}, {}};
+    return SQLSet{command.query(), addFlightSqlTypeMetadata, {}};
 }
 
 static CommandSelectorResult commandStatementUpdate(const arrow::flight::protocol::sql::CommandStatementUpdate & command)
@@ -1057,7 +884,7 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
             return arrow::Status::SerializationError("Deserialization of sql::CommandPreparedStatementQuery failed.");
         if (command.prepared_statement_handle().empty())
             return arrow::Status::Invalid("CommandPreparedStatementQuery: prepared_statement_handle must not be empty");
-        return SQLSet{command.prepared_statement_handle(), {}, {}};
+        return SQLSet{command.prepared_statement_handle(), addFlightSqlTypeMetadata, {}};
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandPreparedStatementUpdate>())
     {

@@ -35,6 +35,34 @@ node = cluster.add_instance(
 
 session_id = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
 
+FLIGHT_SQL_TYPE_NAME = b"ARROW:FLIGHT:SQL:TYPE_NAME"
+FLIGHT_SQL_PRECISION = b"ARROW:FLIGHT:SQL:PRECISION"
+FLIGHT_SQL_SCALE = b"ARROW:FLIGHT:SQL:SCALE"
+CLICKHOUSE_TYPE_NAME = b"CLICKHOUSE:TYPE_NAME"
+
+
+def _field_metadata(field):
+    return field.metadata or {}
+
+
+def _ambiguous_type_query(where_clause=""):
+    return f"""
+        SELECT
+            toDate('2024-01-02') AS date_col,
+            toDate32('2024-01-02') AS date32_col,
+            toInt8(1) AS int8_col,
+            CAST('one' AS Enum8('one' = 1, 'two' = 2)) AS enum8_col,
+            toInt16(2) AS int16_col,
+            CAST('one' AS Enum16('one' = 1, 'two' = 2)) AS enum16_col,
+            toUInt32(3) AS uint32_col,
+            toDateTime('2024-01-02 03:04:05', 'UTC') AS datetime_col
+        {where_clause}
+    """
+
+
+def _assert_schema_equal_with_metadata(actual, expected):
+    assert actual.equals(expected, check_metadata=True), f"{actual}\n!=\n{expected}"
+
 def get_client():
     return FlightSQLClient(
         host=node.ip_address,
@@ -375,9 +403,19 @@ def test_get_xdbc_type_info_filtered():
     reader = client.do_get(flight_info.endpoints[0].ticket)
     table = reader.read_all()
 
-    type_names = sorted(table.column("type_name")[i].as_py() for i in range(table.num_rows))
+    type_names = [table.column("type_name")[i].as_py() for i in range(table.num_rows)]
     assert type_names == ["Int32", "UInt32"]
     assert all(table.column("data_type")[i].as_py() == 4 for i in range(table.num_rows))
+    assert [
+        (table.column("data_type")[i].as_py(), table.column("type_name")[i].as_py())
+        for i in range(table.num_rows)
+    ] == sorted(
+        (table.column("data_type")[i].as_py(), table.column("type_name")[i].as_py())
+        for i in range(table.num_rows)
+    )
+    _assert_schema_equal_with_metadata(
+        table.schema, client.get_xdbc_type_info_schema(data_type=4).schema
+    )
 
     # Unknown ODBC code -> empty table with full schema.
     flight_info = client.get_xdbc_type_info(data_type=999)
@@ -385,6 +423,9 @@ def test_get_xdbc_type_info_filtered():
     empty = reader.read_all()
     assert empty.num_rows == 0
     assert empty.num_columns == 19
+    _assert_schema_equal_with_metadata(
+        empty.schema, client.get_xdbc_type_info_schema(data_type=999).schema
+    )
 
 
 def test_get_catalogs():
@@ -442,7 +483,11 @@ def test_get_tables_with_schema():
     """CommandGetTables with include_schema=True returns Arrow schema bytes."""
     client = get_client()
     client.execute_update(
-        "CREATE TABLE mytable (id UInt32, name String, value Float64) ENGINE = Memory"
+        "CREATE TABLE mytable ("
+        "date_col Date, date32_col Date32, int8_col Int8, "
+        "enum8_col Enum8('one' = 1, 'two' = 2), uint32_col UInt32, "
+        "datetime_col DateTime('UTC'), decimal_col Decimal(18, 4), "
+        "nullable_col Nullable(String)) ENGINE = Memory"
     )
 
     flight_info = client.get_tables(
@@ -455,9 +500,45 @@ def test_get_tables_with_schema():
 
     assert table.num_rows == 1
     assert "table_schema" in table.column_names
-    # table_schema column should contain serialized Arrow schema bytes
     schema_bytes = table.column("table_schema")[0].as_py()
-    assert len(schema_bytes) > 0
+    table_schema = pa.ipc.read_schema(pa.BufferReader(schema_bytes))
+
+    expected = {
+        "date_col": (pa.date32(), b"Date", b"Date"),
+        "date32_col": (pa.date32(), b"Date32", b"Date32"),
+        "int8_col": (pa.int8(), b"Int8", b"Int8"),
+        "enum8_col": (pa.int8(), b"Enum8", b"Enum8('one' = 1, 'two' = 2)"),
+        "uint32_col": (pa.uint32(), b"UInt32", b"UInt32"),
+        "datetime_col": (pa.uint32(), b"DateTime", b"DateTime('UTC')"),
+        "decimal_col": (pa.decimal128(18, 4), b"Decimal", b"Decimal(18, 4)"),
+        "nullable_col": (pa.string(), b"String", b"Nullable(String)"),
+    }
+    assert table_schema.names == list(expected)
+    for name, (arrow_type, type_name, clickhouse_type_name) in expected.items():
+        field = table_schema.field(name)
+        metadata = _field_metadata(field)
+        assert field.type == arrow_type
+        assert metadata[FLIGHT_SQL_TYPE_NAME] == type_name
+        assert metadata[CLICKHOUSE_TYPE_NAME] == clickhouse_type_name
+
+    assert _field_metadata(table_schema.field("decimal_col"))[FLIGHT_SQL_PRECISION] == b"18"
+    assert _field_metadata(table_schema.field("decimal_col"))[FLIGHT_SQL_SCALE] == b"4"
+
+    # The outer protocol schema remains fixed and does not inherit inner table metadata.
+    assert all(FLIGHT_SQL_TYPE_NAME not in _field_metadata(field) for field in table.schema)
+
+    without_schema_info = client.get_tables(
+        db_schema_filter_pattern="default",
+        table_name_filter_pattern="mytable",
+        include_schema=False,
+    )
+    without_schema = client.do_get(without_schema_info.endpoints[0].ticket).read_all()
+    assert without_schema.column_names == [
+        "catalog_name",
+        "db_schema_name",
+        "table_name",
+        "table_type",
+    ]
 
 
 def test_get_table_types():
@@ -472,6 +553,163 @@ def test_get_table_types():
     assert "VIEW" in types
     assert "UNKNOWN TABLE TYPE" not in types, \
         "Some engine(s) in system.table_engines are not mapped in engine_to_type (commandSelector.cpp)"
+
+
+@pytest.mark.parametrize("where_clause", ["", "WHERE 0"])
+def test_statement_query_type_metadata(where_clause):
+    """Statement schemas expose ClickHouse type identity on every protocol path."""
+    client = get_client()
+    query = _ambiguous_type_query(where_clause)
+
+    schema_from_get_schema = client.get_schema(query).schema
+    flight_info = client.execute(query)
+    schema_from_flight_info = flight_info.schema
+    table = client.do_get(flight_info.endpoints[0].ticket).read_all()
+
+    _assert_schema_equal_with_metadata(schema_from_get_schema, schema_from_flight_info)
+    _assert_schema_equal_with_metadata(schema_from_flight_info, table.schema)
+    assert table.num_rows == (0 if where_clause else 1)
+
+    expected = {
+        "date_col": (pa.date32(), b"Date", b"Date"),
+        "date32_col": (pa.date32(), b"Date32", b"Date32"),
+        "int8_col": (pa.int8(), b"Int8", b"Int8"),
+        "enum8_col": (pa.int8(), b"Enum8", b"Enum8('one' = 1, 'two' = 2)"),
+        "int16_col": (pa.int16(), b"Int16", b"Int16"),
+        "enum16_col": (pa.int16(), b"Enum16", b"Enum16('one' = 1, 'two' = 2)"),
+        "uint32_col": (pa.uint32(), b"UInt32", b"UInt32"),
+        "datetime_col": (pa.uint32(), b"DateTime", b"DateTime('UTC')"),
+    }
+    for name, (arrow_type, type_name, clickhouse_type_name) in expected.items():
+        field = table.schema.field(name)
+        metadata = _field_metadata(field)
+        assert field.type == arrow_type
+        assert metadata[FLIGHT_SQL_TYPE_NAME] == type_name
+        assert metadata[CLICKHOUSE_TYPE_NAME] == clickhouse_type_name
+
+    if not where_clause:
+        type_info = client.do_get(client.get_xdbc_type_info().endpoints[0].ticket).read_all()
+        catalog_names = [
+            type_info.column("type_name")[i].as_py() for i in range(type_info.num_rows)
+        ]
+        for _, type_name, _ in expected.values():
+            assert catalog_names.count(type_name.decode()) == 1
+
+
+def test_wrapped_and_parameterized_type_metadata():
+    """Wrappers are removed only from the standard type family metadata."""
+    client = get_client()
+    query = """
+        SELECT
+            CAST(NULL AS Nullable(Date32)) AS nullable_date32,
+            CAST('value' AS LowCardinality(String)) AS low_cardinality_string,
+            CAST('value' AS LowCardinality(Nullable(String))) AS nullable_low_cardinality_string,
+            CAST('12.3456' AS Decimal(18, 4)) AS decimal_col,
+            CAST('fixed' AS FixedString(17)) AS fixed_string_col,
+            toDateTime64('2024-01-02 03:04:05.123456', 6, 'UTC') AS datetime64_col,
+            CAST('two' AS Enum8('one' = 1, 'two' = 2, 'three' = 3)) AS enum_col,
+            toBool(1) AS bool_col
+    """
+    flight_info = client.execute(query)
+    schema = client.do_get(flight_info.endpoints[0].ticket).read_all().schema
+
+    expected = {
+        "nullable_date32": (b"Date32", b"Nullable(Date32)"),
+        "low_cardinality_string": (b"String", b"LowCardinality(String)"),
+        "nullable_low_cardinality_string": (
+            b"String",
+            b"LowCardinality(Nullable(String))",
+        ),
+        "decimal_col": (b"Decimal", b"Decimal(18, 4)"),
+        "fixed_string_col": (b"FixedString", b"FixedString(17)"),
+        "datetime64_col": (b"DateTime64", b"DateTime64(6, 'UTC')"),
+        "enum_col": (b"Enum8", b"Enum8('one' = 1, 'two' = 2, 'three' = 3)"),
+        "bool_col": (b"Bool", b"Bool"),
+    }
+    for name, (type_name, clickhouse_type_name) in expected.items():
+        metadata = _field_metadata(schema.field(name))
+        assert metadata[FLIGHT_SQL_TYPE_NAME] == type_name
+        assert metadata[CLICKHOUSE_TYPE_NAME] == clickhouse_type_name
+
+    decimal_metadata = _field_metadata(schema.field("decimal_col"))
+    assert decimal_metadata[FLIGHT_SQL_PRECISION] == b"18"
+    assert decimal_metadata[FLIGHT_SQL_SCALE] == b"4"
+    assert _field_metadata(schema.field("fixed_string_col"))[FLIGHT_SQL_PRECISION] == b"17"
+    datetime64_metadata = _field_metadata(schema.field("datetime64_col"))
+    assert datetime64_metadata[FLIGHT_SQL_PRECISION] == b"26"
+    assert datetime64_metadata[FLIGHT_SQL_SCALE] == b"6"
+    assert _field_metadata(schema.field("bool_col"))[FLIGHT_SQL_PRECISION] == b"1"
+
+
+def test_type_metadata_preserves_existing_metadata():
+    """Adding Flight SQL metadata preserves the Arrow UUID extension."""
+    client = get_client()
+    flight_info = client.execute(
+        "SELECT CAST('550e8400-e29b-41d4-a716-446655440000' AS UUID) AS uid"
+    )
+    field = client.do_get(flight_info.endpoints[0].ticket).read_all().schema.field("uid")
+    metadata = _field_metadata(field)
+
+    assert metadata[FLIGHT_SQL_TYPE_NAME] == b"UUID"
+    assert metadata[CLICKHOUSE_TYPE_NAME] == b"UUID"
+    assert metadata[b"ARROW:extension:name"] == b"arrow.uuid"
+    assert metadata[b"ARROW:extension:metadata"] == b""
+    assert metadata[b"PARQUET:logical_type"] == b"UUID"
+
+
+def test_unsupported_type_metadata_policy():
+    """Complex types keep their ClickHouse name without claiming an XDBC row."""
+    client = get_client()
+    query = """
+        SELECT
+            CAST([1, 2] AS Array(UInt32)) AS array_col,
+            CAST(map('one', 1) AS Map(String, UInt32)) AS map_col,
+            CAST((1, 'one') AS Tuple(Int8, String)) AS tuple_col,
+            toIPv4('192.0.2.1') AS ipv4_col
+    """
+    schema = client.do_get(client.execute(query).endpoints[0].ticket).read_all().schema
+
+    assert pa.types.is_list(schema.field("array_col").type)
+    assert schema.field("array_col").type.value_type == pa.uint32()
+    assert pa.types.is_map(schema.field("map_col").type)
+    assert schema.field("map_col").type.key_type == pa.string()
+    assert schema.field("map_col").type.item_type == pa.uint32()
+    assert pa.types.is_struct(schema.field("tuple_col").type)
+    assert [field.type for field in schema.field("tuple_col").type] == [
+        pa.int8(),
+        pa.string(),
+    ]
+
+    expected = {
+        "array_col": b"Array(UInt32)",
+        "map_col": b"Map(String, UInt32)",
+        "tuple_col": b"Tuple(Int8, String)",
+    }
+    for name, clickhouse_type_name in expected.items():
+        field = schema.field(name)
+        metadata = _field_metadata(field)
+        assert FLIGHT_SQL_TYPE_NAME not in metadata
+        assert metadata[CLICKHOUSE_TYPE_NAME] == clickhouse_type_name
+
+    ipv4_metadata = _field_metadata(schema.field("ipv4_col"))
+    assert FLIGHT_SQL_TYPE_NAME not in ipv4_metadata
+    assert ipv4_metadata[CLICKHOUSE_TYPE_NAME] == b"IPv4"
+
+    type_info = client.do_get(client.get_xdbc_type_info().endpoints[0].ticket).read_all()
+    catalog_names = {
+        type_info.column("type_name")[i].as_py() for i in range(type_info.num_rows)
+    }
+    assert catalog_names.isdisjoint({"Array", "Map", "Tuple", "IPv4"})
+
+
+def test_type_metadata_is_limited_to_flight_sql_queries():
+    """Raw Arrow Flight descriptors do not receive Flight SQL column metadata."""
+    client = get_client()
+    descriptor = flight.FlightDescriptor.for_command(b"SELECT toDate32('2024-01-02') AS value")
+    info = client.client.get_flight_info(descriptor, client._flight_call_options())
+    table = client.do_get(info.endpoints[0].ticket).read_all()
+    assert FLIGHT_SQL_TYPE_NAME not in _field_metadata(table.schema.field("value"))
+    assert CLICKHOUSE_TYPE_NAME not in _field_metadata(table.schema.field("value"))
 
 
 def test_get_primary_keys():
@@ -612,6 +850,27 @@ def test_poll_flight_info_basic():
         total_rows += table.num_rows
 
     assert total_rows == 100
+
+
+def test_poll_flight_info_type_metadata():
+    """PollFlightInfo and its final DoGet stream expose identical metadata."""
+    client = get_client()
+    descriptor = flight_descriptor(CommandStatementQuery(query=_ambiguous_type_query()))
+
+    poll_result = client.poll_flight_info(descriptor)
+    infos = [poll_result.info]
+    while poll_result.flight_descriptor is not None:
+        poll_result = client.poll_flight_info(poll_result.flight_descriptor)
+        infos.append(poll_result.info)
+
+    assert infos[-1].endpoints
+    table = client.do_get(infos[-1].endpoints[0].ticket).read_all()
+    for info in infos:
+        _assert_schema_equal_with_metadata(info.schema, table.schema)
+
+    metadata = _field_metadata(table.schema.field("datetime_col"))
+    assert metadata[FLIGHT_SQL_TYPE_NAME] == b"DateTime"
+    assert metadata[CLICKHOUSE_TYPE_NAME] == b"DateTime('UTC')"
 
 
 def test_poll_flight_info_with_path_descriptor():
@@ -1051,6 +1310,44 @@ def test_prepared_statement_create_and_close():
 
     # Close should not raise
     stmt.close()
+
+
+def test_prepared_statement_type_metadata():
+    """Prepared dataset, GetSchema, FlightInfo, and DoGet schemas stay identical."""
+    client = get_client()
+    stmt = client.prepare(_ambiguous_type_query("WHERE toUInt32(?) = 1"))
+
+    try:
+        assert stmt.dataset_schema is not None
+        assert _field_metadata(stmt.dataset_schema.field("enum8_col"))[
+            FLIGHT_SQL_TYPE_NAME
+        ] == b"Enum8"
+
+        stmt.bind_parameters(
+            pa.record_batch([pa.array([1], type=pa.uint32())], names=["param_1"])
+        )
+        schema_from_get_schema = client.get_prepared_statement_schema(stmt.handle).schema
+        flight_info = client.get_prepared_statement_flight_info(stmt.handle)
+        table = client.do_get(flight_info.endpoints[0].ticket).read_all()
+
+        _assert_schema_equal_with_metadata(stmt.dataset_schema, schema_from_get_schema)
+        _assert_schema_equal_with_metadata(schema_from_get_schema, flight_info.schema)
+        _assert_schema_equal_with_metadata(flight_info.schema, table.schema)
+        assert table.num_rows == 1
+
+        stmt.bind_parameters(
+            pa.record_batch([pa.array([2], type=pa.uint32())], names=["param_1"])
+        )
+        rebound_schema = client.get_prepared_statement_schema(stmt.handle).schema
+        rebound_info = client.get_prepared_statement_flight_info(stmt.handle)
+        rebound_table = client.do_get(rebound_info.endpoints[0].ticket).read_all()
+
+        _assert_schema_equal_with_metadata(stmt.dataset_schema, rebound_schema)
+        _assert_schema_equal_with_metadata(rebound_schema, rebound_info.schema)
+        _assert_schema_equal_with_metadata(rebound_info.schema, rebound_table.schema)
+        assert rebound_table.num_rows == 0
+    finally:
+        stmt.close()
 
 
 def test_prepared_statement_invalid_sql():

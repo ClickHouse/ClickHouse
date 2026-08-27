@@ -5,6 +5,7 @@
 #include <Server/ArrowFlight/AuthMiddleware.h>
 #include <Server/ArrowFlight/CallsData.h>
 #include <Server/ArrowFlight/commandSelector.h>
+#include <Server/ArrowFlight/FlightSqlTypeInfo.h>
 #include <Server/ArrowFlight/PollSession.h>
 
 #include <Core/Settings.h>
@@ -378,7 +379,11 @@ arrow::Result<ArrowFlightServer::DecodeResult> ArrowFlightServer::decodeDescript
                 const auto & ps_info = ps_info_res.ValueUnsafe();
                 auto resolved_query_res = buildQueryWithValues(ps_info.query_parts, ps_info.bound_parameters);
                 ARROW_RETURN_NOT_OK(resolved_query_res);
-                return DecodeResult {std::move(resolved_query_res).ValueUnsafe(), {}, {}, {}};
+                return DecodeResult {
+                    std::move(resolved_query_res).ValueUnsafe(),
+                    sql_set->schema_modifier,
+                    sql_set->block_modifier,
+                    {}};
             }
 
             return DecodeResult {sql_set->sql, sql_set->schema_modifier, sql_set->block_modifier, {}};
@@ -587,15 +592,16 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
         ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
         PullingPipelineExecutor executor{block_io.pipeline};
+        const auto schema_header = executor.getHeader().getColumnsWithTypeAndName();
         schema = CHColumnToArrowColumn::calculateArrowSchema(
-            executor.getHeader().getColumnsWithTypeAndName(),
+            schema_header,
             "Arrow",
             nullptr,
             {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
 
         if (schema_modifier)
         {
-            auto status = schema_modifier(schema);
+            auto status = schema_modifier(schema, schema_header);
             ARROW_RETURN_NOT_OK(status);
             schema = status.ValueUnsafe();
         }
@@ -802,13 +808,14 @@ arrow::Status ArrowFlightServer::GetSchema(
                     ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
                     PullingPipelineExecutor executor{block_io.pipeline};
+                    const auto schema_header = executor.getHeader().getColumnsWithTypeAndName();
 
                     schema = CHColumnToArrowColumn::calculateArrowSchema(
-                        executor.getHeader().getColumnsWithTypeAndName(), "Arrow", nullptr,
+                        schema_header, "Arrow", nullptr,
                         {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
                     if (schema_modifier)
                     {
-                        auto status = schema_modifier(schema);
+                        auto status = schema_modifier(schema, schema_header);
                         ARROW_RETURN_NOT_OK(status);
                         schema = status.ValueUnsafe();
                     }
@@ -1519,6 +1526,7 @@ arrow::Status ArrowFlightServer::DoAction(
                 /// function arguments like numbers(?)). In that case, we still create the
                 /// prepared statement but without dataset_schema — the client will discover
                 /// the schema at execution time.
+                std::optional<ColumnsWithTypeAndName> dataset_header;
                 try
                 {
                     auto [_, block_io] = executeQuery(substituted_query, query_context, QueryFlags{}, QueryProcessingStage::Complete);
@@ -1528,8 +1536,9 @@ arrow::Status ArrowFlightServer::DoAction(
                         if (block_io.pipeline.pulling())
                         {
                             PullingPipelineExecutor executor{block_io.pipeline};
+                            dataset_header = executor.getHeader().getColumnsWithTypeAndName();
                             info.dataset_schema = CHColumnToArrowColumn::calculateArrowSchema(
-                                executor.getHeader().getColumnsWithTypeAndName(),
+                                *dataset_header,
                                 "Arrow",
                                 nullptr,
                                 {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
@@ -1544,9 +1553,19 @@ arrow::Status ArrowFlightServer::DoAction(
                 }
                 catch (...)
                 {
+                    info.dataset_schema.reset();
+                    dataset_header.reset();
                     LOG_DEBUG(log, "CreatePreparedStatement: schema inference failed for query '{}', "
                         "the prepared statement will be created without dataset_schema: {}",
                         ast->formatForLogging(), getCurrentExceptionMessage(/* with_stacktrace = */ false));
+                }
+
+                if (info.dataset_schema)
+                {
+                    chassert(dataset_header);
+                    ARROW_ASSIGN_OR_RAISE(
+                        info.dataset_schema,
+                        ArrowFlight::addFlightSqlTypeMetadata(std::move(info.dataset_schema), *dataset_header))
                 }
             }
 

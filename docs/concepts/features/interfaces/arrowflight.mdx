@@ -399,6 +399,14 @@ All data is transferred in Apache Arrow IPC format. Only the `Arrow` format is s
 
 ClickHouse data types are mapped to Arrow types during serialization. The setting `output_format_arrow_unsupported_types_as_binary` controls whether unsupported ClickHouse types are serialized as binary blobs.
 
+Flight SQL statement and prepared-statement results include column metadata that preserves the ClickHouse type identity. The schemas embedded by `CommandGetTables` when `include_schema=true` contain the same metadata:
+
+- `ARROW:FLIGHT:SQL:TYPE_NAME` contains the stable ClickHouse type family registered by `CommandGetXdbcTypeInfo`, such as `Date32`, `Enum8`, or `Decimal`. Top-level `Nullable` and `LowCardinality` wrappers are omitted. Unsupported complex types do not set this standard key.
+- `CLICKHOUSE:TYPE_NAME` contains the complete ClickHouse type expression, including wrappers, parameters, enum labels, and time zones.
+- `ARROW:FLIGHT:SQL:PRECISION` and `ARROW:FLIGHT:SQL:SCALE` are included when they can be determined exactly from the ClickHouse type.
+
+This metadata does not change the Arrow physical array type. For example, `Date` and `Date32` are both still encoded as Arrow `date32`, while their `ARROW:FLIGHT:SQL:TYPE_NAME` values distinguish them.
+
 ## Compatibility {#compatibility}
 
 The Arrow Flight interface is compatible with any client or tool that supports the Arrow Flight or Arrow Flight SQL protocol, including:
