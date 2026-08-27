@@ -411,6 +411,22 @@ void checkCreationIsAllowed(
     }
 }
 
+/// Use this instead of checkCreationIsAllowed for a path that can still carry a `..`.
+void checkCreationIsAllowedResolvingDotDot(
+    ContextPtr context_global,
+    const std::string & db_dir_path,
+    const std::string & path,
+    bool can_be_directory)
+{
+    std::error_code ec;
+    const fs::path checked_path = resolveDotDotForContainmentCheck(path, ec);
+    if (ec)
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot check whether file `{}` is inside `{}`: {}",
+            path, db_dir_path, ec.message());
+
+    checkCreationIsAllowed(context_global, db_dir_path, checked_path, can_be_directory);
+}
+
 /// Splits the archive syntax (e.g. "archive.zip::file*.parquet") into
 /// the first ("archive.zip") and second ("file*.parquet") parts.
 /// If the source string doesn't follow the archive syntax, the function just returns it in the second part.
@@ -489,13 +505,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     for (const auto & path : paths)
     {
         /// Brace expansion runs after the normalization above, so a matched path can still carry a `..`.
-        std::error_code ec;
-        const fs::path checked_path = resolveDotDotForContainmentCheck(path, ec);
-        if (ec)
-            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot check whether file `{}` is inside `{}`: {}",
-                path, user_files_absolute_path.string(), ec.message());
-
-        checkCreationIsAllowed(context, user_files_absolute_path, checked_path, can_be_directory);
+        checkCreationIsAllowedResolvingDotDot(context, user_files_absolute_path, path, can_be_directory);
     }
 
     return paths;
@@ -1513,7 +1523,7 @@ String StorageFileSource::FilesIterator::next()
             return {};
 
         /// The read task may come from a client impersonating an initiator server, so validate the path.
-        checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), task->path, /*can_be_directory=*/ true);
+        checkCreationIsAllowedResolvingDotDot(getContext(), getContext()->getUserFilesPath(), task->path, /*can_be_directory=*/ true);
 
         return task->path;
     }
@@ -1597,14 +1607,9 @@ void StorageFileSource::beforeDestroy()
                 String new_filename = storage->file_renamer.generateNewFilename(file_path.filename().string());
                 file_path.replace_filename(new_filename);
 
-                // Checking access rights. A `..` is resolved through any preceding symlink first,
-                // because the check folds it lexically while the rename below does not.
-                std::error_code ec;
-                const auto checked_path = resolveDotDotForContainmentCheck(file_path, ec);
-                if (ec)
-                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot check whether file `{}` is inside `{}`: {}",
-                        file_path.string(), getContext()->getUserFilesPath(), ec.message());
-                checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), checked_path, true);
+                // Checking access rights. The path is the one the rename will operate on, so a `..` in
+                // it must be resolved and not folded lexically.
+                checkCreationIsAllowedResolvingDotDot(getContext(), getContext()->getUserFilesPath(), file_path.string(), true);
 
                 // Checking an existing of new file
                 if (fs::exists(file_path))
@@ -2868,10 +2873,12 @@ public:
     {
         std::string filepath = partition_strategy->getPathForWrite(path, partition_id);
 
-        fs::create_directories(fs::path(filepath).parent_path());
-
+        /// A partition id is data-derived and may contain `..`, so both checks have to precede the
+        /// first filesystem side effect.
         validatePartitionKey(filepath, true);
-        checkCreationIsAllowed(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
+        checkCreationIsAllowedResolvingDotDot(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
+
+        fs::create_directories(fs::path(filepath).parent_path());
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,

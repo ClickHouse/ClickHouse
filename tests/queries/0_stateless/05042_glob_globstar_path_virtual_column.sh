@@ -152,3 +152,36 @@ ln -s "${DATA_DIR}/pin/a/b/c/d" "${DATA_DIR}/pin/link3"
 $CLICKHOUSE_CLIENT -q "
 SELECT id FROM file('${DATA_DIR}/pin/link3/{..,q}/{..,q}/{..,q}/{..,q}/*.csv', 'CSV', 'id UInt64');
 "
+
+# A partition id is data-derived and needs no glob to carry a `..`, so it reaches the same check.
+# The refusal has to come before the directory the write would create, so the second marker is
+# printed only once the first one has established that the write was refused.
+REFUSED3=$($CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level=fatal -q "
+INSERT INTO FUNCTION file('${DATA_DIR}/escw/{_partition_id}/pw.csv', 'CSV', 'a UInt64')
+PARTITION BY '../pwdir' SELECT 1;
+" 2>&1 | sed -n "s|.*File \`\([^\`]*\)\` is not inside.*|\1|p")
+if [[ "${REFUSED3}" == */pw.csv && "${REFUSED3}" != *"/.."* && "${REFUSED3}" != *"/escw/"* ]]; then
+    echo "partitioned write: refused, resolved outside user_files"
+    [ ! -e "${OUTSIDE_DIR}/pwdir" ] && echo "partitioned write: nothing created outside user_files"
+fi
+
+# Without a `..` the partition id is passed through as written, so a partitioned write through a
+# directory symlink leaving user_files keeps working.
+$CLICKHOUSE_CLIENT -q "
+INSERT INTO FUNCTION file('${DATA_DIR}/out/{_partition_id}/pw2.csv', 'CSV', 'a UInt64')
+PARTITION BY 'p1' SELECT 5;
+"
+$CLICKHOUSE_CLIENT -q "
+SELECT a FROM file('${DATA_DIR}/out/p1/pw2.csv', 'CSV', 'a UInt64');
+"
+
+# And a partition id that is a `..` resolving back inside user_files stays writable: `link` points
+# at a directory below it, so the write lands on the symlink's target parent. Refusing every `..`
+# here would pass the two arms above.
+$CLICKHOUSE_CLIENT -q "
+INSERT INTO FUNCTION file('${WREN_DIR}/link/{_partition_id}/pw3.csv', 'CSV', 'a UInt64')
+PARTITION BY '..' SELECT 9;
+"
+$CLICKHOUSE_CLIENT -q "
+SELECT a FROM file('${WREN_DIR}/deep/pw3.csv', 'CSV', 'a UInt64');
+"
