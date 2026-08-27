@@ -128,9 +128,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
 /// `min_insert_block_size_bytes` is not the amount of memory an `INSERT` needs, it is the size of one
 /// block; the pipeline holds several of those at once. The squashing transform accumulates the next
 /// block while the previous one is being concatenated, and the concatenated block is still alive in
@@ -158,8 +155,6 @@ size_t capInsertBlockSizeBytesToMemoryLimit(size_t min_block_size_bytes)
 
     const double budget = static_cast<double>(memory_limit) * budget_of_the_limit;
     return std::min(min_block_size_bytes, static_cast<size_t>(budget * share_for_insert_blocks / copies_held_by_the_pipeline));
-}
-
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
