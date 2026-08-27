@@ -1741,8 +1741,10 @@ private:
         if constexpr (hash_avx512_usage<Impl> == HashAVX512Usage::NarrowOnly)
         {
             for (const auto & argument : arguments)
+            {
                 if (!argument.type->haveMaximumSizeOfValue() || argument.type->getMaximumSizeOfValueInMemory() > 8)
                     return false;
+            }
         }
         return true;
     }
