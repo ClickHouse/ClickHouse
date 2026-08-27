@@ -560,7 +560,7 @@ bool StoragesInfoStreamBase::tryLockTable(StoragesInfo & info)
             // nullptr means table was dropped while acquiring the lock
             return info.table_lock != nullptr;
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             if (e.code() != ErrorCodes::DEADLOCK_AVOIDED)
                 throw;
@@ -569,7 +569,17 @@ bool StoragesInfoStreamBase::tryLockTable(StoragesInfo & info)
             {
                 remaining -= attempt_timeout;
                 if (remaining.count() <= 0)
+                {
+                    /// The exception from the last attempt describes only the final slice, so a query
+                    /// that really waited the whole lock_acquire_timeout would report a timeout of
+                    /// 100 ms. Amend it with the total wait, and keep the rest of the message: it
+                    /// carries the owner query ids of the lock.
+                    if (attempt_timeout != lock_timeout)
+                        e.addMessage("The total lock acquisition timeout of {} ms has been exhausted; the lock was "
+                            "acquired in {} ms slices with query cancellation checks between the attempts",
+                            lock_timeout.count(), cancellation_check_period.count());
                     throw;
+                }
             }
 
             /// Throws if the query is cancelled or the time limit is exceeded in the 'throw' overflow mode.
