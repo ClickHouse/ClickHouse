@@ -1008,13 +1008,12 @@ void StorageKeeperMap::dropTableFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, St
 
     String zk_data_path_to_remove = zkutil::joinZooKeeperPath(zk_root_path_, "data");
 
-    const auto metadata_path = zkutil::joinZooKeeperPath(zk_root_path_, "metadata");
-    String zk_metadata_path_to_remove = metadata_path;
-    String zk_tables_path_to_remove = zkutil::joinZooKeeperPath(metadata_path, "tables");
+    String zk_metadata_path_to_remove = zkutil::joinZooKeeperPath(zk_root_path_, "metadata");
+    String zk_tables_path_to_remove = zkutil::joinZooKeeperPath(zk_metadata_path_to_remove, "tables");
 
-    String zk_dropped_path_to_remove = zkutil::joinZooKeeperPath(metadata_path, "dropped");
+    String zk_dropped_path_to_remove = zkutil::joinZooKeeperPath(zk_metadata_path_to_remove, "dropped");
     String zk_dropped_lock_path_to_remove = zkutil::joinZooKeeperPath(zk_dropped_path_to_remove, "lock");
-    String zk_dropped_lock_version_path = zkutil::joinZooKeeperPath(metadata_path, "drop_lock_version");
+    String zk_dropped_lock_version_path = zkutil::joinZooKeeperPath(zk_metadata_path_to_remove, "drop_lock_version");
 
     LOG_INFO(logger, "Removing table data in ZooKeeper at {}", zk_root_path_);
 
