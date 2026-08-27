@@ -518,11 +518,6 @@ void RewriteRulesStorage::create(const RewriteRuleObjectPtr & create_query)
     writeCreateQuery(create_query->getCreateQuery().rule_name, create_query->getCreateQuery().whole_query);
 }
 
-bool RewriteRulesStorage::exists(const std::string & rule_name) const
-{
-    return impl_storage->exists(getFileName(rule_name));
-}
-
 void RewriteRulesStorage::remove(const std::string & rule_name)
 {
     const auto file_name = getFileName(rule_name);

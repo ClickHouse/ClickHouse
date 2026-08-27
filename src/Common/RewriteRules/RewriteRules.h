@@ -20,8 +20,6 @@ public:
 
     ~RewriteRules();
 
-    bool exists(const std::string & rule_name) const;
-
     RewriteRuleObjectPtr get(const std::string & rule_name) const;
 
     RewriteRuleObjectPtr tryGet(const std::string & rule_name) const;

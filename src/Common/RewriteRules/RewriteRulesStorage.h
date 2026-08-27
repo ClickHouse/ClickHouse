@@ -20,11 +20,6 @@ public:
 
     void create(const RewriteRuleObjectPtr & query);
 
-    /// Existence according to the storage itself. With replicated (ZooKeeper/Keeper) storage this
-    /// is the only source of truth for DDL: the per-replica cache in `RewriteRules` is refreshed
-    /// asynchronously by the background watcher and lags behind by up to one watch interval.
-    bool exists(const std::string & rule_name) const;
-
     void remove(const std::string & rule_name);
 
     bool removeIfExists(const std::string & rule_name);

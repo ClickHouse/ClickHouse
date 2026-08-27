@@ -719,13 +719,6 @@ void RewriteRules::shutdown()
     storage.reset();
 }
 
-bool RewriteRules::exists(const std::string & rule_name) const
-{
-    std::lock_guard lock(mutex);
-    loadIfNot(lock);
-    return exists(rule_name, lock);
-}
-
 RewriteRuleObjectPtr RewriteRules::get(const std::string & rule_name) const
 {
     std::lock_guard lock(mutex);
@@ -822,20 +815,17 @@ void RewriteRules::remove(const std::string & rule_name, std::lock_guard<std::mu
 /// watcher, so within the watcher-lag window it can be stale in both directions - a rule created on
 /// another replica still looks absent here, and a rule dropped there still looks present. The
 /// storage is the source of truth, and its `create` / `update` / `removeIfExists` decide
-/// atomically; the checks below only exist to produce a nicer message in the common case.
+/// atomically.
 void RewriteRules::createRule(const ASTCreateRewriteRuleQuery & query)
 {
     validateRuleTemplates(query);
     std::lock_guard lock(mutex);
     loadIfNot(lock);
-    if (storage->exists(query.rule_name))
-    {
-        throw Exception(
-            ErrorCodes::REWRITE_RULE_ALREADY_EXISTS,
-            "A rewrite rule `{}` already exists",
-            query.rule_name);
-    }
     auto ptr = RewriteRuleObject::create(query);
+    /// No existence pre-check here: it would race with a concurrent `DROP RULE` on another
+    /// replica (a stale positive would reject a `CREATE RULE` that the storage is about to
+    /// accept). `create` consults and mutates the storage atomically and throws
+    /// `REWRITE_RULE_ALREADY_EXISTS` on a duplicate itself.
     storage->create(ptr);
     /// The cache may hold a stale entry for this name (dropped on another replica and recreated
     /// here), so overwrite instead of `add`, which would throw on a stale-positive cache.
