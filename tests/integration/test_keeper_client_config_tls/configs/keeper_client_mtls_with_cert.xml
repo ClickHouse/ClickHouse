@@ -1,0 +1,12 @@
+<clickhouse>
+    <openSSL>
+        <client>
+            <privateKeyFile>/etc/clickhouse-server/config.d/client.key</privateKeyFile>
+            <certificateFile>/etc/clickhouse-server/config.d/client.crt</certificateFile>
+            <caConfig>/etc/clickhouse-server/config.d/server.crt</caConfig>
+            <verificationMode>relaxed</verificationMode>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <!-- privateKeyPassphraseHandler intentionally absent: exercises the default KeyConsoleHandler path with an unencrypted key -->
+        </client>
+    </openSSL>
+</clickhouse>

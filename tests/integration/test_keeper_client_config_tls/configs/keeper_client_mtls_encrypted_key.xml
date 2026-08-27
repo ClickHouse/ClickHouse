@@ -1,0 +1,17 @@
+<clickhouse>
+    <openSSL>
+        <client>
+            <privateKeyFile>/etc/clickhouse-server/config.d/client.key.enc</privateKeyFile>
+            <certificateFile>/etc/clickhouse-server/config.d/client.crt</certificateFile>
+            <caConfig>/etc/clickhouse-server/config.d/server.crt</caConfig>
+            <verificationMode>relaxed</verificationMode>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <privateKeyPassphraseHandler>
+                <name>KeyFileHandler</name>
+                <options>
+                    <password>testpass</password>
+                </options>
+            </privateKeyPassphraseHandler>
+        </client>
+    </openSSL>
+</clickhouse>

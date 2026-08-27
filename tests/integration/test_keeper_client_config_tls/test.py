@@ -22,6 +22,26 @@ node1 = cluster.add_instance(
     stay_alive=True,
 )
 
+# Separate cluster for mTLS: Keeper requires a client certificate.
+cluster_mtls = ClickHouseCluster(__file__)
+node_mtls = cluster_mtls.add_instance(
+    "node_mtls",
+    main_configs=[
+        "configs/enable_secure_keeper.xml",
+        "configs/ssl_conf_mtls.xml",
+        "configs/server.crt",
+        "configs/server.key",
+        "configs/dhparam.pem",
+        "configs/client.crt",
+        "configs/client.key",
+        "configs/client.key.enc",
+        "configs/client.combined.pem",
+    ],
+    with_zookeeper=False,
+    use_keeper=False,
+    stay_alive=True,
+)
+
 SECURE_PORT = 10181
 PLAIN_PORT = 9181
 
@@ -30,6 +50,10 @@ CONFIG_SSL_WITH_CA = "/tmp/keeper_client_ssl_ca.xml"
 CONFIG_SSL_NO_CA = "/tmp/keeper_client_ssl_no_ca.xml"
 CONFIG_ZK_SECURE_NODE_WITH_CA = "/tmp/keeper_client_zk_secure_node_ca.xml"
 CONFIG_ZK_SECURE_NODE_NO_CA = "/tmp/keeper_client_zk_secure_node_no_ca.xml"
+CONFIG_MTLS_WITH_CERT = "/tmp/keeper_client_mtls_with_cert.xml"
+CONFIG_MTLS_NO_CERT = "/tmp/keeper_client_mtls_no_cert.xml"
+CONFIG_MTLS_ENCRYPTED_KEY = "/tmp/keeper_client_mtls_encrypted_key.xml"
+CONFIG_MTLS_COMBINED_PEM = "/tmp/keeper_client_mtls_combined_pem.xml"
 
 # The server cert is self-signed, so it doubles as its own CA.
 CA_PATH = "/etc/clickhouse-server/config.d/server.crt"
@@ -153,3 +177,89 @@ def test_four_letter_ruok_accept_invalid_certificate(started_cluster):
     """ruok succeeds when --accept-invalid-certificate is used, even with no CA provided."""
     data = run_keeper_client("--accept-invalid-certificate", query="ruok")
     assert data.strip() == "imok"
+
+
+# Group D — Client certificate authentication (mTLS)
+#
+# Keeper is configured with verificationMode=strict so it demands a client cert.
+# The keeper-client gets its cert/key exclusively from <openSSL><client> in the
+# config file — no CLI flags. privateKeyPassphraseHandler.name is intentionally
+# absent, which exercises the default KeyConsoleHandler path (no prompt fires
+# because the key is unencrypted).
+
+@pytest.fixture(scope="module")
+def started_cluster_mtls():
+    try:
+        cluster_mtls.start()
+        keeper_utils.wait_until_connected(cluster_mtls, node_mtls)
+
+        for name, dest in (
+            ("keeper_client_mtls_with_cert.xml", CONFIG_MTLS_WITH_CERT),
+            ("keeper_client_mtls_no_cert.xml", CONFIG_MTLS_NO_CERT),
+            ("keeper_client_mtls_encrypted_key.xml", CONFIG_MTLS_ENCRYPTED_KEY),
+            ("keeper_client_mtls_combined_pem.xml", CONFIG_MTLS_COMBINED_PEM),
+        ):
+            node_mtls.copy_file_to_container(
+                os.path.join(os.path.dirname(__file__), "configs", name), dest
+            )
+
+        yield cluster_mtls
+    finally:
+        cluster_mtls.shutdown()
+
+
+def test_client_cert_from_config_connects(started_cluster_mtls):
+    """Client cert/key from <openSSL><client> satisfies Keeper's strict client-auth requirement."""
+    data = node_mtls.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"clickhouse keeper-client --host localhost --port {SECURE_PORT} "
+            f"--secure -c {CONFIG_MTLS_WITH_CERT} -q \"ls '/keeper'\"",
+        ],
+        privileged=True,
+    )
+    assert "api_version" in data
+
+
+def test_missing_client_cert_rejected_by_mtls_keeper(started_cluster_mtls):
+    """Keeper with strict client-auth rejects a connection that presents no client certificate."""
+    data = node_mtls.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"clickhouse keeper-client --host localhost --port {SECURE_PORT} "
+            f"--secure -c {CONFIG_MTLS_NO_CERT} -q \"ls '/keeper'\"",
+        ],
+        privileged=True,
+        nothrow=True,
+    )
+    assert "api_version" not in data
+
+
+def test_encrypted_key_with_keyfilehandler(started_cluster_mtls):
+    """privateKeyPassphraseHandler.name=KeyFileHandler decrypts the key using the password from the config."""
+    data = node_mtls.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"clickhouse keeper-client --host localhost --port {SECURE_PORT} "
+            f"--secure -c {CONFIG_MTLS_ENCRYPTED_KEY} -q \"ls '/keeper'\"",
+        ],
+        privileged=True,
+    )
+    assert "api_version" in data
+
+
+def test_combined_pem_cert_key_in_single_file(started_cluster_mtls):
+    """When certificateFile is absent, tls_cert_file falls back to privateKeyFile (combined-PEM path)."""
+    data = node_mtls.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"clickhouse keeper-client --host localhost --port {SECURE_PORT} "
+            f"--secure -c {CONFIG_MTLS_COMBINED_PEM} -q \"ls '/keeper'\"",
+        ],
+        privileged=True,
+    )
+    assert "api_version" in data
