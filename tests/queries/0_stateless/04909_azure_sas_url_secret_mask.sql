@@ -28,10 +28,15 @@ EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorageCluster('c', 'ht
 -- key cannot be reconstructed from the AST, before the named collection is resolved.
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage(nc_04909_missing, concat('storage_account_', 'url') = concat('http://localhost:11111/devstoreaccount1/cont?sig=', 'SEKRIT_SIGNATURE'));
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage(nc_04909_missing, concat('http://localhost:11111/devstoreaccount1/cont?sig=', 'SEKRIT_NAMED_EXPRESSION'));
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage(nc_04909_missing, client_id = 'SEKRIT_CLIENT_ID', tenant_id = 'SEKRIT_TENANT_ID');
 
 -- extra_credentials is removed before positional arguments are assigned. The account key after it
 -- must still occupy the account_key slot.
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('http://localhost:11111/devstoreaccount1', 'cont', 'data.parquet', extra_credentials(client_id = 'id', tenant_id = 'tenant'), 'account', 'SEKRIT_POSITIONAL_KEY');
+
+-- A named argument in a direct call is invalid, but the query is formatted before validation. Hide
+-- that value and every following positional argument because their intended slots are ambiguous.
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('http://localhost:11111/devstoreaccount1', container = 'SEKRIT_CONTAINER', 'data.parquet', 'account', 'SEKRIT_AFTER_NAMED');
 
 -- A url with no signature in it is left alone.
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('http://localhost:11111/devstoreaccount1/cont', 'cont', 'data.parquet', 'Parquet');

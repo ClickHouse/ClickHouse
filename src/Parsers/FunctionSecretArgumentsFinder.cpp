@@ -535,6 +535,7 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
     }
 
     std::vector<size_t> positional;
+    bool seen_named_argument = false;
     for (size_t i = 0; i < function->arguments->size(); ++i)
     {
         if (const auto nested = function->arguments->at(i)->getFunction())
@@ -542,7 +543,16 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
             if (nested->name() == "extra_credentials")
                 continue;
             if (nested->name() == "equals")
+            {
+                markSecretArgument(i, /* argument_is_named= */ true);
+                seen_named_argument = true;
                 continue;
+            }
+        }
+        if (seen_named_argument)
+        {
+            markSecretArgument(i);
+            continue;
         }
         positional.push_back(i);
     }
@@ -592,7 +602,11 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
                 continue;
             }
             if (key != "connection_string" && key != "storage_account_url")
+            {
+                if (key == "account_key" || key == "client_id" || key == "tenant_id")
+                    markSecretArgument(i, /* argument_is_named= */ true);
                 continue;
+            }
 
             String value;
             if (!equals_func->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ false))
@@ -1027,6 +1041,7 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
     }
 
     std::vector<size_t> positional;
+    bool seen_named_argument = false;
     for (size_t i = 0; i < function->arguments->size(); ++i)
     {
         if (const auto nested = function->arguments->at(i)->getFunction())
@@ -1034,7 +1049,16 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
             if (nested->name() == "extra_credentials")
                 continue;
             if (nested->name() == "equals")
+            {
+                markSecretArgument(i, /* argument_is_named= */ true);
+                seen_named_argument = true;
                 continue;
+            }
+        }
+        if (seen_named_argument)
+        {
+            markSecretArgument(i);
+            continue;
         }
         positional.push_back(i);
     }
