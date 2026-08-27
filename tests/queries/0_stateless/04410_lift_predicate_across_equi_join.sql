@@ -170,9 +170,8 @@ SELECT 'computed target key correctness',
         INNER JOIN (SELECT orderkey + 1000000 AS orderkey FROM lift_lineitem) AS l ON o.orderkey = l.orderkey
         SETTINGS query_plan_lift_predicate_across_join = 0);
 
--- The target side already carries a pushed-down filter above its rename step: the key must still
--- resolve through it to the primary key. Count granules instead of filters, so that the lift is
--- only credited when the target read actually prunes
+-- The target side already carries a pushed-down filter: the key must still resolve through it to
+-- the primary key. Count granules, not filters, so the lift is only credited when the read prunes
 WITH
     (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')))
      FROM (
