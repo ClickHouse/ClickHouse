@@ -174,6 +174,8 @@ EOL
     max_users_mem=$((total_mem*30/100)) # 30%
     # Similar to docker/test/fuzzer/query-fuzzer-tweaks-users.xml
     echo "Setting max_memory_usage_for_user=$max_users_mem and max_memory_usage for queries to 10G"
+    # The heredoc delimiter is unquoted so that ${max_users_mem} expands. That also means backticks
+    # and $(...) would be evaluated, so keep them out of the XML comments below.
     cat > /etc/clickhouse-server/users.d/stress_test_tweaks-users.xml <<EOL
 <clickhouse>
     <profiles>
@@ -201,7 +203,14 @@ EOL
                     <max>200</max>
                 </table_function_remote_max_addresses>
 
-                <!-- Don't waste cycles testing the old interpreter. Spend time in the analyzer instead -->
+                <!--
+                    Don't waste cycles testing the old interpreter. Spend time in the analyzer instead.
+                    A min constraint rather than a readonly one: a no-op explicit enable_analyzer=1
+                    must still be accepted, because a 'compatibility' setting in the same request stops
+                    the constraint check from filtering unchanged settings, and readonly would reject
+                    it. The enable_analyzer value pinned in the profile below is the other half of this
+                    guard, see the comment there.
+                -->
                 <enable_analyzer>
                     <min>1</min>
                 </enable_analyzer>
@@ -223,6 +232,19 @@ EOL
             </constraints>
 
             <allow_experimental_window_view>false</allow_experimental_window_view>
+
+            <!--
+                Server-side backstop for the enable_analyzer constraint above. A constraint can only
+                reject an explicit change, and a 'compatibility' setting below 24.3 (the version where
+                the analyzer became the default) reverts enable_analyzer to 0 without one, so the
+                constraint never fires. Pinning the value here keeps the setting marked as changed,
+                which is what makes 'compatibility' leave it alone. stress.py randomizes
+                'compatibility' down to 20.1 and passes enable_analyzer=1 on the client command line
+                to cover its own queries; this covers everything else - HTTP compatibility URL
+                parameters, a test's own SET compatibility, settings stored in a view. Same pin as in
+                query-fuzzer-tweaks-users.xml.
+            -->
+            <enable_analyzer>1</enable_analyzer>
         </default>
     </profiles>
 </clickhouse>

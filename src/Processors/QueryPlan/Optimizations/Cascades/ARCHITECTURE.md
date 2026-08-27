@@ -241,7 +241,7 @@ equal-cost alternatives (the first-found best is kept and a later equal-cost can
 pruned). Enforcer rules are scheduled by the Stage-3 fixed-point loop, so their promise
 is not consulted.
 
-**Key files**: `Task.h/cpp`, `OptimizerContext.h/cpp`, `Optimizer.cpp`, `CascadesParams.h/cpp`, `OptimizationEnvironment.h`
+**Key files**: `Task.h/cpp`, `Optimizer.h/cpp`, `CascadesParams.h/cpp`, `OptimizerContext.h`
 
 ### Enforcer Scheduling
 
@@ -302,7 +302,7 @@ tree one group per step:
   gather.
 - A plain `SortingStep` (`Full`, without a limit) never becomes a group: ingestion
   strips it and attaches its sort description as the required property of the parent's
-  input link (`OptimizerContext::addGroup`), so the enforcer owns every plain sort in
+  input link (`CascadesOptimizer::addGroup`), so the enforcer owns every plain sort in
   the memo.
 - A `SortingStep` with a limit is a top-N: the bound changes the row count, which no
   property can express, so it is genuinely an operator with its own rules.
@@ -387,7 +387,7 @@ broadcast-vs-shuffle are decided by estimated cost.
 
 The per-query environment (cluster size, cost configuration, and the query settings the
 rules honor) is fixed before the search starts and lives on the memo
-(`OptimizationEnvironment`). The rules honor `distributed_aggregation_memory_efficient`
+(`OptimizerContext`). The rules honor `distributed_aggregation_memory_efficient`
 and `distributed_plan_force_shuffle_aggregation` for aggregation, and
 `exact_rows_before_limit` disables the two-stage top-N (its internal per-shard cap would
 break the exact `rows_before_limit_at_least` accounting). The query's sort settings (size
