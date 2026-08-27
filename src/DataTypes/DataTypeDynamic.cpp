@@ -876,6 +876,10 @@ std::pair<std::string_view, std::string_view> splitSubcolumnName(std::string_vie
         }
         else if (*pos == '\\')
         {
+            /// An escaped symbol inside a quoted section (\', \\) is part of that section and must
+            /// not terminate it, so skip it together with the slash before rescanning.
+            if (inside_back_quotes || inside_string_literal)
+                ++pos;
             ++pos;
         }
         else if (*pos == '.')
