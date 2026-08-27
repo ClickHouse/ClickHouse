@@ -4,12 +4,15 @@
 #include <cmath>
 
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/PreparedSets.h>
@@ -20,8 +23,19 @@
 #include <Formats/ParseError.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event SelectivityEstimatorInSetNotBuilt;
+    extern const Event SelectivityEstimatorInSetEstimatedFromSize;
+}
+
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 statistics_max_set_size_for_exact_selectivity_estimation;
+}
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
 {
@@ -298,13 +312,49 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 if (!future_set)
                     return false;
 
-                auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+                /// Deliberately not `buildOrderedSetInplace`: this estimator is advisory - it only ranks
+                /// PREWHERE candidates - so it must not run a subquery to fill a set. A set that is not
+                /// built yet simply cannot be analysed, and the condition falls back to the default
+                /// selectivity, as it did for every subquery set before `ActionsDAG::Node::column`
+                /// became a `ColumnConst` and made these sets visible here.
+                auto prepared_set = future_set->getOrderedSetIfAlreadyBuilt(rhs.getTreeContext().getQueryContext());
                 if (!prepared_set || !prepared_set->hasExplicitSetElements())
+                {
+                    ProfileEvents::increment(ProfileEvents::SelectivityEstimatorInSetNotBuilt);
                     return false;
+                }
 
                 Columns columns = prepared_set->getSetElements();
                 if (columns.size() != 1)
                     return false;
+
+                /// Turning the set into ranges below costs a `Field` per element, a sort, and one
+                /// statistics probe per element. Above the limit, estimate from the size of the set
+                /// and its bounds instead: still one pass over the set, for the bounds, but without the
+                /// sort or the per-element probes. The atom is finalized rather than turned into ranges:
+                /// a scalar selectivity cannot intersect with other predicates on the same column, only
+                /// multiply.
+                const auto max_set_size = node.getTreeContext().getQueryContext()->getSettingsRef()
+                    [Setting::statistics_max_set_size_for_exact_selectivity_estimation];
+                if (max_set_size && columns[0]->size() > max_set_size)
+                {
+                    chassert(is_in_operator);
+                    const bool negative = func_name != "in";
+                    const auto lhs_name = func.getArgumentAt(0).getColumnName();
+
+                    /// An expression rather than a column (`lower(col) IN (...)`) has no statistics to
+                    /// consult, and below the limit it is given a flat default by the "not a real column"
+                    /// branch further down. Use that same default here, so that crossing the limit cannot
+                    /// change the estimate for such an atom - and skip the size-based path, which would
+                    /// otherwise read `set_size / <no cardinality>` as "matches everything".
+                    if (metadata && !metadata->getColumns().tryGet(lhs_name))
+                        out.selectivity.true_sel = negative ? 1.0 - default_cond_equal_factor : default_cond_equal_factor;
+                    else
+                        out.selectivity = estimateSelectivityFromSetSize(metadata, lhs_name, *columns[0], negative);
+
+                    out.finalized = true;
+                    return false;
+                }
 
                 Tuple tuple(columns[0]->size());
                 for (size_t i = 0; i < columns[0]->size(); ++i)
@@ -574,6 +624,48 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Column
 UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const
 {
     return stats->estimateCardinality();
+}
+
+
+ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::estimateSelectivityFromSetSize(
+    const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements, bool negative) const
+{
+    ProfileEvents::increment(ProfileEvents::SelectivityEstimatorInSetEstimatedFromSize);
+
+    /// `Set::appendSetElements` appends only the rows flagged by the deduplication filter, so this is the
+    /// set's exact number of distinct values, directly comparable with the column's estimated cardinality.
+    const size_t set_size = set_elements.size();
+
+    auto it = column_estimators.find(column_name);
+    if (it == column_estimators.end() || !isCompatibleStatistics(metadata, it->second.stats, column_name))
+    {
+        /// No statistics: match what `finalize` assumes for a list of point ranges on an unknown column.
+        const Selectivity selectivity{std::min(static_cast<Float64>(set_size) * default_cond_equal_factor, 1.0), 0};
+        return negative ? selectivity.applyNot() : selectivity;
+    }
+
+    /// First upper bound: a row outside the set's bounds cannot be in the set. This is exactly as
+    /// accurate as any other range atom on this column - `estimateRanges` degrades to the same
+    /// defaults whenever the statistics cannot answer for a range.
+    Selectivity selectivity{1.0, 0};
+    Field min_value;
+    Field max_value;
+    set_elements.getExtremes(min_value, max_value, 0, set_size);
+    if (!min_value.isNull() && !max_value.isNull())
+        selectivity = it->second.estimateRanges(PlainRanges(Range(min_value, true, max_value, true)));
+
+    /// Second upper bound: at most `set_size` of the column's distinct values can match, and the
+    /// estimator assumes every distinct value carries the same share of rows, so at most
+    /// `set_size / cardinality` of them do. Only when the cardinality is measured - without a uniq
+    /// sketch `estimateCardinality` returns a fixed fraction of the row count, and dividing by that
+    /// guess would make the condition look arbitrarily selective and promote it into PREWHERE on no
+    /// evidence.
+    const UInt64 cardinality = it->second.estimateCardinality();
+    if (cardinality && it->second.stats->hasCardinality())
+        selectivity.true_sel
+            = std::min(selectivity.true_sel, static_cast<Float64>(set_size) / static_cast<Float64>(cardinality));
+
+    return negative ? selectivity.applyNot() : selectivity;
 }
 
 const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom_map
