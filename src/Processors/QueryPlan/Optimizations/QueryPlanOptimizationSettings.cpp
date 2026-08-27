@@ -129,6 +129,7 @@ namespace Setting
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
+    extern const SettingsUInt64 parallel_hash_join_threshold;
     extern const SettingsUInt64 max_bytes_for_lazy_final;
     extern const SettingsFloat min_filtered_ratio_for_lazy_final;
     extern const SettingsUInt64 max_rows_for_lazy_final;
@@ -367,6 +368,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_limit_for_join_lazy_indexing = from[Setting::query_plan_max_limit_for_join_lazy_indexing];
 
     max_threads = from[Setting::max_threads];
+    parallel_hash_join_threshold = from[Setting::parallel_hash_join_threshold];
 
     automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];

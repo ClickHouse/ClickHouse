@@ -218,6 +218,8 @@ public:
         SharedHeader,
         SharedHeader right_sample_block_) const override
     {
+        /// Pipeline copies keep this join's layout. A side-swap has to go through
+        /// `cloneWithParallelLayout` with a layout recomputed from the new right-side estimate.
         return std::make_shared<HashJoin>(
             table_join_,
             right_sample_block_,
@@ -227,6 +229,24 @@ public:
             HashJoinStatsCollectingParams{},
             max_threads,
             use_parallel_layout);
+    }
+
+    /// Same as `clone`, but the caller has already recomputed the layout (side swap).
+    std::shared_ptr<IJoin> cloneWithParallelLayout(
+        const std::shared_ptr<TableJoin> & table_join_,
+        SharedHeader,
+        SharedHeader right_sample_block_,
+        bool use_parallel_layout_) const
+    {
+        return std::make_shared<HashJoin>(
+            table_join_,
+            right_sample_block_,
+            any_take_last_row,
+            reserve_num,
+            instance_id,
+            HashJoinStatsCollectingParams{},
+            max_threads,
+            use_parallel_layout_);
     }
 
     /// `joinPipelinesByShards` clones one join per PK layer and never installs

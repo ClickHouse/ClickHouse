@@ -587,7 +587,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 }
 
 
-bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings &)
+bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * join_step = typeid_cast<JoinStep *>(node.step.get());
     if (!join_step || node.children.size() != 2 || join_step->isOptimized())
@@ -612,20 +612,22 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
         return true;
 
     bool need_swap = false;
+    std::optional<UInt64> lhs_estimation;
     if (!join_step->swap_join_tables.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
+        lhs_estimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
+        auto rhs_estimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
-            lhs_extimation ? toString(lhs_extimation.value()) : "unknown",
-            rhs_extimation ? toString(rhs_extimation.value()) : "unknown");
+            lhs_estimation ? toString(lhs_estimation.value()) : "unknown",
+            rhs_estimation ? toString(rhs_estimation.value()) : "unknown");
 
-        if (lhs_extimation && rhs_extimation && lhs_extimation < rhs_extimation)
+        if (lhs_estimation && rhs_estimation && lhs_estimation < rhs_estimation)
             need_swap = true;
     }
     else if (join_step->swap_join_tables.value())
     {
         need_swap = true;
+        lhs_estimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
     }
 
     if (!need_swap)
@@ -640,7 +642,18 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
 
     auto updated_table_join = std::make_shared<TableJoin>(table_join);
     updated_table_join->swapSides();
-    auto updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
+    /// After the swap the old left stream is the build side. Recompute the layout from that
+    /// estimate; `HashJoin::clone` would keep the pre-swap `use_parallel_layout`.
+    const bool use_parallel_layout = preferParallelHashLayout(
+        updated_table_join->kind(),
+        lhs_estimation,
+        optimization_settings.parallel_hash_join_threshold);
+    JoinPtr updated_join;
+    if (const auto * hash_join = typeid_cast<const HashJoin *>(join.get()))
+        updated_join = hash_join->cloneWithParallelLayout(
+            updated_table_join, right_stream_input_header, left_stream_input_header, use_parallel_layout);
+    else
+        updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
 
     /// After swapping, the join output may lose columns because TableJoin::swapSides
     /// swaps result_columns_from_left_table with columns_added_by_join, and the join

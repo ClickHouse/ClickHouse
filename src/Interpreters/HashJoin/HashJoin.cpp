@@ -486,6 +486,9 @@ HashJoin::HashJoin(
 
     if (!table_join->isRowStoreEnabled() || !isRowStoreSupported() || data->sample_block.columns() == 0)
         data->row_store_state = RowStoreState::Disabled;
+    else
+        /// Publish the layout before any `FillingRightJoinSide` thread can call `addBlockToJoin`.
+        initRowStore(data->sample_block);
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
 
@@ -1015,9 +1018,9 @@ std::optional<HashJoin::RowStoreLayoutWithAccessIndexes> HashJoin::initRowStore(
         access_index.is_nullable = field.is_nullable;
     }
 
-    data->row_store_state = RowStoreState::Initialized;
     data->row_store_layout = std::move(layout);
     data->column_access_indexes = std::move(access_indexes);
+    data->row_store_state = RowStoreState::Initialized;
 
     LOG_DEBUG(log, "{}Initialized Row store with {} columns", instance_log_id, row_store_columns.size());
     return {RowStoreLayoutWithAccessIndexes{data->row_store_layout, data->column_access_indexes}};
@@ -1035,9 +1038,9 @@ void HashJoin::initRowStore(const std::optional<HashJoin::RowStoreLayoutWithAcce
         return;
     }
 
-    data->row_store_state = RowStoreState::Initialized;
     data->row_store_layout = layout_with_access_indexes->layout;
     data->column_access_indexes = layout_with_access_indexes->access_indexes;
+    data->row_store_state = RowStoreState::Initialized;
 }
 
 RowDataStorePtr HashJoin::createRowStoreForBlock(const Block & block) const
