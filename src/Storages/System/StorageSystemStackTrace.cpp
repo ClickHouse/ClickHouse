@@ -190,19 +190,33 @@ void signalHandler(int, siginfo_t * info, void * context)
 /// Wait for data in pipe and read it.
 bool wait(int timeout_ms)
 {
+    /// Deduct the time actually spent rather than one millisecond per `EINTR`: the old counter gave up
+    /// long before the deadline under dense signals, needed thousands of interruptions to expire under
+    /// sparse ones, and - because it tested for equality with zero - could step past zero into
+    /// `poll(fd, 1, -1)`, waiting forever. Same accounting as `ReadBufferFromFileDescriptor::poll`.
+    const UInt64 timeout_microseconds = timeout_ms > 0 ? static_cast<UInt64>(timeout_ms) * 1000 : 0;
+    int remaining_ms = timeout_ms;
+    Stopwatch watch;
+
     while (true)
     {
         int fd = notification_pipe.fds_rw[0];
         pollfd poll_fd{fd, POLLIN, 0};
 
-        int poll_res = poll(&poll_fd, 1, timeout_ms);
+        int poll_res = poll(&poll_fd, 1, remaining_ms);
         if (poll_res < 0)
         {
             if (errno == EINTR)
             {
-                --timeout_ms;   /// Quite a hacky way to update timeout. Just to make sure we avoid infinite waiting.
-                if (timeout_ms == 0)
+                /// No positive deadline to exhaust (a non-blocking probe, or an indefinite wait):
+                /// retry the probe instead of letting a signal decide the outcome.
+                if (timeout_microseconds == 0)
+                    continue;
+
+                const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
+                if (elapsed_microseconds >= timeout_microseconds)
                     return false;
+                remaining_ms = static_cast<int>((timeout_microseconds - elapsed_microseconds + 999) / 1000);
                 continue;
             }
 

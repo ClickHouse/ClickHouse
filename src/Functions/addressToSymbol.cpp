@@ -49,6 +49,10 @@ public:
         return 1;
     }
 
+    /// Resolved against the executing node's own binary, like `buildId`.
+    bool isDeterministic() const override { return false; }
+    bool isServerConstant() const override { return true; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -108,7 +112,7 @@ Converts virtual memory address inside the ClickHouse server process to a symbol
         "Selecting the first string from the `trace_log` system table",
         R"(
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
         )",
         R"(
 -- The `trace` field contains the stack trace at the moment of sampling.
@@ -127,7 +131,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
         "Getting a symbol for a single address",
         R"(
 SET allow_introspection_functions=1;
-SELECT addressToSymbol(94138803686098) \G;
+SELECT addressToSymbol(94138803686098) FORMAT Vertical;
         )",
         R"(
 Row 1:
@@ -147,7 +151,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
         )",
         R"(
 Row 1:

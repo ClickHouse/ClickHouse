@@ -4,22 +4,29 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteBufferFromString.h>
 #include <fmt/format.h>
 #include <exception>
 #include <memory>
+#include <optional>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -29,6 +36,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -40,111 +48,289 @@ static String dumpQueryPlanShort(const QueryPlan & query_plan)
     return out.str();
 }
 
-CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOptimizationSettings & optimization_settings_)
-    : query_plan(query_plan_)
-    , optimization_settings(optimization_settings_)
-{}
-
-/// Default task budget for one optimization; see the comment at the search loop.
-static constexpr size_t DEFAULT_TASK_LIMIT = 100000;
-
-/// Collects everything the search runs under: the cluster size (fail-closed when unknown), the
-/// cost model, and the query settings the rules honor.
-static OptimizationEnvironment buildEnvironment(const ContextPtr & query_context, const QueryPlanOptimizationSettings & optimization_settings)
+static ContextPtr getQueryContextOrThrow()
 {
-    OptimizationEnvironment environment;
+    auto query_context = CurrentThread::get().tryGetQueryContext();
+    if (!query_context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No query context available");
+    return query_context;
+}
+
+/// Statistics come from a query-parameter hint when present, otherwise they are empty.
+/// Reading them from real table statistics is not implemented yet.
+static OptimizerStatisticsPtr createOptimizerStatistics(const ContextPtr & query_context)
+{
+    if (query_context->getQueryParameters().contains(CascadesParams::STAT_HINTS))
+        return createStatisticsFromHint(query_context->getQueryParameters().at(CascadesParams::STAT_HINTS));
+    return createEmptyStatistics();
+}
+
+/// Collects what the search needs: the cluster size (the query is rejected when it is
+/// unknown), the cost model, and the query settings the rules honor.
+static OptimizerContext buildContext(const ContextPtr & query_context, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    OptimizerContext context;
 
     /// Seed the sort settings from the query so any sort added by `SortingEnforcer` keeps the query's
     /// size limits and spill thresholds instead of arbitrary defaults.
-    environment.sort_settings = SortingStep::Settings(query_context->getSettingsRef());
+    context.sort_settings = SortingStep::Settings(query_context->getSettingsRef());
 
     /// Parameter takes priority (for testing or to limit parallelism); otherwise use the same worker
     /// source as the distributed executor.
-    environment.cluster_node_count = getCascadesClusterNodeCountParam(query_context);
-    if (environment.cluster_node_count == 0)
-        environment.cluster_node_count = getCascadesPlanningNodeCount(query_context);
+    context.cluster_node_count = getCascadesClusterNodeCountParam(query_context);
+    if (context.cluster_node_count == 0)
+        context.cluster_node_count = getCascadesPlanningNodeCount(query_context);
     /// Reject rather than silently plan for one node, which would skip every distributed alternative.
-    if (environment.cluster_node_count == 0)
+    if (context.cluster_node_count == 0)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan with enable_cascades_optimizer cannot determine how many nodes will "
             "run the query. Configure a stateless worker cluster, or set `distributed_plan_workers_num` "
             "(also required for `distributed_plan_execute_locally` without a configured cluster).");
+    /// The count sizes the read buckets and the exchange fan-out, so the read-bucket ceiling bounds it
+    /// too: above it a plan would scatter to more destinations than a bucketed read may have.
+    if (context.cluster_node_count > ReadFromMergeTree::max_distributed_read_buckets)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "make_distributed_plan with enable_cascades_optimizer cannot plan for {} nodes, the maximum "
+            "is {}.", context.cluster_node_count, ReadFromMergeTree::max_distributed_read_buckets);
 
     /// If the cost-config override is set but invalid, let the error propagate instead of silently
     /// using the defaults, so a query that set it does not get a different cost model than it asked for.
     if (query_context->getQueryParameters().contains(CascadesParams::COST_CONFIG))
-        environment.cost_config = parseCostConfig(query_context->getQueryParameters().at(CascadesParams::COST_CONFIG));
+        context.cost_config = parseCostConfig(query_context->getQueryParameters().at(CascadesParams::COST_CONFIG));
 
-    environment.distributed_plan_execute_locally = optimization_settings.distributed_plan_execute_locally;
-    environment.distributed_aggregation_memory_efficient = optimization_settings.distributed_aggregation_memory_efficient;
-    environment.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
-    environment.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
+    context.distributed_plan_execute_locally = optimization_settings.distributed_plan_execute_locally;
+    context.distributed_aggregation_memory_efficient = optimization_settings.distributed_aggregation_memory_efficient;
+    context.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
+    context.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
 
-    return environment;
+    return context;
+}
+
+CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOptimizationSettings & optimization_settings_)
+    : query_plan(query_plan_)
+    , optimization_settings(optimization_settings_)
+    , statistics(createOptimizerStatistics(getQueryContextOrThrow()))
+    , cost_estimator(memo)
+    , statistics_derivation(memo, *statistics)
+{
+    memo.setContext(buildContext(getQueryContextOrThrow(), optimization_settings));
+
+    addRule(createJoinCommutativity());
+    addRule(createHashJoinImplementation());
+    addRule(createDefaultImplementation());
+    addRule(createDistributionPassthrough());
+    addRule(createTwoStageAggregationTransformation());
+    addRule(createAggregationImplementation());
+    addRule(createLocalReadImplementation());
+    addRule(createParallelReadImplementation());
+    addRule(createReplicatedReadImplementation());
+    addRule(createReplicatedSubplanImplementation());
+    addRule(createTopNImplementation());
+    addRule(createTwoStageTopN());
+    addEnforcerRule(createDistributionEnforcer());
+    addEnforcerRule(createSortingEnforcer());
+}
+
+void CascadesOptimizer::addRule(OptimizationRulePtr rule)
+{
+    if (rule->isTransformation())
+        transformation_rules.push_back(std::move(rule));
+    else
+        implementation_rules.push_back(std::move(rule));
+}
+
+void CascadesOptimizer::addEnforcerRule(OptimizationRulePtr rule)
+{
+    enforcer_rules.push_back(std::move(rule));
+}
+
+std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::Node & node)
+{
+    /// `CommonSubplanReferenceStep` must be resolved before the Cascades optimizer runs.
+    /// TODO: it could instead be resolved here by mapping the target node to its group.
+    const auto * subplan_reference = typeid_cast<const CommonSubplanReferenceStep *>(node.step.get());
+    if (subplan_reference)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CommonSubplanReferenceStep, it should be already resolved");
+
+    /// Strip a limit-less SortingStep::Full - pure sorting is a physical property, not a logical
+    /// one.  Return the child's GroupId along with the sorting as required properties, so the
+    /// caller can attach them to the input link of the parent group expression.
+    /// A SortingStep with a limit is a top-N (row-reducing) operator, so it is kept as an
+    /// operator instead; the limit is owned by that operator, never by the sorting property.
+    const auto * sorting_step = typeid_cast<const SortingStep *>(node.step.get());
+    if (sorting_step && sorting_step->getType() == SortingStep::Type::Full && sorting_step->getLimit() == 0)
+    {
+        chassert(node.children.size() == 1);
+        auto [child_group_id, _] = addGroup(*node.children.front());
+        ExpressionProperties stripped_props;
+        stripped_props.sorting = sorting_step->getSortDescription();
+        return {child_group_id, stripped_props};
+    }
+
+    std::optional<ExpressionStatistics> prepopulated_statistics = estimateStatistics(node);
+
+    auto group_expression = std::make_shared<GroupExpression>(std::move(node.step));
+    auto group_id = memo.addGroup(group_expression);
+    for (auto * child_node : node.children)
+    {
+        auto [input_group_id, pending_props] = addGroup(*child_node);
+        group_expression->inputs.push_back({input_group_id, pending_props});
+    }
+
+    /// Set statistics on the group (shared by all expressions in the group)
+    auto group = memo.getGroup(group_id);
+    group->statistics = std::move(prepopulated_statistics);
+
+    return {group_id, {}};
+}
+
+void CascadesOptimizer::pushTask(OptimizationTaskPtr task)
+{
+    tasks.push(std::move(task));
+}
+
+GroupPtr CascadesOptimizer::getGroup(GroupId group_id)
+{
+    return memo.getGroup(group_id);
+}
+
+void CascadesOptimizer::updateBestPlan(GroupExpressionPtr expression)
+{
+    /// No pruning: an expression that loses to the current best still keeps its cost, so the
+    /// enforcer-input selection can consider it as an acyclic fallback.
+    costAndUpdateBest(expression, /*prune_against_best=*/false);
+}
+
+bool CascadesOptimizer::costAndUpdateBest(GroupExpressionPtr expression, bool prune_against_best)
+{
+    const auto & cost_config = memo.getContext().cost_config;
+    auto group = memo.getGroup(expression->group_id);
+    auto cost = cost_estimator.estimateCost(expression);
+
+    /// Leave the expression uncosted: plan extraction must never walk into a subtree
+    /// that has no implementation for one of its inputs.
+    if (!cost.buildable)
+    {
+        LOG_TEST(log, "Expression '{}' in group #{} has an unsatisfiable input, not a best-plan candidate",
+            expression->getDescription(), expression->group_id);
+        return false;
+    }
+
+    if (prune_against_best)
+    {
+        Float64 subtree_weighted = cost.subtree_cost.total(cost_config);
+        Float64 current_best = group->getBestCostForProperties(expression->properties, cost_config);
+        if (std::isfinite(current_best) && subtree_weighted >= current_best)
+        {
+            LOG_TEST(log, "Pruned expression '{}' in group #{}: "
+                "cost {} >= current best {}",
+                expression->getDescription(), expression->group_id,
+                subtree_weighted, current_best);
+            return false;
+        }
+    }
+
+    expression->cost = cost;
+    LOG_TEST(log, "group #{} expression '{}' cost {}",
+        expression->group_id, expression->getDescription(), cost.subtree_cost.total(cost_config));
+    group->updateBestImplementation(expression, cost_config);
+    return true;
+}
+
+void CascadesOptimizer::deriveStatistics(GroupId group_id)
+{
+    statistics_derivation.deriveStatistics(group_id);
+}
+
+bool CascadesOptimizer::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
+{
+    const auto & cost_config = memo.getContext().cost_config;
+
+    /// Check if all inputs are fully optimized (all stages complete) and have
+    /// a satisfying implementation.  A group can be fully done with no best if
+    /// no rule could produce the required distribution (e.g. `ReadFromSystemOne`
+    /// at {N nodes}) - treat as pruned.
+    for (const auto & input : expression->inputs)
+    {
+        auto child_group = getGroup(input.group_id);
+        if (!child_group->isFullyDoneFor(input.required_properties))
+            return false;
+        if (!child_group->getBestImplementation(input.required_properties, cost_config).expression)
+        {
+            LOG_TEST(log, "Skipping unsatisfiable expression '{}' in group #{}: "
+                "input group #{} has no implementation for {}",
+                expression->getDescription(), expression->group_id,
+                input.group_id, input.required_properties.dump());
+            return true;  /// Unsatisfiable input - treat as pruned
+        }
+    }
+
+    /// All inputs ready - compute cost directly, bypassing the `OptimizeInputsTask` chain.
+    deriveStatistics(expression->group_id);
+    costAndUpdateBest(expression, /*prune_against_best=*/true);
+    return true;
+}
+
+void CascadesOptimizer::scheduleCosting(GroupExpressionPtr expression)
+{
+    if (!tryUpdateBestPlanDirectly(expression))
+        pushTask(std::make_unique<OptimizeInputsTask>(expression, 0));
 }
 
 void CascadesOptimizer::optimize()
 {
+    if (optimize_was_called)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "CascadesOptimizer::optimize called twice; the memo and the task stack belong to one run, construct a new optimizer instead");
+    optimize_was_called = true;
+
     Stopwatch optimizer_timer;
-    auto query_context = CurrentThread::get().tryGetQueryContext();
-    if (!query_context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No query context available");
+    auto query_context = getQueryContextOrThrow();
 
-    /// Statistics come from a query-parameter hint when present, otherwise they are empty.
-    /// Deriving them from real table statistics is not wired up yet.
-    OptimizerStatisticsPtr statistics;
-    if (query_context->getQueryParameters().contains(CascadesParams::STAT_HINTS))
-        statistics = createStatisticsFromHint(query_context->getQueryParameters().at(CascadesParams::STAT_HINTS));
-    else
-        statistics = createEmptyStatistics();
+    LOG_TRACE(log, "Cost config: {}, cluster node count: {}",
+        memo.getContext().cost_config.dump(), memo.getContext().cluster_node_count);
 
-    OptimizationEnvironment environment = buildEnvironment(query_context, optimization_settings);
-    LOG_TRACE(getLogger("CascadesOptimizer"), "Cost config: {}, cluster node count: {}",
-        environment.cost_config.dump(), environment.cluster_node_count);
+    LOG_TEST(log, "Initial query plan:\n{}", dumpQueryPlanShort(query_plan));
 
-    OptimizerContext optimizer_context(*statistics, std::move(environment));
-    LOG_TEST(optimizer_context.log, "Initial query plan:\n{}", dumpQueryPlanShort(query_plan));
+    auto [root_group_id, root_required_properties] = addGroup(*query_plan.getRootNode());
 
-    auto [root_group_id, root_required_properties] = optimizer_context.addGroup(*query_plan.getRootNode());
+    LOG_TEST(log, "Initial memo:\n{}", memo.dump());
 
-    LOG_TEST(optimizer_context.log, "Initial memo:\n{}", optimizer_context.memo.dump());
-
-    optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(root_group_id, root_required_properties));
+    pushTask(std::make_unique<OptimizeGroupTask>(root_group_id, root_required_properties));
 
     /// Limit the time in terms of optimization tasks instead of wall clock time. This is done for stability of generated plans regardless of system load.
     /// Microsoft SQL Server's optimizer team describes this in Andy Pavlo's seminar: https://www.youtube.com/watch?v=pQe1LQJiXN0
-    const size_t executed_tasks_limit = getCascadesTaskLimitParam(query_context, DEFAULT_TASK_LIMIT);
+    const size_t executed_tasks_limit = getCascadesTaskLimitParam(query_context, CascadesDefaults::DEFAULT_TASK_LIMIT);
     size_t executed_tasks_count = 0;
-    for (; !optimizer_context.tasks.empty() && executed_tasks_count < executed_tasks_limit; ++executed_tasks_count)
+    for (; !tasks.empty() && executed_tasks_count < executed_tasks_limit; ++executed_tasks_count)
     {
-        auto task = optimizer_context.tasks.top();
-        optimizer_context.tasks.pop();
-        task->execute(optimizer_context);
+        auto task = std::move(tasks.top());
+        tasks.pop();
+        task->execute(*this);
     }
 
-    LOG_TEST(optimizer_context.log, "Executed {} tasks, Memo after:\n{}", executed_tasks_count, optimizer_context.memo.dump());
+    LOG_TEST(log, "Executed {} tasks, Memo after:\n{}", executed_tasks_count, memo.dump());
 
     /// Fail closed if the search did not finish within the task budget: building a plan from a
     /// partial memo can yield a non-minimal plan or a confusing failure deep inside buildBestPlan.
     /// Surface a clear error instead and point at the knob to raise the limit.
-    if (!optimizer_context.tasks.empty())
+    if (!tasks.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Cascades optimizer did not finish within the task budget of {} tasks "
             "(root group #{}, required properties {}, {} groups in memo, {} tasks left, next: {}). "
             "The distributed Cascades optimizer is experimental; set enable_cascades_optimizer = 0 "
             "or simplify the query.",
             executed_tasks_limit, root_group_id, root_required_properties.dump(),
-            optimizer_context.memo.getGroupCount(), optimizer_context.tasks.size(),
-            optimizer_context.tasks.top()->describe());
+            memo.getGroupCount(), tasks.size(), tasks.top()->describe());
 
-    auto best_plan = buildBestPlan(root_group_id, root_required_properties, optimizer_context.memo);
+    auto best_plan = buildBestPlan(root_group_id, root_required_properties);
 
-    LOG_TEST(optimizer_context.log, "Optimized plan:\n{}", dumpQueryPlanShort(*best_plan));
+    LOG_TEST(log, "Optimized plan:\n{}", dumpQueryPlanShort(*best_plan));
 
     /// Update the original plan in-place because there might be references to the root node of the original plan
     query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*best_plan));
 
-    LOG_TRACE(optimizer_context.log, "Optimization took {} ms", optimizer_timer.elapsedMilliseconds());
+    LOG_TRACE(log, "Optimization took {} ms", optimizer_timer.elapsedMilliseconds());
 }
 
 /// Drop unused columns and reorder columns between steps if needed
@@ -183,9 +369,9 @@ static QueryPlanStepPtr cloneStepForBestPlan(const GroupExpression & expression)
     return step;
 }
 
-QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties, const Memo & memo)
+QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties)
 {
-    const auto & cost_config = memo.getEnvironment().cost_config;
+    const auto & cost_config = memo.getContext().cost_config;
 
     /// Single-input expressions on the current DFS path, used to break enforcer self-reference
     /// cycles. Path-local: added when a frame is pushed, removed when popped, so the same expression

@@ -474,6 +474,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     PAIMON_REST,
     S3_TABLES,
     ICEBERG_DELTA_SHARING,
+    ICEBERG_HORIZON,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
@@ -548,6 +549,17 @@ enum class TextIndexPostingListCodec : uint8_t
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
+
+/// On-disk serialization format version of text indexes.
+/// These are the on-disk version numbers and must remain stable.
+enum class MergeTreeTextIndexSerializationVersion : uint8_t
+{
+    V0_Initial = 0,
+    V1_WithCodec = 1,
+    V2_WithPositions = 2,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeTextIndexSerializationVersion)
 
 /// NOTE: Part level min-max index depends on strict columns order.
 ///       That means if you want to add new columns segment to index - it will not be materialized until

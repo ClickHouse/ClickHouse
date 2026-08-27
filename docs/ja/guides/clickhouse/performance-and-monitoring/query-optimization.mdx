@@ -550,7 +550,7 @@ ClickHouseは多数のデータ型をサポートしています。パフォー�
 数値については、データセット内の最小値と最大値を確認し、現在の精度が実際のデータセットに見合っているかを確認できます。 
 
 ```sql
--- payment_typeフィールドの最小値/最大値を求める
+-- Find min/max values for the payment_type field
 SELECT
     min(payment_type),max(payment_type),
     min(passenger_count), max(passenger_count)
