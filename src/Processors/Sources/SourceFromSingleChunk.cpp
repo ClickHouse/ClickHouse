@@ -9,7 +9,7 @@ SourceFromSingleChunk::SourceFromSingleChunk(SharedHeader header, Chunk chunk_) 
 {
 }
 
-SourceFromSingleChunk::SourceFromSingleChunk(SharedHeader data) : ISource(std::make_shared<const Block>(data->cloneEmpty())), chunk(data->getColumns(), data->rows())
+SourceFromSingleChunk::SourceFromSingleChunk(SharedHeader data) : ISource(data), chunk(data->getColumns(), data->rows())
 {
     const auto & sample = getPort().getHeader();
     bool has_aggregate_functions = false;
