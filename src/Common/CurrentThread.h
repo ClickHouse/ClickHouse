@@ -29,6 +29,7 @@ class InternalTextLogsQueue;
 
 class ThreadStatus;
 class ThreadGroup;
+class ResourceSchedulingContext;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
 using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
@@ -60,6 +61,10 @@ public:
 
     /// Group to which belongs current thread
     static ThreadGroupPtr getGroup();
+
+    /// Non-owning per-query scheduling context of the current thread's query (null if none, e.g. on
+    /// background threads). Used by IO producers to tag resource requests with their query identity.
+    static ResourceSchedulingContext * getResourceSchedulingContext();
 
     /// MemoryTracker for user that owns current thread if any
     static MemoryTracker * getUserMemoryTracker();

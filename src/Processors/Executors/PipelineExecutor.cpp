@@ -590,11 +590,12 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
                             .workload = query_context->getSettingsRef()[Setting::workload],
                             .trace_cpu_scheduling = trace_cpu_scheduling,
                         },
-                        initial_max);
+                        initial_max,
+                        CurrentThread::getResourceSchedulingContext());
                 }
                 else
                 {
-                    return std::make_shared<CPUSlotsAllocation>(master_threads, worker_threads, master_thread_link, worker_thread_link);
+                    return std::make_shared<CPUSlotsAllocation>(master_threads, worker_threads, master_thread_link, worker_thread_link, CurrentThread::getResourceSchedulingContext());
                 }
             }
         }

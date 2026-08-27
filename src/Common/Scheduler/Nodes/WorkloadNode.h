@@ -16,6 +16,7 @@
 #include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
 #include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
 #include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/RequestQueue.h>
 #include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
 #include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
 #include <Common/Scheduler/WorkloadSettings.h>
@@ -43,28 +44,38 @@ struct WorkloadNodeTraits<ITimeSharedNode>
 
     static NodePtr makeQueue(IWorkloadNode * workload, EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit)
     {
-        NodePtr result = std::make_shared<FifoQueue>(
+        // The time-shared leaf is always a `RequestQueue`; the workload `scheduler` setting selects
+        // the scheduling algorithm it runs (default `fifo` reproduces the historical behaviour).
+        NodePtr result = std::make_shared<RequestQueue>(
             event_queue_,
             SchedulerNodeInfo{},
+            parseSchedulerAlgorithm(settings_.scheduler),
+            unit,
             settings_.getQueueLimit(unit));
-        result->basename = "fifo";
+        result->basename = "queue";
         result->workload = workload;
         return result;
     }
 
     static ResourceLink getLink(const NodePtr & node)
     {
-        return ResourceLink{.queue = &static_cast<FifoQueue &>(*node)};
+        // Expose the queue through the `ISchedulerQueue` interface (independent of the algorithm).
+        return ResourceLink{.queue = &static_cast<ISchedulerQueue &>(*node)};
     }
 
     static void updateQueue(const NodePtr & node, const WorkloadSettings & settings_, CostUnit unit)
     {
-        static_cast<FifoQueue &>(*node).updateQueueLimit(settings_.getQueueLimit(unit));
+        // In-place update: the leaf node stays; its queue limit is updated and, if the `scheduler`
+        // setting changed, `setScheduler` swaps the algorithm and migrates pending requests. No
+        // hierarchy rebuild, `ResourceLink` unchanged.
+        auto & queue = static_cast<RequestQueue &>(*node);
+        queue.updateQueueLimit(settings_.getQueueLimit(unit));
+        queue.setScheduler(parseSchedulerAlgorithm(settings_.scheduler));
     }
 
     static void purgeQueue(const NodePtr & node)
     {
-        static_cast<FifoQueue &>(*node).purgeQueue();
+        static_cast<ISchedulerQueue &>(*node).purgeQueue();
     }
 
     static NodePtr makeFairPolicy(IWorkloadNode * workload, EventQueue & event_queue_, Priority priority)
@@ -491,6 +502,10 @@ protected:
         {
             UNUSED(self, event_queue_);
             settings = new_settings;
+            // The leaf node stays; `updateQueue` updates the queue limit and, for time-shared leaves,
+            // swaps the scheduling algorithm in place if the `scheduler` setting changed (migrating
+            // pending requests, no hierarchy rebuild). So a `CREATE OR REPLACE WORKLOAD` never
+            // invalidates the `ResourceLink` cached by classifiers.
             if (queue)
                 Traits::updateQueue(queue, settings, unit);
         }

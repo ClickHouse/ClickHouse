@@ -70,6 +70,9 @@ public:
             // spuriously throw even though this (new) request was granted via `execute()`.
             exception = {};
             ResourceRequest::reset(cost_);
+            // Tag this IO request with the current thread's per-query scheduling context (reset() cleared
+            // any stale one from a previous reuse). Null on background threads => anonymous FIFO ordering.
+            captureSchedulingContext();
             estimated_cost = link_.queue->enqueueRequestUsingBudget(this); // NOTE: it modifies `cost` and enqueues request
         }
 
@@ -95,6 +98,10 @@ public:
         }
 
         void wait();
+
+        /// Sets `scheduling_context` from the current thread's query context. Defined out of line to
+        /// keep `CurrentThread.h` out of this header.
+        void captureSchedulingContext();
 
         void finish(ResourceCost real_cost_, ResourceLink link_)
         {

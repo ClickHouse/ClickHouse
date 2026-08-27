@@ -116,6 +116,7 @@ To customize workload the following settings could be used:
 * `max_cpus` - the limit on the number of CPU cores to serve queries in this workload.
 * `max_cpu_share` - the same as `max_cpus`, but normalized to the number of available CPU cores.
 * `max_burst_cpu_seconds` - the maximum number of CPU seconds that could be consumed by the workload without being throttled due to `max_cpus`.
+* `scheduler` - (time-shared only) the scheduling algorithm used between the queries of this workload: `fifo` (default, first-come-first-served) or `fair` (weighted fair queueing). See [Query-aware scheduling](#query_aware_scheduling).
 * `max_memory` - the limit on the total memory reserved for this workload.
 
 All limits specified through workload settings are independent for every resource. For example workload with `max_bytes_per_second = '10Mi'` will have 10 MB/s bandwidth limit for every read and write resource independently. If common limit for reading and writing is required, consider using the same resource for READ and WRITE access.
@@ -200,6 +201,37 @@ Slot scheduling provides a way to control [query concurrency](/reference/setting
 <Note>
 Declaring CPU resource disables effect of [`concurrent_threads_soft_limit_num`](/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) and [`concurrent_threads_soft_limit_ratio_to_cores`](/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores) settings. Instead, workload setting `max_concurrent_threads` is used to limit the number of CPUs allocated for a specific workload. To achieve the previous behavior create only WORKER THREAD resource, set `max_concurrent_threads` for the workload `all` to the same value as `concurrent_threads_soft_limit_num` and use `workload = "all"` query setting. This configuration corresponds to [`concurrent_threads_scheduler`](/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) setting set "fair_round_robin" value.
 </Note>
+
+## Query-aware scheduling {#query_aware_scheduling}
+
+The `weight` and `priority` workload settings schedule resources *between* workloads. To control how the queries *inside a single workload* share a time-shared resource, choose the workload's `scheduler`:
+
+```sql
+CREATE WORKLOAD all SETTINGS scheduler = 'fair'
+```
+
+- **`fifo`** (default) — first-come-first-served, preserving the historical behaviour.
+- **`fair`** — weighted fair queueing: each query gets a share of the resource proportional to its `weight` (a query setting, default `1`), and no query is starved.
+
+The `scheduler` is time-shared only (CPU and IO) and can be set per resource with the `FOR <resource>` clause. Changing it on an existing workload swaps the algorithm in place, without interrupting other resources.
+
+Under the `fair` scheduler, a query's effective weight can be **lowered as it runs**, so shorter or newer queries get a larger share. This is controlled by per-query settings (all default to disabled):
+
+| Query setting | Effect |
+|---|---|
+| `weight` | Base fair-scheduling weight of the query (default `1.0`). |
+| `weight_lowering_age_seconds` | Once the query's wall-clock age exceeds this, its weight is lowered. |
+| `weight_lowering_cpu_seconds` | Once the query has attained this many CPU-seconds, its weight is lowered (CPU resources). |
+| `weight_lowering_io_bytes` | Once the query has attained this many IO bytes, its weight is lowered (IO resources). |
+| `weight_lowering_factor` | The factor the weight is multiplied by when a threshold is crossed (e.g. `0.25`). The first threshold to trip applies the full lowering; thresholds do not combine. `1.0` disables lowering. |
+
+```sql
+-- Enable fair scheduling for the workload (once):
+CREATE OR REPLACE WORKLOAD all SETTINGS scheduler = 'fair';
+
+-- Then, per query: keep full weight until it burns 10 CPU-seconds, after which it is de-prioritised.
+SELECT ... SETTINGS workload = 'all', weight_lowering_cpu_seconds = 10, weight_lowering_factor = 0.1;
+```
 
 ## Threads vs. CPUs {#threads_vs_cpus}
 

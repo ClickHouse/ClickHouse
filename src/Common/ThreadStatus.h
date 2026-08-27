@@ -10,6 +10,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
+#include <Common/Scheduler/ResourceSchedulingContext.h>
 #include <Common/UntrackedMemoryRegistry.h>
 
 #include <boost/noncopyable.hpp>
@@ -97,6 +98,12 @@ public:
     const Int32 os_threads_nice_value;
 
     MemorySpillSchedulerPtr memory_spill_scheduler;
+
+    /// Per-query scheduling context shared by all resource requests of this query, used by
+    /// query-aware scheduler leaves. Created only for real queries (`createForQuery`); left null
+    /// for background thread groups (merges/mutations/etc.) so their requests stay anonymous.
+    ResourceSchedulingContextPtr scheduling_context;
+
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
@@ -272,6 +279,9 @@ public:
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;
+
+    /// Non-owning per-query scheduling context of this thread's group (null if none / background).
+    ResourceSchedulingContext * getResourceSchedulingContext() const;
 
     void setQueryId(std::string && new_query_id) noexcept;
     void clearQueryId() noexcept;

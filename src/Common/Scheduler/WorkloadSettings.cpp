@@ -149,6 +149,7 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
         std::optional<Float64> max_burst_cpu_seconds;
         std::optional<Float64> max_queries_per_second;
         std::optional<Float64> max_burst_queries;
+        std::optional<String> scheduler;
         std::optional<Int64> max_io_requests;
         std::optional<Int64> max_bytes_inflight;
         std::optional<Int64> max_concurrent_threads;
@@ -255,6 +256,13 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
                 max_queries_per_second = getNotNegativeFloat64(name, value);
             else if (name == "max_burst_queries")
                 max_burst_queries = getNotNegativeFloat64(name, value);
+            else if (name == "scheduler")
+            {
+                scheduler = value.safeGet<String>();
+                if (*scheduler != "fifo" && *scheduler != "fair")
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Unknown workload setting 'scheduler' value '{}' (expected 'fifo' or 'fair')", *scheduler);
+            }
             else if (name == "max_io_requests" || name == "max_requests")
                 max_io_requests = getNotNegativeInt64(name, value);
             else if (name == "max_bytes_inflight" || name == "max_cost")
@@ -347,6 +355,14 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
         max_burst_queries = default_burst_seconds * max_queries_per_second;
     }
     max_burst_queries = get_value(specific.max_burst_queries, regular.max_burst_queries, max_burst_queries);
+
+    // Scheduling algorithm. `FOR <resource>` is handled by the regular/specific split above, so it
+    // can be set per resource (e.g. `scheduler = 'fair' FOR cpu`). A resource-specific value wins;
+    // otherwise the regular value; otherwise the default ("fifo").
+    if (specific.scheduler)
+        scheduler = *specific.scheduler;
+    else if (regular.scheduler)
+        scheduler = *regular.scheduler;
 
     // Choose semaphore constraint values.
     // Zero setting value means unlimited number of requests or bytes.

@@ -60,7 +60,7 @@ AcquiredCPUSlot::~AcquiredCPUSlot()
         request->finish();
 }
 
-CPUSlotsAllocation::CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker_slots_, ResourceLink master_link_, ResourceLink worker_link_)
+CPUSlotsAllocation::CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker_slots_, ResourceLink master_link_, ResourceLink worker_link_, ResourceSchedulingContext * scheduling_context_)
     : master_slots(master_slots_)
     , total_slots(master_slots_ + worker_slots_)
     , noncompeting_slots(!master_link_ * master_slots_ + !worker_link_ * worker_slots_)
@@ -69,8 +69,13 @@ CPUSlotsAllocation::CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker
     , requests(total_slots - noncompeting_slots) // NOTE: it should not be reallocated after initialization because AcquiredCPUSlot holds raw pointer
     , current_request(requests.empty() ? nullptr : &requests.front())
 {
+    // All slot requests of this allocation belong to one query; tag them so a query-aware leaf
+    // groups them. `CPUSlotRequest` is never `reset()` after construction, so stamping once holds.
     for (CPUSlotRequest & request : requests)
+    {
         request.allocation = this;
+        request.scheduling_context = scheduling_context_;
+    }
 
     std::unique_lock lock{schedule_mutex};
     while (allocated < total_slots)

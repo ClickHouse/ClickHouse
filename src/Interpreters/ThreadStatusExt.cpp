@@ -67,6 +67,11 @@ namespace Setting
     extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
     extern const SettingsUInt64 query_profiler_real_time_period_ns;
     extern const SettingsBool enable_adaptive_memory_spill_scheduler;
+    extern const SettingsFloat weight;
+    extern const SettingsFloat weight_lowering_factor;
+    extern const SettingsFloat weight_lowering_age_seconds;
+    extern const SettingsFloat weight_lowering_cpu_seconds;
+    extern const SettingsFloat weight_lowering_io_bytes;
     extern const SettingsBool jemalloc_enable_profiler;
     extern const SettingsBool jemalloc_collect_profile_samples_in_trace_log;
     extern const SettingsInt32 os_threads_nice_value_query;
@@ -221,9 +226,20 @@ void ThreadGroup::unlinkThread()
 
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
 {
-    const Int32 os_threads_nice_value = query_context_->getSettingsRef()[Setting::os_threads_nice_value_query];
+    const auto & settings = query_context_->getSettingsRef();
+    const Int32 os_threads_nice_value = settings[Setting::os_threads_nice_value_query];
     auto group = std::make_shared<ThreadGroup>(query_context_, os_threads_nice_value, std::move(fatal_error_callback_));
     group->memory_tracker.setDescription("Query");
+    // Mint the per-query scheduling context here (real queries only, from the query settings) so
+    // the query-aware workload schedulers (`fair`) can weight this query and lower its weight as it
+    // accrues age/CPU/IO. Background thread groups leave `scheduling_context` null (scheduled anonymously).
+    group->scheduling_context = std::make_shared<ResourceSchedulingContext>(
+        clock_gettime_ns(),
+        settings[Setting::weight],
+        settings[Setting::weight_lowering_factor],
+        settings[Setting::weight_lowering_age_seconds],
+        settings[Setting::weight_lowering_cpu_seconds],
+        settings[Setting::weight_lowering_io_bytes]);
     return group;
 }
 

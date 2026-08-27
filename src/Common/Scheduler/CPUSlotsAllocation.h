@@ -69,7 +69,7 @@ private:
 class CPUSlotsAllocation final : public ISlotAllocation
 {
 public:
-    CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker_slots_, ResourceLink master_link_, ResourceLink worker_link_);
+    CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker_slots_, ResourceLink master_link_, ResourceLink worker_link_, ResourceSchedulingContext * scheduling_context_ = nullptr);
     ~CPUSlotsAllocation() override;
 
     // Take one already granted slot if available. Lock-free iff there is no granted slot.
