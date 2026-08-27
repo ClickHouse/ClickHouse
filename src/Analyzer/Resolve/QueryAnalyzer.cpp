@@ -866,27 +866,25 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
 
             if (table_expression_modifiers->hasStream())
             {
-                #if !defined(OS_LINUX) && !defined(OS_DARWIN)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming Queries are supported only on Linux and macOS.");
-                #else
-                    if (table_expression_modifiers->hasFinal() || table_expression_modifiers->hasSampleSizeRatio() || table_expression_modifiers->hasSampleOffsetRatio())
-                        throw Exception(ErrorCodes::SYNTAX_ERROR, "STREAM is not compatible with other table expression modifiers (FINAL or SAMPLE)");
+                if (table_expression_modifiers->hasFinal() || table_expression_modifiers->hasSampleSizeRatio() || table_expression_modifiers->hasSampleOffsetRatio())
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "STREAM is not compatible with other table expression modifiers (FINAL or SAMPLE)");
 
-                    if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
-                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming Queries are an experimental feature. Set `enable_streaming_queries = 1` to enable");
+                if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming Queries are an experimental feature. Set `enable_streaming_queries = 1` to enable");
 
-                    if (!storage->supportsStreaming())
-                        throw Exception(ErrorCodes::ILLEGAL_STREAM, "Storage {} doesn't support STREAM", storage->getName());
+                if (!storage->supportsStreaming())
+                    throw Exception(ErrorCodes::ILLEGAL_STREAM, "Storage {} doesn't support STREAM", storage->getName());
 
-                    const auto & stream_settings = table_expression_modifiers->getStreamSettings();
-                    const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+                const auto & stream_settings = table_expression_modifiers->getStreamSettings();
+                const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
-                    if (stream_settings->watermark)
-                    {
-                        validateWatermarkSettings(*stream_settings->watermark, storage_snapshot, scope);
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Watermarks for Streaming Queries are not supported yet");
-                    }
-                #endif
+                if (stream_settings->watermark)
+                {
+                    if (stream_settings->unordered)
+                        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK is not supported for UNORDERED streams");
+
+                    validateWatermarkSettings(*stream_settings->watermark, storage_snapshot, scope);
+                }
             }
         }
     }
@@ -6107,11 +6105,22 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
         auto [it, inserted] = scope.aliases.alias_name_to_table_expression_node.emplace(alias_name, table_expression_node);
         if (!inserted)
-            throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                "Duplicate aliases {} for table expressions in FROM section are not allowed. Try to register {}. Already registered {}.",
-                alias_name,
-                table_expression_node->formatASTForErrorMessage(),
-                it->second->formatASTForErrorMessage());
+        {
+            /** An identifier node can get here only from QueryExpressionsAliasVisitor, which speculatively registers
+              * aliased identifiers from expression sections (e.g. the projection `number AS x`) as potential transitive
+              * table expression aliases. An actual table expression from the FROM section owns the alias in the table
+              * expression namespace, so it replaces the speculative entry (example: SELECT number AS x FROM (SELECT 1) AS x).
+              * Genuine duplicate aliases between table expressions are rejected earlier by TableExpressionsAliasVisitor.
+              */
+            if (it->second->getNodeType() == QueryTreeNodeType::IDENTIFIER)
+                it->second = table_expression_node;
+            else
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "Duplicate aliases {} for table expressions in FROM section are not allowed. Try to register {}. Already registered {}.",
+                    alias_name,
+                    table_expression_node->formatASTForErrorMessage(),
+                    it->second->formatASTForErrorMessage());
+        }
     };
 
     add_table_expression_alias_into_scope(join_tree_node);
