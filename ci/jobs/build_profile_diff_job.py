@@ -110,12 +110,45 @@ UPLOAD_DELAY_DAYS = 4
 
 # Significance thresholds. Object files are compared against the flag-identical
 # warmup build, so their thresholds are tight. The stripped binary is compared
-# against the official master build, which differs in build flags beyond debug
-# info (official-build flag, PGO/BOLT availability): a no-op PR measured a
-# -0.44% residual, so its threshold must absorb about that much. Times run on
-# different machines under different load and need generous margins.
+# against the official master build, which is compiled with debug info while a
+# pull request build is not, and that leaks into the code itself (see
+# XRAY_DEBUG_OFFSET_RATIO): a no-op pull request measured a -0.43% residual, so
+# its threshold must absorb about that much. Times run on different machines
+# under different load and need generous margins.
 BINARY_SIG_BYTES = 8 << 20  # stripped binary: 8 MiB and
 BINARY_SIG_RATIO = 0.01  # 1%
+# The band in which a *smaller* pull request binary is the known debug-info
+# offset rather than anything the pull request did - such a row is not shown at
+# all, see compare_binaries.
+#
+# Pull request builds pass -DDISABLE_ALL_DEBUG_SYMBOLS=1 and the official master
+# build does not (build_clickhouse.py), and `strip --strip-debug` does not undo
+# the difference. XRay decides whether to instrument a loop-free function by
+# counting MachineInstrs with debug pseudo-instructions included
+# (`MICount += MBB.size()` in llvm/lib/CodeGen/XRayInstrumentation.cpp), so with
+# debug info thousands of functions just under the 200-instruction threshold get
+# entry/exit sleds that the pull request build never emits. Measured on master
+# 9d8eed34c114 against pull request 116614: 11028 extra instrumented functions,
+# 3.06 MiB of a 712 MiB stripped binary (0.43%), all of it in `xray_instr_map`,
+# `xray_fn_idx`, the sled NOPs in `.text` and the `.Lxray_*` / `$d` symbols they
+# add. The offset is always in the same direction, because the official build is
+# the one carrying the extra sleds.
+#
+# The band is roughly twice the measured offset and stays below
+# BINARY_SIG_RATIO, so a delta large enough to be flagged is never hidden.
+#
+# The compiler side is fixed in llvm/llvm-project#219100; once that reaches the
+# toolchain this band can go away, and the headline row becomes exact again.
+XRAY_DEBUG_OFFSET_RATIO = 0.008
+# Shown whenever the headline size section says anything at all, so that a
+# rendered negative delta is read with the offset in mind rather than as a size
+# win of that size.
+XRAY_DEBUG_OFFSET_NOTE = (
+    "The official master build is compiled with `-g` and a pull request build is "
+    "not, and XRay counts debug instructions towards its instrumentation "
+    "threshold, so master instruments thousands of functions more and its binary "
+    "is ~0.4% larger no matter what the pull request does."
+)
 OBJECT_REPORT_BYTES = 16 << 10  # .o file: report at 16 KiB,
 OBJECT_SIG_BYTES = 256 << 10  # significant at 256 KiB
 # Per-function ThinLTO time is the noisiest signal of the check: the two links
@@ -142,11 +175,13 @@ TU_SIG_RATIO = 1.5
 TU_SKEW_SIG_RATIO = 1.2
 TU_SKEW_SIG_SECONDS = 300
 # Per-symbol sizes are baselined on the official master build, not on the
-# flag-identical warmup one: its different flags change ThinLTO's inlining and
-# import decisions, so individual functions really do differ in size between two
-# builds of the same source. The whole stripped binary drifts by ~3 MiB on a
-# no-op pull request, so the margins here are much wider than the object-file
-# ones (those are baselined on a build compiled with the PR's exact flags).
+# flag-identical warmup one: that build is compiled with debug info, and every
+# function it instruments but a pull request build does not carries the sled NOPs
+# in its own size (see XRAY_DEBUG_OFFSET_RATIO), so individual functions really
+# do differ in size between two builds of the same source. That is worth ~3 MiB
+# over the whole stripped binary, so the margins here are much wider than the
+# object-file ones (those are baselined on a build compiled with the PR's exact
+# flags).
 SYMBOL_REPORT_BYTES = 64 << 10  # per-symbol size: report at 64 KiB,
 SYMBOL_SIG_BYTES = 512 << 10  # significant at 512 KiB
 MAX_TABLE_ROWS = 20
@@ -678,9 +713,23 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
 
     Only the stripped binary is comparable: master keeps debug symbols while
     PR ThinLTO builds strip them (build_clickhouse.py), so the unstripped and
-    self-extracting binaries differ by gigabytes on any PR. Even stripped, the
-    two sides differ in the official-build flag and PGO/BOLT availability -
-    the significance threshold absorbs that residual.
+    self-extracting binaries differ by gigabytes on any PR.
+
+    Even the stripped binary carries a fixed offset in master's favour, because
+    debug info leaks into codegen through XRay's instruction threshold (see
+    XRAY_DEBUG_OFFSET_RATIO): the official build instruments ~11k functions the
+    pull request build leaves alone, worth ~0.43% of the binary. That is not
+    something a pull request can influence, and reporting it as a -3 MiB change
+    on every pull request only invites a hunt for a size win that does not
+    exist - so a smaller-binary delta inside that band is not shown at all, just
+    named. A delta in the other direction cannot be the offset, and one large
+    enough to be significant is always shown.
+
+    This does hide a genuine shrink of the same size, and there is no way around
+    that while the baseline is the official build: a 3 MiB saving and the offset
+    are indistinguishable here. Recovering it needs a baseline compiled with the
+    pull request's flags - the warmup build, once it links a binary of its own -
+    or the offset gone from the compiler.
 
     This is the check's headline size signal, so it must never disappear
     silently: a headline binary whose size row the PR build did not upload
@@ -720,6 +769,7 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
         "| Binary | Master | PR | Δ |",
         "|---|---:|---:|---:|",
     ]
+    within_offset = []
     for file in HEADLINE_BINARIES:
         pr_size, base_size = sizes.get(file, (0, 0))
         if not pr_size or not base_size:
@@ -729,6 +779,11 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
         if abs(delta) >= BINARY_SIG_BYTES and abs(delta) >= base_size * BINARY_SIG_RATIO:
             section.significant = True
             summaries.append(f"{name}: {format_bytes_delta(delta, base_size)}")
+        elif -base_size * XRAY_DEBUG_OFFSET_RATIO <= delta <= 0:
+            # The known debug-info/XRay offset, not the pull request. Checked
+            # after significance, so a flagged delta is never hidden by it.
+            within_offset.append(name)
+            continue
         table.append(f"| {md_code(name)} | {format_bytes(base_size)} | {format_bytes(pr_size)} | {format_bytes_delta(delta, base_size)} |")
     if len(table) > 2:
         table.append("")
@@ -738,6 +793,16 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
             "by construction."
         )
         lines += table
+    if within_offset:
+        if lines:
+            lines.append("")
+        names = ", ".join(md_code(name) for name in within_offset)
+        lines.append(
+            f"{names}: smaller than the master baseline by less than the known "
+            "offset between the two builds, so the difference is not shown."
+        )
+    if len(table) > 2 or within_offset:
+        lines += ["", XRAY_DEBUG_OFFSET_NOTE]
     section.body = "\n".join(lines).rstrip()
     section.summary = "; ".join(summaries)
     return section
