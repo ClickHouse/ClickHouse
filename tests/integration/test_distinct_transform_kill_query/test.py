@@ -674,7 +674,7 @@ def test_lc_null_keys_kill_query(started_cluster):
     )
 
     query = """SELECT count() FROM numbers(1000000)
-WHERE number IN (SELECT k FROM null_keys_mt_lc)
+WHERE (number, number) IN (SELECT k, k FROM null_keys_mt)
 FORMAT Null
 SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1, max_rows_to_read=0"""
 
@@ -739,21 +739,20 @@ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_indep
 
 def test_lc_null_keys_break_prefix(started_cluster):
     """Break-mode soft timeout must be honored inside the `skip_null_keys` null-marking prepass of a
-    `LowCardinality(Nullable)` set build, without surfacing an error to the client.
+    `LowCardinality(Nullable)` set build, preserving the *whole* multi-slice committed prefix through the
+    downstream `buildLowCardinalityMask`.
 
-    Regression for the Blocker where the soft timeout fires inside `markLowCardinalityNullRows`: the
-    committed prefix must survive the downstream `buildLowCardinalityMask` (which must not discard it via
-    the empty-mask fast path when it sees a soft timeout already latched upstream).
+    Regression for the Blocker where a soft timeout latched upstream (inside `markLowCardinalityNullRows`)
+    caused `buildLowCardinalityMask` to drop the tail of the committed prefix at its own 4096-row boundary.
+    The test pauses the prepass at the first boundary, resumes to commit a *second* 4096-row slice (so the
+    committed prefix spans two slices), then latches the real soft timeout and releases the prepass. With the
+    fix the prepass stops at the paused row and `buildLowCardinalityMask` scans the whole pre-latched prefix;
+    without it the scan drops `[4096, begin)` of the committed prefix.
 
-    Only partition 0 is large enough to reach the second 4096-row sub-range (and therefore the failpoint), so
-    the `markLowCardinalityNullRows` loop is the one that observes the timeout. The test holds the loop paused
-    past `max_execution_time` (so the real soft timeout latches upstream of `buildLowCardinalityMask`), then
-    releases it; the soft-timeout latch must stop the loop at the paused row (the re-armed failpoint is never
-    hit again) and the query must finish with no error in break mode. The exact preserved-prefix value cannot be
-    asserted from the client because an interrupted break-mode query returns no rows to the client in this
-    harness (verified: `system.query_log.result_rows` is 0); the prefix-correctness is guaranteed by the fix in
-    `DistinctTransform` (zero the unprocessed tail on soft timeout, and teach `buildLowCardinalityMask` to keep
-    scanning past a pre-latched soft timeout at row 0).
+    The exact preserved-prefix value cannot be asserted from the client because an interrupted break-mode query
+    returns no rows to the client in this harness (verified: `system.query_log.result_rows` is 0); the test
+    therefore asserts the mechanism: the prepass pauses on the second boundary, never on a third, and the query
+    finishes with no error in break mode.
     """
     node1.query(
         "CREATE TABLE IF NOT EXISTS null_keys_mt_lc (k LowCardinality(Nullable(UInt64))) "
@@ -772,7 +771,7 @@ def test_lc_null_keys_break_prefix(started_cluster):
 WHERE number IN (SELECT k FROM null_keys_mt_lc)
 FORMAT Null
 SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
-         max_execution_time=2, timeout_overflow_mode='break'"""
+         max_execution_time=5, timeout_overflow_mode='break'"""
 
     query_id = str(uuid.uuid4())
     node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
@@ -804,11 +803,10 @@ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_indep
         wait_future.result()
 
     try:
+        ## First 4096-row boundary: the null-marking prepass pauses after committing the first slice.
         wait_failpoint(NULL_FAULT_NAME)
-        ## Hold past the deadline so the soft timeout latches upstream of `buildLowCardinalityMask`, then
-        ## re-arm and release the loop. With the fix the loop returns at the paused row (committed prefix
-        ## preserved); without it the loop keeps marking rows and pauses again at the next boundary.
-        time.sleep(3)
+        ## Re-arm and resume so the prepass commits a *second* 4096-row slice and pauses again at the
+        ## second boundary. This is the multi-slice prefix the upstream commit must preserve wholesale.
         node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
         node1.query(f"SYSTEM NOTIFY FAILPOINT {NULL_FAULT_NAME}")
 
@@ -816,10 +814,27 @@ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_indep
             node1.query,
             f"SYSTEM WAIT FAILPOINT {NULL_FAULT_NAME} PAUSE",
         )
-        done, _ = concurrent.futures.wait([second_pause_future], timeout=10)
+        done, _ = concurrent.futures.wait([second_pause_future], timeout=15)
+        if not done:
+            assert False, "prepass did not reach the second 4096-row boundary: multi-slice prefix path not exercised"
+        second_pause_future.result()
+        ## Hold past the deadline so the soft timeout latches while two slices are already committed, then
+        ## release. With the fix the prepass stops at the paused row (committed 2-slice prefix preserved
+        ## through `buildLowCardinalityMask`, which must scan the whole pre-latched prefix); without it the
+        ## scan drops the tail of the committed prefix at its own 4096-boundary.
+        time.sleep(6)
+        node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {NULL_FAULT_NAME}")
+
+        ## With the fix the prepass breaks at the paused row and never pauses a third time.
+        third_pause_future = pool.submit(
+            node1.query,
+            f"SYSTEM WAIT FAILPOINT {NULL_FAULT_NAME} PAUSE",
+        )
+        done, _ = concurrent.futures.wait([third_pause_future], timeout=10)
         if done:
-            second_pause_future.result()
-            assert False, "loop reached the re-armed failpoint: soft-timeout latch in markLowCardinalityNullRows is broken"
+            third_pause_future.result()
+            assert False, "prepass reached a third boundary: soft-timeout latch is broken"
     finally:
         node1.query(f"SYSTEM DISABLE FAILPOINT {NULL_FAULT_NAME}")
         pool.shutdown(wait=False, cancel_futures=True)
@@ -835,6 +850,10 @@ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_indep
 def test_null_keys_filter_kill(started_cluster):
     """A `KILL QUERY` arriving during the monolithic `column->filter(keep, ...)` pass of the
     `skip_null_keys` prepass must be honored promptly, not after the whole chunk is materialized.
+
+    The query uses a two-column `IN` key so the filter pass iterates two projected columns and pauses at
+    the failpoint twice; with the fix the pass returns at the first column on `isCancelled()`, so the
+    re-armed failpoint at the second column is never reached.
     """
     node1.query(
         "CREATE TABLE IF NOT EXISTS null_keys_mt (k Nullable(UInt64)) "

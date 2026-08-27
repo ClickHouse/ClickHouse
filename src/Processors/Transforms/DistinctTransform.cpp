@@ -231,6 +231,10 @@ LowCardinalityMaskResult DistinctTransform::buildLowCardinalityMask(const Column
         return {{}, 0, num_rows}; /// empty mask == no candidates
 
     const auto seen_count_before = state.seen_count;
+    /// Whether a soft timeout was already latched by an upstream stage (e.g. the `skip_null_keys`
+    /// null-marking prepass) before this scan began. When pre-latched, a prefix has already been
+    /// committed and must be emitted whole; the scan must not drop part of it at a 4096-boundary.
+    const bool pre_latched = time_limit_exceeded;
     auto & seen = state.seen_indices;
 
     const auto index_type_size = column.getSizeOfIndexType();
@@ -268,14 +272,14 @@ LowCardinalityMaskResult DistinctTransform::buildLowCardinalityMask(const Column
                     if (isCancelled() && !isCancelledBySoftTimeout())
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                     /// A soft timeout already latched by an upstream stage (e.g. the `skip_null_keys`
-                    /// null-marking prepass) must not discard the whole chunk at row 0; keep scanning so
-                    /// the committed prefix is still emitted. The scan will bail at the next row that is a
-                    /// 4096-boundary (see below) or at the end of the chunk.
-                    if (row == 0 && time_limit_exceeded)
+                    /// null-marking prepass) committed a prefix before this scan began; emit that whole
+                    /// prefix instead of dropping the tail of it at the first 4096-row boundary. Only bail
+                    /// at a boundary when the timeout fires *during* this scan (i.e. not pre-latched).
+                    if (row == 0 && pre_latched)
                     {
-                        // fall through and continue scanning from row 0
+                        // fall through and keep scanning the committed prefix
                     }
-                    else if (isSoftTimeout() || isCancelled())
+                    else if (!pre_latched && (isSoftTimeout() || isCancelled()))
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
@@ -295,14 +299,14 @@ LowCardinalityMaskResult DistinctTransform::buildLowCardinalityMask(const Column
                     if (isCancelled() && !isCancelledBySoftTimeout())
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                     /// A soft timeout already latched by an upstream stage (e.g. the `skip_null_keys`
-                    /// null-marking prepass) must not discard the whole chunk at row 0; keep scanning so
-                    /// the committed prefix is still emitted. The scan will bail at the next row that is a
-                    /// 4096-boundary (see below) or at the end of the chunk.
-                    if (row == 0 && time_limit_exceeded)
+                    /// null-marking prepass) committed a prefix before this scan began; emit that whole
+                    /// prefix instead of dropping the tail of it at the first 4096-row boundary. Only bail
+                    /// at a boundary when the timeout fires *during* this scan (i.e. not pre-latched).
+                    if (row == 0 && pre_latched)
                     {
-                        // fall through and continue scanning from row 0
+                        // fall through and keep scanning the committed prefix
                     }
-                    else if (isSoftTimeout() || isCancelled())
+                    else if (!pre_latched && (isSoftTimeout() || isCancelled()))
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
@@ -322,14 +326,14 @@ LowCardinalityMaskResult DistinctTransform::buildLowCardinalityMask(const Column
                     if (isCancelled() && !isCancelledBySoftTimeout())
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                     /// A soft timeout already latched by an upstream stage (e.g. the `skip_null_keys`
-                    /// null-marking prepass) must not discard the whole chunk at row 0; keep scanning so
-                    /// the committed prefix is still emitted. The scan will bail at the next row that is a
-                    /// 4096-boundary (see below) or at the end of the chunk.
-                    if (row == 0 && time_limit_exceeded)
+                    /// null-marking prepass) committed a prefix before this scan began; emit that whole
+                    /// prefix instead of dropping the tail of it at the first 4096-row boundary. Only bail
+                    /// at a boundary when the timeout fires *during* this scan (i.e. not pre-latched).
+                    if (row == 0 && pre_latched)
                     {
-                        // fall through and continue scanning from row 0
+                        // fall through and keep scanning the committed prefix
                     }
-                    else if (isSoftTimeout() || isCancelled())
+                    else if (!pre_latched && (isSoftTimeout() || isCancelled()))
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
@@ -349,14 +353,14 @@ LowCardinalityMaskResult DistinctTransform::buildLowCardinalityMask(const Column
                     if (isCancelled() && !isCancelledBySoftTimeout())
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                     /// A soft timeout already latched by an upstream stage (e.g. the `skip_null_keys`
-                    /// null-marking prepass) must not discard the whole chunk at row 0; keep scanning so
-                    /// the committed prefix is still emitted. The scan will bail at the next row that is a
-                    /// 4096-boundary (see below) or at the end of the chunk.
-                    if (row == 0 && time_limit_exceeded)
+                    /// null-marking prepass) committed a prefix before this scan began; emit that whole
+                    /// prefix instead of dropping the tail of it at the first 4096-row boundary. Only bail
+                    /// at a boundary when the timeout fires *during* this scan (i.e. not pre-latched).
+                    if (row == 0 && pre_latched)
                     {
-                        // fall through and continue scanning from row 0
+                        // fall through and keep scanning the committed prefix
                     }
-                    else if (isSoftTimeout() || isCancelled())
+                    else if (!pre_latched && (isSoftTimeout() || isCancelled()))
                         return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
