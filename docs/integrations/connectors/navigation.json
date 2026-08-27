@@ -148,17 +148,7 @@
           ]
         },
         "integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse",
-        {
-          "expanded": false,
-          "group": "dbt",
-          "pages": [
-            "integrations/connectors/data-ingestion/etl-tools/dbt/index",
-            "integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
-            "integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
-            "integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
-            "integrations/connectors/data-ingestion/etl-tools/dbt/guides"
-          ]
-        },
+        { "$ref": "data-ingestion/etl-tools/dbt/navigation.json" },
         "integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {
           "group": "Fivetran",
