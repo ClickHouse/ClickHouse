@@ -38,8 +38,8 @@ public:
     /** This function is needed to avoid a conflict between already calculated columns and columns that needed to execute TTL.
       * If result column is absent in block, all required columns are copied to new block and expression is executed on new block.
       */
-    /// Resolve the column type once and fill `timestamps` for the whole block. Prefer this over
-    /// `getTimestampByIndex` in a loop: it does one type dispatch instead of one per row.
+    /// Resolve the column type once and fill `timestamps` for the whole block. This is the only
+    /// place that knows how a TTL result column maps to a Unix timestamp.
     static void extractTimestamps(
         const IColumn * column, size_t num_rows, const DateLUTImpl & date_lut, PaddedPODArray<Int64> & timestamps);
 
@@ -48,13 +48,16 @@ public:
 
 protected:
     bool isTTLExpired(time_t ttl) const;
-    Int64 getTimestampByIndex(const IColumn * column, size_t index) const;
 
-    /// Block-at-a-time form of the above, with the algorithm's own time zone.
-    void extractTimestamps(const IColumn * column, size_t num_rows, PaddedPODArray<Int64> & timestamps) const
+    /// Fill `timestamps` from `column` using this algorithm's time zone. Call it once per block,
+    /// then index `timestamps` in the row loop.
+    void extractTimestamps(const IColumn * column, size_t num_rows)
     {
         extractTimestamps(column, num_rows, date_lut, timestamps);
     }
+
+    /// Reused across the blocks of one merge, so the per-block extraction does not reallocate.
+    PaddedPODArray<Int64> timestamps;
 
     const TTLExpressions ttl_expressions;
     const TTLDescription description;

@@ -24,10 +24,8 @@ void TTLUpdateInfoAlgorithm::execute(Block & block)
 
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
 
-    /// The loop body is a single min/max update, so resolving the column type once per block
-    /// rather than once per row is both faster and the natural shape here.
     const size_t rows = block.rows();
-    extractTimestamps(ttl_column.get(), rows, timestamps);
+    extractTimestamps(ttl_column.get(), rows);
 
     for (size_t i = 0; i < rows; ++i)
         new_ttl_info.update(timestamps[i]);

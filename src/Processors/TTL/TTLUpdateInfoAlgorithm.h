@@ -34,8 +34,6 @@ public:
 private:
     const TTLUpdateField ttl_update_field;
     const String ttl_update_key;
-    /// Reused across the blocks of one merge, so the per-block extraction does not reallocate.
-    PaddedPODArray<Int64> timestamps;
 };
 
 
