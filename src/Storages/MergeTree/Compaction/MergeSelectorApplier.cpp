@@ -66,26 +66,37 @@ struct ChooseContext
 /// while its part count keeps growing. Narrow the merge instead, so the fixed cost stays a small share of
 /// the memory limit. Ordinary tables, and even very wide tables on a large server, keep the configured
 /// `max_parts_to_merge_at_once`.
-size_t getMaxPartsToMergeAtOnce(const ChooseContext & ctx)
+/// Returns the memory-derived part of the cap alone, with 0 meaning "no cap" - for the selectors whose
+/// width `max_parts_to_merge_at_once` deliberately does not constrain.
+size_t getAffordablePartsToMergeAtOnce(const ChooseContext & ctx)
 {
-    const size_t configured = ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once];
     const size_t bytes_per_source_column = ctx.merge_tree_settings[MergeTreeSetting::merge_memory_estimate_per_source_part_column];
 
     const Int64 memory_limit = total_memory_tracker.getHardLimit();
     if (bytes_per_source_column == 0 || memory_limit <= 0)
-        return configured;
+        return 0;
 
     /// The fixed cost of one merge may take at most this share of the memory limit. Merges are background
     /// work that runs next to the queries and inserts the server is there for, so keep their share small.
     static constexpr size_t inverse_share_of_the_limit = 16;
 
     const size_t num_columns = std::max<size_t>(1, ctx.metadata_snapshot.getColumns().size());
-    const size_t bytes_per_source_part = num_columns * bytes_per_source_column;
+    /// Divide by the two factors one after another instead of dividing by their product: the estimate is
+    /// an unrestricted `UInt64` setting, so `num_columns * bytes_per_source_column` could wrap around and
+    /// turn an absurdly large estimate into a wide (or division-by-zero) merge instead of a narrow one.
     /// A merge of fewer than two parts makes no progress, so never narrow below that.
-    const size_t affordable = std::max<size_t>(
-        2, static_cast<size_t>(memory_limit) / inverse_share_of_the_limit / bytes_per_source_part);
+    return std::max<size_t>(
+        2, static_cast<size_t>(memory_limit) / inverse_share_of_the_limit / num_columns / bytes_per_source_column);
+}
 
-    /// `max_parts_to_merge_at_once` of 0 means "no limit", and then the memory estimate is the only one.
+size_t getMaxPartsToMergeAtOnce(const ChooseContext & ctx)
+{
+    const size_t configured = ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once];
+    const size_t affordable = getAffordablePartsToMergeAtOnce(ctx);
+
+    /// A value of 0 means "no limit" on either side.
+    if (affordable == 0)
+        return configured;
     if (configured == 0)
         return affordable;
     return std::min(configured, affordable);
@@ -125,7 +136,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     /// Delete rows - 2 priority
     if (!ctx.merge_constraints.empty() && !ctx.merge_tree_settings[MergeTreeSetting::ttl_only_drop_parts])
     {
-        TTLRowDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time);
+        TTLRowDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time, getAffordablePartsToMergeAtOnce(ctx));
 
         if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
@@ -134,7 +145,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     /// Recompression - 3 priority
     if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
     {
-        TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);
+        TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time, getAffordablePartsToMergeAtOnce(ctx));
 
         if (auto merge_ranges = recompress_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress);
