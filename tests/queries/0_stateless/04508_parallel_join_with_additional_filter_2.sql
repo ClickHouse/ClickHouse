@@ -1,7 +1,7 @@
 -- RIGHT/FULL joins with a residual ON condition emit unmatched right rows through the parallel
 -- non-joined path. `hash` and `parallel_hash` must produce the same rows. UInt32 keys use
 -- two-level maps; UInt16 keys use single-level maps.
--- Random settings limits: parallel_hash_join_threshold=(1, 1); max_threads=(16, 16); max_block_size=(2, 2); parallel_non_joined_rows_processing=(1, 1); query_plan_join_swap_table=(0, 0); enable_analyzer=(1, 1)
+-- Random settings limits: parallel_hash_join_threshold=(1, 1); max_threads=(16, 16); max_block_size=(2, 2)
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
