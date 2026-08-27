@@ -201,18 +201,29 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
     {
         const auto & array = field.safeGet<Array>();
 
-        /// An EMPTY piece poisons extraction. `isRingArray` requires a non-empty array, so a
-        /// `Polygon`/`MultiPolygon` carrying an empty ring or an empty polygon -- say
-        /// `[shell, []]` -- misses the assembled-geometry branches below and falls into the generic
-        /// recursion, which would keep the bbox of the non-empty pieces and silently skip the empty
-        /// one. `parseConstPolygon`/`parseConstMultiPolygon` assemble the very same literal and
-        /// reject it with `bg::is_valid`, so the query must raise rather than prune every disjoint
-        /// granule away. A top-level empty array -- `CAST([], 'Ring')` -- is the same value seen
-        /// from one level up, and must be reported as failed rather than as no information, or a
-        /// sibling conjunct can still hide the exception.
+        /// An EMPTY piece poisons extraction -- but only where the predicate would really raise on
+        /// it. `isRingArray` requires a non-empty array, so a `Polygon`/`MultiPolygon` carrying an
+        /// empty ring or an empty polygon -- say `[shell, []]` -- misses the assembled-geometry
+        /// branches below and falls into the generic recursion, which would keep the bbox of the
+        /// non-empty pieces and silently skip the empty one. With validation on,
+        /// `parseConstPolygon`/`parseConstMultiPolygon` assemble the very same literal and reject it
+        /// with `bg::is_valid`, so the query must raise rather than prune every disjoint granule
+        /// away. A top-level empty array -- `CAST([], 'Ring')` -- is the same value seen from one
+        /// level up, and must be reported as failed rather than as no information, or a sibling
+        /// conjunct can still hide the exception.
+        ///
+        /// With `require_valid` false -- `validate_polygons = 0`, where `pointInPolygon` skips
+        /// `bg::is_valid` and answers `0` for an empty geometry instead of raising (see
+        /// `00500_point_in_polygon_empty_bound`) -- there is no exception left to preserve, so
+        /// failing closed only costs pruning. The empty piece then simply contributes nothing: a
+        /// top-level empty array yields no bbox at all (`NoInfo`, leaving sibling conjuncts free to
+        /// prune), and an empty hole, which removes nothing from its shell, leaves the surrounding
+        /// polygon's bbox to the non-empty pieces -- exactly the geometry the predicate evaluates.
+        /// Mirrors the `require_valid` guards on the assembled-geometry branches below.
         if (array.empty())
         {
-            acc.valid = false;
+            if (require_valid)
+                acc.valid = false;
             return false;
         }
 

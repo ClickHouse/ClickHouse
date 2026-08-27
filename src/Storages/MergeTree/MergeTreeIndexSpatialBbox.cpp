@@ -154,17 +154,16 @@ MergeTreeIndexConditionSpatialBbox::MergeTreeIndexConditionSpatialBbox(
     : column_name(column_name_)
 {
     if (predicate)
-        query_bbox = extractQueryBbox(predicate, column_name);
+        query_bboxes = extractQueryBboxes(predicate, column_name);
 }
 
-std::optional<QueryBbox>
-MergeTreeIndexConditionSpatialBbox::extractQueryBbox(
+std::vector<QueryBbox>
+MergeTreeIndexConditionSpatialBbox::extractQueryBboxes(
     const ActionsDAG::Node * node,
     const String & col_name)
 {
-    bool has_bbox = false;
     bool failed = false;
-    QueryBbox bbox;
+    std::vector<QueryBbox> bboxes;
     std::unordered_set<const ActionsDAG::Node *> visited;
 
     /// Accept only the INPUT node matching the indexed column: a spatial predicate on any
@@ -175,53 +174,55 @@ MergeTreeIndexConditionSpatialBbox::extractQueryBbox(
         [&col_name](const ActionsDAG::Node & child) { return child.result_name == col_name; },
         [&](const ActionsDAG::Node &, const QueryBbox & node_bbox)
         {
-            if (!has_bbox)
-            {
-                bbox = node_bbox;
-                has_bbox = true;
-            }
-            else
-            {
-                /// All conjuncts must hold simultaneously, so intersect (not union) the
-                /// bboxes: a granule that fails any single conjunct's bbox already fails
-                /// the whole `and`.
-                bbox.xmin = std::max(bbox.xmin, node_bbox.xmin);
-                bbox.ymin = std::max(bbox.ymin, node_bbox.ymin);
-                bbox.xmax = std::min(bbox.xmax, node_bbox.xmax);
-                bbox.ymax = std::min(bbox.ymax, node_bbox.ymax);
-            }
+            /// One box per conjunct, kept apart: see the comment on `query_bboxes`.
+            bboxes.push_back(node_bbox);
         },
         failed);
 
-    if (failed || !has_bbox)
-        return std::nullopt;
-    return bbox;
+    if (failed)
+        return {};
+    return bboxes;
 }
 
 bool MergeTreeIndexConditionSpatialBbox::mayBeTrueOnGranule(
     MergeTreeIndexGranulePtr idx_granule,
     const UpdatePartialDisjunctionResultFn & /*update_partial_disjunction_result_fn*/) const
 {
-    if (!query_bbox)
+    if (query_bboxes.empty())
         return true;
 
     const auto & g = typeid_cast<const MergeTreeIndexGranuleSpatialBbox &>(*idx_granule);
     if (!g.has_data)
         return true; // empty granule — can't prune
 
-    bool disjoint = g.xmax < query_bbox->xmin
-                 || g.xmin > query_bbox->xmax
-                 || g.ymax < query_bbox->ymin
-                 || g.ymin > query_bbox->ymax;
-    return !disjoint;
+    /// The granule survives only if it can satisfy EVERY conjunct, so it is enough for one of them
+    /// to be disjoint from the granule bbox to skip it.
+    for (const auto & query_bbox : query_bboxes)
+    {
+        bool disjoint = g.xmax < query_bbox.xmin
+                     || g.xmin > query_bbox.xmax
+                     || g.ymax < query_bbox.ymin
+                     || g.ymin > query_bbox.ymax;
+        if (disjoint)
+            return false;
+    }
+    return true;
 }
 
 std::string MergeTreeIndexConditionSpatialBbox::getDescription() const
 {
-    if (!query_bbox)
+    if (query_bboxes.empty())
         return "spatial_bbox (no usable predicate)";
-    return fmt::format("spatial_bbox bbox=[{},{},{},{}]",
-        query_bbox->xmin, query_bbox->ymin, query_bbox->xmax, query_bbox->ymax);
+    std::string description = "spatial_bbox bbox=[";
+    for (size_t i = 0; i < query_bboxes.size(); ++i)
+    {
+        const auto & b = query_bboxes[i];
+        if (i != 0)
+            description += "; ";
+        description += fmt::format("{},{},{},{}", b.xmin, b.ymin, b.xmax, b.ymax);
+    }
+    description += "]";
+    return description;
 }
 
 

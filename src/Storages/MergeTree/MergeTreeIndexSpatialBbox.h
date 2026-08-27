@@ -54,7 +54,7 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context);
 
-    bool alwaysUnknownOrTrue() const override { return !query_bbox.has_value(); }
+    bool alwaysUnknownOrTrue() const override { return query_bboxes.empty(); }
 
     bool mayBeTrueOnGranule(
         MergeTreeIndexGranulePtr idx_granule,
@@ -63,16 +63,25 @@ public:
     std::string getDescription() const override;
 
 private:
-    /// Try to find a spatial predicate in the DAG node tree that filters the indexed column
-    /// using a constant geometry. Returns the query bounding box on success. Shares its node-
-    /// level extraction and conjunction-walking logic with `Parquet` row-group pruning via
-    /// `extractSpatialPredicateNodeBbox`/`collectConjunctiveSpatialBboxes` (see `Common/GeoBbox.h`).
-    std::optional<QueryBbox> extractQueryBbox(
+    /// Find every spatial predicate in the DAG node tree that filters the indexed column using a
+    /// constant geometry, and return one bounding box PER conjunct. Shares its node-level
+    /// extraction and conjunction-walking logic with `Parquet` row-group pruning via
+    /// `extractSpatialPredicateNodeBbox`/`collectConjunctiveSpatialBboxes` (see `Common/GeoBbox.h`),
+    /// which keeps the boxes separate in the same way.
+    static std::vector<QueryBbox> extractQueryBboxes(
         const ActionsDAG::Node * node,
         const String & col_name);
 
     String column_name;
-    std::optional<QueryBbox> query_bbox;
+
+    /// The conjuncts are kept apart on purpose and are NOT folded into one box. A matching row's
+    /// geometry bbox must intersect each of them individually, which does not imply that it
+    /// intersects their intersection: one polygon can contain two far-apart points, satisfying both
+    /// `pointInPolygon((0, 0), poly)` and `pointInPolygon((10, 10), poly)`, while those two
+    /// zero-area query boxes do not overlap at all. Intersecting them up front would prune every
+    /// granule for such a query -- see
+    /// `05050_spatial_bbox_conjunct_bboxes_not_intersected`.
+    std::vector<QueryBbox> query_bboxes;
 };
 
 
