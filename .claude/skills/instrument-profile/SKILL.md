@@ -22,8 +22,26 @@ does not exist, this technique is unavailable and you need `cpu-profile` instead
 
 ```sql
 SELECT count() FROM system.instrumentation;          -- table exists => XRay build
-SELECT name FROM system.build_options WHERE name LIKE '%XRAY%';
 ```
+
+## Find out what can be instrumented, before you try
+
+Not every function is in the XRay map. `system.symbols` says which are: it exposes
+`function_id` and `symbol_demangled` **only** for symbols the instrumentation
+manager knows about, so a non-NULL `function_id` means "this one can be
+instrumented". Look the function up instead of issuing an `ADD` and reading the
+exception.
+
+```sql
+SELECT symbol_demangled, function_id
+FROM system.symbols
+WHERE function_id IS NOT NULL
+  AND symbol_demangled LIKE '%Prefetcher::%'
+ORDER BY symbol_demangled;
+```
+
+This is also the way to find the right name to pass to `ADD`, and to see which
+overload you are about to hook when a name is templated or overloaded.
 
 ## Quick reference
 
@@ -116,9 +134,11 @@ FROM t;
 
 ## Gotchas
 
-- **Short functions cannot be instrumented.** XRay only patches functions longer
-  than ~200 instructions; `ADD` throws for the rest. Expect some of your chosen
-  points to be rejected — pick a caller instead of asserting the callee is cold.
+- **Not every function is instrumentable — look it up rather than guessing.** XRay
+  only patches functions above a size threshold (~200 instructions), so `ADD` throws
+  for the rest. Query `system.symbols WHERE function_id IS NOT NULL` first; if the
+  function you want is absent, hook its caller. Discovering this by trial and error
+  wastes a round trip per point and tells you nothing about what to use instead.
 - **`ARGUMENTS` are the handler's, not the function's.** They supply the `LOG` text
   or the `SLEEP` seconds. There is no capture of the instrumented function's
   parameters, so you cannot tag a call with which object it operated on. If you need
