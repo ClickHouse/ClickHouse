@@ -240,6 +240,8 @@ void LocalConnection::sendQuery(
     state->json_ast_max_query_size = query_context->getSettingsRef()[Setting::max_query_size];
     state->json_ast_max_depth = query_context->getSettingsRef()[Setting::max_ast_depth];
     state->json_ast_max_elements = query_context->getSettingsRef()[Setting::max_ast_elements];
+    state->max_parser_depth = query_context->getSettingsRef()[Setting::max_parser_depth];
+    state->max_parser_backtracks = query_context->getSettingsRef()[Setting::max_parser_backtracks];
     state->query_scope_holder = QueryScope::create(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
     state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
@@ -283,7 +285,8 @@ void LocalConnection::sendQuery(
         /// except for plain `SET` queries which are still parsed with `ParserQuery` so
         /// users can switch back to another dialect (e.g. `SET dialect = 'clickhouse'`)
         /// without being locked into JSON-only input.
-        if (state->parsed_as_json_dialect && !isClickHouseJSONSetEscape(begin, end, state->json_ast_max_query_size))
+        if (state->parsed_as_json_dialect
+            && !isClickHouseJSONSetEscape(begin, end, state->json_ast_max_query_size, state->max_parser_depth, state->max_parser_backtracks))
         {
             if (!state->enable_json_ast_dialect)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

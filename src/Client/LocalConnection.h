@@ -41,6 +41,11 @@ struct LocalQueryState
     UInt64 json_ast_max_query_size = 0;
     UInt64 json_ast_max_depth = 0;
     UInt64 json_ast_max_elements = 0;
+    /// Parser limits captured at the same point: the `SET`-escape probe of the `input()`
+    /// initializer runs a full `ParserSetQuery`, which must obey the same limits as the
+    /// original parse.
+    UInt64 max_parser_depth = 0;
+    UInt64 max_parser_backtracks = 0;
     /// Streams of blocks, that are processing the query.
     BlockIO io;
     /// Current stream to pull blocks from.

@@ -447,13 +447,13 @@ size_t getJSONDeserializationRemainingElements()
     return json_deser_max_elements - json_deser_current_elements;
 }
 
-bool isClickHouseJSONSetEscape(const char * begin, const char * end, size_t max_query_size)
+bool isClickHouseJSONSetEscape(const char * begin, const char * end, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
 {
     /// A valid SQL `SET` query is an escape hatch from non-ClickHouse dialects. Merely checking
     /// the leading token would hijack valid queries in those dialects, such as a PromQL metric
     /// named `set`.
     Tokens tokens(begin, end, max_query_size, true);
-    IParser::Pos pos(tokens, 0, 0);
+    IParser::Pos pos(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
     ParserSetQuery parser;
     ASTPtr ast;
     Expected expected;

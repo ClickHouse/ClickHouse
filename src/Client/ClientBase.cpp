@@ -492,7 +492,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
     const Dialect dialect = settings[Setting::dialect];
     const bool is_set_escape = dialect != Dialect::clickhouse
-        && isClickHouseJSONSetEscape(pos, end, settings[Setting::max_query_size]);
+        && isClickHouseJSONSetEscape(
+            pos, end, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
     /// A plain `SET` query is an escape hatch from every non-ClickHouse dialect. Parse it
     /// with `ParserQuery` so users can switch back to another dialect.
