@@ -15,6 +15,8 @@ DROP TABLE IF EXISTS t_skip_index;
 DROP TABLE IF EXISTS t_nested;
 DROP TABLE IF EXISTS t_array;
 DROP TABLE IF EXISTS t_scalar;
+DROP TABLE IF EXISTS t_stored_nan;
+DROP TABLE IF EXISTS a_stored_nan;
 
 CREATE TABLE t_partition (t Tuple(Int32, Int32)) ENGINE = MergeTree ORDER BY tuple() PARTITION BY t;
 INSERT INTO t_partition VALUES ((1, 1)), ((2, 2));
@@ -52,6 +54,18 @@ CREATE TABLE t_scalar (i Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY
 INSERT INTO t_scalar VALUES (1), (2);
 SELECT 'scalar', count() FROM t_scalar WHERE NOT (i < nan);
 
+-- A NaN stored in the key makes the two equalities disagree: the Field total order treats two
+-- NaN-bearing tuples as equal, tuple equality in SQL does not.
+CREATE TABLE t_stored_nan (t Tuple(Float64, Float64)) ENGINE = MergeTree ORDER BY t SETTINGS index_granularity = 1;
+INSERT INTO t_stored_nan VALUES ((nan, 1.)), ((2., 2.));
+SELECT 'stored nan notEquals', count() FROM t_stored_nan WHERE t != (nan, 1.);
+
+-- Array equality does follow the total order, so the matching row must survive: folding the atom
+-- instead of declining it would drop it.
+CREATE TABLE a_stored_nan (a Array(Float64)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+INSERT INTO a_stored_nan VALUES ([nan, 1.]), ([2., 2.]);
+SELECT 'stored nan array equals', count() FROM a_stored_nan WHERE a = [nan, 1.];
+
 -- Constants that hold no NaN must still prune.
 SELECT 'still prunes parts', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_partition WHERE NOT (t < (2, 2)))
@@ -68,3 +82,5 @@ DROP TABLE t_skip_index;
 DROP TABLE t_nested;
 DROP TABLE t_array;
 DROP TABLE t_scalar;
+DROP TABLE t_stored_nan;
+DROP TABLE a_stored_nan;
