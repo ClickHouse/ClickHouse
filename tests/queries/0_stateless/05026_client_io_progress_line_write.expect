@@ -46,9 +46,9 @@ expect ":) "
 # render the profiling suffix at all). Forcing multipart matters: a single PutObject at finalize
 # would be one burst delta right before the query ends. The part size must exceed 5 MiB - S3
 # rejects smaller non-final parts with EntityTooSmall at CompleteMultipartUpload. Parallel part
-# upload is disabled so the uploads run on the query thread, whose streamed per-interval deltas
-# feed the meter - the IO thread pool's contribution is not guaranteed to stream mid-query.
-send -- "INSERT INTO FUNCTION s3('http://localhost:11111/test/05026_client_io_progress_' || currentDatabase() || '.tsv', 'test', 'testtest', 'TSV', 's String, x UInt8') SELECT randomString(100000) AS s, sleepEachRow(0.01) AS x FROM numbers(300) SETTINGS max_block_size = 10, s3_min_upload_part_size = 6000000, s3_max_single_part_upload_size = 1000000, s3_allow_parallel_part_upload = 0, s3_truncate_on_insert = 1\r"
+# upload stays at its default: WriteBufferFromS3Bytes is counted as each part's upload request is
+# built, on the query thread in either mode, so the deltas stream mid-query all the same.
+send -- "INSERT INTO FUNCTION s3('http://localhost:11111/test/05026_client_io_progress_' || currentDatabase() || '.tsv', 'test', 'testtest', 'TSV', 's String, x UInt8') SELECT randomString(100000) AS s, sleepEachRow(0.01) AS x FROM numbers(300) SETTINGS max_block_size = 10, s3_min_upload_part_size = 6000000, s3_max_single_part_upload_size = 1000000, s3_truncate_on_insert = 1\r"
 expect -re {[0-9.]+ [MGT]B/s IO}
 # A further progress frame must follow the matched IO frame before the query completes: the rate
 # was rendered live mid-query (an INSERT SELECT runs as a completed pipeline, whose interactive
