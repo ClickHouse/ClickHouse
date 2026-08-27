@@ -232,11 +232,17 @@ namespace
         if (auth[S3AuthSetting::no_sign_request].value)
             return false;
 
+        /// SigV4 needs both halves of the key pair, and the session token is read only alongside them, so a
+        /// lone half describes no credential: the request goes out anonymously and carries none of it.
+        const bool signs = !auth[S3AuthSetting::access_key_id].value.empty()
+            && !auth[S3AuthSetting::secret_access_key].value.empty();
+
         /// `external_id` is read only by the STS assume-role wrapper, which `S3::getCredentialsProvider` builds
         /// only for a non-empty `role_arn`; with no role to assume, nothing sends it.
-        return stored("access_key_id", auth[S3AuthSetting::access_key_id].value)
-            || stored("secret_access_key", auth[S3AuthSetting::secret_access_key].value)
-            || stored("session_token", auth[S3AuthSetting::session_token].value)
+        return (signs
+                && (stored("access_key_id", auth[S3AuthSetting::access_key_id].value)
+                    || stored("secret_access_key", auth[S3AuthSetting::secret_access_key].value)
+                    || stored("session_token", auth[S3AuthSetting::session_token].value)))
             || stored("role_arn", auth[S3AuthSetting::role_arn].value)
             || (!auth[S3AuthSetting::role_arn].value.empty()
                 && stored("external_id", auth[S3AuthSetting::external_id].value));

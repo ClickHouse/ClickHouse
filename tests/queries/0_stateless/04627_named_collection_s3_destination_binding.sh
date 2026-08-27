@@ -63,6 +63,10 @@ ${CLICKHOUSE_CLIENT} -q "
         access_key_id = 'AKIAIOSFODNN7EXAMPLE', secret_access_key = 'testtest';
     DROP NAMED COLLECTION IF EXISTS $(c keysonly);
     CREATE NAMED COLLECTION $(c keysonly) AS access_key_id = 'test', secret_access_key = 'testtest';
+    DROP NAMED COLLECTION IF EXISTS $(c keyidonly);
+    CREATE NAMED COLLECTION $(c keyidonly) AS url = '$OWN/', access_key_id = 'test';
+    DROP NAMED COLLECTION IF EXISTS $(c secretonly);
+    CREATE NAMED COLLECTION $(c secretonly) AS url = '$OWN/', secret_access_key = 'testtest';
     DROP NAMED COLLECTION IF EXISTS $(c rel);
     CREATE NAMED COLLECTION $(c rel) AS url = '${CLICKHOUSE_TEST_UNIQUE_NAME}.csv',
         access_key_id = 'test', secret_access_key = 'testtest', format = 'CSV';
@@ -276,6 +280,14 @@ allowed_reads "SELECT * FROM s3($(c otherkeys), url = '$OWN/$DATA',
 h '--- partial replacement: the stored secret_access_key still signs'
 run "SELECT * FROM s3($(c keys), url = '$OTHER/x.csv',
     access_key_id = 'other', format = 'CSV', structure = 'a String')"
+
+h '--- half a key pair is never sent, so it authorises nothing and binds nothing'
+# The arm above is the control: there the query completes the pair, so the stored half signs and binds.
+# Nothing listens on that destination, so the retry cap keeps the passing half from taking minutes.
+allowed_reaches_s3 "SELECT * FROM s3($(c keyidonly), url = '$OTHER/x.csv', format = 'CSV',
+    structure = 'a String') SETTINGS s3_retry_attempts = 1, max_execution_time = 25"
+allowed_reaches_s3 "SELECT * FROM s3($(c secretonly), url = '$OTHER/x.csv', format = 'CSV',
+    structure = 'a String') SETTINGS s3_retry_attempts = 1, max_execution_time = 25"
 
 h '--- query-supplied role_arn: the collection keys are dropped, the query role authenticates'
 # Nothing serves that object, so an S3-level outcome is what shows the destination check let the request
@@ -568,6 +580,8 @@ ${CLICKHOUSE_CLIENT} -q "
     DROP NAMED COLLECTION IF EXISTS $(c nosign);
     DROP NAMED COLLECTION IF EXISTS $(c signing);
     DROP NAMED COLLECTION IF EXISTS $(c keysonly);
+    DROP NAMED COLLECTION IF EXISTS $(c keyidonly);
+    DROP NAMED COLLECTION IF EXISTS $(c secretonly);
     DROP NAMED COLLECTION IF EXISTS $(c rel);
     DROP NAMED COLLECTION IF EXISTS $(c later);
     DROP NAMED COLLECTION IF EXISTS $(c userinfo);

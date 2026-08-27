@@ -17,6 +17,9 @@ payload
 payload
 --- partial replacement: the stored secret_access_key still signs
 refused
+--- half a key pair is never sent, so it authorises nothing and binds nothing
+reached-s3
+reached-s3
 --- query-supplied role_arn: the collection keys are dropped, the query role authenticates
 passed-check
 --- gcp_oauth sends a bearer token, so its ADC secrets bind the destination too
