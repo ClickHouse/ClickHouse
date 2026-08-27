@@ -1,0 +1,171 @@
+-- numeric array, dynamic offset
+1	0	9	[0,1]	10
+2	1	8	[1,2]	10
+5	4	5	[4,5]	10
+100	0	0	[]	10
+1	0	10	[0,1]	11
+2	1	9	[1,2]	11
+5	4	6	[4,5]	11
+100	0	0	[]	11
+1	0	9	[0,1]	10
+2	1	8	[1,2]	10
+5	4	5	[4,5]	10
+100	0	0	[]	10
+1	0	10	[0,1]	11
+2	1	9	[1,2]	11
+5	4	6	[4,5]	11
+100	0	0	[]	11
+-- string array, constant and dynamic slices
+1	['s1','s2','s3']	['s3','s4']	['s0','s1','s2','s3','s4']	['s0']	s1
+-1	['s1','s2','s3']	['s3','s4']	['s4']	[]	s1
+0	['s1','s2','s3']	['s3','s4']	[]	[]	s1
+3	['s1','s2','s3']	['s3','s4']	['s2','s3','s4']	['s2','s3','s4']	s1
+1	['s2','s3','s4']	['s4','s5']	['s1','s2','s3','s4','s5']	['s1']	s2
+-1	['s2','s3','s4']	['s4','s5']	['s5']	[]	s2
+0	['s2','s3','s4']	['s4','s5']	[]	[]	s2
+3	['s2','s3','s4']	['s4','s5']	['s3','s4','s5']	['s3','s4','s5']	s2
+1	['s1','s2','s3']	['s3','s4']	['s0','s1','s2','s3','s4']	['s0']	s1
+-1	['s1','s2','s3']	['s3','s4']	['s4']	[]	s1
+0	['s1','s2','s3']	['s3','s4']	[]	[]	s1
+3	['s1','s2','s3']	['s3','s4']	['s2','s3','s4']	['s2','s3','s4']	s1
+1	['s2','s3','s4']	['s4','s5']	['s1','s2','s3','s4','s5']	['s1']	s2
+-1	['s2','s3','s4']	['s4','s5']	['s5']	[]	s2
+0	['s2','s3','s4']	['s4','s5']	[]	[]	s2
+3	['s2','s3','s4']	['s4','s5']	['s3','s4','s5']	['s3','s4','s5']	s2
+-- Array(LowCardinality(String)) elements and slices
+1	Array(LowCardinality(String))	lc_0	lc_1	['lc_0','lc_1']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+2	Array(LowCardinality(String))	lc_1	lc_1	['lc_1','lc_2']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+5	Array(LowCardinality(String))	lc_1	lc_1	['lc_1']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+-1	Array(LowCardinality(String))	lc_1	lc_1	['lc_1']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+1	Array(LowCardinality(String))	lc_1	lc_2	['lc_1','lc_2']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
+2	Array(LowCardinality(String))	lc_2	lc_2	['lc_2','lc_0']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
+5	Array(LowCardinality(String))	lc_2	lc_2	['lc_2']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
+-1	Array(LowCardinality(String))	lc_2	lc_2	['lc_2']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
+1	Array(LowCardinality(String))	lc_0	lc_1	['lc_0','lc_1']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+2	Array(LowCardinality(String))	lc_1	lc_1	['lc_1','lc_2']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+5	Array(LowCardinality(String))	lc_1	lc_1	['lc_1']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+-1	Array(LowCardinality(String))	lc_1	lc_1	['lc_1']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+1	Array(LowCardinality(String))	lc_1	lc_2	['lc_1','lc_2']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
+2	Array(LowCardinality(String))	lc_2	lc_2	['lc_2','lc_0']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
+5	Array(LowCardinality(String))	lc_2	lc_2	['lc_2']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
+-1	Array(LowCardinality(String))	lc_2	lc_2	['lc_2']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
+-- nullable elements
+1	\N	\N	[NULL,1]
+2	1	1	[1,NULL]
+7	\N	\N	[]
+-1	5	5	[5]
+1	\N	\N	[NULL,2]
+2	2	2	[2,NULL]
+7	\N	\N	[]
+-1	6	6	[6]
+1	\N	\N	[NULL,1]
+2	1	1	[1,NULL]
+7	\N	\N	[]
+-1	5	5	[5]
+1	\N	\N	[NULL,2]
+2	2	2	[2,NULL]
+7	\N	\N	[]
+-1	6	6	[6]
+-- negative and nullable offsets, negative length
+1	[5,6]	[1,2,3,4,5,6]	[0,1]
+2	[5,6]	[1,2,3,4,5,6]	[0,1]
+3	[5,6]	[1,2,3,4,5,6]	[2,3]
+-2	[5,6]	[1,2,3,4,5,6]	[0,1]
+1	[6,7]	[1,2,3,4,5,6,7]	[0,1]
+2	[6,7]	[1,2,3,4,5,6,7]	[0,1]
+3	[6,7]	[1,2,3,4,5,6,7]	[2,3]
+-2	[6,7]	[1,2,3,4,5,6,7]	[0,1]
+1	[7,8]	[1,2,3,4,5,6,7,8]	[0,1]
+2	[7,8]	[1,2,3,4,5,6,7,8]	[0,1]
+3	[7,8]	[1,2,3,4,5,6,7,8]	[2,3]
+-2	[7,8]	[1,2,3,4,5,6,7,8]	[0,1]
+1	[5,6]	[1,2,3,4,5,6]	[0,1]
+2	[5,6]	[1,2,3,4,5,6]	[0,1]
+3	[5,6]	[1,2,3,4,5,6]	[2,3]
+-2	[5,6]	[1,2,3,4,5,6]	[0,1]
+1	[6,7]	[1,2,3,4,5,6,7]	[0,1]
+2	[6,7]	[1,2,3,4,5,6,7]	[0,1]
+3	[6,7]	[1,2,3,4,5,6,7]	[2,3]
+-2	[6,7]	[1,2,3,4,5,6,7]	[0,1]
+1	[7,8]	[1,2,3,4,5,6,7,8]	[0,1]
+2	[7,8]	[1,2,3,4,5,6,7,8]	[0,1]
+3	[7,8]	[1,2,3,4,5,6,7,8]	[2,3]
+-2	[7,8]	[1,2,3,4,5,6,7,8]	[0,1]
+-- tuple elements and replicated empty arrays
+1	(0,'t0')	[(0,'t0')]	0	[]
+4	(3,'t3')	[(0,'t0'),(1,'t1'),(2,'t2'),(3,'t3')]	0	[]
+5	(0,'')	[(0,'t0'),(1,'t1'),(2,'t2'),(3,'t3')]	0	[]
+1	(1,'t0')	[(1,'t0')]	0	[0]
+4	(4,'t3')	[(1,'t0'),(2,'t1'),(3,'t2'),(4,'t3')]	0	[0]
+5	(0,'')	[(1,'t0'),(2,'t1'),(3,'t2'),(4,'t3')]	0	[0]
+1	(0,'t0')	[(0,'t0')]	0	[]
+4	(3,'t3')	[(0,'t0'),(1,'t1'),(2,'t2'),(3,'t3')]	0	[]
+5	(0,'')	[(0,'t0'),(1,'t1'),(2,'t2'),(3,'t3')]	0	[]
+1	(1,'t0')	[(1,'t0')]	0	[0]
+4	(4,'t3')	[(1,'t0'),(2,'t1'),(3,'t2'),(4,'t3')]	0	[0]
+5	(0,'')	[(1,'t0'),(2,'t1'),(3,'t2'),(4,'t3')]	0	[0]
+-- array produced by lazy JOIN replication
+1	s0	['s0','s1']
+2	s1	['s1','s2']
+3	s2	['s2','s3']
+4	s3	['s3','s4']
+1	s0	['s0','s1']
+2	s1	['s1','s2']
+3	s2	['s2','s3']
+4	s3	['s3','s4']
+-- replication indexes of type UInt16 (more than 255 rows in a block)
+90000	1800	90000
+90000	1800	90000
+-- arrayElement with a non-constant Nullable index
+1	s0	s0
+2	\N	\N
+5	s4	s4
+-1	s4	s4
+1	s1	s1
+2	\N	\N
+5	s5	s5
+-1	s5	s5
+1	s0	s0
+2	\N	\N
+5	s4	s4
+-1	s4	s4
+1	s1	s1
+2	\N	\N
+5	s5	s5
+-1	s5	s5
+-- arrayElement with a lazily replicated Nullable index (AST fuzzer)
+45150	0	0
+45150	0	0
+-- array and index replicated by the same expansion
+1	1	[1,2]	1
+2	1	[1,2]	1
+5	1	[1,2]	1
+1	2	[2,3]	2
+2	2	[2,3]	2
+5	2	[2,3]	2
+1	1	[1,2]	1
+2	1	[1,2]	1
+5	1	[1,2]	1
+1	2	[2,3]	2
+2	2	[2,3]	2
+5	2	[2,3]	2
+-- unused nested rows are compacted away before the recursion on nested columns
+1	0	1	[0,1]
+2	0	1	[0,1]
+1	1	1	[1,2]
+2	1	1	[1,2]
+1	0	1	[0,1]
+2	0	1	[0,1]
+1	1	1	[1,2]
+2	1	1	[1,2]
+-- out-of-order replication indexes (JOIN probe order) with unused nested rows
+4	0	1	3	[0,1]
+4	0	1	3	[0,1]
+7	0	1	6	[0,1]
+9	2	1	8	[2,3]
+4	0	1	3	[0,1]
+4	0	1	3	[0,1]
+7	0	1	6	[0,1]
+9	2	1	8	[2,3]
+-- large array is not materialized per joined row
+1

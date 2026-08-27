@@ -8706,6 +8706,12 @@ Enable converting the hash table to a flat array for joins when the key is a sin
     DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
 Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
 )", 0) \
+    DECLARE(Bool, enable_hash_join_row_store, true, R"(
+Enable transforming the payload of a hash join into a row-major layout.
+)", 0) \
+    DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, R"(
+Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
