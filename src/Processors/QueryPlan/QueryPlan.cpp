@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
@@ -817,7 +818,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 namespace QueryPlanOptimizations
 {
 
-std::optional<PreformattedMessage> hasUnsupportedStepRemoteExecution(const QueryPlan::Node & node, bool allow_subplan_placeholders);
+void findStepsUnsupportedForRemoteExecution(const QueryPlan::Node & node, std::vector<const IQueryPlanStep *> & unsupported);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void convertLogicalJoinsForLocalExecution(
     QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
@@ -910,12 +911,27 @@ hasPlanUnsupportedStepForDistributed(QueryPlan::Node & root, const QueryPlanOpti
         return res;
     }
 
-    if (auto res = QueryPlanOptimizations::hasUnsupportedStepRemoteExecution(root, true); res.has_value())
+    std::vector<const IQueryPlanStep *> unsupported_steps;
+    QueryPlanOptimizations::findStepsUnsupportedForRemoteExecution(root, unsupported_steps);
+
+    /// The CommonSubplanStep and CommonSubplanReferenceStep are allowed in this case:
+    /// `make_distributed_plan` force-disables the in-memory buffer, so the second optimization
+    /// pass is guaranteed to materialize them away (`materializeQueryPlanReferences` /
+    /// `optimizeUnusedCommonSubplans`) before the fragment cut.
+    const auto is_tolerated_placeholder = [](const IQueryPlanStep * step)
+    {
+        return typeid_cast<const CommonSubplanStep *>(step) != nullptr
+            || typeid_cast<const CommonSubplanReferenceStep *>(step) != nullptr;
+    };
+
+    const auto first_unallowed = std::ranges::find_if_not(unsupported_steps, is_tolerated_placeholder);
+
+    if (first_unallowed != unsupported_steps.end())
     {
         return PreformattedMessage::create(
             "make_distributed_plan cannot distribute this query: "
             "it contains the step {} which could not execute remotely",
-            res->text);
+            (*first_unallowed)->getName());
     }
 
     if (auto res = QueryPlanOptimizations::traversePlanForUnsupportedDistributedStep(root, optimization_settings); res.has_value())
@@ -939,10 +955,13 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
     /// found here was created by an optimization pass after the decision, i.e. a gap in the
     /// pre-pass coverage. Falling back is not safe at this point - the plan is already shaped for
     /// distribution - so fail close instead of silently running it on one node.
-    if (auto res = QueryPlanOptimizations::hasUnsupportedStepRemoteExecution(*root, false); res.has_value())
+    std::vector<const IQueryPlanStep *> unsupported_steps;
+    QueryPlanOptimizations::findStepsUnsupportedForRemoteExecution(*root, unsupported_steps);
+    if (!unsupported_steps.empty())
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan error: plan became unsupported for distributed execution after optimization: {}.", res->text);
+            "make_distributed_plan error: plan became unsupported for distributed execution after optimization: {}.",
+            unsupported_steps.front()->getName());
     }
 
     /// Take the IN-subquery sets out of the plan before it is split into fragments, so the

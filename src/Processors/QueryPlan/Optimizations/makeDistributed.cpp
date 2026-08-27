@@ -1,5 +1,3 @@
-#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
-#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #if CLICKHOUSE_CLOUD
@@ -53,10 +51,15 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-std::optional<PreformattedMessage> hasUnsupportedStepRemoteExecution(const QueryPlan::Node & node, bool allow_subplan_placeholders);
+void findStepsUnsupportedForRemoteExecution(const QueryPlan::Node & node, std::vector<const IQueryPlanStep *> & unsupported);
 
-/// True if all steps can be sent to a remote stateless worker.
-std::optional<PreformattedMessage> hasUnsupportedStepRemoteExecution(const QueryPlan::Node & node, bool allow_subplan_placeholders)
+/// Collects every step of the plan that cannot be shipped to a worker as part of a serialized
+/// fragment. Policy-free: the correlated-subquery placeholders (`CommonSubplanStep` /
+/// `CommonSubplanReferenceStep`) are reported like any other non-serializable step, and each
+/// caller decides what it tolerates - the pre-pass decision point filters them out of the result
+/// (see hasPlanUnsupportedStepForDistributed), the post-optimization check in
+/// `convertToDistributed` does not.
+void findStepsUnsupportedForRemoteExecution(const QueryPlan::Node & node, std::vector<const IQueryPlanStep *> & unsupported)
 {
     /// `BlocksMarshallingStep` pre-serializes result blocks for the client connection of this
     /// server (a shard gets it on the plan of a secondary query). It must run in the process
@@ -64,39 +67,29 @@ std::optional<PreformattedMessage> hasUnsupportedStepRemoteExecution(const Query
     /// codec. A distributed plan executes every stage as a worker task, where the step would
     /// run in the wrong process; a plan that carries it runs locally instead.
     if (typeid_cast<const BlocksMarshallingStep *>(node.step.get()))
-        return PreformattedMessage::create("BlocksMarshallingStep");
-
-    /// Planner placeholders for correlated subqueries. `CommonSubplanReferenceStep` is a leaf,
-    /// `CommonSubplanStep` is a transforming step with one child, and neither is serializable.
-    /// The pre-pass fallback decision (`allow_subplan_placeholders = true`) may accept them:
-    /// `make_distributed_plan` force-disables the in-memory buffer, so the second pass is
-    /// guaranteed to materialize them away (`materializeQueryPlanReferences` /
-    /// `optimizeUnusedCommonSubplans`). The post-optimization check in `convertToDistributed`
-    /// stays strict and backstops that guarantee. The children (the subplan's real steps) are
-    /// still checked below.
-    if (typeid_cast<const CommonSubplanReferenceStep *>(node.step.get()) || typeid_cast<const CommonSubplanStep *>(node.step.get()))
     {
-        if (!allow_subplan_placeholders)
-            return PreformattedMessage::create("subplan placeholder step: {}", node.step->getName());
-        for (const auto * child : node.children)
-            if (auto res = hasUnsupportedStepRemoteExecution(*child, allow_subplan_placeholders); res.has_value())
-                return res;
-        return std::nullopt;
+        unsupported.push_back(node.step.get());
+        return;
     }
 
     if (node.children.empty())
     {
-        if (typeid_cast<const ReadFromMergeTree *>(node.step.get()))
-            return std::nullopt;
-        return node.step->isSerializable() ? std::nullopt : std::make_optional(PreformattedMessage::create("{}", node.step->getName()));
+        /// A `ReadFromMergeTree` leaf is serialized specially (a bucketed worker read), so the
+        /// generic `isSerializable` answer does not apply to it.
+        if (!typeid_cast<const ReadFromMergeTree *>(node.step.get()) && !node.step->isSerializable())
+            unsupported.push_back(node.step.get());
+        return;
     }
+
     /// Logical exchanges become stage boundaries at the split and are never serialized themselves.
     if (!dynamic_cast<const LogicalExchangeStep *>(node.step.get()) && !node.step->isSerializable())
-        return std::make_optional(PreformattedMessage::create("serializable: {}", node.step->getName()));
+        unsupported.push_back(node.step.get());
+
+    /// Always keep descending: an offending inner step (e.g. a subplan placeholder the pre-pass
+    /// tolerates) can still have non-shippable steps below it, and the caller-side filter relies
+    /// on those being reported as their own entries.
     for (const auto * child : node.children)
-        if (auto res = hasUnsupportedStepRemoteExecution(*child, allow_subplan_placeholders); res.has_value())
-            return res;
-    return std::nullopt;
+        findStepsUnsupportedForRemoteExecution(*child, unsupported);
 }
 
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
