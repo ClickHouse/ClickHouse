@@ -1808,6 +1808,13 @@ class SettingsRandomizer:
         "query_plan_short_circuit_constant_false_join": lambda: random.random() > 0.05,
         "allow_distinct_partitions_independently": lambda: random.random() > 0.05,
         "max_number_of_partitions_for_independent_distinct": lambda: random.choice([0, 1, 8, 16, 128, 1024]),
+        # Per-partition independent evaluation of window functions and of IN-subquery
+        # set building, mirroring the DISTINCT trio above
+        "allow_window_partitions_independently": lambda: random.random() > 0.05,
+        "force_window_partitions_independently": lambda: random.random() < 0.2,
+        "max_number_of_partitions_for_independent_window": lambda: random.choice([0, 1, 8, 16, 128, 1024]),
+        "allow_creating_set_partitions_independently": lambda: random.random() > 0.05,
+        "force_creating_set_partitions_independently": lambda: random.random() < 0.2,
         "enable_packed_string_keys_in_aggregation": lambda: random.random() > 0.05,
         "query_plan_optimize_lazy_materialization_for_object_storage": lambda: random.random() > 0.05,
         "use_query_condition_cache_for_top_k": lambda: random.random() < 0.3,
@@ -1821,6 +1828,10 @@ class SettingsRandomizer:
         # per-bucket backlogs - the heaviest exercise of the new aggregation path
         "adaptive_aggregator_freeze_threshold": lambda: random.choice(
             [1, 16, 1024, 16384, 1000000]
+        ),
+        # 1 freezes on the first between-blocks check, 0 leaves only the key-count bound
+        "adaptive_aggregator_freeze_threshold_bytes": lambda: random.choice(
+            [0, 1, 4096, 4194304]
         ),
         "merge_tree_min_bytes_per_read_stream": lambda: random.choice(
             [0, 1, 1024, 64 * 1024, 16 * 1024 * 1024]
@@ -1841,6 +1852,22 @@ class SettingsRandomizer:
         "force_distinct_partitions_independently": lambda: random.random() < 0.2,
         # Don't randomize max_streams_for_union_step because it can break
         # "max_streams_for_union_step": lambda: random.choice([0, 1, 2, 10]),
+        "enable_hash_join_row_store": lambda: random.random() > 0.05,
+        # 0 always allows the row-store transformation, a huge ratio never does
+        "min_rows_ratio_for_hash_join_row_store": lambda: random.choice([0.0, 5.0, 1000.0]),
+        "query_plan_fuse_filter_into_array_join": lambda: random.random() > 0.05,
+        "query_plan_aggregation_bucket_top_k": lambda: random.random() > 0.05,
+        "enable_group_by_top_k_optimization": lambda: random.random() > 0.05,
+        # Low values freeze the top-K heaps almost immediately, 0 never freezes them
+        "group_by_top_k_optimization_observation_rows": lambda: random.choice([0, 1, 1024, 65536]),
+        "query_plan_push_down_volume_reducing_functions": lambda: random.random() > 0.05,
+        "query_plan_optimize_lazy_materialization_for_file": lambda: random.random() > 0.05,
+        "enable_function_early_short_circuit": lambda: random.random() < 0.3,
+        # Plan-level selectivity estimation only: 1 makes every IN set use its bounding
+        # range, 0 keeps the exact per-element ranges regardless of set size
+        "statistics_max_set_size_for_exact_selectivity_estimation": lambda: random.choice([0, 1, 100, 10000]),
+        "materialized_views_populate_atomically": lambda: random.random() > 0.05,
+        "allow_metadata_only_named_tuple_alter": lambda: random.random() < 0.3,
     }
 
     dependent_settings = {
@@ -1860,12 +1887,12 @@ class SettingsRandomizer:
         "use_statistics_cache": "use_statistics",
         # part pruning via statistics requires statistics to be enabled
         "use_statistics_for_part_pruning": "use_statistics",
-        # applying the projection index earlier is inert when the projection index is not applied
-        "use_projection_index_in_read_pools": "optimize_use_projection_filtering",
         # the top-k variant of the query condition cache needs the cache itself to be on
         "use_query_condition_cache_for_top_k": "use_query_condition_cache",
-        # forcing independent DISTINCT is a no-op when the optimization is not allowed
+        # forcing independent DISTINCT/window/set building is a no-op when not allowed
         "force_distinct_partitions_independently": "allow_distinct_partitions_independently",
+        "force_window_partitions_independently": "allow_window_partitions_independently",
+        "force_creating_set_partitions_independently": "allow_creating_set_partitions_independently",
     }
 
     stress_test_only_settings = {
@@ -2001,6 +2028,10 @@ class MergeTreeSettingsRandomizer:
         "text_index_dictionary_block_frontcoding_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_block_size": lambda: random.choice([16, 64, 256, 1024, 65536, 1048576]),
         "text_index_posting_list_codec": lambda: random.choice(["none", "bitpacking"]),
+        # A preference, not a hard constraint: a version that cannot represent an index is upgraded
+        "text_index_serialization_version": lambda: random.choice(
+            ["v0_initial", "v1_with_codec", "v2_with_positions"]
+        ),
         "text_index_max_memory_usage_before_flush": lambda: random.choice([4096, 65536, 1048576, 1073741824]),
         "text_index_max_processed_tokens_before_flush": lambda: random.choice([1, 100, 10000, 100000000]),
         "allow_experimental_adaptive_codec_selection": lambda: random.random() < 0.3,
