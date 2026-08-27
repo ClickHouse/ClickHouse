@@ -18,6 +18,7 @@ CREATE TABLE test_spatial_bbox_unnamed_deferred
 (
     a Polygon,
     b Variant(Tuple(Float64, Float64)),
+    c Variant(Tuple(Float64, Float64), Array(Array(Tuple(Float64, Float64)))),
     INDEX idx_bbox_a a TYPE spatial_bbox GRANULARITY 1
 )
 ENGINE = MergeTree
@@ -25,7 +26,9 @@ ORDER BY tuple()
 SETTINGS index_granularity = 4;
 
 INSERT INTO test_spatial_bbox_unnamed_deferred
-SELECT [[(100., 100.), (110., 100.), (110., 110.), (100., 100.)]], CAST((100., 100.), 'Tuple(Float64, Float64)')
+SELECT [[(100., 100.), (110., 100.), (110., 110.), (100., 100.)]],
+       CAST((100., 100.), 'Tuple(Float64, Float64)'),
+       CAST((100., 100.), 'Tuple(Float64, Float64)')
 FROM numbers(4);
 
 SET short_circuit_function_evaluation = 'disable';
@@ -68,14 +71,20 @@ SELECT count() FROM test_spatial_bbox_unnamed_deferred
 WHERE pointInPolygon(b, [[(10., 10.), (11., 10.), (11., 11.), (10., 10.)]])
   AND pointInPolygon((0., 0.), a);
 
--- The same `Variant` column in the POLYGON argument: its `Point` alternative is rejected there, so
--- the conjunction must fail closed and the query must raise.
+-- An unnamed alternative in the POLYGON argument that the predicate rejects there must keep failing
+-- closed. `c` is used rather than `b`: the rejection has to be DEFERRED to per-row dispatch for the
+-- pruning decision to exist at all. With `b`'s single, incompatible alternative no overload can be
+-- built, so return-type resolution itself raises `ILLEGAL_TYPE_OF_ARGUMENT` while the query is still
+-- being analysed -- before any granule is considered. `c` also carries a compatible
+-- `Array(Array(Tuple(Float64, Float64)))` (a structural `Polygon`) alternative, so the return type
+-- resolves, and only the rows actually holding the `Tuple(Float64, Float64)` alternative -- every row
+-- here -- raise at execution time. Pruning the granule away would hide that, so it must stay off.
 SELECT 'unnamed variant column sibling rejected', extract(explain, '(Parts:.*|Granules:.*)')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_unnamed_deferred
-      WHERE pointInPolygon((0., 0.), b) AND pointInPolygon((0., 0.), a))
+      WHERE pointInPolygon((0., 0.), c) AND pointInPolygon((0., 0.), a))
 WHERE explain LIKE '%Granules:%';
 
 SELECT count() FROM test_spatial_bbox_unnamed_deferred
-WHERE pointInPolygon((0., 0.), b) AND pointInPolygon((0., 0.), a); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+WHERE pointInPolygon((0., 0.), c) AND pointInPolygon((0., 0.), a); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 DROP TABLE test_spatial_bbox_unnamed_deferred;
