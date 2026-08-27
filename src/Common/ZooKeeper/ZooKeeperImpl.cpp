@@ -914,8 +914,10 @@ void ZooKeeper::sendThread()
                         }
                         catch (...)
                         {
-                            deferException(
-                                std::current_exception(), "Exception in ZooKeeper sendThread request-window callback");
+                            if (reject_error.has_value())
+                                tryLogCurrentException(log);
+                            else
+                                deferException(std::current_exception(), "Exception in ZooKeeper sendThread request-window callback");
                         }
                     });
 
@@ -1412,6 +1414,8 @@ void ZooKeeper::receiveEvent()
 
 void ZooKeeper::deferException(std::exception_ptr exception, std::string_view context) noexcept
 {
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
     try
     {
         std::lock_guard lock(deferred_exceptions_mutex);
@@ -1419,23 +1423,36 @@ void ZooKeeper::deferException(std::exception_ptr exception, std::string_view co
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
-        /// Ok: an allocation failure must not prevent session cleanup.
+        /// Ok: failure to defer an exception must not prevent session cleanup.
     }
 }
 
 
-void ZooKeeper::logDeferredExceptions()
+void ZooKeeper::logDeferredExceptions() noexcept
 {
     std::vector<std::pair<std::exception_ptr, std::string_view>> exceptions;
+    try
     {
         std::lock_guard lock(deferred_exceptions_mutex);
         exceptions.swap(deferred_exceptions);
     }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Ok: failure to retrieve deferred exceptions must not prevent session cleanup.
+        return;
+    }
 
     for (auto & [exception, context] : exceptions)
     {
-        LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
-        tryLogException(std::move(exception), log, std::string(context));
+        try
+        {
+            LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+            tryLogException(std::move(exception), log, std::string(context));
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// Ok: failure to log an exception must not prevent session cleanup.
+        }
     }
 }
 

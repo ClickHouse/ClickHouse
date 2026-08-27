@@ -361,7 +361,7 @@ private:
     std::vector<std::pair<std::exception_ptr, std::string_view>> deferred_exceptions;
 
     void deferException(std::exception_ptr exception, std::string_view context) noexcept;
-    void logDeferredExceptions();
+    void logDeferredExceptions() noexcept;
 
     LoggerPtr log;
 
