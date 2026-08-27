@@ -11,7 +11,7 @@ in_datetime_time64	1
 in_datetime64_time	1
 in_date_time	1
 in_date32_time	1
-in_neg_time	1
-in_neg_time64	1
+in_neg_time	0
+in_neg_time64	0
 in_saturate_agree	1
 in_throw_agree	1

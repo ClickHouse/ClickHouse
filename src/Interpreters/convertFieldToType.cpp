@@ -255,6 +255,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         return seconds;
     };
 
+    /// Whether a `Time64` source value has no fractional part, i.e. whether flooring it to whole
+    /// seconds loses information.
+    const auto time64_has_whole_seconds = [&]
+    {
+        const auto & time64 = src.safeGet<Decimal64>();
+        const auto scale_multiplier = static_cast<const DataTypeTime64 &>(*from_type_hint).getScaleMultiplier();
+        return time64.getValue().value % scale_multiplier == 0;
+    };
+
     /// A `Time` value is a signed count of seconds, so it can arrive either as `Int64` or as `UInt64`
     /// depending on how the literal was produced.
     const auto time_to_seconds = [&]() -> Int64
@@ -262,6 +271,24 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (src.getType() == Field::Types::Int64)
             return src.safeGet<Int64>();
         return static_cast<Int64>(src.safeGet<UInt64>());
+    };
+
+    /// Under `strict`, mirror the accurate-cast validity checks of `Transformer` (DateTimeTransforms.h)
+    /// for `Time` / `Time64` sources: a value that the lossy conversion below would truncate or wrap is
+    /// not exactly representable in the target type and therefore cannot equal any stored value - the
+    /// branches return Null instead, so strict `IN` semantics stay exact.
+    const auto seconds_representable_as_date = [](Int64 seconds)
+    {
+        return seconds >= 0 && seconds <= static_cast<Int64>(0xFFFFFFFFL) && seconds % DATE_SECONDS_PER_DAY == 0;
+    };
+    const auto seconds_representable_as_date32 = [](Int64 seconds)
+    {
+        return seconds >= static_cast<Int64>(DATE_LUT_MIN_EXTEND_DAY_NUM) * DATE_SECONDS_PER_DAY
+            && seconds <= MAX_DATE32_TIMESTAMP && seconds % DATE_SECONDS_PER_DAY == 0;
+    };
+    const auto seconds_representable_as_datetime = [](Int64 seconds)
+    {
+        return seconds >= 0 && seconds <= static_cast<Int64>(0xFFFFFFFFL);
     };
 
     /// `Time` and `Time64` are timezone-unaware, so the whole-second value is interpreted in UTC, the
@@ -331,19 +358,31 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     if (which_type.isDate() && which_from_type.isTime())
     {
-        return seconds_to_date(time_to_seconds());
+        const Int64 seconds = time_to_seconds();
+        if (strict && !seconds_representable_as_date(seconds))
+            return {};
+        return seconds_to_date(seconds);
     }
     if (which_type.isDate32() && which_from_type.isTime())
     {
-        return seconds_to_date32(time_to_seconds());
+        const Int64 seconds = time_to_seconds();
+        if (strict && !seconds_representable_as_date32(seconds))
+            return {};
+        return seconds_to_date32(seconds);
     }
     if (which_type.isDate() && which_from_type.isTime64())
     {
-        return seconds_to_date(time64_to_seconds());
+        const Int64 seconds = time64_to_seconds();
+        if (strict && !(time64_has_whole_seconds() && seconds_representable_as_date(seconds)))
+            return {};
+        return seconds_to_date(seconds);
     }
     if (which_type.isDate32() && which_from_type.isTime64())
     {
-        return seconds_to_date32(time64_to_seconds());
+        const Int64 seconds = time64_to_seconds();
+        if (strict && !(time64_has_whole_seconds() && seconds_representable_as_date32(seconds)))
+            return {};
+        return seconds_to_date32(seconds);
     }
     if (which_type.isDateTime() && which_from_type.isTime())
     {
@@ -351,6 +390,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         /// `Time` / `Time64` -> whole-second combination with no `Field` path, so `DateTime IN
         /// (CAST(... AS Time))` reports `TYPE_MISMATCH` while every sibling conversion works.
         const Int64 seconds = time_to_seconds();
+        if (strict && !seconds_representable_as_datetime(seconds))
+            return {};
         if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
             return static_cast<UInt64>(static_cast<UInt32>(seconds));
 
@@ -370,6 +411,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         /// time-of-day wraps into the end of the `DateTime` range rather than being clamped to the
         /// epoch.
         const Int64 seconds = time64_to_seconds();
+        if (strict && !(time64_has_whole_seconds() && seconds_representable_as_datetime(seconds)))
+            return {};
         if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
             return static_cast<UInt64>(static_cast<UInt32>(seconds));
 
@@ -388,6 +431,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         /// clamp to the `Time` range - which `ToTimeTransform64Signed` does for every behavior
         /// except `throw`.
         const Int64 seconds = time64_to_seconds();
+        if (strict
+            && !(time64_has_whole_seconds() && seconds >= -static_cast<Int64>(MAX_TIME_TIMESTAMP)
+                 && seconds <= static_cast<Int64>(MAX_TIME_TIMESTAMP)))
+            return {};
         if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw
             && (seconds < -MAX_TIME_TIMESTAMP || seconds > MAX_TIME_TIMESTAMP))
             throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", seconds);

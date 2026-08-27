@@ -49,13 +49,15 @@ SELECT 'in_datetime64_time', toDateTime64('1970-01-01 01:01:01', 3, 'UTC') IN (C
 SELECT 'in_date_time', toDate('1970-01-02') IN (CAST(86400 AS Time)) FORMAT TSV;
 SELECT 'in_date32_time', toDate32('1970-01-02') IN (CAST(86400 AS Time)) FORMAT TSV;
 
--- A negative time-of-day wraps to the end of the `DateTime` range, identically for both sources.
+-- A negative time-of-day is not exactly representable as `DateTime`, so the strict `IN`
+-- conversion excludes it from the set instead of wrapping it to the end of the range,
+-- identically for both sources.
 SELECT 'in_neg_time', toDateTime('2106-02-07 06:28:15', 'UTC') IN (CAST(-1 AS Time)) FORMAT TSV;
 SELECT 'in_neg_time64', toDateTime('2106-02-07 06:28:15', 'UTC') IN (CAST(-1 AS Time64(0))) FORMAT TSV;
 
--- The two sources stay in step whatever `date_time_overflow_behavior` says. The `IN` field
--- conversion does not receive the session value - both keep wrapping - so what is pinned here is
--- that `Time` follows `Time64` rather than any particular overflow semantics.
+-- The two sources stay in step whatever `date_time_overflow_behavior` says - the strict `IN`
+-- conversion rejects the value before any overflow handling - so what is pinned here is that
+-- `Time` follows `Time64` rather than any particular overflow semantics.
 SET date_time_overflow_behavior = 'saturate';
 SELECT 'in_saturate_agree', (toDateTime('2106-02-07 06:28:15', 'UTC') IN (CAST(-1 AS Time)))
     = (toDateTime('2106-02-07 06:28:15', 'UTC') IN (CAST(-1 AS Time64(0)))) FORMAT TSV;
