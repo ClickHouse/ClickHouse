@@ -119,6 +119,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsString additional_result_filter;
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
@@ -1456,6 +1457,17 @@ void pushOrderByIntoView(
         /// Check the effective context here and skip the pushdown when any of these is set.
         const auto & view_settings = view_context->getSettingsRef();
         if (view_settings[Setting::limit] != 0 || view_settings[Setting::offset] != 0 || view_settings[Setting::prefer_column_name_to_alias])
+            return;
+
+        /// `additional_result_filter` from the effective context grows a filter step on top of
+        /// the inner query's result, after the inner plan is built (the inner interpreter runs at
+        /// subquery depth 0). An injected inner `LIMIT` would truncate the rows before that filter
+        /// drops its share, so the view would return fewer rows than the filtered top-N — a wrong
+        /// result, not just a missed optimization. `additional_table_filters` are applied at the
+        /// reading step, but fail closed on them too rather than proving which tables they hit,
+        /// mirroring `StorageView::canHideRows`.
+        if (!view_settings[Setting::additional_result_filter].value.empty()
+            || !view_settings[Setting::additional_table_filters].value.empty())
             return;
 
         inner_header = InterpreterSelectQueryAnalyzer::getSampleBlock(inner, view_context, SelectQueryOptions().analyze());
