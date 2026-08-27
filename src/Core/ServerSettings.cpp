@@ -1,4 +1,3 @@
-#include <Core/ProtocolDefines.h>
 #include <Access/AccessControl.h>
 #include <Columns/IColumn.h>
 #include <Common/Jemalloc.h>
@@ -33,33 +32,17 @@
 #if ENABLE_DISTRIBUTED_CACHE
 #    include <Disks/IO/WriteBufferFromDistributedCache.h>
 #endif
-#include <base/sort.h>
 #include <base/types.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
-#include <Common/logger_useful.h>
 
 #include <Common/DNSResolver.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/String.h>
-#include <Poco/AutoPtr.h>
-#include <Poco/DOM/DOMParser.h>
-#include <Poco/DOM/Document.h>
-#include <Poco/XML/NamePool.h>
-#include <Poco/DOM/Element.h>
-#include <Poco/DOM/NamedNodeMap.h>
-#include <Poco/DOM/Node.h>
-#include <Common/Config/ConfigProcessor.h>
-#include <cstdlib>
-#include <filesystem>
-#include <unordered_set>
-
-namespace fs = std::filesystem;
 
 #include <fmt/ranges.h>
 
@@ -76,12 +59,6 @@ extern const Metric PointInPolygonCacheSizeLimit;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int BAD_ARGUMENTS;
-}
 
 
 namespace
@@ -121,7 +98,7 @@ namespace
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
-    DECLARE(UInt64, shutdown_wait_unfinished, 120, R"(Delay in seconds to wait for unfinished queries)", 0) \
+    DECLARE(UInt64, shutdown_wait_unfinished, 5, R"(Delay in seconds to wait for unfinished queries)", 0) \
     DECLARE(UInt64, max_thread_pool_size, 10000, R"(
 ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query, then a new thread is created in the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
 
@@ -132,7 +109,7 @@ ClickHouse uses threads from the Global Thread pool to process queries. If there
 ```
 )", 0) \
     DECLARE(UInt64, max_thread_pool_free_size, 1000, R"(
-If the number of **idle** threads in the Global Thread pool is greater than [`max_thread_pool_free_size`](/reference/settings/server-settings/settings/max-thread#max_thread_pool_free_size), then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
+If the number of **idle** threads in the Global Thread pool is greater than [`max_thread_pool_free_size`](/operations/server-configuration-parameters/settings#max_thread_pool_free_size), then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
 
 **Example**
 
@@ -141,7 +118,7 @@ If the number of **idle** threads in the Global Thread pool is greater than [`ma
 ```
 )", 0) \
     DECLARE(UInt64, thread_pool_queue_size, 10000, R"(
-The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to [`max_thread_pool_size`](/reference/settings/server-settings/settings/max-thread#max_thread_pool_size).
+The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to [`max_thread_pool_size`](/operations/server-configuration-parameters/settings#max_thread_pool_size).
 
 :::note
 A value of `0` means unlimited.
@@ -254,19 +231,6 @@ A value of `0` (default) means unlimited.
     DECLARE(UInt32, asynchronous_heavy_metrics_update_period_s, 120, R"(Period in seconds for updating heavy asynchronous metrics.)", 0) \
     DECLARE(Bool, asynchronous_metrics_keeper_metrics_only, false, R"(Make asynchronous metrics calculate the keeper-related metrics only.)", 0) \
     DECLARE(String, default_database, "default", R"(The default database name.)", 0) \
-    DECLARE(String, default_session_user, "default", R"(
-The user name that is used for authentication when a client connects without specifying a user name: an HTTP request without the `user` parameter and `X-ClickHouse-User` header, a native protocol `Hello` packet with an empty user name, a MySQL or PostgreSQL handshake with an empty user name, a gRPC query without `user_name`, an Arrow Flight call without an `authorization` header (or with Basic credentials with an empty user name), or a [web terminal](/interfaces/web-terminal) WebSocket `auth` message with an omitted or empty `user` field.
-
-The empty user name is resolved to this value before authentication, so the connection is still subject to the substituted user's authentication: the password, network, and other access checks apply as usual. An empty user name is merely an alias for the configured user name, and accepting it grants no access beyond what specifying the same user name explicitly already gives. In versions before this setting was introduced, the fallback of an empty user name to `default` existed only for the plain HTTP query-parameter path, gRPC queries, Arrow Flight calls, and the web terminal, while the native, MySQL, and PostgreSQL protocols rejected an empty user name; now all of them accept it. HTTP Basic authentication with an empty user name and requests with `X-ClickHouse-Key` but without `X-ClickHouse-User` also rejected an empty user name before this setting was introduced.
-
-If set to an empty string, connections without a user name are rejected. HTTP handlers with a fixed user (the `user` key inside `handler` of an `http_handlers` rule, or the `user` key inside `handler` of a `prometheus.handlers` rule) authenticate as their configured user and are not affected.
-
-When the `session_log` section is enabled in the server configuration, every such reject is recorded in [`system.session_log`](/operations/system-tables/session_log) as a `LoginFailure` event with an empty `user`, so that prohibited connections without a user name can be audited on every interface.
-
-The default session user is never applied to interserver connections: they identify themselves with a special marker instead of a user name and are authenticated by the cluster secret and the initial user.
-
-The value can be overridden for a specific endpoint of a composable protocol with the `default_session_user` key in the `protocols` section, see [Composable protocols](/operations/settings/composable-protocols).
-)", 0) \
     DECLARE(String, tmp_policy, "", R"(
 Policy for storage with temporary data. All files with `tmp` prefix will be removed at start.
 
@@ -282,7 +246,7 @@ Recommendations for using object storage as `tmp_policy`:
 - `move_factor`, `keep_free_space_bytes`,`max_data_part_size_bytes` and are ignored.
 - Policy should have exactly *one volume*
 
-For more information see the [MergeTree Table Engine](/reference/engines/table-engines/mergetree-family/mergetree) documentation.
+For more information see the [MergeTree Table Engine](/engines/table-engines/mergetree-family/mergetree) documentation.
 :::
 
 **Example**
@@ -330,8 +294,8 @@ A value of `0` means unlimited.
 :::
 
 See also:
-- [`max_temporary_data_on_disk_size_for_user`](/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_user)
-- [`max_temporary_data_on_disk_size_for_query`](/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_query)
+- [`max_temporary_data_on_disk_size_for_user`](/operations/settings/settings#max_temporary_data_on_disk_size_for_user)
+- [`max_temporary_data_on_disk_size_for_query`](/operations/settings/settings#max_temporary_data_on_disk_size_for_query)
 )", 0) \
     DECLARE(String, temporary_data_in_cache, "", R"(
 With this option, temporary data will be stored in the cache for the particular disk.
@@ -439,8 +403,8 @@ The default `merges_mutations_memory_usage_soft_limit` value is calculated as `m
 
 **See also:**
 
-- [max_memory_usage](/reference/settings/session-settings/max-memory-usage#max_memory_usage)
-- [merges_mutations_memory_usage_soft_limit](/reference/settings/server-settings/settings/merges-mutations#merges_mutations_memory_usage_soft_limit)
+- [max_memory_usage](/operations/settings/settings#max_memory_usage)
+- [merges_mutations_memory_usage_soft_limit](/operations/server-configuration-parameters/settings#merges_mutations_memory_usage_soft_limit)
 )", 0) \
     DECLARE(Bool, allow_use_jemalloc_memory, true, R"(Allows to use jemalloc memory.)", 0) \
     DECLARE(Bool, use_separate_cache_arena, true, R"(
@@ -455,14 +419,10 @@ To disable the cgroup observer, set this value to `0`.
     DECLARE(UInt64, async_insert_threads, 16, R"(Maximum number of threads to actually parse and insert data in background. Zero means asynchronous mode is disabled)", 0) \
     DECLARE(Bool, async_insert_queue_flush_on_shutdown, true, R"(If true queue of asynchronous inserts is flushed on graceful shutdown)", 0) \
     DECLARE(Bool, ignore_empty_sql_security_in_create_view_query, true, R"(
-If true, a `CREATE VIEW` or `CREATE MATERIALIZED VIEW` query that specifies neither `DEFINER` nor `SQL SECURITY` is stored as written, and the view gets an empty SQL security type. Specifying `DEFINER` alone counts as `SQL SECURITY DEFINER`, so such a query is unaffected by this setting. A normal view with an empty SQL security type runs with the permissions of the invoker. For a materialized view with an explicitly specified target table, the access checks on the target table are skipped: inserting into the source table does not require the `INSERT` privilege on the target table, and reading from the view does not require the `SELECT` privilege on it.
-
-If false, the defaults from the [`default_normal_view_sql_security`](/reference/settings/session-settings#default_normal_view_sql_security), [`default_materialized_view_sql_security`](/reference/settings/session-settings#default_materialized_view_sql_security), and [`default_view_definer`](/reference/settings/session-settings#default_view_definer) settings are written into the view definition at creation time. With the default values of those settings, a materialized view created with neither clause records the creating user as its definer and runs with that user's permissions.
-
-Refreshable materialized views always receive the defaults, regardless of this setting.
+If true, ClickHouse doesn't write defaults for empty SQL security statement in `CREATE VIEW` queries.
 
 :::note
-Changing this setting affects only views created afterwards; the stored definitions of existing views stay unchanged.
+This setting is only necessary for the migration period and will become obsolete in 24.4
 :::
 )", 0)  \
     DECLARE(UInt64, max_build_vector_similarity_index_thread_pool_size, 16, R"(
@@ -475,13 +435,13 @@ A value of `0` means all cores.
     \
     /* Database Catalog */ \
     DECLARE(UInt64, database_atomic_delay_before_drop_table_sec, 8 * 60, R"(
-The delay during which a dropped table can be restored using the [`UNDROP`](/reference/statements/undrop) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
+The delay during which a dropped table can be restored using the [`UNDROP`](/sql-reference/statements/undrop.md) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
 The default for this setting is `480` (8 minutes).
 )", 0) \
     DECLARE(UInt64, database_catalog_unused_dir_hide_timeout_sec, 60 * 60, R"(
 Parameter of a task that cleans up garbage from `store/` directory.
 If some subdirectory is not used by clickhouse-server and this directory was not modified for last
-[`database_catalog_unused_dir_hide_timeout_sec`](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_hide_timeout_sec) seconds, the task will "hide" this directory by
+[`database_catalog_unused_dir_hide_timeout_sec`](/operations/server-configuration-parameters/settings#database_catalog_unused_dir_hide_timeout_sec) seconds, the task will "hide" this directory by
 removing all access rights. It also works for directories that clickhouse-server does not
 expect to see inside `store/`.
 
@@ -492,9 +452,9 @@ A value of `0` means "immediately".
     DECLARE(UInt64, database_catalog_unused_dir_rm_timeout_sec, 30 * 24 * 60 * 60, R"(
 Parameter of a task that cleans up garbage from `store/` directory.
 If some subdirectory is not used by clickhouse-server and it was previously "hidden"
-(see [database_catalog_unused_dir_hide_timeout_sec](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_hide_timeout_sec))
+(see [database_catalog_unused_dir_hide_timeout_sec](/operations/server-configuration-parameters/settings#database_catalog_unused_dir_hide_timeout_sec))
 and this directory was not modified for last
-[`database_catalog_unused_dir_rm_timeout_sec`](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_rm_timeout_sec) seconds, the task will remove this directory.
+[`database_catalog_unused_dir_rm_timeout_sec`]/operations/server-configuration-parameters/settings#database_catalog_unused_dir_rm_timeout_sec) seconds, the task will remove this directory.
 It also works for directories that clickhouse-server does not
 expect to see inside `store/`.
 
@@ -519,9 +479,9 @@ A value of `0` means "never". The default value corresponds to 1 day.
 Limit on total number of concurrently executed queries. Note that limits on `INSERT` and `SELECT` queries, and on the maximum number of queries for users must also be considered.
 
 See also:
-- [`max_concurrent_insert_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries)
-- [`max_concurrent_select_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries)
-- [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users)
+- [`max_concurrent_insert_queries`](/operations/server-configuration-parameters/settings#max_concurrent_insert_queries)
+- [`max_concurrent_select_queries`](/operations/server-configuration-parameters/settings#max_concurrent_select_queries)
+- [`max_concurrent_queries_for_all_users`](/operations/settings/settings#max_concurrent_queries_for_all_users)
 
 :::note
 
@@ -552,16 +512,16 @@ This setting can be modified at runtime and will take effect immediately. Querie
 )", 0) \
     DECLARE(UInt64, max_waiting_queries, 0, R"(
 Limit on total number of concurrently waiting queries.
-Execution of a waiting query is blocked while required tables are loading asynchronously (see [`async_load_databases`](/reference/settings/server-settings/settings/async-load#async_load_databases).
+Execution of a waiting query is blocked while required tables are loading asynchronously (see [`async_load_databases`](/operations/server-configuration-parameters/settings#async_load_databases).
 
 :::note
 Waiting queries are not counted when limits controlled by the following settings are checked:
 
-- [`max_concurrent_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries)
-- [`max_concurrent_insert_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries)
-- [`max_concurrent_select_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries)
-- [`max_concurrent_queries_for_user`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user)
-- [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users)
+- [`max_concurrent_queries`](/operations/server-configuration-parameters/settings#max_concurrent_queries)
+- [`max_concurrent_insert_queries`](/operations/server-configuration-parameters/settings#max_concurrent_insert_queries)
+- [`max_concurrent_select_queries`](/operations/server-configuration-parameters/settings#max_concurrent_select_queries)
+- [`max_concurrent_queries_for_user`](/operations/settings/settings#max_concurrent_queries_for_user)
+- [`max_concurrent_queries_for_all_users`](/operations/settings/settings#max_concurrent_queries_for_all_users)
 
 This correction is done to avoid hitting these limits just after server startup.
 :::
@@ -592,7 +552,7 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(Double, uncompressed_cache_size_ratio, DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.)", 0) \
     DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Mark cache policy name.)", 0) \
     DECLARE(UInt64, mark_cache_size, DEFAULT_MARK_CACHE_MAX_SIZE, R"(
-Maximum size of cache for marks (index of [`MergeTree`](/reference/engines/table-engines/mergetree-family) family of tables).
+Maximum size of cache for marks (index of [`MergeTree`](/engines/table-engines/mergetree-family) family of tables).
 
 :::note
 This setting can be modified at runtime and will take effect immediately.
@@ -691,8 +651,8 @@ This setting allows avoiding frequent open/close calls (which are very expensive
 
 The amount of data in mapped files can be monitored in the following system tables with the following metrics:
 
-- `MMappedFiles`/`MMappedFileBytes`/`MMapCacheCells` in [`system.metrics`](/reference/system-tables/metrics), [`system.metric_log`](/reference/system-tables/metric_log)
-- `CreatedReadBufferMMap`/`CreatedReadBufferMMapFailed`/`MMappedFileCacheHits`/`MMappedFileCacheMisses` in [`system.events`](/reference/system-tables/events), [`system.processes`](/reference/system-tables/processes), [`system.query_log`](/reference/system-tables/query_log), [`system.query_thread_log`](/reference/system-tables/query_thread_log), [`system.query_views_log`](/reference/system-tables/query_views_log)
+- `MMappedFiles`/`MMappedFileBytes`/`MMapCacheCells` in [`system.metrics`](/operations/system-tables/metrics), [`system.metric_log`](/operations/system-tables/metric_log)
+- `CreatedReadBufferMMap`/`CreatedReadBufferMMapFailed`/`MMappedFileCacheHits`/`MMappedFileCacheMisses` in [`system.events`](/operations/system-tables/events), [`system.processes`](/operations/system-tables/processes), [`system.query_log`](/operations/system-tables/query_log), [`system.query_thread_log`](/operations/system-tables/query_thread_log), [`system.query_views_log`](/operations/system-tables/query_views_log)
 
 :::note
 The amount of data in mapped files does not consume memory directly and is not accounted for in query or server memory usage — because this memory can be discarded similar to the OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the MergeTree family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
@@ -700,14 +660,14 @@ The amount of data in mapped files does not consume memory directly and is not a
 This setting can be modified at runtime and will take effect immediately.
 :::
 )", 0) \
-    DECLARE(UInt64, compiled_expression_cache_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE, R"(Sets the cache size (in bytes) for [compiled expressions](/concepts/features/performance/caches/caches).)", 0) \
+    DECLARE(UInt64, compiled_expression_cache_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE, R"(Sets the cache size (in bytes) for [compiled expressions](../../operations/caches.md).)", 0) \
     \
-    DECLARE(UInt64, compiled_expression_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, R"(Sets the cache size (in elements) for [compiled expressions](/concepts/features/performance/caches/caches).)", 0) \
+    DECLARE(UInt64, compiled_expression_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, R"(Sets the cache size (in elements) for [compiled expressions](../../operations/caches.md).)", 0) \
     DECLARE(UInt64, point_in_polygon_cache_size, DEFAULT_POINT_IN_POLYGON_CACHE_MAX_SIZE, R"(
 Maximum size in bytes of the cache of preprocessed polygons used by the function `pointInPolygon` with a constant polygon argument.
 Entries above the limit are evicted in least recently used order.
 Setting it to `0` disables the cache: all cached polygons are evicted, and every subsequent query preprocesses its constant polygon anew.
-The cache can also be cleared manually, without changing this limit, with the [`SYSTEM DROP POINT IN POLYGON CACHE`](/reference/statements/system#drop-point-in-polygon-cache) query.
+The cache can also be cleared manually, without changing this limit, with the [`SYSTEM DROP POINT IN POLYGON CACHE`](../../sql-reference/statements/system#drop-point-in-polygon-cache) query.
 :::note
 This setting can be modified at runtime and will take effect immediately.
 :::
@@ -737,7 +697,7 @@ Stop further attempts to update a hostname's DNS cache after this number of cons
 
 **See also**
 
-- [`SYSTEM DROP DNS CACHE`](/reference/statements/system#drop-dns-cache)
+- [`SYSTEM DROP DNS CACHE`](../../sql-reference/statements/system#drop-dns-cache)
 )", 0) \
     DECLARE(Bool, dns_allow_resolve_names_to_ipv4, true, "Allows resolve names to ipv4 addresses.", 0) \
     DECLARE(Bool, dns_allow_resolve_names_to_ipv6, true, "Allows resolve names to ipv6 addresses.", 0) \
@@ -745,7 +705,7 @@ Stop further attempts to update a hostname's DNS cache after this number of cons
     DECLARE(UInt64, max_table_size_to_drop, 50000000000lu, R"(
 Restriction on deleting tables.
 
-If the size of a [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a [`DROP`](/reference/statements/drop) query or [`TRUNCATE`](/reference/statements/truncate) query.
+If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a [`DROP`](../../sql-reference/statements/drop.md) query or [`TRUNCATE`](../../sql-reference/statements/truncate.md) query.
 
 :::note
 A value of `0` means that you can delete all tables without any restrictions.
@@ -762,13 +722,13 @@ This setting does not require a restart of the ClickHouse server to apply. Anoth
     DECLARE(UInt64, max_partition_size_to_drop, 50000000000lu, R"(
 Restriction on dropping partitions.
 
-If the size of a [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) table exceeds [`max_partition_size_to_drop`](#max_partition_size_to_drop) (in bytes), you can't drop a partition using a [DROP PARTITION](/reference/statements/alter/partition#drop-partitionpart) query.
+If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds [`max_partition_size_to_drop`](#max_partition_size_to_drop) (in bytes), you can't drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
 This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 :::note
 The value `0` means that you can drop partitions without any restrictions.
 
-This limitation does not restrict drop table and truncate table, see [max_table_size_to_drop](/reference/settings/session-settings/max#max_table_size_to_drop)
+This limitation does not restrict drop table and truncate table, see [max_table_size_to_drop](/operations/settings/settings#max_table_size_to_drop)
 :::
 
 **Example**
@@ -988,9 +948,9 @@ Smaller pool size utilizes less CPU and disk resources, but background processes
 :::
 
 Before changing it, please also take a look at related MergeTree settings, such as:
-- [`number_of_free_entries_in_pool_to_lower_max_size_of_merge`](/reference/settings/merge-tree-settings/number-of#number_of_free_entries_in_pool_to_lower_max_size_of_merge).
-- [`number_of_free_entries_in_pool_to_execute_mutation`](/reference/settings/merge-tree-settings/number-of#number_of_free_entries_in_pool_to_execute_mutation).
-- [`number_of_free_entries_in_pool_to_execute_optimize_entire_partition`](/reference/settings/merge-tree-settings/number-of#number_of_free_entries_in_pool_to_execute_optimize_entire_partition)
+- [`number_of_free_entries_in_pool_to_lower_max_size_of_merge`](../../operations/settings/merge-tree-settings.md#number_of_free_entries_in_pool_to_lower_max_size_of_merge).
+- [`number_of_free_entries_in_pool_to_execute_mutation`](../../operations/settings/merge-tree-settings.md#number_of_free_entries_in_pool_to_execute_mutation).
+- [`number_of_free_entries_in_pool_to_execute_optimize_entire_partition`](/operations/settings/merge-tree-settings#number_of_free_entries_in_pool_to_execute_optimize_entire_partition)
 
 **Example**
 
@@ -1001,12 +961,12 @@ Before changing it, please also take a look at related MergeTree settings, such 
     DECLARE(Float, background_merges_mutations_concurrency_ratio, 2, R"(
 Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently.
 
-For example, if the ratio equals to 2 and [`background_pool_size`](/reference/settings/server-settings/settings/background#background_pool_size) is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operations could be suspended and postponed. This is needed to give small merges more execution priority.
+For example, if the ratio equals to 2 and [`background_pool_size`](/operations/server-configuration-parameters/settings#background_pool_size) is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operations could be suspended and postponed. This is needed to give small merges more execution priority.
 
 :::note
 You can only increase this ratio at runtime. To lower it you have to restart the server.
 
-As with the [`background_pool_size`](/reference/settings/server-settings/settings/background#background_pool_size) setting [`background_merges_mutations_concurrency_ratio`](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio) could be applied from the `default` profile for backward compatibility.
+As with the [`background_pool_size`](/operations/server-configuration-parameters/settings#background_pool_size) setting [`background_merges_mutations_concurrency_ratio`](/operations/server-configuration-parameters/settings#background_merges_mutations_concurrency_ratio) could be applied from the `default` profile for backward compatibility.
 :::
 )", 0) \
     DECLARE(String, background_merges_mutations_scheduling_policy, "round_robin", R"(
@@ -1021,9 +981,9 @@ Possible values:
 - `shortest_task_first` — Always execute smaller merge or mutation. Merges and mutations are assigned priorities based on their resulting size. Merges with smaller sizes are strictly preferred over bigger ones. This policy ensures the fastest possible merge of small parts but can lead to indefinite starvation of big merges in partitions heavily overloaded by `INSERT`s.
 )", 0) \
     DECLARE(UInt64, background_move_pool_size, 8, R"(The maximum number of threads that will be used for moving data parts to another disk or volume for *MergeTree-engine tables in a background.)", 0) \
-    DECLARE(UInt64, background_fetches_pool_size, 16, R"(The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family) tables in the background.)", 0) \
-    DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family) tables in the background.)", 0) \
-    DECLARE(UInt64, background_buffer_flush_schedule_pool_size, 16, R"(The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/reference/engines/table-engines/special/buffer) in the background.)", 0) \
+    DECLARE(UInt64, background_fetches_pool_size, 16, R"(The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/engines/table-engines/mergetree-family) tables in the background.)", 0) \
+    DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/engines/table-engines/mergetree-family) tables in the background.)", 0) \
+    DECLARE(UInt64, background_buffer_flush_schedule_pool_size, 16, R"(The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/engines/table-engines/special/buffer) in the background.)", 0) \
     DECLARE(UInt64, background_schedule_pool_size, 512, R"(The cap on the number of threads used to execute lightweight periodic operations for replicated tables, Kafka streaming, DNS cache updates, and similar tasks. Threads are spawned lazily on demand up to this cap, so a server with light background load uses far fewer threads than this number.)", 0) \
     DECLARE(UInt64, background_schedule_pool_initial_size, 16, R"(Initial number of worker threads allocated for each background schedule pool. Each pool grows lazily up to its configured cap (`background_schedule_pool_size` and friends) when demand exceeds the current set of workers. Lower values reduce startup overhead and idle thread counts; higher values eliminate first-task scheduling latency on busy servers.)", 0) \
     DECLARE(Float, background_schedule_pool_max_parallel_tasks_per_type_ratio, 0.8f, R"(The maximum ratio of threads in the pool that can execute tasks of the same type simultaneously.)", 0) \
@@ -1072,9 +1032,9 @@ Asynchronous loading of system tables. Helpful if there is a high amount of log 
 Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, databases, table functions, and dictionaries.
 
 User wishing to see secrets must also have
-[`format_display_secrets_in_show_and_select` format setting](/reference/settings/formats/format#format_display_secrets_in_show_and_select)
+[`format_display_secrets_in_show_and_select` format setting](../settings/formats#format_display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](/reference/statements/grant#displaysecretsinshowandselect) privilege.
+[`displaySecretsInShowAndSelect`](/sql-reference/statements/grant#displaysecretsinshowandselect) privilege.
 
 Possible values:
 
@@ -1096,17 +1056,6 @@ If the response exceeds this limit, the query fails with an error.
 
 Default: `10485760` (10 MiB).
 )", 0) \
-    DECLARE(Bool, http_allow_path_requests, false, R"(
-Allow the HTTP interface to route path-style requests (such as `/my_db/my_table.csv`) to the query handler.
-
-This flag gates the routing decision only, which is made before the request is authenticated, so it cannot depend on a per-user setting. After routing, the per-user settings [`http_allow_database_as_path`](/operations/settings/settings#http_allow_database_as_path), [`http_allow_table_as_file`](/operations/settings/settings#http_allow_table_as_file), and [`http_allow_filters_as_path`](/operations/settings/settings#http_allow_filters_as_path) control whether the routed path is actually interpreted for the authenticated user. When this flag is off, unknown paths return a plain `404`.
-
-**Example**
-
-```xml
-<http_allow_path_requests>1</http_allow_path_requests>
-```
-)", 0) \
     DECLARE(UInt64, max_keep_alive_requests, 10000, R"(
 Maximal number of requests through a single keep-alive connection until it will be closed by ClickHouse server.
 
@@ -1121,7 +1070,7 @@ Maximal number of requests through a single keep-alive connection until it will 
     DECLARE(Seconds, replicated_fetches_http_receive_timeout, 0, R"(HTTP receive timeout for fetch part requests. Inherited from default profile `http_receive_timeout` if not set explicitly.)", 0) \
     DECLARE(UInt64, total_memory_profiler_step, 0, R"(Whenever server memory usage becomes larger than every next step in number of bytes the memory profiler will collect the allocating stack trace. Zero means disabled memory profiler. Values lower than a few megabytes will slow down server.)", 0) \
     DECLARE(Double, total_memory_tracker_sample_probability, 0, R"(
-Allows to collect random allocations and de-allocations and writes them in the [system.trace_log](/reference/system-tables/trace_log) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](/reference/settings/server-settings/settings/total-memory#total_memory_profiler_step) is lowered. You can set `total_memory_profiler_step` equal to `1` for extra fine-grained sampling.
+Allows to collect random allocations and de-allocations and writes them in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](/operations/server-configuration-parameters/settings#total_memory_profiler_step) is lowered. You can set `total_memory_profiler_step` equal to `1` for extra fine-grained sampling.
 
 Possible values:
 
@@ -1200,13 +1149,13 @@ The replica name in ZooKeeper.
 Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
 
 **See Also**
-- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+- [Workload Scheduling](/operations/workload-scheduling.md)
 )", 0) \
     DECLARE(String, mutation_workload, "default", R"(
 Used to regulate how resources are utilized and shared between mutations and other workloads. Specified value is used as `workload` setting value for all background mutations. Can be overridden by a merge tree setting.
 
 **See Also**
-- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+- [Workload Scheduling](/operations/workload-scheduling.md)
 )", 0) \
     DECLARE(Bool, throw_on_unknown_workload, false, R"(
 Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
@@ -1221,7 +1170,7 @@ Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
 ```
 
 **See Also**
-- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+- [Workload Scheduling](/operations/workload-scheduling.md)
 )", 0) \
     DECLARE(Bool, cpu_slot_preemption, true, R"(
 Defines how workload scheduling for CPU resources (MASTER THREAD and WORKER THREAD) is done.
@@ -1236,7 +1185,7 @@ Defines how workload scheduling for CPU resources (MASTER THREAD and WORKER THRE
 ```
 
 **See Also**
-- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+- [Workload Scheduling](/operations/workload-scheduling.md)
 )", 0) \
     DECLARE(UInt64, cpu_slot_quantum_ns, 10000000, R"(
 It defines how many CPU nanoseconds a thread is allowed to consume after acquired a CPU slot and before it should request another CPU slot. Makes sense only if `cpu_slot_preemption` is enabled and CPU resource is defined for MASTER THREAD or WORKER THREAD.
@@ -1248,7 +1197,7 @@ It defines how many CPU nanoseconds a thread is allowed to consume after acquire
 ```
 
 **See Also**
-- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+- [Workload Scheduling](/operations/workload-scheduling.md)
 )", 0) \
     DECLARE(UInt64, cpu_slot_preemption_timeout_ms, 1000, R"(
 It defines how many milliseconds could a worker thread wait during preemption, i.e. while waiting for another CPU slot to be granted. After this timeout, if thread was unable to acquire a new CPU slot it will exit and the query is scaled down to a lower number of concurrently executing threads dynamically. Note that master thread never downscaled, but could be preempted indefinitely. Makes sense only when `cpu_slot_preemption` is enabled and CPU resource is defined for WORKER THREAD.
@@ -1260,7 +1209,7 @@ It defines how many milliseconds could a worker thread wait during preemption, i
 ```
 
 **See Also**
-- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+- [Workload Scheduling](/operations/workload-scheduling.md)
 )", 0) \
     DECLARE(String, series_keeper_path, "/clickhouse/series", R"(
 Path in Keeper with auto-incremental numbers, generated by the `generateSerialID` function. Each series will be a node under this path.
@@ -1335,9 +1284,7 @@ When disabled, `max_server_memory_usage_to_ram_ratio` only caps the hard memory 
 Has no effect when `max_server_memory_usage_to_ram_ratio` is `0`.
 )", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, R"(
-Disables `INSERT`, `ALTER`, and `DELETE` queries so read-only replicas do not create data parts, mutations, or merge work that affects read performance.
-
-Writes to external storage through engines such as `S3`, `DataLake`, `MySQL`, `PostgreSQL`, and `Kafka` remain allowed. Background streaming from `Kafka`, `RabbitMQ`, `NATS`, and `S3Queue` tables into attached materialized views is disabled because it produces `MergeTree` parts and merge work on this replica.
+Disable insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance. Inserts into external engines (S3, DataLake, MySQL, PostrgeSQL, Kafka, etc) are allowed despite this setting.
 )", 0) \
     DECLARE(UInt64, parts_kill_delay_period, 30, R"(
 Period to completely remove parts for SharedMergeTree. Only available in ClickHouse Cloud
@@ -1380,25 +1327,17 @@ Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching
     DECLARE(UInt64, drop_distributed_cache_queue_size, 1000, R"(The queue size of the threadpool used for dropping distributed cache.)", 0) \
     DECLARE(UInt64, distributed_cache_write_pool_size, 100, R"(The maximum number of distributed cache write requests that run on a background thread at the same time (across all queries). When the limit is reached, a write goes through the cache inline (on the calling thread) instead of on a background thread, so it neither blocks waiting for a slot nor creates an unbounded number of threads.)", 0) \
     DECLARE(Bool, distributed_cache_apply_throttling_settings_from_client, true, R"(Whether cache server should apply throttling settings received from client.)", 0) \
-    DECLARE(Bool, enable_read_through_distributed_cache, false, R"(Only has an effect in ClickHouse Cloud. Allow reading from distributed cache. This is a server-level switch, applied without a restart, so that background operations which do not have a query profile of their own (merges, mutations, `Buffer` table flushes) follow it as well. Individual queries can deviate from it with the `force_read_through_distributed_cache` setting.)", 0) \
-    DECLARE(Bool, enable_write_through_distributed_cache, false, R"(Only has an effect in ClickHouse Cloud. Allow writing to distributed cache (writing to s3 will also be done by distributed cache). This is a server-level switch, applied without a restart, so that background operations which do not have a query profile of their own (merges, mutations, `Buffer` table flushes) follow it as well. Individual queries can deviate from it with the `force_write_through_distributed_cache` setting.)", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, R"(
 Controls if the user can change settings related to the different feature tiers.
 
-- `0` - Changes to any setting are allowed (experimental, private preview, beta, production).
-- `1` - Only changes to private preview, beta and production feature settings are allowed. Changes to experimental settings are rejected.
-- `2` - Only changes to beta and production feature settings are allowed. Changes to experimental or private preview settings are rejected.
-- `3` - Only changes to production settings are allowed. Changes to experimental, private preview or beta settings are rejected.
+- `0` - Changes to any setting are allowed (experimental, beta, production).
+- `1` - Only changes to beta and production feature settings are allowed. Changes to experimental settings are rejected.
+- `2` - Only changes to production settings are allowed. Changes to experimental or beta settings are rejected.
 
-This is equivalent to setting a readonly constraint on all `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA` features.
+This is equivalent to setting a readonly constraint on all `EXPERIMENTAL` / `BETA` features.
 
 :::note
 A value of `0` means that all settings can be changed.
-:::
-
-:::note
-`2` previously meant "production settings only". It now also allows beta settings, so a configuration
-that pinned `2` to allow production settings only must use `3`.
 :::
 )", 0) \
     DECLARE(Bool, dictionaries_lazy_load, 1, R"(
@@ -1409,7 +1348,7 @@ Lazy loading of dictionaries.
 
 :::note
 The server will wait at startup until all the dictionaries finish their loading before receiving any connections
-(exception: if [`wait_dictionaries_load_at_startup`](/reference/settings/server-settings/settings/other#wait_dictionaries_load_at_startup) is set to `false`).
+(exception: if [`wait_dictionaries_load_at_startup`](/operations/server-configuration-parameters/settings#wait_dictionaries_load_at_startup) is set to `false`).
 :::
 
 **Example**
@@ -1453,11 +1392,11 @@ Disabled by default to avoid possible security issues which can be caused by bug
     DECLARE(Bool, os_collect_psi_metrics, true, "Enable accounting PSI metrics from /proc/pressure/ files.", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_drop_connection, 0, R"(
 Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.
-See [Controlling behavior on server CPU overload](/concepts/features/configuration/settings/server-overload) for more details.
+See [Controlling behavior on server CPU overload](/operations/settings/server-overload) for more details.
 )", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_drop_connection, 0, R"(
 Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.
-See [Controlling behavior on server CPU overload](/concepts/features/configuration/settings/server-overload) for more details.
+See [Controlling behavior on server CPU overload](/operations/settings/server-overload) for more details.
 )", 0) \
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_num, 0, R"(Maximum number of queries allowed per TCP connection before the connection is closed. Set to 0 for unlimited queries.)", 0) \
@@ -1472,7 +1411,7 @@ See [Controlling behavior on server CPU overload](/concepts/features/configurati
     DECLARE(Bool, jemalloc_enable_global_profiler, Jemalloc::default_enable_global_profiler, R"(Enable jemalloc's allocation profiler for all threads. Jemalloc will sample allocations and all deallocations for sampled allocations.
     Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
     Samples can also be stored in system.trace_log using config jemalloc_collect_global_profile_samples_in_trace_log or with query setting jemalloc_collect_profile_samples_in_trace_log.
-    See [Allocation Profiling](/concepts/features/performance/allocation-profiling))", 0) \
+    See [Allocation Profiling](/operations/allocation-profiling))", 0) \
     DECLARE(Bool, jemalloc_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log, R"(Store jemalloc's sampled allocations in system.trace_log)", 0) \
     DECLARE(Bool, jemalloc_enable_background_threads, Jemalloc::default_enable_background_threads, R"(Enable jemalloc background threads. Jemalloc uses background threads to cleanup unused memory pages. Disabling it could lead to performance degradation.)", 0) \
     DECLARE(UInt64, jemalloc_max_background_threads_num, Jemalloc::default_max_background_threads_num, R"(Maximum amount of jemalloc background threads to create, set to 0 to use jemalloc's default value)", 0) \
@@ -1544,7 +1483,6 @@ If enabled, every ZooKeeper request must have a component name set via `Coordina
 )", 0) \
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
     DECLARE(Bool, allow_experimental_webassembly_udf, false, R"(Enable experimental support for WebAssembly UDFs)", EXPERIMENTAL) \
-    DECLARE(Bool, enable_silk_runtime, false, R"(Enable experimental support for the silk fiber runtime: initialize the silk fiber scheduler at server startup, so that subsystems supporting it can run their jobs on fibers)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_executable_udf_drivers, false, R"(Enable experimental support for drivers for executable user-defined functions, declared via `user_defined_executable_function_drivers_config`. A driver turns a user code snippet supplied in `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` into a runnable executable UDF.)", EXPERIMENTAL) \
     DECLARE(Bool, enable_webterminal, true, R"(Enable the web terminal interface at the `/webterminal` HTTP endpoint. Provides an interactive `clickhouse-client` session in the browser via WebSocket. When `false`, requests to `/webterminal` return HTTP status `403 Forbidden`.)", 0) \
     DECLARE(String, webterminal_allowed_origins, "", R"(Comma-separated list of full origins (scheme + host + optional port) allowed to open `/webterminal` WebSocket sessions. When empty, the same-origin policy is enforced strictly (Origin must match the request scheme, host, and port). Set this for deployments behind a TLS-terminating reverse proxy where `request.isSecure()` is `false` even though the browser uses `https`. Example: `https://example.com,https://app.example.com:8443`.)", 0) \
@@ -1573,7 +1511,7 @@ The trailing slash is mandatory.
 ```
 )", 0) \
     DECLARE(String, user_files_path, "/var/lib/clickhouse/user_files/", R"(
-The directory with user files. Used in the table function [file()](/reference/functions/table-functions/file), [fileCluster()](/reference/functions/table-functions/fileCluster).
+The directory with user files. Used in the table function [file()](/sql-reference/table-functions/file), [fileCluster()](/sql-reference/table-functions/fileCluster).
 
 **Example**
 
@@ -1581,9 +1519,17 @@ The directory with user files. Used in the table function [file()](/reference/fu
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 )", 0) \
-    DECLARE(String, dictionaries_lib_path, "/var/lib/clickhouse/dictionaries_lib/", R"(The directory with shared libraries for the `library` dictionary source. The setting is deprecated: the `library` dictionary source was removed.)", SettingsTierType::OBSOLETE) \
+    DECLARE(String, dictionaries_lib_path, "/var/lib/clickhouse/dictionaries_lib/", R"(
+The directory with dictionaries lib.
+
+**Example**
+
+```xml
+<dictionaries_lib_path>/var/lib/clickhouse/dictionaries_lib/</dictionaries_lib_path>
+```
+)", 0) \
     DECLARE(String, user_scripts_path, "/var/lib/clickhouse/user_scripts/", R"(
-The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](/reference/functions/regular-functions/udf#executable-user-defined-functions).
+The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](/sql-reference/functions/udf#executable-user-defined-functions).
 
 **Example**
 
@@ -1663,18 +1609,15 @@ Port for exchanging data between ClickHouse servers over `<HTTPS>`.
 <interserver_https_port>9010</interserver_https_port>
 ```
 )", 0) \
-    DECLARE(String, include_from, "", R"(
+    DECLARE(String, include_from, "/etc/metrika.xml", R"(
 The path to the file with substitutions. Both XML and YAML formats are supported.
 
-For more information, see the section [Configuration files](/concepts/features/configuration/server-config/configuration-files).
-Empty by default, which means that no substitutions file is used. Before version 26.8 the file `/etc/metrika.xml` was used implicitly whenever it existed; if you rely on it, specify the path explicitly.
-
-Note that configuration files that are loaded separately from the main server configuration — the users' configuration (e.g. `users.xml` when it is not included in the main file) and XML dictionary configurations — read the `include_from` element from their own contents, not from the server configuration. Each such file that relies on substitutions needs its own `include_from` element.
+For more information, see the section [Configuration files](/operations/configuration-files).
 
 **Example**
 
 ```xml
-<include_from>/etc/clickhouse-server/substitutions.xml</include_from>
+<include_from>/etc/metrica.xml</include_from>
 ```
 )", 0) \
     DECLARE(String, tmp_path, "/var/lib/clickhouse/tmp/", R"(
@@ -1692,7 +1635,7 @@ Path on the local filesystem to store temporary data for processing large querie
 ```
 )", 0) \
     DECLARE(String, format_schema_path, "/var/lib/clickhouse/format_schemas/", R"(
-The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](/reference/formats/CapnProto) format.
+The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](/interfaces/formats/CapnProto) format.
 
 **Example**
 
@@ -1821,8 +1764,8 @@ The server will not exit if IPv6 or IPv4 networks are unavailable while trying t
 <listen_try>0</listen_try>
 ```
 )", 0) \
-    DECLARE(Bool, mysql_require_secure_transport, false, R"(If set to true, secure communication is required with clients over [mysql_port](/reference/settings/server-settings/settings/mysql#mysql_port). Connection with option `<--ssl-mode=none>` will be refused. Use it with [OpenSSL](/reference/settings/server-settings/settings/other#openssl) settings.)", 0) \
-    DECLARE(Bool, postgresql_require_secure_transport, false, R"(If set to true, secure communication is required with clients over [postgresql_port](/reference/settings/server-settings/settings/postgresql#postgresql_port). Connection with option `<sslmode=disable>` will be refused. Use it with [OpenSSL](/reference/settings/server-settings/settings/other#openssl) settings.)", 0) \
+    DECLARE(Bool, mysql_require_secure_transport, false, R"(If set to true, secure communication is required with clients over [mysql_port](/operations/server-configuration-parameters/settings#mysql_port). Connection with option `<--ssl-mode=none>` will be refused. Use it with [OpenSSL](/operations/server-configuration-parameters/settings#openssl) settings.)", 0) \
+    DECLARE(Bool, postgresql_require_secure_transport, false, R"(If set to true, secure communication is required with clients over [postgresql_port](/operations/server-configuration-parameters/settings#postgresql_port). Connection with option `<sslmode=disable>` will be refused. Use it with [OpenSSL](/operations/server-configuration-parameters/settings#openssl) settings.)", 0) \
     DECLARE(Bool, skip_check_for_incorrect_settings, false, R"(
 If set to true, server settings will not be checked for correctness.
 
@@ -1857,7 +1800,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(Bool, logger_use_syslog, false, R"(Also forward log output to syslog.)", 0, "logger.use_syslog") \
     DECLARE(String, logger_syslog_level, "trace", R"(Log level for logging to syslog.)", 0, "logger.syslog_level") \
     DECLARE(Bool, logger_async, true, R"(When `<true>` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG.)", 0, "logger.async") \
-    DECLARE(UInt64, logger_async_queue_max_size, 65536, R"(When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped. Rounded up to the next power of two (e.g. `100000` becomes `131072`).)", 0, "logger.async_queye_max_size") \
+    DECLARE(UInt64, logger_async_queue_max_size, 65536, R"(When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped.)", 0, "logger.async_queye_max_size") \
     DECLARE(String, logger_startup_level, "", R"(Startup level is used to set the root logger level at server startup. After startup log level is reverted to the `<level>` setting.)", 0, "logger.startup_level") \
     DECLARE(String, logger_shutdown_level, "", R"(Shutdown level is used to set the root logger level at server Shutdown.)", 0, "logger.shutdown_level") \
     DECLARE(String, openssl_server_private_key_file, "", R"(Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.)", 0, "openSSL.server.privateKeyFile") \
@@ -2021,1462 +1964,6 @@ void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfigurat
 }
 
 
-void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguration & config, const String & config_path, bool skip_check)
-{
-    /// `skip_check` carries the escape hatch resolved from the layered config (so a command-line
-    /// `--skip_check_for_incorrect_settings=1` is honored); `config.getBool` covers the same flag
-    /// set inside the validated config file itself.
-    if (skip_check || config.getBool("skip_check_for_incorrect_settings", false))
-        return;
-
-    /// Collect all known top-level keys from ServerSettings:
-    /// - For settings without paths, the setting name itself is the top-level key.
-    /// - For settings with paths, the first segment of the path (before any dot) is the top-level key.
-    std::unordered_set<String> known_keys;
-    {
-        ServerSettingsImpl settings;
-        for (const auto & setting : settings.all())
-        {
-            String path{setting.getPath()};
-            if (path.empty())
-            {
-                known_keys.insert(String(setting.getName()));
-            }
-            else
-            {
-                auto dot_pos = path.find('.');
-                if (dot_pos != String::npos)
-                    known_keys.insert(path.substr(0, dot_pos));
-                else
-                    known_keys.insert(path);
-            }
-        }
-    }
-
-    /// Known config sections that have complex/dynamic structure
-    /// and cannot be represented as simple scalar ServerSettings.
-    /// If you add a new config section, add it here to avoid throwing on unknown config.
-    static const std::unordered_set<String> known_complex_sections = {
-        /// Network
-        "listen_host",
-        "interserver_listen_host",
-
-        /// Ports
-        "http_port",
-        "https_port",
-        "tcp_port",
-        "tcp_port_secure",
-        "mysql_port",
-        "postgresql_port",
-        "grpc_port",
-        "interserver_http_port",
-        "interserver_https_port",
-        "tcp_with_proxy_port",
-        "tcp_ssh_port",
-        "arrowflight_port",
-
-        /// Cluster and replication
-        "remote_servers",
-        "zookeeper",
-        "keeper",
-        "auxiliary_zookeepers",
-        "allow_experimental_cluster_discovery",
-        "macros",
-        "interserver_http_credentials",
-        "replica_group_name",
-
-        /// Storage
-        "storage_configuration",
-        "backups",
-        "compression",
-        "encryption_codecs",
-        "disk_encrypted_keys",
-        "merge_tree",
-        "replicated_merge_tree",
-        "database_replicated",
-        "filesystem_caches",
-        "custom_cached_disks_base_directory",
-        "custom_local_disks_base_directory",
-
-        /// Dictionaries and functions
-        "dictionaries_config",
-        "user_defined_executable_functions_config",
-        "user_defined_executable_function_drivers_config",
-        "nb_models",
-        "dictionary",
-        "lemmatizers",
-        "synonyms_extensions",
-        "path_to_regions_hierarchy_file",
-        "path_to_regions_names_files",
-
-        /// Access control
-        "users",
-        "profiles",
-        "quotas",
-        "roles",
-        "users_config",
-        "user_directories",
-        "ldap_servers",
-        "kerberos",
-        "jwt",
-        "jwt_authenticators",
-        "http_authentication_servers",
-        "connections_credentials",
-        "custom_settings_prefixes",
-        "default_profile",
-        "system_profile",
-        "buffer_profile",
-        "background_profile",
-        "access_control_path",
-        "access_control_improvements",
-        "password_complexity",
-        "default_password_type",
-        "bcrypt_workfactor",
-        "allow_implicit_no_password",
-        "allow_no_password",
-        "allow_plaintext_password",
-
-        /// Named collections
-        "named_collections",
-        "named_collections_storage",
-
-        /// SQL-defined HTTP handlers
-        "query_rules_storage",
-
-        /// Networking and protocols
-        "protocols",
-        "grpc",
-        "http_options_response",
-        "http_server_default_response",
-        "http_forbid_headers",
-        "remote_url_allow_hosts",
-        "http_handlers",
-        "arrowflight",
-        "proxy",
-        "enable_http_stacktrace",
-        "enable_verbose_replicas_status",
-        "proto_caps",
-        "enable_http_close_session",
-        "enable_arrow_close_session",
-
-        /// Monitoring and metrics
-        "graphite",
-        "send_crash_reports",
-
-        /// System log tables
-        "query_log",
-        "query_thread_log",
-        "part_log",
-        "background_schedule_pool_log",
-        "trace_log",
-        "crash_log",
-        "text_log",
-        "metric_log",
-        "transposed_metric_log",
-        "histogram_metric_log",
-        "predicate_statistics_log",
-        "error_log",
-        "filesystem_cache_log",
-        "filesystem_read_prefetches_log",
-        "s3queue_log",
-        "azure_queue_log",
-        "asynchronous_metric_log",
-        "opentelemetry_span_log",
-        "query_views_log",
-        "zookeeper_log",
-        "session_log",
-        "transactions_info_log",
-        "processors_profile_log",
-        "asynchronous_insert_log",
-        "backup_log",
-        "blob_storage_log",
-        "query_metric_log",
-        "dead_letter_queue",
-        "zookeeper_connection_log",
-        "aggregated_zookeeper_log",
-        "iceberg_metadata_log",
-        "delta_lake_metadata_log",
-        "distributed_cache_log",
-        "distributed_cache_server_log",
-        "instrumentation_trace_log",
-        "default_system_log_flush_policy",
-        "create_union_system_log_tables",
-        /// Legacy system log section names that older releases (or cloud deployments) read but the
-        /// current server does not. A config carried over an upgrade may still contain them
-        /// (e.g. `latency_log`, deprecated in favor of `histogram_metric_log`); such sections are
-        /// harmless no-ops and must not turn into startup failures.
-        "latency_log",
-        "query_condition_cache_log",
-
-        /// Other logging
-        "query_masking_rules",
-
-        /// Engine-specific
-        "kafka",
-        "rabbitmq",
-        "nats",
-        "s3",
-        "azure",
-        "rocksdb",
-        "distributed",
-        "mqs",
-        "kafka_consumer_hang",
-        "iceberg_biglake_metadata_service_hosts",
-
-        /// External bridges
-        "library_bridge",
-        "odbc_bridge",
-        "jdbc_bridge",
-
-        /// Sections used in private builds (shared catalog, distributed cache, stateless workers, cloud readiness)
-        "shared_database_catalog",
-        "shared_merge_tree",
-        "shared_log_pipeline",
-        "distributed_cache_client",
-        "distributed_cache_server",
-        "distributed_query",
-        "stateless_worker_client",
-        "stateless_worker_server",
-        "stateless_worker_discovery_service",
-        "_functional_tests_helper_shared_catalog",
-        /// Shared-catalog analog of `_functional_tests_helper_database_replicated_replace_args_macros`,
-        /// injected into the server config by the private SharedCatalog functional-test setup
-        /// (`tests/config/config.d/shared_catalog.xml`).
-        "_functional_tests_helper_shared_catalog_replace_args_macros",
-        "server_uuid_from_replica_name",
-        "cloud",
-        "default_user_for_system_dictionaries",
-
-        /// Miscellaneous
-        "core_dump",
-        "core_path",
-        "resources",
-        "resources_and_workloads",
-        "workload_classifiers",
-        "top_level_domains_lists",
-        "url_scheme_mappers",
-        "tokenizer",
-        "dashboards",
-        "acme",
-        "ai",
-        "placement_info",
-        "placement",
-        "display_name",
-        "database_disk",
-        "allow_system_allocate_memory",
-        "timezone",
-        "allow_experimental_transactions",
-        "transaction_log",
-        "allow_moving_table_directory_to_trash",
-        "allow_remove_stale_moving_parts",
-        "allow_zookeeper_write",
-        "auth_use_forwarded_address",
-        "builtin_dictionaries_reload_interval",
-        "default_session_timeout",
-        "max_session_timeout",
-        "keeper_map_path_prefix",
-        "keeper_map_keys_limit",
-        "user_defined_zookeeper_path",
-        "user_defined_path",
-        "workload_zookeeper_path",
-        "workload_path",
-        "warning_supress_regexp",
-        "enable_system_unfreeze",
-        "disable_insertion_and_mutation",
-        "use_analyzer_for_mutations",
-        "streaming_storage_shutdown_threads",
-        "local_disk_check_period_ms",
-        "page_cache_size",
-        "replicated_merge_tree_paranoid_check_on_drop_range",
-        "replicated_merge_tree_paranoid_check_on_startup",
-        "test",
-        /// Note: a literal top-level `include` key is intentionally NOT allowlisted here.
-        /// `ConfigProcessor::doIncludesRecursive` either throws on an `<include>` element that
-        /// does not carry exactly one substitution attribute (`incl`, `from_env`, `from_zk`)
-        /// or removes the node after expanding it, so `include` can never appear as a key of
-        /// the merged config this check inspects. The valid substitution forms are handled
-        /// explicitly below by collecting top-level `<include .../>` references from the raw
-        /// pre-merge fragments.
-        "include_endpoint",
-        "ignore_table_dependencies_on_metadata_loading",
-        "allow_reserved_database_name_tmp_convert",
-        "resource_overload_warnings",
-        "distributed_ddl_keeper_max_retries",
-        "distributed_ddl_keeper_initial_backoff_ms",
-        "distributed_ddl_keeper_max_backoff_ms",
-
-        /// Daemon-level settings (read by `BaseDaemon` before the server starts)
-        "umask",
-        "pid",
-        "pending_signals",
-
-        /// Obsolete settings that may still appear in long-lived configurations
-        /// (e.g., cloud installations carrying historical settings). Kept here so
-        /// that upgrading installations don't fail to start due to leftover keys.
-        "format_alter_operations_with_parentheses",
-
-        /// Background pool settings (legacy, moved to merge_tree section)
-        "background_processing_pool_thread_sleep_seconds",
-        "background_processing_pool_thread_sleep_seconds_if_nothing_to_do",
-        "background_processing_pool_thread_sleep_seconds_random_part",
-        "background_processing_pool_task_sleep_seconds_when_no_work_min",
-        "background_processing_pool_task_sleep_seconds_when_no_work_max",
-        "background_processing_pool_task_sleep_seconds_when_no_work_multiplier",
-        "background_processing_pool_task_sleep_seconds_when_no_work_random_part",
-        "background_move_processing_pool_thread_sleep_seconds",
-        "background_move_processing_pool_thread_sleep_seconds_if_nothing_to_do",
-        "background_move_processing_pool_thread_sleep_seconds_random_part",
-        "background_move_processing_pool_task_sleep_seconds_when_no_work_min",
-        "background_move_processing_pool_task_sleep_seconds_when_no_work_max",
-        "background_move_processing_pool_task_sleep_seconds_when_no_work_multiplier",
-        "background_move_processing_pool_task_sleep_seconds_when_no_work_random_part",
-        /// Read directly by `Context::getBackgroundStreamingTaskSchedulingSettings`, not via `ServerSettings`.
-        "background_streaming_processing_pool_thread_sleep_seconds",
-        "background_streaming_processing_pool_thread_sleep_seconds_random_part",
-        "background_streaming_processing_pool_thread_sleep_seconds_if_nothing_to_do",
-        "background_streaming_processing_pool_task_sleep_seconds_when_no_work_min",
-        "background_streaming_processing_pool_task_sleep_seconds_when_no_work_max",
-        "background_streaming_processing_pool_task_sleep_seconds_when_no_work_multiplier",
-        "background_streaming_processing_pool_task_sleep_seconds_when_no_work_random_part",
-
-        /// Schema inference cache settings
-        "schema_inference_cache_max_elements_for_s3",
-        "schema_inference_cache_max_elements_for_file",
-        "schema_inference_cache_max_elements_for_url",
-        "schema_inference_cache_max_elements_for_azure",
-        "schema_inference_cache_max_elements_for_hdfs",
-        "schema_inference_cache_max_elements_for_local",
-
-        /// Config processing
-        "include_from",
-
-        /// Startup
-        "startup_scripts",
-        "fail_points_active",
-
-        /// SSL and security
-        "ssh",
-        "ssh_server",
-
-        /// Silk fiber runtime
-        "silk",
-
-        /// Testing
-        "_functional_tests_helper_database_replicated_replace_args_macros",
-    };
-
-    /// Some config sections have user-defined names (e.g., graphite rollup rules, HTTP handlers).
-    /// We recognize them by known prefixes: exact match or prefix followed by '_' separator.
-    /// This prevents typos like "graphite_rollupTypo" from silently passing.
-    /// Do NOT add a blanket `users` prefix here: every legitimate top-level `users_*` key
-    /// (`users`, `users_config`, `users_to_ignore_early_memory_limit_check`, ...) is already
-    /// covered by `known_keys` (from `ServerSettings`) or by `known_complex_sections`,
-    /// and a prefix would silently accept typos like `<users_cnfig>` (typo of `users_config`).
-    static const std::vector<String> known_prefixes = {
-        "graphite_rollup",
-        "http_handlers",
-        /// Per-user HDFS client sections: `<hdfs_USERNAME>` where USERNAME is arbitrary
-        /// (the global `<hdfs>` section is covered by the `hdfs.libhdfs3_conf` setting path).
-        "hdfs",
-    };
-
-    /// Normalize a config path to its top-level component: strip at the first unescaped `.` or `[`
-    /// so `custom.handlers` -> `custom` and `my_payload[1].field` -> `my_payload`. A backslash
-    /// escapes the next character (mirroring `Poco::Util::XMLConfiguration::findNode`, which is how
-    /// `config.keys("")` reports a literal dot in a tag name, e.g. `<my.payload>` -> key `my\.payload`,
-    /// see `gtest_config_dot.cpp`), so `my\.payload` is one top-level component, not `my` + `.payload`.
-    /// The final validation below sees only top-level section names, so every exemption must be
-    /// reduced to the top-level component it actually shields.
-    auto top_level_component = [](const String & path) -> String
-    {
-        for (size_t i = 0; i < path.size(); ++i)
-        {
-            if (path[i] == '\\' && i + 1 < path.size())
-            {
-                ++i;
-                continue;
-            }
-            if (path[i] == '.' || path[i] == '[')
-                return path.substr(0, i);
-        }
-        return path;
-    };
-
-    /// A raw DOM node name imported from an include source (e.g. a tag `<my.payload>`) becomes a
-    /// top-level key of the merged config, but the final unknown-key check below compares against the
-    /// keys `AbstractConfiguration::keys("")` reports, and `Poco::Util::XMLConfiguration::enumerate`
-    /// escapes a literal dot in a tag name as `\.` there (the same escaping `top_level_component`
-    /// already accounts for, see `gtest_config_dot.cpp`). Mirror that escaping when recording an
-    /// imported tag as an exemption: otherwise a dotted section would be stored raw as `my.payload`
-    /// while its top-level key is `my\.payload`, and the valid, in-use key would be wrongly rejected
-    /// with `UNKNOWN_ELEMENT_IN_CONFIG`.
-    auto escape_dom_name_as_config_key = [](const String & name) -> String
-    {
-        String escaped;
-        escaped.reserve(name.size());
-        for (char c : name)
-        {
-            if (c == '.')
-                escaped += '\\';
-            escaped += c;
-        }
-        return escaped;
-    };
-
-    /// Two distinct concepts, kept in separate sets so they cannot cross-contaminate:
-    ///
-    ///  - `handler_group_paths`: full config prefixes whose rules we scan for `config://`
-    ///    references. A handler group is a *prefix*, not necessarily a top-level section:
-    ///    `<protocols><X><handlers>custom.handlers</handlers></X></protocols>` points
-    ///    `createHandlerFactory` at the prefix `custom.handlers` (rules live under
-    ///    `<custom><handlers>...</handlers></custom>`), whose top-level section is `custom`.
-    ///
-    ///  - `referenced_top_level_keys`: the actual top-level section names to exempt from the
-    ///    final unknown-key check (always normalized via `top_level_component`).
-    ///
-    /// Mixing the two (as a single `referenced_keys` set once did) lets a `config://` payload
-    /// section that merely happens to contain handler-shaped children be re-scanned as if it
-    /// were a handler group, whitelisting a second unrelated top-level key — a false negative.
-    std::unordered_set<String> handler_group_paths;
-    std::unordered_set<String> referenced_top_level_keys;
-
-    /// (a) Handler sections referenced by `<protocols>...<handlers>NAME</handlers>...</protocols>`.
-    /// Only HTTP protocol endpoints actually consult `handlers` (see `buildProtocolStackFromConfig`
-    /// in `Server.cpp`), so gate the allowlist on `type == "http"` to keep typos in non-HTTP
-    /// protocols rejected. The referenced value is a config *prefix*: scan it in full, but exempt
-    /// only its top-level component.
-    if (config.has("protocols"))
-    {
-        Poco::Util::AbstractConfiguration::Keys protocols;
-        config.keys("protocols", protocols);
-        for (const auto & proto : protocols)
-        {
-            String type_key = "protocols." + proto + ".type";
-            if (!config.has(type_key) || config.getString(type_key) != "http")
-                continue;
-            String handlers_key = "protocols." + proto + ".handlers";
-            if (config.has(handlers_key))
-            {
-                String handler_section = config.getString(handlers_key);
-                /// `createHTTPHandlerFactory` consults the named handler prefix only when it
-                /// actually exists (`config.has(handler_section)`); otherwise it falls back to
-                /// the default `http_handlers` and never reads the named section. Exempting the
-                /// top-level component when the referenced prefix is absent would whitelist a
-                /// misspelled or missing section the server does not consume — a false negative
-                /// (e.g. `<handlers>custom.handlers</handlers>` while the config only has
-                /// `<custom><typo>...</typo></custom>`, so `custom.handlers` does not exist and
-                /// the top-level `<custom>` is a genuine unknown key). Gate the exemption (and
-                /// the `config://` scan below) on the prefix existing, mirroring the consumer.
-                if (!handler_section.empty() && config.has(handler_section))
-                {
-                    handler_group_paths.insert(handler_section);
-                    referenced_top_level_keys.insert(top_level_component(handler_section));
-                }
-            }
-        }
-    }
-
-    /// Also scan the default `http_handlers` group for `config://` references. The HTTP handler
-    /// factory (`createHTTPHandlerFactory`) consults exactly two handler groups: the default
-    /// `http_handlers`, and the group named by an HTTP protocol's `<handlers>` (already added
-    /// above from the `protocols` block). Any *other* top-level `http_handlers*` section is dead
-    /// config the server never reads, so exempting a `config://` payload it references would
-    /// whitelist a genuinely unknown top-level key that no server code consumes — a false negative
-    /// (e.g. a stray `<http_handlers_alt>` block referencing `config://<typo>` would mask the typo).
-    /// Mirror the consumer and scan only the default group here (it is itself exempt as a top-level
-    /// key via `known_complex_sections`/`known_prefixes`; it only needs to enter
-    /// `handler_group_paths` for the `config://` scan below).
-    if (config.has("http_handlers"))
-        handler_group_paths.insert("http_handlers");
-
-    /// (b) Top-level keys referenced by `config://` inside HTTP handler sections.
-    /// Only a handler of `type == "static"` consumes a `config://` reference, and it reads
-    /// it exclusively from `handler.response_content` (see `createStaticHandlerFactory` and
-    /// `StaticRequestHandler`). Exempting any other field, or `response_content` on a
-    /// non-static handler (e.g. `redirect`, which ignores it), would whitelist a top-level
-    /// key that no server code reads — a false negative that lets a genuinely unknown
-    /// section pass validation. So gate the scan on the handler type and the single
-    /// consumed field. We iterate only the known handler-group prefixes, never the growing
-    /// exemption set, so a discovered payload key can never be mistaken for a handler group.
-    ///
-    /// Read `response_content` with `getRawString`, exactly as `createStaticHandlerFactory`
-    /// does. `getString` would expand Poco `${...}` references first, so a value like
-    /// `${ref}` (with `<ref>config://payload</ref>` elsewhere) would record `payload` as
-    /// referenced here, while `StaticRequestHandler` sees the raw `${ref}` text and never
-    /// reads `payload` — exempting `payload` on that basis is a false negative.
-    {
-        static const String config_prefix = "config://";
-        for (const auto & group : handler_group_paths)
-        {
-            if (!config.has(group))
-                continue;
-            Poco::Util::AbstractConfiguration::Keys rules;
-            config.keys(group, rules);
-            for (const auto & rule : rules)
-            {
-                String type_path = group + "." + rule + ".handler.type";
-                if (!config.has(type_path) || config.getString(type_path) != "static")
-                    continue;
-                String path = group + "." + rule + ".handler.response_content";
-                if (!config.has(path))
-                    continue;
-                String value = config.getRawString(path);
-                if (value.starts_with(config_prefix))
-                {
-                    /// `StaticRequestHandler::writeResponse` reads the referenced path with
-                    /// `getRawString(referenced_path, "Ok.\n")`: when the full path is absent it
-                    /// serves the default `Ok.\n` and never consumes the referenced section. So a
-                    /// `config://payload.suffix` whose exact path `payload.suffix` does not exist
-                    /// must not exempt the top-level `<payload>` — doing so would whitelist a
-                    /// section no server code reads (a false negative). Exempt the top-level
-                    /// component only when the full referenced path exists, mirroring the consumer.
-                    String referenced_path = value.substr(config_prefix.size());
-                    if (!referenced_path.empty() && config.has(referenced_path))
-                    {
-                        String ref = top_level_component(referenced_path);
-                        if (!ref.empty())
-                            referenced_top_level_keys.insert(ref);
-                    }
-                }
-            }
-        }
-    }
-
-    /// (c) Top-level keys that act as substitution sources for `<elem incl="X"/>` references.
-    /// An `incl` attribute is resolved by `ConfigProcessor` *exclusively* from the
-    /// `<include_from>` source document (see `doIncludesRecursive`: the lookup is
-    /// `getRootNode(include_from)->getNodeByPath(name)`), never from arbitrary top-level keys
-    /// of the merged config. The substitution replaces the *contents* of the referencing
-    /// element while the element keeps its own name, so an `incl` source tag becomes a
-    /// top-level key of the merged config only when the source file is itself merged — i.e.
-    /// when the `<include_from>` source is placed under `config.d/`.
-    ///
-    /// We therefore derive the exemption from the *actual* top-level tags of the parsed
-    /// `<include_from>` source, not from `incl` attribute names: keying off the reference name
-    /// alone would exempt an unrelated top-level key that merely happens to share a name with
-    /// some `incl` reference (even when no such tag exists in the real source), masking exactly
-    /// the typo/misplaced-section class this check is meant to catch.
-    ///
-    /// The `<include_from>` directive may live in either the main config or the users config
-    /// (or any `*.d/*` fragment merged into them), so scan all standard config files to collect
-    /// the source paths, then exempt every top-level tag of each parsed source.
-    {
-        /// Use the same enlarged name pool as `ConfigProcessor`: a default-sized pool overflows on
-        /// files with many unique element names (e.g. a users config with thousands of users),
-        /// aborting the scan of a file `ConfigProcessor` itself parses fine. The size is prime
-        /// because `Poco::XML::NamePool` uses a bad hash function internally, and its size was
-        /// prime by default.
-        Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool(65521));
-        Poco::XML::DOMParser dom_parser(name_pool);
-        std::unordered_set<std::string> include_from_paths;
-
-        /// The server-side `<include_from>` substitution source(s): the single merged value that
-        /// `ConfigProcessor` actually uses, plus the server's default substitution source. This is
-        /// derived from the merged `config` below, *never* from the raw pre-merge fragments: a
-        /// `config.d` fragment may `replace`/`remove` the main config's `<include_from>`, so only the
-        /// merged value reflects the source `ConfigProcessor` consults (see `processConfig`, which
-        /// reads the single merged `<include_from>` node). `ConfigProcessor` resolves a top-level
-        /// server `<include incl="X"/>` only against this server source, never against the users
-        /// config's — so top-level include refs must be resolved against it only. Resolving them
-        /// against a users-config `<include_from>` source, or against a stale/overridden pre-merge
-        /// source, would let a genuinely unknown top-level server key pass validation merely because
-        /// that other source happens to define a node of the referenced name.
-        std::unordered_set<std::string> server_include_from_paths;
-
-        /// Reference names of *top-level* `<include incl="X"/>` elements found in the server config
-        /// (the main config or a merged `config.d`/`conf.d` fragment). `ConfigProcessor` expands such
-        /// an element by inserting the *children* of node `X` (resolved from the `<include_from>`
-        /// source) into the root, so those child tags become real top-level keys of the merged config
-        /// even when the source is external and not merged. Collected only from server-config files
-        /// (never the users config, whose `<include>` targets a separate tree).
-        ///
-        /// Known limitation (deliberately fail-open): these references are collected as the *union* of
-        /// the top-level `<include .../>` elements seen across the raw pre-merge fragments; the merge's
-        /// `replace`/`remove` semantics on the `<include>` element itself are not replayed. Unlike
-        /// `<include_from>` (whose single merged value survives on the `config` object and is read back
-        /// below), a top-level `<include>` element is *expanded and removed* during processing, so the
-        /// merged `config` no longer contains it and there is nothing to read back — a faithful
-        /// reconstruction would have to replay `ConfigProcessor::merge` (where every `<include>`
-        /// collapses to one merge identifier and is consumed positionally). The union therefore
-        /// over-approximates: if a later fragment `replace`s or `remove`s a top-level `<include>`, the
-        /// old reference is still resolved and its imported keys stay exempt. This only ever *widens*
-        /// the exemption set (a rare false negative — an unknown key colliding with a no-longer-imported
-        /// name passes), never rejects a valid config, so it fails open; tightening it is intentionally
-        /// left to a full merge replay rather than a partial one that could refuse to start a valid
-        /// config.
-        std::unordered_set<std::string> top_level_include_refs;
-
-        /// Whether a server-config file contains a *top-level* `<include from_zk="..."/>`. Such an
-        /// element imports the children of a ZooKeeper node as top-level keys, but resolving it would
-        /// need a ZooKeeper connection at config-validation time (before `<zookeeper>` itself is
-        /// validated), so the imported keys cannot be determined here — the check bails out below.
-        /// Same fail-open over-approximation as `top_level_include_refs` above: a later fragment that
-        /// `remove`s the `<include from_zk=.../>` is not replayed, so the whole check may still be
-        /// skipped even though the merged config imports nothing from ZooKeeper — again only ever
-        /// widening what is tolerated, never rejecting a valid config.
-        bool has_unresolvable_top_level_from_zk_include = false;
-
-        /// Canonicalize paths so that symlinks (e.g. a symlinked `/etc/clickhouse-server`) and
-        /// relative segments do not defeat the merge-set membership test below.
-        auto to_canonical = [](const fs::path & p) -> std::string
-        {
-            std::error_code ec;
-            fs::path c = fs::weakly_canonical(p, ec);
-            return ec ? p.string() : c.string();
-        };
-
-        /// Canonical paths of the files whose top-level tags actually become top-level keys of the
-        /// *validated* (main server) config — i.e. the main config and the `config.d`/`conf.d`
-        /// fragments `ConfigProcessor` merges into it. The users config is a separate tree that is
-        /// not merged into the server config, so it is intentionally excluded here.
-        std::unordered_set<std::string> merge_files;
-
-        /// A scanned *server*-config file that exists but is not a regular file (e.g. a pipe such as
-        /// `/dev/fd/X`). `ConfigProcessor::parseConfig` explicitly accepts such a path, but it cannot
-        /// be re-read here (see the bail-out below), so the scan cannot see its `<include .../>`
-        /// directives and the whole check is skipped — fail open, never refuse to start a valid config.
-        ///
-        /// Only *server*-config files set this: they are the files whose top-level tags (and whose
-        /// `<include .../>` expansions) become top-level keys of the validated config. A non-regular
-        /// *users* config is a separate tree that contributes no top-level server key, so it must not
-        /// disable validation of the server config — see the warning at its scan site below.
-        std::string non_regular_server_config_path;
-
-        /// A scanned *users*-config file that exists but is not a regular file. Recorded only to warn:
-        /// unlike a server-config file it contributes no top-level server key, so the check keeps
-        /// running (see the warning at the scan site below).
-        std::string non_regular_users_config_path;
-
-        /// Whether the active users config (or a fragment merged into it) declares
-        /// `<include_from from_zk="..."/>`. `ConfigProcessor` resolves that substitution against
-        /// ZooKeeper (`processConfig` runs `doIncludesRecursive` on the `<include_from>` node itself
-        /// before reading its value), which is impossible here — validation runs before `<zookeeper>`
-        /// is itself validated. The users-side substitution source is therefore unknown, so a source
-        /// file kept under `config.d`/`conf.d` (whose top-level tags would otherwise be exempted
-        /// below) could be rejected as unknown. Bail out instead — fail open, exactly like the
-        /// unresolvable top-level `<include from_zk=.../>` case.
-        bool has_unresolvable_users_include_from_from_zk = false;
-
-        /// One raw top-level `<include_from>` sibling of one users-config file, before the
-        /// users-config merge. `UsersConfigAccessStorage::load` feeds each active users config
-        /// through its own `ConfigProcessor`, which merges the file with its `users.d`/`conf.d`
-        /// fragments *first* and only then reads the single merged `<include_from>` — so a later
-        /// fragment can `replace` or `remove` an earlier source, and a file may carry several
-        /// `<include_from>` siblings (e.g. a `remove` followed by a fresh declaration, which the
-        /// merger appends after dropping the old node). Record every sibling of every file, in
-        /// document order, and let the caller replay the merger's semantics over the whole chain;
-        /// unioning the raw pre-merge values instead would keep a stale/overridden source, letting
-        /// it exempt an unrelated unknown server key (or latch an already-removed `from_zk`
-        /// bail-out), while reading only the first sibling per file would lose a source that a
-        /// later sibling of the same file re-declares.
-        struct UsersIncludeFromDecl
-        {
-            bool has_remove = false;
-            bool has_replace = false;
-            String text;
-            bool has_from_env = false;
-            String from_env_name;
-            bool has_from_zk = false;
-            /// The merge identity of the node: `mergeRecursive` pairs a fragment element with an
-            /// element of the accumulated tree that has the same name and the same
-            /// non-substitution, non-`remove`/`replace` attributes (see `getElementIdentifier`),
-            /// so two `<include_from>` nodes whose remaining attributes differ never merge.
-            String merge_identity;
-        };
-
-        /// Returns true iff the file is an actual merge candidate — i.e. it exists, parses, and has
-        /// a root the merger accepts. Only such files contribute their top-level tags to the merged
-        /// config, so only they belong in `merge_files`. When `is_server_file` is set, also collects
-        /// any top-level `<include incl="X"/>` reference name; otherwise records the file's raw
-        /// top-level `<include_from>` siblings into `users_include_from` for the caller to fold.
-        auto scan_file = [&](const fs::path & p, bool is_server_file, std::vector<UsersIncludeFromDecl> * users_include_from = nullptr) -> bool
-        {
-            if (!fs::exists(p))
-                return false;
-            if (!fs::is_regular_file(p))
-            {
-                if (is_server_file)
-                    non_regular_server_config_path = p.string();
-                else
-                    non_regular_users_config_path = p.string();
-                return false;
-            }
-            try
-            {
-                Poco::AutoPtr<Poco::XML::Document> doc = ConfigProcessor::parseConfig(p.string(), dom_parser);
-                if (!doc)
-                    return false;
-                /// Align with `ConfigProcessor::merge`: it merges only files whose root matches the
-                /// main config root (`clickhouse` and `yandex` are treated as equivalent). A fragment
-                /// with any other root is not merged, so its top-level tags never become top-level
-                /// keys of the validated config — it must not enter `merge_files`, and walking it
-                /// would inject bogus `incl` references and mask real typos in the merged config.
-                auto * root = doc->documentElement();
-                if (!root)
-                    return false;
-                const String root_name = root->nodeName();
-                if (root_name != "clickhouse" && root_name != "yandex")
-                    return false;
-                /// Pick up a top-level `<include_from>` so we can later parse the source.
-                /// Also resolve `from_env="VAR"` substitutions, which leave `innerText()` empty
-                /// in the raw XML (the value lives in the environment, not the document).
-                /// From server-config files also pick up top-level `<include incl="X"/>` reference
-                /// names, whose expansion imports `<X>`'s children as top-level keys (see above).
-                for (auto * child = root->firstChild(); child; child = child->nextSibling())
-                {
-                    if (child->nodeType() != Poco::XML::Node::ELEMENT_NODE)
-                        continue;
-                    if (child->nodeName() == "include_from")
-                    {
-                        /// Server-side `<include_from>` is intentionally NOT collected from these raw
-                        /// pre-merge fragments: a `config.d`/`conf.d` fragment may `replace`/`remove`
-                        /// the main config's `<include_from>`, so only the single merged value (read
-                        /// from the merged `config` below) reflects the source `ConfigProcessor`
-                        /// actually uses. Unioning the raw pre-merge sources here would keep a
-                        /// stale/overridden source, causing false negatives (the stale source
-                        /// whitelists an unknown key). The users config is a separate
-                        /// `ConfigProcessor` invocation whose merged `<include_from>` is not exposed
-                        /// on the server `config`, so record its raw declarations for the caller to
-                        /// replay the merge across the users config's own fragment chain. Every
-                        /// sibling matters, not just the first: the merger walks a fragment's
-                        /// siblings in document order, so e.g. an `<include_from remove="remove"/>`
-                        /// followed by a plain `<include_from>` drops the old node and appends the
-                        /// new one, which then becomes the first — and hence effective — node that
-                        /// `processConfig` later reads via `getNodeByPath`.
-                        if (is_server_file)
-                            continue;
-                        if (users_include_from)
-                        {
-                            auto * elem = static_cast<Poco::XML::Element *>(child);
-                            UsersIncludeFromDecl decl;
-                            decl.has_remove = elem->hasAttribute("remove");
-                            decl.has_replace = elem->hasAttribute("replace");
-                            decl.text = child->innerText();
-                            decl.has_from_env = elem->hasAttribute("from_env");
-                            if (decl.has_from_env)
-                                decl.from_env_name = elem->getAttribute("from_env");
-                            decl.has_from_zk = elem->hasAttribute("from_zk");
-
-                            Poco::AutoPtr<Poco::XML::NamedNodeMap> attrs(elem->attributes());
-                            std::vector<std::pair<String, String>> identity_attrs;
-                            for (const auto * attr = attrs->item(0); attr; attr = attr->nextSibling())
-                            {
-                                const String & attr_name = attr->nodeName();
-                                if (attr_name == "remove" || attr_name == "replace"
-                                    || std::find(
-                                           ConfigProcessor::SUBSTITUTION_ATTRS.begin(),
-                                           ConfigProcessor::SUBSTITUTION_ATTRS.end(),
-                                           attr_name)
-                                        != ConfigProcessor::SUBSTITUTION_ATTRS.end())
-                                    continue;
-                                identity_attrs.emplace_back(attr_name, attr->getNodeValue());
-                            }
-                            ::sort(identity_attrs.begin(), identity_attrs.end());
-                            for (const auto & [attr_name, attr_value] : identity_attrs)
-                            {
-                                decl.merge_identity += attr_name;
-                                decl.merge_identity += '\0';
-                                decl.merge_identity += attr_value;
-                                decl.merge_identity += '\0';
-                            }
-
-                            users_include_from->push_back(std::move(decl));
-                        }
-                    }
-                    else if (is_server_file && child->nodeName() == "include")
-                    {
-                        /// A top-level `<include .../>` is expanded by `doIncludesRecursive` by
-                        /// importing the *children* of the referenced node into the root, so those
-                        /// child tags become real top-level keys of the merged config. `<include>`
-                        /// accepts exactly one of the substitution attributes `incl`, `from_env`,
-                        /// `from_zk` (see `ConfigProcessor::SUBSTITUTION_ATTRS`); mirror all three so
-                        /// none of them makes a previously valid config rejected as unknown.
-                        auto * elem = static_cast<Poco::XML::Element *>(child);
-                        if (elem->hasAttribute("incl"))
-                        {
-                            /// Resolved later against each `<include_from>` source (a lookup table),
-                            /// exactly as `doIncludesRecursive` resolves an `incl` reference.
-                            String ref = elem->getAttribute("incl");
-                            if (!ref.empty())
-                                top_level_include_refs.insert(std::move(ref));
-                        }
-                        else if (elem->hasAttribute("from_env"))
-                        {
-                            /// `from_env` is fully resolvable here: the processor wraps the environment
-                            /// variable's value as `<from_env>VALUE</from_env>` and imports its
-                            /// children, so parse it the same way and exempt those imported keys.
-                            const String env_name = elem->getAttribute("from_env");
-                            if (const char * env_val = std::getenv(env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
-                            {
-                                try
-                                {
-                                    Poco::AutoPtr<Poco::XML::Document> env_doc
-                                        = dom_parser.parseString("<from_env>" + std::string{env_val} + "</from_env>");
-                                    if (auto * env_root = env_doc ? env_doc->documentElement() : nullptr)
-                                    {
-                                        for (auto * c = env_root->firstChild(); c; c = c->nextSibling())
-                                        {
-                                            if (c->nodeType() == Poco::XML::Node::ELEMENT_NODE)
-                                                referenced_top_level_keys.insert(escape_dom_name_as_config_key(c->nodeName()));
-                                        }
-                                    }
-                                }
-                                catch (...) // NOLINT(bugprone-empty-catch)
-                                {
-                                    /// A malformed value would already have failed `ConfigProcessor`
-                                    /// before validation is reached; tolerate it here. Ok.
-                                }
-                            }
-                        }
-                        else if (elem->hasAttribute("from_zk"))
-                        {
-                            /// `from_zk` imports the children of a ZooKeeper node, which cannot be
-                            /// resolved without a live connection at config-validation time. Record it
-                            /// so the check bails out rather than falsely rejecting the imported keys.
-                            has_unresolvable_top_level_from_zk_include = true;
-                        }
-                    }
-                }
-                return true;
-            }
-            catch (...) // NOLINT(bugprone-empty-catch)
-            {
-                /// Best-effort scan: ignore parse failures (broken or non-config XML in the dir). Ok.
-                return false;
-            }
-        };
-
-        /// Scan the main config and every fragment `ConfigProcessor` actually merges into it.
-        /// Mirror `ConfigProcessor::getConfigMergeFiles` (it merges `<config-name>.d` and legacy
-        /// `conf.d`, accepting `.xml`, `.conf`, `.yaml`, and `.yml`) instead of hard-coding
-        /// `config.d` with an `.xml`/`.yaml` filter — otherwise a substitution source kept in a
-        /// `.conf` file or a `conf.d` directory would be missed and the merged config rejected.
-        /// A file enters `merge_files` only when `scan_file` confirms the merger would merge it
-        /// (matching root), so a fragment the merger would skip cannot exempt its top-level tags.
-        fs::path config_dir = fs::path(config_path).remove_filename();
-        if (scan_file(config_path, /*is_server_file=*/true))
-            merge_files.insert(to_canonical(config_path));
-        for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(config_path))
-        {
-            if (scan_file(merge_file, /*is_server_file=*/true))
-                merge_files.insert(to_canonical(merge_file));
-        }
-
-        /// The single active server `<include_from>` source is the *merged* one. `ConfigProcessor`
-        /// reads exactly one `<include_from>` node from the merged config (with `from_env`/`from_zk`
-        /// already resolved), so the merged `config` is the authoritative — not merely fallback —
-        /// source here: it is the value that survives any `config.d` `replace`/`remove` of the main
-        /// config's `<include_from>`.
-        if (String resolved_include_from = config.getString("include_from", ""); !resolved_include_from.empty())
-        {
-            /// `config` is the merged *server* config, so this is a server-side source.
-            server_include_from_paths.insert(resolved_include_from);
-            include_from_paths.insert(std::move(resolved_include_from));
-        }
-
-        /// Resolve the *active* users config path exactly as `AccessControl::addStoragesFromMainConfig`
-        /// does, so we never pull `incl`/`include_from` exemptions from an inactive users config tree
-        /// (which would let a real unknown top-level server-config key slip through):
-        ///   - explicit `<users_config>`: resolve a relative path against the main config dir;
-        ///   - empty `<users_config>` and no `<user_directories>`: the main config doubles as the
-        ///     users config (`config_path`), which is already scanned above;
-        ///   - empty `<users_config>` with `<user_directories>`: there is no users config file at all.
-        String users_config_value = config.getString("users_config", "");
-        bool has_user_directories = config.has("user_directories");
-        std::vector<fs::path> users_paths;
-        if (users_config_value.empty())
-        {
-            if (!has_user_directories)
-                users_paths.emplace_back(config_path);
-        }
-        else
-        {
-            fs::path users_path{users_config_value};
-            if (users_path.is_relative() && fs::exists(config_dir / users_path))
-                users_path = config_dir / users_path;
-            users_paths.push_back(std::move(users_path));
-        }
-
-        /// `<user_directories>` adds *more* active users config files, and
-        /// `addStoragesFromUserDirectoriesConfig` loads each of them with its own `ConfigProcessor`
-        /// invocation, which honors that file's own `<include_from>`. Mirror the entry types it maps to
-        /// `UsersConfigAccessStorage` (`users_xml` — its storage type — plus the `users.xml` and
-        /// `users_config` aliases, with the `[N]` suffix Poco appends to repeated keys stripped, exactly
-        /// as that function does) and the same relative-path resolution, so a substitution source
-        /// named by such a users file — and itself merged into the server config from `config.d`/`conf.d`
-        /// — is not mistaken for an unknown top-level key. The stock `programs/server/config.xml` uses
-        /// exactly this path, so missing it would reject valid configs.
-        if (has_user_directories)
-        {
-            Strings keys_in_user_directories;
-            config.keys("user_directories", keys_in_user_directories);
-            for (const String & key_in_user_directories : keys_in_user_directories)
-            {
-                String type = key_in_user_directories;
-                if (size_t bracket_pos = type.find('['); bracket_pos != String::npos)
-                    type.resize(bracket_pos);
-                if (type != "users_xml" && type != "users.xml" && type != "users_config")
-                    continue;
-                String path = config.getString("user_directories." + key_in_user_directories + ".path", "");
-                if (path.empty())
-                    continue;
-                fs::path users_path{path};
-                if (users_path.is_relative() && fs::exists(config_dir / users_path))
-                    users_path = config_dir / users_path;
-                users_paths.push_back(std::move(users_path));
-            }
-        }
-
-        /// Scan every active users config and the fragments merged into it, unless it is the main
-        /// config (already scanned). Fold each config's raw `<include_from>` declarations into the
-        /// single *effective* value its own `ConfigProcessor` invocation would read from the merged
-        /// tree, replaying `mergeRecursive`'s semantics across the fragment chain over an ordered
-        /// model of the merged tree's `<include_from>` nodes: `remove` erases the paired node,
-        /// `replace` substitutes it in place, a default merge edits it in place, and an unpaired
-        /// fragment node is appended at the end. `processConfig` then reads the *first* surviving
-        /// node (`getNodeByPath`). Only that effective source may exempt keys or trigger the
-        /// `from_zk` bail-out — a stale, overridden source must do neither, and a source
-        /// re-declared by a later sibling of the same fragment must not be lost.
-        for (const auto & users_path : users_paths)
-        {
-            if (users_path == fs::path(config_path))
-                continue;
-
-            /// The `<include_from>` elements of the merged users-config tree, in document order.
-            std::vector<UsersIncludeFromDecl> merged_include_from_nodes;
-
-            auto fold_users_file = [&](const fs::path & users_file, bool is_merge_fragment)
-            {
-                std::vector<UsersIncludeFromDecl> decls;
-                if (!scan_file(users_file, /*is_server_file=*/false, &decls))
-                    return;
-
-                if (!is_merge_fragment)
-                {
-                    /// The users config itself is the merge *base*: `mergeRecursive` interprets
-                    /// `remove`/`replace` only on the fragment side, so the base file's own nodes
-                    /// simply seed the tree in document order, attributes uninterpreted.
-                    for (auto & decl : decls)
-                    {
-                        decl.has_remove = false;
-                        decl.has_replace = false;
-                        merged_include_from_nodes.push_back(std::move(decl));
-                    }
-                    return;
-                }
-
-                /// Replay `mergeRecursive` for this fragment: it indexes the tree's nodes once (a
-                /// multimap in document order), then walks the fragment's siblings in document
-                /// order; each sibling pairs with the first not-yet-paired tree node of the same
-                /// merge identity. Nodes appended by this same fragment are not in the index, so a
-                /// later sibling of the same fragment cannot merge into them.
-                const size_t matchable_count = merged_include_from_nodes.size();
-                std::vector<char> paired(matchable_count, 0);
-                std::vector<char> erased(matchable_count, 0);
-                for (auto & decl : decls)
-                {
-                    size_t match = matchable_count;
-                    for (size_t i = 0; i < matchable_count; ++i)
-                    {
-                        if (!paired[i] && merged_include_from_nodes[i].merge_identity == decl.merge_identity)
-                        {
-                            match = i;
-                            break;
-                        }
-                    }
-                    if (match == matchable_count)
-                    {
-                        /// No pair in the tree: a `remove` is dropped, anything else (including a
-                        /// dangling `replace`) is appended as-is at the end.
-                        if (!decl.has_remove)
-                        {
-                            decl.has_remove = false;
-                            decl.has_replace = false;
-                            merged_include_from_nodes.push_back(std::move(decl));
-                        }
-                        continue;
-                    }
-                    paired[match] = 1;
-                    UsersIncludeFromDecl & target = merged_include_from_nodes[match];
-                    if (decl.has_remove)
-                    {
-                        erased[match] = 1;
-                    }
-                    else if (decl.has_replace)
-                    {
-                        decl.has_remove = false;
-                        decl.has_replace = false;
-                        target = std::move(decl);
-                    }
-                    else
-                    {
-                        /// Default merge edits the paired node in place: `mergeRecursive` strips
-                        /// the target's non-whitespace text and appends the fragment's, so the
-                        /// fragment's text always wins (even when empty). When the fragment node
-                        /// carries a value, the target's substitution attributes are removed
-                        /// (`SUBSTITUTION_ATTRS`); `mergeAttributes` then overlays the fragment
-                        /// node's attributes on whatever remains.
-                        target.text = decl.text;
-                        if (!decl.text.empty())
-                        {
-                            target.has_from_env = false;
-                            target.from_env_name.clear();
-                            target.has_from_zk = false;
-                        }
-                        if (decl.has_from_env)
-                        {
-                            target.has_from_env = true;
-                            target.from_env_name = decl.from_env_name;
-                        }
-                        if (decl.has_from_zk)
-                            target.has_from_zk = true;
-                    }
-                }
-                /// Drop the nodes this fragment removed, preserving the order of the survivors
-                /// (appended nodes sit past `matchable_count` and are never erased here).
-                for (size_t i = matchable_count; i-- > 0;)
-                {
-                    if (erased[i])
-                        merged_include_from_nodes.erase(merged_include_from_nodes.begin() + i);
-                }
-            };
-            fold_users_file(users_path, /*is_merge_fragment=*/false);
-            for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(users_path.string()))
-                fold_users_file(merge_file, /*is_merge_fragment=*/true);
-
-            if (merged_include_from_nodes.empty())
-                continue;
-
-            /// Resolve the effective declaration — the first surviving node, which is what
-            /// `processConfig` reads via `getNodeByPath` — exactly like `doIncludesRecursive`
-            /// resolves the merged node: a literal value wins; otherwise `from_env` is resolvable
-            /// here, while `from_zk` cannot be resolved at config-validation time, so record it and
-            /// bail out below rather than risk rejecting the source's top-level tags — fail open,
-            /// never refuse to start a valid config.
-            const UsersIncludeFromDecl & effective_include_from = merged_include_from_nodes.front();
-            String src = effective_include_from.text;
-            if (src.empty())
-            {
-                if (effective_include_from.has_from_env)
-                {
-                    if (const char * env_val = std::getenv(effective_include_from.from_env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
-                        src = env_val;
-                }
-                else if (effective_include_from.has_from_zk)
-                {
-                    has_unresolvable_users_include_from_from_zk = true;
-                }
-            }
-            if (!src.empty())
-                include_from_paths.insert(std::move(src));
-        }
-
-        /// `ConfigProcessor::parseConfig` accepts a non-regular config path (it has an explicit
-        /// carve-out: "Suppose non regular file parsed as XML, such as pipe: /dev/fd/X"), so the
-        /// server can legitimately be started with e.g. `--config-file=/dev/fd/N`. Such a file cannot
-        /// be re-read by the scan above: the processor has already consumed it (a drained pipe
-        /// re-parses as empty and diverges from what the processor saw) and opening a FIFO for reading
-        /// blocks until a writer appears. The scan therefore misses its top-level `<include .../>`
-        /// directives — which `ConfigProcessor` already expanded and removed, so the merged config
-        /// contains the imported keys while nothing records that they were imported — and an
-        /// unrecognized top-level key would be rejected even though the very same config was valid
-        /// before this check existed. Skip the whole check in this rare case — fail open, exactly like
-        /// a non-regular `<include_from>` source below — and log so a genuine typo remains visible.
-        ///
-        /// Scoped to *server*-config files on purpose: the users config is a separate
-        /// `ConfigProcessor` tree that contributes no top-level key to the validated server config, so
-        /// a non-regular `users_config` must not silence the check for the whole server config (a typo
-        /// such as `<max_thred_pool_size>` in `config.xml` has to stay visible).
-        if (!non_regular_server_config_path.empty())
-        {
-            LOG_WARNING(
-                getLogger("ServerSettings"),
-                "Not checking for unknown config options in '{}': the config file '{}' is not a regular "
-                "file, so the top-level keys its <include> directives contribute cannot be determined "
-                "at config-validation time.",
-                config_path,
-                non_regular_server_config_path);
-            return;
-        }
-
-        /// A users config that is not a regular file cannot be re-read either, so a users-side
-        /// `<include_from>` it declares stays invisible. Unlike a server-config file it contributes no
-        /// top-level server key, so keep validating; the only thing lost is the exemption for the
-        /// top-level tags of a substitution source that both that users config points at *and* is
-        /// itself merged into the server config. Warn so such a setup is diagnosable — the fix is
-        /// `<skip_check_for_incorrect_settings>` — rather than disabling the check for everything.
-        if (!non_regular_users_config_path.empty())
-        {
-            LOG_WARNING(
-                getLogger("ServerSettings"),
-                "The users config file '{}' is not a regular file, so its <include_from> directives "
-                "cannot be read at config-validation time. Still checking '{}' for unknown config "
-                "options; use <skip_check_for_incorrect_settings> if this rejects a valid config.",
-                non_regular_users_config_path,
-                config_path);
-        }
-
-        /// The users-side `<include_from>` path itself comes from ZooKeeper, so the substitution source
-        /// — and hence the set of top-level tags it legitimately contributes — cannot be determined
-        /// here. Skip the whole check, mirroring the top-level `<include from_zk=.../>` bail-out below.
-        if (has_unresolvable_users_include_from_from_zk)
-        {
-            LOG_WARNING(
-                getLogger("ServerSettings"),
-                "Not checking for unknown config options in '{}': the users config contains "
-                "<include_from from_zk=.../>, whose substitution source cannot be resolved without a "
-                "ZooKeeper connection at config-validation time.",
-                config_path);
-            return;
-        }
-
-        /// A top-level `<include from_zk="..."/>` in the server config imports the children of a
-        /// ZooKeeper node as top-level keys, but resolving it needs a ZooKeeper connection that is
-        /// unavailable at config-validation time (it runs before `<zookeeper>` is validated and, on
-        /// the initial load, before any connection exists). The set of legitimately imported keys
-        /// therefore cannot be determined, so rejecting an unrecognized top-level key would be a
-        /// false positive for a previously valid config. Skip the whole check in this rare case —
-        /// fail open, never refuse to start a valid config — and log so a genuine typo remains
-        /// visible. `<skip_check_for_incorrect_settings>` is not required for such setups.
-        if (has_unresolvable_top_level_from_zk_include)
-        {
-            LOG_WARNING(
-                getLogger("ServerSettings"),
-                "Not checking for unknown config options in '{}': it contains a top-level "
-                "<include from_zk=.../>, whose imported top-level keys cannot be resolved without a "
-                "ZooKeeper connection at config-validation time.",
-                config_path);
-            return;
-        }
-
-        for (const auto & include_from_path : include_from_paths)
-        {
-            if (!fs::exists(include_from_path))
-                continue;
-
-            /// A source's own top-level tags become top-level keys of the merged config only when
-            /// the source file is itself merged into the server config (it lives under
-            /// `config.d`/`conf.d`, so `ConfigProcessor` copies its top-level children into the
-            /// loaded config). An external `<include_from>` source that is *only* a substitution
-            /// lookup table contributes no top-level key of its own —
-            /// `ConfigProcessor::processIncludes` reads it solely to resolve `incl` references — so
-            /// exempting its tags would let a genuinely unknown top-level key pass merely because the
-            /// lookup table happens to define a tag of the same name, masking exactly the typo /
-            /// misplaced-section class this check catches. The one way an external source *does*
-            /// contribute a top-level key is a top-level `<include incl="X"/>`, handled below.
-            const bool source_is_merged = merge_files.contains(to_canonical(include_from_path));
-            /// A top-level server `<include incl="X"/>` resolves only against server-side sources
-            /// (mirrors `ConfigProcessor`, which never consults the users config's `<include_from>`
-            /// for a server include). A users-config source is thus consulted only for the
-            /// merged-fragment exemption below, never for include-ref resolution.
-            const bool source_is_server = server_include_from_paths.contains(include_from_path);
-            if (!source_is_merged && !(source_is_server && !top_level_include_refs.empty()))
-                continue;
-
-            /// `ConfigProcessor::parseConfig` accepts a non-regular `include_from` source (e.g. a
-            /// pipe such as `/dev/fd/X`), but such a source cannot be reliably re-read here: the
-            /// processor may already have consumed it (a drained pipe re-parses as empty and
-            /// diverges from what the processor saw), and opening a FIFO for reading blocks until a
-            /// writer appears. The keys it legitimately contributes therefore cannot be determined
-            /// at config-validation time, and rejecting an unrecognized top-level key would be a
-            /// false positive for a valid config. Fail open like the unresolvable `from_zk` case:
-            /// skip the whole check and log, so a valid config is never refused.
-            if (!fs::is_regular_file(include_from_path))
-            {
-                LOG_WARNING(
-                    getLogger("ServerSettings"),
-                    "Not checking for unknown config options in '{}': its <include_from> source '{}' "
-                    "is not a regular file, so the top-level keys it contributes cannot be determined "
-                    "at config-validation time.",
-                    config_path,
-                    include_from_path);
-                return;
-            }
-            try
-            {
-                Poco::AutoPtr<Poco::XML::Document> include_from_doc = ConfigProcessor::parseConfig(include_from_path, dom_parser);
-                auto * root = include_from_doc ? include_from_doc->documentElement() : nullptr;
-                if (!root)
-                    continue;
-
-                /// The source is a merged fragment: `ConfigProcessor` copies every one of its
-                /// top-level tags into the loaded config, so exempt them all.
-                if (source_is_merged)
-                {
-                    for (auto * child = root->firstChild(); child; child = child->nextSibling())
-                    {
-                        if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE)
-                            referenced_top_level_keys.insert(escape_dom_name_as_config_key(child->nodeName()));
-                    }
-                }
-
-                /// A top-level `<include incl="X"/>` is expanded by `doIncludesRecursive` by
-                /// inserting the *children* of node `X` from this `<include_from>` source into the
-                /// root, so those child tags become real top-level keys of the merged config even
-                /// when the source is external and not merged. Resolve `<X>` exactly as the processor
-                /// does (`getRootNode(include_from)->getNodeByPath(name)`) and exempt only the
-                /// imported children — nothing else, so an unrelated typo elsewhere stays rejected.
-                /// Only server-side sources are consulted (see `source_is_server` above): a server
-                /// `<include>` is never resolved against the users config's `<include_from>`.
-                if (source_is_server)
-                {
-                    for (const auto & ref : top_level_include_refs)
-                    {
-                        if (auto * referenced = root->getNodeByPath(ref))
-                        {
-                            for (auto * child = referenced->firstChild(); child; child = child->nextSibling())
-                            {
-                                if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE)
-                                    referenced_top_level_keys.insert(escape_dom_name_as_config_key(child->nodeName()));
-                            }
-                        }
-                    }
-                }
-            }
-            catch (...) // NOLINT(bugprone-empty-catch)
-            {
-                /// Best-effort: tolerate a missing or malformed include source. Ok.
-            }
-        }
-    }
-
-    /// A `GraphiteMergeTree` rollup configuration section can have an *arbitrary* top-level name:
-    /// the name is taken from the table definition `GraphiteMergeTree('<section>')` (see
-    /// `setGraphitePatternsFromConfig`), not from a fixed allowlist, so such sections cannot be
-    /// matched by name or by prefix. They have a fixed *shape* instead. We recognize that shape so a
-    /// deployment that names its rollup section e.g. `<retention_5m>` (valid before this check
-    /// existed) keeps starting, while a typo is still rejected.
-    ///
-    /// The shape mirrors exactly what `setGraphitePatternsFromConfig` accepts: it iterates the
-    /// section's children and throws `UNKNOWN_ELEMENT_IN_CONFIG` unless *every* child is a
-    /// `<pattern>` rule, the single `<default>` rule, or one of the four column-name overrides
-    /// (`path_column_name`, `time_column_name`, `value_column_name`, `version_column_name`). A
-    /// section that *only* overrides column names (no patterns) is still a valid `GraphiteMergeTree`
-    /// config (`selectPatternForPath` just yields no rollup rule), so it must be accepted too.
-    ///
-    /// An *existing* section with zero children is a valid (degenerate) `GraphiteMergeTree` config
-    /// too: `setGraphitePatternsFromConfig` only throws `NO_ELEMENTS_IN_CONFIG` when the section is
-    /// *missing*, so a present-but-empty section (e.g. `<retention_cfg/>`) keeps the default column
-    /// names and an empty pattern list and starts fine. It must be exempted, not rejected.
-    ///
-    /// We therefore accept the section iff every child (if any) is one of those recognized keys.
-    /// This must mirror the parser exactly: accepting a section just because *some* child looks like
-    /// a rollup rule would let a typo'd top-level section that merely happens to contain a
-    /// `<pattern>` (alongside an unrelated child the parser rejects) pass validation — a false
-    /// negative for exactly the unknown top-level sections this check is meant to catch.
-    ///
-    /// The check is also recursive into each rollup rule.
-    /// A `<pattern>`/`<default>` rollup rule is accepted by `appendGraphitePattern` only when it is
-    /// structurally *and* semantically valid. Mirror all of its config-level checks so a typo'd
-    /// section that merely resembles a rollup rule is not exempted from the unknown-key check:
-    ///  - every child is `regexp`, `function`, `rule_type` or a `retention*` block (anything else
-    ///    throws `UNKNOWN_ELEMENT_IN_CONFIG`). A `<retention*>` block is materialized by reading
-    ///    `.age` and `.precision` with `getUInt`, so both must be present and parse as unsigned
-    ///    integers, otherwise the parser throws; only those two grandchildren are read;
-    ///  - the rule carries at least one `function` or `retention*` child, otherwise the parser throws
-    ///    `NO_ELEMENTS_IN_CONFIG` ("at least one of an aggregate function or retention rules is
-    ///    mandatory");
-    ///  - every `rule_type` value parses to a known type (`all`/`plain`/`tagged`/`tag_list`), otherwise
-    ///    `ruleType` throws `BAD_ARGUMENTS`;
-    ///  - the `<default>` rule keeps `rule_type` as `all` (it defaults to `all` when absent), otherwise
-    ///    the parser throws `BAD_ARGUMENTS` ("Default must have rule_type all").
-    /// Mirroring only the child *names* (as an earlier version did) would exempt e.g.
-    /// `<pattern><regexp>.*</regexp></pattern>` — a rule the parser rejects — while never rejecting a
-    /// section the parser would accept.
-    auto graphite_rule_valid = [&config](const String & rule_element, bool is_default) -> bool
-    {
-        Poco::Util::AbstractConfiguration::Keys rule_children;
-        config.keys(rule_element, rule_children);
-        bool has_function_or_retention = false;
-        /// Whether the rule carries a non-empty `<regexp>`. `appendGraphitePattern` only rewrites a
-        /// `tag_list` rule into the dispatchable `tagged` type when its `<regexp>` is non-empty; see
-        /// the `tag_list` check after the loop.
-        bool has_nonempty_regexp = false;
-        /// The rule's `<rule_type>` value; the parser defaults to `all` when the child is absent.
-        String rule_type = "all";
-        /// `(age, precision)` pairs collected in config order, to mirror `appendGraphitePattern`'s
-        /// final `::sort(..., compareRetentions)` after the child loop (see below).
-        std::vector<std::pair<UInt64, UInt64>> retentions;
-        for (const auto & rule_child : rule_children)
-        {
-            const bool ok = rule_child == "regexp" || rule_child == "function"
-                || rule_child == "rule_type" || rule_child.starts_with("retention");
-            if (!ok)
-                return false;
-
-            if (rule_child == "regexp" && !config.getString(rule_element + ".regexp").empty())
-                has_nonempty_regexp = true;
-
-            if (rule_child == "function")
-                has_function_or_retention = true;
-
-            if (rule_child.starts_with("retention"))
-            {
-                /// `appendGraphitePattern` materializes a `retention*` block by reading `.age` and
-                /// `.precision` with `getUInt`. A block missing either child, or whose value is not
-                /// an unsigned integer, makes the parser throw, so it is not a valid rollup rule and
-                /// the section must not be exempted. Only `age`/`precision` are read (matching the
-                /// parser), so other grandchildren are ignored.
-                const String retention = rule_element + "." + rule_child;
-                if (!config.has(retention + ".age") || !config.has(retention + ".precision"))
-                    return false;
-                try
-                {
-                    retentions.emplace_back(config.getUInt(retention + ".age"), config.getUInt(retention + ".precision"));
-                }
-                catch (const Poco::Exception &)
-                {
-                    return false;
-                }
-                has_function_or_retention = true;
-            }
-
-            if (rule_child == "rule_type")
-            {
-                rule_type = config.getString(rule_element + ".rule_type");
-                const bool known_rule_type = rule_type == "all" || rule_type == "plain"
-                    || rule_type == "tagged" || rule_type == "tag_list";
-                if (!known_rule_type)
-                    return false;
-                /// `appendGraphitePattern` rejects a `<default>` whose `rule_type` is not `all`.
-                if (is_default && rule_type != "all")
-                    return false;
-            }
-        }
-
-        /// `appendGraphitePattern` only rewrites a `tag_list` rule into the dispatchable `tagged`
-        /// type when its `<regexp>` is non-empty (`buildTaggedRegex` needs the tag spec). A
-        /// `tag_list` rule without a non-empty `<regexp>` therefore keeps the internal
-        /// `RuleTypeTagList`, which `setGraphitePatternsFromConfig`'s final dispatch rejects with
-        /// `Unhandled rule_type in config`. Such a rule is not a valid rollup rule, so the section
-        /// must not be exempted. This mirrors the parser and only ever rejects sections the parser
-        /// also rejects — a valid `tag_list` rule always carries a non-empty `<regexp>` — so it can
-        /// never turn a valid config into a startup failure.
-        if (rule_type == "tag_list" && !has_nonempty_regexp)
-            return false;
-
-        /// `appendGraphitePattern` finishes a rule by sorting its `retention*` blocks with
-        /// `compareRetentions`, which throws `BAD_ARGUMENTS` ("Age and precision should only grow up")
-        /// unless, for every compared pair, `age` and `precision` grow together. A rule whose
-        /// retentions are not co-monotonic is therefore rejected by the parser and must not be
-        /// exempted here. Replicate that exact `::sort` — same comparator logic, same config-order
-        /// input — rather than an all-pairs invariant: for a co-monotonic (valid) rule no comparison
-        /// ever throws regardless of the sort's internal order, so this only rejects sections the
-        /// parser also rejects and never turns a valid rollup config into a startup failure.
-        try
-        {
-            ::sort(
-                retentions.begin(),
-                retentions.end(),
-                [](const std::pair<UInt64, UInt64> & a, const std::pair<UInt64, UInt64> & b) -> bool
-                {
-                    if (a.first > b.first && a.second > b.second)
-                        return true;
-                    if (a.first < b.first && a.second < b.second)
-                        return false;
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Retention age and precision must grow together");
-                });
-        }
-        catch (const Exception &)
-        {
-            return false;
-        }
-
-        return has_function_or_retention;
-    };
-
-    auto looks_like_graphite_rollup = [&config, &graphite_rule_valid](const String & section) -> bool
-    {
-        Poco::Util::AbstractConfiguration::Keys children;
-        config.keys(section, children);
-
-        /// A present-but-empty *container* section is a valid (degenerate) `GraphiteMergeTree`
-        /// config: `setGraphitePatternsFromConfig` accepts it, keeping the default column names and
-        /// no rollup rules. Rejecting it would make a previously valid config fail to start.
-        ///
-        /// But `config.keys` reports only child *elements*, so a scalar leaf key such as
-        /// `<max_thred_pool_size>16</max_thred_pool_size>` (a typo'd setting — exactly what this
-        /// check must catch) also has zero children. A `GraphiteMergeTree` section never carries a
-        /// scalar value of its own, so a childless section with a non-empty value is not a rollup
-        /// section: exempt the empty container, but let the valued leaf fall through and be rejected.
-        if (children.empty())
-            return Poco::trim(config.getString(section, "")).empty();
-
-        for (const auto & child : children)
-        {
-            /// Poco yields repeated `<pattern>` elements as `pattern`, `pattern[1]`, ...; the parser
-            /// matches them all with `startsWith(key, "pattern")`. A second `<default>` would be
-            /// `default[1]`, which the parser does NOT accept, so only the exact `default` is matched.
-            const bool is_pattern = child.starts_with("pattern");
-            const bool is_default = child == "default";
-            const bool is_column = child == "path_column_name" || child == "time_column_name"
-                || child == "value_column_name" || child == "version_column_name";
-
-            if (!is_pattern && !is_default && !is_column)
-                return false;
-
-            /// Recurse into rollup rules: a `<pattern>`/`<default>` that `appendGraphitePattern` would
-            /// reject (a foreign nested key, no `function`/`retention`, or an invalid or
-            /// `default`-incompatible `rule_type`) makes the whole section an unknown top-level key.
-            if ((is_pattern || is_default) && !graphite_rule_valid(section + "." + child, is_default))
-                return false;
-        }
-        return true;
-    };
-
-    Poco::Util::AbstractConfiguration::Keys top_level_keys;
-    config.keys("", top_level_keys);
-
-    /// Collect every unknown key instead of failing on the first one, so a user fixing a
-    /// misconfigured server sees the whole list at once rather than one key per restart.
-    std::vector<String> unknown_keys;
-
-    for (auto key : top_level_keys)
-    {
-        /// Strip array indices like "listen_host[1]"
-        auto bracket_pos = key.find('[');
-        if (bracket_pos != String::npos)
-            key.resize(bracket_pos);
-
-        if (known_keys.contains(key) || known_complex_sections.contains(key) || referenced_top_level_keys.contains(key))
-            continue;
-
-        bool matches_prefix = false;
-        for (const auto & prefix : known_prefixes)
-        {
-            if (key == prefix || (key.starts_with(prefix) && key.size() > prefix.size() && key[prefix.size()] == '_'))
-            {
-                matches_prefix = true;
-                break;
-            }
-        }
-        if (matches_prefix)
-            continue;
-
-        /// Arbitrary-named `GraphiteMergeTree` rollup sections, recognized by their structure.
-        if (looks_like_graphite_rollup(key))
-            continue;
-
-        /// Repeated elements (`listen_host`, `listen_host[1]`, ...) reduce to the same key after
-        /// the index is stripped — report each unknown key once.
-        if (std::find(unknown_keys.begin(), unknown_keys.end(), key) == unknown_keys.end())
-            unknown_keys.push_back(std::move(key));
-    }
-
-    if (!unknown_keys.empty())
-    {
-        throw Exception(
-            ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-            "Unknown element{} '{}' found in config {}."
-            " If it is a new option, it should be added to ServerSettings or to the known config sections."
-            " You can also disable this check with <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>.",
-            unknown_keys.size() == 1 ? "" : "s",
-            fmt::join(unknown_keys, "', '"),
-            config_path);
-    }
-}
-
-
 namespace
 {
 
@@ -3573,9 +2060,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
                 {std::to_string(context->getAccessControl().getAllowTierSettings()), ChangeableWithoutRestart::Yes}},
             {"s3queue_disable_streaming",
              {std::to_string(context->getServerSettingsCopy().get("s3queue_disable_streaming").safeGet<bool>()), ChangeableWithoutRestart::Yes}},
-            {"message_queue_disable_insertion", {std::to_string(context->getMessageQueueDisableInsertion()), ChangeableWithoutRestart::No}},
-            {"enable_read_through_distributed_cache", {std::to_string(context->getReadThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
-            {"enable_write_through_distributed_cache", {std::to_string(context->getWriteThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
+            {"message_queue_disable_insertion", {std::to_string(context->getMessageQueueDisableInsertion()), ChangeableWithoutRestart::Yes}},
 
             {"max_remote_read_network_bandwidth_for_server",
              {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},

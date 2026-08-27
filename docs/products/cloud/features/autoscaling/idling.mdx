@@ -18,7 +18,7 @@ When you create a ClickHouse Cloud service, the default setting for the IP allow
 
 ### Adaptive Idling {#adaptive-idling}
  ClickHouse Cloud implements adaptive idling to prevent disruptions while optimizing cost savings. The system evaluates several conditions before transitioning a service to idle. Adaptive idling overrides the idling duration setting when any of the below listed conditions are met:
-- When the number of parts exceeds the maximum active parts threshold (default: 10,000), the service isn't idled so that background maintenance can continue
+- When the number of parts exceeds the maximum idle parts threshold (default: 10,000), the service isn't idled so that background maintenance can continue
 - When there are ongoing merge operations, the service isn't idled until those merges complete to avoid interrupting critical data consolidation
 - Additionally, the service also adapts idle timeouts based on server initialization time:
   - If server initialization time is less than 15 minutes, no adaptive timeout is applied and the customer-configured default idle timeout is used

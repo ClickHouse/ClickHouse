@@ -56,7 +56,6 @@ const char * auto_config_build[]
     "USE_NLP", "@USE_NLP@",
     "USE_LIBSTEMMER", "@USE_LIBSTEMMER@",
     "USE_LIBURING", "@USE_LIBURING@",
-    "USE_SILK", "@USE_SILK@",
     "USE_SQLITE", "@USE_SQLITE@",
     "USE_LIBPQXX", "@USE_LIBPQXX@",
     "USE_AZURE_BLOB_STORAGE", "@USE_AZURE_BLOB_STORAGE@",

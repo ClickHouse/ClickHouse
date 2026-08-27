@@ -23,10 +23,13 @@ SELECT count() FROM t_or_like_chain_nul WHERE s LIKE '%a\0b%' OR s LIKE '%cd%' S
 
 -- `match` chain, Hyperscan allowed: the embedded NUL keeps it off truncating `multiMatchAny`, so originals are kept -> 2.
 SELECT count() FROM t_or_like_chain_nul WHERE match(s, 'a\0b') OR match(s, 'cd') SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 1, enable_analyzer = 1;
+SELECT count() FROM t_or_like_chain_nul WHERE match(s, 'a\0b') OR match(s, 'cd') SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 1, enable_analyzer = 0;
 -- `match` chain, Hyperscan disabled: no fast path applies, so the original branches are kept -> 2.
 SELECT count() FROM t_or_like_chain_nul WHERE match(s, 'a\0b') OR match(s, 'cd') SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 0, enable_analyzer = 1;
+SELECT count() FROM t_or_like_chain_nul WHERE match(s, 'a\0b') OR match(s, 'cd') SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 0, enable_analyzer = 0;
 
 -- `LIKE` substring chain rewritten (-> byte-oriented multiSearchAny) must still give 2.
 SELECT count() FROM t_or_like_chain_nul WHERE s LIKE '%a\0b%' OR s LIKE '%cd%' SETTINGS optimize_or_like_chain = 1, enable_analyzer = 1;
+SELECT count() FROM t_or_like_chain_nul WHERE s LIKE '%a\0b%' OR s LIKE '%cd%' SETTINGS optimize_or_like_chain = 1, enable_analyzer = 0;
 
 DROP TABLE t_or_like_chain_nul;

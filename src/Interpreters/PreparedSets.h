@@ -3,7 +3,6 @@
 #include <city.h>
 #include <Parsers/IAST_fwd.h>
 #include <DataTypes/IDataType.h>
-#include <exception>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -40,10 +39,6 @@ struct SetAndKey
     String key;
     SetPtr set;
     StoragePtr external_table;
-    /// `GLOBAL IN` under the analyzer attaches `external_table` only at pipeline build time (see
-    /// `ReadFromRemote`), so the intent is recorded at set registration for the plan optimizations
-    /// that must know whether the set fill also feeds an external table.
-    bool external_table_expected = false;
 };
 
 using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
@@ -197,11 +192,6 @@ public:
         const SizeLimits & network_transfer_limits,
         const PreparedSetsCachePtr & prepared_sets_cache);
 
-    /// Prepare the set for a distributed plan, which ships its values with the worker tasks:
-    /// retain the values, and make the source run as a distributed plan when its shape allows
-    /// it. The following `build` call must skip the cache: a cached set has no values.
-    void prepareForDistributedPlan(const ContextPtr & context);
-
     void buildSetInplace(const ContextPtr & context);
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
@@ -209,14 +199,9 @@ public:
 
     void buildExternalTableFromInplaceSet(StoragePtr external_table_);
     void setExternalTable(StoragePtr external_table_);
-    void markExternalTableExpected() { set_and_key->external_table_expected = true; }
 
     const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }
-
-    /// The set is backed by a `GLOBAL IN` / `GLOBAL JOIN` external table, either through the
-    /// set that fills that table or through the table stored next to the set itself.
-    bool hasExternalTable() const;
 
 private:
     Hash hash;
@@ -226,11 +211,6 @@ private:
 
     std::unique_ptr<QueryPlan> source;
     QueryTreeNodePtr query_tree;
-
-    /// Why the destructive in-place build in `buildOrderedSetInplace` failed after it consumed `source`.
-    /// The set can never be built once that happened, so `build` rethrows this instead of returning a null
-    /// plan, which its callers would silently take for "nothing left to build".
-    std::exception_ptr in_place_build_failure;
 };
 
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;

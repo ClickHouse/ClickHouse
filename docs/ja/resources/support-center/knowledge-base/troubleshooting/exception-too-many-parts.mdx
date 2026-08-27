@@ -1,122 +1,45 @@
 ---
-title: ClickHouse の「パーツが多すぎる」例外の解消
-description: 挿入のバッチ処理、非同期挿入の使用、適切なパーティショニングキーの選択によって、「パーツが多すぎる」例外を診断して解消する方法を学びます。
+title: ClickHouse の「パーツが多すぎる」エラーの解消
+description: データ挿入レートの最適化、MergeTree 設定の構成、パーティションの適切な管理を通じて、ClickHouse の「パーツが多すぎる」エラーに対処する方法を学びます。
 date: 2023-03-20
 tags: ['エラーと例外']
 keywords: ['パーツが多すぎる']
 ---
 
-<div id="what-the-exception-means">
-  ## この例外が意味すること
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="dbexception-too-many-parts-252-merges-are-processing-significantly-slower-than-inserts">
+  ## DB::Exception: パーツが多すぎる (エラー: 252)。マージ処理が insert 処理よりも大幅に遅れています
 </div>
 
-ClickHouse は、`MergeTree` テーブル内のアクティブなデータパーツ数に対する設定済みの上限を `INSERT` が超える場合、`Too many parts` 例外をスローします。この例外には、多くの場合、`Merges are processing significantly slower than inserts` というメッセージも含まれます。
+MergeTree テーブルで `parts_to_throw_insert` 設定のしきい値に達しています。
 
-同期 `INSERT` は、それぞれ少なくとも 1 つのデータパーツを作成します。insert に複数のパーティション値の行が含まれている場合、ClickHouse は影響を受ける各パーティションに対して 1 つずつパーツを作成できます。バックグラウンドマージによって小さなパーツはより大きなパーツへと結合されますが、ClickHouse がマージする速度を上回るペースで新しいパーツが作成されると、アクティブなパーツ数は増え続けます。
-
-この例外は、次のいずれかの設定によってトリガーされる可能性があります。
-
-* [`parts_to_throw_insert`](/ja/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert): 単一のパーティション内のアクティブなパーツ数を制限します。
-* [`max_parts_in_total`](/ja/reference/settings/merge-tree-settings/max-parts#max_parts_in_total): テーブル内のアクティブなパーツ総数を制限します。
-
-<div id="diagnose-the-cause">
-  ## 原因を特定する
-</div>
-
-次のクエリを使って、アクティブなパーツ数が最も多いパーティションを特定します。
+次を使用すると、指定したテーブルのアクティブなパーツ数を監視できます。
 
 ```sql
-SELECT
-    database,
-    table,
-    partition_id,
-    count() AS active_parts,
-    sum(rows) AS rows,
-    formatReadableSize(sum(bytes_on_disk)) AS size_on_disk
-FROM system.parts
-WHERE active
-  AND database = '<database_name>'
-  AND table = '<table_name>'
-GROUP BY
-    database,
-    table,
-    partition_id
-ORDER BY active_parts DESC;
+select count(*) from system.parts where table = '<table_name>' and active == 1
 ```
 
-`max_parts_in_total` によって適用されるテーブル全体の上限を確認するには、テーブル内のすべてのアクティブなパーツを数えます。
+ClickHouse への挿入に関する主な要件は、1秒あたりにあまり多くの`INSERT`ステートメントを送信しないことです。理想的には、1秒に1回、または数秒に1回の挿入にしてください。
 
-```sql
-SELECT
-    database,
-    table,
-    count() AS active_parts,
-    sum(rows) AS rows,
-    formatReadableSize(sum(bytes_on_disk)) AS size_on_disk
-FROM system.parts
-WHERE active
-  AND database = '<database_name>'
-  AND table = '<table_name>'
-GROUP BY
-    database,
-    table;
-```
+したがって、1秒あたり10万行を挿入することはできますが、それは1つの大きな一括`INSERT`ステートメントによる場合に限られます。*MergeTree テーブルに対して1秒あたり何百、何千もの insert ステートメントを送信すると、必ず何らかのエラーが発生します。これは設定をいくつか調整しても変えられません。
 
-一般的な原因には次のようなものがあります。
+外部で多数の insert を1つの大きな一括 insert ステートメントにまとめられない場合は、*MergeTree テーブルの前に Buffer table を作成する必要があります。
 
-* 頻繁に行われる小規模な同期 insert。
-* カーディナリティの高いパーティション化キー。
-* 多数のパーティション値にまたがる行を含む insert。
-* ストレージのスループット制限、空きディスク容量の不足、またはその他のリソース競合により、バックグラウンドマージが追いつかない。
+1. insert が行われるたびに、`/var/lib/clickhouse/.../table_name/` にフォルダーが1つ作成されます。そのフォルダー内には各カラムごとに2つのファイルがあります。1つはデータ用 (圧縮済み) 、もう1つは索引用です。データはそれらのファイル内で主キー順に物理的にソートされています。これらのフォルダーは&#39;**パーツ**&#39;と呼ばれます。
 
-現在実行中のマージは [`system.merges`](/ja/reference/system-tables/merges) で確認でき、マージの失敗についてはサーバーログを確認できます。
+2. ClickHouse は、それらの小さなパーツをバックグラウンドでより大きなパーツへマージします。どのパーツをマージするかは、いくつかのルールに従って選択されます。2つ (またはそれ以上) のパーツがマージされると、より大きな1つのパーツが作成され、古いパーツは削除待ちのキューに入れられます。列挙されている設定を使うと、パーツのマージルールを微調整できます。マージ処理の目標は、各パーティションごとに1つの大きなパーツ (または、大きすぎてマージする価値のない少数の大きなパーツ) だけを残すことです。こちらの[コメント](https://github.com/yandex/ClickHouse/issues/1661#issuecomment-352739726)も確認してください。
 
-<div id="resolve-the-exception">
-  ## 例外の解決
-</div>
+3. 新しいパーツをあまりに速く作成すると (たとえば多数の小さな insert を行うことで) 、しかも ClickHouse がそれらを十分な速度でマージできない場合 (つまり、ClickHouse がマージできるより速く新しいパーツが作られる場合) 、&#39;Merges are processing significantly slower than inserts&#39; という例外が発生します。制限を引き上げることはできますが、その結果、ファイル数やディレクトリー数が多すぎることによる filesystem の問題 (inodes 制限など) が発生する可能性があります。
 
-<div id="batch-synchronous-inserts">
-  ### 同期 `INSERT` のバッチ化
-</div>
+4. 一度に多数のパーティションへ insert すると、問題は insert の影響を受けるパーティション数に応じて増幅されます。
 
-挿入する前に、クライアント側で行をバッチ化します。各バッチには少なくとも 1,000 行、理想的には 10,000～100,000 行を含めてください。1 秒あたりおよそ 1 回の同期 `INSERT` を目安にしてください。`INSERT` の回数を減らして 1 回あたりのサイズを大きくすると、作成されるパーツが減り、バックグラウンドマージに必要な処理も少なくなります。
+5. 列挙されている設定のいずれか、または max&#95;insert&#95;block&#95;size / max&#95;block&#95;size / insert&#95;format&#95;max&#95;block&#95;size / max&#95;client&#95;network&#95;bandwidth を使って ClickHouse の動作を調整することはできます。しかし、より良い解決策は、想定されるペースでデータを insert することです。想定されるペースは次のとおりです。**1〜2秒ごとに1回の insert、各 insert には1万〜50万行のデータを含める**。
 
-<div id="use-asynchronous-inserts">
-  ### 非同期挿入を使用する
-</div>
+6. したがって、&quot;Merges are processing significantly slower than inserts&quot; を解決する適切な方法は、1秒あたりの insert 数と各 insert の行数を調整することです。データが1行ずつ到着する場合は、batch insert を使って小さな insert をより大きな1つにまとめてください。一度に insert するデータが多すぎる場合は、大きすぎる insert を抑制してください。意味を十分に理解しているのでない限り、ClickHouse の internals は変更しないでください。
 
-クライアント側でのバッチ処理が現実的でない場合は、ClickHouseが受信データをサーバー側でまとめて処理できるよう、[非同期挿入](/ja/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)を使用してください。
+7. データが1秒あたり50万行を超える速度で到着する場合、おそらく必要なのは設定の調整ではなく、そのトラフィックを処理するためのクラスター内のサーバー増設です。
 
-```sql
-INSERT INTO <table_name>
-SETTINGS
-    async_insert = 1,
-    wait_for_async_insert = 1
-VALUES (...);
-```
-
-ClickHouse がデータの書き込みに成功した後でのみ insert を確認応答するよう、`wait_for_async_insert = 1` のままにしてください。
-
-<div id="review-the-partitioning-key">
-  ### パーティショニングキーを見直す
-</div>
-
-カーディナリティの低いパーティショニングキーを使用し、ユーザー識別子やリクエスト識別子のような値でパーティション化することは避けてください。ClickHouse は同じパーティション内でのみパーツをマージするため、パーティション数が多いと効率的にマージできなくなります。詳しくは、[パーティショニングキーの選び方](/ja/concepts/best-practices/partitioning-keys)を参照してください。
-
-<div id="investigate-merge-bottlenecks">
-  ### マージのボトルネックを調査する
-</div>
-
-データの挿入がすでに適切にバッチ化されている場合は、ストレージ性能、利用可能なディスク容量、競合するバックグラウンドタスクを確認してください。マージ速度は、ストレージシステム、テーブルエンジン、ソートキー、圧縮、および利用可能な CPU と I/O の処理能力に左右されます。
-
-<div id="avoid-increasing-part-limits-as-the-primary-fix">
-  ### 第一の対処としてパーツ数の制限引き上げは避けてください
-</div>
-
-`parts_to_throw_insert` や `max_parts_in_total` を増やしても、パーツが過剰に作成される原因そのものは解決できません。制限値を引き上げれば例外の発生を遅らせることはできますが、その一方でファイルシステムやメタデータのオーバーヘッドが増え、クエリパフォーマンスが低下する可能性があります。これらの設定を変更するのは、原因を特定し、システムに十分な余力があることを確認した後にしてください。
-
-<div id="verify-the-recovery">
-  ## 復旧を確認する
-</div>
-
-insert戦略またはパーティション化方式を変更したら、診断クエリをもう一度実行します。アクティブなパーツの数は安定し、その後、バックグラウンドでのマージが追いつくにつれて減少していくはずです。バックログが解消されるまで、insert の失敗、空きディスク容量、および [`system.merges`](/ja/reference/system-tables/merges) の監視を続けてください。
+8. バックグラウンドマージの速度は通常、ストレージ速度、使用している圧縮設定、MergeTree オプション (マージアルゴリズム - plain merge/aggregating/summing/collapsing など) 、および使用している sorting key に依存します。

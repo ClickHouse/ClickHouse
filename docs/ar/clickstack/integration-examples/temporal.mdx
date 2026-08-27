@@ -40,7 +40,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * إمكانية وصول عبر شبكة HTTP من ClickStack إلى Temporal Cloud الخاص بك
 
 <Steps>
-  <Step title="إنشاء مفتاح Temporal Cloud" id="create-temporal-cloud-key">
+  <Step>
+    #### إنشاء مفتاح Temporal Cloud
+
     تأكد من أن لديك مفتاح واجهة برمجة تطبيقات لـ Temporal Cloud. يمكنك إنشاؤه باتباع [دليل المصادقة](https://docs.temporal.io/production-deployment/cloud/metrics/openmetrics/api-reference#authentication) في وثائق Temporal.
 
     <Warning>
@@ -50,7 +52,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Warning>
   </Step>
 
-  <Step title="أنشئ تهيئة مخصصة لـ OTel collector" id="custom-otel">
+  <Step>
+    #### أنشئ تهيئة مخصصة لـ OTel collector
+
     يتيح لك ClickStack توسيع تهيئة OpenTelemetry collector الأساسية من خلال إرفاق ملف تهيئة مخصص وضبط متغير بيئة. وتُدمج التهيئة المخصصة مع التهيئة الأساسية التي يديرها HyperDX عبر OpAMP.
 
     أنشئ ملفًا باسم `temporal-metrics.yaml` بالتكوين التالي:
@@ -107,7 +111,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="تهيئة ClickStack لتحميل إعدادات مخصصة" id="load-custom">
+  <Step>
+    #### تهيئة ClickStack لتحميل إعدادات مخصصة
+
     لتمكين إعدادات مخصصة للمجمّع في عملية نشر ClickStack الحالية، يجب عليك:
 
     1. تركيب ملف الإعدادات المخصص على المسار `/etc/otelcol-contrib/custom.config.yaml`
@@ -147,7 +153,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="تحقّق من المقاييس في HyperDX" id="verifying-metrics">
+  <Step>
+    #### تحقّق من المقاييس في HyperDX
+
     بعد إكمال الإعداد، سجّل الدخول إلى HyperDX وتحقّق من تدفّق المقاييس:
 
     1. انتقل إلى مستكشف المقاييس
@@ -165,11 +173,13 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 لمساعدتك على بدء مراقبة Temporal Cloud باستخدام ClickStack، نوفر بعض التصورات المرئية النموذجية لـ Temporal Metrics.
 
 <Steps>
-  <Step title="تنزيل ملف إعداد لوحة المعلومات" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">تنزيل ملف إعداد لوحة المعلومات</TrackedLink>.
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">تنزيل</TrackedLink> ملف إعداد لوحة المعلومات
   </Step>
 
-  <Step title="استيراد لوحة المعلومات المُعدّة مسبقًا" id="import-dashboard">
+  <Step>
+    #### استيراد لوحة المعلومات المُعدّة مسبقًا
+
     1. افتح HyperDX وانتقل إلى قسم Dashboards
     2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى من قائمة النقاط الثلاث
 
@@ -180,7 +190,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/temporal/import-temporal-metrics-dashboard.webp" alt="مربع حوار إنهاء الاستيراد" />
   </Step>
 
-  <Step title="عرض لوحة المعلومات" id="created-dashboard">
+  <Step>
+    #### عرض لوحة المعلومات
+
     سيتم إنشاء لوحة المعلومات مع إعداد جميع التصورات المرئية مسبقًا:
 
     <Image img="/images/clickstack/temporal/temporal-metrics-dashboard.webp" alt="لوحة معلومات Temporal Metrics" />
@@ -287,4 +299,4 @@ docker exec <container> cat /var/log/otel-collector.log | grep -i error
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.
+يستفيد هذا الدليل من OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. بالنسبة إلى عمليات النشر في بيئة الإنتاج، نوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات الإنتاج.

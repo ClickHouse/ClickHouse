@@ -41,36 +41,36 @@ Langfuse 提供灵活的部署选项，以满足不同的安全性和基础设�
 
 Langfuse 仅依赖开源组件，可部署在本地、云基础设施或私有化环境中：
 
-* **ClickHouse**：存储高吞吐量的可观测性数据 (链路追踪、spans、generations、评分) ，支持快速聚合分析并为仪表盘提供支撑。
+* **ClickHouse**：存储高吞吐量的可观测性数据 (链路追踪、spans、generations、scores) ，支持快速聚合分析并为仪表盘提供支撑。
 * **Postgres**：存储事务性数据，例如用户账户、项目配置和提示词定义。
 * **Redis**：处理事件队列和缓存。
 * **S3/Blob Storage**：存储大型载荷和原始事件数据。
 
 ```mermaid
 flowchart TB
-    User["UI, API, SDKs"]
-    subgraph vpc["VPC"]
-        Web["Web Server<br/>(langfuse/langfuse)"]
-        Worker["Async Worker<br/>(langfuse/worker)"]
-        Postgres@{ img: "https://langfuse.com/images/logos/postgres_icon.svg", label: "Postgres - OLTP\n(Transactional Data)", pos: "b", w: 60, h: 60, constraint: "on" }
-        Cache@{ img: "https://langfuse.com/images/logos/redis_icon.png", label: "Redis\n(Cache, Queue)", pos: "b", w: 60, h: 60, constraint: "on" }
-        ClickHouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "ClickHouse - OLAP\n(Observability Data)", pos: "b", w: 60, h: 60, constraint: "on" }
-        S3@{ img: "https://langfuse.com/images/logos/s3_icon.svg", label: "S3 / Blob Storage\n(Raw events, multi-modal attachments)", pos: "b", w: 60, h: 60, constraint: "on" }
+    User["UI、API、SDKs"]
+    subgraph vpc ["VPC"]
+        Web["Web 服务器<br/>(langfuse/langfuse)"]
+        Worker["异步工作线程<br/>(langfuse/worker)"]
+        Postgres@{ img: "https://langfuse.com/images/logos/postgres_icon.svg", label: "Postgres - OLTP\n(事务型数据)", pos: "b", w: 60, h: 60, constraint: "on" }
+        Cache@{ img: "https://langfuse.com/images/logos/redis_icon.png", label: "Redis\n(缓存、队列)", pos: "b", w: 60, h: 60, constraint: "on" }
+        Clickhouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "Clickhouse - OLAP\n(可观测性数据)", pos: "b", w: 60, h: 60, constraint: "on" }
+        S3@{ img: "https://langfuse.com/images/logos/s3_icon.svg", label: "S3 / Blob Storage\n(原始事件、多模态附件)", pos: "b", w: 60, h: 60, constraint: "on" }
     end
-    LLM["LLM API/Gateway<br/>(optional; BYO; can be same VPC or VPC-peered)"]
+    LLM["LLM API/网关<br/>(可选；BYO；可位于同一 VPC 中或与 VPC 建立对等连接)"]
 
     User --> Web
     Web --> S3
     Web --> Postgres
     Web --> Cache
-    Web --> ClickHouse
-    Web -..->|"optional for playground"| LLM
+    Web --> Clickhouse
+    Web -..->|"playground 场景下可选"| LLM
 
     Cache --> Worker
-    Worker --> ClickHouse
+    Worker --> Clickhouse
     Worker --> Postgres
     Worker --> S3
-    Worker -..->|"optional for evals"| LLM
+    Worker -..->|"evals 场景下可选"| LLM
 ```
 
 <div id="features">

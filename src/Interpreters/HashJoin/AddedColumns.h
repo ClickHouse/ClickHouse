@@ -16,8 +16,6 @@ namespace ErrorCodes
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-class MatchedRowsStats;
-
 struct JoinOnKeyColumns
 {
     Names key_names;
@@ -148,8 +146,7 @@ public:
         ExpressionActionsPtr additional_filter_expression_,
         const std::vector<std::pair<size_t, size_t>> & additional_filter_required_rhs_pos_,
         bool is_asof_join,
-        bool is_join_get_,
-        bool record_refs_for_stats)
+        bool is_join_get_)
         : left_block(left_block_.getSourceBlock())
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
@@ -164,7 +161,7 @@ public:
 
         if constexpr (lazy)
         {
-            record_row_refs = num_columns_to_add > 0 || record_refs_for_stats;
+            has_columns_to_add = num_columns_to_add > 0;
             lazy_output.reserve(rows_to_add);
         }
 
@@ -245,7 +242,7 @@ public:
         }
         else
         {
-            if (record_row_refs)
+            if (has_columns_to_add)
                 lazy_output.addDefault();
         }
     }
@@ -276,12 +273,7 @@ public:
     // The default row is represented by a zero ref word, so that fixed-size blocks can be generated sequentially,
     // default_count cannot represent the position of the row
     LazyOutput lazy_output;
-    bool record_row_refs = false;
-
-    /// Non-owning; set only under EXPLAIN ANALYZE
-    MatchedRowsStats * match_stats = nullptr;
-
-    size_t matched_left_rows = 0;
+    bool has_columns_to_add;
 
     void reserve(bool need_replicate)
     {

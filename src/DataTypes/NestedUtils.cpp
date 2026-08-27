@@ -7,7 +7,6 @@
 #include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
@@ -465,46 +464,21 @@ using NameToDataType = std::map<String, DataTypePtr>;
 NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
 {
     std::unordered_map<String, NamesAndTypesList> nested;
-    /// A subcolumn entry's `type_in_storage` is the type in metadata, while a plain entry carries the
-    /// type its caller resolved, which for a part being read is the part's own (possibly older) type.
-    std::unordered_map<String, NameSet> contributed_by_subcolumn;
     for (const auto & name_type : names_and_types)
     {
-        /// Group by the column in storage so a subcolumn contributes its member and never itself:
-        /// `c2.null` as an element name would build an invalid Nested type.
-        auto name_in_storage = name_type.getNameInStorage();
-        const auto & type_in_storage = name_type.getTypeInStorage();
+        /// Skip subcolumns (e.g. `c0.c2.null` derived from `c0.c2 Array(Nullable(Tuple()))`).
+        /// They are not real flat-nested columns like `n.a Array(T)`, `n.b Array(T)`.
+        if (name_type.isSubcolumn())
+            continue;
 
-        const auto * type_arr = typeid_cast<const DataTypeArray *>(type_in_storage.get());
+        const auto * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
 
         /// Ignore true Nested type, but try to unite flatten arrays to Nested type.
-        if (!isNested(type_in_storage) && type_arr)
+        if (!isNested(name_type.type) && type_arr)
         {
-            auto split = splitName(name_in_storage);
-            if (split.second.empty())
-                continue;
-
-            auto & elems = nested[split.first];
-            /// A member is contributed once even if both it and its subcolumns are requested.
-            if (!elems.contains(split.second))
-            {
-                elems.emplace_back(split.second, type_arr->getNestedType());
-                if (name_type.isSubcolumn())
-                    contributed_by_subcolumn[split.first].insert(split.second);
-            }
-            /// A plain entry replaces a subcolumn entry's contribution, never the other way round, so
-            /// the element type describes the same data the columns in this list carry.
-            else if (!name_type.isSubcolumn() && contributed_by_subcolumn[split.first].erase(split.second))
-            {
-                for (auto & elem : elems)
-                {
-                    if (elem.name == split.second)
-                    {
-                        elem = NameAndTypePair{split.second, type_arr->getNestedType()};
-                        break;
-                    }
-                }
-            }
+            auto split = splitName(name_type.name);
+            if (!split.second.empty())
+                nested[split.first].emplace_back(split.second, type_arr->getNestedType());
         }
     }
 
@@ -746,21 +720,6 @@ DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements)
             ++it;
 
             type = type_tuple->getElement(*pos);
-        }
-        else if (const auto * type_map = typeid_cast<const DataTypeMap *>(type.get()))
-        {
-            /// `keys` and `values` are tuple elements of the Map's nested type, so they are on the
-            /// path like any other tuple element. Their array level is re-created by the caller.
-            if (it == tuple_elements.end())
-                break;
-
-            const auto & nested_tuple = assert_cast<const DataTypeTuple &>(*type_map->getNestedDataType());
-            auto pos = nested_tuple.tryGetPositionByName(*it);
-            if (!pos)
-                break;
-            ++it;
-
-            type = nested_tuple.getElement(*pos);
         }
         else
             break;

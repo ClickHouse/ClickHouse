@@ -28,7 +28,9 @@ Dans ce guide, vous apprendrez à créer un agent IA web avec [Streamlit](https:
 Vous pouvez suivre les étapes ci-dessous pour créer votre application Streamlit.
 
 <Steps>
-  <Step title="Installer les bibliothèques" id="install-libraries">
+  <Step>
+    ## Installer les bibliothèques
+
     Installez les bibliothèques requises en exécutant les commandes suivantes :
 
     ```bash
@@ -36,7 +38,9 @@ Vous pouvez suivre les étapes ci-dessous pour créer votre application Streamli
     ```
   </Step>
 
-  <Step title="Créer le fichier utilitaire" id="create-utilities">
+  <Step>
+    ## Créer le fichier utilitaire
+
     Créez un fichier `utils.py` contenant deux fonctions utilitaires. La première est un
     générateur asynchrone destiné à gérer les réponses en flux de
     l’agent Agno. La seconde est une fonction permettant d’appliquer des styles à l’application Streamlit :
@@ -63,7 +67,9 @@ Vous pouvez suivre les étapes ci-dessous pour créer votre application Streamli
     ```
   </Step>
 
-  <Step title="Configurer les identifiants" id="setup-credentials">
+  <Step>
+    ## Configurer les identifiants
+
     Définissez votre clé API Anthropic comme variable d’environnement :
 
     ```bash
@@ -78,7 +84,9 @@ Vous pouvez suivre les étapes ci-dessous pour créer votre application Streamli
     </Info>
   </Step>
 
-  <Step title="Importez les bibliothèques nécessaires" id="import-libraries">
+  <Step>
+    ## Importez les bibliothèques nécessaires
+
     Commencez par créer le fichier principal de votre application Streamlit (par ex. `app.py`) et ajoutez les importations :
 
     ```python
@@ -102,7 +110,9 @@ Vous pouvez suivre les étapes ci-dessous pour créer votre application Streamli
     ```
   </Step>
 
-  <Step title="Définir la fonction de streaming de l’agent" id="define-agent-function">
+  <Step>
+    ## Définir la fonction de streaming de l’agent
+
     Ajoutez la fonction principale de l’agent qui se connecte au [SQL playground de ClickHouse](https://sql.clickhouse.com/) et diffuse les réponses en continu :
 
     ```python
@@ -152,7 +162,9 @@ Vous pouvez suivre les étapes ci-dessous pour créer votre application Streamli
     ```
   </Step>
 
-  <Step title="Ajouter des fonctions wrapper synchrones" id="add-wrapper-functions">
+  <Step>
+    ## Ajouter des fonctions wrapper synchrones
+
     Ajoutez des fonctions utilitaires pour gérer le streaming asynchrone dans Streamlit :
 
     ```python
@@ -174,7 +186,9 @@ Vous pouvez suivre les étapes ci-dessous pour créer votre application Streamli
     ```
   </Step>
 
-  <Step title="Créer l’interface Streamlit" id="create-interface">
+  <Step>
+    ## Créer l’interface Streamlit
+
     Ajoutez les composants de l’interface Streamlit ainsi que la fonctionnalité de chat :
 
     ```python
@@ -203,7 +217,9 @@ Vous pouvez suivre les étapes ci-dessous pour créer votre application Streamli
     ```
   </Step>
 
-  <Step title="Lancez l’application" id="run-application">
+  <Step>
+    ## Lancez l’application
+
     Pour démarrer votre application web d’agent IA ClickHouse, vous pouvez exécuter la
     commande suivante dans votre terminal :
 

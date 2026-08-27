@@ -35,10 +35,6 @@ Les moteurs de table des familles [`MergeTree`](/fr/reference/engines/table-engi
 peuvent stocker les données dans `S3`, `AzureBlobStorage`, `HDFS` (non pris en charge) en utilisant respectivement un disque de type `s3`,
 `azure_blob_storage`, `hdfs` (non pris en charge).
 
-<Note>
-  Le type de disque `s3` peut également être utilisé avec des fournisseurs de stockage objet compatibles S3, tels qu’Alibaba Cloud Object Storage Service. Configurez `endpoint` avec le point de terminaison compatible S3 du fournisseur et tenez compte de toute exigence de compatibilité propre à ce fournisseur.
-</Note>
-
 La configuration du disque nécessite :
 
 1. Une section `type`, égale à l&#39;une des valeurs `s3`, `azure_blob_storage`, `hdfs` (non pris en charge), `local_blob_storage`, `web`.
@@ -53,7 +49,7 @@ Elle nécessite de spécifier :
 <br />
 
 Il est également possible de spécifier `metadata_type` (sa valeur par défaut est `local`) ; il peut aussi être défini sur `plain`, `web` et, à partir de `24.4`, `plain_rewritable`.
-L&#39;utilisation du type de métadonnées `plain` est décrite dans la [section sur le stockage simple](/fr/concepts/features/configuration/server-config/storing-data#plain-storage). Le type de métadonnées `web` ne peut être utilisé qu&#39;avec le type de stockage objet `web`. Le type de métadonnées `local` stocke les fichiers de métadonnées localement (chaque fichier de métadonnées contient la correspondance avec les fichiers du stockage objet, ainsi que des méta-informations supplémentaires à leur sujet).
+L&#39;utilisation du type de métadonnées `plain` est décrite dans la [section sur le stockage plain](/fr/concepts/features/configuration/server-config/storing-data#plain-storage). Le type de métadonnées `web` ne peut être utilisé qu&#39;avec le type de stockage objet `web`. Le type de métadonnées `local` stocke les fichiers de métadonnées localement (chaque fichier de métadonnées contient la correspondance avec les fichiers du stockage objet, ainsi que des méta-informations supplémentaires à leur sujet).
 
 Par exemple :
 
@@ -1113,7 +1109,7 @@ SETTINGS storage_policy='web';
 | `remote_fs_read_backoff_threashold` | Le temps d’attente maximal lors d’une tentative de lecture de données depuis le disque distant  | `10000` secondes  |
 | `remote_fs_read_backoff_max_tries`  | Le nombre maximal de tentatives de lecture avec backoff                                         | `5`               |
 
-Si une requête échoue avec une exception `DB:Exception Unreachable URL`, vous pouvez essayer d’ajuster les paramètres suivants : [http&#95;connection&#95;timeout](/fr/reference/settings/session-settings/http#http_connection_timeout), [http&#95;receive&#95;timeout](/fr/reference/settings/session-settings/http#http_receive_timeout), [keep&#95;alive&#95;timeout](/fr/reference/settings/server-settings/settings/other#keep_alive_timeout).
+Si une requête échoue avec une exception `DB:Exception Unreachable URL`, vous pouvez essayer d’ajuster les paramètres suivants : [http&#95;connection&#95;timeout](/fr/reference/settings/session-settings#http_connection_timeout), [http&#95;receive&#95;timeout](/fr/reference/settings/session-settings#http_receive_timeout), [keep&#95;alive&#95;timeout](/fr/reference/settings/server-settings/settings#keep_alive_timeout).
 
 Pour obtenir les fichiers à téléverser, exécutez :
 `clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (`--metadata-path` peut être trouvé dans la requête `SELECT data_paths FROM system.tables WHERE name = 'table_name'`).

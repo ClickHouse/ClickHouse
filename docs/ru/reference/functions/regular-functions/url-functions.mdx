@@ -585,8 +585,7 @@ SELECT
 
 Добавленный в: v1.1.0
 
-Удаляет из URL первое вхождение `name=value` для каждого запрошенного параметра.
-Сопоставляются только параметры, записанные в виде `name=`, поэтому параметр-флаг без значения остаётся неизменным; например, `cutURLParameter('http://bigmir.net/?a&c=d', 'a')` возвращает URL без изменений.
+Удаляет параметр `name` из URL, если такой параметр присутствует.
 Эта функция не кодирует и не декодирует символы в именах параметров; например, `Client ID` и `Client%20ID` считаются разными именами параметров.
 
 **Синтаксис**
@@ -602,7 +601,7 @@ cutURLParameter(url, name)
 
 **Возвращаемое значение**
 
-URL, из которого удалено первое вхождение `name=value` для каждого запрошенного параметра. [`String`](/ru/reference/data-types/string)
+URL без параметра `name`. [`String`](/ru/reference/data-types/string)
 
 **Примеры**
 
@@ -1099,6 +1098,9 @@ firstSignificantSubdomain(url)
 SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
 ```
 
+```response title=Response
+```
+
 <div id="firstSignificantSubdomainCustomRFC">
   ## firstSignificantSubdomainCustom
 </div>
@@ -1218,7 +1220,7 @@ fragment(url)
 **Пример использования**
 
 ```sql title=Query
-SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-clickhouse-service');
+SELECT fragment('https://clickhouse.com/docs/getting-started/quick-start/cloud#1-create-a-clickhouse-service');
 ```
 
 ```response title=Response
@@ -1290,7 +1292,7 @@ path(url)
 **Пример использования**
 
 ```sql title=Query
-SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value');
+SELECT path('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value');
 ```
 
 ```response title=Response
@@ -1326,7 +1328,7 @@ pathFull(url)
 **Пример использования**
 
 ```sql title=Query
-SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value#section');
+SELECT pathFull('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value#section');
 ```
 
 ```response title=Response
@@ -1551,7 +1553,7 @@ topLevelDomain(url)
 
 **Возвращаемое значение**
 
-Возвращает доменное имя, если входную строку можно разобрать как URL. В противном случае возвращает пустую строку. [`String`](/ru/reference/data-types/string)
+Возвращает имя домена, если входную строку можно разобрать как URL. В противном случае возвращает пустую строку. [`String`](/ru/reference/data-types/string)
 
 **Примеры**
 
