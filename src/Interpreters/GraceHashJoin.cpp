@@ -832,7 +832,8 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
 GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bucket_id, size_t reserve_num)
 {
-    auto join = std::make_unique<HashJoin>(table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id);
+    auto join = std::make_unique<HashJoin>(
+        table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id, /*is_concurrent_hash_join*/ false);
     /// A bucket that outgrows memory is rebucketed, which reads its right blocks back out - and that
     /// can happen at any point, so these blocks are never dropped.
     join->keepRightBlocksForAnotherAlgorithm();

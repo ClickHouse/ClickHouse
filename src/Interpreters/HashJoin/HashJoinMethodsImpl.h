@@ -214,6 +214,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         std::move(added_columns.offsets_to_replicate),
         std::move(added_columns.filter),
         std::move(added_columns.matched_rows),
+        added_columns.lazy_output.hash_table_matches,
         std::move(block),
         HashJoinResult::Properties{
             *join.table_join,
