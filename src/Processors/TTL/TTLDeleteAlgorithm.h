@@ -18,6 +18,8 @@ public:
 
 private:
     size_t rows_removed = 0;
+    /// Reused across blocks of one merge, so the per-block extraction does not reallocate.
+    PaddedPODArray<Int64> timestamps;
 };
 
 }

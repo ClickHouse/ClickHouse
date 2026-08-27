@@ -2,16 +2,6 @@ aggregating	2	0	2106-01-01 00:00:00
 aggregating	3	5	2020-01-01 00:00:00
 summing	2	0	2	2106-01-01 00:00:00
 summing	3	5	1	2020-01-01 00:00:00
-coalescing	2	1	2	2106-01-01 00:00:00
-coalescing	3	1	9	2020-01-01 00:00:00
-graphite	sum_2	0	2106-01-01 00:00:00
-graphite	sum_3	5	2020-01-01 00:00:00
-blocked	1	0
-unblocked	0
-patched	2	0	2106-01-01 00:00:00
-patched	3	7	2020-01-01 00:00:00
-patched vertical	1990	0
-patched vertical algorithm	['Vertical']
 ordinary	1	5	2020-01-01 00:00:00
 ordinary	2	5	2020-01-01 00:00:00
 ordinary ttl info	['1970-01-01 00:00:00']	['1970-01-01 00:00:00']

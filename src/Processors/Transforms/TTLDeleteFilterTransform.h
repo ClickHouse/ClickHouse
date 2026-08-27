@@ -43,7 +43,7 @@ public:
         bool force,
         /// Include the rows-WHERE TTLs even when no source part reported an expired row. Set for
         /// merges whose output can hold a value no source row had, where that report says nothing.
-        bool force_rows_where_ttl = false);
+        bool force_rows_where_ttl);
 
     TTLDeleteFilterTransform(const SharedHeader & header_, std::shared_ptr<const SharedState> shared_state_);
 

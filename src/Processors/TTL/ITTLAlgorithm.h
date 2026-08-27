@@ -38,12 +38,23 @@ public:
     /** This function is needed to avoid a conflict between already calculated columns and columns that needed to execute TTL.
       * If result column is absent in block, all required columns are copied to new block and expression is executed on new block.
       */
+    /// Resolve the column type once and fill `timestamps` for the whole block. Prefer this over
+    /// `getTimestampByIndex` in a loop: it does one type dispatch instead of one per row.
+    static void extractTimestamps(
+        const IColumn * column, size_t num_rows, const DateLUTImpl & date_lut, PaddedPODArray<Int64> & timestamps);
+
     static ColumnPtr executeExpressionAndGetColumn(
         const ExpressionActionsPtr & expression, const Block & block, const String & result_column);
 
 protected:
     bool isTTLExpired(time_t ttl) const;
     Int64 getTimestampByIndex(const IColumn * column, size_t index) const;
+
+    /// Block-at-a-time form of the above, with the algorithm's own time zone.
+    void extractTimestamps(const IColumn * column, size_t num_rows, PaddedPODArray<Int64> & timestamps) const
+    {
+        extractTimestamps(column, num_rows, date_lut, timestamps);
+    }
 
     const TTLExpressions ttl_expressions;
     const TTLDescription description;

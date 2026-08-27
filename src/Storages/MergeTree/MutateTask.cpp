@@ -2672,7 +2672,8 @@ private:
                 ctx->new_data_part,
                 NamesAndTypesList{} /*expired_columns*/,
                 ctx->time_of_mutation,
-                true);
+                /*force_=*/ true,
+                /*force_rows_where_ttl_=*/ false);
             subqueries = transform->getSubqueries();
             builder->addTransform(std::move(transform));
         }
@@ -3071,7 +3072,8 @@ private:
                     ctx->new_data_part,
                     NamesAndTypesList{} /*expired_columns*/,
                     ctx->time_of_mutation,
-                    true);
+                    /*force_=*/ true,
+                    /*force_rows_where_ttl_=*/ false);
                 subqueries = transform->getSubqueries();
                 builder->addTransform(std::move(transform));
             }
