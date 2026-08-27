@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -45,13 +46,24 @@ public:
         return function_name;
     }
 
+    /// The `IgnoreSet` variants are called with the left operand alone during type analysis, but
+    /// `inIgnoreSet(x, set)` written explicitly stays valid, hence the variadic arity.
+    bool isVariadic() const override { return ignore_set; }
+
     size_t getNumberOfArguments() const override
     {
-        return 2;
+        return ignore_set ? 0 : 2;
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (ignore_set && (arguments.empty() || arguments.size() > 2))
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
+                getName(),
+                arguments.size());
+
         if (arguments[0]->hasDynamicStructure())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 

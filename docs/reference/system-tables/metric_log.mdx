@@ -2058,6 +2058,16 @@ CurrentMetric_DistributedFilesToInsert:                          0
 **Schema**
 This table can be configured with different schema types using the XML tag `<schema_type>`. The default schema type is `wide`, where each metric or profile event is stored as a separate column. This schema is the most performant and efficient for single-column reads.
 
+The `bucketed` schema stores all profile events and current metrics in a single `metrics` column of type [Map](/reference/data-types/map)([Enum16](/reference/data-types/enum), [Int64](/reference/data-types/int-uint)), so the table consists of a few columns instead of thousands. The `Map` uses the bucketed serialization (`map_serialization_version = 'with_buckets'`) with a constant number of 128 buckets, so reading a single metric reads only one of the 128 buckets. Zero values are not stored: reading a missing key returns `0`. Every metric is also exposed through an `ALIAS` column named as the metric itself (for example, `ProfileEvent_Query UInt64 ALIAS metrics['ProfileEvent_Query']`), so all queries written for the `wide` schema continue to work. Profile events are stored as increments during the collection interval, and current metrics are stored as values at the moment of collection.
+
+```xml
+<clickhouse>
+    <metric_log>
+        <schema_type>bucketed</schema_type>
+    </metric_log>
+</clickhouse>
+```
+
 The `transposed` schema stores data in a format similar to `system.asynchronous_metric_log`, where metrics and events are stored as rows. This schema is useful for low-resource setups because it reduces resource consumption during merges.
 
 **Histograms**

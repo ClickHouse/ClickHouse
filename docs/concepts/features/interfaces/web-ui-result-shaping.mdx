@@ -1,0 +1,110 @@
+---
+description: 'Documentation for sorting, filtering and paging a result in the built-in Web SQL UI (`/play`)'
+sidebarTitle: 'Web UI Result Shaping'
+slug: /interfaces/web-ui-result-shaping
+title: 'Web UI Sorting, Filtering and Pagination'
+doc_type: 'reference'
+sidebar: false
+---
+
+The built-in Web SQL UI (`play.html`, served at the [`/play`](/concepts/features/interfaces/http) path of any ClickHouse HTTP port) can sort a result by its columns, filter it by their values, and page through it — all without editing the query.
+
+None of this happens in the browser. Each change re-runs the query with the corresponding query-construction setting, which the server materializes by wrapping the query as a derived table with an outer `ORDER BY`, `WHERE` and `LIMIT`. The result on screen is therefore the sorted, filtered, paged result of the whole query, not a rearrangement of the rows the page happened to hold.
+
+## Sorting {#sorting}
+
+Two arrows appear at the right of every column header: ▲ sorts the result by that column ascending, ▼ sorts it descending. Clicking an arrow activates that sort and re-runs the query; clicking the arrow of the direction that is already active deactivates it, and clicking the arrow of the other direction switches to it. The arrows are real buttons, so keyboard users can tab to them and activate them with the keyboard, and each exposes its state to assistive technology (the header itself carries `aria-sort`).
+
+On devices with a hovering pointer (a mouse) the arrows are shown only while the header is hovered or an arrow is focused, so they stay out of the way otherwise; on touch and other coarse-pointer devices, which have no hover, they are always shown so they can be tapped directly. A column that is part of the sort shows both of its arrows without hovering — one so the sort is readable at a glance, the other because reversing the direction is the likeliest next action.
+
+Every icon in a column header reads the same way, whichever feature it controls: it is muted while that feature is not in effect on the column, and drawn in the color reserved for controls in effect — magenta in the light theme, yellow in the dark one — once it is, which is also when it stays shown without hovering. Muting is a loss of color, never of transparency, so an icon never looks faded over a column name or over the color coding of the cells.
+
+### Sorting by several columns {#sorting-by-several-columns}
+
+Activating a sort replaces the current one: the previously sorted columns are deactivated, and the clicked column becomes the only sort key. Hold <kbd>Shift</kbd> while clicking to keep the sort keys already in effect and add this column after them, which is the order the `ORDER BY` uses — the first key decides, and each later key breaks the ties of the ones before it. With more than one sort key, every active arrow also shows its column's position in that order as a superscript (▼¹, ▲², …).
+
+<kbd>Shift</kbd> on a column that is already a sort key only changes its direction and keeps its position in the order. Deactivating a column drops that column alone and leaves the remaining keys in place.
+
+## Filtering {#filtering}
+
+### From a column header {#filtering-from-a-column-header}
+
+A funnel icon appears in every column header, next to the sort arrows and revealed the same way. Clicking it opens an input for a predicate on that column, with an apply button (▶) glued to its right; the placeholder suggests the shape a predicate takes for the column's type — `> 10` for a number, `LIKE '%test%'` for a string. The input opens inside the header cell, which grows a second line to make room for it — the same line the filter itself is shown on once it is set, so a filter is edited where it is read. What is typed is the part that follows the column name, so `> 10` becomes `WHERE column > 10`, and any expression the server accepts there works — `BETWEEN 1 AND 5`, `IN (1, 2, 3)`, `IS NOT NULL`, `% 2 = 0`.
+
+Pressing the apply button (or <kbd>Enter</kbd>) applies the filter and re-runs the query; <kbd>Esc</kbd>, or clicking or tabbing anywhere else, abandons the edit and puts the input away. The apply button is inactive while there is nothing to apply — an empty box on a column that carries no filter — but stays active for an empty box on a column that does carry one, since emptying the box and applying is how a filter is removed from the input. Filters on several columns are combined with `AND`.
+
+### From a cell {#filtering-from-a-cell}
+
+Selecting a cell also puts a funnel icon next to its copy icon, when a filter on that value is something the column supports. Clicking it offers the comparisons that fit:
+
+| Value | Offered |
+|-------|---------|
+| A number | `=`, `!=`, `>`, `<`, `>=`, `<=` |
+| A date or a time (`Date`, `Date32`, `DateTime`, `DateTime64`) | `=`, `!=`, `>`, `<`, `>=`, `<=` |
+| A string of at most 100 characters | `=`, `!=`, `contains` — an empty string gets only `=` and `!=`, since every string contains it |
+| A `Bool` | `true`, `false` — the two values themselves, rather than a comparison against this cell's |
+| An `Enum` | `=`, `!=` — a partial match over a closed set of names is not a useful filter |
+| `NULL` | `IS NULL`, `IS NOT NULL` |
+
+Picking one applies it immediately. A date, a time or an enum is compared against the very text the server rendered it as, which ClickHouse parses back as the column's own type (for an enum, the name of the value). `contains` becomes a `LIKE` pattern with the value's own `%` and `_` escaped, so it matches the value literally. A cell whose value is none of the above — an array, a tuple, a map, a long text — offers no menu; its column can still be filtered from the header input.
+
+### The filter in effect {#the-filter-in-effect}
+
+A column that is being filtered shows its predicate under its name for as long as it is set, so it is never invisible that the rows on screen are a subset of the result; its funnel moves down beside it, into the bottom left corner of the header. Clicking the predicate reopens the input on it, in its place; the ✕ next to it removes the filter, as does applying an empty input. Both re-run the query.
+
+There is one filter per column, wherever it came from: setting a filter from a cell replaces whatever the header input had put there, and the header always displays the filter in effect.
+
+A filtered result that comes back empty keeps its column headers (instead of the vertical layout an empty result is otherwise shown in), so the filter that matched nothing can be seen and taken off again.
+
+## Pagination {#pagination}
+
+A result is displayed up to a limit — 1000 rows, or fewer for a very wide result. When a result is cut off at that limit there is more of it to see, and a pager appears under the table:
+
+```text
+Page: 1 2 …   Per page: 1000
+```
+
+Clicking a page number sets the page size to the display limit and that page as the [`page`](/reference/settings/session-settings/other#page) setting, then re-runs the query; the server translates the page into the corresponding `OFFSET`. The pager then stays for as long as the result is paged, even though each page is exactly full and so no longer looks cut off.
+
+The number of pages is not shown, because it is not known — counting the rows of the result would mean running a second query. The pager lists the ten pages before the current one, the current one, and the next one, followed by `…`. Clicking `…` turns it into an input for any page number, which is taken when the input loses focus (pressing <kbd>Enter</kbd> does that).
+
+The next page is offered only while the current one is full. A page that came back with fewer rows than fit on it is the end of the result, so there is no page after it. (A result whose length happens to be an exact multiple of the page size still offers one more page, which then comes back empty: telling that case apart would again mean counting the rows.)
+
+`Per page` shows how many rows a page holds, and is edited the same way: click the value and type another. It cannot exceed what the result can display at once — a larger page would return rows the table then truncates away, and the next page would start beyond them, so paging on would silently skip the rows that never fit; a bigger number is taken as that maximum, which is then what the value shows. Changing it starts again at the first page, since pages of a new size hold different rows.
+
+Changing the sort or any filter goes back to the first page: both change which rows the result has, or in what order, so the page the user was on no longer denotes the same slice of it.
+
+## How it is applied {#how-it-is-applied}
+
+The shape is sent as the [`order`](/reference/settings/session-settings/other#order), [`filter`](/reference/settings/session-settings/other#filter), [`limit`](/reference/settings/session-settings/other#limit) and [`page`](/reference/settings/session-settings/other#page) query-construction settings. Because the server applies them to the parsed query rather than to its text, they compose with whatever the query already is: a `UNION`, a trailing `FORMAT` clause, or its own `ORDER BY` and `LIMIT` all keep working, and the query in the editor is never rewritten.
+
+Column names are passed as quoted identifiers, so a result column whose name is an expression (`count()`) or carries a space is a usable sort or filter key.
+
+## When it is available {#when-it-is-available}
+
+Shaping is offered only for the statements those settings shape, i.e. `SELECT` and `UNION` queries (including a query that begins with a `WITH` clause or with `FROM`). It is not offered for `SHOW`, `DESCRIBE`, `EXISTS` or `EXPLAIN`: those do produce a table, but the settings do not apply to them, so a control there would promise a result the rows do not have.
+
+A shape applies to the result of a single statement, so it is not offered for a "Run all" multi-statement run, whose statements are separate queries with separate columns.
+
+A shape belongs to the statement it was made on. Running a different statement — after editing the query, or moving the cursor to another statement of a multi-statement editor — drops it, rather than applying an `ORDER BY` or a `WHERE` on a column the new statement may not have.
+
+It belongs to the context that statement was run in as well: the selected database, the server and user it was sent to, and the values of its query parameters. The same text names different columns after any of those change — `SELECT * FROM events` after switching databases, or `SELECT * FROM {tbl:Identifier}` after editing the parameter — so the shape is dropped there too, and the next run returns the unshaped result.
+
+## Downloading and copying {#downloading-and-copying}
+
+Download re-runs the producing query with the same shape, so the exported file holds the same rows in the same order as the result on screen. Copy uses the rendered result and therefore matches it too.
+
+## Persistence {#persistence}
+
+The shape is remembered in the page URL (`sort_columns`, `filters`, `page` and `page_size`), in the browser history, and in the per-tab result snapshot, so reloading the page, sharing the link, or navigating back and forward preserves it. Because the shape decides the rows and not only their presentation, a shared link that auto-runs its query (`run=1`) re-runs it with the same shape, and so reproduces the result itself. Only an active shape is stored — an unshaped result adds nothing to the URL or history state — to keep them compact.
+
+A restored result keeps its shape bound to the context that produced it, as described above: the snapshot records the database, the connection and the parameter values its rows were produced with, so re-running the statement after changing any of those drops the shape rather than applying it to a different result.
+
+Like the [color coding modes](/concepts/features/interfaces/web-ui-color-coding) and the [pinned columns](/concepts/features/interfaces/web-ui-pinned-columns), the shape is kept per query tab, so sorting or filtering a result in one tab does not re-run another tab's result.
+
+## Limitations {#limitations}
+
+- A shape the server cannot apply fails the query, and the error is shown as for any other failing query. The shape is then dropped, since a failed run renders neither the headers nor the pager that would clear it.
+- Sorting and filtering identify a column by its name in the result. A result can carry the same name twice (`SELECT 1 AS x, 2 AS x`, a join of tables sharing column names), and such columns cannot be told apart by name, so they get no sort or filter controls; the uniquely named columns of the same result keep theirs.
+- Multi-column sorting needs a <kbd>Shift</kbd> key and so is not available on a touch device; a single-column sort is.
+- The vertical (transposed) layout of a single-row result has no column headers and therefore no controls; a result the user has already shaped keeps its horizontal layout for that reason.

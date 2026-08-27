@@ -127,6 +127,7 @@ namespace Setting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsString default_session_user;
     extern const ServerSettingsBool validate_tcp_client_information;
     extern const ServerSettingsBool interserver_tables_status_require_auth;
     extern const ServerSettingsBool process_query_plan_packet;
@@ -319,6 +320,7 @@ TCPHandler::TCPHandler(
     bool parse_proxy_protocol_,
     std::string server_display_name_,
     std::string host_name_,
+    std::optional<String> default_session_user_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -330,6 +332,7 @@ TCPHandler::TCPHandler(
     , write_event(write_event_)
     , server_display_name(std::move(server_display_name_))
     , host_name(std::move(host_name_))
+    , default_session_user(std::move(default_session_user_))
 {
 }
 
@@ -340,6 +343,7 @@ TCPHandler::TCPHandler(
     TCPProtocolStackData & stack_data,
     std::string server_display_name_,
     std::string host_name_,
+    std::optional<String> default_session_user_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -354,6 +358,7 @@ TCPHandler::TCPHandler(
     , default_database(stack_data.default_database)
     , server_display_name(std::move(server_display_name_))
     , host_name(std::move(host_name_))
+    , default_session_user(std::move(default_session_user_))
 {
     if (!forwarded_for.empty())
         LOG_TRACE(log, "Forwarded client address: {}", forwarded_for);
@@ -2094,8 +2099,29 @@ void TCPHandler::receiveHello()
     readStringBinary(user, *in, MAX_HELLO_STRING_SIZE);
     readStringBinary(password, *in, MAX_HELLO_STRING_SIZE);
 
+    /// An empty user name means the default session user: the `default_session_user`
+    /// server setting, possibly overridden for this listener in the `protocols` section.
+    /// The substitution is remembered to make sure that a connection with an empty user name
+    /// can never be treated as an interserver or SSH-marked connection, even if the configured
+    /// default session user is (mis)set to one of the marker values.
+    bool user_substituted_by_default = false;
     if (user.empty())
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (no user in Hello package)");
+    {
+        user = default_session_user ? *default_session_user
+                                    : String(server.context()->getServerSettings()[ServerSetting::default_session_user]);
+        user_substituted_by_default = true;
+
+        /// The default session user can be explicitly configured to be empty to prohibit
+        /// connections without a user name. The reject is recorded in `system.session_log` as a
+        /// login failure, so that prohibited anonymous attempts remain auditable.
+        if (user.empty())
+        {
+            auto exception = Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (no user in Hello package)");
+            session = makeSession();
+            session->onAuthenticationFailure(user, getClientAddress(session->getClientInfo()), exception);
+            throw exception; /// NOLINT
+        }
+    }
 
     auto users_to_ignore_early_memory_limit_check = server.context()->getUsersToIgnoreEarlyMemoryLimitCheck();
     if (!(users_to_ignore_early_memory_limit_check && users_to_ignore_early_memory_limit_check->contains(user)))
@@ -2109,7 +2135,7 @@ void TCPHandler::receiveHello()
         (!user.empty() ? ", user: " + user : "")
     );
 
-    is_interserver_mode = (user == EncodedUserInfo::USER_INTERSERVER_MARKER) && password.empty();
+    is_interserver_mode = !user_substituted_by_default && (user == EncodedUserInfo::USER_INTERSERVER_MARKER) && password.empty();
     if (is_interserver_mode)
     {
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
@@ -2152,7 +2178,7 @@ void TCPHandler::receiveHello()
         return;
     }
 
-    is_ssh_based_auth = user.starts_with(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
+    is_ssh_based_auth = !user_substituted_by_default && user.starts_with(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
     if (is_ssh_based_auth)
         user.erase(0, std::string_view(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
 

@@ -254,6 +254,19 @@ A value of `0` (default) means unlimited.
     DECLARE(UInt32, asynchronous_heavy_metrics_update_period_s, 120, R"(Period in seconds for updating heavy asynchronous metrics.)", 0) \
     DECLARE(Bool, asynchronous_metrics_keeper_metrics_only, false, R"(Make asynchronous metrics calculate the keeper-related metrics only.)", 0) \
     DECLARE(String, default_database, "default", R"(The default database name.)", 0) \
+    DECLARE(String, default_session_user, "default", R"(
+The user name that is used for authentication when a client connects without specifying a user name: an HTTP request without the `user` parameter and `X-ClickHouse-User` header, a native protocol `Hello` packet with an empty user name, a MySQL or PostgreSQL handshake with an empty user name, a gRPC query without `user_name`, an Arrow Flight call without an `authorization` header (or with Basic credentials with an empty user name), or a [web terminal](/interfaces/web-terminal) WebSocket `auth` message with an omitted or empty `user` field.
+
+The empty user name is resolved to this value before authentication, so the connection is still subject to the substituted user's authentication: the password, network, and other access checks apply as usual. An empty user name is merely an alias for the configured user name, and accepting it grants no access beyond what specifying the same user name explicitly already gives. In versions before this setting was introduced, the fallback of an empty user name to `default` existed only for the plain HTTP query-parameter path, gRPC queries, Arrow Flight calls, and the web terminal, while the native, MySQL, and PostgreSQL protocols rejected an empty user name; now all of them accept it. HTTP Basic authentication with an empty user name and requests with `X-ClickHouse-Key` but without `X-ClickHouse-User` also rejected an empty user name before this setting was introduced.
+
+If set to an empty string, connections without a user name are rejected. HTTP handlers with a fixed user (the `user` key inside `handler` of an `http_handlers` rule, or the `user` key inside `handler` of a `prometheus.handlers` rule) authenticate as their configured user and are not affected.
+
+When the `session_log` section is enabled in the server configuration, every such reject is recorded in [`system.session_log`](/operations/system-tables/session_log) as a `LoginFailure` event with an empty `user`, so that prohibited connections without a user name can be audited on every interface.
+
+The default session user is never applied to interserver connections: they identify themselves with a special marker instead of a user name and are authenticated by the cluster secret and the initial user.
+
+The value can be overridden for a specific endpoint of a composable protocol with the `default_session_user` key in the `protocols` section, see [Composable protocols](/operations/settings/composable-protocols).
+)", 0) \
     DECLARE(String, tmp_policy, "", R"(
 Policy for storage with temporary data. All files with `tmp` prefix will be removed at start.
 
