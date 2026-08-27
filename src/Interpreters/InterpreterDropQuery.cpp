@@ -364,13 +364,24 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-            DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
-            if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
-                fiu_do_on(FailPoints::drop_table_fail_before_metadata_drop,
-                {
-                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before dropping the metadata of table {}", table_id.getNameForLogs());
-                });
-            database->dropTable(context_, table_id.table_name, query.sync);
+            auto [removed_ref_deps, removed_loading_deps, removed_view_deps]
+                = DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+            try
+            {
+                if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
+                    fiu_do_on(FailPoints::drop_table_fail_before_metadata_drop,
+                    {
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before dropping the metadata of table {}", table_id.getNameForLogs());
+                    });
+                database->dropTable(context_, table_id.table_name, query.sync);
+            }
+            catch (...)
+            {
+                /// The table keeps its metadata and is attached again at the next start, so it must keep its
+                /// dependencies: without them a table it depends on can be dropped while it still needs it.
+                DatabaseCatalog::instance().addDependencies(table_id, removed_ref_deps, removed_loading_deps, removed_view_deps);
+                throw;
+            }
             /// Only once the metadata is gone: a `dropTable` that throws leaves the table on disk, and it
             /// is attached again at the next start, so it must keep blocking `DROP NAMED COLLECTION`.
             NamedCollectionFactory::instance().removeDependencies(table_id);
