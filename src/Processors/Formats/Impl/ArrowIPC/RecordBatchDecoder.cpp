@@ -950,7 +950,8 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
 
     /// Keys for the LowCardinality dictionary: the decoded Arrow dictionary values plus, for nullable
     /// fields, a trailing NULL that null rows point at (Arrow keeps nulls only in the index validity).
-    DataTypePtr value_type = fieldToCHType(field, settings, field.nullable);
+    /// allow_null_type: a dictionary over the Arrow null type materializes as an all-null plain column.
+    DataTypePtr value_type = fieldToCHType(field, settings, field.nullable, /*allow_null_type=*/true);
     MutableColumnPtr keys = IColumn::mutate(values->cloneResized(dict_size));
     UInt64 null_key_index = dict_size;
     if (field.nullable)

@@ -37,6 +37,13 @@ nested = pa.table({
 with pa.OSFile('${FILE_PREFIX}.nested.arrow', 'wb') as sink:
     with pa.ipc.new_file(sink, nested.schema) as writer:
         writer.write_table(nested)
+dict_null = pa.table({
+    'n': pa.array([1, 2, 3], type=pa.int64()),
+    'nd': pa.DictionaryArray.from_arrays(pa.array([0, None, 0], type=pa.int8()), pa.array([None], type=pa.null())),
+})
+with pa.OSFile('${FILE_PREFIX}.dict.arrow', 'wb') as sink:
+    with pa.ipc.new_file(sink, dict_null.schema) as writer:
+        writer.write_table(dict_null)
 "
 
 echo 'file, explicit structure'
@@ -61,4 +68,8 @@ echo 'a nested null-typed field stays Nullable(Nothing) too'
 ${CLICKHOUSE_LOCAL} -q "DESC file('${FILE_PREFIX}.nested.arrow', 'Arrow') SETTINGS schema_inference_make_columns_nullable = 0"
 ${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${FILE_PREFIX}.nested.arrow', 'Arrow') ORDER BY n SETTINGS schema_inference_make_columns_nullable = 0"
 
-rm -f "${FILE_PREFIX}.arrow" "${FILE_PREFIX}.arrows" "${FILE_PREFIX}.trivial.arrow" "${FILE_PREFIX}.nested.arrow"
+echo 'a dictionary-encoded null-typed column materializes as all-null'
+${CLICKHOUSE_LOCAL} -q "DESC file('${FILE_PREFIX}.dict.arrow', 'Arrow')"
+${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${FILE_PREFIX}.dict.arrow', 'Arrow') ORDER BY n"
+
+rm -f "${FILE_PREFIX}.arrow" "${FILE_PREFIX}.arrows" "${FILE_PREFIX}.trivial.arrow" "${FILE_PREFIX}.nested.arrow" "${FILE_PREFIX}.dict.arrow"
