@@ -2968,7 +2968,7 @@ SELECT * FROM url_engine_table;
 - [enable_url_encoding](/reference/settings/session-settings/enable#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
 - [url_base](/reference/settings/session-settings/url#url_base) - base URL for resolving relative URLs passed to the engine.
 )DOCS_MD",
-            .syntax = "ENGINE = URL(url[, format[, compression]])",
+            .syntax = "ENGINE = URL(url[, format[, compression]][, http_method = 'POST'])",
             .related = {"File"}});
 }
 
