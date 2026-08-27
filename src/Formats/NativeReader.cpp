@@ -212,11 +212,8 @@ Block NativeReader::read()
         {
             /// NativeReader must enable all supported serializations (e.g. nullable sparse) here. Since it operates on
             /// in-memory state, it should be able to handle all possible serialization variants.
-            auto info_settings = SerializationInfoSettings::enableAllSupportedSerializations(
-                server_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
-            if (server_revision < DBMS_MIN_REVISION_WITH_JSON_TYPED_PATHS_SERIALIZATION)
-                info_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
-            auto info = column.type->createSerializationInfo(info_settings);
+            auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations(
+                server_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
 
             UInt8 has_custom = 0;
             readBinary(has_custom, istr);

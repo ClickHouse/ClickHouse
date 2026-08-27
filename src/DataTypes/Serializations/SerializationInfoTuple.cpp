@@ -55,31 +55,13 @@ MutableSerializationInfoPtr SerializationInfoTuple::createWithType(
     const auto & old_elements = old_tuple.getElements();
     const auto & new_elements = new_tuple.getElements();
     chassert(elems.size() == old_elements.size());
+    chassert(elems.size() == new_elements.size());
 
     MutableSerializationInfos infos;
-    infos.reserve(new_elements.size());
-    for (size_t i = 0; i < new_elements.size(); ++i)
-    {
-        auto info = new_elements[i]->createSerializationInfo(new_settings);
-        std::optional<size_t> old_position;
-        if (old_elements.size() == new_elements.size())
-            old_position = i;
-        else
-            old_position = old_tuple.tryGetPositionByName(new_tuple.getElementNames()[i]);
+    infos.reserve(elems.size());
+    for (size_t i = 0; i < elems.size(); ++i)
+        infos.push_back(elems[i]->createWithType(*old_elements[i], *new_elements[i], new_settings));
 
-        const auto * old_info = old_position ? elems[*old_position].get() : nullptr;
-        const auto * new_info = info.get();
-        if (old_info && typeid(*old_info) == typeid(*new_info))
-            info = elems[*old_position]->createWithType(*old_elements[*old_position], *new_elements[i], new_settings);
-        else if (!old_position)
-            info->addDefaults(data.num_rows);
-
-        infos.push_back(std::move(info));
-    }
-
-    /// The result describes `new_type`, so the element identities have to be the ones of `new_type` as well:
-    /// the elements can be renamed, and everything that merges tuple subinfos (`add`, `replaceData`) matches
-    /// them by name, so carrying the old names over would silently make the renamed elements unmatched.
     return std::make_shared<SerializationInfoTuple>(std::move(infos), new_tuple.getElementNames(), new_settings);
 }
 

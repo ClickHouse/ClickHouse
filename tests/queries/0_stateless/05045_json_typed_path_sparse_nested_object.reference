@@ -1,6 +1,0 @@
-(\'rare\',1)	{"x":"rare"}	{"x":"rare"}	{"x":"rare"}
-(NULL,0)	{"x":null}	{"x":null}	{"x":null}
-obj.x	Sparse
-obj.y	Default
-obj.x	Sparse
-obj.y	Sparse

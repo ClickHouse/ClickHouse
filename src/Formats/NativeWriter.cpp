@@ -11,8 +11,10 @@
 #include <Formats/NativeWriter.h>
 
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -24,6 +26,37 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+ColumnPtr materializeObjectTypedPaths(const ColumnPtr & column)
+{
+    if (const auto * replicated = typeid_cast<const ColumnReplicated *>(column.get()))
+    {
+        return ColumnReplicated::create(
+            materializeObjectTypedPaths(replicated->getNestedColumn()),
+            replicated->getIndexesColumn());
+    }
+
+    if (const auto * tuple = typeid_cast<const ColumnTuple *>(column.get()))
+    {
+        if (tuple->tupleSize() == 0)
+            return column;
+
+        auto columns = tuple->getColumnsCopy();
+        for (auto & element : columns)
+            element = materializeObjectTypedPaths(element);
+        return ColumnTuple::create(columns);
+    }
+
+    if (typeid_cast<const ColumnObject *>(column.get()))
+        return recursiveRemoveSparse(column);
+
+    return column;
+}
+
 }
 
 NativeWriter::NativeWriter(
@@ -109,14 +142,12 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
                 result_column = recursiveRemoveSparse(result_column);
         }
 
+        /// Typed paths in `JSON` are materialized because the `Native` wire format has no
+        /// recursive serialization-info entry for them.
+        result_column = materializeObjectTypedPaths(result_column);
+
         auto info_settings = SerializationInfoSettings::enableAllSupportedSerializations(
             client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
-        if (client_revision < DBMS_MIN_REVISION_WITH_JSON_TYPED_PATHS_SERIALIZATION)
-        {
-            info_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
-            if (column.type->hasSparseSerializationSubcolumns(info_settings) && recursiveHasSparse(result_column))
-                result_column = recursiveRemoveSparse(result_column);
-        }
 
         auto info = column.type->getSerializationInfo(*result_column, info_settings);
         return {column.type->getSerialization(*info), info, result_column};

@@ -1,23 +1,14 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnObject.h>
-#include <Columns/ColumnReplicated.h>
-#include <Columns/ColumnSparse.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
-#include <Core/ColumnWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/ProtocolDefines.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationInfoObject.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Formats/NativeWriter.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/JSON/Object.h>
 #include <Common/Exception.h>
@@ -252,7 +243,8 @@ TEST(SerializationInfoByNameJSON, WriteJSONCanBeReadBack)
 
 TEST(SerializationInfoObject, EnabledOnlyForSubcolumnsVersion)
 {
-    auto json_type = DataTypeFactory::instance().get("JSON(x Nullable(String), y String, max_dynamic_paths=0)");
+    auto json_type = DataTypeFactory::instance().get(
+        "JSON(n JSON(x String, max_dynamic_paths=0), y String, max_dynamic_paths=0)");
     NamesAndTypesList columns{{"j", json_type}};
 
     SerializationInfoSettings settings;
@@ -268,7 +260,8 @@ TEST(SerializationInfoObject, EnabledOnlyForSubcolumnsVersion)
     const auto * object_info = typeid_cast<const SerializationInfoObject *>(infos.tryGet("j").get());
     ASSERT_NE(object_info, nullptr);
     EXPECT_FALSE(object_info->getSettings().choose_kind);
-    EXPECT_TRUE(object_info->getTypedPathInfo("x")->getSettings().choose_kind);
+    EXPECT_EQ(typeid_cast<const SerializationInfoObject *>(object_info->getTypedPathInfo("n").get()), nullptr);
+    EXPECT_TRUE(object_info->getTypedPathInfo("y")->getSettings().choose_kind);
 
     WriteBufferFromOwnString out;
     infos.writeJSON(out);
@@ -297,78 +290,21 @@ TEST(SerializationInfoObject, CreateWithChangedTypedPaths)
     EXPECT_THROW(object_info->getTypedPathInfo("y"), DB::Exception);
 }
 
-TEST(SerializationInfoObject, CreateWithChangedTypedPathStructure)
+TEST(SerializationInfoObject, TupleShapeChangeUsesFreshInfo)
 {
-    const auto check_evolution = [](const String & old_name, const String & new_name)
-    {
-        auto old_type = DataTypeFactory::instance().get(old_name);
-        auto new_type = DataTypeFactory::instance().get(new_name);
-
-        auto settings = defaultSettings();
-        settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
-
-        auto old_info = old_type->createSerializationInfo(settings);
-        old_info->addDefaults(100);
-        auto evolved_info = old_info->createWithType(*old_type, *new_type, settings);
-        auto fresh_info = new_type->createSerializationInfo(settings);
-        EXPECT_TRUE(evolved_info->structureEquals(*fresh_info));
-        EXPECT_TRUE(evolved_info->hasCustomSerialization());
-    };
-
-    check_evolution(
-        "JSON(t Tuple(a Tuple(b String)), max_dynamic_paths=0)",
-        "JSON(t Tuple(a Tuple(b String, c UInt64)), max_dynamic_paths=0)");
-}
-
-TEST(SerializationInfoObject, PreservesNestedObjectStatsWithoutReselectingKinds)
-{
-    auto old_type = DataTypeFactory::instance().get("JSON(obj JSON(x String, max_dynamic_paths=0), max_dynamic_paths=0)");
-    auto new_type = DataTypeFactory::instance().get("JSON(obj JSON(x String, y UInt64, max_dynamic_paths=0), max_dynamic_paths=0)");
+    auto old_type = DataTypeFactory::instance().get("JSON(t Tuple(a String), max_dynamic_paths=0)");
+    auto new_type = DataTypeFactory::instance().get("JSON(t Tuple(a String, b UInt64), max_dynamic_paths=0)");
 
     auto settings = defaultSettings();
     settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+
     auto old_info = old_type->createSerializationInfo(settings);
     old_info->addDefaults(100);
-
-    settings.choose_kind = false;
     auto evolved_info = old_info->createWithType(*old_type, *new_type, settings);
-    const auto * outer_info = assert_cast<const SerializationInfoObject *>(evolved_info.get());
-    const auto * nested_info = assert_cast<const SerializationInfoObject *>(outer_info->getTypedPathInfo("obj").get());
-    const auto & new_path_info = nested_info->getTypedPathInfo("y");
+    auto fresh_info = new_type->createSerializationInfo(settings);
 
-    EXPECT_EQ(
-        nested_info->getTypedPathInfo("x")->getKindStack(),
-        ISerialization::KindStack({ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
-    EXPECT_EQ(new_path_info->getKindStack(), ISerialization::KindStack({ISerialization::Kind::DEFAULT}));
-    EXPECT_EQ(new_path_info->getData().num_rows, 100);
-    EXPECT_EQ(new_path_info->getData().num_defaults, 100);
-}
-
-TEST(SerializationInfoTuple, NativeKeepsSparseElementsForSupportedRevision)
-{
-    constexpr size_t rows = 4;
-    auto values = ColumnString::create();
-    values->insertDefault();
-    values->insertData("value", 5);
-    auto offsets = ColumnUInt64::create();
-    offsets->getData().push_back(0);
-
-    Columns elements;
-    elements.emplace_back(ColumnSparse::create(
-        MutableColumnPtr(std::move(values)), MutableColumnPtr(std::move(offsets)), rows));
-
-    ColumnWithTypeAndName column;
-    column.name = "t";
-    column.type = DataTypeFactory::instance().get("Tuple(s String)");
-    column.column = ColumnTuple::create(std::move(elements));
-
-    auto supported_result = NativeWriter::getSerializationAndColumn(
-        DBMS_MIN_REVISION_WITH_JSON_TYPED_PATHS_SERIALIZATION - 1, column);
-    EXPECT_TRUE(recursiveHasSparse(std::get<2>(supported_result)));
-
-    auto old_result = NativeWriter::getSerializationAndColumn(
-        DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION - 1, column);
-    EXPECT_FALSE(recursiveHasSparse(std::get<2>(old_result)));
+    EXPECT_TRUE(evolved_info->structureEquals(*fresh_info));
+    EXPECT_FALSE(evolved_info->hasCustomSerialization());
 }
 
 TEST(SerializationInfoObject, DoesNotScanDefaultsForOuterColumn)
@@ -407,7 +343,8 @@ TEST(SerializationInfoByName, DowngradesWithoutEligibleSubcolumns)
         MergeTreeSerializationInfoVersion::WITH_TYPES);
 
     settings.string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
-    auto ineligible_json = DataTypeFactory::instance().get("JSON(x Array(String), max_dynamic_paths=0)");
+    auto ineligible_json = DataTypeFactory::instance().get(
+        "JSON(x JSON(y String, max_dynamic_paths=0), max_dynamic_paths=0)");
     EXPECT_EQ(
         SerializationInfoByName(NamesAndTypesList{{"j", ineligible_json}}, settings).getVersion(),
         MergeTreeSerializationInfoVersion::BASIC);
@@ -416,83 +353,6 @@ TEST(SerializationInfoByName, DowngradesWithoutEligibleSubcolumns)
     SerializationInfoByName eligible_infos(NamesAndTypesList{{"j", eligible_json}}, settings);
     EXPECT_EQ(eligible_infos.getVersion(), MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS);
     EXPECT_NE(eligible_infos.tryGet("j"), nullptr);
-}
-
-TEST(SerializationInfoObject, NativeRevisionGate)
-{
-    constexpr size_t rows = 4;
-    auto values = ColumnString::create();
-    values->insertDefault();
-    values->insertData("value", 5);
-    auto offsets = ColumnUInt64::create();
-    offsets->getData().push_back(0);
-
-    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths;
-    typed_paths["x"] = ColumnSparse::create(
-        MutableColumnPtr(std::move(values)), MutableColumnPtr(std::move(offsets)), rows);
-
-    ColumnWithTypeAndName column;
-    column.name = "j";
-    column.type = DataTypeFactory::instance().get("JSON(x String, max_dynamic_paths=0)");
-    auto object_template = column.type->createColumn();
-    const auto & object_template_ref = assert_cast<const ColumnObject &>(*object_template);
-    auto shared_data = object_template_ref.getSharedDataPtr()->cloneResized(rows);
-    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths;
-    column.column = ColumnObject::create(
-        std::move(typed_paths),
-        std::move(dynamic_paths),
-        std::move(shared_data),
-        object_template_ref.getMaxDynamicPaths(),
-        object_template_ref.getMaxDynamicPathsUpperBound(),
-        object_template_ref.getGlobalMaxDynamicPaths(),
-        object_template_ref.getMaxDynamicTypes());
-
-    auto new_result = NativeWriter::getSerializationAndColumn(DBMS_MIN_REVISION_WITH_JSON_TYPED_PATHS_SERIALIZATION, column);
-    const auto & new_info = std::get<1>(new_result);
-    const auto & new_column = std::get<2>(new_result);
-    const auto * object_info = typeid_cast<const SerializationInfoObject *>(new_info.get());
-    ASSERT_NE(object_info, nullptr);
-    EXPECT_EQ(
-        object_info->getTypedPathInfo("x")->getKindStack(),
-        ISerialization::KindStack({ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
-    EXPECT_TRUE(recursiveHasSparse(new_column));
-
-    auto old_result = NativeWriter::getSerializationAndColumn(DBMS_MIN_REVISION_WITH_JSON_TYPED_PATHS_SERIALIZATION - 1, column);
-    const auto & old_info = std::get<1>(old_result);
-    const auto & old_column = std::get<2>(old_result);
-    EXPECT_EQ(typeid_cast<const SerializationInfoObject *>(old_info.get()), nullptr);
-    EXPECT_FALSE(recursiveHasSparse(old_column));
-}
-
-TEST(SerializationInfoNullable, NativePreservesOuterWrapperKinds)
-{
-    auto type = DataTypeFactory::instance().get("Nullable(JSON(x Nullable(String), max_dynamic_paths=0))");
-    auto mutable_nested = type->createColumn();
-    type->insertDefaultInto(*mutable_nested);
-    ColumnPtr nested = std::move(mutable_nested);
-
-    const auto check_kind = [&](const ColumnPtr & wrapped, ISerialization::Kind kind)
-    {
-        ColumnWithTypeAndName column{wrapped, type, "j"};
-        auto [serialization, info, _] = NativeWriter::getSerializationAndColumn(
-            DBMS_MIN_REVISION_WITH_JSON_TYPED_PATHS_SERIALIZATION, column);
-        const ISerialization::KindStack expected{ISerialization::Kind::DEFAULT, kind};
-        ASSERT_NE(info, nullptr);
-        EXPECT_EQ(info->getKindStack(), expected);
-        EXPECT_EQ(serialization->getKindStack(), expected);
-
-        WriteBufferFromOwnString out;
-        info->serialializeKindStackBinary(out);
-        auto restored = type->createSerializationInfo(info->getSettings());
-        auto serialized = out.str();
-        ReadBufferFromString in(serialized);
-        restored->deserializeFromKindsBinary(in);
-        EXPECT_EQ(restored->getKindStack(), expected);
-        EXPECT_EQ(type->getSerialization(*restored)->getKindStack(), expected);
-    };
-
-    check_kind(ColumnReplicated::create(nested), ISerialization::Kind::REPLICATED);
-    check_kind(ColumnBLOB::create(nested), ISerialization::Kind::DETACHED);
 }
 
 /// Malformed kind tests.

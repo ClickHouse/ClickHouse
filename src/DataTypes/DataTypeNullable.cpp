@@ -3,18 +3,12 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
-#include <DataTypes/Serializations/SerializationInfoNullable.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
-#include <DataTypes/Serializations/SerializationDetached.h>
-#include <DataTypes/Serializations/SerializationReplicated.h>
-#include <DataTypes/Serializations/SerializationWrapper.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnBLOB.h>
-#include <Columns/ColumnReplicated.h>
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
@@ -49,24 +43,6 @@ bool DataTypeNullable::onlyNull() const
 MutableColumnPtr DataTypeNullable::createColumn() const
 {
     return ColumnNullable::create(nested_data_type->createColumn(), ColumnUInt8::create());
-}
-
-MutableColumnPtr DataTypeNullable::createColumn(const ISerialization & serialization) const
-{
-    const auto * current_serialization = &serialization;
-    while (const auto * wrapper = dynamic_cast<const SerializationWrapper *>(current_serialization))
-        current_serialization = wrapper->getNested().get();
-
-    if (const auto * replicated = typeid_cast<const SerializationReplicated *>(current_serialization))
-        return ColumnReplicated::create(createColumn(*replicated->getNested()), ColumnUInt8::create());
-
-    if (const auto * detached = typeid_cast<const SerializationDetached *>(current_serialization))
-        return ColumnBLOB::create(createColumn(*detached->getNested()));
-
-    if (const auto * nullable = typeid_cast<const SerializationNullable *>(current_serialization))
-        return ColumnNullable::create(nested_data_type->createColumn(*nullable->getNested()), ColumnUInt8::create());
-
-    return IDataType::createColumn(serialization);
 }
 
 MutableColumnPtr DataTypeNullable::createUninitializedColumnWithSize(size_t size) const
@@ -124,62 +100,6 @@ SerializationPtr DataTypeNullable::doGetSerialization(const SerializationInfoSet
     if (settings.propagate_types_serialization_versions_to_nested_types)
         return SerializationNullable::create(nested_data_type->getSerialization(settings));
     return SerializationNullable::create(nested_data_type->getDefaultSerialization());
-}
-
-SerializationPtr DataTypeNullable::getSerialization(const SerializationInfo & info) const
-{
-    return getSerialization(info, true);
-}
-
-SerializationPtr DataTypeNullable::getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const
-{
-    const auto * nullable_info = typeid_cast<const SerializationInfoNullable *>(&info);
-    if (!nullable_info)
-        return IDataType::getSerialization(info, use_type_serialization_settings);
-
-    auto serialization = SerializationNullable::create(
-        nested_data_type->getSerialization(*nullable_info->getNestedInfo(), use_type_serialization_settings));
-    return wrapSerializationBasedOnKindStack(std::move(serialization), info.getKindStack(), info.getSettings());
-}
-
-MutableSerializationInfoPtr DataTypeNullable::createSerializationInfo(const SerializationInfoSettings & settings) const
-{
-    if (settings.version < MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS || !hasSparseSerializationSubcolumns(settings))
-        return IDataType::createSerializationInfo(settings);
-
-    return std::make_shared<SerializationInfoNullable>(nested_data_type->createSerializationInfo(settings), settings);
-}
-
-SerializationInfoPtr DataTypeNullable::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
-{
-    if (settings.version < MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS || !hasSparseSerializationSubcolumns(settings))
-        return IDataType::getSerializationInfo(column, settings);
-
-    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
-        return getSerializationInfo(column_const->getDataColumn(), settings);
-
-    if (const auto * column_replicated = checkAndGetColumn<ColumnReplicated>(&column))
-    {
-        auto info = const_pointer_cast<SerializationInfo>(getSerializationInfo(*column_replicated->getNestedColumn(), settings));
-        info->appendToKindStack(ISerialization::Kind::REPLICATED);
-        return info;
-    }
-
-    if (const auto * column_blob = checkAndGetColumn<ColumnBLOB>(&column))
-    {
-        auto info = const_pointer_cast<SerializationInfo>(getSerializationInfo(*column_blob->getWrappedColumn(), settings));
-        info->appendToKindStack(ISerialization::Kind::DETACHED);
-        return info;
-    }
-
-    const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
-    return std::make_shared<SerializationInfoNullable>(
-        const_pointer_cast<SerializationInfo>(nested_data_type->getSerializationInfo(column_nullable.getNestedColumn(), settings)), settings);
-}
-
-bool DataTypeNullable::hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const
-{
-    return nested_data_type->hasSparseSerializationSubcolumns(settings);
 }
 
 void DataTypeNullable::forEachChild(const ChildCallback & callback) const

@@ -74,8 +74,6 @@ public:
     SerializationPtr getSerialization(const SerializationInfo & info) const override;
     SerializationPtr getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const override;
     MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
-    using IDataType::getSerializationInfo;
-    SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const override;
 
     const SchemaFormat & getSchemaFormat() const { return schema_format; }
     String getSchemaFormatString() const;

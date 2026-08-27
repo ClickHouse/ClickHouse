@@ -42,16 +42,19 @@ MutableSerializationInfoPtr SerializationInfoObject::createWithType(
     for (const auto & path : new_names)
     {
         const auto & new_path_type = new_object.getTypedPaths().at(path);
-        auto new_info = new_path_type->createSerializationInfo(new_settings);
+        auto path_settings = new_settings;
+        if (!new_settings.canUseSparseSerialization(*new_path_type))
+            path_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+        auto new_info = new_path_type->createSerializationInfo(path_settings);
         auto old_type_it = old_object.getTypedPaths().find(path);
         auto old_info_it = name_to_elem.find(path);
         const auto * old_info = old_info_it != name_to_elem.end() ? old_info_it->second.get() : nullptr;
         const auto * new_info_ptr = new_info.get();
         if (old_type_it != old_object.getTypedPaths().end()
             && old_info
-            && typeid(*old_info) == typeid(*new_info_ptr))
+            && old_info->structureEquals(*new_info_ptr))
         {
-            new_info = old_info_it->second->createWithType(*old_type_it->second, *new_path_type, new_settings);
+            new_info = old_info_it->second->createWithType(*old_type_it->second, *new_path_type, path_settings);
         }
         else if (old_type_it == old_object.getTypedPaths().end() || old_info_it == name_to_elem.end())
         {

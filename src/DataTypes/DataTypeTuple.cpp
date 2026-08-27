@@ -365,7 +365,12 @@ MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const Seriali
     MutableSerializationInfos infos;
     infos.reserve(elems.size());
     for (const auto & elem : elems)
-        infos.push_back(elem->createSerializationInfo(settings));
+    {
+        auto elem_settings = settings;
+        if (!settings.canUseSparseSerialization(*elem))
+            elem_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+        infos.push_back(elem->createSerializationInfo(elem_settings));
+    }
 
     return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
 }
@@ -400,15 +405,6 @@ SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColum
 
     return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
 }
-
-bool DataTypeTuple::hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const
-{
-    return std::any_of(elems.begin(), elems.end(), [&](const auto & elem)
-    {
-        return elem->hasSparseSerializationSubcolumns(settings);
-    });
-}
-
 
 void DataTypeTuple::forEachChild(const ChildCallback & callback) const
 {
