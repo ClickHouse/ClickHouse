@@ -81,6 +81,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int NO_SUCH_PROJECTION_IN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
@@ -457,6 +458,20 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         command.first = command_ast->first;
         command.if_not_exists = command_ast->if_not_exists;
+
+        return command;
+    }
+    if (command_ast->type == ASTAlterCommand::MODIFY_PROJECTION)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.projection_decl = command_ast->projection_decl->clone();
+        command.type = AlterCommand::MODIFY_PROJECTION;
+
+        const auto & ast_projection_decl = command_ast->projection_decl->as<ASTProjectionDeclaration &>();
+
+        command.projection_name = ast_projection_decl.name;
+        command.if_exists = command_ast->if_exists;
 
         return command;
     }
@@ -1046,6 +1061,47 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
     }
+    else if (type == MODIFY_PROJECTION)
+    {
+        if (!metadata.projections.has(projection_name))
+        {
+            /// With `IF EXISTS` the whole command must be a no-op
+            if (if_exists)
+                return;
+
+            throw Exception(
+                ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
+                "There is no projection {} in table{}",
+                projection_name,
+                metadata.projections.getHintsMessage(projection_name));
+        }
+
+        /// create a new projection with the modified settings
+        auto new_projection = ProjectionDescription::getProjectionFromAST(
+            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
+
+        /// Existing parts store projection data built from the query body, so only the `WITH SETTINGS` clause may change
+        auto definition_without_settings = [](const IAST & definition_ast)
+        {
+            auto cloned = definition_ast.clone();
+            auto & decl = cloned->as<ASTProjectionDeclaration &>();
+            cloned->reset(decl.with_settings);
+            return cloned->formatWithSecretsOneLine();
+        };
+
+        const auto & old_projection = metadata.projections.get(projection_name);
+        if (definition_without_settings(*old_projection.definition_ast) != definition_without_settings(*new_projection.definition_ast))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot modify projection {}: only the WITH SETTINGS clause may be changed, "
+                "but the projection query differs from the existing one. "
+                "Use DROP PROJECTION and ADD PROJECTION to change the query",
+                projection_name);
+
+        /// Intentionally not a mutation because the new settings apply lazily
+        /// to parts written by future inserts and merges; `MATERIALIZE PROJECTION` forces a rebuild.
+        metadata.projections.replace(std::move(new_projection));
+    }
     else if (type == DROP_PROJECTION)
     {
         if (!partition && !clear)
@@ -1211,7 +1267,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             /// For implicit indices, check the index name rather than column_names because
             /// for ALIAS columns, column_names contains the underlying expression columns.
             if (index.isImplicitlyCreated() && index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
+            {
                 index.definition_ast = createImplicitMinMaxIndexAST(rename_to);
+                index.name = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to;
+                /// For an ALIAS column the index covers the columns its expression expands to,
+                /// which the column's own name never appears in, so a rename does not affect them.
+                if (!metadata.columns.hasAlias(rename_to))
+                    index.column_names = {rename_to};
+            }
             else
                 rename_visitor.visit(index.definition_ast);
         }
