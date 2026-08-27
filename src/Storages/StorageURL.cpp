@@ -895,9 +895,6 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         }
         catch (...)
         {
-            if (options == 1)
-                throw;
-
             /// Probing the next failover option only makes sense while someone still wants the data.
             /// The error of a request whose read has been cancelled - for example, the last HTTP error
             /// rethrown when the cancellation woke up the retry backoff, see doWithRetries - must
@@ -905,11 +902,16 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
             /// the cancellation, see generate. It is marked as the interruption of the read here too:
             /// the request may have failed just before the cancellation arrived, in which case its
             /// error is unmarked, but not probing the remaining options because of the cancellation
-            /// makes it the error the read is interrupted with.
+            /// makes it the error the read is interrupted with. The check precedes the single-option
+            /// fast path below for the same reason: the rethrown error of the lone option must not
+            /// mask a cancellation which landed while it was unwinding.
             if (cancellation && cancellation->isCancelled())
             {
                 throw ReadInterruptedException(std::current_exception());
             }
+
+            if (options == 1)
+                throw;
 
             if (first_exception_message.empty())
                 first_exception_message = getCurrentExceptionMessage(false);
