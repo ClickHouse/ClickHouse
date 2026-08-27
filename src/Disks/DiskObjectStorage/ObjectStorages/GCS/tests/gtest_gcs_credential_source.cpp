@@ -87,6 +87,10 @@ TEST(GCSCredentialSource, TransportKnobsArePartOfClientIdentity)
     rhs = lhs;
     rhs.request_timeout_ms = lhs.request_timeout_ms + 1;
     EXPECT_FALSE(lhs.describesSameClientAs(rhs));
+
+    rhs = lhs;
+    rhs.max_connections = lhs.max_connections + 1;
+    EXPECT_FALSE(lhs.describesSameClientAs(rhs));
 }
 
 TEST(GCSCredentialSource, ApplicationDefaultCredentialsAreNotInterchangeable)

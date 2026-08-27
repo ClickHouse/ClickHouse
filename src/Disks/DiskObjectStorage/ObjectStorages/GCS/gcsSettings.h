@@ -28,6 +28,8 @@ namespace DB
 /// instead of included, because the native backend must build without the S3 library.
 inline constexpr UInt64 DEFAULT_GCS_CONNECT_TIMEOUT_MS = 1000;
 inline constexpr UInt64 DEFAULT_GCS_REQUEST_TIMEOUT_MS = 30000;
+/// Same value as `S3::DEFAULT_MAX_CONNECTIONS`, repeated for the same reason.
+inline constexpr UInt64 DEFAULT_GCS_MAX_CONNECTIONS = 1024;
 
 /// Parsed configuration of a native Google Cloud Storage object storage backend.
 ///
@@ -73,6 +75,12 @@ struct GCSObjectStorageSettings
     UInt64 connect_timeout_ms = DEFAULT_GCS_CONNECT_TIMEOUT_MS;
     /// Send / receive timeout of a request.
     UInt64 request_timeout_ms = DEFAULT_GCS_REQUEST_TIMEOUT_MS;
+    /// Upper bound on the connections the transport keeps pooled per endpoint, from the
+    /// `max_connections` key of the shared argument grammar (the same key the S3-compatibility path
+    /// passes to `maxConnections` of the AWS client configuration). Sessions are opened on demand and
+    /// only pooled on release, so this bounds the retained ones rather than the concurrent ones —
+    /// the same meaning `ConnectionPoolSizeOption` has for the upstream transports.
+    UInt64 max_connections = DEFAULT_GCS_MAX_CONNECTIONS;
     /// Proxy of the requests, resolved per request. Set from the disk section (the old
     /// `<gcs><proxy>` format, then the server-wide `<proxy>` / the environment) exactly like the S3
     /// disk does. Left unset on the SQL surface: `getGCSClient` then resolves the server-wide

@@ -4,6 +4,7 @@
 
 #include <google/cloud/common_options.h>
 #include <google/cloud/credentials.h>
+#include <google/cloud/internal/curl_options.h>
 #include <google/cloud/internal/rest_options.h>
 #include <google/cloud/options.h>
 #include <google/cloud/storage/options.h>
@@ -237,6 +238,7 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     result.headers = parseGCSHeaders(config, config_prefix);
     result.connect_timeout_ms = config.getUInt64(config_prefix + ".connect_timeout_ms", DEFAULT_GCS_CONNECT_TIMEOUT_MS);
     result.request_timeout_ms = config.getUInt64(config_prefix + ".request_timeout_ms", DEFAULT_GCS_REQUEST_TIMEOUT_MS);
+    result.max_connections = config.getUInt64(config_prefix + ".max_connections", DEFAULT_GCS_MAX_CONNECTIONS);
 
     /// The same lookup order an S3 disk uses (`S3Settings::loadFromConfigForObjectStorage`): the
     /// disk-local `<proxy>` section first, then the server-wide `<proxy>` configuration, then the
@@ -285,6 +287,7 @@ bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSetti
         && headers == other.headers
         && connect_timeout_ms == other.connect_timeout_ms
         && request_timeout_ms == other.request_timeout_ms
+        && max_connections == other.max_connections
         /// Resolvers are compared by identity: two of them can hand out different proxies (and a
         /// remote one cannot be asked what it would answer without querying it), so only the very
         /// same resolver object is known to describe the same transport. The cost of the
@@ -425,6 +428,13 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     options.set<gc::rest_internal::TransferStallTimeoutOption>(request_timeout);
     options.set<gc::rest_internal::DownloadStallTimeoutOption>(request_timeout);
     options.set<::ClickHouse::PocoRestConnectTimeoutOption>(std::chrono::milliseconds(settings.connect_timeout_ms));
+
+    /// `max_connections` of the shared argument grammar. The S3-compatibility path hands it to
+    /// `maxConnections` of the AWS client configuration; the native transport bounds its per-endpoint
+    /// session pool with it. Accepting the key and then keeping the transport's own default would let
+    /// switching `use_native_gcs` on silently drop an operator's connection cap.
+    if (settings.max_connections)
+        options.set<gc::rest_internal::ConnectionPoolSizeOption>(static_cast<std::size_t>(settings.max_connections));
 
     /// A disk carries its own resolver (the disk section can override the server-wide proxy); the
     /// SQL surface does not, and resolves the server-wide configuration here, which is what an S3
