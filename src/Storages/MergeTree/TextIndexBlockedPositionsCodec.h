@@ -59,7 +59,7 @@ public:
     struct DecodeScratch
     {
         PaddedPODArray<char> payload;
-        PaddedPODArray<UInt32> doc_offsets;
+        PaddedPODArray<UInt64> doc_offsets;
         PaddedPODArray<UInt32> values;
     };
 

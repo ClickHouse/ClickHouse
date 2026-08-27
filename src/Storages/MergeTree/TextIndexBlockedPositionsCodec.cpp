@@ -53,11 +53,12 @@ UInt64 readVarUIntFrom(const uint8_t *& pos, const uint8_t * end)
 }
 
 /// Parse a block payload into the delta value lane and per-rank bounds: rank r spans [doc_offsets[r], doc_offsets[r + 1]).
+/// The bounds are derived here and never persisted, so they are UInt64 and put no ceiling on a block's position count.
 void parseBlock(
     const uint8_t * payload,
     size_t payload_bytes,
     size_t docs_in_block,
-    PaddedPODArray<UInt32> & doc_offsets,
+    PaddedPODArray<UInt64> & doc_offsets,
     PaddedPODArray<UInt32> & values)
 {
     const uint8_t * pos = payload;
@@ -87,19 +88,14 @@ void parseBlock(
         if ((freq < 2) || (freq > std::numeric_limits<UInt32>::max()) || (total + (freq - 1) > max_total))
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Corrupt text index positions: invalid frequency {} (total would exceed {})", freq, max_total);
-        doc_offsets[local_rank] = static_cast<UInt32>(freq);
+        doc_offsets[local_rank] = freq;
         total += freq - 1;
         prev_rank = local_rank;
     }
 
-    /// The lane is indexed with UInt32 offsets; max_total alone does not bound it for large payloads.
-    if (total > std::numeric_limits<UInt32>::max())
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions: {} positions in a single block", total);
-
     /// Frequencies become exclusive prefix sums. The tail entry closes the last document's slice.
-    std::exclusive_scan(doc_offsets.begin(), doc_offsets.begin() + docs_in_block, doc_offsets.begin(), UInt32{});
-    doc_offsets[docs_in_block] = static_cast<UInt32>(total);
+    std::exclusive_scan(doc_offsets.begin(), doc_offsets.begin() + docs_in_block, doc_offsets.begin(), UInt64{});
+    doc_offsets[docs_in_block] = total;
 
     values.resize(total);
     const size_t consumed = PFor::decodeBlocks<UInt32>(pos, total, PFor::Delta::none, values.data(), end);
@@ -111,7 +107,7 @@ void parseBlock(
 
 /// Append each requested document's absolute positions to `positions`, and its end offset to `offsets`.
 void emitRanks(
-    const PaddedPODArray<UInt32> & doc_offsets,
+    const PaddedPODArray<UInt64> & doc_offsets,
     const PaddedPODArray<UInt32> & values,
     std::span<const UInt32> local_ranks,
     PaddedPODArray<UInt32> & offsets,
@@ -132,11 +128,11 @@ void emitRanks(
 
     for (UInt32 rank : local_ranks)
     {
-        const UInt32 lane_end = doc_offsets[rank + 1];
+        const UInt64 lane_end = doc_offsets[rank + 1];
         /// Every document has at least one position, and its first one is absolute; the rest are deltas.
         UInt32 position = values[doc_offsets[rank]];
         *out++ = position;
-        for (UInt32 k = doc_offsets[rank] + 1; k < lane_end; ++k)
+        for (UInt64 k = doc_offsets[rank] + 1; k < lane_end; ++k)
         {
             /// The writer emits strictly increasing positions, so a zero delta or a wrap means corruption.
             const UInt32 delta = values[k];
