@@ -172,16 +172,15 @@ FileCacheQueryLimit::QueryContext::QueryContext(
 IFileCachePriority::IteratorPtr FileCacheQueryLimit::QueryContext::add(
     KeyMetadataPtr key_metadata,
     size_t offset,
-    size_t size,
-    const CachePriorityGuard::WriteLock & lock)
+    size_t size)
 {
-    auto it = getPriority().add(key_metadata, offset, size, lock, /* state_lock */nullptr);
+    auto it = getPriority().add(key_metadata, offset, size, /* state_lock */nullptr);
 
     std::lock_guard records_lock(records_mutex);
     auto [_, inserted] = records.emplace(FileCacheKeyAndOffset{key_metadata->key, offset}, it);
     if (!inserted)
     {
-        it->remove(lock);
+        it->remove();
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Cannot add offset {} to query context under key {}, it already exists",
@@ -190,17 +189,14 @@ IFileCachePriority::IteratorPtr FileCacheQueryLimit::QueryContext::add(
     return it;
 }
 
-bool FileCacheQueryLimit::QueryContext::tryRemove(
-    const Key & key,
-    size_t offset,
-    const CachePriorityGuard::WriteLock & lock)
+bool FileCacheQueryLimit::QueryContext::tryRemove(const Key & key, size_t offset)
 {
     std::lock_guard records_lock(records_mutex);
     auto record = records.find({key, offset});
     if (record == records.end())
         return false;
 
-    record->second->remove(lock);
+    record->second->remove();
     records.erase(record);
     return true;
 }
@@ -219,9 +215,9 @@ void FileCacheQueryLimit::QueryContext::unchargeRemoved(const Key & key, size_t 
     records.erase(record);
 }
 
-void FileCacheQueryLimit::QueryContext::removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard)
+void FileCacheQueryLimit::QueryContext::removeInvalidatedEntries(size_t max_batch)
 {
-    getPriority().removeInvalidatedEntries(max_batch, cache_guard);
+    getPriority().removeInvalidatedEntries(max_batch);
 }
 
 void FileCacheQueryLimit::QueryContext::tryDecrementSize(const Key & key, size_t offset, size_t size)
@@ -239,8 +235,7 @@ void FileCacheQueryLimit::QueryContext::tryDecrementSize(const Key & key, size_t
 
 IFileCachePriority::IteratorPtr FileCacheQueryLimit::QueryContext::tryGet(
     const Key & key,
-    size_t offset,
-    const CachePriorityGuard::WriteLock &)
+    size_t offset)
 {
     std::lock_guard records_lock(records_mutex);
     auto it = records.find({key, offset});

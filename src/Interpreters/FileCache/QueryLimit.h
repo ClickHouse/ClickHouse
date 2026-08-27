@@ -70,37 +70,27 @@ public:
         /// has finished or cannot be tracked at all (background operations, unit tests).
         bool canBeDroppedWithoutHolders() const { return !has_thread_group || thread_group.expired(); }
 
-        Priority::IteratorPtr tryGet(
-            const Key & key,
-            size_t offset,
-            const CachePriorityGuard::WriteLock &);
+        Priority::IteratorPtr tryGet(const Key & key, size_t offset);
 
         /// Returns the iterator of the created entry, so that the caller can account
         /// the reserved size in it once the space is actually reserved (`incrementSize`).
-        Priority::IteratorPtr add(
-            KeyMetadataPtr key_metadata,
-            size_t offset,
-            size_t size,
-            const CachePriorityGuard::WriteLock &);
+        Priority::IteratorPtr add(KeyMetadataPtr key_metadata, size_t offset, size_t size);
 
         /// Drops the record and its per-query queue entry, if this query has one for
         /// `key`:`offset`. A missing record is not an error: eviction candidates are
         /// collected from the whole cache, so most of them were never cached by this query.
         /// Returns whether a record was removed.
-        bool tryRemove(
-            const Key & key,
-            size_t offset,
-            const CachePriorityGuard::WriteLock &);
+        bool tryRemove(const Key & key, size_t offset);
 
         /// The segment is gone from the cache: release its charge and drop the record. Only the
         /// charge is released here, while the queue entry is merely invalidated: taking it out of
-        /// the queue needs the cache priority write lock, which no removal path holds.
+        /// the queue needs the priority's own guard, which no removal path may block on.
         void unchargeRemoved(const Key & key, size_t offset);
 
         /// Takes the entries invalidated by `unchargeRemoved` out of the per-query queue, so that
         /// neither the queue nor the eviction walk over it grows with every segment this query has
         /// ever cached. Lock free while there is nothing to remove, which is the common case.
-        void removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard);
+        void removeInvalidatedEntries(size_t max_batch);
 
         /// Give back space which was reserved but not written, at most what is charged for
         /// `key`:`offset`. No-op without a record.
