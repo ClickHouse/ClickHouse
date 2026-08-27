@@ -35,7 +35,8 @@ NC_MAIN="nc_${CLICKHOUSE_DATABASE}_62352"
 NC_DISP="nc_disp_${CLICKHOUSE_DATABASE}_62352"
 NC_ENGINE="nc_eng_${CLICKHOUSE_DATABASE}_62352"
 # Fixed UUIDs collide when the flaky check runs this test concurrently; generate per run.
-read -r UUID_ATTACH UUID_ACC UUID_WILD <<< "$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4(), generateUUIDv4(), generateUUIDv4()")"
+# The dummy arguments keep the three calls distinct: identical ones collapse into a single value.
+read -r UUID_ATTACH UUID_ACC UUID_WILD <<< "$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4(1), generateUUIDv4(2), generateUUIDv4(3)")"
 TAG_KVORDER="${CLICKHOUSE_DATABASE}_62352_kvorder"
 TAG_METHODALIAS="${CLICKHOUSE_DATABASE}_62352_methodalias"
 TAG_ALIASCAP="${CLICKHOUSE_DATABASE}_62352_aliascap"
