@@ -648,6 +648,17 @@ class PullRequestPushYamlGen:
         )
         res = template_1.format(*job_items)
 
+        # Only a pull_request event carries the context the group is keyed on, so
+        # exactly the pull_request workflows are the ones that reference it.
+        if self.workflow_config.event in (Workflow.Event.PULL_REQUEST,):
+            assert (
+                "concurrency:" in res and "github.event.pull_request.number" in res
+            ), f"[{self.workflow_config.name}] misses the per-commit concurrency group"
+        else:
+            assert (
+                "github.event.pull_request" not in res
+            ), f"[{self.workflow_config.name}] must not reference github.event.pull_request"
+
         return res
 
 
