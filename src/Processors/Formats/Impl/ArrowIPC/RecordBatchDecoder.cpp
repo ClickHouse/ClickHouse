@@ -493,12 +493,13 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 const bool saturate = settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate;
                 for (size_t i = 0; i < rows; ++i)
                 {
-                    /// Floor division: a value in (-1000, 0) ms is before the epoch, not second 0.
-                    Int64 seconds = src[i] >= 0 ? src[i] / 1000 : (src[i] - 999) / 1000;
-                    if (seconds < 0 || seconds > max_seconds)
+                    /// Any negative value is before the epoch (its floored second is <= -1), so the
+                    /// range check needs no floor division that could overflow near Int64 minimum.
+                    Int64 seconds = src[i] / 1000;
+                    if (src[i] < 0 || seconds > max_seconds)
                     {
                         if (saturate)
-                            seconds = seconds < 0 ? 0 : max_seconds;
+                            seconds = src[i] < 0 ? 0 : max_seconds;
                         else
                             throw Exception(
                                 ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,

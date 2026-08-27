@@ -35,8 +35,9 @@ out_of_range = pa.table({
 with pa.OSFile(f"{base}.out_of_range.Arrow", "wb") as sink:
     with pa.ipc.new_file(sink, out_of_range.schema) as writer:
         writer.write_table(out_of_range)
-# -1 ms = 1969-12-31 23:59:59.999: before the epoch, must not floor into second 0.
-subsecond = pa.table({'d': pa.array([-1], type=pa.int64()).cast(pa.date64())})
+# -1 ms = 1969-12-31 23:59:59.999: before the epoch, must not round into second 0. Int64 minimum
+# must fail with a clean range error, not overflow inside the reader.
+subsecond = pa.table({'d': pa.array([-1, -2**63], type=pa.int64()).cast(pa.date64())})
 with pa.OSFile(f"{base}.subsecond.Arrow", "wb") as sink:
     with pa.ipc.new_file(sink, subsecond.schema) as writer:
         writer.write_table(subsecond)
@@ -57,6 +58,6 @@ ${CLICKHOUSE_LOCAL} -q "
     SELECT k, d FROM file('${DATA_FILE}.out_of_range.Arrow', 'Arrow') ORDER BY k
     SETTINGS session_timezone = 'UTC', date_time_overflow_behavior = 'saturate'"
 
-echo "--- -1 ms is before the epoch and throws too ---"
+echo "--- -1 ms and Int64 minimum are before the epoch and throw too ---"
 ${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${DATA_FILE}.subsecond.Arrow', 'Arrow') FORMAT Null" 2>&1 \
     | grep -oF 'is out of the allowed DateTime range' | head -1
