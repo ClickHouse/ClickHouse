@@ -732,7 +732,10 @@ def _run_main_with_compile_failure(monkeypatch, tmp_path, log_text, test_files):
     monkeypatch.setattr(
         job,
         "configure_before_binary",
-        lambda info: job.Result(name="Configure before-binary", status=job.Result.Status.OK),
+        lambda info, build_type: job.Result(
+            name=f"Configure before-binary (cmake, {build_type})",
+            status=job.Result.Status.OK,
+        ),
     )
 
     log = tmp_path / "compile.log"
@@ -740,7 +743,7 @@ def _run_main_with_compile_failure(monkeypatch, tmp_path, log_text, test_files):
     monkeypatch.setattr(
         job,
         "compile_before_binary",
-        lambda: job.Result(
+        lambda build_type: job.Result(
             name="Compile before-binary (ninja unit_tests_dbms, without the fix)",
             status=job.Result.Status.FAIL,
             files=[str(log)],
@@ -1428,9 +1431,9 @@ def _drive_main_to_compile_step(monkeypatch, tmp_path, compile_log):
     monkeypatch.setattr(
         job,
         "configure_before_binary",
-        lambda info: job.Result(name="Configure", status=job.Result.Status.OK),
+        lambda info, build_type: job.Result(name="Configure", status=job.Result.Status.OK),
     )
-    monkeypatch.setattr(job, "compile_before_binary", lambda: compile_result)
+    monkeypatch.setattr(job, "compile_before_binary", lambda build_type: compile_result)
     # A reproduction must never be reached: step 4b returns either way.
     monkeypatch.setattr(
         job, "run_gtests", lambda *a, **kw: pytest.fail("main() ran the gtests")
@@ -1601,6 +1604,247 @@ def test_main_reports_error_when_a_second_overlaid_edge_has_no_diagnostic(
 
 
 
+# --------------------------------------------------------------------------
+# main(): the build-type escalation loop. "No touched test failed" is only a
+# refutation once every build type in BEFORE_BUILD_TYPES has run them: a regression
+# test whose failure mode needs a sanitizer the arm lacks passes there either way. So
+# the loop must continue on exactly that outcome and stop on every other one, and the
+# arms must not share a Result name (praktika derives each log path from the name).
+# --------------------------------------------------------------------------
+def _before_run(job, tmp_path, tag, status, with_run_marker=True):
+    """A before-run Result carrying a real gtest log, shaped like run_gtests returns."""
+    log = tmp_path / f"gtest-{tag}.log"
+    log.write_text(
+        "[ RUN      ] SuiteA.Case\n[       OK ] SuiteA.Case (1 ms)\n"
+        if with_run_marker
+        else "Note: Google Test filter = SuiteA.*\n"
+    )
+    return job.Result(name=f"before-run-{tag}", status=status, files=[str(log)])
+
+
+def _drive_main_arms(monkeypatch, tmp_path, outcomes, reset_ok=True):
+    """Drive main() with the build steps stubbed and one `outcomes` entry per arm.
+
+    Each entry is a callable (job) -> Result deciding what that arm's before-run did.
+    Returns (job, finalized, calls) where `calls` records what each step was asked for.
+    """
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    class _Info:
+        pr_labels = ["pr-bugfix"]
+        sha = "prheadsha777"
+        base_branch = "master"
+        is_local_run = False
+
+        def get_changed_files(self):
+            return [_OVERLAID]
+
+    monkeypatch.setattr(job, "Info", _Info)
+    monkeypatch.setattr(job, "get_changed_unit_test_files", lambda info: [_OVERLAID])
+    monkeypatch.setattr(job, "derive_test_suites", lambda files: ["SuiteA"])
+    monkeypatch.setattr(job, "gitmodules_shape_violation", lambda: None)
+    monkeypatch.setattr(job, "determine_merge_base", lambda info: "mergebase123")
+    # Only the checkout-HEAD probe is stubbed: `before_run_started_a_test` really cats the
+    # gtest log below, so the production "[ RUN ]" detection is what decides these arms.
+    real_get_output = job.Shell.get_output
+    monkeypatch.setattr(
+        job.Shell,
+        "get_output",
+        staticmethod(
+            lambda cmd, **kw: (
+                "checkouthead999" if "rev-parse HEAD" in cmd else real_get_output(cmd, **kw)
+            )
+        ),
+    )
+    monkeypatch.setattr(job, "get_submodule_state_changes", lambda base, head: [])
+    monkeypatch.setattr(job, "prepare_before_worktree", lambda *a, **kw: True)
+
+    calls = {"configure": [], "compile": [], "run": [], "reset": 0}
+
+    def fake_configure(info, build_type):
+        calls["configure"].append(build_type)
+        return job.Result(name=f"configure-{build_type}", status=job.Result.Status.OK)
+
+    def fake_compile(build_type):
+        calls["compile"].append(build_type)
+        return job.Result(name=f"compile-{build_type}", status=job.Result.Status.OK)
+
+    def fake_run(binary, gtest_filter, name):
+        index = len(calls["run"])
+        calls["run"].append(name)
+        assert index < len(outcomes), "main() ran more arms than the test allows"
+        return outcomes[index](job)
+
+    def fake_reset():
+        calls["reset"] += 1
+        return reset_ok
+
+    monkeypatch.setattr(job, "configure_before_binary", fake_configure)
+    monkeypatch.setattr(job, "compile_before_binary", fake_compile)
+    monkeypatch.setattr(job, "run_gtests", fake_run)
+    monkeypatch.setattr(job, "reset_before_build_dir", fake_reset)
+
+    finalized = {}
+    monkeypatch.setattr(
+        job,
+        "finalize",
+        lambda results, info_lines: finalized.update(results=results, info=info_lines),
+    )
+    job.main()
+    assert "results" in finalized, "main() returned without finalizing a report"
+    return job, finalized, calls
+
+
+def test_main_first_arm_reproduction_does_not_build_a_second_arm(monkeypatch, tmp_path):
+    # A reproduction on the first arm is the final verdict: no further build type may be
+    # built (that would spend another cold build for nothing) and nothing is deleted.
+    job, finalized, calls = _drive_main_arms(
+        monkeypatch,
+        tmp_path,
+        [lambda job: _before_run(job, tmp_path, "arm1", job.Result.Status.FAIL)],
+    )
+    assert finalized["results"][-1].status == job.Result.Status.XFAIL
+    assert "Bug reproduced" in finalized["info"]
+    assert calls["configure"] == [job.BEFORE_BUILD_TYPES[0]]
+    assert calls["reset"] == 0
+
+
+def test_main_escalates_to_the_next_build_type_when_the_first_finds_nothing(
+    monkeypatch, tmp_path
+):
+    # The first arm ran every touched test and none failed — inconclusive, not a
+    # refutation — so the next build type is configured, compiled and run, and its
+    # reproduction is what decides the job.
+    job, finalized, calls = _drive_main_arms(
+        monkeypatch,
+        tmp_path,
+        [
+            lambda job: _before_run(job, tmp_path, "arm1", job.Result.Status.OK),
+            lambda job: _before_run(job, tmp_path, "arm2", job.Result.Status.FAIL),
+        ],
+    )
+    assert finalized["results"][-1].status == job.Result.Status.XFAIL
+    assert "Bug reproduced" in finalized["info"]
+    assert calls["configure"] == list(job.BEFORE_BUILD_TYPES)
+    assert calls["compile"] == list(job.BEFORE_BUILD_TYPES)
+    assert calls["reset"] == 1, "the shared build directory must be emptied between arms"
+    # Both arms are named in the report, and the first says why it escalated.
+    for build_type, name in zip(job.BEFORE_BUILD_TYPES, calls["run"]):
+        assert build_type in name
+    escalated = [r for r in finalized["results"] if "Escalating to" in (r.info or "")]
+    assert len(escalated) == 1
+    assert job.BEFORE_BUILD_TYPES[1] in escalated[0].info
+
+
+def test_main_refutes_only_after_every_build_type(monkeypatch, tmp_path):
+    # Every touched test passed on every build type: that is the refutation the merge
+    # gate blocks on, and the info must name what was actually measured.
+    job, finalized, calls = _drive_main_arms(
+        monkeypatch,
+        tmp_path,
+        [
+            lambda job: _before_run(job, tmp_path, "arm1", job.Result.Status.OK),
+            lambda job: _before_run(job, tmp_path, "arm2", job.Result.Status.OK),
+        ],
+    )
+    refutation = finalized["results"][-1]
+    assert refutation.status == job.Result.Status.FAIL
+    assert "Failed to reproduce the bug." in finalized["info"]
+    for build_type in job.BEFORE_BUILD_TYPES:
+        assert build_type in refutation.info
+    assert calls["configure"] == list(job.BEFORE_BUILD_TYPES)
+
+
+def test_main_clean_run_without_a_test_does_not_escalate(monkeypatch, tmp_path):
+    # The suite is not compiled into unit_tests_dbms: the run measured nothing at all, so
+    # it is inconclusive on every build type. Escalating would turn a documented ERROR
+    # into a possible FAIL.
+    job, finalized, calls = _drive_main_arms(
+        monkeypatch,
+        tmp_path,
+        [
+            lambda job: _before_run(
+                job, tmp_path, "arm1", job.Result.Status.OK, with_run_marker=False
+            )
+        ],
+    )
+    assert finalized["results"][-1].status == job.Result.Status.ERROR
+    assert "not compiled into" in finalized["results"][-1].info
+    assert calls["configure"] == [job.BEFORE_BUILD_TYPES[0]]
+    assert calls["reset"] == 0
+
+
+def test_main_errored_run_does_not_escalate(monkeypatch, tmp_path):
+    # The runner itself did not finish: preserve the error instead of trying another
+    # build type, which cannot turn an unfinished run into evidence.
+    job, finalized, calls = _drive_main_arms(
+        monkeypatch,
+        tmp_path,
+        [lambda job: _before_run(job, tmp_path, "arm1", job.Result.Status.ERROR)],
+    )
+    assert finalized["results"][-1].status == job.Result.Status.ERROR
+    assert "did not finish" in finalized["info"]
+    assert calls["configure"] == [job.BEFORE_BUILD_TYPES[0]]
+
+
+def test_main_stops_when_the_build_directory_cannot_be_emptied(monkeypatch, tmp_path):
+    # Fail closed: configuring the next build type on top of the previous arm's
+    # CMakeCache.txt would build one sanitizer and report another.
+    job, finalized, calls = _drive_main_arms(
+        monkeypatch,
+        tmp_path,
+        [lambda job: _before_run(job, tmp_path, "arm1", job.Result.Status.OK)],
+        reset_ok=False,
+    )
+    assert finalized["results"][-1].status == job.Result.Status.ERROR
+    assert "CMakeCache.txt" in finalized["results"][-1].info
+    assert calls["configure"] == [job.BEFORE_BUILD_TYPES[0]], "arm 2 was configured anyway"
+    assert calls["compile"] == [job.BEFORE_BUILD_TYPES[0]]
+
+
+def test_reset_before_build_dir_reports_a_surviving_directory(monkeypatch, tmp_path):
+    # The predicate the branch above depends on: it is the *state of the directory* that
+    # decides, not the exit code of the rm.
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    before_src = tmp_path / "before_src"
+    (before_src / "build").mkdir(parents=True)
+    monkeypatch.setattr(job, "BEFORE_SRC", str(before_src))
+    monkeypatch.setattr(job.Shell, "check", staticmethod(lambda *a, **kw: True))
+    assert job.reset_before_build_dir() is False
+
+    (before_src / "build").rmdir()
+    assert job.reset_before_build_dir() is True
+
+
+def test_per_arm_build_step_log_paths_are_distinct(monkeypatch, tmp_path):
+    # praktika names each log from the Result NAME
+    # (`from_commands_run`: {TEMP_DIR}/{normalize_string(name)}.log), so two arms sharing
+    # one name write one file and the second silently overwrites the first arm's
+    # configure and compile logs — the evidence for the arm that started the escalation.
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+    from ci.praktika.utils import Utils
+
+    names = []
+
+    def fake_from_commands_run(name, command, **kw):
+        names.append(name)
+        return job.Result(name=name, status=job.Result.Status.OK)
+
+    monkeypatch.setattr(
+        job.Result, "from_commands_run", staticmethod(fake_from_commands_run)
+    )
+    monkeypatch.setattr(job, "setup_build_caches_env", lambda info: None)
+    monkeypatch.setattr(job.Shell, "check", staticmethod(lambda *a, **kw: True))
+    monkeypatch.setattr(job, "BEFORE_SRC", str(tmp_path / "before_src"))
+
+    for build_type in job.BEFORE_BUILD_TYPES:
+        job.configure_before_binary(None, build_type)
+        job.compile_before_binary(build_type)
+
+    assert len(names) == 2 * len(job.BEFORE_BUILD_TYPES)
+    log_paths = [Utils.normalize_string(n) for n in names]
+    assert len(set(log_paths)) == len(log_paths), f"log paths collide: {log_paths}"
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

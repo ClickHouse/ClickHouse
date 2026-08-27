@@ -34,11 +34,12 @@ functional-test logic.
 import os
 import re
 import shlex
+import shutil
 import sys
 
 sys.path.append("./")
 
-from ci.defs.defs import BuildTypes
+from ci.defs.defs import BuildTypes, ToolSet
 from ci.jobs.build_clickhouse import BUILD_TYPE_TO_CMAKE, setup_build_caches_env
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
@@ -54,9 +55,13 @@ BEFORE_SRC_NORMALIZED = f"{REPO_NORMALIZED}/{BEFORE_SRC}"
 BEFORE_BUILD_NORMALIZED = f"{BEFORE_SRC_NORMALIZED}/build"
 BEFORE_BINARY = f"{BEFORE_SRC}/build/src/unit_tests_dbms"
 
-# Build the "before" binary with the same config the regular `Unit tests (asan_ubsan)`
-# job uses for the PR binary, so the two sides are compared under identical flags.
-BUILD_TYPE = BuildTypes.AMD_ASAN_UBSAN
+# Build types the "before" binary is validated on, in order; the first is what
+# `Unit tests (asan_ubsan)` uses for the PR binary. A later arm is reached only when its
+# predecessor ran every touched test and none failed: a test whose failure mode needs a
+# sanitizer the arm lacks passes there either way, so one arm cannot separate "the test does
+# not catch the bug" from "this build cannot observe it". Every arm is a cold build, so the
+# list stops at two and `amd_msan`/`amd_debug` remain blind spots.
+BEFORE_BUILD_TYPES = (BuildTypes.AMD_ASAN_UBSAN, BuildTypes.AMD_TSAN)
 
 # gtest test-registration macros whose first argument is the test-suite name.
 # `TEST`/`TEST_F` are `#define`d to `GTEST_TEST`/`GTEST_TEST_F`, so both spellings of
@@ -405,7 +410,17 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
     return os.path.isfile(os.path.join(BEFORE_SRC, SUBMODULE_MARKER))
 
 
-def configure_before_binary(info):
+def reset_before_build_dir():
+    """Empty the build directory so the next build type is configured from scratch.
+
+    Returns False if it survives: configuring a different `SANITIZE` value on top of the
+    previous arm's `CMakeCache.txt` builds one sanitizer while the report names another.
+    """
+    Shell.check(f"rm -rf {BEFORE_SRC}/build", verbose=True)
+    return not os.path.exists(f"{BEFORE_SRC}/build")
+
+
+def configure_before_binary(info, build_type):
     """Run cmake configure for the before-worktree. Returns the cmake Result.
 
     Kept separate from the compile step on purpose: a configure failure is an
@@ -427,29 +442,32 @@ def configure_before_binary(info):
     # build matrix). Bind-mounting the worktree onto `/ClickHouse` to recover hits does
     # NOT work — sccache's server compiles in its own mount namespace, not the client's.
     #
-    # Reuse the exact ASan+UBSan flags from the build job, but point the source tree,
-    # build dir, and toolchain file at the merge-base worktree (the only path the dict
-    # hardcodes to the primary checkout is the toolchain file).
-    cmake_flags = BUILD_TYPE_TO_CMAKE[BUILD_TYPE].replace(
+    # Reuse the exact flags the build job uses for this build type, but point the source
+    # tree, build dir, and toolchain file at the merge-base worktree (the only path the
+    # dict hardcodes to the primary checkout is the toolchain file).
+    cmake_flags = BUILD_TYPE_TO_CMAKE[build_type].replace(
         f"{REPO_NORMALIZED}/cmake/", f"{BEFORE_SRC_NORMALIZED}/cmake/"
     )
     cmake_cmd = f"{cmake_flags} {BEFORE_SRC_NORMALIZED} -B {BEFORE_BUILD_NORMALIZED}"
     return Result.from_commands_run(
-        name="Configure before-binary (cmake)",
+        name=f"Configure before-binary (cmake, {build_type})",
         command=[cmake_cmd],
         workdir=BEFORE_BUILD_NORMALIZED,
         with_log=True,
     )
 
 
-def compile_before_binary():
+def compile_before_binary(build_type):
     """Compile only the `unit_tests_dbms` target in the configured before-worktree.
 
     Returns the ninja Result. A failure here means the overlaid test does not compile
     against the merge-base sources — strong evidence it depends on code the PR adds.
     """
     compile_result = Result.from_commands_run(
-        name="Compile before-binary (ninja unit_tests_dbms, without the fix)",
+        name=(
+            "Compile before-binary (ninja unit_tests_dbms, without the fix, "
+            f"{build_type})"
+        ),
         command=["ninja unit_tests_dbms"],
         workdir=BEFORE_BUILD_NORMALIZED,
         with_log=True,
@@ -656,10 +674,40 @@ def compile_failure_attribution(compile_result, test_files):
     )
 
 
+_SANITIZER_OPTION_VARS = ("ASAN_OPTIONS", "TSAN_OPTIONS", "UBSAN_OPTIONS", "MSAN_OPTIONS")
+
+
+def set_sanitizer_symbolizer_options():
+    """Point the sanitizer runtimes at an explicit `llvm-symbolizer`.
+
+    A report is symbolized before the process aborts, and with no unversioned
+    `llvm-symbolizer` on `PATH` the runtime falls back to `addr2line`, which does not finish
+    on a multi-GB `unit_tests_dbms`, so the run reaches the report as a timeout rather than a
+    verdict. The binary-builder image installs `llvm-symbolizer-<version>` without that
+    symlink. Setting only this option keeps the binary's compiled-in defaults in force
+    (`base/base/sanitizer_options.h`).
+    """
+    symbolizer = shutil.which("llvm-symbolizer") or shutil.which(
+        f"llvm-symbolizer-{ToolSet.COMPILER_C.rsplit('-', 1)[-1]}"
+    )
+    if not symbolizer:
+        print(
+            "WARNING: no llvm-symbolizer found; a sanitizer report would be symbolized "
+            "with addr2line, which does not finish on this binary"
+        )
+        return
+    for var in _SANITIZER_OPTION_VARS:
+        options = os.environ.get(var, "")
+        if "external_symbolizer_path" in options:
+            continue
+        os.environ[var] = f"{options} external_symbolizer_path={symbolizer}".strip()
+
+
 def run_gtests(binary_path, gtest_filter, name):
-    # ASan+UBSan build: do not wrap with gdb (LSan is incompatible with the debugger),
+    # Sanitizer builds: do not wrap with gdb (LSan is incompatible with the debugger),
     # and disable the uninstrumented FIPS provider to avoid sanitizer false positives.
     os.environ["OPENSSL_CONF"] = "/dev/null"
+    set_sanitizer_symbolizer_options()
     return Result.from_gtest_run(
         unit_tests_path=binary_path,
         name=name,
@@ -854,163 +902,203 @@ def main():
         )
         return
 
-    # 4a. Configure. A cmake-configure failure is an environment/infra problem, never
-    # evidence that the test depends on the fix — report it as an error, do not pass.
-    configure_result = configure_before_binary(info)
-    results.append(configure_result)
-    if not configure_result.is_ok():
-        configure_result.set_status(Result.Status.ERROR)
-        finalize(
-            results,
-            "Bugfix validation inconclusive: the before-binary failed to CONFIGURE "
-            "(cmake). This is an infrastructure error, not a reproduction.",
-        )
-        return
+    # 4-5. Build the "before" binary and judge the touched tests on it, one build type at
+    # a time. Only the "every touched test ran and none failed" outcome continues to the
+    # next arm; every other outcome decides the job. The arms share one build directory.
+    arms_tried = []
+    for build_type in BEFORE_BUILD_TYPES:
+        if arms_tried and not reset_before_build_dir():
+            results.append(
+                Result(
+                    name=f"Reset before-build directory ({build_type})",
+                    status=Result.Status.ERROR,
+                    info=(
+                        f"Could not empty {BEFORE_SRC}/build before configuring "
+                        f"{build_type}; refusing to configure on top of the "
+                        f"{arms_tried[-1]} CMakeCache.txt, which would build one sanitizer "
+                        "and report another. This is an infrastructure error — NOT a "
+                        "reproduction."
+                    ),
+                )
+            )
+            finalize(
+                results,
+                "Bugfix validation inconclusive: could not empty the before-build "
+                "directory between build types.",
+            )
+            return
+        arms_tried.append(build_type)
 
-    # 4b. Compile. A compile failure is NOT accepted as a reproduction: it only proves
-    # the overlaid test references *some* code the PR adds, not that it catches the bug
-    # at runtime. Attribute the failure instead:
-    #  * every compiler error inside the overlaid test files, or every translation unit
-    #    that failed to compile being an overlaid test file (compile_failure_attribution)
-    #    → the changed test code depends on the fix's interface (typically a call site
-    #    adapted to a changed signature). The PR author cannot avoid that adaptation and
-    #    the unit side has nothing left to judge, so report the step as an expected
-    #    failure (XFAIL) with nothing to validate — NOT as a reproduction. When the PR
-    #    also carries functional/integration tests, new_tests_check.py still demands a
-    #    real validation from those jobs; for a unit-only PR the merge gate already
-    #    treats inconclusive as non-blocking, so this changes report truthfulness, not
-    #    gating.
-    #  * anything else (a failed fix-source or contrib translation unit, the linker, no
-    #    parsable diagnostic) → cannot be attributed to the touched test changes; fail
-    #    close (ERROR).
-    compile_result = compile_before_binary()
-    if not compile_result.is_ok():
-        attributed_to, other_errors, refusal = compile_failure_attribution(
-            compile_result, test_files
-        )
-        if attributed_to:
-            compile_result.set_label(Result.Label.XFAIL)
-            compile_result.set_status(Result.Status.XFAIL)
+        # 4a. Configure. A cmake-configure failure is an environment/infra problem, never
+        # evidence that the test depends on the fix — report it as an error, do not pass.
+        configure_result = configure_before_binary(info, build_type)
+        results.append(configure_result)
+        if not configure_result.is_ok():
+            configure_result.set_status(Result.Status.ERROR)
+            finalize(
+                results,
+                "Bugfix validation inconclusive: the before-binary failed to CONFIGURE "
+                "(cmake). This is an infrastructure error, not a reproduction.",
+            )
+            return
+
+        # 4b. Compile. A compile failure is NOT accepted as a reproduction: it only proves
+        # the overlaid test references *some* code the PR adds, not that it catches the bug
+        # at runtime. Attribute the failure instead:
+        #  * every compiler error inside the overlaid test files, or every translation unit
+        #    that failed to compile being an overlaid test file (compile_failure_attribution)
+        #    → the changed test code depends on the fix's interface (typically a call site
+        #    adapted to a changed signature). The PR author cannot avoid that adaptation and
+        #    the unit side has nothing left to judge, so report the step as an expected
+        #    failure (XFAIL) with nothing to validate — NOT as a reproduction. When the PR
+        #    also carries functional/integration tests, new_tests_check.py still demands a
+        #    real validation from those jobs; for a unit-only PR the merge gate already
+        #    treats inconclusive as non-blocking, so this changes report truthfulness, not
+        #    gating.
+        #  * anything else (a failed fix-source or contrib translation unit, the linker, no
+        #    parsable diagnostic) → cannot be attributed to the touched test changes; fail
+        #    close (ERROR).
+        compile_result = compile_before_binary(build_type)
+        if not compile_result.is_ok():
+            attributed_to, other_errors, refusal = compile_failure_attribution(
+                compile_result, test_files
+            )
+            if attributed_to:
+                compile_result.set_label(Result.Label.XFAIL)
+                compile_result.set_status(Result.Status.XFAIL)
+                compile_result.set_info(
+                    "The before-binary cannot compile the overlaid unit-test changes: "
+                    + attributed_to
+                    + ". The changed test code depends on the interface this PR introduces "
+                    "(e.g. a call site adapted to a changed signature), so there is nothing "
+                    "the unit side can validate on the merge base. This is expected, not an "
+                    "error — and it is not counted as a reproduction either. "
+                    + (compile_result.info or "")
+                )
+                results.append(compile_result)
+                finalize(
+                    results,
+                    "Nothing to validate on the unit side: the changed unit-test files do "
+                    "not compile against the merge base because they depend on the fix's "
+                    "interface. Regression coverage is judged by the functional/integration "
+                    "Bugfix validation jobs (enforced by new_tests_check.py when such tests "
+                    "exist).",
+                )
+                return
+            compile_result.set_status(Result.Status.ERROR)
             compile_result.set_info(
-                "The before-binary cannot compile the overlaid unit-test changes: "
-                + attributed_to
-                + ". The changed test code depends on the interface this PR introduces "
-                "(e.g. a call site adapted to a changed signature), so there is nothing "
-                "the unit side can validate on the merge base. This is expected, not an "
-                "error — and it is not counted as a reproduction either. "
-                + (compile_result.info or "")
+                "The before-binary FAILED TO COMPILE, and the errors cannot be attributed "
+                "to the overlaid test files alone"
+                + (f" (errors outside them: {', '.join(other_errors)})" if other_errors else "")
+                + (f" ({refusal})" if refusal else "")
+                + ". This does not prove the test reproduces the bug. Write a regression "
+                "test that builds against the merge-base and fails at runtime without the "
+                "fix. " + (compile_result.info or "")
             )
             results.append(compile_result)
             finalize(
                 results,
-                "Nothing to validate on the unit side: the changed unit-test files do "
-                "not compile against the merge base because they depend on the fix's "
-                "interface. Regression coverage is judged by the functional/integration "
-                "Bugfix validation jobs (enforced by new_tests_check.py when such tests "
-                "exist).",
+                "Bugfix validation inconclusive: the before-binary failed to COMPILE and "
+                "the failure cannot be attributed to the touched regression case.",
             )
             return
-        compile_result.set_status(Result.Status.ERROR)
-        compile_result.set_info(
-            "The before-binary FAILED TO COMPILE, and the errors cannot be attributed "
-            "to the overlaid test files alone"
-            + (f" (errors outside them: {', '.join(other_errors)})" if other_errors else "")
-            + (f" ({refusal})" if refusal else "")
-            + ". This does not prove the test reproduces the bug. Write a regression "
-            "test that builds against the merge-base and fails at runtime without the "
-            "fix. " + (compile_result.info or "")
+        build_result = compile_result
+
+        results.append(build_result)
+
+        # 5. Run the touched tests on the "before" binary — at least one must fail/crash.
+        before_result = run_gtests(
+            BEFORE_BINARY,
+            gtest_filter,
+            name=f"Touched unit tests on the before-binary ({build_type}, must fail)",
         )
-        results.append(compile_result)
-        finalize(
-            results,
-            "Bugfix validation inconclusive: the before-binary failed to COMPILE and "
-            "the failure cannot be attributed to the touched regression case.",
-        )
-        return
-    build_result = compile_result
 
-    results.append(build_result)
+        if before_result.is_error():
+            # Inconclusive run (binary could not be executed / runner died): preserve the
+            # error rather than reporting a false "failed to reproduce".
+            results.append(before_result)
+            finalize(
+                results,
+                "Bugfix validation inconclusive: the before-binary run did not finish.",
+            )
+            return
 
-    # 5. Run the touched tests on the "before" binary — at least one must fail/crash.
-    before_result = run_gtests(
-        BEFORE_BINARY,
-        gtest_filter,
-        name="Touched unit tests on the before-binary (must fail)",
-    )
+        if not before_result.is_ok():
+            # A failure/crash only counts as a reproduction if the touched suite actually
+            # started executing. If the binary died before any test ran (no "[ RUN ]" marker),
+            # it is an environment/infrastructure problem — e.g. a runtime that cannot
+            # initialize in this container — NOT evidence the test catches the bug. Fail close.
+            if not before_run_started_a_test(before_result):
+                before_result.set_status(Result.Status.ERROR)
+                before_result.set_info(
+                    "The before-binary died before running any touched test (no gtest "
+                    "'[ RUN ]' marker). This is an infrastructure error — NOT a reproduction. "
+                    + (before_result.info or "")
+                )
+                results.append(before_result)
+                finalize(
+                    results,
+                    "Bugfix validation inconclusive: the before-binary did not start any "
+                    "touched test (environment problem, not a reproduction).",
+                )
+                return
 
-    if before_result.is_error():
-        # Inconclusive run (binary could not be executed / runner died): preserve the
-        # error rather than reporting a false "failed to reproduce".
-        results.append(before_result)
-        finalize(
-            results,
-            "Bugfix validation inconclusive: the before-binary run did not finish.",
-        )
-        return
+            # At least one touched test failed or crashed on the before-binary — the bug is
+            # reproduced. Flip the expected failure to a success for the report.
+            mark_reproduced(before_result)
+            results.append(before_result)
+            finalize(
+                results,
+                "Bug reproduced: at least one touched unit test fails/crashes on the "
+                "before-binary (merge-base without the fix) and passes on the PR binary.",
+            )
+            return
 
-    if not before_result.is_ok():
-        # A failure/crash only counts as a reproduction if the touched suite actually
-        # started executing. If the binary died before any test ran (no "[ RUN ]" marker),
-        # it is an environment/infrastructure problem — e.g. a runtime that cannot
-        # initialize in this container — NOT evidence the test catches the bug. Fail close.
+        # A "pass" only refutes the bug if the touched suite actually ran. `unit_tests_dbms`
+        # is built from `gtest*.cpp` only (see `grep_gtest_sources` in `src/CMakeLists.txt`),
+        # while `_UNIT_TEST_FILE_RE` also matches standalone `*.cpp`/`*.cc`/`*.cxx` test files
+        # under `tests/` (e.g. `test_hive_catalog_url_parsing.cpp`). If a bugfix touches such a
+        # file, its suite is derived but never compiled into the binary, so the filter matches
+        # zero cases and the before-binary exits cleanly without printing a "[ RUN ]" marker.
+        # That is not a refutation — the test was never executed. Treat it as inconclusive
+        # instead of falsely reporting that the test fails to catch the bug.
         if not before_run_started_a_test(before_result):
             before_result.set_status(Result.Status.ERROR)
             before_result.set_info(
-                "The before-binary died before running any touched test (no gtest "
-                "'[ RUN ]' marker). This is an infrastructure error — NOT a reproduction. "
-                + (before_result.info or "")
+                "The before-binary ran no touched test (no gtest '[ RUN ]' marker) yet exited "
+                "cleanly — the touched suite is not compiled into `unit_tests_dbms`, which is "
+                "built from `gtest*.cpp` sources only. This is inconclusive — NOT a refutation."
             )
             results.append(before_result)
             finalize(
                 results,
-                "Bugfix validation inconclusive: the before-binary did not start any "
-                "touched test (environment problem, not a reproduction).",
+                "Bugfix validation inconclusive: none of the touched unit tests are compiled "
+                "into `unit_tests_dbms` (e.g. a standalone, non-`gtest*.cpp` test file).",
             )
             return
 
-        # At least one touched test failed or crashed on the before-binary — the bug is
-        # reproduced. Flip the expected failure to a success for the report.
-        mark_reproduced(before_result)
-        results.append(before_result)
-        finalize(
-            results,
-            "Bug reproduced: at least one touched unit test fails/crashes on the "
-            "before-binary (merge-base without the fix) and passes on the PR binary.",
-        )
-        return
+        # Every touched test ran and passed on this arm. That only refutes the bug once no
+        # build type is left: a failure mode this build cannot observe is indistinguishable
+        # from a test that does not catch the bug.
+        if len(arms_tried) < len(BEFORE_BUILD_TYPES):
+            before_result.set_info(
+                f"All touched unit tests PASS on the {build_type} before-binary, which "
+                f"cannot observe a failure mode specific to another build type — not a "
+                f"refutation. Escalating to {BEFORE_BUILD_TYPES[len(arms_tried)]}."
+            )
+            results.append(before_result)
+            continue
 
-    # A "pass" only refutes the bug if the touched suite actually ran. `unit_tests_dbms`
-    # is built from `gtest*.cpp` only (see `grep_gtest_sources` in `src/CMakeLists.txt`),
-    # while `_UNIT_TEST_FILE_RE` also matches standalone `*.cpp`/`*.cc`/`*.cxx` test files
-    # under `tests/` (e.g. `test_hive_catalog_url_parsing.cpp`). If a bugfix touches such a
-    # file, its suite is derived but never compiled into the binary, so the filter matches
-    # zero cases and the before-binary exits cleanly without printing a "[ RUN ]" marker.
-    # That is not a refutation — the test was never executed. Treat it as inconclusive
-    # instead of falsely reporting that the test fails to catch the bug.
-    if not before_run_started_a_test(before_result):
-        before_result.set_status(Result.Status.ERROR)
+        before_result.set_status(Result.Status.FAIL)
         before_result.set_info(
-            "The before-binary ran no touched test (no gtest '[ RUN ]' marker) yet exited "
-            "cleanly — the touched suite is not compiled into `unit_tests_dbms`, which is "
-            "built from `gtest*.cpp` sources only. This is inconclusive — NOT a refutation."
+            "Failed to reproduce the bug: all touched unit tests PASS on the before-binary "
+            "(merge-base without the fix) on every validated build type ("
+            + ", ".join(arms_tried)
+            + "). The added/changed test does not catch the bug the fix addresses."
         )
         results.append(before_result)
-        finalize(
-            results,
-            "Bugfix validation inconclusive: none of the touched unit tests are compiled "
-            "into `unit_tests_dbms` (e.g. a standalone, non-`gtest*.cpp` test file).",
-        )
+        finalize(results, "Failed to reproduce the bug.")
         return
-
-    # All touched tests ran and passed on the before-binary — the test does not catch the bug.
-    before_result.set_status(Result.Status.FAIL)
-    before_result.set_info(
-        "Failed to reproduce the bug: all touched unit tests PASS on the before-binary "
-        "(merge-base without the fix). The added/changed test does not catch the bug "
-        "the fix addresses."
-    )
-    results.append(before_result)
-    finalize(results, "Failed to reproduce the bug.")
 
 
 if __name__ == "__main__":
