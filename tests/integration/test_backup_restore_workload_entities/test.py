@@ -129,6 +129,46 @@ def test_backup_excludes_config_defined_entities():
     assert resources.count("cfg_res") == 1
 
 
+def test_restore_rejects_entity_kind_mismatch():
+    # restore() rejects a .sql file whose entity kind does not match the system table being restored
+    # (a WORKLOAD definition under data/system/resources/, or a RESOURCE under data/system/workloads/).
+    # That guard is what keeps the per-table CREATE_WORKLOAD / CREATE_RESOURCE access split safe -- a
+    # WORKLOAD restored via system.resources would otherwise only require CREATE_RESOURCE. Emulate a
+    # malformed backup by moving the backed-up WORKLOAD file into the resources data directory and
+    # renaming its manifest entry to match, then assert RESTORE fails with CANNOT_RESTORE_TABLE.
+    instance.query("CREATE RESOURCE sql_res (WRITE DISK sql_disk, READ DISK sql_disk)")
+    instance.query("CREATE WORKLOAD sql_wl IN all SETTINGS priority = 3")
+
+    backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP TABLE system.workloads, TABLE system.resources TO {backup_name}"
+    )
+    assert backed_up_entity_files(backup_name, "workloads") == ["sql_wl.sql"]
+
+    # Move the physical WORKLOAD file into the resources data directory (the directory exists because
+    # sql_res was backed up there) ...
+    src = next(
+        f
+        for f in find_files_in_backup_folder(backup_name)
+        if f.endswith("/workloads/sql_wl.sql")
+    )
+    os.rename(src, src.replace("/workloads/sql_wl.sql", "/resources/sql_wl.sql"))
+    # ... and point its manifest entry at the new path so RESTORE reads it under system.resources.
+    meta_path = os.path.join(get_path_to_backup(backup_name), ".backup")
+    with open(meta_path) as f:
+        meta = f.read()
+    with open(meta_path, "w") as f:
+        f.write(meta.replace("/workloads/sql_wl.sql", "/resources/sql_wl.sql"))
+
+    instance.query("DROP WORKLOAD sql_wl")
+    instance.query("DROP RESOURCE sql_res")
+
+    error = instance.query_and_get_error(
+        f"RESTORE TABLE system.workloads, TABLE system.resources FROM {backup_name}"
+    )
+    assert "CANNOT_RESTORE_TABLE" in error
+
+
 def test_backup_restore_on_cluster():
     # node1 and node2 share a single Keeper-backed workload entity storage (configs/replicated_workloads.xml),
     # so an entity created on one node replicates to the other. This exercises the ON CLUSTER coordination
