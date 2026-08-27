@@ -13,10 +13,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # splitter's estimate by ~100x, forcing far smaller batches than the guest's real (tiny, 1 MiB)
 # heap requires.
 #
-# RETURNS Array(UInt32) is deliberate: Array can't live inside Nullable, so ClickHouse disables
-# its default null-handling for this function and passes a genuinely-Nullable argument column
-# through to executeImpl -- a plain UInt32 return would have ClickHouse strip Nullable from the
-# argument before the call, never reaching the buggy code path at all.
+# RETURNS Nullable(UInt32) is deliberate: a WASM UDF owns null propagation exactly when it
+# declares a Nullable return type, so ClickHouse disables its default null-handling for this
+# function and passes a genuinely-Nullable argument column through to executeImpl -- a plain
+# UInt32 return would have ClickHouse strip Nullable from the argument before the call, never
+# reaching the buggy code path at all.
 #
 # The guest returns, for every input row, the number of rows in the batch it arrived in, so SQL
 # can assert both that every row was processed and that batches stayed reasonably large instead
@@ -34,8 +35,8 @@ cat "${CUR_DIR}/wasm/text_split_abi.wasm" \
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << 'EOF'
 CREATE OR REPLACE FUNCTION wasm_csv_batch_rows_nullable
     LANGUAGE WASM ABI BUFFERED_V1
-    FROM 'text_split_abi_nullable' :: 'batch_row_count_json'
-    ARGUMENTS (x Nullable(Int8)) RETURNS Array(UInt32)
+    FROM 'text_split_abi_nullable' :: 'batch_row_count_json_scalar'
+    ARGUMENTS (x Nullable(Int8)) RETURNS Nullable(UInt32)
     SETTINGS serialization_format = 'JSONEachRow';
 
 -- A single 262144-row block of Nullable(Int8) values (some NULL): well within the guest's
@@ -46,7 +47,7 @@ SELECT count() = 262144 AS all_rows_processed,
        min(batch_rows) > 1000 AS batches_not_collapsed
 FROM
 (
-    SELECT wasm_csv_batch_rows_nullable(if(number % 10 = 0, NULL, toInt8((number % 2) - 100)))[1] AS batch_rows
+    SELECT wasm_csv_batch_rows_nullable(if(number % 10 = 0, NULL, toInt8((number % 2) - 100))) AS batch_rows
     FROM numbers(262144)
 )
 SETTINGS max_block_size = 262144, max_threads = 1, webassembly_udf_max_input_block_size = 0;

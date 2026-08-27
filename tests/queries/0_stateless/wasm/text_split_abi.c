@@ -83,6 +83,30 @@ Span * batch_row_count(Span * input, uint32_t num_rows) {
    Array return types can't live inside Nullable, so calling this disables ClickHouse's
    default null-handling and lets a genuinely-Nullable argument column reach the guest —
    the path needed to exercise the declared-Nullable-argument size estimator. */
+/* Same batch-row-count probe, but emitting a scalar rather than a one-element array, so a
+   function declared RETURNS Nullable(UInt32) can use it. A Nullable return type is what makes
+   ClickHouse hand the guest genuinely-Nullable argument columns instead of denulling them. */
+Span * batch_row_count_json_scalar(Span * input, uint32_t num_rows) {
+    (void)input;
+    uint8_t digits[10];
+    uint32_t len = write_u32(num_rows, digits);
+    /* {"result":}\n = 12 chars + up to 10 digits */
+    Span * out = clickhouse_create_buffer(num_rows * (12 + len));
+    if (out == NULL) return NULL;
+    static const char prefix[] = "{\"result\":";
+    uint8_t * pos = out->data;
+    for (uint32_t row = 0; row < num_rows; row++) {
+        for (uint32_t i = 0; prefix[i]; i++)
+            *pos++ = prefix[i];
+        for (uint32_t i = 0; i < len; i++)
+            *pos++ = digits[i];
+        *pos++ = '}';
+        *pos++ = '\n';
+    }
+    out->size = (uint32_t)(pos - out->data);
+    return out;
+}
+
 Span * batch_row_count_json(Span * input, uint32_t num_rows) {
     (void)input;
     uint8_t digits[10];

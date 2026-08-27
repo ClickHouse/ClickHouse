@@ -826,12 +826,22 @@ public:
 
     bool isSuitableForConstantFolding() const override { return user_defined_function->getIsDeterministic(); }
 
-    /// Don't let the framework wrap the result in Nullable when inputs are nullable —
-    /// Array/Tuple return types cannot be inside Nullable.  WASM UDFs handle null
-    /// propagation themselves via COL_IS_NULLABLE on output columns.
+    /// A WASM UDF owns null propagation exactly when it declared that it can produce nulls.
+    /// For a `Nullable` return type the framework leaves the arguments alone, so the guest
+    /// sees real `ColumnNullable` inputs through `COL_IS_NULLABLE` and decides which rows are
+    /// null; for every other return type the framework denulls the arguments and wraps the
+    /// result, giving the ordinary SQL propagation every built-in function has.
+    ///
+    /// Keying this on the declared type's shape instead (`canBeInsideNullable`, as an earlier
+    /// version did) made the guest-visible ABI depend on something unrelated to nulls: an
+    /// `Array`/`Tuple` return type cannot be inside `Nullable` either, so the same module
+    /// declared `RETURNS Array(UInt32)` saw nullable inputs while `RETURNS UInt32` did not.
+    /// A return type that cannot be `Nullable` needs no special case here: the framework's
+    /// `makeNullableSafe` already returns it as-is and evaluates null rows over the nested
+    /// column's default values (see `IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality`).
     bool useDefaultImplementationForNulls() const override
     {
-        return user_defined_function->getResultType()->canBeInsideNullable();
+        return !user_defined_function->getResultType()->isNullable();
     }
 
     ColumnPtr
