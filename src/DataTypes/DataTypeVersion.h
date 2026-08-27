@@ -35,9 +35,8 @@ public:
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
     void updateHashImpl(SipHash &) const override {}
 
-    /// NOTE: mirrors DataTypeIPv4 verbatim per plan (rule 5); bitwise AND/OR on a packed version
-    /// number is semantically questionable but this flag only gates whether bitAnd/bitOr etc.
-    /// accept the type, so we mirror IPv4 exactly rather than second-guess it (flagged in open_risks).
+    /// Unlike IPv4/IPv6, where bit operations express subnet masking, bitAnd/bitOr on a packed
+    /// version number has no meaning, so bitwise functions reject the type rather than accept it.
     bool canBeUsedInBitOperations() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
     bool canBePromoted() const override { return false; }
