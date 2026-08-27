@@ -1308,7 +1308,8 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
             return;
         }
         /// These (and mapFilter/mapSort/... Map adapters over the same array Impls) only select/order/
-        /// count/split the input's own elements, so skip their lambda entirely (like if()'s condition).
+        /// count/split the *first* collection's own elements, so the lambda and the trailing
+        /// condition/sort-key collections are not donors either (like if()'s condition).
         static const std::unordered_set<String> predicate_only_higher_order_functions = {
             "arrayFilter", "arrayExists", "arrayAll", "arrayCount",
             "arrayFirst", "arrayFirstOrNull", "arrayLast", "arrayLastOrNull",
@@ -1321,13 +1322,21 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
             "mapFilter", "mapExists", "mapAll",
             "mapSort", "mapReverseSort", "mapPartialSort", "mapPartialReverseSort",
         };
+        /// arrayPartialSort([f,] limit, arr, ...) / arrayTopK([f,] K, arr, ...) put a scalar count
+        /// between the lambda and the collection whose elements they return.
+        static const std::unordered_set<String> predicate_only_with_leading_count = {
+            "arrayPartialSort", "arrayPartialReverseSort",
+            "arrayTopK", "arrayBottomK",
+            "mapPartialSort", "mapPartialReverseSort",
+        };
         if (!args.empty() && predicate_only_higher_order_functions.contains(function->name))
         {
             const auto * lambda_arg = args[0]->as<ASTFunction>();
             if (lambda_arg && lambda_arg->name == "lambda")
             {
-                for (size_t i = 1; i < args.size(); ++i)
-                    collectValueCarryingIdentifierNames(*args[i], names, masked_names);
+                const size_t source_index = predicate_only_with_leading_count.contains(function->name) ? 2 : 1;
+                if (source_index < args.size())
+                    collectValueCarryingIdentifierNames(*args[source_index], names, masked_names);
                 return;
             }
         }
