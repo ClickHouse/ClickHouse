@@ -6016,6 +6016,15 @@ Higher values raise peak memory during query initialization when the Iceberg met
 
 Must be greater than zero; `1` decodes the manifests one at a time.
 )", 0) \
+    DECLARE(NonZeroUInt64, iceberg_data_manifest_decode_concurrency, 4, R"(
+Maximum number of Iceberg data manifest files decoded concurrently while the list of data files to read is produced for a query.
+
+Decoding several manifests at a time overlaps the object storage round-trips and the per-entry pruning work; new manifests are decoded only as the query consumes already decoded entries.
+
+Higher values raise peak memory during query execution when the Iceberg metadata files cache is disabled or full, since each in-flight manifest then holds its own decoded contents.
+
+Must be greater than zero; `1` decodes the manifests one at a time.
+)", 0) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.
 
