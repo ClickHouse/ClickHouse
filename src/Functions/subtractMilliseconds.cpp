@@ -38,9 +38,9 @@ SELECT
 SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 millisecond)
         )",
         R"(
-┌─minus(CAST('⋯second(10))─┐
-│  1998-06-15 23:59:59.990 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'DateTime'), toIntervalMillisecond(10))─┐
+│                                          1998-06-15 23:59:59.990 │
+└──────────────────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
