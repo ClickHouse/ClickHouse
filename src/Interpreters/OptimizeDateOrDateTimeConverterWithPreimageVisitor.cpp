@@ -231,7 +231,7 @@ void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction
         if (point.getType() != Field::Types::UInt64)
             continue;
 
-        if (!canCalculatePreimageForConstant(converter_base->getResultType(), point_type))
+        if (!canCalculatePreimageForConstant(*converter_base->getResultType(), *point_type))
             continue;
 
         ColumnsWithTypeAndName comparison_arguments(2);
