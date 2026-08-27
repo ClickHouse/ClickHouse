@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
-#include <Interpreters/castColumn.h>
 
 namespace DB
 {
@@ -77,7 +76,7 @@ GroupConcatImpl<has_limit>::GroupConcatImpl(
     , delimiter(delimiter_)
     , type(data_type_)
 {
-    serialization = isFixedString(type) ? std::make_shared<DataTypeString>()->getDefaultSerialization() : this->argument_types[0]->getDefaultSerialization();
+    serialization = this->argument_types[0]->getDefaultSerialization();
 }
 
 template <bool has_limit>
@@ -106,18 +105,10 @@ void GroupConcatImpl<has_limit>::add(
     if (isFixedString(type))
     {
         /// Trailing zero bytes are cut, matching CAST(FixedString AS String).
-        if (const auto * col_fixed = checkAndGetColumn<ColumnFixedString>(columns[0]))
-        {
-            std::string_view ref = col_fixed->getDataAt(row_num);
-            while (!ref.empty() && ref.back() == 0)
-                ref.remove_suffix(1);
-            cur_data.insertString(ref, arena);
-            return;
-        }
-
-        ColumnWithTypeAndName col = {columns[0]->getPtr(), type, "column"};
-        const auto & col_str = castColumn(col, std::make_shared<DataTypeString>());
-        cur_data.insert(col_str.get(), serialization, row_num, arena);
+        std::string_view ref = assert_cast<const ColumnFixedString &>(*columns[0]).getDataAt(row_num);
+        while (!ref.empty() && ref.back() == 0)
+            ref.remove_suffix(1);
+        cur_data.insertString(ref, arena);
     }
     else
         cur_data.insert(columns[0], serialization, row_num, arena);
