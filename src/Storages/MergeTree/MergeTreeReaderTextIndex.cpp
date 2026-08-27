@@ -990,18 +990,15 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const TextS
                     token_info.position_bytes, token_info.position_offset, pos_file_size);
             positions_stream->seekToMark({token_info.position_offset, 0});
             const size_t available = token_info.position_bytes;
-            dirs[u] = TextIndexBlockedPositionsCodec::readDirectory(
-                *data_buffer, token_info.position_offset, token_info.position_cardinality, available);
-            blocks_total += dirs[u].numBlocks();
-
             /// Candidate ranks in this token's postings. Dense candidates: one linear walk over the
             /// materialized list beats per-candidate roaring rank(); sparse: rank() wins.
             const auto & postings = token_postings[u];
 
-            if (dirs[u].num_docs != postings.cardinality())
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Corrupt text index positions: expected {} documents, but the posting list has {}",
-                    dirs[u].num_docs, postings.cardinality());
+            /// readDirectory rejects a blob whose document count disagrees with the postings. That
+            /// equality is what bounds a rank below num_docs, so the block index needs no check.
+            dirs[u] = TextIndexBlockedPositionsCodec::readDirectory(
+                *data_buffer, token_info.position_offset, postings.cardinality(), available);
+            blocks_total += dirs[u].numBlocks();
 
             auto & ranks = candidate_ranks[u];
             ranks.resize(candidates.size());

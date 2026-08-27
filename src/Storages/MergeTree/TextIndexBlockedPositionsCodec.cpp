@@ -153,22 +153,6 @@ void emitRanks(
 
 }
 
-UInt64 TextIndexBlockedPositionsCodec::countDocuments(std::span<const RoaringishEntry> entries)
-{
-    UInt64 num_docs = 0;
-    UInt32 current_doc = 0;
-    bool has_doc = false;
-    for (const auto & entry : entries)
-    {
-        if (!has_doc || entry.doc_id != current_doc)
-        {
-            current_doc = entry.doc_id;
-            has_doc = true;
-            ++num_docs;
-        }
-    }
-    return num_docs;
-}
 
 void TextIndexBlockedPositionsCodec::encode(std::span<const RoaringishEntry> entries, WriteBuffer & out)
 {
@@ -278,7 +262,7 @@ TextIndexBlockedPositionsCodec::Directory TextIndexBlockedPositionsCodec::readDi
     readVarUInt(dir.num_docs, in);
     if (dir.num_docs != expected_num_docs)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions: stored document count {} does not match index header {}",
+            "Corrupt text index positions: stored document count {} does not match the posting list ({})",
             dir.num_docs, expected_num_docs);
 
     UInt64 num_blocks = 0;

@@ -66,9 +66,6 @@ public:
     /// Encodes the writer's sorted RoaringishEntry accumulation as the blocked stream.
     static void encode(std::span<const RoaringishEntry> entries, WriteBuffer & out);
 
-    /// Distinct document count — recorded as position_cardinality and validated by readDirectory.
-    static UInt64 countDocuments(std::span<const RoaringishEntry> entries);
-
     /// Reads the directory (stream positioned at the token's `blob_offset` = position_offset).
     /// `expected_num_docs` (header cardinality) and `available_bytes` fail-close every declared size.
     static Directory readDirectory(ReadBuffer & in, UInt64 blob_offset, UInt64 expected_num_docs, size_t available_bytes);

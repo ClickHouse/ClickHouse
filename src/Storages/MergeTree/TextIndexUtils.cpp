@@ -68,14 +68,14 @@ CompressionCodecPtr makeMarksCompressionCodec(const String & marks_compression_c
 void decodeBlockedPositions(
     ReadBuffer & in,
     std::span<const UInt32> doc_ids,
-    UInt64 position_cardinality,
+    UInt64 expected_num_docs,
     size_t available_bytes,
     TextIndexBlockedPositionsCodec::DecodeScratch & scratch,
     PODArray<RoaringishEntry> & entries)
 {
     PaddedPODArray<UInt32> doc_offsets;
     PaddedPODArray<UInt32> positions;
-    TextIndexBlockedPositionsCodec::decodeAll(in, position_cardinality, available_bytes, doc_offsets, positions, scratch);
+    TextIndexBlockedPositionsCodec::decodeAll(in, expected_num_docs, available_bytes, doc_offsets, positions, scratch);
 
     entries.reserve(entries.size() + positions.size());
 
@@ -518,7 +518,7 @@ void MergeTextIndexesTask::readAndAppendPositions(size_t source_num, TokenPostin
     /// this token's row ids in pre-remap order, captured while its postings were read.
     position_entries_buffer.clear();
     decodeBlockedPositions(
-        *data_buffer, token_row_ids, token_info.position_cardinality, token_info.position_bytes,
+        *data_buffer, token_row_ids, token_info.cardinality, token_info.position_bytes,
         blocked_decode_scratch, position_entries_buffer);
 
     /// Adjust doc_ids if merging parts with offset remapping.
@@ -579,12 +579,6 @@ void MergeTextIndexesTask::flushPostingList()
 
         token_info.header |= PostingsSerialization::Flags::HasPositions;
         token_info.position_offset = positions_stream->plain_hashing.count();
-        const UInt64 num_position_docs = TextIndexBlockedPositionsCodec::countDocuments(output_positions);
-        if (num_position_docs > std::numeric_limits<UInt32>::max())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Text index positions: more than {} documents for a single token", std::numeric_limits<UInt32>::max());
-        token_info.position_cardinality = static_cast<UInt32>(num_position_docs);
-
         TextIndexBlockedPositionsCodec::encode(output_positions, positions_stream->plain_hashing);
         token_info.position_bytes = positions_stream->plain_hashing.count() - token_info.position_offset;
     }

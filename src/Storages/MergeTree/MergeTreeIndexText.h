@@ -71,7 +71,7 @@ namespace DB
   * - Information about posting lists for each token:
   *    1. Header of posting list (VarUInt) (see PostingsSerialization::Flags).
   *    2. Cardinality of token (VarUInt).
-  *    3. If HasPositions flag is set, the token's offset, document count and byte length in .pos (VarUInt each).
+  *    3. If HasPositions flag is set, the token's offset and byte length in .pos (VarUInt each).
   *    4. a) If EmbeddedPostings flag is set, posting list embedded into the dictionary block.
   *       b) Otherwise, number of blocks of the posting list (VarUInt), if SingleBlock flag is not set.
   *       c) For each posting list block, offset in file to the block and min-max range of the block. All numbers are encoded as VarUInt.
@@ -267,8 +267,6 @@ struct TokenPostingsInfo
 
     /// Position data offset in the .pos file
     UInt64 position_offset = 0;
-    /// Number of documents that have positions for this token.
-    UInt32 position_cardinality = 0;
     /// Byte length of the position blob, so readers bound it by the token's extent, not the file's.
     UInt64 position_bytes = 0;
 
