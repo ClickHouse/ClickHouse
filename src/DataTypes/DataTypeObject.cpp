@@ -437,7 +437,9 @@ struct PathAndSubcolumn
     }
 };
 
-PathAndSubcolumn splitPathAndDynamicTypeSubcolumn(std::string_view subcolumn_name, const String & nested_json_type_name)
+/// The returned type hint is still the raw one the user wrote; expanding a bare `JSON` in it needs
+/// the path this split produces, so the caller does it (see replaceJSONTypeNameIfNeeded above).
+PathAndSubcolumn splitPathAndDynamicTypeSubcolumn(std::string_view subcolumn_name)
 {
     /// Try to find dynamic type subcolumn in a form .:`Type`.
     auto pos = subcolumn_name.find(".:`");
@@ -449,8 +451,6 @@ PathAndSubcolumn splitPathAndDynamicTypeSubcolumn(std::string_view subcolumn_nam
     /// Try to read back quoted type name.
     if (!tryReadBackQuotedString(type_hint, buf))
         return {String(subcolumn_name), {}, {}};
-
-    replaceJSONTypeNameIfNeeded(type_hint, nested_json_type_name);
 
     /// If there is more data in the buffer - it's the remaining subcolumn after the type hint.
     /// Strip the leading dot separator if present.
@@ -746,8 +746,12 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     }
 
     /// Split requested subcolumn to the JSON path, type hint, and remaining subcolumn.
-    auto split = splitPathAndDynamicTypeSubcolumn(subcolumn_name, getTypeOfNestedObjects()->getName());
+    auto split = splitPathAndDynamicTypeSubcolumn(subcolumn_name);
     const auto & path = split.path;
+    /// An inferred nested object is stored under the type derived for *its* path, so expand the
+    /// `JSON`/`Array(JSON)` shorthand to that one; the pathless type no longer names the variant.
+    if (!split.type_hint.empty())
+        replaceJSONTypeNameIfNeeded(split.type_hint, getTypeOfNestedObjects(path + ".")->getName());
     String path_subcolumn;
     std::unique_ptr<SubstreamData> res;
     if (auto it = typed_paths.find(path); it != typed_paths.end())
