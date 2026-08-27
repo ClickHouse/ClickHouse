@@ -459,13 +459,14 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
 class TextIndexDAGReplacer
 {
 public:
-    TextIndexDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_, bool direct_read_from_text_index_, bool is_filter_dag_, bool require_index_analyzed_predicate_ = false, const std::unordered_map<String, String> * tracked_columns_ = nullptr)
+    TextIndexDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_, bool direct_read_from_text_index_, bool is_filter_dag_, bool require_index_analyzed_predicate_ = false, const std::unordered_map<String, String> * tracked_columns_ = nullptr, bool keep_inputs_ = false)
         : actions_dag(actions_dag_)
         , text_index_read_infos(text_index_read_infos_)
         , direct_read_from_text_index(direct_read_from_text_index_)
         , is_filter_dag(is_filter_dag_)
         , require_index_analyzed_predicate(require_index_analyzed_predicate_)
         , tracked_columns(tracked_columns_)
+        , keep_inputs(keep_inputs_)
     {
     }
 
@@ -536,7 +537,7 @@ public:
         result.is_dag_rewritten = true;
         if (has_filter_column)
             result.filter_node = filter_node;
-        actions_dag.removeUnusedActions();
+        actions_dag.removeUnusedActions(/*allow_remove_inputs=*/ !keep_inputs);
 
         Names replaced_columns = actions_dag.getRequiredColumnsNames();
         NameSet replaced_columns_set(replaced_columns.begin(), replaced_columns.end());
@@ -577,6 +578,9 @@ private:
     /// When set, only a haystack reading these columns is rewritten. Used past a JOIN, where the other side
     /// can have a column of the same name that this index does not describe.
     const std::unordered_map<String, String> * tracked_columns = nullptr;
+    /// Keep unused inputs. A step rebuilt with its original input header would otherwise widen its output:
+    /// ActionsDAG::updateHeader appends every header column that is not an input of the DAG.
+    bool keep_inputs = false;
 
     struct SelectedCondition
     {
@@ -1165,7 +1169,7 @@ static void applyTextIndexInjectPastJoin(
 
     TextIndexDAGReplacer replacer(
         step_dag, text_index_infos, /*direct_read_from_text_index=*/ false, /*is_filter_dag=*/ filter_step != nullptr,
-        /*require_index_analyzed_predicate=*/ false, &tracked_columns);
+        /*require_index_analyzed_predicate=*/ false, &tracked_columns, /*keep_inputs=*/ true);
 
     auto result = replacer.replace(read_from_merge_tree_step.getContext(), filter_column_name);
     if (!result.is_dag_rewritten)
