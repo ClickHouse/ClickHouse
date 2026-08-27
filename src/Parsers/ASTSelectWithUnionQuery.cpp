@@ -6,9 +6,9 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Common/SipHash.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
-#include <Common/SipHash.h>
 
 
 namespace DB
@@ -46,22 +46,6 @@ NameToNameMap childQueryParameters(const ASTPtr & child)
 
 }
 
-void ASTSelectWithUnionQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
-{
-    /// The connective between the child selects (`UNION ALL` / `UNION DISTINCT` / `EXCEPT` /
-    /// `INTERSECT`, per gap in `list_of_modes` before normalization, `union_mode` after) is kept
-    /// outside `children`, so without folding it in `SELECT 1 UNION ALL SELECT 2` and
-    /// `SELECT 1 UNION DISTINCT SELECT 2` share a tree hash. The rewrite-rule matcher treats an
-    /// equal `getTreeHash(true)` as semantic equality. `is_normalized` selects which of the two
-    /// members formatting consults, so both are folded.
-    hash_state.update(is_normalized);
-    hash_state.update(union_mode);
-    hash_state.update(list_of_modes.size());
-    for (const auto mode : list_of_modes)
-        hash_state.update(mode);
-    ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
-}
-
 ASTPtr ASTSelectWithUnionQuery::clone() const
 {
     auto res = make_intrusive<ASTSelectWithUnionQuery>(*this);
@@ -77,6 +61,17 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
 
     cloneOutputOptions(*res);
     return res;
+}
+
+void ASTSelectWithUnionQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// The set operation joining the selects is not a child, so the default implementation does not
+    /// see it: without hashing the modes, `a UNION ALL b` and `a UNION DISTINCT b` hash equally.
+    hash_state.update(union_mode);
+    hash_state.update(list_of_modes.size());
+    for (auto mode : list_of_modes)
+        hash_state.update(mode);
+    ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 

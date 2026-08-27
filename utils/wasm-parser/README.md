@@ -79,7 +79,7 @@ a shim in a browser.
 
 ## What it costs
 
-Stripped, 334 translation units, `-Oz` with full LTO and `-fvirtual-function-elimination`, built
+Stripped, 341 translation units, `-Oz` with full LTO and `-fvirtual-function-elimination`, built
 with wasi-sdk 33:
 
 | build | bytes | gzip -9 | brotli -q 11 | zstd --ultra -22 |
@@ -221,12 +221,12 @@ view still parses: it is part of `CREATE`, not of access management.
 It is worth a build option because nothing else comes close. Below is what each family of
 statements costs at the margin - the whole module, minus that one family. Only the first row is
 re-measured against the table above; the rest are from the original measurement, and are indicative
-rather than current - the DCL row moved by 190 bytes between the two, which is the order of drift
-to expect:
+rather than current - the DCL row moved by 190 bytes between the first two measurements, which is
+the order of drift to expect:
 
 | left out | bytes | gzip -9 |
 | --- | ---: | ---: |
-| DCL (`-DENABLE_DCL=OFF`) | 201589 | 66442 |
+| DCL (`-DENABLE_DCL=OFF`) | 203596 | 67413 |
 | `CREATE TABLE` / `VIEW` / `DATABASE` | 56533 | 16731 |
 | functions, workloads, resources, named collections, indexes | 45644 | 13070 |
 | `ALTER` | 35978 | 7857 |

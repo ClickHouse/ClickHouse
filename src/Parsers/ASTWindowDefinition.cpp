@@ -1,11 +1,11 @@
 #include <Parsers/ASTWindowDefinition.h>
 
+#include <Common/SipHash.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Common/quoteString.h>
-#include <Common/SipHash.h>
 #include <IO/Operators.h>
 
 #include <array>
@@ -65,21 +65,18 @@ String ASTWindowDefinition::getID(char) const
 
 void ASTWindowDefinition::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    /// The parent window name and the frame description are kept outside `children` (only the
-    /// PARTITION BY / ORDER BY lists and the frame offsets are children), and `getID` is
-    /// constant. Fold them in so that e.g. `ROWS BETWEEN 1 PRECEDING AND CURRENT ROW` and
-    /// `RANGE BETWEEN CURRENT ROW AND 1 FOLLOWING` (identical children) do not share a tree
-    /// hash: the rewrite-rule matcher treats an equal `getTreeHash(true)` as semantic equality.
+    /// The frame and the parent window name are not children, so the default implementation does
+    /// not see them. The offsets are children and are covered by the generic walk.
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 112, "If members were added to ASTWindowDefinition, hash them here unless they are purely cosmetic.");
     hash_state.update(parent_window_name.size());
     hash_state.update(parent_window_name);
     hash_state.update(frame_is_default);
     hash_state.update(frame_type);
     hash_state.update(frame_begin_type);
     hash_state.update(frame_begin_preceding);
-    hash_state.update(frame_begin_offset != nullptr);
     hash_state.update(frame_end_type);
     hash_state.update(frame_end_preceding);
-    hash_state.update(frame_end_offset != nullptr);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -196,10 +193,12 @@ String ASTWindowListElement::getID(char) const
 
 void ASTWindowListElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    /// `name` is the window's name in `WINDOW <name> AS (<definition>)` — a plain member, not an
-    /// `ASTWithAlias` alias — and `getID` is constant, so without folding it in `WINDOW w1 AS
-    /// (...)` and `WINDOW w2 AS (...)` share a tree hash while being referenced by different
-    /// `OVER wN` clauses.
+    /// The name is what an `OVER w` reference resolves against, and it is not a child, so without
+    /// this two differently named windows hash equally. Length-prefixed, otherwise the name runs
+    /// into whatever `getID` writes next.
+    static_assert(
+        sizeof(void *) != 8 || sizeof(*this) == 64,
+        "If members were added to ASTWindowListElement, hash them here unless they are purely cosmetic.");
     hash_state.update(name.size());
     hash_state.update(name);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
@@ -371,6 +370,9 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'frame_begin_offset' is only valid for an Offset frame boundary during AST JSON deserialization");
 
         frame_begin_preceding = r.getBool("frame_begin_preceding");
+        if (frame_begin_type != WindowFrame::BoundaryType::Offset && !frame_begin_preceding)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'frame_begin_preceding' must be true for a non-Offset frame boundary during AST JSON deserialization");
 
         frame_end_type = parseBoundaryType(r.getString("frame_end_type"));
 
@@ -386,6 +388,9 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'frame_end_offset' is only valid for an Offset frame boundary during AST JSON deserialization");
 
         frame_end_preceding = r.getBool("frame_end_preceding");
+        if (frame_end_type != WindowFrame::BoundaryType::Offset && frame_end_preceding)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'frame_end_preceding' must be false for a non-Offset frame boundary during AST JSON deserialization");
     }
 }
 

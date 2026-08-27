@@ -30,7 +30,6 @@ struct ASTWindowDefinition : public IAST
 
     String getID(char delimiter) const override;
 
-    /// Folds the parent window name and the frame description, which are kept outside `children`.
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     std::string getDefaultWindowName() const;
@@ -60,12 +59,10 @@ struct ASTWindowListElement : public IAST
     ASTPtr clone() const override;
 
     String getID(char delimiter) const override;
-
-    /// Folds `name`, which is kept outside `children` and is not an alias.
-    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
-
     void writeJSON(WriteBuffer & out) const override;
     void readJSON(const Poco::JSON::Object & json) override;
+
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

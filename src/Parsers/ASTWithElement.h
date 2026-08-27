@@ -22,8 +22,6 @@ public:
 
     ASTPtr clone() const override;
 
-    /// Folds `name`, `is_materialized` and the `aliases` subtree, which are kept outside
-    /// `children` (`name` is the WITH element's own name, not an `ASTWithAlias` alias).
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     void writeJSON(WriteBuffer & out) const override;

@@ -176,8 +176,8 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
 
     if (is_like)
     {
-        query->has_like = true;
         query->like = like->as<ASTLiteral &>().value.safeGet<String>();
+        query->has_like = true;
     }
 
     query->cluster = cluster_str;

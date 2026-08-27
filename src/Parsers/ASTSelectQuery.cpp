@@ -13,7 +13,7 @@
 #include <IO/Operators.h>
 #include <Parsers/QueryParameterVisitor.h>
 
-#include <map>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
@@ -50,6 +50,19 @@ ASTPtr ASTSelectQuery::clone() const
 
 void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    /// The children carry different roles (SELECT list, WHERE, HAVING, ...) recorded only in
+    /// `positions`. Without hashing the roles, `SELECT a WHERE b` and `SELECT a HAVING b` would
+    /// hash equally. Iterate over all enumerators so that a newly added one is hashed without
+    /// changing this code.
+    for (auto expr : magic_enum::enum_values<Expression>())
+    {
+        auto it = positions.find(expr);
+        if (it != positions.end())
+        {
+            hash_state.update(expr);
+            hash_state.update(it->second);
+        }
+    }
     hash_state.update(recursive_with);
     hash_state.update(distinct);
     hash_state.update(group_by_with_totals);
@@ -60,19 +73,6 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(group_by_all);
     hash_state.update(order_by_all);
     hash_state.update(limit_by_all);
-    /// The children carry no clause tag of their own: which clause a child belongs to is kept in
-    /// `positions`. Without folding it in, two selects with the same child ASTs under different
-    /// clauses share a tree hash — e.g. `SELECT ... WHERE x` vs `SELECT ... HAVING x` (or
-    /// `PREWHERE` / `QUALIFY`), and `LIMIT 5` vs `OFFSET 5`. The rewrite-rule matcher treats an
-    /// equal `getTreeHash(true)` as semantic equality, so fold the (clause, child index) pairs in
-    /// a deterministic order (`positions` is an unordered map).
-    std::map<Expression, size_t> ordered_positions(positions.begin(), positions.end());
-    hash_state.update(ordered_positions.size());
-    for (const auto & [expression, position] : ordered_positions)
-    {
-        hash_state.update(static_cast<UInt8>(expression));
-        hash_state.update(position);
-    }
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 

@@ -1,11 +1,11 @@
 #include <Parsers/ASTQueryWithOutput.h>
 
+#include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
-#include <Common/SipHash.h>
 
 
 namespace DB
@@ -31,6 +31,9 @@ void ASTQueryWithOutput::writeOutputOptionsJSON(JSONObjectWriter & w) const
 
 void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
 {
+    /// The children are appended in the canonical order (see `output_option_members`), so
+    /// the deserialized AST has the same child order - and the same tree hash - as a
+    /// freshly parsed one.
     /// `ParserQueryWithOutput` accepts only specific node types for these fields, and
     /// downstream code (e.g. `ClientBase`) downcasts them unconditionally with `as<...>`.
     /// Validate the concrete node type here so malformed `clickhouse_json` is rejected
@@ -45,16 +48,6 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
                 "Output 'out_file' must be a string literal during AST JSON deserialization");
         children.push_back(out_file);
     }
-
-    /// `format_ast` is parsed by `ParserIdentifier`.
-    format_ast = r.readChildOfType<ASTIdentifier>("format_ast");
-    if (format_ast)
-        children.push_back(format_ast);
-
-    /// `settings_ast` is parsed by `ParserSetQuery`.
-    settings_ast = r.readChildOfType<ASTSetQuery>("settings_ast");
-    if (settings_ast)
-        children.push_back(settings_ast);
 
     compression = r.readChildOfType<ASTLiteral>("compression");
     if (compression)
@@ -77,6 +70,16 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
         children.push_back(compression_level);
     }
 
+    /// `format_ast` is parsed by `ParserIdentifier`.
+    format_ast = r.readChildOfType<ASTIdentifier>("format_ast");
+    if (format_ast)
+        children.push_back(format_ast);
+
+    /// `settings_ast` is parsed by `ParserSetQuery`.
+    settings_ast = r.readChildOfType<ASTSetQuery>("settings_ast");
+    if (settings_ast)
+        children.push_back(settings_ast);
+
     setIsOutfileAppend(r.getBool("is_outfile_append"));
     setIsOutfileTruncate(r.getBool("is_outfile_truncate"));
     setIsIntoOutfileWithStdout(r.getBool("is_into_outfile_with_stdout"));
@@ -97,6 +100,16 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
             "Output 'compression_level' requires 'compression' during AST JSON deserialization");
 }
 
+void ASTQueryWithOutput::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// The three `INTO OUTFILE` modifiers are not children, so the default implementation does not
+    /// see them: without hashing them, `INTO OUTFILE 'x'` and `INTO OUTFILE 'x' APPEND` hash equally.
+    hash_state.update(isOutfileAppend());
+    hash_state.update(isOutfileTruncate());
+    hash_state.update(isIntoOutfileWithStdout());
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
 void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
 {
     /// Clone the output options in the canonical order so that the cloned children
@@ -104,19 +117,6 @@ void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
     for (auto member : output_option_members)
         if (this->*member)
             cloned.set(cloned.*member, (this->*member)->clone());
-}
-
-void ASTQueryWithOutput::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
-{
-    /// The output-option ASTs (`out_file`, `format_ast`, ...) are children, but the `INTO
-    /// OUTFILE` modifier flags are not, and they change the formatted text (`APPEND` /
-    /// `TRUNCATE` / `AND STDOUT`). Fold them in so that e.g. `SELECT 1 INTO OUTFILE 'f'` and
-    /// `SELECT 1 INTO OUTFILE 'f' APPEND` do not share a tree hash: the rewrite-rule matcher
-    /// treats an equal `getTreeHash(true)` as semantic equality.
-    hash_state.update(isIntoOutfileWithStdout());
-    hash_state.update(isOutfileAppend());
-    hash_state.update(isOutfileTruncate());
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
@@ -183,6 +183,13 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
         ast_with_output->reset(ast_with_output->settings_ast);
         ast_with_output->reset(ast_with_output->compression);
         ast_with_output->reset(ast_with_output->compression_level);
+
+        /// The `APPEND` / `TRUNCATE` / `AND STDOUT` modifiers are flags, not children, and they are
+        /// part of the tree hash; callers use this function to normalize the AST before hashing
+        /// (e.g. the query result cache), so they must be cleared together with `out_file`.
+        ast_with_output->setIsOutfileAppend(false);
+        ast_with_output->setIsOutfileTruncate(false);
+        ast_with_output->setIsIntoOutfileWithStdout(false);
 
         return true;
     }

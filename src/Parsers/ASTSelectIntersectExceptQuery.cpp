@@ -1,9 +1,9 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Common/SipHash.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
-#include <Common/SipHash.h>
 
 
 namespace DB
@@ -28,10 +28,8 @@ ASTPtr ASTSelectIntersectExceptQuery::clone() const
 
 void ASTSelectIntersectExceptQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    /// The operator printed between the child selects is kept outside `children`, so without
-    /// folding it in `a INTERSECT ALL b` and `a EXCEPT DISTINCT b` share a tree hash (`getID` is
-    /// constant). The rewrite-rule matcher treats an equal `getTreeHash(true)` as semantic
-    /// equality.
+    /// The operator joining the selects is not a child either, so `a EXCEPT b` and `a INTERSECT b`
+    /// would otherwise hash equally.
     hash_state.update(final_operator);
     ASTSelectQuery::updateTreeHashImpl(hash_state, ignore_aliases);
 }

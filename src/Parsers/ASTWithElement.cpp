@@ -3,9 +3,9 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Common/SipHash.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
-#include <Common/SipHash.h>
 #include <IO/Operators.h>
 
 namespace DB
@@ -29,12 +29,11 @@ ASTPtr ASTWithElement::clone() const
 
 void ASTWithElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    /// `name`, `is_materialized` and `aliases` all change the formatted text (`WITH <name>
-    /// [(<aliases>)] AS [MATERIALIZED] (<subquery>)`) but are kept outside `children` (only the
-    /// subquery is a child) and `getID` is constant. Fold them in so that e.g. `WITH a AS
-    /// (SELECT 1)` and `WITH b AS (SELECT 1)` do not share a tree hash: the rewrite-rule matcher
-    /// treats an equal `getTreeHash(true)` as semantic equality. `aliases` is hashed as a whole
-    /// subtree (`updateTreeHash`) because its identifiers live in its children.
+    /// The name selects which CTE a reference resolves to, and `aliases` renames the subquery
+    /// columns, but neither is a child, so without this both are absent from the hash.
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 80, "If members were added to ASTWithElement, hash them here unless they are purely cosmetic.");
+    /// Length-prefixed, otherwise the name runs into whatever `getID` writes next.
     hash_state.update(name.size());
     hash_state.update(name);
     hash_state.update(is_materialized);
@@ -81,7 +80,9 @@ void ASTWithElement::readJSON(const Poco::JSON::Object & json)
         for (const auto & alias : aliases->children)
             if (!alias || !alias->as<ASTIdentifier>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "`WithElement` aliases must be identifiers during AST JSON deserialization");
-        children.push_back(aliases);
+        /// `ParserWithElement` and `clone` keep `aliases` out of `children`, and
+        /// `updateTreeHashImpl` hashes the member explicitly, so adding it here would make a
+        /// JSON-built copy of the same definition hash the aliases twice and compare unequal.
     }
 }
 
