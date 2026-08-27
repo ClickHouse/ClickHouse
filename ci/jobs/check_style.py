@@ -674,10 +674,10 @@ def check_storage_proxy_forwards(files) -> str:
     if not missing:
         return ""
     return (
-        f"{proxy_path}: a deferrable engine overrides these, but StorageProxy does not forward them, so "
-        f"a table in a database with `lazy_load_tables` answers them from the proxy instead of from "
-        f"itself: " + ", ".join(missing) + ". Forward each one to getNested(), or add it to `exempt` "
-        f"above with a comment saying why the proxy's own answer is the right one."
+        f"{proxy_path}: a deferrable engine overrides these, but StorageProxy does not forward them, "
+        f"so a table in a database with `lazy_load_tables` answers them from the proxy instead of "
+        f"from itself: {', '.join(missing)}. Forward each one to getNested(), or add it to `exempt` "
+        "above with a comment saying why the proxy's own answer is the right one."
     )
 
 
