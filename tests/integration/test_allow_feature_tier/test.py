@@ -747,3 +747,41 @@ def test_merge_tree_constraint_applies_to_the_alias_of_the_setting(start_cluster
 
     instance.query("DROP USER IF EXISTS user_with_const_constraint")
     instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_const_constraint")
+
+
+def test_merge_tree_setting_is_the_same_setting_under_either_name(start_cluster):
+    # A `merge_tree_`-prefixed setting is carried through `Settings` as a custom setting, so its value is
+    # stored under the spelling that wrote it and without its declared type. Writing the value it already
+    # has changes nothing, whichever of its names is used, and writing a different value is still a change
+    assert "0" == get_current_tier_value(instance)
+    canonical = MERGE_TREE_SETTINGS_PREFIX + MERGE_TREE_ALIASED_SETTING_CANONICAL
+    alias = MERGE_TREE_SETTINGS_PREFIX + MERGE_TREE_ALIASED_SETTING
+
+    instance.query("DROP USER IF EXISTS user_with_const_aliased_setting")
+    instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_const_aliased_setting")
+    instance.query(
+        f"CREATE SETTINGS PROFILE profile_with_const_aliased_setting SETTINGS {canonical} = 1 CONST"
+    )
+    instance.query(
+        "CREATE USER user_with_const_aliased_setting IDENTIFIED WITH no_password "
+        "SETTINGS PROFILE 'profile_with_const_aliased_setting'"
+    )
+
+    # Re-stating the value it already has is not a change, under either name
+    for name in [canonical, alias]:
+        output, error = instance.query_and_get_answer_with_error(
+            f"SELECT 1 SETTINGS {name} = 1", user="user_with_const_aliased_setting"
+        )
+        assert output.strip() == "1", name
+        assert error == "", name
+
+    # Writing a different value is a change, and `CONST` still refuses it under either name
+    for name in [canonical, alias]:
+        output, error = instance.query_and_get_answer_with_error(
+            f"SELECT 1 SETTINGS {name} = 0", user="user_with_const_aliased_setting"
+        )
+        assert output == ""
+        assert "should not be changed" in error, name
+
+    instance.query("DROP USER IF EXISTS user_with_const_aliased_setting")
+    instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_const_aliased_setting")

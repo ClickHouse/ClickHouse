@@ -270,8 +270,9 @@ void SettingsConstraints::checkResetToDefault(const Settings & current_settings,
         /// Custom settings have no declared default: resetting one removes it. There cannot be a
         /// value constraint for such a setting, but an existing value must still pass the readonly
         /// and source checks. Do not check an absent custom setting, preserving its no-op behavior.
+        /// A `merge_tree_`-prefixed name may be stored under either of its spellings, so look for both.
         Field current_value;
-        if (current_settings.tryGet(name, current_value))
+        if (current_settings.tryGet(name, current_value) || current_settings.tryGet(resolveSettingName(name), current_value))
         {
             SettingChange change{name, current_value};
             getChecker(current_settings, Settings::resolveName(name)).check(change, current_value, THROW_ON_VIOLATION, source);
@@ -313,6 +314,21 @@ Field getNewValueToCheck(const SettingsT & current_settings, const SettingChange
 {
     Field current_value;
     bool has_current_value = current_settings.tryGet(change.name, current_value);
+
+    if constexpr (std::is_same_v<SettingsT, Settings>)
+    {
+        /// A `merge_tree_`-prefixed name is carried through `Settings` as a custom setting, so its value is
+        /// stored under the spelling that wrote it and without the setting's declared type. Read the
+        /// canonical spelling as well, and compare in the declared type, so that writing a setting through
+        /// one of its names is recognized as the same setting written through another.
+        auto canonical_name = resolveSettingName(change.name);
+        if (!has_current_value && canonical_name != change.name)
+            has_current_value = current_settings.tryGet(canonical_name, current_value);
+
+        if (!ignore_unchanged_settings && has_current_value
+            && settingCastValueUtil(canonical_name, change.value) == settingCastValueUtil(canonical_name, current_value))
+            return {};
+    }
 
     if (!ignore_unchanged_settings && has_current_value && change.value == current_value)
         return {};
