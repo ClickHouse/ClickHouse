@@ -591,6 +591,16 @@ inline bool isDeferredGeometryKindType(const IDataType & type)
     return typeid_cast<const DataTypeVariant *>(&inner) || typeid_cast<const DataTypeDynamic *>(&inner);
 }
 
+/// Whether `type` is a bare, unnamed two-`Float64` `Tuple` -- the shape `callOnGeometryDataType`
+/// resolves as `Point` by `IDataType::equals`, with no `Point` custom name to report it under.
+/// `geoKindNameOfType` and `constGeoKindName` both return an empty kind for it, so the kind checks
+/// in `extractSpatialPredicateNodeBbox` cannot see it at all and would treat it as harmless.
+inline bool isRawPointTuple(const IDataType & type)
+{
+    const IDataType & inner = unwrapGeoKindWrappers(type);
+    return !inner.getCustomName() && structuralGeoKindName(inner) == "Point";
+}
+
 }
 
 inline bool hasDeferredGeometryKindRejection(const IDataType & type, const IFunctionBase & function, size_t arg_index)
@@ -744,6 +754,29 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     for (const auto * child : node.children)
     {
         const size_t this_arg_index = arg_index++;
+
+        /// Checked for EVERY child, whatever its node type. A bare `Tuple(Float64, Float64)` --
+        /// neither named `Point` nor wrapped in `Geometry`/`Variant`/`Dynamic` -- is invisible to
+        /// every kind check below: `constGeoKindName` reports no kind for it, so a column falls
+        /// through to `accept_input` and a constant is declined by `extractBboxFromFieldValue` as
+        /// "not geometry-shaped" without poisoning `acc.valid`, leaving the node at
+        /// `NoInfo`/`NotApplicable`. `callOnGeometryDataType` nonetheless resolves it as a `Point`
+        /// by `IDataType::equals` and dispatches on that, so a predicate that refuses a `Point`
+        /// (`polygonsIntersectCartesian`, `polygonsWithinCartesian`) raises on it while EXECUTING,
+        /// and a sibling conjunct's bbox could prune every granule away and turn that into a
+        /// silent `0`.
+        ///
+        /// The predicate's own `treatsConstTupleAsPoint` says where a bare point legitimately
+        /// belongs -- `pointInPolygon`'s first argument, a WebAssembly UDF argument declared
+        /// `Point` -- and pruning stays on exactly there. This states no per-function domain: any
+        /// predicate that does not claim the position as a point position fails closed, which
+        /// merely costs pruning.
+        if (child->result_type && !node.function_base->treatsConstTupleAsPoint(this_arg_index)
+            && GeoBboxDetail::isRawPointTuple(*child->result_type))
+        {
+            any_kind_rejected = true;
+            continue;
+        }
 
         if (child->type == ActionsDAG::ActionType::INPUT)
         {
