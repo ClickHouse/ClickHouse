@@ -1,16 +1,13 @@
-#include <DataTypes/DataTypeVersion.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/Serializations/SerializationVersion.h>
+---
+description: 'Documentation for the Version data type in ClickHouse, which stores a
+  4-component numeric version as a packed UInt128'
+keywords: ['version', 'data type']
+sidebarTitle: 'Version'
+slug: /sql-reference/data-types/version
+title: 'Version'
+doc_type: 'reference'
+---
 
-
-namespace DB
-{
-
-void registerDataTypeVersion(DataTypeFactory & factory)
-{
-    factory.registerSimpleDataType("Version", [] { return DataTypePtr(std::make_shared<DataTypeVersion>()); }, DataTypeFactory::Case::Sensitive,
-        Documentation{
-            .description = R"DOCS_MD(
 ## Version {#version}
 
 A semantic-version-like value `major.minor.patch.build`. Stored in 16 bytes as a packed UInt128:
@@ -64,9 +61,15 @@ SELECT toVersion('2.0.0.0') > toVersion('1.99.99.99');
 │                                                      1 │
 └────────────────────────────────────────────────────────┘
 ```
-)DOCS_MD",
-            .syntax = "Version",
-        });
-}
 
-}
+### Relationship to semantic versioning {#relationship-to-semver}
+
+`Version` is a 4-component numeric scheme, closer to ClickHouse's own version numbers
+(`24.3.1.2672`) than to semantic versioning. Pre-release (`-alpha`) and build-metadata (`+build`)
+suffixes are not supported: the four `UInt32` components exactly fill the `UInt128`, so there is no
+value left between two adjacent packed versions for a pre-release to occupy. Text carrying such a
+suffix is rejected rather than silently truncated.
+
+**See Also**
+
+- [Type conversion functions](/reference/functions/regular-functions/type-conversion-functions)
