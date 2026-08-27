@@ -59,6 +59,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"input_format_vortex_filter_push_down", true, true, "New setting to push translatable parts of WHERE conditions on top-level integer, floating-point, and string/binary columns down into the Vortex format scan, which may reduce the rows decoded; ClickHouse reapplies the full filter after the scan, and whole segments are not yet pruned by statistics."},
+            {"input_format_vortex_preserve_order", false, false, "New setting to return the rows of a Vortex file in file order; by default the file is decoded in parallel and the row order is not guaranteed."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -159,8 +161,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"analyzer_compatibility_multiple_joins_qualify_column_names", false, false, "New compatibility setting. When enabled, the analyzer mimics the old analyzer's qualified result column names for queries whose FROM clause has two or more JOINs."},
             {"input_format_parquet_spatial_filter_push_down", false, true, "New setting: skip GeoParquet row groups and pages based on spatial predicates and bounding box statistics"},
             {"use_text_index_negative_tokens_cache", false, true, "New setting to cache absent text index tokens and avoid repeated dictionary lookups."},
-            {"input_format_vortex_filter_push_down", true, true, "New setting to push translatable parts of WHERE conditions on top-level integer, floating-point, and string/binary columns down into the Vortex format scan, which may reduce the rows decoded; ClickHouse reapplies the full filter after the scan, and whole segments are not yet pruned by statistics."},
-            {"input_format_vortex_preserve_order", false, false, "New setting to return the rows of a Vortex file in file order; by default the file is decoded in parallel and the row order is not guaranteed."},
             {"optimize_trivial_view_pushdown_to_distributed", false, true, "New setting to push the full outer query to shards for trivial views over Distributed tables."},
             {"filesystem_cache_wait_for_concurrent_download_timeout_milliseconds", 60000, 1000, "New setting to bound how long a read waits for a file segment being downloaded to the filesystem cache by a concurrent query; on timeout the read bypasses the cache instead of waiting indefinitely. The previous value 60000 corresponds to the old behavior (one full 60 s wait cycle on the downloader)."},
             {"text_index_posting_list_apply_mode", "materialize", "lazy", "Text index queries now decode posting lists on demand with a cursor instead of materializing them into Roaring Bitmaps, which reduces memory usage and CPU time for selective queries."},
