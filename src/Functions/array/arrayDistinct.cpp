@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
@@ -96,7 +97,17 @@ ColumnPtr FunctionArrayDistinct::executeImpl(const ColumnsWithTypeAndName & argu
     auto res_ptr = return_type->createColumn();
     ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
 
-    const IColumn & src_data = array.getData();
+    const IColumn * src_data_ptr = &array.getData();
+
+    /// The generic path deduplicates elements by a hash of their raw bytes (`executeHashed`),
+    /// so negative zeros have to be canonicalized in advance, recursively for composite elements -
+    /// see `canonicalizeNegativeZero`. This also makes the result agree with `GROUP BY` and
+    /// `DISTINCT`, which report positive zero for a group that contains a negative zero.
+    ColumnPtr canonicalized = canonicalizeNegativeZero(*src_data_ptr);
+    if (canonicalized)
+        src_data_ptr = canonicalized.get();
+
+    const IColumn & src_data = *src_data_ptr;
     const ColumnArray::Offsets & offsets = array.getOffsets();
 
     IColumn & res_data = res.getData();
