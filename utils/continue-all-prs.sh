@@ -222,6 +222,13 @@ fi
 
 MAIN_REPO="$(git rev-parse --show-toplevel)"
 [[ -n "$WORKTREE_BASE" ]] || WORKTREE_BASE="${MAIN_REPO}-prworker"
+# `git worktree list` only reports absolute paths, so every guard comparing a
+# worker path against that list (`is_registered_worktree`, and through it
+# `prepare_worktree_for_task` and the cleanup helpers) requires an absolute
+# base. A relative `--worktree-base` would otherwise pass `ensure_worktree`,
+# which canonicalizes on its own, and then fail the first per-PR round with
+# `Refusing to clean an unexpected worktree`.
+WORKTREE_BASE="$(realpath -m "$WORKTREE_BASE")"
 
 # Install a defense-in-depth pre-push hook for ordinary worker pushes. The hook
 # is applied through command-scope environment configuration, so it also covers
@@ -1058,6 +1065,14 @@ triage_state_is_safe()
     [[ "$actual_tree" == "$expected_tree" ]]
 }
 
+# Canonical clone URL of the repository the pull requests belong to. Triage
+# must never take the base branch from an inherited `origin`, which can point
+# at a fork of the operator's checkout.
+repo_clone_url()
+{
+    printf 'https://github.com/%s.git\n' "$REPO"
+}
+
 # Check out the actual PR head before triage begins, and return the data needed
 # to validate and push a mechanical base merge.  A detached checkout avoids
 # reserving one shared local branch when multiple workers process the same PR.
@@ -1065,7 +1080,7 @@ prepare_triage_worktree()
 {
     local wt="$1" number="$2" deadline="$3"
     local meta base_ref head_ref head_repo_url head_owner author cross_repo maintainer_can_modify
-    local fetch_url push_url pushable=0
+    local fetch_url push_url base_repo_url pushable=0
 
     meta=$(run_with_deadline "$deadline" gh pr view "$number" --repo "$REPO" \
         --json baseRefName,headRefName,headRepository,headRepositoryOwner,author,isCrossRepository,maintainerCanModify \
@@ -1090,7 +1105,13 @@ prepare_triage_worktree()
     # reachable from outside.
     run_with_deadline "$deadline" git -C "$wt" fetch -q "$fetch_url" "refs/heads/$head_ref" || return $?
     git -C "$wt" checkout --detach -q FETCH_HEAD || return 1
-    run_with_deadline "$deadline" git -C "$wt" fetch -q origin "+refs/heads/$base_ref:refs/remotes/origin/$base_ref" || return $?
+    # Resolve the base branch from the pull request's own repository, by
+    # explicit URL. The triage clone inherits `origin` from the operator's
+    # checkout, which may be a fork: fetching `origin/$base_ref` from it would
+    # validate a merge of the fork's base branch instead of the real one.
+    base_repo_url=$(repo_clone_url)
+    run_with_deadline "$deadline" git -C "$wt" fetch -q "$base_repo_url" \
+        "+refs/heads/$base_ref:refs/remotes/origin/$base_ref" || return $?
     push_url="$head_repo_url"
     printf '%s\t%s\t%s\t%s\t%s\n' "$(git -C "$wt" rev-parse HEAD)" "$(git -C "$wt" rev-parse "origin/$base_ref")" "$head_ref" "$push_url" "$pushable"
 }
@@ -1100,12 +1121,15 @@ prepare_triage_worktree()
 # merge commit, transferred by the orchestrator after it leaves the sandbox.
 create_triage_clone()
 {
-    local wt="$1" triage_wt="$2" deadline="$3" origin_url
+    local wt="$1" triage_wt="$2" deadline="$3"
 
     rm -rf "$triage_wt"
     run_with_deadline "$deadline" git clone -q --shared --no-checkout "$wt" "$triage_wt" || return $?
-    origin_url=$(git -C "$wt" remote get-url origin) || return 1
-    git -C "$triage_wt" remote set-url origin "$origin_url"
+    # Cloning a local path points `origin` at the worker's directory. Use the
+    # canonical repository instead of whatever `origin` the operator's checkout
+    # carries, so that everything triage resolves through `origin` - the base
+    # branch above all - comes from the pull request's own repository.
+    git -C "$triage_wt" remote set-url origin "$(repo_clone_url)"
 }
 
 # The private triage clone starts without a checkout. Materialize its
@@ -1132,9 +1156,27 @@ run_with_deadline()
     timeout "$remaining" "$@"
 }
 
+# `git clone --shared` lets the triage clone read the worker's objects, not the
+# other way round: the pull-request head and the base branch that triage
+# fetched live only in the clone's own object store. Import them into the
+# trusted worker, or the checkout below fails with `reference is not a tree`.
+import_triage_objects()
+{
+    local wt="$1" triage_wt="$2" oid
+    local -a missing=()
+
+    for oid in "${@:3}"; do
+        git -C "$wt" cat-file -e "$oid^{commit}" 2>/dev/null || missing+=("$oid")
+    done
+    (( ${#missing[@]} )) || return 0
+    git -C "$wt" fetch -q --no-tags "$triage_wt" "${missing[@]}"
+}
+
 recreate_validated_triage_merge()
 {
-    local wt="$1" start_head="$2" base_head="$3"
+    local wt="$1" start_head="$2" base_head="$3" triage_wt="$4"
+
+    import_triage_objects "$wt" "$triage_wt" "$start_head" "$base_head" || return 1
 
     # Do not transfer the triage commit object. Even with the expected parents
     # and tree, its author, committer, and message are untrusted. Recreate the
@@ -1490,7 +1532,7 @@ ${system_prompt}"
             if triage_state_is_safe "$triage_wt" "$triage_start_head" "$triage_base_head"; then
                 triage_current_head=$(git -C "$triage_wt" rev-parse HEAD) || return 1
                 if [[ "$triage_current_head" != "$triage_start_head" ]]; then
-                    recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" || return 1
+                    recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" "$triage_wt" || return 1
                 fi
             else
                 discard_untrusted_triage_changes "$triage_wt" "$triage_start_head" "$log"
@@ -1517,7 +1559,7 @@ ${system_prompt}"
                     # update triage is allowed to make. It is safe, but there
                     # is nothing to recreate or push.
                     [[ "$triage_current_head" != "$triage_start_head" ]] || break
-                    recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" || return 1
+                    recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" "$triage_wt" || return 1
                     if [[ "$triage_pushable" != "1" ]]; then
                         handoff=$(cat "$log.last")
                         echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL because the validated merge cannot be pushed =====" >> "$log"
@@ -1562,7 +1604,7 @@ ${system_prompt}"
                 if triage_state_is_safe "$triage_wt" "$triage_start_head" "$triage_base_head"; then
                     triage_current_head=$(git -C "$triage_wt" rev-parse HEAD) || return 1
                     if [[ "$triage_current_head" != "$triage_start_head" ]]; then
-                        recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" || return 1
+                        recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" "$triage_wt" || return 1
                     fi
                 else
                     discard_untrusted_triage_changes "$triage_wt" "$triage_start_head" "$log"

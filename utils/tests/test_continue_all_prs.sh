@@ -326,6 +326,14 @@ gh()
 }
 GH_USER=test-user
 REPO=ClickHouse/ClickHouse
+# The shipped helper always derives the base repository from `REPO`; the tests
+# redirect it to a local path so no network access is needed.
+source <(sed -n '/^repo_clone_url()/,/^}/p' "$repo/utils/continue-all-prs.sh")
+[[ "$(repo_clone_url)" == 'https://github.com/ClickHouse/ClickHouse.git' ]]
+repo_clone_url()
+{
+    printf '%s\n' "$collision_base"
+}
 collision_result=$(prepare_triage_worktree "$collision_wt" 1 $(( $(date +%s) + 30 )))
 unset -f gh
 
@@ -335,6 +343,95 @@ IFS=$'\t' read -r collision_head_oid collision_base_oid collision_head_ref _ col
 [[ "$collision_base_oid" == "$(git -C "$collision_base" rev-parse refs/heads/master)" ]]
 [[ "$collision_head_ref" == pr-head ]]
 [[ "$collision_pushable" == 1 ]]
+
+# The triage clone inherits `origin` from the operator's checkout, which can be
+# a fork with a divergent base branch. The validated merge must always use the
+# base branch of `REPO`, so `prepare_triage_worktree` has to fetch it by
+# explicit upstream URL rather than through the inherited `origin`.
+fork_upstream="$scratch/fork-upstream"
+fork_remote="$scratch/fork-remote"
+fork_worktree="$scratch/fork-worktree"
+git init -q -b master "$fork_upstream"
+git -C "$fork_upstream" config user.email test@example.com
+git -C "$fork_upstream" config user.name test
+printf 'upstream base\n' > "$fork_upstream/content"
+git -C "$fork_upstream" add content
+git -C "$fork_upstream" commit -qm 'Add upstream base'
+git clone -q "$fork_upstream" "$fork_remote"
+git -C "$fork_remote" config user.email test@example.com
+git -C "$fork_remote" config user.name test
+# The fork's `master` diverges from the upstream one.
+printf 'fork base\n' > "$fork_remote/content"
+git -C "$fork_remote" commit -qam 'Diverge the fork base'
+git -C "$fork_remote" checkout -q -b pr-head
+printf 'fork head\n' > "$fork_remote/content"
+git -C "$fork_remote" commit -qam 'Add fork head'
+# The worker, and therefore the triage clone, has `origin` pointing at the fork.
+git clone -q "$fork_remote" "$fork_worktree"
+# The upstream base moves on after the fork was created.
+printf 'upstream base 2\n' > "$fork_upstream/content"
+git -C "$fork_upstream" commit -qam 'Advance the upstream base'
+
+gh()
+{
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' master pr-head "$fork_remote" ClickHouse test-user false true
+}
+repo_clone_url()
+{
+    printf '%s\n' "$fork_upstream"
+}
+fork_result=$(prepare_triage_worktree "$fork_worktree" 1 $(( $(date +%s) + 30 )))
+unset -f gh
+
+IFS=$'\t' read -r fork_head_oid fork_base_oid _ <<< "$fork_result"
+[[ "$fork_head_oid" == "$(git -C "$fork_remote" rev-parse refs/heads/pr-head)" ]]
+[[ "$fork_base_oid" == "$(git -C "$fork_upstream" rev-parse refs/heads/master)" ]]
+[[ "$fork_base_oid" != "$(git -C "$fork_remote" rev-parse refs/heads/master)" ]]
+
+# Triage works in a `--shared` clone: the objects it fetches stay in the
+# clone's object store and never appear in the worker. Recreating the
+# validated merge in the worker must import them first, otherwise the
+# detached checkout fails with `reference is not a tree`.
+source <(sed -n '/^import_triage_objects()/,/^}/p' "$repo/utils/continue-all-prs.sh")
+source <(sed -n '/^recreate_validated_triage_merge()/,/^}/p' "$repo/utils/continue-all-prs.sh")
+import_source="$scratch/import-source"
+import_worker="$scratch/import-worker"
+import_triage="$scratch/import-triage"
+git init -q -b master "$import_source"
+git -C "$import_source" config user.email test@example.com
+git -C "$import_source" config user.name test
+printf 'base\n' > "$import_source/base"
+git -C "$import_source" add base
+git -C "$import_source" commit -qm 'Add base'
+git clone -q "$import_source" "$import_worker"
+git -C "$import_worker" config user.email test@example.com
+git -C "$import_worker" config user.name test
+# The pull-request head and the newer base branch appear only after the worker
+# was cloned, exactly as they do when triage fetches them.
+git -C "$import_source" checkout -q -b pr-head
+printf 'head\n' > "$import_source/head"
+git -C "$import_source" add head
+git -C "$import_source" commit -qm 'Add head'
+import_head_oid=$(git -C "$import_source" rev-parse refs/heads/pr-head)
+git -C "$import_source" checkout -q master
+printf 'newer base\n' > "$import_source/newer-base"
+git -C "$import_source" add newer-base
+git -C "$import_source" commit -qm 'Advance the base'
+import_base_oid=$(git -C "$import_source" rev-parse refs/heads/master)
+
+git clone -q --shared --no-checkout "$import_worker" "$import_triage"
+git -C "$import_triage" fetch -q "$import_source" \
+    "+refs/heads/pr-head:refs/remotes/origin/pr-head" "+refs/heads/master:refs/remotes/origin/master"
+# Sanity check: the worker does not have either object, so the assertions
+# below are not vacuous.
+! git -C "$import_worker" cat-file -e "$import_head_oid^{commit}" 2>/dev/null
+! git -C "$import_worker" cat-file -e "$import_base_oid^{commit}" 2>/dev/null
+
+recreate_validated_triage_merge "$import_worker" "$import_head_oid" "$import_base_oid" "$import_triage" >/dev/null
+import_merge_oid=$(git -C "$import_worker" rev-parse HEAD)
+[[ "$(git -C "$import_worker" show -s --format='%P' "$import_merge_oid")" == "$import_head_oid $import_base_oid" ]]
+[[ "$(<"$import_worker/head")" == 'head' ]]
+[[ "$(<"$import_worker/newer-base")" == 'newer base' ]]
 
 relative_worktree_base=${worktree_base#"$repo/"}
 git -C "$repo" worktree remove --force "${worktree_base}-0" 2>/dev/null || true
@@ -347,6 +444,15 @@ git -C "$repo" worktree add --no-checkout --detach "${worktree_base}-0" HEAD
             --worktree-base "$relative_worktree_base" --color never
 ) > "$scratch/relative-reuse.log" 2>&1
 grep -q "Reusing existing worktree: ${worktree_base}-0" "$scratch/relative-reuse.log"
+# A relative `--worktree-base` must survive the guards that compare the worker
+# path with `git worktree list`, which reports absolute paths only. Without a
+# canonicalized `WORKTREE_BASE`, the round dies in `prepare_worktree_for_task`
+# before the agent starts.
+! grep -q 'Refusing to clean an unexpected worktree' "$scratch/relative-reuse.log" \
+    "$repo/tmp/continue-all-prs/pr-1.log"
+! grep -q 'Worktree cleanup failed' "$scratch/relative-reuse.log" \
+    "$repo/tmp/continue-all-prs/pr-1.log"
+grep -q 'FINISHED  PR #1' "$scratch/relative-reuse.log"
 
 unregistered_worktree_base="$scratch/unregistered-worktree"
 mkdir -p "${unregistered_worktree_base}-0"
