@@ -2404,12 +2404,31 @@ void Planner::buildPlanForUnionNode()
         /// Add distinct transform
         SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
+        /// UNION concatenates its branches' streams instead of merging them, so a preliminary DISTINCT
+        /// runs in parallel and shrinks what the final single-stream DISTINCT must merge. INTERSECT/EXCEPT
+        /// already narrow their output to one stream, so a preliminary step there is pure overhead.
+        const bool add_pre_distinct = union_mode == SelectUnionMode::UNION_DISTINCT && preliminaryDistinctIsUseful(max_threads);
+
+        if (add_pre_distinct)
+        {
+            auto pre_distinct_step = std::make_unique<DistinctStep>(
+                query_plan.getCurrentHeader(),
+                limits,
+                0 /*limit hint*/,
+                query_plan.getCurrentHeader()->getNames(),
+                true /*pre distinct*/);
+            pre_distinct_step->setStepDescription("Preliminary DISTINCT");
+            query_plan.addStep(std::move(pre_distinct_step));
+        }
+
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentHeader(),
             limits,
             0 /*limit hint*/,
             query_plan.getCurrentHeader()->getNames(),
             false /*pre distinct*/);
+        if (add_pre_distinct)
+            distinct_step->setStepDescription("DISTINCT");
         query_plan.addStep(std::move(distinct_step));
     }
 
