@@ -39,7 +39,10 @@ INSERT INTO nnnb VALUES (1, [[([([(1,'d')],'d')], 's')]], ['s']);
 
 SET enable_analyzer = 1;
 SET join_algorithm = 'hash'; -- parallel_hash does not guarantee the right order
+SET max_threads = 1;
+SET query_plan_join_shard_by_pk_ranges = 0;
 SET parallel_non_joined_rows_processing = 0;
+SET parallel_hash_join_threshold = 1000000000;
 
 {% for join_use_nulls in [0, 1] -%}
 
