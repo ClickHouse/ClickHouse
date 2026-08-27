@@ -269,6 +269,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Trig | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
 | Label | `label_replace`, `label_join` |
+| Sorting | `sort`, `sort_desc`, `sort_by_label`, `sort_by_label_desc` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
 | Other | `time`, `pi` |
@@ -346,6 +347,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Trig | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
 | Label | `label_replace`, `label_join` |
+| Sorting | `sort`, `sort_desc`, `sort_by_label`, `sort_by_label_desc` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
 | Other | `time`, `pi` |
