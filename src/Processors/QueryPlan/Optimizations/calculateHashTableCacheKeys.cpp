@@ -57,7 +57,7 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
             hash.update(table_expression->getTreeHash({.compare_aliases = false}));
     }
     if (const auto & dag = read.getPrewhereInfo())
-        dag->prewhere_actions.updateHash(hash);
+        dag->prewhere_actions.updateHash(hash, /*build_independent=*/true);
     return hash.get64();
 }
 
@@ -251,6 +251,24 @@ void calculateHashTableCacheKeys(
             /// RIGHT->LEFT remap below (keeping `A RIGHT JOIN B ≡ B LEFT JOIN A`). Two joins over the
             /// same inputs but with different keys/conditions then yield different child
             /// contributions, hence different cache keys, instead of colliding.
+            /// Identify a key by where it sits in that side's header and what type it has, never by its
+            /// name: names are branch-local (see `ActionsDAG::Node::updateHash`), so hashing them makes
+            /// the single-replica plan and the parallel-replicas plan disagree on a join they both
+            /// perform identically. This is the same choice already made for the join's output columns
+            /// below, applied to its keys.
+            const auto & left_header = *node.children.at(0)->step->getOutputHeader();
+            const auto & right_header = *node.children.at(1)->step->getOutputHeader();
+            auto update_with_column = [](SipHash & key_hash, const Block & header, const String & name)
+            {
+                if (const auto * column = header.findByName(name))
+                {
+                    key_hash.update(header.getPositionByName(name));
+                    key_hash.update(column->type->getName());
+                }
+                /// A key that is not a column of this side's header is produced by the join itself;
+                /// there is nothing build-independent to say about it, so it contributes nothing.
+            };
+
             SipHash keys_left;
             SipHash keys_right;
             for (const auto & clause : table_join.getClauses())
@@ -258,14 +276,14 @@ void calculateHashTableCacheKeys(
                 for (size_t i = 0; i < clause.keysCount(); ++i)
                 {
                     const bool nullsafe = clause.nullsafe_compare_key_indexes.contains(i);
-                    keys_left.update(clause.key_names_left[i]);
+                    update_with_column(keys_left, left_header, clause.key_names_left[i]);
                     keys_left.update(nullsafe);
-                    keys_right.update(clause.key_names_right[i]);
+                    update_with_column(keys_right, right_header, clause.key_names_right[i]);
                     keys_right.update(nullsafe);
                 }
                 const auto [left_cond, right_cond] = clause.condColumnNames();
-                keys_left.update(left_cond);
-                keys_right.update(right_cond);
+                update_with_column(keys_left, left_header, left_cond);
+                update_with_column(keys_right, right_header, right_cond);
             }
             auto a = cache_keys[node.children.at(0)] ^ keys_left.get64();
             auto b = cache_keys[node.children.at(1)] ^ keys_right.get64();

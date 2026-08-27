@@ -264,11 +264,20 @@ UInt64 ActionsDAG::Node::getHash() const
     return hash_state.get64();
 }
 
-void ActionsDAG::Node::updateHash(SipHash & hash_state) const
+void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent) const
 {
     hash_state.update(type);
 
-    if (!result_name.empty())
+    /// A column name is a label, not part of what the node computes: the type, the function and the
+    /// children already say that. It is also branch-local - a query tree numbers its tables
+    /// independently, so the same column is `__table1.x` inside a shipped fragment and `__table2.x` in
+    /// the plan enclosing it, and composed names carry the qualifier too, e.g. `in(__table1.x, ...)`.
+    /// So a caller asking for a build-independent key gets the structure without the names. This is the
+    /// same trade `JoinStep` already makes in `calculateHashTableCacheKeys` (types, never names): two
+    /// same-shaped expressions over same-typed columns then share a key, which costs a slightly-off
+    /// `output_bytes` estimate and never a wrong result, while hashing names costs Auto-PR the query
+    /// altogether.
+    if (!result_name.empty() && !build_independent)
         hash_state.update(result_name);
 
     if (result_type)
@@ -298,12 +307,18 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
         /// hashed above. Skipping only its value keeps the single-replica and parallel-replicas plan
         /// builds matching without dropping any other constant's value (it still serializes normally
         /// for distributed propagation).
-        if (!is_runtime_filter_id)
+        /// A `Const(Set)` column carries the prepared set built for this plan. Two builds of the same
+        /// query prepare separate `Set` objects, so their values hash differently while their identity -
+        /// the content-derived `__set_<hash>_<hash>` in `result_name`, hashed above - is the same. This
+        /// is the same situation as the runtime-filter id right above, so treat it the same way when
+        /// the caller asked for a build-independent hash.
+        const bool is_set = build_independent && result_type && WhichDataType(result_type).isSet();
+        if (!is_runtime_filter_id && !is_set)
             column->updateHashWithValue(0, hash_state);
     }
 
     for (const auto & child : children)
-        child->updateHash(hash_state);
+        child->updateHash(hash_state, build_independent);
 }
 
 UInt64 ActionsDAG::getHash() const
@@ -313,7 +328,7 @@ UInt64 ActionsDAG::getHash() const
     return hash.get64();
 }
 
-void ActionsDAG::updateHash(SipHash & hash_state) const
+void ActionsDAG::updateHash(SipHash & hash_state, bool build_independent) const
 {
     struct Frame
     {
@@ -330,7 +345,7 @@ void ActionsDAG::updateHash(SipHash & hash_state) const
         auto & frame = stack.top();
         if (frame.next_child == frame.node->children.size())
         {
-            frame.node->updateHash(hash_state);
+            frame.node->updateHash(hash_state, build_independent);
             stack.pop();
         }
         else
@@ -4320,6 +4335,7 @@ static void addChildrenBeforeNode(std::vector<const ActionsDAG::Node *> & reorde
     already_added_nodes.insert(node);
 };
 
+
 void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
 {
     size_t nodes_size = nodes.size();
@@ -4344,7 +4360,11 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
     {
         const auto & node = *reordered_nodes[node_id];
         writeIntBinary(static_cast<UInt8>(node.type), out);
-        writeStringBinary(node.result_name, out);
+        /// A cache key must not depend on branch-local column names - see `Node::updateHash`.
+        if (registry.for_cache_key)
+            writeStringBinary(String{}, out);
+        else
+            writeStringBinary(node.result_name, out);
         encodeDataType(node.result_type, out);
 
         writeVarUInt(node.children.size(), out);
