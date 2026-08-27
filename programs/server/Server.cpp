@@ -55,6 +55,7 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/SilkFiberScheduler.h>
 #include <Common/getMappedArea.h>
 #include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
@@ -106,6 +107,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
+#include <Parsers/registerStatements.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
@@ -248,6 +250,8 @@ namespace ServerSetting
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
+    extern const ServerSettingsBool enable_read_through_distributed_cache;
+    extern const ServerSettingsBool enable_write_through_distributed_cache;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -260,6 +264,7 @@ namespace ServerSetting
     extern const ServerSettingsInt32 dns_cache_update_period;
     extern const ServerSettingsUInt32 dns_max_consecutive_failures;
     extern const ServerSettingsBool enable_azure_sdk_logging;
+    extern const ServerSettingsBool enable_silk_runtime;
     extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
@@ -1525,6 +1530,7 @@ try
 #endif
 
     registerInterpreters();
+    registerStatements();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
@@ -1627,6 +1633,13 @@ try
         has_trace_collector ? server_settings[ServerSetting::global_profiler_real_time_period_ns].value : 0,
         has_trace_collector ? server_settings[ServerSetting::global_profiler_cpu_time_period_ns].value : 0);
 
+#if USE_SILK
+    if (server_settings[ServerSetting::enable_silk_runtime])
+    {
+        Silk::initializeFiberScheduler(config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE));
+    }
+#endif
+
     if (has_trace_collector)
     {
         global_context->createTraceCollector();
@@ -1667,6 +1680,15 @@ try
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
     std::vector<ProtocolServerAdapter> introspection_servers;
 
+    auto stop_silk_fiber_scheduler = [&]{
+#if USE_SILK
+        if (server_settings[ServerSetting::enable_silk_runtime])
+        {
+            LOG_INFO(log, "Stopping silk fiber scheduler");
+            Silk::destroyFiberScheduler();
+        }
+#endif
+    };
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT_SAFE({
         Stopwatch watch;
@@ -1674,6 +1696,8 @@ try
         DB::StaticThreadPool::shutdownAll();
         GlobalThreadPool::instance().shutdown();
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
+
+        stop_silk_fiber_scheduler();
     });
 
     if (page_cache_max_size != 0)
@@ -2815,6 +2839,8 @@ try
                     : std::nullopt);
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
+            global_context->setReadThroughDistributedCache(new_server_settings[ServerSetting::enable_read_through_distributed_cache]);
+            global_context->setWriteThroughDistributedCache(new_server_settings[ServerSetting::enable_write_through_distributed_cache]);
 
             global_context->setOSCPUOverloadSettings(static_cast<double>(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection]), static_cast<double>(new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]));
 
@@ -3977,6 +4003,89 @@ catch (...)
     return static_cast<UInt8>(code) ? code : -1;
 }
 
+namespace
+{
+
+/// Walk a composable protocol's `impl` chain and return the effective `default_session_user`:
+/// the value closest to the endpoint wins. Used both when the protocol stack is built and when it is
+/// decided whether a configuration reload has to restart the endpoint.
+/// Returns an empty optional if no module in the chain sets it (the handlers then fall back to the
+/// `default_session_user` server setting).
+std::optional<String> getEffectiveDefaultSessionUser(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
+{
+    std::string conf_name = protocol;
+    std::string prefix = protocol + ".";
+    std::unordered_set<std::string> pset {conf_name};
+    while (true)
+    {
+        if (config.has(prefix + "default_session_user"))
+            return config.getString(prefix + "default_session_user");
+
+        if (!config.has(prefix + "impl"))
+            return {};
+
+        conf_name = "protocols." + config.getString(prefix + "impl");
+        prefix = conf_name + ".";
+
+        /// A malformed loop is rejected when the stack is built; here we just stop to avoid spinning.
+        if (!pset.insert(conf_name).second)
+            return {};
+    }
+}
+
+/// Resolve the `http_handlers`-style section a composable `http` endpoint serves: the
+/// `handlers` key of the module carrying `type = http`, found by walking the `impl` chain
+/// (mirrors `buildProtocolStackFromConfig`). Returns an empty optional when the chain does
+/// not reach an `http` module in this configuration (e.g. the endpoint did not exist or had
+/// a different type before a reload).
+std::optional<String> resolveHTTPHandlersKey(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
+{
+    std::string conf_name = protocol;
+    std::string prefix = protocol + ".";
+    std::unordered_set<std::string> pset {conf_name};
+    while (true)
+    {
+        if (config.getString(prefix + "type", "") == "http")
+            return config.getString(conf_name + ".handlers", "http_handlers");
+
+        if (!config.has(prefix + "impl"))
+            return {};
+
+        conf_name = "protocols." + config.getString(prefix + "impl");
+        prefix = conf_name + ".";
+
+        /// A malformed loop is rejected when the stack is built; here we just stop to avoid spinning.
+        if (!pset.insert(conf_name).second)
+            return {};
+    }
+}
+
+/// Whether a non-keeper `prometheus` endpoint (serving the global `prometheus` section)
+/// consults the default session user. Only the time-series handlers without a fixed `user`
+/// authenticate; the plain metrics exposition served without a `handlers` section does not.
+bool prometheusHandlersConsumeDefaultSessionUser(const Poco::Util::AbstractConfiguration & config)
+{
+    if (!config.has("prometheus.handlers"))
+        return false;
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys("prometheus.handlers", keys);
+    for (const auto & key : keys)
+    {
+        const std::string handler_prefix = "prometheus.handlers." + key + ".handler";
+        const std::string type = config.getString(handler_prefix + ".type", "");
+        /// The metrics exposition aliases accepted by `parseHandlerType`.
+        if (type == "prometheus" || type == "metrics" || type == "expose_metrics"
+            || type == "prometheus_metrics" || type == "prometheus_expose_metrics")
+            continue;
+        if (!config.has(handler_prefix + ".user"))
+            return true;
+    }
+    return false;
+}
+
+}
+
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const ServerSettings & server_settings,
@@ -3985,10 +4094,19 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     AsynchronousMetrics & async_metrics,
     bool & is_secure)
 {
+    /// The default session user for the endpoint: the `default_session_user` key looked up
+    /// from the endpoint's protocol module towards the referenced (`impl`) modules; the value
+    /// closest to the endpoint wins. If not set anywhere in the chain, the handlers fall back
+    /// to the `default_session_user` server setting.
+    /// It is resolved for the whole `impl` chain up front, because a module can be both typed
+    /// (so its handler factory is created while walking the chain) and inherit the setting from
+    /// a module it references, which the walk reaches only later.
+    const std::optional<String> default_session_user = getEffectiveDefaultSessionUser(config, "protocols." + protocol);
+
     auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
     {
         if (type == "tcp")
-            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes));
+            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes, default_session_user));
 
         if (type == "tls")
 #if USE_SSL
@@ -4000,12 +4118,12 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (type == "proxy1")
             return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this, conf_name));
         if (type == "mysql")
-            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, server_settings[ServerSetting::mysql_require_secure_transport], ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes));
+            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, server_settings[ServerSetting::mysql_require_secure_transport], ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes, default_session_user));
         if (type == "postgres")
 #if USE_SSL
-            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], conf_name + ".", ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], conf_name + ".", ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes, default_session_user));
 #else
-            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes, default_session_user));
 #endif
         if (type == "http")
         {
@@ -4015,14 +4133,14 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             if (config.has(conf_name + ".handlers"))
                 handlers_config_key = config.getString(conf_name + ".handlers");
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key, protocol), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key, protocol, default_session_user), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
             );
         }
         if (type == "prometheus")
         {
             const std::string handler_name = server_settings[ServerSetting::prometheus_keeper_metrics_only] ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, handler_name), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, handler_name, /* http_handlers_key= */ {}, protocol, default_session_user), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
             );
         }
         if (type == "interserver")
@@ -4042,6 +4160,8 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
 
     auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name, is_introspection);
 
+    bool has_interserver = false;
+
     while (true)
     {
         // if there is no "type" - it's a reference to another protocol and this is just an endpoint
@@ -4054,6 +4174,8 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
                     throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' contains more than one TLS layer", protocol);
                 is_secure = true;
             }
+            if (type == "interserver")
+                has_interserver = true;
 
             if (is_introspection && type != "tcp" && type != "tls" && type != "proxy1")
                 throw Exception(
@@ -4074,6 +4196,12 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (!pset.insert(conf_name).second)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
     }
+
+    /// Interserver connections are authenticated by the cluster secret and the initial user
+    /// and never use the default session user, so such a configuration is an error.
+    if (has_interserver && default_session_user)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Protocol '{}': 'default_session_user' cannot be used with the 'interserver' protocol", protocol);
 
     if (is_introspection && innermost_type != "tcp")
         throw Exception(
@@ -4579,11 +4707,23 @@ void Server::updateServers(
             std::string port_name = server->getPortName();
             bool has_host = false;
             bool is_http = false;
+            bool is_non_keeper_prometheus = false;
+            bool is_prometheus = false;
+            bool default_session_user_changed = false;
             String handlers_key = "http_handlers";
+            String previous_handlers_key = handlers_key;
             if (port_name.starts_with("protocols."))
             {
                 std::string protocol = port_name.substr(0, port_name.find_last_of('.'));
                 has_host = config.has(protocol + ".host");
+
+                /// Whether any handler in the `impl` chain actually consumes the default session
+                /// user, so that a `default_session_user` change does not restart listeners that
+                /// ignore it: keeper-metrics-only `prometheus` listeners serve metrics without
+                /// authentication (`KeeperPrometheusHandler-factory` only exposes `MetricsImpl`),
+                /// and `prometheus` endpoints whose configured handler set consists only of
+                /// fixed-user and non-authenticating handlers never consult the setting either.
+                bool consumes_default_session_user = false;
 
                 std::string conf_name = protocol;
                 std::string prefix = protocol + ".";
@@ -4598,7 +4738,40 @@ void Server::updateServers(
                             is_http = true;
                             if (config.has(conf_name + ".handlers"))
                                 handlers_key = config.getString(conf_name + ".handlers");
+                            /// This reload may re-point the endpoint at a different `<handlers>` section
+                            /// (through the endpoint's `handlers` reference or its `impl` chain), while
+                            /// the running factory still serves the previously referenced section. Resolve
+                            /// the old reference too: the consumer check must consider the old *or* the
+                            /// new handler set, and the changed-configuration check below must notice the
+                            /// reference switch itself — comparing only the new section on both sides of
+                            /// the reload would miss a switch between two sections that are themselves
+                            /// unchanged.
+                            previous_handlers_key = resolveHTTPHandlersKey(previous_config, protocol).value_or(handlers_key);
+                            /// `SQLDefinedHTTPHandlerFactory` is appended to every HTTP handler
+                            /// factory. It caches the endpoint override, while the SQL handler
+                            /// registry itself is read on every request, so an SQL-defined handler
+                            /// can start consuming the setting after the listener was created even
+                            /// when all XML handlers have fixed users.
+                            consumes_default_session_user = true;
                             break;
+                        }
+                        if (type == "tcp" || type == "mysql" || type == "postgres")
+                            consumes_default_session_user = true;
+                        /// The running listener still serves the handler set of the *previous*
+                        /// configuration (the shared `prometheus.handlers` section), so consider the
+                        /// setting consumed when either the old or the new set consumes it. A change
+                        /// of the section itself forces a restart below, like a change of an `http`
+                        /// endpoint's `handlers` section.
+                        if (type == "prometheus")
+                        {
+                            is_prometheus = true;
+                            if (!server_settings[ServerSetting::prometheus_keeper_metrics_only])
+                            {
+                                is_non_keeper_prometheus = true;
+                                consumes_default_session_user = consumes_default_session_user
+                                    || prometheusHandlersConsumeDefaultSessionUser(previous_config)
+                                    || prometheusHandlersConsumeDefaultSessionUser(config);
+                            }
                         }
                     }
 
@@ -4611,6 +4784,15 @@ void Server::updateServers(
                     if (!pset.insert(conf_name).second)
                         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
                 }
+
+                /// The per-endpoint default session user is fixed in the protocol handler factory,
+                /// so the endpoint must be restarted when its effective value changes. Compare the
+                /// effective value (the one closest to the endpoint wins, as in
+                /// `buildProtocolStackFromConfig`) rather than every node in the `impl` chain, so
+                /// that editing a shadowed base module does not force a needless restart.
+                default_session_user_changed = consumes_default_session_user
+                    && getEffectiveDefaultSessionUser(previous_config, protocol)
+                        != getEffectiveDefaultSessionUser(config, protocol);
             }
             else
             {
@@ -4618,14 +4800,58 @@ void Server::updateServers(
                 /// dynamic_cast<> since HTTPServer is also used for prometheus and
                 /// internal replication communications.
                 is_http = server->getPortName() == "http_port" || server->getPortName() == "https_port";
+                is_prometheus = server->getPortName() == "prometheus.port";
+                /// The standalone `prometheus.port` listener is built from the same shared
+                /// `prometheus.handlers` section as a composable `type = prometheus` endpoint
+                /// (`createPrometheusMainHandlerFactory` bakes it into the handler factory), and
+                /// there is no other reconfiguration hook for it, so it needs the same restart
+                /// check. In keeper-metrics-only mode the section is not served at all, and a
+                /// change of the mode itself is handled by the check below.
+                is_non_keeper_prometheus = is_prometheus && !server_settings[ServerSetting::prometheus_keeper_metrics_only];
             }
 
             if (!has_host)
                 has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server->getListenHost()) != listen_hosts.end();
             bool has_port = !config.getString(port_name, "").empty();
-            bool force_restart = is_http && !isSameConfiguration(previous_config, config, handlers_key);
-            if (force_restart)
+            bool force_restart = false;
+            if (is_http && previous_handlers_key != handlers_key)
+            {
+                force_restart = true;
+                LOG_TRACE(log, "The handlers reference had been changed from <{}> to <{}>, will reload {}",
+                    previous_handlers_key, handlers_key, server->getDescription());
+            }
+            else if (is_http && !isSameConfiguration(previous_config, config, handlers_key))
+            {
+                force_restart = true;
                 LOG_TRACE(log, "<{}> had been changed, will reload {}", handlers_key, server->getDescription());
+            }
+            /// A non-keeper `prometheus` listener (a composable `type = prometheus` endpoint as well
+            /// as the standalone `prometheus.port` one) serves the shared `prometheus.handlers`
+            /// section, which is baked into its handler factory, so the listener must be restarted
+            /// when the section changes (a fixed `user`, a route, or a handler type may have changed).
+            if (is_non_keeper_prometheus && !isSameConfiguration(previous_config, config, "prometheus.handlers"))
+            {
+                force_restart = true;
+                LOG_TRACE(log, "<prometheus.handlers> had been changed, will reload {}", server->getDescription());
+            }
+            /// `prometheus.keeper_metrics_only` selects the handler factory baked into a `prometheus`
+            /// listener: `KeeperPrometheusHandler-factory` exposes the keeper metrics without
+            /// authentication, while `PrometheusHandler-factory` also serves the authenticating
+            /// time-series handlers of `prometheus.handlers`. A change of the mode itself must restart
+            /// the listener in either direction — the port and the handler section may well stay the
+            /// same, and neither of the checks above can notice the switched factory then.
+            if (is_prometheus
+                && previous_config.getBool("prometheus.keeper_metrics_only", false)
+                    != server_settings[ServerSetting::prometheus_keeper_metrics_only])
+            {
+                force_restart = true;
+                LOG_TRACE(log, "<prometheus.keeper_metrics_only> had been changed, will reload {}", server->getDescription());
+            }
+            if (default_session_user_changed)
+            {
+                force_restart = true;
+                LOG_TRACE(log, "<default_session_user> had been changed, will reload {}", server->getDescription());
+            }
 
             if (!has_host || !has_port || config.getInt(server->getPortName()) != server->portNumber() || force_restart)
             {
