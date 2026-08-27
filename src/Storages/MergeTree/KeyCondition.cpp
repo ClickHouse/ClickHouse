@@ -33,7 +33,10 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -2673,41 +2676,57 @@ static bool tryPrepareSetColumnsForIndex(
     return true;
 }
 
-/// `has` compares array elements as raw Fields, whereas `MergeTreeSetIndex` converts them to the
-/// key type with an accurate cast. For an `Enum` key the two disagree: `castColumnAccurateOrNull`
-/// accepts a `String` that names one of the enum labels, but `has` never treats a `String` element
-/// as equal to an enum value. Numeric elements are fine, because `has` compares enums numerically
-/// (see `00674_has_array_enum`) and the cast accepts the codes of declared values, so only a
-/// non-integral element next to an enum is rejected. Everything unrelated to enums is left alone -
-/// the conversion of such elements is handled by `tryPrepareSetColumnsForIndex`.
+/// `has` compares array elements with the key values as raw `Field`s, whereas `MergeTreeSetIndex`
+/// converts the elements to the key type with an accurate cast. The two agree only when the raw
+/// representation of the set element type carries the same semantics as the key type. Counter-examples
+/// (see `03916_has_to_in`): `DateTime` stores seconds while `Date` stores days, so
+/// `has([toDateTime(...)], date_key)` is false at runtime while the cast maps the element onto the
+/// matching `Date`; a `String` element never equals an `Enum` value even when it names one of its
+/// labels; the cast pads a `FixedString` with zero bytes. An exact set atom built from such a pair
+/// prunes rows that satisfy the predicate under `notHas`. Allow only pairs where the raw comparison
+/// provably matches the cast:
+///   - identical types (after stripping `Nullable` and `LowCardinality`);
+///   - two native integers: both the `Field` comparison and the cast are numeric across widths and
+///     signs (floats never get here - `tryPrepareSetIndexForHas` rejects them earlier, because the
+///     set index considers two NaNs equal while `has` does not);
+///   - an `Enum` next to a native integer: `has` compares enums numerically (see
+///     `00674_has_array_enum`) and the cast accepts the codes of declared values;
+///   - `Nothing` on the element side: an all-NULL element never equals a non-NULL key value under
+///     `has`, and the accurate-or-null cast likewise keeps it NULL, dropping it from the set;
+///   - `Tuple` / `Array` / `Map` pairs are compared element-wise by the same rule;
+///   - a `Variant` element is admissible when every contained alternative is, because the raw
+///     `Field` of a `Variant` is its underlying value. A `Dynamic` element does not describe its
+///     contents at the type level; the caller substitutes the `Variant` of the types the constant
+///     column actually holds, so a bare `Dynamic` reaching this check is declined.
 static bool areTypesCompatibleForHasSetIndex(const DataTypePtr & set_element_type, const DataTypePtr & key_column_type)
 {
     const auto set_type = removeNullable(recursiveRemoveLowCardinality(set_element_type));
     const auto key_type = removeNullable(recursiveRemoveLowCardinality(key_column_type));
 
-    const bool set_is_enum = isEnum(set_type);
-    const bool key_is_enum = isEnum(key_type);
+    if (isNothing(set_type))
+        return true;
 
-    if (set_is_enum || key_is_enum)
+    if (set_type->equals(*key_type))
+        return true;
+
+    const bool set_is_native_integer = isNativeInteger(set_type);
+    const bool key_is_native_integer = isNativeInteger(key_type);
+
+    if (set_is_native_integer && key_is_native_integer)
+        return true;
+
+    if ((isEnum(set_type) && key_is_native_integer) || (set_is_native_integer && isEnum(key_type)))
+        return true;
+
+    if (const auto * set_variant_type = typeid_cast<const DataTypeVariant *>(set_type.get()))
     {
-        if (set_type->equals(*key_type))
-            return true;
-
-        /// Two different enums can map the same label to different codes, and neither of the two
-        /// representations is the one `has` compares against, so decline the set atom.
-        if (set_is_enum && key_is_enum)
-            return false;
-
-        return isNativeInteger(set_is_enum ? key_type : set_type);
+        for (const auto & alternative : set_variant_type->getVariants())
+        {
+            if (!areTypesCompatibleForHasSetIndex(alternative, key_type))
+                return false;
+        }
+        return true;
     }
-
-    /// `has` compares the original array element with the key value byte-for-byte, while the set
-    /// index casts the element to the key type. For `FixedString` the cast pads the value with zero
-    /// bytes, so `has(['V0'], fixed_string_key)` is false at runtime for the row `'V0\0'` while the
-    /// padded set element matches it. Decline any pair involving `FixedString` unless the types are
-    /// identical.
-    if ((isFixedString(set_type) || isFixedString(key_type)) && !set_type->equals(*key_type))
-        return false;
 
     const auto * set_tuple_type = typeid_cast<const DataTypeTuple *>(set_type.get());
     const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get());
@@ -2715,6 +2734,9 @@ static bool areTypesCompatibleForHasSetIndex(const DataTypePtr & set_element_typ
     {
         const auto & set_elements = set_tuple_type->getElements();
         const auto & key_elements = key_tuple_type->getElements();
+
+        /// Tuples of different sizes agree trivially: the raw comparison never holds and the cast
+        /// drops the element from the set.
         if (set_elements.size() != key_elements.size())
             return true;
 
@@ -2731,7 +2753,13 @@ static bool areTypesCompatibleForHasSetIndex(const DataTypePtr & set_element_typ
     if (set_array_type && key_array_type)
         return areTypesCompatibleForHasSetIndex(set_array_type->getNestedType(), key_array_type->getNestedType());
 
-    return true;
+    const auto * set_map_type = typeid_cast<const DataTypeMap *>(set_type.get());
+    const auto * key_map_type = typeid_cast<const DataTypeMap *>(key_type.get());
+    if (set_map_type && key_map_type)
+        return areTypesCompatibleForHasSetIndex(set_map_type->getKeyType(), key_map_type->getKeyType())
+            && areTypesCompatibleForHasSetIndex(set_map_type->getValueType(), key_map_type->getValueType());
+
+    return false;
 }
 
 static bool areSetAndKeyTypesCompatibleForHas(
@@ -2955,9 +2983,44 @@ bool KeyCondition::tryPrepareSetIndexForHas(
         return true;
     }
 
-    if (!out.relaxed
-        && !areSetAndKeyTypesCompatibleForHas({array_nested_type}, key_args_count, data_types, set_transforming_dags, indexes_mapping))
-        return false;
+    if (!out.relaxed)
+    {
+        /// A `Dynamic` element does not describe its contents at the type level, so check the types
+        /// the constant column actually holds instead.
+        DataTypePtr checked_element_type = array_nested_type;
+        if (WhichDataType(*array_nested_type).isDynamic())
+        {
+            const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*array_elements);
+
+            /// Values that overflowed into the shared variant are stored serialized and carry no
+            /// type-level description, so their compatibility cannot be established.
+            if (!dynamic_column.getSharedVariant().empty())
+                return false;
+
+            const auto & alternatives
+                = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariants();
+            const auto shared_variant_discriminator = dynamic_column.getSharedVariantDiscriminator();
+
+            DataTypes contained_types;
+            for (size_t i = 0; i < alternatives.size(); ++i)
+            {
+                if (i != shared_variant_discriminator)
+                    contained_types.push_back(alternatives[i]);
+            }
+
+            /// A column with no typed variants holds nothing but NULLs, which never poison the set:
+            /// they are either dropped by the accurate-or-null conversion or match the NULL of a
+            /// Nullable key.
+            if (contained_types.empty())
+                checked_element_type = std::make_shared<DataTypeNothing>();
+            else
+                checked_element_type = std::make_shared<DataTypeVariant>(contained_types);
+        }
+
+        if (!areSetAndKeyTypesCompatibleForHas(
+                {checked_element_type}, key_args_count, data_types, set_transforming_dags, indexes_mapping))
+            return false;
+    }
 
     /// We do not need to unpack tuples inside, because `tryPrepareSetColumnsForIndex` will do it
     Columns set_columns = {array_elements};
