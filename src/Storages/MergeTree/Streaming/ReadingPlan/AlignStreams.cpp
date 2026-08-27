@@ -87,43 +87,44 @@ class StreamAligner
 {
     void matchPending()
     {
-        if (left_columns.empty())
+        if (left_columns.empty() || right_columns.empty())
             return;
 
         const auto & left_block_numbers = assert_cast<const ColumnUInt64 &>(*left_columns[left_block_number_pos]).getData();
         const auto & left_block_offsets = assert_cast<const ColumnUInt64 &>(*left_columns[left_block_offset_pos]).getData();
-        const auto & right_block_numbers = assert_cast<const ColumnUInt64 &>(*data_columns[right_block_number_pos]).getData();
-        const auto & right_block_offsets = assert_cast<const ColumnUInt64 &>(*data_columns[right_block_offset_pos]).getData();
+        const auto & right_block_numbers = assert_cast<const ColumnUInt64 &>(*right_columns[right_block_number_pos]).getData();
+        const auto & right_block_offsets = assert_cast<const ColumnUInt64 &>(*right_columns[right_block_offset_pos]).getData();
         const size_t left_rows = left_columns.front()->size();
-        const size_t right_rows = data_columns.front()->size();
+        const size_t right_rows = right_columns.front()->size();
 
         const auto compare_at = [&](size_t left, size_t right)
         {
             return compareKeys(left_block_numbers[left], left_block_offsets[left], right_block_numbers[right], right_block_offsets[right]);
         };
 
-        while (processed_left < left_rows && matched_right < right_rows)
+        while (processed_left < left_rows && processed_right < right_rows)
         {
-            const int comparison = compare_at(processed_left, matched_right);
+            const int comparison = compare_at(processed_left, processed_right);
 
             if (comparison > 0)
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "A data stream row of AlignStreams has no matching metadata stream row (block number {}, block offset {})",
-                    right_block_numbers[matched_right], right_block_offsets[matched_right]);
+                ++processed_right;
             }
             else if (comparison == 0)
             {
                 size_t eq_range_len = 1;
-                while (processed_left + eq_range_len < left_rows && matched_right + eq_range_len < right_rows
-                    && compare_at(processed_left + eq_range_len, matched_right + eq_range_len) == 0)
+                while (processed_left + eq_range_len < left_rows && processed_right + eq_range_len < right_rows
+                    && compare_at(processed_left + eq_range_len, processed_right + eq_range_len) == 0)
                     ++eq_range_len;
+
+                for (size_t i = 0; i < matched_columns.size(); ++i)
+                    matched_columns[i]->insertRangeFrom(*right_columns[i], processed_right, eq_range_len);
 
                 for (size_t i = 0; i < attached_positions.size(); ++i)
                     attached_columns[i]->insertRangeFrom(*left_columns[attached_positions[i]], processed_left, eq_range_len);
 
-                matched_right += eq_range_len;
-                processed_left += eq_range_len - 1;
+                processed_right += eq_range_len;
+                processed_left += eq_range_len;
             }
             else
             {
@@ -133,6 +134,9 @@ class StreamAligner
 
         if (processed_left == left_rows)
             dropPendingLeftRows();
+
+        if (processed_right == right_rows)
+            dropPendingRightRows();
     }
 
 public:
@@ -147,24 +151,24 @@ public:
             attached_columns.push_back(left_header.getByPosition(position).type->createColumn());
 
         for (const auto & type : right_header.getDataTypes())
-            data_columns.push_back(type->createColumn());
+            matched_columns.push_back(type->createColumn());
     }
 
     bool hasPendingLeftRows() const { return !left_columns.empty(); }
-    bool hasPendingRightRows() const { return !data_columns.front()->empty(); }
+    bool hasPendingRightRows() const { return !right_columns.empty(); }
+    bool hasMatchedRows() const { return !matched_columns.front()->empty(); }
 
     void addRightChunk(Chunk chunk)
     {
-        chassert(data_columns.front()->empty());
+        chassert(right_columns.empty());
         if (chunk.getNumRows() == 0)
             return;
 
         convertToFullIfSparse(chunk);
         convertToFullIfConst(chunk);
 
-        auto source_columns = chunk.detachColumns();
-        for (size_t i = 0; i < data_columns.size(); ++i)
-            data_columns[i] = IColumn::mutate(std::move(source_columns[i]));
+        right_columns = chunk.detachColumns();
+        processed_right = 0;
 
         matchPending();
     }
@@ -184,6 +188,12 @@ public:
         matchPending();
     }
 
+    void dropPendingRightRows()
+    {
+        right_columns.clear();
+        processed_right = 0;
+    }
+
     void dropPendingLeftRows()
     {
         left_columns.clear();
@@ -192,27 +202,15 @@ public:
 
     Chunk flushMatched()
     {
-        if (matched_right == 0)
+        const size_t rows = matched_columns.front()->size();
+        if (rows == 0)
             return {};
 
-        const size_t total = data_columns.front()->size();
-
         Columns columns;
-        columns.reserve(data_columns.size() + attached_columns.size());
-        const size_t rows = std::exchange(matched_right, 0);
+        columns.reserve(matched_columns.size() + attached_columns.size());
 
-        for (auto & column : data_columns)
-        {
-            if (rows == total)
-            {
-                columns.push_back(exchangeWithEmpty(column));
-            }
-            else
-            {
-                columns.push_back(column->cut(0, rows));
-                column = IColumn::mutate(column->cut(rows, total - rows));
-            }
-        }
+        for (auto & column : matched_columns)
+            columns.push_back(exchangeWithEmpty(column));
 
         for (auto & column : attached_columns)
             columns.push_back(exchangeWithEmpty(column));
@@ -232,9 +230,12 @@ private:
     size_t processed_left = 0;
 
     /// Right stream data
-    MutableColumns data_columns;
+    Columns right_columns;
+    size_t processed_right = 0;
+
+    /// Matched output
+    MutableColumns matched_columns;
     MutableColumns attached_columns;
-    size_t matched_right = 0;
 };
 
 class AlignStreamsProcessor final : public IProcessor
@@ -310,7 +311,7 @@ public:
             right_chunk = right_input.pull(/*set_not_needed=*/true);
         }
 
-        const bool has_work = left_chunk.has_value() || right_chunk.has_value() || aligner.hasPendingLeftRows() || aligner.hasPendingRightRows();
+        const bool has_work = left_chunk.has_value() || right_chunk.has_value() || aligner.hasPendingLeftRows() || aligner.hasPendingRightRows() || aligner.hasMatchedRows();
 
         if (!has_work)
         {
@@ -345,11 +346,12 @@ public:
             left_chunk.reset();
         }
 
-        enqueueChunk(aligner.flushMatched());
+        if (left_input.isFinished())
+            enqueueChunk(aligner.flushMatched());
 
-        /// Data rows left without metadata coverage - invariant is broken.
+        /// The metadata stream ended - the pending data rows can never be matched.
         if (left_input.isFinished() && !aligner.hasPendingLeftRows() && aligner.hasPendingRightRows())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The metadata stream of AlignStreams ended before all data stream rows were matched");
+            aligner.dropPendingRightRows();
 
         /// The data stream ended - the pending metadata tail can never match.
         if (right_input.isFinished() && !right_chunk.has_value() && !aligner.hasPendingRightRows())
