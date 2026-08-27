@@ -67,25 +67,25 @@ O teste inclui:
 
 Quando o teste terminar ou os créditos se esgotarem, converta para uma organização paga por meio da [oferta do ClickHouse Cloud no Azure Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud).
 
-<div id="copying-data-from-onelake">
-  ## Copiando dados do OneLake
+<div id="syncing-data-from-onelake">
+  ## Sincronizando dados do OneLake
 </div>
 
-O fluxo Copy &amp; Sync permite copiar tabelas do OneLake para o ClickHouse:
+O fluxo Sync permite sincronizar tabelas do OneLake com o ClickHouse:
 
-1. Abra seu item do ClickHouse e selecione **Copy &amp; Sync**
-2. Escolha um Lakehouse no seu workspace
+1. Abra seu item do ClickHouse e selecione **Sync**
+2. Selecione **Sync from OneLake** e escolha um Lakehouse no seu workspace
 3. Selecione as tabelas que deseja acelerar
-4. Comece a copiar um snapshot pontual dos seus dados
+4. Selecione **Save and sync** para iniciar uma sincronização pontual dos seus dados
 
 <Frame>
-  ![Configuração do Copy & Sync criando uma nova tabela de destino com chave de ordenação](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-copy-sync-table-selection.webp)
+  ![Configuração do Sync criando uma nova tabela de destino com chave de ordenação](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-sync-table-selection.webp)
 </Frame>
 
 Você pode criar uma tabela de destino com tipos de dados inferidos e configuração padrão, com base no schema detectado no OneLake. Se preferir ter mais controle sobre a definição da tabela, crie uma tabela antecipadamente e use uma tabela existente como destino.
 
 <Frame>
-  ![Mapeamento de colunas do Copy & Sync de uma tabela de origem do OneLake para uma tabela existente do ClickHouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-copy-sync-existing-table.webp)
+  ![Mapeamento de colunas do Sync de uma tabela de origem do OneLake para uma tabela existente do ClickHouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-sync-existing-table.webp)
 </Frame>
 
 O status da sincronização é exibido para cada tabela. Assim que uma tabela é concluída, ela pode ser consultada imediatamente no console SQL. Tabelas grandes são sincronizadas em segundo plano, para que você possa continuar trabalhando enquanto são carregadas.
@@ -107,7 +107,7 @@ Cada tabela sincronizada é alimentada por um [ClickPipe](/pt-BR/integrations/cl
   ### Custo
 </div>
 
-A cópia de dados do OneLake para o ClickHouse é gratuita durante a prévia pública do Microsoft Fabric. A cobrança terá início quando a carga de trabalho do Fabric atingir a disponibilidade geral. Os detalhes de preço serão publicados quando a carga de trabalho atingir GA.
+A sincronização de dados do OneLake para o ClickHouse é gratuita durante a prévia pública do Microsoft Fabric. A cobrança terá início quando a carga de trabalho do Fabric atingir a disponibilidade geral. Os detalhes de preço serão publicados quando a carga de trabalho atingir GA.
 
 <div id="sql-console-and-saved-queries">
   ## Console SQL e consultas salvas
@@ -155,7 +155,7 @@ O acesso MCP é opcional para cada serviço e somente leitura. Ao ativá-lo, voc
   ### Abrir no ClickHouse Cloud
 </div>
 
-Selecione **Open ClickHouse** para abrir o console completo do ClickHouse Cloud, conectado com sua identidade Microsoft. Você pode copiar dados para o ClickHouse e executar quaisquer instruções SQL a partir da carga de trabalho do Fabric, mas, para tarefas administrativas, será necessário acessar o Cloud Console para gerenciar o serviço.
+Selecione **Open in ClickHouse Cloud** para abrir o console completo do ClickHouse Cloud, conectado com sua identidade Microsoft. Você pode sincronizar dados com o ClickHouse e executar quaisquer instruções SQL a partir da carga de trabalho do Fabric, mas, para tarefas administrativas, será necessário acessar o Cloud Console para gerenciar o serviço.
 
 <Frame>
   ![Configurações do serviço no console do ClickHouse Cloud acessadas a partir da carga de trabalho](/images/integrations/tools/data-integration/microsoft-fabric/fabric-07-cloud-console-service.webp)
@@ -188,7 +188,7 @@ A saúde do serviço, o desempenho das consultas e o uso de recursos são monito
   ### Monitoramento de ClickPipes
 </div>
 
-Cada Copy &amp; Sync do OneLake é executado como um ClickPipe. Acompanhe o progresso da cópia, a vazão e os erros na [página do ClickPipes](/pt-BR/integrations/clickpipes/monitoring) no console do ClickHouse Cloud.
+Cada sincronização do OneLake é executada como um ClickPipe. Acompanhe o progresso da sincronização, a vazão e os erros na [página do ClickPipes](/pt-BR/integrations/clickpipes/monitoring) no console do ClickHouse Cloud.
 
 <div id="mapping-to-clickhouse-cloud">
   ## Mapeamento para o ClickHouse Cloud
@@ -243,9 +243,9 @@ No workspace do Fabric, selecione **+ Novo item** e, em seguida, **Lakehouse de 
   ### Crie um item do ClickHouse e sincronize
 </div>
 
-1. Crie um item do ClickHouse no mesmo workspace, conforme descrito em [provisionamento](#provisioning)
-2. Abra **Copy &amp; Sync**, escolha seu Lakehouse e selecione a tabela `publicholidays`
-3. Ordene pelos campos que você filtra com mais frequência: `countryOrRegion, date`
+1. Crie um item do ClickHouse no mesmo workspace, conforme descrito em [Provisioning](#provisioning)
+2. Abra **Sync**, escolha seu Lakehouse e selecione a tabela `publicholidays`
+3. Ordene pelas colunas que você filtra com mais frequência: `countryOrRegion, date`
 4. Inicie a sincronização; os dados serão preenchidos em breve. Uma tabela desse tamanho é sincronizada em segundos
 
 <div id="query-the-data">
@@ -296,8 +296,8 @@ A carga de trabalho do ClickHouse está em prévia pública. As limitações aba
   ### Movimentação de dados
 </div>
 
-* **As cópias são snapshots em um momento específico.** Ainda não há replicação agendada ou contínua. Para atualizar uma tabela com os dados mais recentes do OneLake, execute a sincronização novamente. Atualizações e exclusões na tabela de origem não são propagadas para a cópia no ClickHouse.
-* **Somente tabelas do Lakehouse.** O Copy &amp; Sync lê tabelas Delta de um Lakehouse no mesmo workspace. Outros itens do Fabric (Warehouse, bancos de dados KQL, bancos de dados espelhados) ainda não são compatíveis como fontes.
+* **As cópias são snapshots pontuais.** Ainda não há replicação agendada ou contínua. Para atualizar uma tabela com os dados mais recentes do OneLake, execute a sincronização novamente. Atualizações e exclusões na tabela de origem não são propagadas para a cópia no ClickHouse.
+* **Somente tabelas do Lakehouse.** A sincronização lê tabelas de um Lakehouse no mesmo workspace.
 * **Sem gravação de volta no OneLake.** Os dados fluem em uma única direção, do OneLake para o ClickHouse. A gravação dos resultados de consultas de volta no OneLake está planejada.
 
 <div id="service-management">

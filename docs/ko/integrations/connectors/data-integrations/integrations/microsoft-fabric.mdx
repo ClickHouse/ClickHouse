@@ -67,25 +67,25 @@ ClickHouse 항목을 생성하려면 다음 단계를 따르십시오.
 
 평가판이 종료되거나 크레딧이 소진되면 [Azure Marketplace의 ClickHouse Cloud 오퍼](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud)를 통해 유료 조직으로 전환하십시오.
 
-<div id="copying-data-from-onelake">
-  ## OneLake에서 데이터 복사
+<div id="syncing-data-from-onelake">
+  ## OneLake에서 데이터 동기화
 </div>
 
-Copy &amp; Sync를 통해 OneLake 테이블을 ClickHouse로 가져올 수 있습니다.
+Sync 흐름을 통해 OneLake 테이블을 ClickHouse로 가져올 수 있습니다.
 
-1. ClickHouse 항목을 열고 **Copy &amp; Sync**를 선택합니다.
-2. 워크스페이스에서 Lakehouse를 선택합니다.
+1. ClickHouse 항목을 열고 **Sync**를 선택합니다.
+2. **Sync from OneLake**를 선택하고 워크스페이스에서 Lakehouse를 선택합니다.
 3. 가속할 테이블을 선택합니다.
-4. 데이터의 특정 시점 스냅샷 복사를 시작합니다.
+4. **Save and sync**를 선택하여 데이터의 특정 시점 동기화를 시작합니다.
 
 <Frame>
-  ![정렬 키를 사용해 새 대상 테이블을 생성하는 Copy & Sync 구성](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-copy-sync-table-selection.webp)
+  ![정렬 키를 사용해 새 대상 테이블을 생성하는 Sync 구성](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-sync-table-selection.webp)
 </Frame>
 
 OneLake에서 감지된 스키마를 기반으로 데이터 타입을 추론하고 기본 구성으로 대상 테이블을 생성할 수 있습니다. 테이블 정의를 더 세밀하게 제어하려면 테이블을 미리 생성한 후 기존 테이블을 대상으로 사용할 수 있습니다.
 
 <Frame>
-  ![OneLake 원본 테이블에서 기존 ClickHouse 테이블로의 Copy & Sync 컬럼 매핑](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-copy-sync-existing-table.webp)
+  ![OneLake 원본 테이블에서 기존 ClickHouse 테이블로의 Sync 컬럼 매핑](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-sync-existing-table.webp)
 </Frame>
 
 동기화 상태는 테이블별로 표시됩니다. 테이블 동기화가 완료되면 SQL 콘솔에서 즉시 쿼리할 수 있습니다. 대용량 테이블은 백그라운드에서 동기화되므로 로드되는 동안에도 계속 작업할 수 있습니다.
@@ -107,7 +107,7 @@ OneLake에서 감지된 스키마를 기반으로 데이터 타입을 추론하�
   ### 비용
 </div>
 
-Microsoft Fabric 공개 미리 보기 기간에는 OneLake에서 ClickHouse로 데이터를 복사해도 무료입니다. Fabric 워크로드가 일반 제공되면 청구가 시작됩니다. 워크로드가 일반 제공(GA)되면 가격 정보가 공개됩니다.
+Microsoft Fabric 공개 미리 보기 기간에는 OneLake에서 ClickHouse로 데이터를 동기화해도 무료입니다. Fabric 워크로드가 일반 제공되면 청구가 시작됩니다. 워크로드가 일반 제공(GA)되면 가격 정보가 공개됩니다.
 
 <div id="sql-console-and-saved-queries">
   ## SQL 콘솔 및 저장된 쿼리
@@ -155,7 +155,7 @@ MCP 액세스는 서비스별로 선택하여 활성화할 수 있으며 읽기 
   ### ClickHouse Cloud에서 열기
 </div>
 
-**Open ClickHouse**를 선택하면 Microsoft 아이덴티티로 로그인된 전체 ClickHouse Cloud 콘솔이 열립니다. Fabric 워크로드에서 데이터를 ClickHouse로 복사하고 모든 SQL 문을 실행할 수 있지만, 관리 작업을 수행하려면 Cloud Console에서 서비스 관리 페이지로 이동해야 합니다.
+**Open in ClickHouse Cloud**를 선택하면 Microsoft 아이덴티티로 로그인된 전체 ClickHouse Cloud 콘솔이 열립니다. Fabric 워크로드에서 데이터를 ClickHouse로 동기화하고 모든 SQL 문을 실행할 수 있지만, 관리 작업을 수행하려면 Cloud Console에서 서비스 관리 페이지로 이동해야 합니다.
 
 <Frame>
   ![워크로드에서 연 ClickHouse Cloud 콘솔의 서비스 설정](/images/integrations/tools/data-integration/microsoft-fabric/fabric-07-cloud-console-service.webp)
@@ -188,7 +188,7 @@ Cloud Console의 **설정** 페이지에서 유휴 상태 전환을 구성합니
   ### ClickPipes 모니터링
 </div>
 
-OneLake의 각 Copy &amp; Sync는 ClickPipe로 실행됩니다. ClickHouse Cloud Console의 [ClickPipes 페이지](/ko/integrations/clickpipes/monitoring)에서 복사 진행률, 처리량, 오류를 확인하십시오.
+OneLake의 각 동기화는 ClickPipe로 실행됩니다. ClickHouse Cloud Console의 [ClickPipes 페이지](/ko/integrations/clickpipes/monitoring)에서 동기화 진행률, 처리량, 오류를 확인하십시오.
 
 <div id="mapping-to-clickhouse-cloud">
   ## ClickHouse Cloud 매핑
@@ -244,7 +244,7 @@ Fabric 워크스페이스에서 **+ New item**을 선택한 후 **Sample lakehou
 </div>
 
 1. [프로비저닝](#provisioning)에 설명된 대로 동일한 워크스페이스에 ClickHouse 항목을 생성합니다.
-2. **Copy &amp; Sync**를 열고 Lakehouse를 선택한 다음 `publicholidays` 테이블을 선택합니다.
+2. **Sync**를 열고 Lakehouse를 선택한 다음 `publicholidays` 테이블을 선택합니다.
 3. 가장 자주 필터링하는 컬럼을 기준으로 정렬합니다: `countryOrRegion, date`
 4. 동기화를 시작합니다. 잠시 후 데이터가 채워지며, 이 정도 크기의 테이블은 몇 초 안에 완료됩니다.
 
@@ -297,7 +297,7 @@ ClickHouse 워크로드는 공개 미리 보기 단계입니다. 아래 제한 �
 </div>
 
 * **복사는 특정 시점의 스냅샷입니다.** 예약 복제나 지속적 복제는 아직 지원되지 않습니다. 최신 OneLake 데이터로 테이블을 갱신하려면 동기화를 다시 실행하십시오. 원본 테이블의 업데이트 및 삭제 사항은 ClickHouse 사본에 반영되지 않습니다.
-* **Lakehouse 테이블만 지원됩니다.** Copy &amp; Sync는 동일한 워크스페이스에 있는 Lakehouse의 Delta 테이블을 읽습니다. 다른 Fabric 항목(Warehouse, KQL 데이터베이스, 미러링된 데이터베이스)은 아직 소스로 지원되지 않습니다.
+* **Lakehouse 테이블만 지원됩니다.** Sync는 동일한 워크스페이스에 있는 Lakehouse의 테이블을 읽습니다.
 * **OneLake로의 쓰기 지원 없음.** 데이터는 OneLake에서 ClickHouse로 단방향으로 이동합니다. 쿼리 결과를 OneLake에 다시 쓰는 기능은 추후 지원될 예정입니다.
 
 <div id="service-management">

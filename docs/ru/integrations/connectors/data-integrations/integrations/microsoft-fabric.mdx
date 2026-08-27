@@ -67,25 +67,25 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 По окончании пробного периода или при исчерпании кредитов перейдите на платную организацию через [предложение ClickHouse Cloud в Azure Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud).
 
-<div id="copying-data-from-onelake">
-  ## Копирование данных из OneLake
+<div id="syncing-data-from-onelake">
+  ## Синхронизация данных из OneLake
 </div>
 
-Процесс Copy &amp; Sync позволяет переносить таблицы OneLake в ClickHouse:
+Процесс Sync позволяет переносить таблицы OneLake в ClickHouse:
 
-1. Откройте свой элемент ClickHouse и выберите **Copy &amp; Sync**
-2. Выберите Lakehouse в рабочем пространстве
+1. Откройте свой элемент ClickHouse и выберите **Sync**
+2. Выберите **Синхронизировать из OneLake** и Lakehouse в рабочем пространстве
 3. Выберите таблицы, которые хотите ускорить
-4. Запустите копирование снимка данных на определённый момент времени
+4. Выберите **Сохранить и синхронизировать**, чтобы запустить синхронизацию данных на определённый момент времени
 
 <Frame>
-  ![Настройка Copy & Sync для создания новой целевой таблицы с ключом сортировки](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-copy-sync-table-selection.webp)
+  ![Настройка Sync для создания новой целевой таблицы с ключом сортировки](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-sync-table-selection.webp)
 </Frame>
 
 Можно создать целевую таблицу с автоматически определёнными типами данных и конфигурацией по умолчанию на основе схемы, обнаруженной в OneLake. Если вам нужен больший контроль над определением таблицы, создайте её заранее и используйте в качестве целевой существующую таблицу.
 
 <Frame>
-  ![Сопоставление столбцов Copy & Sync из исходной таблицы OneLake с существующей таблицей ClickHouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-copy-sync-existing-table.webp)
+  ![Сопоставление столбцов Sync из исходной таблицы OneLake с существующей таблицей ClickHouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-sync-existing-table.webp)
 </Frame>
 
 Статус синхронизации отображается для каждой таблицы. После завершения синхронизации таблица сразу становится доступной для запросов в консоли SQL. Большие таблицы синхронизируются в фоновом режиме, поэтому вы можете продолжать работу, пока они загружаются.
@@ -107,7 +107,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
   ### Стоимость
 </div>
 
-В период публичной предварительной версии Microsoft Fabric копирование данных из OneLake в ClickHouse бесплатно. Тарификация начнётся, когда рабочая нагрузка Fabric станет общедоступной. Информация о ценах будет опубликована, когда рабочая нагрузка достигнет стадии GA.
+В период публичной предварительной версии Microsoft Fabric синхронизация данных из OneLake в ClickHouse бесплатна. Тарификация начнётся, когда рабочая нагрузка Fabric станет общедоступной. Информация о ценах будет опубликована, когда рабочая нагрузка достигнет стадии GA.
 
 <div id="sql-console-and-saved-queries">
   ## Консоль SQL и сохранённые запросы
@@ -155,7 +155,7 @@ ClickHouse предлагает гораздо больше, чем быстры
   ### Открытие в ClickHouse Cloud
 </div>
 
-Нажмите **Open ClickHouse**, чтобы открыть полную консоль ClickHouse Cloud с входом через свою учетную запись Microsoft. Из рабочей нагрузки Fabric можно копировать данные в ClickHouse и выполнять любые SQL-операторы, но для административных задач необходимо перейти в Cloud Console, чтобы управлять сервисом.
+Нажмите **Open in ClickHouse Cloud**, чтобы открыть полную консоль ClickHouse Cloud с входом через свою учетную запись Microsoft. Из рабочей нагрузки Fabric можно синхронизировать данные с ClickHouse и выполнять любые SQL-операторы, но для административных задач необходимо перейти в консоль Cloud, чтобы управлять сервисом.
 
 <Frame>
   ![Настройки сервиса в консоли ClickHouse Cloud, открытые из рабочей нагрузки](/images/integrations/tools/data-integration/microsoft-fabric/fabric-07-cloud-console-service.webp)
@@ -188,7 +188,7 @@ ClickHouse предлагает гораздо больше, чем быстры
   ### Мониторинг ClickPipes
 </div>
 
-Каждая операция Copy &amp; Sync из OneLake выполняется в виде ClickPipe. Отслеживайте ход копирования, пропускную способность и ошибки на [странице ClickPipes](/ru/integrations/clickpipes/monitoring) в консоли ClickHouse Cloud.
+Каждая синхронизация из OneLake выполняется в виде ClickPipe. Отслеживайте ход синхронизации, пропускную способность и ошибки на [странице ClickPipes](/ru/integrations/clickpipes/monitoring) в консоли ClickHouse Cloud.
 
 <div id="mapping-to-clickhouse-cloud">
   ## Сопоставление с ClickHouse Cloud
@@ -244,7 +244,7 @@ ClickHouse предлагает гораздо больше, чем быстры
 </div>
 
 1. Создайте элемент ClickHouse в том же рабочем пространстве, как описано в разделе [подготовки](#provisioning)
-2. Откройте **Copy &amp; Sync**, выберите свой Lakehouse и таблицу `publicholidays`
+2. Откройте **Sync**, выберите свой Lakehouse и таблицу `publicholidays`
 3. Укажите сортировку по столбцам, по которым вы чаще всего фильтруете: `countryOrRegion, date`
 4. Запустите синхронизацию — данные вскоре будут загружены. Таблица такого размера синхронизируется за считаные секунды
 
@@ -297,7 +297,7 @@ ORDER BY year;
 </div>
 
 * **Копии представляют собой снимки состояния на определённый момент времени.** Плановая или непрерывная репликация пока недоступна. Чтобы обновить таблицу актуальными данными из OneLake, повторно запустите синхронизацию. Изменения и удаления в исходной таблице не распространяются на копию в ClickHouse.
-* **Поддерживаются только таблицы Lakehouse.** Copy &amp; Sync считывает Delta-таблицы из Lakehouse в том же рабочем пространстве. Другие элементы Fabric (Warehouse, базы данных KQL, зеркальные базы данных) пока не поддерживаются в качестве источников.
+* **Поддерживаются только таблицы Lakehouse.** Синхронизация считывает таблицы из Lakehouse в том же рабочем пространстве.
 * **Обратная запись в OneLake не поддерживается.** Данные передаются только в одном направлении — из OneLake в ClickHouse. Возможность записывать результаты запросов обратно в OneLake запланирована.
 
 <div id="service-management">

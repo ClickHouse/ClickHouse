@@ -67,25 +67,25 @@ ClickHouse アイテムを作成するには:
 
 トライアルの終了時またはクレジットの使い切り時には、[Azure Marketplace の ClickHouse Cloud オファー](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud)を通じて有料組織に移行してください。
 
-<div id="copying-data-from-onelake">
-  ## OneLake からデータをコピーする
+<div id="syncing-data-from-onelake">
+  ## OneLake からデータを同期する
 </div>
 
-Copy &amp; Sync フローを使用して、OneLake テーブルを ClickHouse に取り込みます。
+Sync フローを使用して、OneLake テーブルを ClickHouse に取り込みます。
 
-1. ClickHouse アイテムを開き、**Copy &amp; Sync** を選択します
-2. ワークスペースから Lakehouse を選択します
+1. ClickHouse アイテムを開き、**Sync** を選択します
+2. **Sync from OneLake** を選択し、ワークスペースから Lakehouse を選択します
 3. 高速化するテーブルを選択します
-4. データの特定時点のスナップショットのコピーを開始します
+4. **Save and sync** を選択して、データの特定時点の同期を開始します
 
 <Frame>
-  ![ソートキーを使用して新しい宛先テーブルを作成する Copy & Sync の設定](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-copy-sync-table-selection.webp)
+  ![ソートキーを使用して新しい宛先テーブルを作成する Sync の設定](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-sync-table-selection.webp)
 </Frame>
 
 OneLake で検出されたスキーマに基づいて、推論されたデータ型とデフォルト設定を使用する宛先テーブルを作成できます。テーブル定義をより細かく制御したい場合は、あらかじめテーブルを作成し、既存のテーブルを宛先として使用できます。
 
 <Frame>
-  ![OneLake ソーステーブルから既存の ClickHouse テーブルへの Copy & Sync カラムマッピング](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-copy-sync-existing-table.webp)
+  ![OneLake ソーステーブルから既存の ClickHouse テーブルへの Sync カラムマッピング](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-sync-existing-table.webp)
 </Frame>
 
 同期ステータスはテーブルごとに表示されます。テーブルの同期が完了すると、すぐに SQL コンソールでクエリを実行できます。大きなテーブルはバックグラウンドで同期されるため、読み込み中も作業を続けられます。
@@ -107,7 +107,7 @@ OneLake で検出されたスキーマに基づいて、推論されたデータ
   ### コスト
 </div>
 
-Microsoft Fabric のパブリック プレビュー期間中、OneLake から ClickHouse へのデータのコピーは無料です。Fabric ワークロードが一般提供になると、課金が開始されます。ワークロードの GA に伴い、料金の詳細が公開されます。
+Microsoft Fabric のパブリック プレビュー期間中、OneLake から ClickHouse へのデータの同期は無料です。Fabric ワークロードが一般提供になると、課金が開始されます。ワークロードの GA に伴い、料金の詳細が公開されます。
 
 <div id="sql-console-and-saved-queries">
   ## SQL コンソールと保存クエリ
@@ -155,7 +155,7 @@ MCP アクセスはサービスごとにオプトインで有効化でき、読�
   ### ClickHouse Cloud で開く
 </div>
 
-**ClickHouse を開く**を選択すると、Microsoft ID でサインインした状態で ClickHouse Cloud コンソール 全体が開きます。Fabric ワークロードから ClickHouse にデータをコピーし、任意の SQL ステートメントを実行できますが、管理タスクを実行するには Cloud Console に移動してサービスを管理する必要があります。
+**ClickHouse Cloud で開く**を選択すると、Microsoft ID でサインインした状態で ClickHouse Cloud コンソール 全体が開きます。Fabric ワークロードから ClickHouse にデータを同期し、任意の SQL ステートメントを実行できますが、管理タスクを実行するには Cloud Console に移動してサービスを管理する必要があります。
 
 <Frame>
   ![ワークロードから開いた ClickHouse Cloud コンソール のサービス設定](/images/integrations/tools/data-integration/microsoft-fabric/fabric-07-cloud-console-service.webp)
@@ -188,7 +188,7 @@ Cloud Console の **Settings** ページでアイドル化を設定します。�
   ### ClickPipes の監視
 </div>
 
-OneLake からの各 Copy &amp; Sync は ClickPipe として実行されます。[ClickHouse Cloud コンソールの ClickPipes ページ](/ja/integrations/clickpipes/monitoring)で、コピーの進行状況、スループット、エラーを確認できます。
+OneLake からの各同期は ClickPipe として実行されます。[ClickHouse Cloud コンソールの ClickPipes ページ](/ja/integrations/clickpipes/monitoring)で、同期の進行状況、スループット、エラーを確認できます。
 
 <div id="mapping-to-clickhouse-cloud">
   ## ClickHouse Cloud へのマッピング
@@ -244,7 +244,7 @@ Fabric ワークスペースで **+ New item** を選択し、**Sample lakehouse
 </div>
 
 1. [プロビジョニング](#provisioning)で説明されているように、同じワークスペースに ClickHouse アイテムを作成します
-2. **Copy &amp; Sync** を開き、Lakehouse を選択して `publicholidays` テーブルを選択します
+2. **Sync** を開き、Lakehouse を選択して `publicholidays` テーブルを選択します
 3. 最も頻繁にフィルタリングするカラムを指定して並べ替えます: `countryOrRegion, date`
 4. 同期を開始すると、まもなくデータが投入されます。このサイズのテーブルであれば、数秒で完了します
 
@@ -297,7 +297,7 @@ ClickHouse ワークロード はパブリックプレビューです。以下�
 </div>
 
 * **コピーは特定時点のスナップショットです。** スケジュールまたは継続的なレプリケーションにはまだ対応していません。テーブルを最新の OneLake データで更新するには、同期を再実行してください。ソーステーブルでの更新や削除は、ClickHouse のコピーには反映されません。
-* **Lakehouse テーブルのみ。** Copy &amp; Sync は、同じワークスペース内の Lakehouse から Delta テーブルを読み取ります。その他の Fabric アイテム (Warehouse、KQL データベース、ミラーリングされたデータベース) は、ソースとしてまだサポートされていません。
+* **Lakehouse テーブルのみ。** Sync は、同じワークスペース内の Lakehouse からテーブルを読み取ります。
 * **OneLake への書き戻しはできません。** データは OneLake から ClickHouse へ一方向にのみ流れます。クエリ結果を OneLake に書き戻す機能は今後提供予定です。
 
 <div id="service-management">

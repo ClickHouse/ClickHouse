@@ -67,31 +67,31 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 
 试用期结束或额度用尽后，可通过 [Azure Marketplace 上的 ClickHouse Cloud 产品](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud)转换为付费组织。
 
-<div id="copying-data-from-onelake">
-  ## 从 OneLake 复制数据
+<div id="syncing-data-from-onelake">
+  ## 从 OneLake 同步数据
 </div>
 
-使用 Copy &amp; Sync 流程将 OneLake 表导入 ClickHouse：
+使用 Sync 流程将 OneLake 表导入 ClickHouse：
 
-1. 打开您的 ClickHouse 项目，选择 **Copy &amp; Sync**
-2. 从您的 工作区 中选择 Lakehouse
+1. 打开您的 ClickHouse 项目，选择 **Sync**
+2. 选择 **Sync from OneLake**，然后从您的 工作区 中选择 Lakehouse
 3. 选择要加速的表
-4. 开始复制数据的时间点快照
+4. 选择 **Save and sync**，开始同步数据的时间点快照
 
 <Frame>
-  ![配置 Copy & Sync：使用排序键创建新的目标表](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-copy-sync-table-selection.webp)
+  ![配置 Sync：使用排序键创建新的目标表](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-sync-table-selection.webp)
 </Frame>
 
 您可以根据 OneLake 中发现的 schema，使用推断的数据类型和默认配置创建目标表。如果希望更好地控制表定义，可以预先创建表，并将现有表用作目标端。
 
 <Frame>
-  ![将 OneLake 源表映射到现有 ClickHouse 表的 Copy & Sync 列映射](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-copy-sync-existing-table.webp)
+  ![将 OneLake 源表映射到现有 ClickHouse 表的 Sync 列映射](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-sync-existing-table.webp)
 </Frame>
 
 每个表都会显示同步状态。表同步完成后，即可立即在 SQL 控制台中查询。大型表会在后台同步，因此您可以在加载期间继续工作。
 
 <Note>
-  在公开预览版中，仅支持复制时间点快照。未来的发行版计划提供更多复制选项。
+  在公开预览中，仅支持复制时间点快照。未来的发行版计划提供更多复制选项。
 </Note>
 
 <div id="powered-by-clickpipes">
@@ -107,7 +107,7 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
   ### 成本
 </div>
 
-在 Microsoft Fabric 公开预览期间，将数据从 OneLake 复制到 ClickHouse 不收费。Fabric 工作负载正式发布后将开始计费。工作负载达到 GA 后将公布定价详情。
+在 Microsoft Fabric 公开预览期间，将数据从 OneLake 同步到 ClickHouse 不收费。Fabric 工作负载正式发布后将开始计费。工作负载达到 GA 后将公布定价详情。
 
 <div id="sql-console-and-saved-queries">
   ## SQL 控制台和已保存的查询
@@ -155,7 +155,7 @@ MCP 访问可按服务选择启用，且仅支持只读操作。启用后，会�
   ### 在 ClickHouse Cloud 中打开
 </div>
 
-选择 **打开 ClickHouse**，即可打开完整的 ClickHouse Cloud 控制台，并使用您的 Microsoft 身份登录。您可以从 Fabric 工作负载将数据复制到 ClickHouse 并运行任何 SQL 语句；但如需执行管理任务，则需要进入 Cloud Console 管理服务。
+选择 **在 ClickHouse Cloud 中打开**，即可打开完整的 ClickHouse Cloud 控制台，并使用您的 Microsoft 身份登录。您可以从 Fabric 工作负载将数据同步到 ClickHouse 并运行任何 SQL 语句；但如需执行管理任务，则需要进入 Cloud Console 管理服务。
 
 <Frame>
   ![从工作负载进入的 ClickHouse Cloud 控制台服务设置](/images/integrations/tools/data-integration/microsoft-fabric/fabric-07-cloud-console-service.webp)
@@ -188,7 +188,7 @@ MCP 访问可按服务选择启用，且仅支持只读操作。启用后，会�
   ### 监控 ClickPipes
 </div>
 
-从 OneLake 执行的每次复制和同步都会作为一个 ClickPipe 运行。您可以在 ClickHouse Cloud 控制台的 [ClickPipes 页面](/zh/integrations/clickpipes/monitoring)上跟踪复制进度、吞吐量和错误。
+从 OneLake 执行的每次同步都会作为一个 ClickPipe 运行。您可以在 ClickHouse Cloud 控制台的 [ClickPipes 页面](/zh/integrations/clickpipes/monitoring)上跟踪同步进度、吞吐量和错误。
 
 <div id="mapping-to-clickhouse-cloud">
   ## 映射到 ClickHouse Cloud
@@ -244,7 +244,7 @@ ClickHouse 为 ClickHouse 工作负载提供支持。有关严重级别、响应
 </div>
 
 1. 按照[预配](#provisioning)中的说明，在同一工作区内创建一个 ClickHouse 项目
-2. 打开 **Copy &amp; Sync**，选择你的 Lakehouse，然后选择 `publicholidays` 表
+2. 打开 **Sync**，选择你的 Lakehouse，然后选择 `publicholidays` 表
 3. 按最常用于过滤的列排序：`countryOrRegion, date`
 4. 启动同步后，数据很快便会填充完成。此规模的表可在数秒内完成同步
 
@@ -297,7 +297,7 @@ ClickHouse 工作负载 目前处于公开预览阶段。以下限制仅反映�
 </div>
 
 * **复制为时间点快照。** 目前不支持计划复制或连续复制。若要使用最新的 OneLake 数据刷新表，请重新运行同步。源表中的更新和删除不会同步到 ClickHouse 副本。
-* **仅支持湖仓表。** Copy &amp; Sync 会从同一工作区中的 Lakehouse 读取 Delta 表。其他 Fabric 项目 (Warehouse、KQL 数据库、镜像数据库) 尚不支持作为源。
+* **仅支持湖仓表。** Sync 会从同一工作区中的 Lakehouse 读取表。
 * **不支持写回 OneLake。** 数据仅从 OneLake 单向流入 ClickHouse。未来计划支持将查询结果写回 OneLake。
 
 <div id="service-management">

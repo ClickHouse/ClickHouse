@@ -67,25 +67,25 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 عند انتهاء الفترة التجريبية أو نفاد الأرصدة، حوّلها إلى مؤسسة مدفوعة عبر [عرض ClickHouse Cloud على Azure Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud).
 
-<div id="copying-data-from-onelake">
-  ## نسخ البيانات من OneLake
+<div id="syncing-data-from-onelake">
+  ## مزامنة البيانات من OneLake
 </div>
 
-تتيح لك عملية Copy &amp; Sync نسخ جداول OneLake إلى ClickHouse:
+تتيح لك عملية Sync مزامنة جداول OneLake إلى ClickHouse:
 
-1. افتح عنصر ClickHouse وحدد **Copy &amp; Sync**
-2. اختر Lakehouse من مساحة عملك
+1. افتح عنصر ClickHouse وحدد **Sync**
+2. حدد **Sync from OneLake** واختر Lakehouse من مساحة عملك
 3. حدد الجداول التي تريد تسريعها
-4. ابدأ بنسخ لقطة من بياناتك في نقطة زمنية محددة
+4. حدد **Save and sync** لبدء مزامنة بياناتك في نقطة زمنية محددة
 
 <Frame>
-  ![إعداد Copy & Sync ينشئ جدول وجهة جديدًا بمفتاح فرز](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-copy-sync-table-selection.webp)
+  ![إعداد Sync ينشئ جدول وجهة جديدًا بمفتاح فرز](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-sync-table-selection.webp)
 </Frame>
 
 يمكنك إنشاء جدول وجهة بأنواع بيانات مستنتجة وإعدادات افتراضية استنادًا إلى المخطط المكتشف في OneLake. وإذا كنت تفضل تحكمًا أكبر في تعريف الجدول، يمكنك إنشاء جدول مسبقًا واستخدام جدول موجود كوجهة.
 
 <Frame>
-  ![تعيين أعمدة Copy & Sync من جدول مصدر في OneLake إلى جدول ClickHouse موجود](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-copy-sync-existing-table.webp)
+  ![تعيين أعمدة Sync من جدول مصدر في OneLake إلى جدول ClickHouse موجود](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-sync-existing-table.webp)
 </Frame>
 
 تُعرض حالة المزامنة لكل جدول. وبمجرد اكتمال المزامنة، يمكن الاستعلام عن الجدول فورًا من وحدة تحكم SQL. تتم مزامنة الجداول الكبيرة في الخلفية، لذا يمكنك متابعة العمل أثناء تحميلها.
@@ -107,7 +107,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
   ### التكلفة
 </div>
 
-يمكن نسخ البيانات من OneLake إلى ClickHouse مجانًا خلال فترة المعاينة العامة لـ Microsoft Fabric. تبدأ الفوترة عندما يصل عبء عمل Fabric إلى مرحلة التوافر العام. وستُنشر تفاصيل الأسعار عند وصول عبء العمل إلى مرحلة GA.
+تكون مزامنة البيانات من OneLake إلى ClickHouse مجانية خلال فترة المعاينة العامة لـ Microsoft Fabric. تبدأ الفوترة عندما يصل عبء عمل Fabric إلى مرحلة التوافر العام. وستُنشر تفاصيل الأسعار عند وصول عبء العمل إلى مرحلة GA.
 
 <div id="sql-console-and-saved-queries">
   ## وحدة تحكم SQL والاستعلامات المحفوظة
@@ -155,7 +155,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
   ### فتح في ClickHouse Cloud
 </div>
 
-حدّد **Open ClickHouse** لفتح واجهة ClickHouse Cloud الكاملة بعد تسجيل الدخول باستخدام هوية Microsoft الخاصة بك. يمكنك نسخ البيانات إلى ClickHouse وتشغيل أي عبارات SQL من عبء العمل Fabric، ولكن لإجراء أي مهام إدارية، ستحتاج إلى الدخول إلى وحدة تحكم ClickHouse Cloud لإدارة الخدمة.
+حدّد **Open in ClickHouse Cloud** لفتح واجهة ClickHouse Cloud الكاملة بعد تسجيل الدخول باستخدام هوية Microsoft الخاصة بك. يمكنك مزامنة البيانات إلى ClickHouse وتشغيل أي عبارات SQL من عبء العمل Fabric، ولكن لإجراء أي مهام إدارية، ستحتاج إلى الدخول إلى وحدة تحكم ClickHouse Cloud لإدارة الخدمة.
 
 <Frame>
   ![إعدادات خدمة ClickHouse Cloud التي تم الوصول إليها من عبء العمل](/images/integrations/tools/data-integration/microsoft-fabric/fabric-07-cloud-console-service.webp)
@@ -188,7 +188,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
   ### مراقبة ClickPipes
 </div>
 
-تعمل كل عملية Copy &amp; Sync من OneLake باعتبارها ClickPipe. راقب تقدّم النسخ ومعدل النقل والأخطاء في [صفحة ClickPipes](/ar/integrations/clickpipes/monitoring) في وحدة تحكم ClickHouse Cloud.
+تعمل كل عملية مزامنة من OneLake باعتبارها ClickPipe. راقب تقدّم المزامنة ومعدل النقل والأخطاء في [صفحة ClickPipes](/ar/integrations/clickpipes/monitoring) في وحدة تحكم ClickHouse Cloud.
 
 <div id="mapping-to-clickhouse-cloud">
   ## الربط بـ ClickHouse Cloud
@@ -243,8 +243,8 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
   ### أنشئ عنصر ClickHouse وزامنه
 </div>
 
-1. أنشئ عنصر ClickHouse في مساحة العمل نفسها، كما هو موضح في قسم [التجهيز](#provisioning)
-2. افتح **Copy &amp; Sync**، واختر Lakehouse، ثم حدّد جدول `publicholidays`
+1. أنشئ عنصر ClickHouse في مساحة العمل نفسها، كما هو موضح في قسم [الإعداد](#provisioning)
+2. افتح **Sync**، واختر Lakehouse، ثم حدّد جدول `publicholidays`
 3. رتّب البيانات حسب الأعمدة التي تُجري التصفية عليها غالبًا: `countryOrRegion, date`
 4. ابدأ المزامنة، وستُملأ البيانات بعد وقت قصير. يكتمل نقل جدول بهذا الحجم خلال ثوانٍ
 
@@ -297,7 +297,7 @@ ORDER BY year;
 </div>
 
 * **النسخ لقطات في نقطة زمنية محددة.** لا تتوفر جدولة أو نسخ متماثل مستمر حتى الآن. لتحديث جدول بأحدث بيانات OneLake، أعد تشغيل المزامنة. لا تُنقل التحديثات وعمليات الحذف في جدول المصدر إلى نسخة ClickHouse.
-* **جداول Lakehouse فقط.** تقرأ Copy &amp; Sync جداول Delta من Lakehouse ضمن مساحة العمل نفسها. عناصر Fabric الأخرى (Warehouse وقواعد بيانات KQL وقواعد البيانات المعكوسة) غير مدعومة بعد كمصادر.
+* **جداول Lakehouse فقط.** تقرأ Sync الجداول من Lakehouse ضمن مساحة العمل نفسها.
 * **لا توجد كتابة عكسية إلى OneLake.** تتدفق البيانات في اتجاه واحد، من OneLake إلى ClickHouse. ومن المخطط إتاحة كتابة نتائج الاستعلامات مجددًا إلى OneLake.
 
 <div id="service-management">
