@@ -91,6 +91,10 @@ uint64_t MetadataStorageInMemory::getFileSize(const std::string & path) const
     auto * entry = findFile(path);
     if (!entry)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
+    /// A plain metadata file created by `writeStringToFile` (e.g. `frozen_metadata.txt`) has no
+    /// backing objects: its inline data is the whole payload, so its size is the payload size.
+    if (entry->blob_group->objects.empty())
+        return entry->blob_group->inline_data.size();
     return getTotalSize(entry->blob_group->objects);
 }
 
@@ -998,6 +1002,18 @@ void MetadataStorageInMemoryTransaction::truncateFile(const std::string & path, 
         }
 
         recordBlobGroupBefore(entry->blob_group);
+
+        /// A plain metadata file created by `writeStringToFile` has no backing objects: its inline
+        /// data is the whole payload, so truncation shrinks the inline data itself.
+        if (entry->blob_group->objects.empty())
+        {
+            auto & inline_data = entry->blob_group->inline_data;
+            if (target_size > inline_data.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} can't be truncated to size {}", path, target_size);
+            inline_data.resize(target_size);
+            entry->blob_group->last_modified = Poco::Timestamp();
+            return;
+        }
 
         auto & objects = entry->blob_group->objects;
         size_t current_size = 0;

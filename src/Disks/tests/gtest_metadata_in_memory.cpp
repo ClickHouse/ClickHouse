@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Memory/MetadataStorageFromMemory.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Memory/MetadataStorageInMemory.h>
 
 #include <Common/ObjectStorageKey.h>
@@ -529,6 +530,60 @@ TEST_F(MetadataInMemoryTest, TestWriteStringToFileRoundTrip)
         transaction->commit(DB::NoCommitOptions{});
     }
     EXPECT_EQ(metadata->readFileToString("shadow/frozen_metadata.txt"), content);
+}
+
+/// A plain-content file written by `writeStringToFile` has no backing objects: its inline data is
+/// the whole payload, so `getFileSize` must report the payload size (not the total size of the
+/// empty object list) and `truncateFile` must shrink the payload itself (not just remove blobs).
+TEST_F(MetadataInMemoryTest, TestPlainFileSizeAndTruncate)
+{
+    auto metadata = getMetadataStorage();
+
+    const std::string content = "2\nreplica_1\nzk\nshared_id\n";
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->writeStringToFile("frozen_metadata.txt", content);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_EQ(metadata->getFileSize("frozen_metadata.txt"), content.size());
+
+    /// Shrinking keeps a prefix of the payload.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->truncateFile("frozen_metadata.txt", 1);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_EQ(metadata->getFileSize("frozen_metadata.txt"), 1);
+    EXPECT_EQ(metadata->readFileToString("frozen_metadata.txt"), "2");
+
+    /// Growing a file is not something `truncateFile` supports on any metadata backend.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->truncateFile("frozen_metadata.txt", 100);
+        EXPECT_THROW(transaction->commit(DB::NoCommitOptions{}), DB::Exception);
+    }
+    EXPECT_EQ(metadata->readFileToString("frozen_metadata.txt"), "2");
+
+    /// Truncating to zero leaves an empty file with no readable leftover content.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->truncateFile("frozen_metadata.txt", 0);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_TRUE(metadata->existsFile("frozen_metadata.txt"));
+    EXPECT_EQ(metadata->getFileSize("frozen_metadata.txt"), 0);
+    EXPECT_EQ(metadata->readFileToString("frozen_metadata.txt"), "");
+}
+
+/// The sibling in-memory backend (`MetadataStorageFromMemory`, made by `wrapWithMemoryMetadata`)
+/// also returns an empty placeholder from `getPath()`, so it must report the same locality as
+/// `MetadataStorageInMemory` instead of inheriting the permissive default.
+TEST_F(MetadataInMemoryTest, TestFromMemorySiblingNotOnLocalFilesystem)
+{
+    auto key_generator = DB::createObjectStorageKeyGeneratorByTemplate("[a-z]{32}");
+    auto metadata = std::make_shared<DB::MetadataStorageFromMemory>(/*compatible_key_prefix_=*/"", key_generator);
+    EXPECT_FALSE(metadata->isPathOnLocalFilesystem());
+    EXPECT_FALSE(metadata->hasLocalFilesystemDirectoryNamespace());
 }
 
 /// `FREEZE` and detached-part cloning mark each source file read-only (`BackupImpl` with
