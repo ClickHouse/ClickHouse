@@ -11,7 +11,7 @@ namespace DB
 /// (Previously the multi-target dispatch mechanism achieved this implicitly.)
 ///
 /// LLVM's default interleave factor on AArch64 is 2, and a portable build (no `-mcpu=`) keeps that
-/// default. x86-64 and Darwin AArch64 already interleave these fills four ways.
+/// default. It is already 4 at the default `x86-64-v3` baseline and on Darwin AArch64.
 
 template <iota_supported_types T>
 void NO_INLINE iota(T * begin, size_t count, T first_value)
