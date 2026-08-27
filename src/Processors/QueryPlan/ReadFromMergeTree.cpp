@@ -2687,7 +2687,42 @@ std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const
     if (!analysis)
         return {};
 
-    const auto & column_names = analysis->column_names_to_read.empty() ? all_column_names : analysis->column_names_to_read;
+    /// Reads that are priced per part below, but whose column set is only known once a read task is
+    /// built for a concrete part: `getReadTaskColumns` gives every index read task and on-fly mutation
+    /// step its own input columns. Rather than under-count them, decline to answer - the caller reads
+    /// that as "could be any size".
+    if (!index_read_tasks.empty() || (mutations_snapshot && mutations_snapshot->hasDataMutations()))
+        return {};
+
+    /// `column_names_to_read` is what the step projects, which is not what the storage reads.
+    /// `getReadTaskColumns` gives each PREWHERE step and the row-level filter their own input columns,
+    /// and `spreadMarkRangesAmongStreams` appends the sampling expression's columns, none of which have
+    /// to appear among the projected ones. Pricing only the projected columns would under-count the
+    /// read - badly, since PREWHERE tends to filter on exactly the columns the query does not select -
+    /// and an under-count makes the caller reject a read that is in fact large.
+    ///
+    /// The FINAL branch of `spreadMarkRangesAmongStreams` adds the sorting key and the
+    /// sign/version/is_deleted columns on top. It is unreachable from here: this estimate serves the
+    /// automatic parallel replicas gate, and `supportsDataflowStatisticsCollection` already excludes a
+    /// FINAL read from that optimization. The deferred filters are likewise FINAL-only.
+    Names column_names = analysis->column_names_to_read.empty() ? all_column_names : analysis->column_names_to_read;
+    {
+        NameSet present(column_names.begin(), column_names.end());
+        const auto add_columns = [&](const Names & names_to_add)
+        {
+            for (const auto & column_name : names_to_add)
+                if (present.emplace(column_name).second)
+                    column_names.push_back(column_name);
+        };
+
+        if (query_info.prewhere_info)
+            add_columns(query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames());
+        if (query_info.row_level_filter)
+            add_columns(query_info.row_level_filter->actions.getRequiredColumnsNames());
+        if (analysis->sampling.use_sampling && analysis->sampling.filter_expression)
+            add_columns(analysis->sampling.filter_expression->getRequiredColumns().getNames());
+    }
+
     if (const auto estimate = estimateReadBytes(
             analysis->parts_with_ranges,
             column_names,
