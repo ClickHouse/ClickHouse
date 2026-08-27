@@ -50,3 +50,41 @@ SELECT * FROM system.data_skipping_indices WHERE database = current_database() A
 default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	Implicit	1	0	0	0
 default	t_implicit	auto_minmax_index_s2	minmax	minmax()	s2	Implicit	1	0	0	0
 DROP TABLE t_implicit;
+DROP TABLE IF EXISTS t_rename;
+CREATE TABLE t_rename (c0 Int32, c2 Int32) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 1;
+ALTER TABLE t_rename (RENAME COLUMN c2 TO c13), (MODIFY SETTING fsync_part_directory = 1);
+SELECT name, expr FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_rename' ORDER BY name;
+auto_minmax_index_c0	c0
+auto_minmax_index_c13	c13
+DROP TABLE t_rename;
+CREATE TABLE t_rename (c0 Int32, s String, d Date) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_string_columns = 1, add_minmax_index_for_temporal_columns = 1;
+ALTER TABLE t_rename (RENAME COLUMN s TO s2), (MODIFY SETTING fsync_part_directory = 1);
+ALTER TABLE t_rename (RENAME COLUMN d TO d2), (MODIFY SETTING fsync_part_directory = 0);
+SELECT name, expr FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_rename' ORDER BY name;
+auto_minmax_index_d2	d2
+auto_minmax_index_s2	s2
+DROP TABLE t_rename;
+CREATE TABLE t_rename (value Int32, al Int32 ALIAS value > 0) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 1;
+ALTER TABLE t_rename (RENAME COLUMN al TO al2), (MODIFY SETTING fsync_part_directory = 1);
+SELECT name, expr FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_rename' ORDER BY name;
+auto_minmax_index_al2	value > 0
+auto_minmax_index_value	value
+DROP TABLE t_rename;
+CREATE TABLE t_rename (c0 Int32, c2 Int32) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 1;
+ALTER TABLE t_rename (RENAME COLUMN c2 TO c13), (DROP COLUMN c13);
+SELECT name, expr FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_rename' ORDER BY name;
+auto_minmax_index_c0	c0
+DROP TABLE t_rename;
+CREATE TABLE t_rename (c0 Int32, c2 Int32) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 1;
+ALTER TABLE t_rename (RENAME COLUMN c2 TO c13), (ADD COLUMN c2 Int32);
+SELECT name, expr FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_rename' ORDER BY name;
+auto_minmax_index_c0	c0
+auto_minmax_index_c13	c13
+auto_minmax_index_c2	c2
+DROP TABLE t_rename;
+CREATE TABLE t_rename (a Int32, al Int32 ALIAS a + 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 1;
+ALTER TABLE t_rename (MODIFY COLUMN a String), (RENAME COLUMN al TO al2), (MODIFY COLUMN a Int32);
+SELECT name, expr FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_rename' ORDER BY name;
+auto_minmax_index_a	a
+auto_minmax_index_al2	a + 1
+DROP TABLE t_rename;

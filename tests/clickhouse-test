@@ -1749,6 +1749,13 @@ class SettingsRandomizer:
         "use_streaming_marks_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_apply_mode": lambda: random.choice(["materialize", "lazy"]),
         "text_index_lazy_intersection_density_threshold": threshold_generator(0.2, 0.2, 0.0, 1.0),
+        # Independent DISTINCT per MergeTree partition
+        "allow_distinct_partitions_independently": lambda: random.random() > 0.05,
+        "force_distinct_partitions_independently": lambda: random.random() < 0.3,
+        "max_number_of_partitions_for_independent_distinct": threshold_generator(
+            0.2, 0.2, 1, 128
+        ),
+        "enable_parallel_single_level_merge": lambda: random.random() > 0.05,
     }
 
     dependent_settings = {
@@ -1766,6 +1773,8 @@ class SettingsRandomizer:
         "use_top_k_dynamic_filtering_for_variable_length_types": "use_top_k_dynamic_filtering",
         # statistics cache is pointless when statistics are disabled
         "use_statistics_cache": "use_statistics",
+        # forcing independent DISTINCT is a no-op when the optimization is not allowed
+        "force_distinct_partitions_independently": "allow_distinct_partitions_independently",
     }
 
     stress_test_only_settings = {
@@ -1868,6 +1877,7 @@ class MergeTreeSettingsRandomizer:
         "enable_index_granularity_compression": lambda: random.randint(0, 1),
         "enable_block_number_column": lambda: random.randint(0, 1),
         "enable_block_offset_column": lambda: random.randint(0, 1),
+        "patch_parts_version": lambda: random.choice(["v1", "v2"]),
         "use_primary_key_cache": lambda: random.randint(0, 1),
         "prewarm_primary_key_cache": lambda: random.randint(0, 1),
         "object_serialization_version": lambda: random.choice(["v2", "v3"]),
@@ -1928,6 +1938,15 @@ class MergeTreeSettingsRandomizer:
                 value = random.randint(100 * 1024, 30 * 1024 * 1024)
             else:
                 value = generator()
+
+            # `countmin` is unavailable when ClickHouse is built without DataSketches.
+            if setting == "auto_statistics_types" and "use_datasketches" not in args.build_flags:
+                value = ",".join(
+                    statistic_type
+                    for statistic_type in value.split(",")
+                    if statistic_type != "countmin"
+                )
+
             if type(value) == str and value == "":
                 continue
 
@@ -4928,7 +4947,10 @@ def run_tests_array(
         stop_exit_code,
     ) = all_tests_with_params
 
-    os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-proc{process_index}-%2m.profraw"
+    # %c enables continuous mode so a client killed mid-write (query timeouts
+    # SIGKILL the whole process group) leaves a valid profile instead of a
+    # truncated one.
+    os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-proc{process_index}-%c%2m.profraw"
 
     OP_SQUARE_BRACKET = colored("[", args, attrs=["bold"])
     CL_SQUARE_BRACKET = colored("]", args, attrs=["bold"])
