@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MutateTask.h>
+#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 #include <Storages/TTLDescription.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -3982,9 +3983,15 @@ bool MutateTask::prepare()
             LOG_TRACE(ctx->log, "Part {} is fully expired after MATERIALIZE TTL, creating empty part with mutation version {}",
                 ctx->source_part->name, ctx->future_part->part_info.mutation);
 
+            /// Seed the patch part index from the covered part to keep the patch partition uniform
+            /// (see `MergeTreeData::createEmptyPart`).
+            std::optional<PatchPartIndex> patch_part_index;
+            if (ctx->source_part->info.isPatch())
+                patch_part_index = ctx->source_part->getPatchPartIndex().cloneEmpty();
+
             auto [empty_part, lock] = ctx->data->createEmptyPart(
                 ctx->future_part->part_info, ctx->source_part->partition, ctx->future_part->name,
-                ctx->source_part->getMetadataSnapshot(), ctx->txn);
+                ctx->source_part->getMetadataSnapshot(), ctx->txn, std::move(patch_part_index));
 
             ctx->temporary_directory_lock = std::move(lock);
             ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);
