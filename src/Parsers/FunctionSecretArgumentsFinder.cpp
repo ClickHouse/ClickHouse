@@ -554,7 +554,7 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
     {
         if (const auto nested = function->arguments->at(i)->getFunction())
         {
-            if (nested->name() == "extra_credentials")
+            if (nested->name() == "headers" || nested->name() == "extra_credentials")
                 continue;
             if (nested->name() == "equals")
             {
@@ -604,7 +604,7 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
             const auto equals_func = function->arguments->at(i)->getFunction();
             if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments() || equals_func->arguments->size() != 2)
             {
-                if (!equals_func || equals_func->name() != "extra_credentials")
+                if (!equals_func || (equals_func->name() != "headers" && equals_func->name() != "extra_credentials"))
                     markSecretArgument(i);
                 continue;
             }
@@ -1064,7 +1064,7 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
     {
         if (const auto nested = function->arguments->at(i)->getFunction())
         {
-            if (nested->name() == "extra_credentials")
+            if (nested->name() == "headers" || nested->name() == "extra_credentials")
                 continue;
             if (nested->name() == "equals")
             {

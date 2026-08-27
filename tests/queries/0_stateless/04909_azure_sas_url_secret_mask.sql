@@ -34,6 +34,9 @@ EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage(nc_04909_missin
 -- must still occupy the account_key slot.
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('http://localhost:11111/devstoreaccount1', 'cont', 'data.parquet', extra_credentials(client_id = 'id', tenant_id = 'tenant'), 'account', 'SEKRIT_POSITIONAL_KEY');
 
+-- headers is also removed before positional arguments are assigned.
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('http://localhost:11111/devstoreaccount1', 'cont', 'data.parquet', headers('Authorization' = 'SEKRIT_HEADER'), 'account', 'SEKRIT_KEY_AFTER_HEADERS');
+
 -- A named argument in a direct call is invalid, but the query is formatted before validation. Hide
 -- that value and every following positional argument because their intended slots are ambiguous.
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('http://localhost:11111/devstoreaccount1', container = 'SEKRIT_CONTAINER', 'data.parquet', 'account', 'SEKRIT_AFTER_NAMED');
