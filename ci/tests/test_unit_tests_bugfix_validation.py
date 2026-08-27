@@ -729,6 +729,7 @@ def _run_main_with_compile_failure(monkeypatch, tmp_path, log_text, test_files):
     )
     monkeypatch.setattr(job, "get_submodule_state_changes", lambda base, head: [])
     monkeypatch.setattr(job, "prepare_before_worktree", lambda base, sha, files: True)
+    monkeypatch.setattr(job, "reset_before_build_dir", lambda: True)
     monkeypatch.setattr(
         job,
         "configure_before_binary",
@@ -1432,6 +1433,7 @@ def _drive_main_to_compile_step(monkeypatch, tmp_path, compile_log):
     )
     monkeypatch.setattr(job, "get_submodule_state_changes", lambda base, head: [])
     monkeypatch.setattr(job, "prepare_before_worktree", lambda *a, **kw: True)
+    monkeypatch.setattr(job, "reset_before_build_dir", lambda: True)
     monkeypatch.setattr(
         job,
         "configure_before_binary",

@@ -19,8 +19,9 @@ outcomes produce none, so they escalate to the next build type instead of decidi
     changed test code depends on the interface the fix introduces (typically a call site
     adapted to a changed signature), which a sanitizer-conditional part of the test can do
     on one build type only;
-  * a case of the changed test files did not run, having skipped itself (`GTEST_SKIP()`) or
-    being disabled, so the changed regression case was not necessarily exercised;
+  * a case of the changed test files did not run, having skipped itself (`GTEST_SKIP()`),
+    being disabled, or being compiled out by a preprocessor guard and so absent from the
+    report, which leaves the changed regression case possibly unexercised;
   * every touched case ran and passed, which cannot separate "the test does not catch the
     bug" from "this build cannot observe the failure mode".
 
@@ -45,6 +46,7 @@ See ci/jobs/functional_tests.py:invert_bugfix_validation_status for the analogou
 functional-test logic.
 """
 
+import fnmatch
 import json
 import os
 import re
@@ -92,9 +94,16 @@ _SUITE_RE = re.compile(
     r"^\s*(?:" + "|".join(_GTEST_MACROS) + r")\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)",
     re.MULTILINE,
 )
+_CASE_RE = re.compile(
+    r"^\s*(?:"
+    + "|".join(_GTEST_MACROS)
+    + r")\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)",
+    re.MULTILINE,
+)
 
 # A changed file is a unit-test source if it lives in a `tests/` directory under src/.
 _UNIT_TEST_FILE_RE = re.compile(r"^src/.+/tests/.+\.(?:cpp|h|hpp|cc|cxx)$")
+_TRANSLATION_UNIT_SUFFIXES = (".cpp", ".cc", ".cxx")
 
 
 def get_changed_unit_test_files(info):
@@ -125,6 +134,20 @@ def derive_test_suites(files):
         for m in _SUITE_RE.finditer(content):
             suites.add(m.group(1))
     return sorted(suites)
+
+
+def can_reach_unit_tests_dbms(fpath):
+    """Can the cases this changed unit-test file declares be in `unit_tests_dbms`?
+
+    `grep_gtest_sources` (src/CMakeLists.txt) globs `gtest*.cpp`, so any other translation
+    unit under `tests/` is in no build type's binary. A header has no translation unit of its
+    own and reaches the binary through whichever `gtest*.cpp` includes it, which is the shape
+    gtest documents for `TYPED_TEST_SUITE_P` (gtest-typed-test.h).
+    """
+    name = os.path.basename(fpath)
+    if name.endswith(_TRANSLATION_UNIT_SUFFIXES):
+        return fnmatch.fnmatch(name, "gtest*.cpp")
+    return True
 
 
 def build_gtest_filter(suites):
@@ -746,6 +769,36 @@ def before_run_started_a_test(result):
     return False
 
 
+def declared_case_matchers(test_files):
+    """Per case declared in the changed test files, a regex matching how gtest reports it.
+
+    A case declared behind a preprocessor guard is never registered, so it is absent from the
+    report rather than reported as not run. Comparing declarations against the report needs
+    every naming form `build_gtest_filter` documents, plus the empty-`INSTANTIATE_TEST_SUITE_P`
+    prefix form `Suite.Case/0` (`gtest-param-util.h` drops the `Prefix/` when it is empty; the
+    typed macro static_asserts a non-empty one, so it has no such form).
+    """
+    matchers = {}
+    for fpath in test_files:
+        # The primary checkout is the base+PR MERGE ref, so it can hold a case the base added
+        # and the overlay does not; read the overlaid PR-head file that the arm actually built.
+        overlaid = os.path.join(BEFORE_SRC, fpath)
+        source = overlaid if os.path.isfile(overlaid) else fpath
+        try:
+            with open(source, "r", errors="replace") as f:
+                content = f.read()
+        except OSError as e:
+            print(f"WARNING: could not read {source}: {e}")
+            continue
+        for m in _CASE_RE.finditer(content):
+            suite, case = re.escape(m.group(1)), re.escape(m.group(2))
+            matchers[f"{m.group(1)}.{m.group(2)}"] = re.compile(
+                rf"^(?:{suite}\.{case}(?:/.+)?|.+/{suite}\.{case}/.+"
+                rf"|{suite}/.+\.{case}|.+/{suite}/.+\.{case})$"
+            )
+    return matchers
+
+
 def changed_cases_unexercised(test_files):
     """Did this arm fail to exercise the changed regression cases?
 
@@ -754,12 +807,15 @@ def changed_cases_unexercised(test_files):
     `"status"` alone, so a case that never ran reaches a caller of `run_gtests` as a passing
     one; read the gtest report directly instead. A case is matched to a changed file by the
     basename of its `"file"`, which `-ffile-prefix-map` (CMakeLists.txt) reduces to the
-    source-relative path. ANY unexecuted case of a changed file leaves that file only partly
-    exercised, and which of its cases is the regression one is not known here; with no case
-    matched, only a run that executed nothing is provably no measurement. Returns
-    (unexercised, unexecuted_case_names, reason), and `unexercised` rests on a case
-    positively reporting `SKIPPED` or `SUPPRESSED`, so a report that cannot be read leaves
-    the caller's existing verdict in place.
+    source-relative path, and a case declared in a changed file but absent from the report was
+    compiled out by a preprocessor guard (the filter covers every suite those files declare,
+    so a registered case is always reported). Either way the file is only partly exercised and
+    which of its cases is the regression one is not known here; when the changed files declare
+    no case at all, such as a touched header, only a run that executed nothing is provably no
+    measurement. Returns (unexercised,
+    unexercised_case_names, reason), and `unexercised` rests on a case positively reporting
+    `SKIPPED`/`SUPPRESSED` or on a declaration positively absent from a readable report, so a
+    report that cannot be read leaves the caller's existing verdict in place.
     """
     report_path = ResultTranslator.GTEST_RESULT_FILE
     try:
@@ -780,12 +836,22 @@ def changed_cases_unexercised(test_files):
         if os.path.basename(case.get("file") or "") in changed_basenames
     ]
     unexecuted = {"SKIPPED", "SUPPRESSED"}
+    reported = [f"{suite_name}.{case.get('name', '?')}" for suite_name, case in cases]
     not_run = [
-        f"{suite_name}.{case.get('name', '?')} ({case.get('result')})"
-        for suite_name, case in cases
+        f"{name} ({case.get('result')})"
+        for name, (_, case) in zip(reported, cases)
         if case.get("result") in unexecuted
     ]
-    if changed:
+    missing = [
+        name
+        for name, matcher in declared_case_matchers(test_files).items()
+        if not any(matcher.match(r) for r in reported)
+    ]
+    not_run += [f"{name} (not registered)" for name in missing]
+    if missing:
+        reason = "a case declared in the changed test files was not registered"
+        unexercised = True
+    elif changed:
         reason = "a case of the changed test files did not run"
         unexercised = any(case.get("result") in unexecuted for _, case in changed)
     else:
@@ -1164,15 +1230,18 @@ def main():
             )
             return
 
-        # A "pass" only refutes the bug if the touched suite actually ran. `unit_tests_dbms`
-        # is built from `gtest*.cpp` only (see `grep_gtest_sources` in `src/CMakeLists.txt`),
-        # while `_UNIT_TEST_FILE_RE` also matches standalone `*.cpp`/`*.cc`/`*.cxx` test files
-        # under `tests/` (e.g. `test_hive_catalog_url_parsing.cpp`). If a bugfix touches such a
-        # file, its suite is derived but never compiled into the binary, so the filter matches
-        # zero cases and the before-binary exits cleanly without printing a "[ RUN ]" marker.
-        # That is not a refutation — the test was never executed. Treat it as inconclusive
-        # instead of falsely reporting that the test fails to catch the bug.
-        if not before_run_started_a_test(before_result):
+        # A "pass" only refutes the bug if the touched suite actually ran, and a clean exit
+        # with no "[ RUN ]" marker means the filter matched nothing in this binary. Whether
+        # another build type can still run those cases is what decides the job here:
+        # `_UNIT_TEST_FILE_RE` also matches a standalone `*.cpp`/`*.cc`/`*.cxx` under `tests/`
+        # (e.g. `test_hive_catalog_url_parsing.cpp`), whose suite is derived but is in no build
+        # type's binary, so nothing is left to try; a file that can reach the binary was instead
+        # compiled out on this build type alone, and the declaration check below turns that into
+        # "no verdict". Either way it is not a refutation.
+        compiled_in = [f for f in test_files if can_reach_unit_tests_dbms(f)]
+        if not before_run_started_a_test(before_result) and not (
+            compiled_in and declared_case_matchers(compiled_in)
+        ):
             before_result.set_status(Result.Status.ERROR)
             before_result.set_info(
                 "The before-binary ran no touched test (no gtest '[ RUN ]' marker) yet exited "
