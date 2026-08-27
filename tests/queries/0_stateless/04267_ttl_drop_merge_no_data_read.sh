@@ -402,14 +402,20 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_groupby;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_groupby;"
 
 # -------------------------------------------------------------------
-# Case 8: a Regular merge over fully expired parts is short-circuited too
+# Case 8: a Regular merge over fully expired parts reads the source parts
 #
 # When TTL merge admission is unavailable, selection falls through to a
-# Regular merge that still drops every row - it must not read the source
-# parts just because the assigned type is no longer TTLDrop (issue #116172).
+# Regular merge, and OPTIMIZE TABLE FINAL always assigns MergeType::Regular.
+# Such a merge still drops every expired row, but only by re-evaluating the
+# current TTL expression in the pipeline: the parts' own ttl_infos are not
+# invalidated by ALTER MODIFY TTL with materialize_ttl_after_modify = 0
+# (Case 11), so they cannot prove expiry under the current expression and
+# only the assigned TTLDrop type may skip the read pipeline.
 # max_number_of_merges_with_ttl_in_pool = 0 is the deterministic form of the
-# saturated-limit state, and it also keeps a background TTLDrop merge from
-# racing this one. OPTIMIZE TABLE FINAL always assigns MergeType::Regular.
+# saturated-limit state, and it keeps a background TTLDrop merge from racing.
+# Merges are never stopped, so a background Regular merge racing the OPTIMIZE
+# produces the same (rows, read_rows) pair; length(merged_from) > 1 keeps
+# single-part FINAL merges out of the comparison.
 # -------------------------------------------------------------------
 echo "-- Case 8: Regular merge over fully expired parts"
 
@@ -429,21 +435,15 @@ ${CLICKHOUSE_CLIENT} -q "
         merge_with_ttl_timeout = 0,
         min_bytes_for_wide_part = 1;
 
-    SYSTEM STOP MERGES t_ttl_regular_fallback;
-
     INSERT INTO t_ttl_regular_fallback (id, value) SELECT number, randomString(100) FROM numbers(100);
     INSERT INTO t_ttl_regular_fallback (id, value) SELECT number, randomString(100) FROM numbers(100);
-
-    SYSTEM START MERGES t_ttl_regular_fallback;
 
     OPTIMIZE TABLE t_ttl_regular_fallback FINAL;
 "
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS part_log"
+wait_for_ttl_merge_and_flush_logs "t_ttl_regular_fallback"
 
 ${CLICKHOUSE_CLIENT} -q "
-    -- Every merge over these parts must short-circuit, not just the newest one: restarting merges
-    -- before OPTIMIZE lets a background merge run too, and which of them is last is a race.
     SELECT DISTINCT
         merge_reason,
         rows,
@@ -528,10 +528,11 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patched;"
 # -------------------------------------------------------------------
 # Case 10: SYSTEM STOP TTL MERGES still suppresses row removal
 #
-# OPTIMIZE ... FINAL assigns MergeType::Regular, so it reaches the shortcut
-# through the proven-expiry arm rather than the TTLDrop one. The operator has
-# stopped TTL merges, so this merge must not drop the rows -- the pipeline
-# would not, because the same flag also gates its TTL step.
+# OPTIMIZE ... FINAL assigns MergeType::Regular, so the merge goes through
+# the pipeline; the same flag that gates the shortcut also gates the
+# pipeline's TTL step (MergeTask.cpp clears need_remove_expired_values when
+# TTL work is cancelled), so the rows survive either way. The operator has
+# stopped TTL merges, so no data may be dropped.
 # -------------------------------------------------------------------
 echo "-- Case 10: STOP TTL MERGES suppresses the short-circuit"
 
@@ -565,3 +566,73 @@ ${CLICKHOUSE_CLIENT} -q "
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_stopped;"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM START TTL MERGES t_ttl_stopped;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_stopped;"
+
+# -------------------------------------------------------------------
+# Case 11: MODIFY TTL without materialization keeps the rows on a Regular merge
+#
+# materialize_ttl_after_modify = 0 deliberately leaves old parts in place,
+# so their ttl_infos stay computed under the previous TTL expression: a part
+# fully expired under the original short TTL still says so after the TTL is
+# relaxed. A Regular merge over such a part must not trust that metadata --
+# it re-evaluates the current TTL in the pipeline and keeps the rows, which
+# is exactly what the zero-read shortcut would have skipped.
+# max_number_of_merges_with_ttl_in_pool = 0 makes OPTIMIZE TABLE FINAL the
+# deterministic Regular merge here, and keeps the stale parts away from the
+# TTL drop selector, which would drop them as expired. Merges are stopped
+# until the ALTER has relaxed the TTL, so no merge can run under the short
+# one; afterwards a racing background Regular merge keeps the rows too, so
+# the part_log comparison below is order-independent.
+# -------------------------------------------------------------------
+echo "-- Case 11: MODIFY TTL without materialization keeps the rows"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_modify_relaxed
+    (
+        id UInt64,
+        value String,
+        event_time DateTime DEFAULT now() - INTERVAL 2 DAY
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time + INTERVAL 1 DAY
+    SETTINGS
+        max_number_of_merges_with_ttl_in_pool = 0,
+        merge_with_ttl_timeout = 0,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_modify_relaxed;
+
+    -- Both parts are fully expired under the original TTL, and their ttl_infos say so.
+    INSERT INTO t_ttl_modify_relaxed (id, value) SELECT number, randomString(100) FROM numbers(100);
+    INSERT INTO t_ttl_modify_relaxed (id, value) SELECT number, randomString(100) FROM numbers(100);
+
+    -- Relax the TTL without materializing it: the parts keep the stale, expired infos.
+    SET materialize_ttl_after_modify = 0;
+    ALTER TABLE t_ttl_modify_relaxed MODIFY TTL event_time + INTERVAL 10 YEAR;
+
+    SYSTEM START MERGES t_ttl_modify_relaxed;
+
+    OPTIMIZE TABLE t_ttl_modify_relaxed FINAL;
+"
+
+wait_for_ttl_merge_and_flush_logs "t_ttl_modify_relaxed"
+
+# The merge must open the source parts and keep what it reads: the rows are
+# alive under the current TTL. A zero-read shortcut trusting the stale
+# ttl_infos would report (0, 0) here and leave the table empty.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT DISTINCT
+        merge_reason,
+        rows,
+        read_rows
+    FROM system.part_log
+    WHERE
+        database = currentDatabase()
+        AND table = 't_ttl_modify_relaxed'
+        AND event_type = 'MergeParts'
+        AND length(merged_from) > 1
+    ORDER BY merge_reason, rows, read_rows;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_modify_relaxed;"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_modify_relaxed;"

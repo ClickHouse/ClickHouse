@@ -226,8 +226,7 @@ private:
         bool cleanup{false};
         bool vertical_lightweight_delete{false};
         bool vertical_ttl_delete{false};
-        /// When true, all source parts are fully expired (a TTLDrop merge, or any other
-        /// merge whose source parts prove it from their own TTL metadata).
+        /// When true, all source parts are fully expired (MergeType::TTLDrop).
         /// The data pipeline is skipped entirely — no readers are opened,
         /// no buffers allocated, and the result is an empty part.
         bool ttl_drop_short_circuit{false};

@@ -1036,55 +1036,38 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         && !use_const_adaptive_granularity
         && global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical;
 
-    /// When all source parts are fully expired, skip creating the read pipeline to avoid opening
-    /// source parts and allocating read/prefetch buffers.
-    ///
-    /// A TTLDrop merge was selected on exactly that basis, so its type alone is enough. A merge
-    /// that fell back to MergeType::Regular because TTL merge admission was unavailable drops the
-    /// same rows and is just as safe, but it has to prove that state from the source parts' own
-    /// TTL metadata instead of from the assigned type.
+    /// For TTLDrop merges, all source parts are fully expired.
+    /// Skip creating the read pipeline to avoid opening source parts
+    /// and allocating read/prefetch buffers.
     ///
     /// We restrict this to tables that have only an unconditional rows TTL
     /// (no column TTL, moves, recompression, GROUP BY, or WHERE-clause TTL).
     /// When other TTL families are present, TTLTransform::finalize rebuilds
     /// their maps from scratch, and replicating that logic here would be
     /// fragile. hasOnlyRowsTTL already excludes WHERE-clause TTLs.
-    auto all_source_parts_fully_expired = [&]
-    {
-        for (const auto & part : global_ctx->future_part->parts)
-        {
-            /// A finished table TTL was computed on a completely expired part, so the flag
-            /// proves expiry on its own: updatePartMinMaxTTL skips finished infos, leaving
-            /// table_ttl.min and part_max_ttl at 0, and checkAllTTLCalculated below would
-            /// reject such a part for min == 0 before it could be accepted.
-            if (part->ttl_infos.table_ttl.finished())
-                continue;
-            /// A part written before the TTL was declared carries no usable TTL metadata.
-            if (!part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
-                return false;
-            /// No rows at all, so nothing can be unexpired.
-            if (part->isEmpty())
-                continue;
-            const time_t part_max_ttl = part->ttl_infos.part_max_ttl;
-            if (!part_max_ttl || part_max_ttl > global_ctx->time_of_merge)
-                return false;
-        }
-        return true;
-    };
-
-    /// Each conjunct names work the pipeline would otherwise do: TTL removal may be cancelled for this
-    /// merge, patches still have to be applied, and only createMergedStream() re-checks cleanup here.
-    const bool can_short_circuit_fully_expired_merge =
+    ///
+    /// A regular merge never takes this shortcut, even when each source part's own ttl_infos claim
+    /// full expiry: after `ALTER TABLE ... MODIFY TTL ... SETTINGS materialize_ttl_after_modify = 0`
+    /// those infos can still be computed under the previous TTL expression, and re-evaluating the
+    /// current one is exactly what the skipped pipeline does (a regular merge over a part whose old
+    /// short TTL already expired, relaxed to a longer TTL, must keep the rows). A per-part persisted
+    /// rows-TTL version that MODIFY TTL would invalidate does not exist, so the claim is unprovable
+    /// until one is added.
+    ///
+    /// The remaining conjuncts each name work the pipeline would otherwise do: TTL removal may be
+    /// cancelled for this merge, patches still have to be applied, and only createMergedStream()
+    /// re-checks the cleanup opt-in.
+    const bool can_short_circuit_ttl_drop =
         ctx->need_remove_expired_values
         && global_ctx->metadata_snapshot->hasOnlyRowsTTL()
         && global_ctx->future_part->patch_parts.empty()
         && !global_ctx->cleanup
-        && (global_ctx->future_part->merge_type == MergeType::TTLDrop || all_source_parts_fully_expired());
+        && global_ctx->future_part->merge_type == MergeType::TTLDrop;
 
-    if (can_short_circuit_fully_expired_merge)
+    if (can_short_circuit_ttl_drop)
     {
-        LOG_DEBUG(ctx->log, "Skipping data pipeline: all {} source parts are fully expired (merge type {})",
-            global_ctx->future_part->parts.size(), toString(global_ctx->future_part->merge_type));
+        LOG_DEBUG(ctx->log, "TTLDrop merge: skipping data pipeline, "
+            "all {} source parts are fully expired", global_ctx->future_part->parts.size());
 
         global_ctx->ttl_drop_short_circuit = true;
 
