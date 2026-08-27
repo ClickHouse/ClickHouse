@@ -948,41 +948,9 @@ bool MergeTreeIndexConditionText::tryPrepareJSONPathValuesSet(
     if (!type)
         return false;
 
-    const bool expression_is_dynamic = removeLowCardinality(type)->getTypeId() == TypeIndex::Dynamic;
     const size_t max_token_bytes = json_path_values_configuration->max_token_bytes;
     VectorWithMemoryTracking<String> tokens;
     VectorWithMemoryTracking<String> validation_tokens;
-
-    if (expression_is_dynamic)
-    {
-        tokens.reserve(values.size() * 6);
-        const auto string_type = std::make_shared<DataTypeString>();
-        for (const auto & value : values)
-        {
-            if (value.empty())
-                return false;
-            if (!appendJSONPathValuesDynamicEqualityTokens(
-                    json_index_info->subcolumn.path,
-                    string_type,
-                    Field(value),
-                    max_token_bytes,
-                    tokens,
-                    validation_tokens))
-                return false;
-        }
-
-        JSONTextQueryPayload payload{
-            .match_patterns_by_prefix = true,
-            .validation_tokens = std::move(validation_tokens)};
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
-            function_name,
-            TextSearchMode::Any,
-            TextIndexDirectReadMode::Exact,
-            std::move(tokens),
-            std::vector<OptimizedRegularExpression>{},
-            std::move(payload)));
-        return true;
-    }
 
     if (!WhichDataType(removeLowCardinality(type)).isStringOrFixedString())
         return false;
