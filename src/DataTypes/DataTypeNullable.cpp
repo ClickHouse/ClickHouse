@@ -61,28 +61,6 @@ size_t DataTypeNullable::getSizeOfValueInMemory() const
 }
 
 
-void DataTypeNullable::insertDefaultInto(IColumn & column) const
-{
-    auto & nullable_column = assert_cast<ColumnNullable &>(column);
-    nested_data_type->insertDefaultInto(nullable_column.getNestedColumn());
-    /// Keep the nested column and the null map in sync even if appending to the
-    /// null map throws (e.g. on a memory limit).
-    try
-    {
-        nullable_column.getNullMapData().push_back(static_cast<UInt8>(1));
-    }
-    catch (...)
-    {
-        nullable_column.getNestedColumn().popBack(1);
-        throw;
-    }
-}
-
-bool DataTypeNullable::isDefaultInsertTrivial() const
-{
-    return nested_data_type->isDefaultInsertTrivial();
-}
-
 bool DataTypeNullable::equals(const IDataType & rhs) const
 {
     return rhs.isNullable() && nested_data_type->equals(*static_cast<const DataTypeNullable &>(rhs).nested_data_type);

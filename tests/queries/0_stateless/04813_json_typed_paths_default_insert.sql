@@ -21,6 +21,11 @@ SELECT '{"nested": null}'::JSON(nested JSON(a Int64, e Enum8('x' = 1, 'y' = 2)))
 -- Nullable typed paths default to NULL.
 SELECT '{}'::JSON(n Nullable(Enum8('p' = 5, 'q' = 6)), m Nullable(Int64)) AS j, j.n, j.m;
 
+-- Insert deduplication hashes the nested bytes of null rows too, so an omitted
+-- path and an explicit null must store the same value hidden under NULL.
+SELECT toInt8(assumeNotNull('{}'::JSON(n Nullable(Enum8('p' = 5, 'q' = 6))).n)) AS omitted,
+       toInt8(assumeNotNull('{"n": null}'::JSON(n Nullable(Enum8('p' = 5, 'q' = 6))).n)) AS explicit_null;
+
 -- Default filling during INSERT into MergeTree, mixing default-filled rows and
 -- explicitly provided rows.
 DROP TABLE IF EXISTS t_json_typed_paths_default;

@@ -24,9 +24,6 @@ public:
 
     Field getDefault() const override;
 
-    void insertDefaultInto(IColumn & column) const override;
-    bool isDefaultInsertTrivial() const override;
-
     bool equals(const IDataType & rhs) const override;
 
     bool isParametric() const override { return true; }
