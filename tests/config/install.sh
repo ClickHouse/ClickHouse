@@ -150,6 +150,7 @@ if [[ "$BUGFIX_VALIDATE_CHECK" -eq 0 && "$PREVIOUS_RELEASE_CONFIG" -eq 0 ]]; the
     ln -sf $SRC_PATH/config.d/columns_cache.xml $DEST_SERVER_PATH/config.d/
 fi
 ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/silk.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/

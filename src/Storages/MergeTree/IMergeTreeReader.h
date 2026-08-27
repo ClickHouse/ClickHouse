@@ -41,10 +41,9 @@ public:
     /// (<= the last mark of the current read task; equal to it when the task is one
     /// contiguous range). It bounds caching of deserialized columns, which must not
     /// span the gaps between ranges of a multi-range task. 0 means unknown.
-    /// If rows_offset is not 0, when reading from MergeTree, the first rows_offset rows will be skipped.
     virtual size_t readRows(size_t from_mark, size_t current_range_last_mark,
                             bool continue_reading, size_t max_rows_to_read,
-                            size_t rows_offset, Columns & res_columns) = 0;
+                            MutableColumns & res_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
 
@@ -138,7 +137,7 @@ protected:
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
-    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const;
+    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
