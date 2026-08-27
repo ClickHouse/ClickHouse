@@ -60,7 +60,7 @@ Clears every hypothetical projection defined in the current session, regardless 
 
 ## Required privileges {#required-privileges}
 
-`CREATE HYPOTHETICAL PROJECTION` requires `SELECT` on the columns the projection reads — column-level `SELECT` is sufficient — because estimating it will read those columns.
+`CREATE HYPOTHETICAL PROJECTION` reads no table data — it only validates the definition and stores it in the session — so it does not require `SELECT` on the projection's columns. When `EXPLAIN WHATIF` starts estimating projections it will read those columns, and column-level `SELECT` will be required then, as it already is for [`CREATE HYPOTHETICAL INDEX`](/reference/statements/hypothetical-index#required-privileges).
 
 `DROP HYPOTHETICAL PROJECTION` and `DROP ALL HYPOTHETICAL PROJECTIONS` require no extra privilege; they only remove entries from the session-local store.
 
