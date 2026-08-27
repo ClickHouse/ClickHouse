@@ -670,10 +670,13 @@ def main():
                 else:
                     booted = True
                     break
-                # Only a boot the server did not survive is retried. While it is
+                # Only a boot no tracked replica survived is retried. While one is
                 # still up, the next attempt would wipe the run directory it is
                 # using, so this fails with `wait_ready`'s diagnostics instead.
-                if CH.proc.poll() is None:
+                if any(
+                    p is not None and p.poll() is None
+                    for p in (CH.proc, CH.proc_1, CH.proc_2)
+                ):
                     break
                 if boot_attempt + 1 < boot_attempts:
                     print(
