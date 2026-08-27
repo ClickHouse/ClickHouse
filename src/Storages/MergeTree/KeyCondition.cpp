@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/hasNullable.h>
 #include <DataTypes/Utils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
@@ -33,6 +34,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
@@ -1461,6 +1463,46 @@ ActionsDAGWithInversionPushDown::ActionsDAGWithInversionPushDown(const ActionsDA
 }
 
 
+/// True if a range over values of this type does not bound what the predicate compares: inside a
+/// container, `FieldVisitorAccurateLess` orders a nested `Null` first, by its `Field` type tag, while
+/// the data and `IColumn::compareAt` order it last. A top-level `NULL` is ordered consistently through
+/// the `+Inf` sentinel that key and index analysis write for it, so look under a `Nullable`.
+static bool hasContainerElementOrderMismatch(const DataTypePtr & type)
+{
+    const DataTypePtr inner = removeNullable(type);
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(inner.get()))
+        return hasTypeThatCanContainNulls(array->getNestedType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(inner.get()))
+        return std::ranges::any_of(tuple->getElements(), hasTypeThatCanContainNulls);
+    if (const auto * map = typeid_cast<const DataTypeMap *>(inner.get()))
+        return hasTypeThatCanContainNulls(map->getKeyType()) || hasTypeThatCanContainNulls(map->getValueType());
+    return false;
+}
+
+/// `FUNCTION_UNKNOWN` is the neutral element of the RPN and is always relaxed, so atoms on the other
+/// key columns keep pruning and the exactness checks (`isRelaxed`, `alwaysUnknownOrTrue`) stay accurate.
+static void unsetAtomsOnColumnsWithoutUsableRange(
+    KeyCondition::RPN & rpn, const KeyCondition::ColumnIndices & key_columns, const Block & key_sample_block)
+{
+    std::unordered_set<size_t> unusable_columns;
+    for (const auto & column : key_sample_block)
+    {
+        auto it = key_columns.find(column.name);
+        if (it != key_columns.end() && hasContainerElementOrderMismatch(column.type))
+            unusable_columns.insert(it->second);
+    }
+
+    if (unusable_columns.empty())
+        return;
+
+    for (auto & element : rpn)
+    {
+        if (std::ranges::any_of(element.key_columns, [&](size_t position) { return unusable_columns.contains(position); }))
+            element = KeyCondition::RPNElement(KeyCondition::RPNElement::FUNCTION_UNKNOWN);
+    }
+}
+
 KeyCondition::KeyCondition(
     const ActionsDAGWithInversionPushDown & filter_dag,
     ContextPtr context,
@@ -1518,6 +1560,8 @@ KeyCondition::KeyCondition(
     rpn = std::move(builder).extractRPN();
 
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
+
+    unsetAtomsOnColumnsWithoutUsableRange(rpn, key_columns, key_expr_->getSampleBlock());
 }
 
 KeyCondition::KeyCondition(
