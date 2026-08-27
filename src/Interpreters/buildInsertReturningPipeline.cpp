@@ -103,19 +103,19 @@ namespace
         ///
         /// Check the effective value, not only the `changed` bit, so explicit resets to neutral
         /// values like `SET limit = 0` or `SET filter = ''` remain accepted.
-        if (!settings[Setting::select].empty())
+        if (!settings[Setting::select].value.empty())
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Setting 'select' is not supported for INSERT ... RETURNING because delayed RETURNING does not apply query-construction rewrites");
-        if (!settings[Setting::filter].empty())
+        if (!settings[Setting::filter].value.empty())
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Setting 'filter' is not supported for INSERT ... RETURNING because delayed RETURNING does not apply query-construction rewrites");
-        if (!settings[Setting::order].empty())
+        if (!settings[Setting::order].value.empty())
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Setting 'order' is not supported for INSERT ... RETURNING because delayed RETURNING does not apply query-construction rewrites");
-        if (!settings[Setting::sort].empty())
+        if (!settings[Setting::sort].value.empty())
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Setting 'sort' is not supported for INSERT ... RETURNING because delayed RETURNING does not apply query-construction rewrites");
