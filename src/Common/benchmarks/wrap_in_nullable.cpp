@@ -26,10 +26,10 @@ static void BM_WrapInNullable1(benchmark::State & state)
     {
         state.PauseTiming();
         ColumnPtr null_map_column = fillColumnWithRandomData(uint8_type, limit, max_array_length, max_string_length, rng);
-        ColumnPtr src_column = ColumnNullable::create(denull_src_column, std::move(null_map_column));
+        ColumnPtr src_column = ColumnNullable::create(denull_src_column, null_map_column);
         state.ResumeTiming();
 
-        auto result = wrapInNullable(std::move(src_column), args, nullable_float64, limit);
+        auto result = wrapInNullable(src_column, args, nullable_float64, limit);
         benchmark::DoNotOptimize(result);
     }
 }
