@@ -75,6 +75,11 @@ public:
     static std::string getUniqueStoragePathIdentifier(
         const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
 
+    /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
+    /// object cannot be safely cached and caching must be skipped (fail-close). Exposed for testing:
+    /// the safety-critical contract is that a weak etag (e.g. HDFS) never keys the cache.
+    static std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake);
+
 protected:
     StorageID storage_id;
     const String name;
