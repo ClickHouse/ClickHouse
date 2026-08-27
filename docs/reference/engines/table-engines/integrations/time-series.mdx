@@ -194,14 +194,14 @@ The _histograms_ table must have columns:
 | `negative_values` | [x] | `Array(Float64)` | `Array(Float64)` | Absolute counts of the negative buckets |
 | `custom_values` | [x] | `Array(Float64)` | `Array(Float64)` | Custom bucket boundaries (only used with `schema` = -53) |
 
-Counts are stored as `Float64`, which represents integers exactly only up to 2<sup>53</sup>. An
-integer-flavor histogram whose `count`, `zero_count` or any decoded bucket count exceeds that bound is
-rejected on ingestion instead of being stored rounded, so a stored histogram always reads back the
-counts it arrived with.
-
 A table with this target gets an additional outer `histograms` column of type `Array(Tuple(...))` carrying
 one tuple per histogram sample with the same elements as the table columns after `id`, and the stored
 histograms can be read back with the [timeSeriesHistograms](#functions) table function.
+
+Counts are stored as `Float64`, which represents every integer up to 2^53 exactly. The `flags` bit records
+whether a sample arrived as an integer or a float histogram, so an integer histogram round-trips unchanged;
+one whose count, zero count, or a decoded bucket count would exceed 2^53 is rejected on ingestion rather
+than stored rounded.
 
 ## Creation {#creation}
 
