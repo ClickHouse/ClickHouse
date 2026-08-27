@@ -57,19 +57,24 @@ INSERT INTO t_chain SELECT number FROM numbers(128);
 SELECT sum(x) FROM t_chain WHERE abs(negate(toInt16(x))) >= 10 AND abs(negate(toInt16(x))) <= 20;
 
 -- A cast into `Bool` maps every nonzero value to 1, so it changes values even between types of the same
--- width. Values 8..15 fit one byte and 300..307 do not, so both are covered.
+-- width. Values 8..15 fit one byte and 300..307 do not, so both are covered. The all-zero granule is the
+-- only prunable one, so the `Granules` assertion also fails if a `Bool` condition stops pruning entirely.
 CREATE TABLE t_bool_narrowing (w UInt64, f Bool ALIAS w, INDEX i_f (w) TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 INSERT INTO t_bool_narrowing SELECT number + 8 FROM numbers(8);
 INSERT INTO t_bool_narrowing SELECT number + 300 FROM numbers(8);
+INSERT INTO t_bool_narrowing SELECT 0 FROM numbers(4);
 
 SELECT count() FROM t_bool_narrowing WHERE f = true;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT sum(w) FROM t_bool_narrowing WHERE f = true) WHERE explain ILIKE '%Granules: 4/5%';
 
 CREATE TABLE t_bool_same_size (u UInt8, f Bool ALIAS u, INDEX i_f (u) TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 INSERT INTO t_bool_same_size SELECT number + 8 FROM numbers(8);
+INSERT INTO t_bool_same_size SELECT 0 FROM numbers(4);
 
 SELECT count() FROM t_bool_same_size WHERE f = true;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT sum(u) FROM t_bool_same_size WHERE f = true) WHERE explain ILIKE '%Granules: 2/3%';
 
 DROP TABLE t_unsigned;
 DROP TABLE t_signed;
