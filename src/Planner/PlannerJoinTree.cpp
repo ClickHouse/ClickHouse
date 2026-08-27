@@ -786,13 +786,13 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
       * We do not check access rights for table functions because they have been already checked in ITableFunction::execute().
       */
     NameSet columns_names_allowed_to_select;
-    if (table_node)
+    if (!select_query_options.ignore_access_check && table_node)
     {
         const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
         columns_names_allowed_to_select = checkAccessRights(
             table_node->getStorage(), table_node->getStorageID(), table_node->getStorageSnapshot(), column_names_with_aliases, query_context);
     }
-    else if (table_function_node)
+    else if (!select_query_options.ignore_access_check && table_function_node)
     {
         /// A parameterized view is resolved as a `TableFunctionNode` that wraps a real `StorageView`, but no
         /// `ITableFunction::execute` runs for it, so the access check skipped above for regular table functions
@@ -806,7 +806,9 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
                 storage, table_function_node->getStorageID(), table_function_node->getStorageSnapshot(), column_names_with_aliases, query_context);
         }
     }
-    else if ((query_node || union_node) && select_query_options.check_subquery_table_access)
+    else if (!select_query_options.ignore_access_check
+        && (query_node || union_node)
+        && select_query_options.check_subquery_table_access)
     {
         /// Check permissions for all tables referenced in the subquery.
         /// This is needed because in only_analyze mode, subqueries are not recursively planned,

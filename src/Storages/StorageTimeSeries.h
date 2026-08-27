@@ -150,4 +150,8 @@ private:
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);
 std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr storage);
 
+/// Checks SELECT access to a TimeSeries table and rejects effective row policies on the outer table or its targets.
+/// Target-based reads cannot preserve policies defined on either representation.
+void checkTimeSeriesTableSelectAccess(const ContextPtr & context, const StorageID & time_series_table_id);
+
 }

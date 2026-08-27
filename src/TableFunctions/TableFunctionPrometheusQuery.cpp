@@ -1,6 +1,9 @@
 #include <TableFunctions/TableFunctionPrometheusQuery.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -30,8 +33,9 @@ void TableFunctionPrometheusQuery<over_range>::parseArguments(const ASTPtr & ast
 
 template <bool over_range>
 ColumnsDescription
-TableFunctionPrometheusQuery<over_range>::getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const
+TableFunctionPrometheusQuery<over_range>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
+    context->checkAccess(AccessType::SELECT, config.evaluation_settings.time_series_storage_id);
     PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings};
     return converter.getResultColumns();
 }
@@ -45,6 +49,7 @@ StoragePtr TableFunctionPrometheusQuery<over_range>::executeImpl(
     ColumnsDescription /* cached_columns */,
     bool is_insert_query) const
 {
+    checkTimeSeriesTableSelectAccess(context, config.evaluation_settings.time_series_storage_id);
     auto columns = getActualTableStructure(context, is_insert_query);
     auto res = std::make_shared<StoragePrometheusQuery>(StorageID(getDatabaseName(), table_name), columns, config);
     res->startup();

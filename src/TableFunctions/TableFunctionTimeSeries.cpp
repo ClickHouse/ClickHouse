@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionTimeSeries.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -87,14 +88,19 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         ContextPtr context,
         const String & /* table_name */,
         ColumnsDescription /* cached_columns */,
-        bool /* is_insert_query */) const
+        bool is_insert_query) const
 {
+    if (is_insert_query)
+        context->checkAccess(AccessType::INSERT, time_series_storage_id);
+    else
+        checkTimeSeriesTableSelectAccess(context, time_series_storage_id);
     return getTargetTable(context);
 }
 
 template <ViewTarget::Kind target_kind>
 ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
+    context->checkAccess(AccessType::SELECT, time_series_storage_id);
     auto metadata_snapshot = getTargetTable(context)->getInMemoryMetadataPtr(context, false);
     return metadata_snapshot->columns;
 }
@@ -135,7 +141,9 @@ SELECT * FROM timeSeriesSamples('db_name', 'time_series_table');
 <Note>
 The function `timeSeriesSamples` has an alias `timeSeriesData` which is kept for backwards compatibility.
 </Note>
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+
+The outer `TimeSeries` table is the access-control boundary. `SELECT` on the inner target table alone is not sufficient; callers need `SELECT` on the outer `TimeSeries` table. `SELECT` row policies on the outer table or any target table are not supported for this target-backed read and cause the query to be rejected.
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 
     factory.registerAlias("timeSeriesData", "timeSeriesSamples");
 
@@ -161,7 +169,9 @@ SELECT * FROM timeSeriesTags(db_name.time_series_table);
 SELECT * FROM timeSeriesTags('db_name.time_series_table');
 SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+
+The outer `TimeSeries` table is the access-control boundary. `SELECT` on the inner target table alone is not sufficient; callers need `SELECT` on the outer `TimeSeries` table. `SELECT` row policies on the outer table or any target table are not supported for this target-backed read and cause the query to be rejected.
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Metrics>>(
         {.description = R"DOCS_MD(
@@ -185,12 +195,16 @@ SELECT * FROM timeSeriesMetrics(db_name.time_series_table);
 SELECT * FROM timeSeriesMetrics('db_name.time_series_table');
 SELECT * FROM timeSeriesMetrics('db_name', 'time_series_table');
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+
+The outer `TimeSeries` table is the access-control boundary. `SELECT` on the inner target table alone is not sufficient; callers need `SELECT` on the outer `TimeSeries` table. `SELECT` row policies on the outer table or any target table are not supported for this target-backed read and cause the query to be rejected.
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 
     factory.registerFunction<TableFunctionTimeSeriesSelector>(
         {.description = R"DOCS_MD(
 Reads time series from a TimeSeries table filtered by a selector and with timestamps in a specified interval.
 This function is similar to [range selectors](https://prometheus.io/docs/prometheus/latest/querying/basics/#range-vector-selectors) but it's used to implement [instant selectors](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors) too.
+
+`SELECT` row policies on the outer `TimeSeries` table or any target table are not supported for this target-backed read and cause the query to be rejected.
 
 ## Syntax {#syntax}
 
@@ -222,11 +236,13 @@ There is no specific order for returned data.
 ```sql
 SELECT * FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now())
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ false>>(
         {.description = R"DOCS_MD(
 Evaluates a prometheus query using data from a TimeSeries table.
+
+`SELECT` row policies on the outer `TimeSeries` table or any target table are not supported for this target-backed read and cause the query to be rejected.
 
 ## Syntax {#syntax}
 
@@ -298,10 +314,12 @@ Unary operators `+` and `-`.
 ```sql
 SELECT * FROM prometheusQuery(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now())
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ true>>(
         {.description = R"DOCS_MD(
 Evaluates a prometheus query using data from a TimeSeries table over a range of evaluation times.
+
+`SELECT` row policies on the outer `TimeSeries` table or any target table are not supported for this target-backed read and cause the query to be rejected.
 
 ## Syntax {#syntax}
 
@@ -375,7 +393,7 @@ Unary operators `+` and `-`.
 ```sql
 SELECT * FROM prometheusQueryRange(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now() - INTERVAL 10 MINUTES, now(), INTERVAL 1 MINUTE)
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 }
 
 }

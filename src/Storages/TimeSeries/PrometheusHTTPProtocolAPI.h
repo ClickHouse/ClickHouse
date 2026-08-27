@@ -1,5 +1,8 @@
 #pragma once
 
+#include <utility>
+#include <vector>
+
 #include <Common/Logger_fwd.h>
 #include <Core/Names.h>
 #include <Formats/FormatSettings.h>
@@ -41,6 +44,7 @@ public:
         String end_param;
         String step_param;
         String lookback_delta_param;
+        UInt64 limit = 0;
     };
 
     /// Execute an instant query (/api/v1/query) or range query (/api/v1/query_range)
@@ -49,7 +53,11 @@ public:
         const Params & params,
         QueryFinishCallback query_finish_callback = {});
 
-    /// Get series metadata (/api/v1/series): the union of the series matched by the `match[]` selectors, capped by `limit` (0 means no limit).
+    /// Get series metadata (/api/v1/series).
+    /// `match_params` are the values of the repeated `match[]` parameter. The result is the union
+    /// over all selectors; an empty list is rejected by the HTTP endpoint.
+    /// `limit` is the maximum number of returned items (0 means no limit); when the result is
+    /// truncated, the response carries the Prometheus "results truncated due to limit" warning.
     void getSeries(
         WriteBuffer & response,
         const Strings & match_params,
@@ -94,19 +102,51 @@ private:
     ASTPtr makeSeriesIDsQuery(const Strings & match_params, const String & start_param, const String & end_param);
 
     /// Writes the result of a prometheus query as a JSON.
-    void writeQueryResponse(WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type);
+    void writeQueryResponse(
+        WriteBuffer & response,
+        PullingAsyncPipelineExecutor & pulling_executor,
+        PrometheusQueryResultType result_type,
+        UInt64 limit);
 
     /// Helper methods.
     void writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type);
-    void writeQueryResponseFooter(WriteBuffer & response);
-    void writeQueryResponseBlock(WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first);
+    void writeQueryResponseFooter(WriteBuffer & response, bool truncated);
+    void writeQueryResponseBlock(
+        WriteBuffer & response,
+        PrometheusQueryResultType result_type,
+        const Block & result_block,
+        bool first,
+        UInt64 limit,
+        UInt64 & emitted,
+        bool & truncated);
     void writeQueryResponseScalarBlock(WriteBuffer & response, const Block & result_block, bool first);
     void writeQueryResponseStringBlock(WriteBuffer & response, const Block & result_block, bool first);
-    void writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
-    void writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
+    void writeQueryResponseInstantVectorBlock(
+        WriteBuffer & response,
+        const Block & result_block,
+        UInt64 limit,
+        UInt64 & emitted,
+        bool & truncated);
+    void writeQueryResponseRangeVectorBlock(
+        WriteBuffer & response,
+        const Block & result_block,
+        UInt64 limit,
+        UInt64 & emitted,
+        bool & truncated);
     void writeTags(WriteBuffer & response, const Block & result_block, size_t row_index);
     void writeTimestamp(WriteBuffer & response, DateTime64 value, UInt32 scale);
     void writeScalar(WriteBuffer & response, Float64 value);
+
+    /// Returns the (tag name -> column name) pairs configured via the `tags_to_columns` setting.
+    /// These tags can be present in the dedicated columns of the `tags` table, the `tags` Map, or both.
+    std::vector<std::pair<String, String>> getConfiguredTagColumns() const;
+
+    /// Appends `min_time`/`max_time` overlap conditions to `conditions` for the optional `start`/`end`
+    /// parameters of the metadata endpoints when trusted time bounds are available. Otherwise validates
+    /// the request and leaves the conditions unchanged, returning the approximate superset allowed by
+    /// Prometheus's `/api/v1/series` contract.
+    void appendTimeRangeConditions(
+        std::vector<String> & conditions, const StoragePtr & tags_table, const String & start_param, const String & end_param);
 
     std::shared_ptr<const StorageTimeSeries> time_series_storage;
     FormatSettings format_settings;

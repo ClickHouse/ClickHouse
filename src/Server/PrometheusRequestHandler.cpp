@@ -32,12 +32,14 @@
 #include <Server/HTTP/authenticateUserByHTTP.h>
 #include <Server/HTTP/checkHTTPHeader.h>
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
+#include <Storages/StorageTimeSeries.h>
 
 
 namespace DB
@@ -439,32 +441,36 @@ public:
 
     bool isSettingLikeParameter(const String & name) override
     {
-        /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
-        if (name.empty())
+        /// Start from the generic exclusions applied by `ImplWithContext` (`user`, `password`, `quota_key`,
+        /// `stacktrace`, `role`, `query_id`, `database`, `table`): `makeContext` gives them the shared HTTP
+        /// semantics (roles, query id, ...), so they must not fail as unknown settings here.
+        if (!ImplWithContext::isSettingLikeParameter(name))
             return false;
 
-        /// Some parameters (default_format, everything used in the code above) do not belong to the
-        /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "database", "table"};
+        /// Additionally reserve the Prometheus HTTP API parameters consumed by these endpoints.
+        /// Prometheus defines `limit` on these endpoints, so it must not fall through to ClickHouse's
+        /// generic `limit` setting.
+        static const NameSet reserved_param_names{"query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta"};
         return !reserved_param_names.contains(name);
     }
 
-    /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
-    /// with 0 (the default) meaning no limit.
+    /// Parses the optional `limit` parameter of the Prometheus endpoints (the maximum number of returned
+    /// items; 0 means no limit, which is also the default). An absent or empty parameter means no limit.
     UInt64 getLimitParam() const
     {
-        String limit_param = params->get("limit", "");
-        if (limit_param.empty())
+        String limit_str = params->get("limit", "");
+        if (limit_str.empty())
             return 0;
 
         Int64 parsed_limit = 0;
-        if (!tryParse(parsed_limit, limit_param.data(), limit_param.size()) || (parsed_limit < 0))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
-                            limit_param);
+        if (!tryParse(parsed_limit, limit_str.data(), limit_str.size()) || parsed_limit < 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
+                limit_str);
+
         return static_cast<UInt64>(parsed_limit);
     }
-
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
         const String & uri = request.getURI();
@@ -476,7 +482,36 @@ public:
 
         try
         {
-            auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+            /// Resolve the route before touching the configured table. Unknown paths are a routing
+            /// error, not a table read, so they must keep their 404 response even for users who do not
+            /// have SELECT on the configured TimeSeries table.
+            const String uri_path = Poco::URI(uri).getPath();
+            const bool known_endpoint
+                = uri_path.ends_with("/query_range")
+                || uri_path.ends_with("/query")
+                || uri_path.ends_with("/format_query")
+                || uri_path.ends_with("/parse_query")
+                || uri_path.ends_with("/series")
+                || uri_path.ends_with("/labels")
+                || uri_path.ends_with("/metadata")
+                || extractLabelValuesName(uri_path).has_value();
+
+            if (!known_endpoint)
+            {
+                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", maskSensitiveQueryParametersInURI(uri), request.getMethod());
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+                writeString(R"({"status":"error","errorType":"not_found","error":"API endpoint not found"})", getOutputStream(response));
+                return;
+            }
+
+            if (uri_path.ends_with("/format_query"))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format_query endpoint is not implemented");
+            if (uri_path.ends_with("/parse_query"))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
+
+            const auto time_series_table_id = getTimeSeriesTableID();
+            checkTimeSeriesTableSelectAccess(context, time_series_table_id);
+            auto table = DatabaseCatalog::instance().getTable(time_series_table_id, context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
             auto query_finish_callback = [&]()
@@ -484,23 +519,14 @@ public:
                 getOutputStream(response).finalize();
             };
 
-            /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
-            /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
-            /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
-            /// percent-encoded label name in ".../label/<name>/values" is read correctly.
-            const String uri_path = Poco::URI(uri).getPath();
-
             if (uri_path.ends_with("/query_range"))
             {
                 String query = params->get("query", "");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 String step = params->get("step", "");
+                UInt64 limit = getLimitParam();
                 String lookback_delta = params->get("lookback_delta", "");
-
-                /// TODO: Support the following **optional** query parameters:
-                /// - timeout=<duration>: Evaluation timeout
-                /// - limit=<number>: Maximum number of returned series
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
@@ -511,6 +537,7 @@ public:
                     .end_param = end,
                     .step_param = step,
                     .lookback_delta_param = lookback_delta,
+                    .limit = limit,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
@@ -519,9 +546,8 @@ public:
             {
                 String query = params->get("query", "");
                 String time = params->get("time", "");
+                UInt64 limit = getLimitParam();
                 String lookback_delta = params->get("lookback_delta", "");
-
-                /// TODO: Support optional parameters same as for the range query.
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
@@ -532,17 +558,10 @@ public:
                     .end_param = "",
                     .step_param = "",
                     .lookback_delta_param = lookback_delta,
+                    .limit = limit,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
-            }
-            else if (uri_path.ends_with("/format_query"))
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format_query endpoint is not implemented");
-            }
-            else if (uri_path.ends_with("/parse_query"))
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
             }
             else if (uri_path.ends_with("/series"))
             {

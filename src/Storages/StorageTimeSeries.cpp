@@ -1,5 +1,7 @@
 #include <Storages/StorageTimeSeries.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/EnabledRowPolicies.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
@@ -41,6 +43,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -713,6 +716,32 @@ std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr 
 }
 
 
+void checkTimeSeriesTableSelectAccess(const ContextPtr & context, const StorageID & time_series_table_id)
+{
+    context->checkAccess(AccessType::SELECT, time_series_table_id);
+
+    auto check_row_policy = [&](const StorageID & table_id)
+    {
+        const auto row_policy_filter = context->getRowPolicyFilter(
+            table_id.getDatabaseName(),
+            table_id.getTableName(),
+            RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Cannot read TimeSeries targets because SELECT row policies are applied on table {}",
+                table_id.getNameForLogs());
+    };
+
+    check_row_policy(time_series_table_id);
+
+    const auto time_series_storage = storagePtrToTimeSeries(
+        DatabaseCatalog::instance().getTable(time_series_table_id, context));
+    for (const auto target_kind : time_series_storage->getTargetKinds())
+        check_row_policy(time_series_storage->getTargetTable(target_kind, context)->getStorageID());
+}
+
+
 void registerStorageTimeSeries(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory)
 {
@@ -1144,6 +1173,52 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. Requires `recent_samples_ttl_seconds` to be non-zero |
+
+## Prometheus-compatible HTTP API {#prometheus-http-api}
+
+A `TimeSeries` table can be exposed through a Prometheus-compatible HTTP API configured under the `prometheus` section of the server configuration. The `/api/v1/series` endpoint returns the matching series together with their full label set (the metric name as `__name__` plus all tags).
+
+The configured outer `TimeSeries` table is the access-control boundary for these HTTP endpoints and all `TimeSeries` table functions. Callers need `SELECT` on the outer table; `SELECT` on an inner target table alone is not sufficient. Existing configurations that grant access only to inner target tables must grant access to the outer `TimeSeries` table.
+
+`SELECT` row policies are not supported on the outer `TimeSeries` table or any of its target tables for these target-backed reads. Queries with an effective policy are rejected because the implementation reads target tables directly instead of applying the policy to the outer representation. Use table-level grants for access control.
+
+The `match[]` parameter is a Prometheus series selector: a bare metric name, for example `/api/v1/series?match[]=cpu_usage`, or a full instant selector with label matchers, for example `/api/v1/series?match[]=cpu_usage{host="server1"}` or `/api/v1/series?match[]={host=~"server.*"}`. The `=`, `!=`, `=~`, and `!~` matchers are supported, and regular expressions are anchored on both sides, as in Prometheus. A non-legacy label name can be written as a quoted string literal in a selector, for example `/api/v1/series?match[]={"http.status_code"="200"}`. The parameter can be repeated; the result is the union of the series matched by each selector.
+
+The `/api/v1/series` endpoint requires at least one non-empty `match[]` selector, so a request without a selector never runs an unbounded scan over the whole `tags` table. The optional `limit` parameter caps the number of returned series (`0` means no limit, which is also the default); a truncated response carries the Prometheus warning `results truncated due to limit`. The `/api/v1/query` and `/api/v1/query_range` endpoints accept the same parameter to cap vector and matrix results.
+
+The optional `start` and `end` parameters restrict the result to series whose time range (`min_time`/`max_time`) overlaps the requested interval when both `store_min_time_and_max_time` and `filter_by_min_time_and_max_time` are enabled. Prometheus allows `/api/v1/series` filtering to be approximate, so if either setting is disabled, or the `tags` target has no maintained bounds, the endpoint returns the matching series without applying the time filter instead of rejecting the request.
+
+The `/api/v1/label/<name>/values` endpoint returns the distinct values of a label. Use `__name__` to get metric names. Its optional `match[]`, `start`, `end`, and `limit` parameters use the same semantics as `/api/v1/series`. Non-legacy label names use Prometheus' escaped path form, for example `U__http_2e_status__code` for `http.status_code`.
+
+Tags configured via `tags_to_columns` are included whether their values are present in the dedicated columns, the `tags` Map, or both. The endpoint reads the [tags](#tags-table) target table and deduplicates by series identity.
+
+Configure a handler of type `query` for the endpoint:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule>
+            <url>/api/v1/series</url>
+            <handler>
+                <type>query</type>
+                <table>default.prometheus</table>
+            </handler>
+        </my_rule>
+        <my_label_values>
+            <url>regex:/api/v1/label/[^/]+/values</url>
+            <handler>
+                <type>query</type>
+                <table>default.prometheus</table>
+            </handler>
+        </my_label_values>
+    </handlers>
+</prometheus>
+```
+
+:::note
+Each `match[]` value must be an instant series selector. A range selector (for example `cpu_usage[5m]`) or any other PromQL expression is rejected, as are the empty selector `{}`, an explicitly empty `match[]` value (for example `?match[]=`), and a selector whose matchers all match the empty label value (for example `{host=~".*"}`). At least one matcher must narrow the set of series.
+:::
 
 # Functions {#functions}
 

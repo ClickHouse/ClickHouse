@@ -57,6 +57,12 @@ def send_test_data():
             ({"__name__": "foo", "shape": "circle", "size": "l"}, {110: 16, 130: 16, 150: 16}),
         ]
     )
+    send_to_clickhouse(
+        [
+            ({"__name__": "regex_metric", "host": "server1x"}, {110: 1}),
+            ({"__name__": "regex_metric", "host": "server2"}, {110: 2}),
+        ]
+    )
     # `stream_error` is used by the tests that expect the error only after results have
     # already been written.
     send_to_clickhouse(
@@ -103,6 +109,17 @@ def test_query_post_urlencoded():
     )
     post_data = extract_data_from_http_api_response(post_resp)
     assert get_data == post_data
+
+
+def test_query_regex_matchers_are_anchored():
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/query",
+        params={"query": 'regex_metric{host=~"server1|server2"}', "time": 110},
+    )
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert data["status"] == "success", f"Unexpected body: {data}"
+    assert [result["metric"]["host"] for result in data["data"]["result"]] == ["server2"]
 
 
 # `/api/v1/query_range` must accept params via a POST `application/x-www-form-urlencoded`
@@ -156,6 +173,229 @@ def test_range_query_accepts_positive_step_for_equal_start_and_end():
         1,
     )
     assert result == '{"resultType": "matrix", "result": [{"metric": {"__name__": "post_body_metric", "job": "test"}, "values": [[1000, "1"]]}]}'
+
+
+@pytest.mark.parametrize(
+    "path, params",
+    [
+        ("/api/v1/query", {"query": "post_body_metric", "time": "5m"}),
+        ("/api/v1/query", {"query": "post_body_metric", "time": "0x10"}),
+        ("/api/v1/query", {"query": "post_body_metric", "time": "1970-01-01"}),
+        (
+            "/api/v1/query_range",
+            {"query": "post_body_metric", "start": "5m", "end": "1002", "step": "1"},
+        ),
+        (
+            "/api/v1/query_range",
+            {"query": "post_body_metric", "start": "1000", "end": "1970-01-01 00:16:42", "step": "1"},
+        ),
+    ],
+)
+def test_query_endpoints_reject_non_prometheus_http_timestamps(path, params):
+    response = requests.get(f"http://{node.ip_address}:9093{path}", params=params)
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["errorType"] == "bad_data"
+
+
+@pytest.mark.parametrize(
+    "path, params",
+    [
+        ("/api/v1/query", {"query": "post_body_metric", "time": "1000.0009"}),
+        (
+            "/api/v1/query_range",
+            {"query": "post_body_metric", "start": "1000.0009", "end": "1000.0009", "step": "1"},
+        ),
+    ],
+)
+def test_query_endpoints_round_numeric_timestamps_to_milliseconds(path, params):
+    response = requests.get(f"http://{node.ip_address}:9093{path}", params=params)
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert data["status"] == "success"
+    result = data["data"]["result"][0]
+    if data["data"]["resultType"] == "vector":
+        assert result["value"][0] == 1000.001
+    else:
+        assert result["values"][0][0] == 1000.001
+
+
+@pytest.mark.parametrize(
+    "path, form_data",
+    [
+        ("/api/v1/query", {"query": "foo", "time": "110", "limit": "1"}),
+        ("/api/v1/query_range", {"query": "foo", "start": "110", "end": "130", "step": "10", "limit": "1"}),
+    ],
+)
+def test_query_limit_is_read_from_post_body(path, form_data):
+    response = requests.post(
+        f"http://{node.ip_address}:9093{path}",
+        data=form_data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert data["status"] == "success"
+    assert len(data["data"]["result"]) == 1
+    assert data["warnings"] == ["results truncated due to limit"]
+
+
+def test_query_limit_reports_truncation():
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/query",
+        params={"query": "foo", "time": 110, "limit": 1},
+    )
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["data"]["resultType"] == "vector"
+    assert len(data["data"]["result"]) == 1
+    assert data["warnings"] == ["results truncated due to limit"]
+
+
+def test_range_query_limit_reports_truncation():
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/query_range",
+        params={"query": "foo", "start": 110, "end": 130, "step": 10, "limit": 1},
+    )
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["data"]["resultType"] == "matrix"
+    assert len(data["data"]["result"]) == 1
+    assert data["warnings"] == ["results truncated due to limit"]
+
+
+@pytest.mark.parametrize("path, params", [
+    ("/api/v1/query", {"query": "foo", "time": 110}),
+    ("/api/v1/query_range", {"query": "foo", "start": 110, "end": 130, "step": 10}),
+])
+def test_query_zero_limit_is_unlimited(path, params):
+    response = requests.get(f"http://{node.ip_address}:9093{path}", params={**params, "limit": 0})
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert data["status"] == "success"
+    assert len(data["data"]["result"]) == 3
+    assert "warnings" not in data
+
+
+@pytest.mark.parametrize("path, params", [
+    ("/api/v1/query", {"query": "foo", "time": 110, "limit": 3}),
+    ("/api/v1/query_range", {"query": "foo", "start": 110, "end": 130, "step": 10, "limit": 3}),
+])
+def test_query_exact_limit_is_not_reported_as_truncated(path, params):
+    response = requests.get(f"http://{node.ip_address}:9093{path}", params=params)
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert data["status"] == "success"
+    assert len(data["data"]["result"]) == 3
+    assert "warnings" not in data
+
+
+@pytest.mark.parametrize(
+    "path, params",
+    [
+        ("/api/v1/query", {"query": "foo", "time": 110}),
+        ("/api/v1/query_range", {"query": "foo", "start": 110, "end": 130, "step": 10}),
+    ],
+)
+def test_query_limit_is_enforced_across_multiple_blocks(path, params):
+    limited_response = requests.get(
+        f"http://{node.ip_address}:9093{path}",
+        params={**params, "limit": 2, "max_block_size": 1},
+    )
+    assert limited_response.status_code == 200, f"Expected 200, got {limited_response.status_code}: {limited_response.text}"
+    limited_data = limited_response.json()
+    assert limited_data["status"] == "success"
+    assert len(limited_data["data"]["result"]) == 2
+    assert limited_data["warnings"] == ["results truncated due to limit"]
+
+    exact_response = requests.get(
+        f"http://{node.ip_address}:9093{path}",
+        params={**params, "limit": 3, "max_block_size": 1},
+    )
+    assert exact_response.status_code == 200, f"Expected 200, got {exact_response.status_code}: {exact_response.text}"
+    exact_data = exact_response.json()
+    assert exact_data["status"] == "success"
+    assert len(exact_data["data"]["result"]) == 3
+    assert "warnings" not in exact_data
+
+
+@pytest.mark.parametrize(
+    "path, params",
+    [
+        ("/api/v1/query", {"query": "foo", "time": 110}),
+        ("/api/v1/query_range", {"query": "foo", "start": 110, "end": 130, "step": 10}),
+    ],
+)
+def test_query_endpoints_accept_signed_int64_max_limit(path, params):
+    response = requests.get(
+        f"http://{node.ip_address}:9093{path}",
+        params={**params, "limit": "9223372036854775807"},
+    )
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert data["status"] == "success"
+    assert len(data["data"]["result"]) == 3
+    assert "warnings" not in data
+
+
+@pytest.mark.parametrize(
+    "query, result_type",
+    [("1", "scalar"), ('"hello"', "string")],
+)
+def test_query_limit_does_not_truncate_scalar_or_string_results(query, result_type):
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/query",
+        params={"query": query, "time": 110, "limit": 1},
+    )
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["data"]["resultType"] == result_type
+    assert "warnings" not in data
+
+
+@pytest.mark.parametrize(
+    "limit",
+    [
+        "-1",
+        "not-a-number",
+        "9223372036854775808",
+        "18446744073709551615",
+        "18446744073709551616",
+    ],
+)
+@pytest.mark.parametrize(
+    "path, base_params",
+    [
+        ("/api/v1/query", {"query": "foo", "time": 110}),
+        ("/api/v1/query_range", {"query": "foo", "start": 110, "end": 130, "step": 10}),
+    ],
+)
+def test_query_endpoints_reject_invalid_limit(path, base_params, limit):
+    response = requests.get(f"http://{node.ip_address}:9093{path}", params={**base_params, "limit": limit})
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["errorType"] == "bad_data"
+
+
+@pytest.mark.parametrize(
+    "path, params",
+    [
+        ("/api/v1/query", {"query": "foo", "time": 110, "limit": ""}),
+        (
+            "/api/v1/query_range",
+            {"query": "foo", "start": 110, "end": 130, "step": 10, "limit": ""},
+        ),
+    ],
+)
+def test_empty_query_limit_is_ignored(path, params):
+    response = requests.get(f"http://{node.ip_address}:9093{path}", params=params)
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    assert response.json()["status"] == "success"
 
 
 def test_query_lookback_delta():

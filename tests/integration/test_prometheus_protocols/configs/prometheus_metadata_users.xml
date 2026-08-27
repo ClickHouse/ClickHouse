@@ -1,0 +1,60 @@
+<clickhouse>
+    <users>
+        <metadata_temp_table_only>
+            <password></password>
+            <profile>metadata_temp_table_only</profile>
+            <grants>
+                <query>GRANT CREATE TEMPORARY TABLE ON *.*</query>
+            </grants>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+        </metadata_temp_table_only>
+        <metadata_select_time_series>
+            <password></password>
+            <profile>metadata_select_time_series</profile>
+            <grants>
+                <query>GRANT SELECT ON default.prometheus</query>
+            </grants>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+        </metadata_select_time_series>
+        <metadata_select_temp_table_only>
+            <password></password>
+            <profile>metadata_select_temp_table_only</profile>
+            <grants>
+                <query>GRANT SELECT ON default.prometheus</query>
+                <query2>GRANT CREATE TEMPORARY TABLE ON *.*</query2>
+            </grants>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+        </metadata_select_temp_table_only>
+        <metadata_insert_temp_table_only>
+            <password></password>
+            <profile>metadata_insert_temp_table_only</profile>
+            <grants>
+                <query>GRANT INSERT ON default.prometheus</query>
+                <query2>GRANT CREATE TEMPORARY TABLE ON *.*</query2>
+            </grants>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+        </metadata_insert_temp_table_only>
+    </users>
+    <profiles>
+        <metadata_temp_table_only>
+            <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        </metadata_temp_table_only>
+        <metadata_select_time_series>
+            <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        </metadata_select_time_series>
+        <metadata_select_temp_table_only>
+            <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        </metadata_select_temp_table_only>
+        <metadata_insert_temp_table_only>
+            <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        </metadata_insert_temp_table_only>
+    </profiles>
+</clickhouse>

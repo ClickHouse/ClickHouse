@@ -113,7 +113,23 @@
                 </handler>
             </my_rule_11>
 
-            <!-- Table without min_time/max_time columns: /api/v1/series must ignore the time range for it. -->
+            <!-- Prefix used by access-control and unknown-route regression tests. -->
+            <my_rule_16>
+                <url_prefix>/combined</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>default.prometheus</table>
+                </handler>
+            </my_rule_16>
+
+            <!-- Tables used to verify the Prometheus-compatible ranged-series fallback. -->
+            <my_rule_17>
+                <url_prefix>/no_filter</url_prefix>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus_no_filter</table>
+                </handler>
+            </my_rule_17>
             <my_rule_12>
                 <url_prefix>/no_bounds</url_prefix>
                 <handler>
@@ -121,6 +137,31 @@
                     <table>default.prometheus_no_bounds</table>
                 </handler>
             </my_rule_12>
+
+            <!-- Table used to verify that metadata time bounds do not wrap for UInt32 timestamps. -->
+            <my_rule_18>
+                <url_prefix>/uint32</url_prefix>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus_uint32</table>
+                </handler>
+            </my_rule_18>
+
+            <!-- Table used to verify that metadata time bounds are clipped for DateTime64(9). -->
+            <my_rule_19>
+                <url_prefix>/datetime64_9</url_prefix>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus_datetime64_9</table>
+                </handler>
+            </my_rule_19>
+            <my_rule_20>
+                <url_prefix>/datetime64_3_future</url_prefix>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus_datetime64_3_future</table>
+                </handler>
+            </my_rule_20>
         </handlers>
     </prometheus>
 </clickhouse>
