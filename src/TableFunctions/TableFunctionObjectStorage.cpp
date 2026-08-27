@@ -241,12 +241,9 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     else if (!cached_columns.empty())
         columns = cached_columns;
 
-    /// `getActualTableStructure` returns the explicit structure, so DESC reports it. Formats whose
-    /// schema reload is not a user opt-in would then overwrite it in the storage, making DESC and
-    /// SELECT disagree on the same expression. Writes keep using the authoritative lake schema.
-    /// A column default is materialized from the missing-value bitmask of one reader, so it exists
-    /// only adjacent to that reader, while a lake resolves its sorting key and its row-level deletes
-    /// from its own metadata against whatever values reach them.
+    /// Only a format whose schema reload is not a user opt-in overwrites the explicit structure in the
+    /// storage, and a write is authoritative from the lake schema. A declared default is excluded: it is
+    /// materialized from one reader's missing-value bitmask, so it exists only where that reader does.
     const bool preserve_structure_for_reads = configuration->structure != "auto" && !is_insert_query
         && configuration->schemaReloadIgnoresExplicitStructure() && !columns.hasDefaults();
     StoragePtr storage;
