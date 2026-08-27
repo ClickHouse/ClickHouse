@@ -109,6 +109,7 @@ public:
     void approveIncrease() override
     {
         chassert(increase);
+        increase->approval_epoch = ++approval_epoch;
         apply(*increase);
         increase = nullptr;
         child->approveIncrease();
@@ -162,6 +163,7 @@ private:
     }
 
     SpaceSharedNodePtr child;
+    UInt64 approval_epoch = 0;
 
     std::atomic<bool> stop_flag = false;
     EventQueue events;
