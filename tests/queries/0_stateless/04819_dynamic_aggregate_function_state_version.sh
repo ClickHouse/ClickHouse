@@ -58,28 +58,49 @@ roundtrip()
 
 blob="${CLICKHOUSE_TMP}/04819_dynamic.native"
 
+# Produces a Native blob over HTTP. The producing SELECT can fail transiently for reasons unrelated
+# to what this test checks (e.g. under the ParallelReplicas CI configuration a teardown race between
+# the coordinator and a replica occasionally kills it with `ATTEMPT_TO_READ_AFTER_EOF`/`UNKNOWN_CODEC`),
+# and the exception text then lands in the blob — HTTP streaming may have already sent a 200 — poisoning
+# the next `INSERT` with a confusing `INCORRECT_DATA`. Validate the fetched blob and retry a few times,
+# so only the checked round trips can fail the test.
+fetch_native_blob()
+{
+    local url="$1"
+    for _ in 1 2 3 4 5; do
+        if $CLICKHOUSE_CURL -sS "$url" --data-binary "$query" > "$blob" 2>/dev/null \
+            && [ -s "$blob" ] \
+            && ! LC_ALL=C grep -aq 'DB::Exception' "$blob"; then
+            return 0
+        fi
+        sleep 1
+    done
+    echo "FAIL: could not fetch a valid Native blob from the server"
+    return 1
+}
+
 # The nested state does not follow the negotiated revision: a peer that predates the state version,
 # no negotiated revision at all, and a current peer are all told the same explicitly versioned
 # nested type.
-$CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&client_protocol_version=54337" --data-binary "$query" > "$blob"
+fetch_native_blob "${CLICKHOUSE_URL}&client_protocol_version=54337"
 echo "old peer: $(announced_version "$blob")"
-$CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&client_protocol_version=54491" --data-binary "$query" > "$blob"
+fetch_native_blob "${CLICKHOUSE_URL}&client_protocol_version=54491"
 echo "current peer: $(announced_version "$blob")"
 
 # A versioned announcement carries a version 1 payload.
-$CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}" --data-binary "$query" > "$blob"
+fetch_native_blob "${CLICKHOUSE_URL}"
 echo "no revision: $(announced_version "$blob"), round trip $(roundtrip < "$blob")"
 
 # The binary type encoding carries the version in its explicit version field, so the payload stays
 # version 1 there too. The INSERT goes over HTTP: the TCP client parses Native input itself and
 # does not handle binary-encoded types in it.
-$CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&output_format_native_encode_types_in_binary_format=1" --data-binary "$query" > "$blob"
+fetch_native_blob "${CLICKHOUSE_URL}&output_format_native_encode_types_in_binary_format=1"
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE dynamic_qd_rt"
 $CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&input_format_native_decode_types_in_binary_format=1&query=INSERT%20INTO%20dynamic_qd_rt%20FORMAT%20Native" --data-binary @"$blob"
 echo "binary encoding: round trip $($CLICKHOUSE_CLIENT -q "SELECT medianDeterministicMerge(d.\`AggregateFunction(1, quantileDeterministic, UInt64, UInt64)\`) FROM dynamic_qd_rt")"
 
 # The flattened Dynamic serialization announces its types through the same type list.
-$CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&output_format_native_use_flattened_dynamic_and_json_serialization=1" --data-binary "$query" > "$blob"
+fetch_native_blob "${CLICKHOUSE_URL}&output_format_native_use_flattened_dynamic_and_json_serialization=1"
 echo "flattened: $(announced_version "$blob"), round trip $(roundtrip < "$blob")"
 
 rm -f "$blob"
