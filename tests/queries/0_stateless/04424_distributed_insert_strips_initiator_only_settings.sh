@@ -16,13 +16,18 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS dst"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS dist"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst (x UInt64) ENGINE = MergeTree ORDER BY x"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE dist AS dst ENGINE = Distributed(test_cluster_two_shards_localhost, ${CLICKHOUSE_DATABASE}, dst, x)"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE dist AS dst ENGINE = Distributed(test_cluster_two_shards, ${CLICKHOUSE_DATABASE}, dst, x)"
 
 QUERY_ID="04424-${CLICKHOUSE_DATABASE}-$$"
 
 # `prefer_localhost_replica = 0` forces the remote-connection path (the one that strips settings
 # before sending); `distributed_foreground_insert = 1` makes the shard INSERTs run synchronously so
-# they are logged before we flush. `offset` (a construction setting) is passed as a session setting
+# they are logged before we flush. The cluster must have at most one local shard
+# (`test_cluster_two_shards`: 127.0.0.1 is local, 127.0.0.2 is deliberately non-local — see
+# `isLocalAddress`): when a server is local for two or more destination shards, `DistributedSink`
+# ignores `prefer_localhost_replica = 0` and writes them in-process so the sibling writes share the
+# per-query `insert_start_gates` (the `Too many parts` check), and no shard-side query would exist
+# to observe. `offset` (a construction setting) is passed as a session setting
 # via the command line — it cannot sit on the INSERT statement (rejected on a write query) — while the
 # `input_format` / `output_format` / `default_format` settings sit on the statement. (`compression` is
 # omitted: it is an HTTP-response-body setting that is rejected in an in-query SETTINGS clause, so it

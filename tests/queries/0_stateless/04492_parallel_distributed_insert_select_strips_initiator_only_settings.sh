@@ -31,15 +31,20 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS dist_dst"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE src (x UInt64) ENGINE = MergeTree ORDER BY x"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst (x UInt64) ENGINE = MergeTree ORDER BY x"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO src SELECT number FROM numbers(10)"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE dist_src AS src ENGINE = Distributed(test_cluster_two_shards_localhost, ${CLICKHOUSE_DATABASE}, src, x)"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE dist_dst AS dst ENGINE = Distributed(test_cluster_two_shards_localhost, ${CLICKHOUSE_DATABASE}, dst, x)"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE dist_src AS src ENGINE = Distributed(test_cluster_two_shards, ${CLICKHOUSE_DATABASE}, src, x)"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE dist_dst AS dst ENGINE = Distributed(test_cluster_two_shards, ${CLICKHOUSE_DATABASE}, dst, x)"
 
 mkdir -p "${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 DATA_FILE="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/data.csv"
 ${CLICKHOUSE_CLIENT} -q "SELECT number FROM numbers(10) FORMAT CSV" > "${DATA_FILE}"
 
-# Initiator-only settings to set on the INSERT. `prefer_localhost_replica = 0` forces every shard
-# (both localhost) through the remote-connection path that forwards the settings packet.
+# Initiator-only settings to set on the INSERT. `prefer_localhost_replica = 0` forces the shards
+# through the remote-connection path that forwards the settings packet. The cluster must have at
+# most one local shard (`test_cluster_two_shards`: 127.0.0.1 is local, 127.0.0.2 is deliberately
+# non-local — see `isLocalAddress`): when a server is local for two or more destination shards, the
+# write paths ignore `prefer_localhost_replica = 0` and run the local writes in-process so the
+# sibling writes share the per-query `insert_start_gates` (the `Too many parts` check), and no
+# shard-side query would exist to observe.
 # `implicit_table_at_top_level` is set to an existing table (`src`) so it would resolve even if it
 # were applied; it is a no-op here because the source SELECT already has a FROM, and we only assert it
 # does not reach the shards. (`offset` / `limit` and `compression` are omitted: the former are
@@ -73,7 +78,7 @@ QID_CLUSTER="04492-cluster-${CLICKHOUSE_DATABASE}-$$"
 ${CLICKHOUSE_CLIENT} --query_id="${QID_CLUSTER}" -q "
     INSERT INTO dist_dst
     SETTINGS ${LEAK_SETTINGS}
-    SELECT * FROM fileCluster('test_cluster_two_shards_localhost', '${CLICKHOUSE_TEST_UNIQUE_NAME}/data.csv', 'CSV', 'x UInt64')"
+    SELECT * FROM fileCluster('test_cluster_two_shards', '${CLICKHOUSE_TEST_UNIQUE_NAME}/data.csv', 'CSV', 'x UInt64')"
 
 # initiator-only setting reset to DEFAULT must not ride along in the forwarded query text.
 # A `name = DEFAULT` entry lives in `ASTSetQuery::default_settings` (a list separate from `changes`) and is
@@ -96,7 +101,7 @@ ${CLICKHOUSE_CLIENT} --query_id="${QID_DEFAULT}" -q "
 # file/data-lake `*Cluster` functions like `fileCluster` are the ones that go through ReadFromCluster.)
 QID_READ="04492-read-${CLICKHOUSE_DATABASE}-$$"
 ${CLICKHOUSE_CLIENT} --query_id="${QID_READ}" -q "
-    SELECT count() FROM fileCluster('test_cluster_two_shards_localhost', '${CLICKHOUSE_TEST_UNIQUE_NAME}/data.csv', 'CSV', 'x UInt64')
+    SELECT count() FROM fileCluster('test_cluster_two_shards', '${CLICKHOUSE_TEST_UNIQUE_NAME}/data.csv', 'CSV', 'x UInt64')
     SETTINGS prefer_localhost_replica = 0, log_queries = 1, http_allow_table_as_file = 1, input_format = 'TSV'" > /dev/null
 
 # an initiator-only setting on the source SELECT (not the INSERT) is stripped from the forwarded query text.
