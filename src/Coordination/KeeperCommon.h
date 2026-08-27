@@ -89,11 +89,10 @@ struct KeeperRequestBatch
     std::vector<KeeperRequestForSession> requests;
     /// Which server's Keeper[Request]Dispatcher produced this batch. That dispatcher owns the
     /// sessions of all requests in the batch. Only that server needs to produce responses to
-    /// these requests when committing this batch.
+    /// these requests when committing this batch. -1 if unknown (e.g. if parsed from log entry in old format).
     //TODO(keeper-batch2): assign it.
-    /// TODO: Use this to avoid producing useless responses on servers that don't own the
-    ///       corresponding client sessions. (Currently such responses are created and go all the
-    ///       way through responses_queue to be discarded at the last moment by responseThread().)
+    //TODO(keeper-batch3): Use this to avoid producing useless responses on servers that don't own the
+    ///       corresponding client sessions. Probably pass the flag all the way to processRequest so we don't waste time creating responses at all.
     int32_t dispatcher_server_id{-1};
     /// Lower bound on last committed log entry idx, as of the time this batch reached the leader.
     //TODO(keeper-batch2): assign (patch) it on leader.
@@ -112,6 +111,7 @@ struct KeeperRequestBatch
     int64_t log_idx{0};
 
     int64_t getZxid(size_t request_idx) const { return first_zxid == 0 ? 0 : first_zxid + static_cast<int64_t>(request_idx); }
+    int64_t getLastZxid() const { return getZxid(requests.size() - 1); }
 };
 using KeeperRequestBatchPtr = std::shared_ptr<KeeperRequestBatch>;
 

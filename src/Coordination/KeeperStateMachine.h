@@ -278,7 +278,7 @@ private:
 
     /// Cache of parsed batch log entries, keyed by (session_id, xid) of the batch's first request.
     /// Entries of closed sessions are erased on Close commit in case something strange happened.
-    //TODO(keeper-batch2) Replace this cache by plumbing the parsed batch through nuraft as an opaque pointer attached to the log entry, instead of re-parsing (and caching) the exact buffer we serialized microseconds earlier in the same process.
+    /// TODO: Replace this cache by plumbing the parsed batch through nuraft as an opaque pointer attached to the log entry, instead of re-parsing (and caching) the exact buffer we serialized microseconds earlier in the same process.
     std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestBatchPtr>> parsed_batch_cache;
     uint64_t min_request_size_to_cache{0};
     /// we only need to protect the access to the map itself

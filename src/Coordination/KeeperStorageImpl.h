@@ -26,17 +26,12 @@ public:
         int64_t session_id,
         std::optional<int64_t> new_last_zxid) override;
 
-    /// Preprocess one (transaction-creating) request of a batch. first_in_batch means this is
-    /// the first transaction-creating request of its batch, so a new UncommittedBatchInfo is
-    /// created; otherwise the last one is extended.
-    KeeperDigest preprocessOneRequest(
+    /// Returns false if the request was rejected and rolled back.
+    bool preprocessOneRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
         int64_t time,
-        int64_t new_last_zxid,
-        bool check_acl,
-        int64_t log_idx,
-        bool first_in_batch);
+        bool check_acl);
 
     /// Helper that uses getUncommittedNode, prepareRemoveNodeWithoutUpdatingParent, and
     /// prepareUpdateNodeStat to remove the given set of ephemeral nodes and update their parents'

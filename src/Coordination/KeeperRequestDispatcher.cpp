@@ -1018,7 +1018,6 @@ void KeeperRequestDispatcher::addErrorResponse(const KeeperRequestForSession & r
     onResponse(std::move(response_for_session));
 }
 
-//TODO(keeper-batch3) Works as-is while commit_callback stays per-request; if/when it becomes batch-level, match own batches cheaply by dispatcher_server_id + head-of-queue identity (subsumes the SessionID server_id/internal_id special case), and solve intermediate_reads timing which currently relies on per-request commit granularity (unresolved; see also KeeperStateMachine::commit).
 void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_for_session)
 {
     /// When Close commits, mark the session as dead so that

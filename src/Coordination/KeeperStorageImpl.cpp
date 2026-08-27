@@ -1653,69 +1653,135 @@ std::optional<KeeperDigest> KeeperStorageImpl<NS>::preprocessBatch(const KeeperR
     if (isFinalized())
         return std::nullopt;
 
-    /// Requests that don't create storage transactions.
-    const auto is_non_transactional = [](const KeeperRequestForSession & request_for_session)
-    {
-        const auto op_num = request_for_session.request->getOpNum();
-        return op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig;
-    };
+    if (!initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
-    /// On the leader preprocessBatch is called twice: in the PreAppendLogLeader callback
-    /// (before the entry is written to the changelog and before the log idx is known) and in
-    /// pre_commit. Detect the second call using the uncommitted batch list, to avoid
-    /// (incorrectly) running request logic a second time.
+    if (!staging.deltas.empty() || staging.zxid != -1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "State left over from previous transaction");
+
+    /// Backpressure: sleep if the nodes storage's background work fell behind. Done here rather
+    /// than inside the storage's prepare methods to make sure storage_mutex is not held: sleeping
+    /// under storage_mutex would stall the background work that the throttling is waiting for.
+    nodes.throttleWrite();
+
+    UncommittedBatchInfo * transaction = nullptr;
+    KeeperStagingTransaction batch_staging;
+    int64_t commit_zxid = 0; // (for cleanup, not related to the current batch preprocessing)
     {
-        int64_t first_transaction_zxid = 0;
-        int64_t last_transaction_zxid = 0;
-        for (size_t i = 0; i < batch.requests.size(); ++i)
+        std::lock_guard lock(transaction_mutex);
+
+        /// On the leader preprocessBatch is called twice: in the PreAppendLogLeader callback
+        /// (before the entry is written to the changelog and before the log idx is known) and in
+        /// pre_commit. Detect the second call and don't run the request logic a second time.
+        if (!uncommitted_batches.empty())
         {
-            if (!is_non_transactional(batch.requests[i]))
+            auto & last_batch = uncommitted_batches.back();
+            if (last_batch.first_zxid == batch.first_zxid && last_batch.last_zxid == batch.getLastZxid()
+                && checkDigest(batch.digest, last_batch.nodes_digest))
             {
-                if (first_transaction_zxid == 0)
-                    first_transaction_zxid = batch.getZxid(i);
-                last_transaction_zxid = batch.getZxid(i);
+                /// The batch was preprocessed in the PreAppendLogLeader callback, before the
+                /// log idx was known; stamp it now.
+                chassert(last_batch.log_idx == 0);
+                last_batch.log_idx = batch.log_idx;
+                return batch.digest;
             }
         }
-        if (last_transaction_zxid != 0
-            && tryMatchPreprocessedBatch(first_transaction_zxid, last_transaction_zxid, batch.digest, batch.log_idx))
-            return batch.digest;
+
+        int64_t last_zxid = getNextZXIDLocked() - 1;
+        auto current_digest = getNodesDigest(false, /*lock_transaction_mutex=*/false);
+
+        if (batch.first_zxid <= last_zxid && (!uncommitted_batches.empty() || last_zxid != old_snapshot_zxid))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug",
+                            batch.first_zxid, last_zxid);
+
+        batch_staging.digest = current_digest;
+        KeeperDigestVersion version = keeper_context->digestEnabled() ? KEEPER_CURRENT_DIGEST_VERSION : KeeperDigestVersion::NO_DIGEST;
+        chassert(batch_staging.digest.version == version);
+
+        transaction = &uncommitted_batches.emplace_back(UncommittedBatchInfo{
+            .first_zxid = batch.first_zxid, .last_zxid = batch.getLastZxid(), .nodes_digest = current_digest, .log_idx = batch.log_idx});
+        commit_zxid = zxid;
     }
 
-    KeeperDigest digest_after_preprocessing;
-    bool first_transactional_request = true;
-    for (size_t i = 0; i < batch.requests.size(); ++i)
+    auto preprocess_requests = [&]
     {
-        const auto & request_for_session = batch.requests[i];
-
-        if (is_non_transactional(request_for_session))
+        for (size_t i = 0; i < batch.requests.size(); ++i)
         {
-            digest_after_preprocessing = getNodesDigest(false, /*lock_transaction_mutex=*/true);
-            continue;
+            const auto & request_for_session = batch.requests[i];
+            const auto op_num = request_for_session.request->getOpNum();
+
+            if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
+                continue;
+
+            chassert(staging.deltas.empty());
+            staging.zxid = batch.getZxid(i);
+            staging.digest = batch_staging.digest;
+
+            bool ok = preprocessOneRequest(
+                request_for_session.request,
+                request_for_session.session_id,
+                request_for_session.time,
+                check_acl);
+
+            if (ok)
+            {
+                if (staging.digest.version != KeeperDigestVersion::NO_DIGEST)
+                    nodes.updateNodesDigest(staging.digest.value, staging.zxid);
+                batch_staging.digest = staging.digest;
+            }
+
+            batch_staging.deltas.splice(batch_staging.deltas.end(), std::move(staging.deltas));
+            staging.deltas.clear();
         }
+    };
 
-        digest_after_preprocessing = preprocessOneRequest(
-            request_for_session.request,
-            request_for_session.session_id,
-            request_for_session.time,
-            batch.getZxid(i),
-            check_acl,
-            batch.log_idx,
-            /*first_in_batch=*/first_transactional_request);
-        first_transactional_request = false;
+    preprocess_requests();
+
+#ifndef NDEBUG
+    /// In debug build, sometimes do a little consistency test: roll back the transaction,
+    /// prepare it again, and assert that the result is the same.
+    /// This shouldn't have any externally observable effects.
+    /// Good for finding bugs in rollback.
+    if (batch_staging.digest.version != KeeperDigestVersion::NO_DIGEST && thread_local_rng() % 4 == 0)
+    {
+        const UInt64 first_digest = batch_staging.digest.value;
+        const size_t first_delta_count = batch_staging.deltas.size();
+
+        uncommitted_state.rollback(std::move(batch_staging.deltas));
+        batch_staging.deltas.clear();
+        batch_staging.digest = transaction->nodes_digest;
+
+        preprocess_requests();
+
+        chassert(
+            first_digest == batch_staging.digest.value && first_delta_count == batch_staging.deltas.size(),
+            "Re-preprocessing after rollback produced a different result. Preprocessing is non-deterministic or rollback is incorrect.");
     }
+#endif
 
-    return digest_after_preprocessing;
+    uncommitted_state.addDeltas(std::move(batch_staging.deltas));
+
+    // It's ok to assign this without locking transaction_mutex, even though `transaction`
+    // is inside `uncommitted_batches`. Because it just so happens that no code path
+    // reads nodes_digest from uncommitted_batches without holding nuraft's main lock_,
+    // which we're also holding. (Except for commit callback, which reads
+    // `uncommitted_batches.front()`, but only after the batch is committed,
+    // which can't happen before we return from here.)
+    transaction->nodes_digest = batch_staging.digest;
+
+    uncommitted_state.cleanup(commit_zxid);
+    staging.zxid = -1;
+
+    return batch_staging.digest;
 }
 
 template <typename NS>
-KeeperDigest KeeperStorageImpl<NS>::preprocessOneRequest(
+bool KeeperStorageImpl<NS>::preprocessOneRequest(
     const Coordination::ZooKeeperRequestPtr & zk_request,
     int64_t session_id,
     int64_t time,
-    int64_t new_last_zxid,
-    bool check_acl,
-    int64_t log_idx,
-    bool first_in_batch)
+    bool check_acl)
 {
     Stopwatch watch;
     SCOPE_EXIT({
@@ -1734,110 +1800,6 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessOneRequest(
         }
 
         ProfileEvents::increment(ProfileEvents::KeeperPreprocessElapsedMicroseconds, elapsed_us);
-    });
-
-    if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
-
-    if (!staging.deltas.empty() || staging.zxid != -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "State left over from previous transaction");
-
-    UncommittedBatchInfo * transaction = nullptr;
-    {
-        std::lock_guard lock(transaction_mutex);
-        int64_t last_zxid = getNextZXIDLocked() - 1;
-        auto current_digest = getNodesDigest(false, /*lock_transaction_mutex=*/false);
-
-        if (uncommitted_batches.empty())
-        {
-            // if we have no uncommitted transactions it means the last zxid is possibly loaded from snapshot
-            if (last_zxid != old_snapshot_zxid && new_last_zxid <= last_zxid)
-                throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug",
-                                new_last_zxid, last_zxid);
-        }
-        else
-        {
-            if (new_last_zxid <= last_zxid)
-                throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug",
-                                new_last_zxid, last_zxid);
-        }
-
-        staging.zxid = new_last_zxid;
-        staging.digest = current_digest;
-        KeeperDigestVersion version = keeper_context->digestEnabled() ? KEEPER_CURRENT_DIGEST_VERSION : KeeperDigestVersion::NO_DIGEST;
-        chassert(staging.digest.version == version);
-
-        if (first_in_batch)
-        {
-            transaction = &uncommitted_batches.emplace_back(UncommittedBatchInfo{
-                .first_zxid = new_last_zxid, .last_zxid = new_last_zxid, .nodes_digest = current_digest, .log_idx = log_idx});
-        }
-        else
-        {
-            chassert(!uncommitted_batches.empty());
-            transaction = &uncommitted_batches.back();
-            chassert(transaction->log_idx == log_idx);
-            transaction->last_zxid = new_last_zxid;
-        }
-    }
-
-    /// Backpressure: sleep if the nodes storage's background work fell behind. Done here rather
-    /// than inside the storage's prepare methods to make sure no locks are held: sleeping under
-    /// storage_mutex would stall the background work that the throttling is waiting for.
-    nodes.throttleWrite();
-
-    bool request_finalized = false;
-    const auto finalize = [&](bool rolled_back)
-    {
-        if (request_finalized)
-            return;
-        uncommitted_state.addDeltas(std::move(staging.deltas));
-        staging.deltas.clear();
-
-        if (zk_request->getOpNum() == Coordination::OpNum::Create
-            || zk_request->getOpNum() == Coordination::OpNum::CreateContainer)
-        {
-            fiu_do_on(FailPoints::keeper_leader_sets_invalid_digest, staging.digest.value = 42);
-        }
-
-        if (!rolled_back && staging.digest.version != KeeperDigestVersion::NO_DIGEST)
-        {
-            nodes.updateNodesDigest(staging.digest.value, new_last_zxid);
-            // if the version of digest we got from the leader is the same as the one this instances has, we can simply copy the value
-            // and just check the digest on the commit
-            // a mistake can happen while applying the changes to the uncommitted_state so for now let's just recalculate the digest here also
-            //
-            // It's ok to assign this without locking transaction_mutex, even though `transaction`
-            // is inside `uncommitted_batches`. Because it just so happens that no code path
-            // reads nodes_digest from uncommitted_batches without holding nuraft's main lock_,
-            // which we're also holding. (Except for commit callback, which reads
-            // `uncommitted_batches.front()`, but only after the batch is committed,
-            // which can't happen before we return from here.)
-            transaction->nodes_digest = staging.digest;
-        }
-
-        uncommitted_state.cleanup(getZXID());
-        staging.zxid = -1;
-        request_finalized = true;
-    };
-
-    const int uncaught_exceptions_before = std::uncaught_exceptions();
-    SCOPE_EXIT({
-        /// The most common way to leave without finalizing is an exception thrown while preprocessing.
-        /// Don't abort in that case: let the exception propagate to `KeeperStateMachine::preprocess`,
-        /// whose handler logs the message and the stack trace before aborting. (We can't log it here:
-        /// `std::current_exception` is null while unwinding towards a handler that hasn't been entered
-        /// yet, so all we could print is the useless "Finalize not called" line, and aborting here
-        /// would destroy the only clue about what actually went wrong.)
-        if (!request_finalized && std::uncaught_exceptions() == uncaught_exceptions_before)
-        {
-            LOG_FATAL(getLogger("KeeperStorage"), "Finalize not called before returning");
-            std::abort();
-        }
     });
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
@@ -1861,8 +1823,7 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessOneRequest(
         staging.deltas.emplace_back(staging.zxid, CloseSessionDelta{session_id});
         uncommitted_state.closed_sessions_to_zxids[session_id].insert(staging.zxid);
 
-        finalize(/*rolled_back=*/ false);
-        return transaction->nodes_digest;
+        return true;
     }
 
     Coordination::Error error = Coordination::Error::ZOK;
@@ -1872,61 +1833,35 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessOneRequest(
     };
 
     callOnConcreteRequestType(*zk_request, preprocess_request);
+
+    if (zk_request->getOpNum() == Coordination::OpNum::Create
+        || zk_request->getOpNum() == Coordination::OpNum::CreateContainer)
+    {
+        fiu_do_on(FailPoints::keeper_leader_sets_invalid_digest, staging.digest.value = 42);
+    }
+
     if (error == Coordination::Error::ZOK)
+        return true;
+
+    /// Request failed, do rollback.
+
+    /// Hack: Multi request needs a FailedMultiDelta instead of ErrorDelta. We pass it from
+    /// `preprocess` to here through staging.deltas.
+    std::optional<Delta> custom_error_delta;
+    if (!staging.deltas.empty() && std::get_if<FailedMultiDelta>(&staging.deltas.back().operation))
     {
-#ifndef NDEBUG
-        /// In debug build, sometimes do a little consistency test: roll back the transaction,
-        /// prepare it again, and assert that the result is the same.
-        /// This shouldn't have any externally observable effects.
-        /// Good for finding bugs in rollback.
-        if (staging.digest.version != KeeperDigestVersion::NO_DIGEST && thread_local_rng() % 2 == 0)
-        {
-            nodes.updateNodesDigest(staging.digest.value, new_last_zxid);
-            const UInt64 first_digest = staging.digest.value;
-            const size_t first_delta_count = staging.deltas.size();
-
-            uncommitted_state.rollback(std::move(staging.deltas));
-            staging.deltas.clear();
-            staging.digest = transaction->nodes_digest;
-
-            callOnConcreteRequestType(*zk_request, preprocess_request);
-            chassert(error == Coordination::Error::ZOK, "Re-preprocessing after a spurious rollback unexpectedly failed");
-
-            UInt64 second_digest = staging.digest.value;
-            nodes.updateNodesDigest(second_digest, new_last_zxid);
-            chassert(
-                first_digest == second_digest && first_delta_count == staging.deltas.size(),
-                "Re-preprocessing after rollback produced a different result: preprocessing is non-deterministic or rollback is incomplete");
-        }
-#endif
-
-        finalize(/*rolled_back=*/ false);
+        custom_error_delta = std::move(staging.deltas.back());
+        staging.deltas.pop_back();
     }
+
+    uncommitted_state.rollback(std::move(staging.deltas));
+    staging.deltas.clear();
+    if (custom_error_delta.has_value())
+        staging.deltas.push_back(std::move(*custom_error_delta));
     else
-    {
-        /// Note: We currently only have the capability to roll back *all* deltas for a zxid.
-        /// Can't roll back an arbitrary suffix of deltas because there's no digest update logic
-        /// in delta rollback. We either calculate fully updated digest (through a combination of
-        /// prepareWriteCommon and updateNodesDigest) or revert to original digest.
+        staging.deltas.emplace_back(staging.zxid, error);
 
-        /// Hack: Multi request needs a FailedMultiDelta instead of ErrorDelta. We pass it from
-        /// `preprocess` to here through staging.deltas.
-        std::optional<Delta> custom_error_delta;
-        if (!staging.deltas.empty() && std::get_if<FailedMultiDelta>(&staging.deltas.back().operation))
-        {
-            custom_error_delta = std::move(staging.deltas.back());
-            staging.deltas.pop_back();
-        }
-
-        uncommitted_state.rollback(std::move(staging.deltas));
-        staging.deltas.clear();
-        if (custom_error_delta.has_value())
-            staging.deltas.push_back(std::move(*custom_error_delta));
-        else
-            staging.deltas.emplace_back(staging.zxid, error);
-        finalize(/*rolled_back=*/ true);
-    }
-    return transaction->nodes_digest;
+    return false;
 }
 
 template <typename NS>

@@ -902,7 +902,6 @@ KeeperResponseForSession KeeperStateMachine::processReconfiguration(
     return { session_id, std::move(response) };
 }
 
-//TODO(keeper-batch2) Process all requests of the batch under one storage-lock/process_and_responses_lock acquisition (splitting into runs where SessionID needs different handling), collect responses into one batched response_callback call, and keep per-request commit_callback for now.
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
     auto batch = parseRequestBatch(data, true);
@@ -1280,15 +1279,7 @@ void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 void KeeperStateMachine::rollbackRequestBatch(const KeeperRequestBatch & batch, bool allow_missing)
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    for (size_t i = batch.requests.size(); i > 0; --i)
-    {
-        const auto op_num = batch.requests[i - 1].request->getOpNum();
-        /// These don't create storage transactions, nothing to roll back.
-        if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
-            continue;
-
-        storage->rollbackRequest(batch.getZxid(i - 1), allow_missing);
-    }
+    storage->rollbackBatch(batch, allow_missing);
 }
 
 nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()

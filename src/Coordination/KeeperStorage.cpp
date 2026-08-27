@@ -592,24 +592,6 @@ uint64_t KeeperStorage::getLastUncommittedLogIdx() const
     return uncommitted_batches.empty() ? 0 : uncommitted_batches.back().log_idx;
 }
 
-bool KeeperStorage::tryMatchPreprocessedBatch(int64_t first_transaction_zxid, int64_t last_transaction_zxid, const KeeperDigest & digest, int64_t log_idx)
-{
-    std::lock_guard lock(transaction_mutex);
-    if (uncommitted_batches.empty())
-        return false;
-
-    auto & last_batch = uncommitted_batches.back();
-    if (last_batch.first_zxid != first_transaction_zxid || last_batch.last_zxid != last_transaction_zxid
-        || !checkDigest(digest, last_batch.nodes_digest))
-        return false;
-
-    /// The batch was preprocessed in the PreAppendLogLeader callback, before the log idx was
-    /// known; stamp it now.
-    chassert(last_batch.log_idx == 0);
-    last_batch.log_idx = log_idx;
-    return true;
-}
-
 KeeperDigest KeeperStorage::preprocessRequest(
     const Coordination::ZooKeeperRequestPtr & request,
     int64_t session_id,
@@ -819,35 +801,41 @@ bool KeeperStorage::isFinalized() const
     return finalized;
 }
 
-void KeeperStorage::rollbackRequest(int64_t rollback_zxid, bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS
+void KeeperStorage::rollbackBatch(const KeeperRequestBatch & batch, bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    if (allow_missing && (uncommitted_batches.empty() || uncommitted_batches.back().last_zxid < rollback_zxid))
+    if (allow_missing && (uncommitted_batches.empty() || uncommitted_batches.back().last_zxid < batch.first_zxid))
         return;
 
-    if (uncommitted_batches.empty() || rollback_zxid < uncommitted_batches.back().first_zxid
-        || rollback_zxid > uncommitted_batches.back().last_zxid)
+    if (uncommitted_batches.empty() || batch.first_zxid != uncommitted_batches.back().first_zxid
+        || batch.getLastZxid() != uncommitted_batches.back().last_zxid)
     {
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Trying to rollback invalid ZXID ({}). It should be in the last preprocessed batch.", rollback_zxid);
+            ErrorCodes::LOGICAL_ERROR, "Trying to rollback batch that doesn't match the last preprocessed batch (rollback zxid [{}, {}], preprocessed [{}, {}].", batch.first_zxid, batch.getLastZxid(), uncommitted_batches.back().first_zxid, uncommitted_batches.back().last_zxid);
     }
 
     // if an exception occurs during rollback, the best option is to terminate because we can end up in an inconsistent state
     // we block memory tracking so we can avoid terminating if we're rolling back because of memory limit
     LockMemoryExceptionInThread blocker{VariableContext::Global};
-    try
+
+    for (size_t i = batch.requests.size(); i > 0; --i)
     {
-        /// A batch's requests are rolled back one by one, in reverse order (see
-        /// KeeperStateMachine::rollbackRequestBatch); pop the batch when its first transaction
-        /// is rolled back.
-        if (rollback_zxid == uncommitted_batches.back().first_zxid)
-            uncommitted_batches.pop_back();
-        uncommitted_state.rollback(rollback_zxid);
+        const auto op_num = batch.requests[i - 1].request->getOpNum();
+        /// These don't create storage transactions, nothing to roll back.
+        if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
+            continue;
+
+        try
+        {
+            uncommitted_state.rollback(batch.getZxid(i - 1));
+        }
+        catch (...)
+        {
+            LOG_FATAL(getLogger("KeeperStorage"), "Failed to rollback log. Terminating to avoid inconsistencies");
+            std::terminate();
+        }
     }
-    catch (...)
-    {
-        LOG_FATAL(getLogger("KeeperStorage"), "Failed to rollback log. Terminating to avoid inconsistencies");
-        std::terminate();
-    }
+
+    uncommitted_batches.pop_back();
 }
 
 KeeperDigest KeeperStorage::getNodesDigest(bool committed, bool lock_transaction_mutex) const TSA_NO_THREAD_SAFETY_ANALYSIS
