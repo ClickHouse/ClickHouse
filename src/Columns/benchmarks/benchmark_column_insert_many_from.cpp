@@ -65,7 +65,7 @@ static void BM_insertManyFrom(benchmark::State & state)
     auto type = DataTypeFactory::instance().get(str_type);
     auto src = mockColumn(type, ROWS);
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         state.PauseTiming();
         auto dst = type->createColumn();

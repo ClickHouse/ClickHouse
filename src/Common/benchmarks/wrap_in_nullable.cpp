@@ -22,7 +22,7 @@ static void BM_WrapInNullable1(benchmark::State & state)
         = fillColumnWithRandomData(removeNullable(nullable_float64), limit, max_array_length, max_string_length, rng);
 
     DataTypePtr uint8_type = std::make_shared<DataTypeUInt8>();
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         state.PauseTiming();
         ColumnPtr null_map_column = fillColumnWithRandomData(uint8_type, limit, max_array_length, max_string_length, rng);
@@ -45,7 +45,7 @@ static void BM_WrapInNullable2(benchmark::State & state)
     ColumnPtr src_column = fillColumnWithRandomData(nullable_float64, limit, max_array_length, max_string_length, rng);
 
     DataTypePtr uint8_type = std::make_shared<DataTypeUInt8>();
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         state.PauseTiming();
         ColumnPtr null_map_column = fillColumnWithRandomData(uint8_type, limit, max_array_length, max_string_length, rng);

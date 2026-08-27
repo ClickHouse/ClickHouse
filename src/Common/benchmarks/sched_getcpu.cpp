@@ -96,7 +96,7 @@ void BM_sched_getcpu_vsyscall(benchmark::State & state)
         return;
     }
     unsigned cpu = 0;
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         fn(&cpu, nullptr, nullptr);
         benchmark::DoNotOptimize(cpu);
@@ -107,7 +107,7 @@ BENCHMARK(BM_sched_getcpu_vsyscall);
 void BM_sched_getcpu_syscall(benchmark::State & state)
 {
     unsigned cpu = 0;
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         syscall(SYS_getcpu, &cpu, nullptr, nullptr);
         benchmark::DoNotOptimize(cpu);

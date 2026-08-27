@@ -106,7 +106,7 @@ void BM_ComputeHashInto(benchmark::State & state, const std::vector<ColumnPtr> &
     const size_t ncols = cols.size();
     PaddedPODArray<UInt32> hash_buf(n);
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         bool initial = true;
         for (size_t k = 0; k < ncols; ++k)
@@ -141,7 +141,7 @@ void BM_HashAndFastrange_New(benchmark::State & state, const std::vector<ColumnP
     PaddedPODArray<UInt32> hash_buf(n);
     PaddedPODArray<UInt64> pids(n); // mapToRange writes a UInt64 selector
     const UInt32 p32 = static_cast<UInt32>(num_shards);
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         std::fill(hash_buf.begin(), hash_buf.end(), WEAK_HASH32_INITIAL_VALUE);
         for (size_t k = 0; k < ncols; ++k)

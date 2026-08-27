@@ -187,7 +187,7 @@ void run(benchmark::State & state, int64_t reader_period_us)
         });
     }
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         sync_start.arrive_and_wait();
         sync_end.arrive_and_wait();
@@ -337,7 +337,7 @@ void BM_ProfileEventsReadLatency(benchmark::State & state)
 
     LatencyHist hist;
     Stopwatch sw(CLOCK_MONOTONIC);
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         sw.restart();
         for (size_t i = 0; i < batch; ++i)
@@ -375,7 +375,7 @@ void BM_ProfileEventsReadAll(benchmark::State & state)
     ProfileEvents::Counters counters(per_cpu ? VariableContext::User : VariableContext::Thread, nullptr);
 
     const size_t end = ProfileEvents::end();
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         ProfileEvents::Count acc = 0;
         for (size_t e = 0; e < end; ++e)

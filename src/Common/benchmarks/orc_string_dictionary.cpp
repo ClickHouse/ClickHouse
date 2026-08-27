@@ -296,7 +296,7 @@ template <typename DictionaryImpl, size_t cardinality>
 static void BM_writeStringDictionary(benchmark::State & state)
 {
     auto strs = mockStrings<cardinality>();
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         auto dict = createAndWriteStringDictionary<DictionaryImpl>(strs);
         benchmark::DoNotOptimize(dict);
