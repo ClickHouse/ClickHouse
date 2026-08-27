@@ -3,6 +3,7 @@
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <Columns/ColumnMap.h>
 
+
 namespace DB
 {
 
@@ -28,21 +29,12 @@ private:
         V1 = 0,
     };
 
+public:
     SerializationMap(
         const SerializationPtr & key_serialization_,
         const SerializationPtr & value_serialization_,
         const SerializationPtr & nested_serialization_,
         MergeTreeMapSerializationVersion serialization_version_);
-
-public:
-    static UInt128 getHash(const SerializationPtr & nested_, MergeTreeMapSerializationVersion serialization_version_);
-    static SerializationPtr create(
-        const SerializationPtr & key_serialization_,
-        const SerializationPtr & value_serialization_,
-        const SerializationPtr & nested_serialization_,
-        MergeTreeMapSerializationVersion serialization_version_);
-
-    bool supportsPooling() const override { return nested_serialization->supportsPooling(); }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -61,7 +53,6 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -90,7 +81,8 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -108,6 +100,21 @@ private:
     friend SerializationMapSize;
     friend SerializationMapKeysOrValues;
     friend SerializationMapKeyValue;
+
+    /// Small shared state cached at the current substream path so that both
+    /// `SerializationMap` and `SerializationMapKeyValue` can coordinate.
+    /// `SerializationMap` sets `reading_full_map = true` during prefix deserialization;
+    /// `SerializationMapKeyValue` reads the flag to decide whether to keep the
+    /// intermediate nested column (needed for cache sharing) or discard it after extraction.
+    struct DeserializeBinaryBulkStateMapReadingInfo : public DeserializeBinaryBulkState
+    {
+        bool reading_full_map = false;
+
+        DeserializeBinaryBulkStatePtr clone() const override
+        {
+            return std::make_shared<DeserializeBinaryBulkStateMapReadingInfo>(*this);
+        }
+    };
 
     /// State read from the buckets info stream during deserialization prefix.
     /// Contains the bucket count and optional statistics that were written
@@ -131,6 +138,7 @@ private:
     };
 
     static DeserializeBinaryBulkStatePtr deserializeBucketsInfoStatePrefix(DeserializeBinaryBulkSettings & settings, SubstreamsDeserializeStatesCache * cache);
+    static DeserializeBinaryBulkStatePtr deserializeMapReadingInfoStatePrefix(SubstreamsDeserializeStatesCache * cache, const ISerialization::SubstreamPath & path);
 
     template <typename KeyWriter, typename ValueWriter>
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, KeyWriter && key_writer, ValueWriter && value_writer) const;
@@ -141,10 +149,10 @@ private:
     template <typename ReturnType>
     ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 
-    VectorWithMemoryTracking<ColumnPtr> splitMapToBuckets(const IColumn & map_column, size_t start, size_t end, size_t buckets, IColumn & bucket_index_column) const;
-    void collectMapFromBuckets(const VectorWithMemoryTracking<ColumnPtr> & map_buckets, IColumn & map_column) const;
+    Columns splitMapToBuckets(const IColumn & map_column, size_t start, size_t end, size_t buckets, IColumn & bucket_index_column) const;
+    void collectMapFromBuckets(const Columns & map_buckets, IColumn & map_column) const;
     void collectMapFromBucketsWithOrder(
-        const VectorWithMemoryTracking<ColumnPtr> & map_buckets,
+        const Columns & map_buckets,
         const IColumn & bucket_index_column,
         IColumn & map_column) const;
 };

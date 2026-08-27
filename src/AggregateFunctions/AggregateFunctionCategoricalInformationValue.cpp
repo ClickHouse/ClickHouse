@@ -89,9 +89,6 @@ public:
         const auto * y_col = static_cast<const ColumnUInt8 *>(columns[category_count]);
         bool y = y_col->getData()[row_num];
 
-        /// Limit unrolling: x86-64-v3 defaults to unroll-by-4 which hurts when `category_count` is small (the unrolled body
-        /// is skipped, paying extra setup cost per row). Unroll-by-2 matches the v2 codegen.
-#pragma clang loop unroll_count(2)
         for (size_t i = 0; i < category_count; ++i)
         {
             const auto * x_col = static_cast<const ColumnUInt8 *>(columns[i]);
@@ -104,7 +101,7 @@ public:
         ++counter(place, category_count, y);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         for (size_t i = 0; i <= category_count; ++i)
         {
@@ -180,7 +177,6 @@ AggregateFunctionPtr createAggregateFunctionCategoricalIV(
 
 }
 
-void registerAggregateFunctionCategoricalIV(AggregateFunctionFactory & factory);
 void registerAggregateFunctionCategoricalIV(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -209,32 +205,27 @@ The result indicates how much each discrete (categorical) feature `[category1, c
     {
         "Basic usage analyzing age groups vs mobile usage",
         R"(
-CREATE TABLE visits (is_young UInt8, is_female UInt8, is_mobile UInt8) ENGINE = Memory;
-
--- 80 of the 100 young visitors browse on a mobile device, and only 20 of the 100 older ones do,
--- while the sex of a visitor says nothing about the device.
-INSERT INTO visits SELECT 1, number % 2, number < 80 FROM numbers(100);
-INSERT INTO visits SELECT 0, number % 2, number < 20 FROM numbers(100);
-
-SELECT round(categoricalInformationValue(is_young, is_mobile)[1], 4) AS iv FROM visits;
+-- Using the metrica.hits dataset (available on https://sql.clickhouse.com/) to analyze age-mobile relationship
+SELECT categoricalInformationValue(Age < 15, IsMobile)
+FROM metrica.hits;
         )",
         R"(
-┌─────iv─┐
-│ 0.8318 │
-└────────┘
+[0.0014814694805292418]
         )"
     },
     {
         "Multiple categorical features with user demographics",
         R"(
--- The age of a visitor predicts the device, the sex of a visitor does not.
-SELECT arrayMap(x -> round(x, 4), categoricalInformationValue(is_young, is_female, is_mobile)) AS iv
-FROM visits;
+SELECT categoricalInformationValue(
+    Sex,                 -- 0=male, 1=female
+    toUInt8(Age < 25),   -- 0=25+, 1=under 25
+    toUInt8(IsMobile)    -- 0=desktop, 1=mobile
+) AS iv_values
+FROM metrica.hits
+WHERE Sex IN (0, 1);
         )",
         R"(
-┌─iv─────────┐
-│ [0.8318,0] │
-└────────────┘
+[0.00018965785460692887,0.004973668839403392]
         )"
     }
     };

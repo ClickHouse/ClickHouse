@@ -119,11 +119,6 @@ def test_reconfig_remove_2_and_leader(started_cluster):
 
     ku.wait_configs_equal(config, zk1)
 
-    zk2.stop()
-    zk2 = create_client(node2)
-    zk2.sync("/test_two_0")
-    ku.wait_configs_equal(config, zk2)
-
     for i in range(200):
         assert zk1.exists(f"test_two_{i}")
         assert zk2.exists(f"test_two_{i}")
@@ -156,7 +151,7 @@ def test_reconfig_remove_2_and_leader(started_cluster):
     # before continuing with the checks
     for i in range(100):
         if any(
-            "leader" in ku.send_4lw_cmd(cluster, node, "mntr")
+            "leader" in ku.send_4lw_cmd(cluster, node, f"mntr")
             for node in [node2, node3]
         ):
             break

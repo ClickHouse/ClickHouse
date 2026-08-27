@@ -1,6 +1,3 @@
--- Tags: no-parallel-replicas
--- no-parallel-replicas: block structure (blockNumber, byteSize) changes under parallel replicas.
-
 SET enable_lazy_columns_replication=0;
 
 DROP TABLE IF EXISTS t1;

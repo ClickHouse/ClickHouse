@@ -1,6 +1,7 @@
+from datetime import datetime
 import glob
+import json as json_module
 import os
-import platform
 import signal
 import subprocess
 import sys
@@ -12,9 +13,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import List
 
-from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.log_parser import FuzzerLogParser
-from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -40,7 +39,7 @@ CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
 class ClickHouseProc:
-    SEAWEEDFS_LOG = f"{temp_dir}/seaweedfs.log"
+    MINIO_LOG = f"{temp_dir}/minio.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
     KAFKA_LOG = f"{temp_dir}/kafka.log"
     LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_rows_to_read=0 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
@@ -51,48 +50,33 @@ class ClickHouseProc:
     WD2 = f"{temp_dir}/ft_wd2"
     CH_LOCAL_LOG = f"{temp_dir}/clickhouse-local.log"
     CH_LOCAL_ERR_LOG = f"{temp_dir}/clickhouse-local.err.log"
-    # Per-table wall-clock cap for dump_system_tables (seconds). One stuck dump
-    # must not exhaust the job's 9000s budget and get the whole job SIGKILLed.
-    DUMP_SYSTEM_TABLE_TIMEOUT = 600
-    # Total wall-clock cap for symbolizing the jemalloc profiles of a job (seconds),
-    # for the same reason.
-    JEMALLOC_SYMBOLIZATION_BUDGET = 1200
 
     def __init__(
         self,
         is_db_replicated=False,
         is_shared_catalog=False,
-        is_per_test_coverage=False,
         ch_config_dir="/etc/clickhouse-server",
         ch_var_lib_dir="/var/lib/clickhouse",
     ):
         self.is_db_replicated = is_db_replicated
         self.is_shared_catalog = is_shared_catalog
-        self.is_per_test_coverage = is_per_test_coverage
         self.ch_config_dir = ch_config_dir
         self.ch_var_lib_dir = ch_var_lib_dir
         self.run_path0 = f"{temp_dir}/run_r0"
         self.run_path1 = f"{temp_dir}/run_r1"
         self.run_path2 = f"{temp_dir}/run_r2"
-        # Directory the job runs `clickhouse-test` from, if it wants cores of
-        # crashed client processes collected. A client started by a `.sh` test
-        # inherits this directory unless the test changes directory itself, and a
-        # relative `kernel.core_pattern` (the one CI runners use) writes the core
-        # into the dumping process's cwd, so this is where a client core lands.
-        # Jobs differ - `functional_tests.py` runs from the repository root while
-        # `fast_test.py` prefixes `cd {temp_dir}` - so the job declares it instead
-        # of it being guessed here.
-        self.client_core_path = None
         self.log_dir = f"{temp_dir}/var/log/clickhouse-server"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.config_file = f"{self.ch_config_dir}/config.xml"
+        self.aes_key = f"{temp_dir}/aes.key"
+
         # NOTE: should be the same for all replicas (for database replicated), since some tests uses CREATE TABLE Engine=File(${USER_FILES_PATH})
         self.user_files_path = f"{self.run_path0}/user_files"
         self.test_output_file = f"{temp_dir}/test_result.txt"
         self.command = f"clickhouse-server --config-file {self.config_file} --pid-file {self.pid_file} -- --path {self.run_path0} --user_files_path {self.user_files_path} --top_level_domains_path {self.ch_config_dir}/top_level_domains --logger.stderr {self.log_dir}/stderr.log"
-        self.ch_config_dir_replica_1 = "/etc/clickhouse-server1"
+        self.ch_config_dir_replica_1 = f"/etc/clickhouse-server1"
         self.config_file_replica_1 = f"{self.ch_config_dir_replica_1}/config.xml"
-        self.ch_config_dir_replica_2 = "/etc/clickhouse-server2"
+        self.ch_config_dir_replica_2 = f"/etc/clickhouse-server2"
         self.config_file_replica_2 = f"{self.ch_config_dir_replica_2}/config.xml"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.pid_file_replica_1 = (
@@ -107,20 +91,16 @@ class ClickHouseProc:
         self.port = 9000
         self.port_1 = 19000
         self.port_2 = 29000
-        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --pid-file {self.pid_file_replica_1} -- --path {self.run_path1} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr1.log --logger.log {self.log_dir}/clickhouse-server1.log --logger.errorlog {self.log_dir}/clickhouse-server1.err.log --tcp_port {self.port_1} --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --distributed_query.streaming_exchange_port 19223 --macros.replica r2"
-        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --pid-file {self.pid_file_replica_2} -- --path {self.run_path2} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr2.log --logger.log {self.log_dir}/clickhouse-server2.log --logger.errorlog {self.log_dir}/clickhouse-server2.err.log --tcp_port {self.port_2} --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --distributed_query.streaming_exchange_port 29223 --macros.shard s2"
+        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --pid-file {self.pid_file_replica_1} -- --path {self.run_path1} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr1.log --logger.log {self.log_dir}/clickhouse-server1.log --logger.errorlog {self.log_dir}/clickhouse-server1.err.log --tcp_port {self.port_1} --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --macros.replica r2"
+        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --pid-file {self.pid_file_replica_2} -- --path {self.run_path2} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr2.log --logger.log {self.log_dir}/clickhouse-server2.log --logger.errorlog {self.log_dir}/clickhouse-server2.err.log --tcp_port {self.port_2} --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --macros.shard s2"
         self.proc = None
         self.proc_1 = None
         self.proc_2 = None
         self.pid = 0
-        int(Utils.cpu_count() / 2)
-        self.seaweedfs_proc = None
+        nproc = int(Utils.cpu_count() / 2)
+        self.minio_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
-        # The failing sub-command + its ClickHouse error tail from
-        # prepare_stateful_data(), so the re-prepare ERROR row carries the real
-        # reason instead of the generic "failed to re-prepare stateful data".
-        self.stateful_setup_error = None
         self.debug_artifacts = []
         self.extra_tests_results = []
         self.logs = []
@@ -160,79 +140,38 @@ class ClickHouseProc:
 </clickhouse>
 """)
 
-    def start_seaweedfs(self, test_type):
+    def start_minio(self, test_type):
         os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
         command = [
-            "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
+            "./ci/jobs/scripts/functional_tests/setup_minio.sh",
             test_type,
             "./tests",
         ]
-        with open(self.SEAWEEDFS_LOG, "w") as log_file:
-            self.seaweedfs_proc = subprocess.Popen(
+        with open(self.MINIO_LOG, "w") as log_file:
+            self.minio_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
-        print(
-            f"Started setup_seaweedfs.sh asynchronously with PID {self.seaweedfs_proc.pid}"
-        )
+        print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
 
-        # Wait for setup_seaweedfs.sh to fully exit, not just for the bucket to
-        # be listable: the server's S3 disks authenticate at startup and need
-        # the whole identity/bucket setup in place. The seaweedfs server is
-        # nohup'd and outlives the script, so waiting on the script is safe.
-        # Its internal waits are bounded (60s each), so pad the timeout.
-        try:
-            returncode = self.seaweedfs_proc.wait(timeout=240)
-        except subprocess.TimeoutExpired:
-            print(
-                "Failed to start seaweedfs: setup_seaweedfs.sh did not finish in time"
-            )
-            self.seaweedfs_proc.kill()
-            return False
-        if returncode != 0:
-            print(f"setup_seaweedfs.sh exited with code {returncode}")
-            return False
-
-        # pass the credentials explicitly: the setup script no longer writes
-        # ~/.aws, and without them the aws cli would sign with the runner's
-        # instance-role credentials, which SeaweedFS does not know
-        access_key = os.environ.get("SEAWEEDFS_ACCESS_KEY", "clickhouse")
-        secret_key = os.environ.get("SEAWEEDFS_SECRET_KEY", "clickhouse")
-        if not Shell.check(
-            f"AWS_ACCESS_KEY_ID={access_key} AWS_SECRET_ACCESS_KEY={secret_key} "
-            "AWS_DEFAULT_REGION=us-east-1 "
-            "aws --endpoint-url http://localhost:11111 s3 ls s3://test",
+        if Shell.check(
+            "/mc ls clickminio/test | grep -q .",
             verbose=False,
-            retries=3,
+            retries=6,
         ):
-            print("Failed to start seaweedfs: bucket test not reachable")
-            return False
-        return True
+            return True
+        print("Failed to start minio")
+        return False
 
     def start_azurite(self):
-        # Raise the open files limit before launching azurite-rs.
-        # Each concurrent test query opens a TCP connection plus an in-memory
-        # blob handle, and the default soft limit (1024) was exhausted under
-        # parallel load, causing `accept error: Too many open files`.
-        # Fall back to the hard limit if 1048576 cannot be set.
         command = (
-            f"cd {temp_dir} && "
-            "(ulimit -n 1048576 2>/dev/null || ulimit -n $(ulimit -Hn)) && "
-            "azurite-rs --host 0.0.0.0 --blob-port 10000 --silent --in-memory"
+            f"cd {temp_dir} && azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence",
         )
         with open(self.AZURITE_LOG, "w") as log_file:
             self.azurite_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT, shell=True
             )
-        print(f"Started azurite-rs asynchronously with PID {self.azurite_proc.pid}")
-
-        if Shell.check(
-            "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:10000/ | grep -qE '400|200'",
-            verbose=False,
-            retries=6,
-        ):
-            return True
-        print("Failed to start azurite-rs")
-        return False
+        print(f"Started azurite asynchronously with PID {self.azurite_proc.pid}")
+        return True
 
     def start_kafka(self):
         command = [
@@ -244,22 +183,21 @@ class ClickHouseProc:
             )
         print(f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}")
 
-        # setup_kafka.sh exits 0 only after broker AND schema registry are ready,
-        # so wait on the script itself. Its own timeout is 60s; pad here.
-        try:
-            returncode = self.kafka_proc.wait(timeout=90)
-        except subprocess.TimeoutExpired:
-            print("Failed to start Kafka: setup_kafka.sh did not finish in time")
-            return False
-        if returncode != 0:
-            print(f"setup_kafka.sh exited with code {returncode}")
-            return False
-        return True
+        for _ in range(60):
+            res = Shell.check(
+                "rpk topic list --brokers 127.0.0.1:9092",
+                verbose=True,
+            )
+            if res:
+                return True
+            time.sleep(1)
+        print("Failed to start Kafka")
+        return False
 
     @staticmethod
     def log_cluster_config():
         return Shell.check(
-            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster ./tmp_ci/etc/clickhouse-server/config.d/system_logs_export.yaml",
+            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster ./tmp_ci/etc/clickhouse-server/config.d/system_logs_export.yaml",
             verbose=True,
         )
 
@@ -272,40 +210,32 @@ class ClickHouseProc:
 
         os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "1"
         os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "1"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = "1"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = (
+            "1"
+        )
         os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = "1"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = "0.001"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = (
+            "0.001"
+        )
         os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.001"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = "0.001"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = "0.001"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = (
+            "0.001"
+        )
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = (
+            "0.001"
+        )
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = (
+            "10000"
+        )
         os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
-
-    @staticmethod
-    def memory_ratio_config_files():
-        """All installed server config trees the ratio override must cover.
-        `DBReplicated` mode installs copies of the main tree under
-        `/etc/clickhouse-server1` and `/etc/clickhouse-server2` and starts a
-        server from each (tests/config/install.sh), and that copy happens
-        before `set_memory_ratio` runs, so writing only the main tree would
-        leave the two extra servers at the default 0.9 ratio - keeping the
-        host-OOM / `Server died` failure mode reachable there. The replica
-        trees exist (with a populated `config.d`) only in `DBReplicated`
-        runs, so probing for them selects exactly the installed trees."""
-        config_dirs = [Path("/etc/clickhouse-server/config.d")]
-        config_dirs += [
-            p
-            for p in (
-                Path("/etc/clickhouse-server1/config.d"),
-                Path("/etc/clickhouse-server2/config.d"),
-            )
-            if p.is_dir()
-        ]
-        return [d / "max_server_memory_usage_to_ram_ratio.xml" for d in config_dirs]
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = (
+            "10000"
+        )
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = (
+            "10000"
+        )
 
     @staticmethod
     def set_memory_ratio(ratio):
@@ -313,35 +243,145 @@ class ClickHouseProc:
     <max_server_memory_usage_to_ram_ratio>{ratio}</max_server_memory_usage_to_ram_ratio>
 </clickhouse>
 """
-        for file_path in ClickHouseProc.memory_ratio_config_files():
-            with open(file_path, "w") as f:
-                f.write(config)
-            print(
-                f"Set max_server_memory_usage_to_ram_ratio to {ratio} in {file_path}"
-            )
+        file_path = "/etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml"
+        with open(file_path, "w") as f:
+            f.write(config)
+        print(
+            f"Set max_server_memory_usage_to_ram_ratio to {ratio} in {file_path}"
+        )
 
-    @staticmethod
-    def reset_memory_ratio():
-        """Remove the override written by `set_memory_ratio` so the server
-        default applies again. Needed when the same installed config tree is
-        reused to launch a non-sanitizer binary (the bugfix-validation loop
-        swaps binaries without reinstalling configs). No-op if absent."""
-        for file_path in ClickHouseProc.memory_ratio_config_files():
-            Path(file_path).unlink(missing_ok=True)
-            print(
-                f"Removed {file_path}; server default max_server_memory_usage_to_ram_ratio applies"
-            )
+    def _install_light(self):
+        """
+        Installs ClickHouse config into ci temporary directory, this way of installation does not require mounting /etc|var/clickhouse-server into docker container.
+        To be used only with start_light(). This method is suitable for jobs that do not require complex configuration, such as clickbench.
+        Jobs like functional tests are hard/not-reasonable to adapt to use this way of installation, thus they have to mount config and other directories into default directories.
+        """
+        Utils.add_to_PATH(temp_dir)
+        commands = [
+            f"mkdir -p {temp_dir}/users.d",
+            f"cp ./programs/server/config.xml ./programs/server/users.xml {temp_dir}",
+            # make it ipv4 only
+            f'sed -i "s|<!-- <listen_host>0.0.0.0</listen_host> -->|<listen_host>0.0.0.0</listen_host>|" {temp_dir}/config.xml',
+            f"cp -r --dereference ./programs/server/config.d {temp_dir}",
+            f"chmod +x {temp_dir}/clickhouse",
+            f"ln -sf {temp_dir}/clickhouse {temp_dir}/clickhouse-server",
+            f"ln -sf {temp_dir}/clickhouse {temp_dir}/clickhouse-client",
+        ]
+        res = True
+        for command in commands:
+            res = res and Shell.check(command, verbose=True)
+        if not res:
+            print("Failed to install ClickHouse config")
 
-    def create_log_export_config(self, config_dir=None):
+        return res
+
+    def start_light(self):
+        """
+        Start ClickHouse server with config installed with _install_config()
+        """
+        print(f"Starting ClickHouse server")
+        # check binary available and do decompression in the meantime
+        assert Shell.check("clickhouse --version", verbose=True)
+        self.pid_file = f"{temp_dir}/clickhouse-server.pid"
+        self.start_cmd = f"{temp_dir}/clickhouse-server --config-file={temp_dir}/config.xml --pid-file {self.pid_file}"
+        print("Command: ", self.start_cmd)
+        self.log_fd = open(f"{self.log_dir}/clickhouse-server.log", "w")
+        self.proc = subprocess.Popen(
+            self.start_cmd, stderr=subprocess.STDOUT, stdout=self.log_fd, shell=True
+        )
+        time.sleep(2)
+        retcode = self.proc.poll()
+        if retcode is not None:
+            stdout = self.proc.stdout.read().strip() if self.proc.stdout else ""
+            stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
+            Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
+            return False
+        print(f"ClickHouse server process started -> wait ready")
+        res = self.wait_ready()
+        if res:
+            print(f"ClickHouse server ready")
+        else:
+            print(f"ClickHouse server NOT ready")
+
+        self._flush_system_logs()
+        self.save_system_metadata_files_from_remote_database_disk()
+        return res
+
+    def install_clickbench_config(self):
+        res = self._install_light()
+        if not res:
+            return False
+
+        # tweak for clickbench
+        content = """
+profiles:
+    default:
+        allow_introspection_functions: 1
+"""
+        file_path = f"{temp_dir}/users.d/allow_introspection_functions.yaml"
+        with open(file_path, "w") as file:
+            file.write(content)
+        return True
+
+    def install_fuzzer_config(self):
+        res = self._install_light()
+        if not res:
+            return False
+        commands = [
+            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {temp_dir}/users.d",
+        ]
+
+        c1 = """
+<clickhouse>
+    <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
+</clickhouse>
+"""
+        c2 = """
+<clickhouse>
+    <core_dump>
+        <!-- 100GiB -->
+        <size_limit>107374182400</size_limit>
+    </core_dump>
+    <!-- NOTE: no need to configure core_path,
+    since clickhouse is not started as daemon (via clickhouse start)
+    -->
+    <core_path>$PWD</core_path>
+</clickhouse>
+"""
+        file_path = f"{temp_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
+        with open(file_path, "w") as file:
+            file.write(c1)
+
+        file_path = f"{temp_dir}/config.d/core.xml"
+        with open(file_path, "w") as file:
+            file.write(c2)
+        res = True
+        for command in commands:
+            res = res and Shell.check(command, verbose=True)
+        return res
+
+    def install_vector_search_config(self):
+        # Large values are set, ClickHouse will auto downsize
+        c1 = """
+<max_server_memory_usage_to_ram_ratio>0.95</max_server_memory_usage_to_ram_ratio>
+<cache_size_to_ram_max_ratio>0.95</cache_size_to_ram_max_ratio>
+<vector_similarity_index_cache_size>214748364800</vector_similarity_index_cache_size>
+<max_build_vector_similarity_index_thread_pool_size>48</max_build_vector_similarity_index_thread_pool_size>
+<vector_similarity_index_cache_size_ratio>0.99</vector_similarity_index_cache_size_ratio>
+</clickhouse>
+        """
+        commands = [f'sed -i "s|</clickhouse>||g" {temp_dir}/config.xml']
+        res = True
+        for command in commands:
+            res = res and Shell.check(command, verbose=True)
+
+        with open(f"{temp_dir}/config.xml", "a") as config_file:
+            config_file.write(c1)
+        return res
+
+    def create_log_export_config(self):
         print("Create log export config")
-        # Write into the config dir the server actually reads. Callers that run
-        # the server from a non-default location (e.g. `ClickHouseService` under
-        # `ci/tmp/etc/clickhouse-server`) must pass it explicitly, otherwise the
-        # `system_logs_export` cluster lands in the default `ch_config_dir` and
-        # the server starts without it, failing replication setup with `Code:
-        # 701. Requested cluster 'system_logs_export' not found`.
-        config_dir = config_dir or self.ch_config_dir
-        config_file = Path(config_dir) / "config.d" / "system_logs_export.yaml"
+        config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"
         config_file.parent.mkdir(parents=True, exist_ok=True)
 
         self.log_export_host, self.log_export_password = (
@@ -390,14 +430,8 @@ class ClickHouseProc:
 
     @staticmethod
     def stop_log_exports():
-        # Flush any buffered system-log records so the final queries are
-        # exported before the replication views are detached.
-        Shell.check(
-            'clickhouse-client --query "SYSTEM FLUSH LOGS"',
-            verbose=True,
-        )
         return Shell.check(
-            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
+            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
             verbose=True,
         )
 
@@ -405,7 +439,6 @@ class ClickHouseProc:
         if replica_num == 0:
             # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host
             Shell.check("dmesg --clear", verbose=True)
-            kill_leftover_server_processes()
 
         if replica_num == 1:
             pid_file = self.pid_file_replica_1
@@ -433,10 +466,8 @@ class ClickHouseProc:
             Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
         )
 
-        # set profile file for the server (not needed for per-test coverage,
-        # which uses system.coverage_log instead of .profraw files)
-        if not self.is_per_test_coverage:
-            os.environ["LLVM_PROFILE_FILE"] = "ft-server-%m.profraw"
+        # set profile file for the server
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-server-%m.profraw"
 
         env = os.environ.copy()
         env["TSAN_OPTIONS"] = " ".join(
@@ -501,19 +532,95 @@ class ClickHouseProc:
         if self.is_db_replicated and replica_num == 0:
             res = self.start(replica_num=1) and self.start(replica_num=2)
 
-        # System logs are flushed in wait_ready() once the server is listening,
-        # not here: start()'s callers run wait_ready() afterwards, so a flush here
-        # races the TCP listener and fails with Code 210 (Connection refused).
+        self._flush_system_logs()
         self.save_system_metadata_files_from_remote_database_disk()
 
         return res
 
+    def create_minio_log_tables(self):
+        # create tables for minio log webhooks
+        res = Shell.check(
+            'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
+            verbose=True,
+        )
+        res = res and Shell.check(
+            'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
+            verbose=True,
+        )
+
+        res = res and Shell.check(
+            '/mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_server_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
+            verbose=True,
+            strict=True,
+        )
+        res = res and Shell.check(
+            '/mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_audit_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
+            verbose=True,
+            strict=True,
+        )
+        if not res:
+            return False
+
+        # Restart minio with a timeout to avoid hanging forever (see #97647).
+        # If the restart hangs, kill minio and start it again.
+        # We use Popen with start_new_session=True so that on timeout we can
+        # kill the entire process group, avoiding orphaned child processes
+        # that would block communicate() indefinitely (see #98466).
+        restart_timeout = 60
+        try:
+            print(f"Restarting clickminio (timeout {restart_timeout}s)")
+            proc = subprocess.Popen(
+                [
+                    "/mc",
+                    "admin",
+                    "service",
+                    "restart",
+                    "clickminio",
+                    "--wait",
+                    "--json",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+            try:
+                stdout, _ = proc.communicate(timeout=restart_timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                proc.communicate()
+                raise
+            try:
+                status = json_module.loads(stdout).get("status", "")
+            except (json_module.JSONDecodeError, AttributeError):
+                status = stdout.strip()
+        except (subprocess.TimeoutExpired, OSError):
+            print(
+                f"WARNING: minio restart timed out after {restart_timeout}s, killing and restarting"
+            )
+            Shell.check("pkill -9 -f 'minio server'", verbose=True)
+            time.sleep(2)
+            Shell.check(
+                f"nohup minio server --address :11111 {temp_dir}/minio_data &",
+                verbose=True,
+            )
+            # Wait for minio to be ready
+            for _ in range(30):
+                if Shell.check("/mc ls clickminio/test", verbose=False):
+                    status = "success"
+                    break
+                time.sleep(1)
+            else:
+                status = "failed"
+
+        res = "success" in status
+        if not res:
+            print(f"ERROR: Failed to restart clickminio, status: {status}")
+        return res
+
     def wait_ready(self, replica_num=0):
         res, out, err = 0, "", ""
-        # A debug or sanitizer server can legitimately take over a minute from
-        # fork to listening; the loop below exits early on success and detects a
-        # dead server via proc.poll(), so a generous deadline costs nothing.
-        attempts = 60
+        attempts = 30
         delay = 2
         if replica_num == 1:
             pid_file = self.pid_file_replica_1
@@ -539,7 +646,7 @@ class ClickHouseProc:
             try:
                 self.pid = int(Shell.get_output(f"cat {pid_file}").strip())
                 break
-            except Exception:
+            except Exception as e:
                 Utils.sleep(1)
             i += 1
         if self.pid is None:
@@ -547,7 +654,7 @@ class ClickHouseProc:
             return False
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
-                f'clickhouse-client --port {port} --receive_timeout=5 --query "select 1"', verbose=True
+                f'clickhouse-client --port {port} --query "select 1"', verbose=True
             )
             if out.strip() == "1":
                 print(f"Server replica {replica_num} ready")
@@ -568,16 +675,7 @@ class ClickHouseProc:
             )
             return False
         if self.is_db_replicated and replica_num == 0:
-            if not (self.wait_ready(replica_num=1) and self.wait_ready(replica_num=2)):
-                return False
-        if replica_num == 0:
-            # _flush_system_logs() fans out to every running replica; the
-            # replica_num == 0 guard only stops the recursive wait_ready(1/2)
-            # calls above from re-running that fan-out (replicas 1 and 2 are
-            # already confirmed ready there). Flushing pre-creates the system log
-            # tables so tests don't hit "table does not exist". Kept here, not in
-            # start(), to avoid the Code 210 race against the TCP listener.
-            self._flush_system_logs()
+            return self.wait_ready(replica_num=1) and self.wait_ready(replica_num=2)
         return True
 
     def _flush_system_logs(self):
@@ -597,27 +695,13 @@ class ClickHouseProc:
                     return False
         return True
 
-    def prepare_stateful_data(self, with_s3_storage, is_db_replicated, build_type=None):
-        self.stateful_setup_error = None
+    def prepare_stateful_data(self, with_s3_storage, is_db_replicated):
         if is_db_replicated:
             print("Skip stateful data preparation for db replicated")
             return True
-        # Fewer insert threads on sanitizer binaries: their baseline RSS sits
-        # near max_server_memory_usage, so 16 parallel insert pipelines trip the
-        # total limit (Code 241). Same data is loaded, just a smaller peak.
-        is_sanitizer = build_type is not None and any(
-            san in build_type for san in ("asan", "tsan", "msan", "ubsan")
-        )
-        max_insert_threads = 4 if is_sanitizer else 16
         command = """
 set -e
 set -o pipefail
-# Record which sub-command failed (set -e then exits). $BASH_COMMAND is the
-# failing command itself, so the captured reason names the exact query instead
-# of just a line number; combined with the ClickHouse client error already on
-# stderr this is captured below so the bugfix-validation re-prepare path can
-# report the real reason.
-trap 'rc=$?; echo "prepare_stateful_data: command [$BASH_COMMAND] at line $LINENO failed with exit $rc" >&2' ERR
 
 MAX_EXECUTION_TIME=1800
 
@@ -625,10 +709,7 @@ clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "CREATE DATABASE datasets"
 clickhouse-client < ./tests/docker_scripts/create.sql
 bash ./tests/docker_scripts/create_tpcds.sh
-bash ./tests/docker_scripts/create_tpch.sh
 clickhouse-client --query "SHOW TABLES FROM datasets"
-clickhouse-client --query "SHOW TABLES FROM tpcds"
-clickhouse-client --query "SHOW TABLES FROM tpch"
 
 clickhouse-client --query "CREATE DATABASE test"
 clickhouse-client --query "SHOW TABLES FROM test"
@@ -640,18 +721,17 @@ if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TR
         ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
         SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='s3_cache'"
 
-    clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 25G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=$MAX_INSERT_THREADS"
-    clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 25G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=$MAX_INSERT_THREADS"
+    clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 25G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+    clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 25G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
     clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
     clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
-    # Note: `tpcds` and `tpch` databases are NOT dropped here as they are used by stateful tests.
 else
     clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
     clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 fi
 clickhouse-client --query "CREATE TABLE test.hits_s3  (WatchID UInt64, JavaEnable UInt8, Title String, GoodEvent Int16, EventTime DateTime, EventDate Date, CounterID UInt32, ClientIP UInt32, ClientIP6 FixedString(16), RegionID UInt32, UserID UInt64, CounterClass Int8, OS UInt8, UserAgent UInt8, URL String, Referer String, URLDomain String, RefererDomain String, Refresh UInt8, IsRobot UInt8, RefererCategories Array(UInt16), URLCategories Array(UInt16), URLRegions Array(UInt32), RefererRegions Array(UInt32), ResolutionWidth UInt16, ResolutionHeight UInt16, ResolutionDepth UInt8, FlashMajor UInt8, FlashMinor UInt8, FlashMinor2 String, NetMajor UInt8, NetMinor UInt8, UserAgentMajor UInt16, UserAgentMinor FixedString(2), CookieEnable UInt8, JavascriptEnable UInt8, IsMobile UInt8, MobilePhone UInt8, MobilePhoneModel String, Params String, IPNetworkID UInt32, TraficSourceID Int8, SearchEngineID UInt16, SearchPhrase String, AdvEngineID UInt8, IsArtifical UInt8, WindowClientWidth UInt16, WindowClientHeight UInt16, ClientTimeZone Int16, ClientEventTime DateTime, SilverlightVersion1 UInt8, SilverlightVersion2 UInt8, SilverlightVersion3 UInt32, SilverlightVersion4 UInt16, PageCharset String, CodeVersion UInt32, IsLink UInt8, IsDownload UInt8, IsNotBounce UInt8, FUniqID UInt64, HID UInt32, IsOldCounter UInt8, IsEvent UInt8, IsParameter UInt8, DontCountHits UInt8, WithHash UInt8, HitColor FixedString(1), UTCEventTime DateTime, Age UInt8, Sex UInt8, Income UInt8, Interests UInt16, Robotness UInt8, GeneralInterests Array(UInt16), RemoteIP UInt32, RemoteIP6 FixedString(16), WindowName Int32, OpenerName Int32, HistoryLength Int16, BrowserLanguage FixedString(2), BrowserCountry FixedString(2), SocialNetwork String, SocialAction String, HTTPError UInt16, SendTiming Int32, DNSTiming Int32, ConnectTiming Int32, ResponseStartTiming Int32, ResponseEndTiming Int32, FetchTiming Int32, RedirectTiming Int32, DOMInteractiveTiming Int32, DOMContentLoadedTiming Int32, DOMCompleteTiming Int32, LoadEventStartTiming Int32, LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32, FirstPaintTiming Int32, RedirectCount Int8, SocialSourceNetworkID UInt8, SocialSourcePage String, ParamPrice Int64, ParamOrderID String, ParamCurrency FixedString(3), ParamCurrencyID UInt16, GoalsReached Array(UInt32), OpenstatServiceName String, OpenstatCampaignID String, OpenstatAdID String, OpenstatSourceID String, UTMSource String, UTMMedium String, UTMCampaign String, UTMContent String, UTMTerm String, FromTag String, HasGCLID UInt8, RefererHash UInt64, URLHash UInt64, CLID UInt32, YCLID UInt64, ShareService String, ShareURL String, ShareTitle String, ParsedParams Nested(Key1 String, Key2 String, Key3 String, Key4 String, Key5 String, ValueDouble Float64), IslandID FixedString(16), RequestNum UInt32, RequestTry UInt8) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='s3_cache'"
 # AWS S3 is very inefficient, so increase memory even further:
-clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM test.hits SETTINGS enable_filesystem_cache_on_write_operations=0, write_through_distributed_cache=0, max_insert_threads=$MAX_INSERT_THREADS"
+clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM test.hits SETTINGS enable_filesystem_cache_on_write_operations=0, write_through_distributed_cache=0, max_insert_threads=16"
 
 clickhouse-client --query "CREATE TABLE test.hits_parquet (Title String, URL String, Referer String, SearchPhrase String, WatchID UInt64, UserID UInt64, CounterID UInt32, EventTime DateTime, EventDate Date, RegionID UInt32, ClientIP UInt32) ENGINE = S3('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits_compatible/hits.parquet', NOSIGN)"
 
@@ -659,29 +739,9 @@ clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "SELECT count() FROM test.hits"
 clickhouse-client --query "SELECT count() FROM test.visits"
 """
-        command = f"MAX_INSERT_THREADS={max_insert_threads}\n" + command
         if with_s3_storage:
             command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
-        # Run via Shell.run (bash, like Shell.check) but keep a log file so that
-        # on failure we can surface the failing sub-command + its ClickHouse
-        # error tail to the caller. Same success semantics as before
-        # (returncode == 0). This is what makes the intermittent msan re-prepare
-        # failure diagnosable in CIDB instead of a generic boolean.
-        log_file = f"{temp_dir}/prepare_stateful_data.log"
-        rc = Shell.run(command, log_file=log_file, verbose=True)
-        if rc != 0:
-            tail = ""
-            try:
-                with open(log_file, errors="ignore") as f:
-                    tail = "".join(f.readlines()[-15:]).strip()
-            except OSError:
-                pass
-            self.stateful_setup_error = (
-                f"stateful data prep failed (exit {rc})"
-                + (f": {tail}" if tail else "")
-            )
-            print(f"ERROR: {self.stateful_setup_error}")
-        return rc == 0
+        return Shell.check(command)
 
     def insert_system_zookeeper_config(self):
         for _ in range(10):
@@ -696,13 +756,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             return False
 
     def run_test(self, cmd, timeout=7200):
-        """Run a `clickhouse-test` command and return its integer exit code.
-
-        Returns 0 on success, non-zero on failure. The code is forwarded
-        verbatim to `FTResultsProcessor.run` as `runner_exit_code`, which
-        distinguishes the abort causes `clickhouse-test` raises `StopTesting`
-        with and names the synthetic leaf accordingly.
-        """
         print(f"Run test: [{cmd}]")
         with open(self.test_output_file, "w") as f:
             process = subprocess.Popen(
@@ -718,33 +771,38 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
             def _reader():
                 for line in process.stdout:
-                    print(line, end="")
-                    f.write(line)
+                    # we generally want timestamps for any test, not just a fast test
+                    ts_line = f"{datetime.now():%Y-%m-%d %H:%M:%S} {line}"
+                    print(ts_line, end="")
+                    f.write(ts_line)
 
             reader_thread = threading.Thread(target=_reader)
             reader_thread.start()
 
             try:
                 process.wait(timeout=timeout)
-                reader_thread.join()
-                return process.returncode
             except subprocess.TimeoutExpired:
-                print(
-                    f"ERROR: fast test timed out after {timeout}s, killing process group"
-                )
+                print(f"ERROR: fast test timed out after {timeout}s, killing process group")
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                 process.wait()
                 reader_thread.join()
-                return process.returncode
-            finally:
-                # Kill any test processes that survived clickhouse-test's own cleanup
-                # (e.g. if it was killed with SIGKILL before its signal handlers ran).
-                # clickhouse-test writes the group pid file itself on startup; --cleanup
-                # reads it and kills all orphaned test process groups.
-                _clickhouse_test = Path(__file__).resolve().parent.parent.parent.parent / "tests" / "clickhouse-test"
-                subprocess.run([sys.executable, str(_clickhouse_test), "--cleanup"], check=False)
+                return False
+
+            reader_thread.join()
+            return process.returncode == 0
 
     def terminate(self, force=False):
+        if self.minio_proc:
+            # remove the webhook so it doesn't spam with errors once we stop ClickHouse
+            Shell.check(
+                "/mc admin config reset clickminio logger_webhook:ch_server_webhook",
+                verbose=True,
+            )
+            Shell.check(
+                "/mc admin config reset clickminio audit_webhook:ch_audit_webhook",
+                verbose=True,
+            )
+
         if self.kafka_proc:
             print("Stopping Redpanda broker")
             Shell.check("pkill -f redpanda", verbose=True)
@@ -757,23 +815,9 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         self.save_system_metadata_files_from_remote_database_disk()
 
-        self.stop_server(force=force)
+        print("Terminate ClickHouse processes")
 
-        return self
-
-    def stop_server(self, force=False):
-        """Gracefully stop only the ClickHouse server processes.
-
-        Unlike `terminate`, this leaves the auxiliary services (Redpanda/Kafka,
-        SeaweedFS) running. It is used between bugfix-validation iterations so the
-        server binary can be swapped and restarted without tearing down the
-        rest of the test environment: otherwise a changed test relying on
-        Kafka or SeaweedFS would pass under the first build type and spuriously
-        "reproduce" a bug under the next one.
-        """
-        print("Stop ClickHouse processes")
-
-        Shell.check("ps -ef | grep  clickhouse")
+        Shell.check(f"ps -ef | grep  clickhouse")
         for proc, pid_file, pid, run_path in (
             (self.proc, self.pid_file, self.pid_0, self.run_path0),
             (self.proc_1, self.pid_file_replica_1, self.pid_1, self.run_path1),
@@ -805,16 +849,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         return self
 
-    def clean_logs(self):
-        """
-        Remove server logs from `log_dir`.
-
-        Used between bugfix validation iterations to keep logs from different
-        build types from being mixed together.
-        """
-        Utils.clean_dir(Path(self.log_dir))
-        return self
-
     @staticmethod
     def _chmod(files):
         for file in files:
@@ -832,10 +866,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
-                res += self._collect_diagnostic_reports()
+                if Path(f"{self.aes_key}.rsa").exists():
+                    res.append(f"{self.aes_key}.rsa")
                 res += self._get_logs_archive_coordination()
-                if Path(self.SEAWEEDFS_LOG).exists():
-                    res.append(self.SEAWEEDFS_LOG)
+                if Path(self.MINIO_LOG).exists():
+                    res.append(self.MINIO_LOG)
                 if Path(self.AZURITE_LOG).exists():
                     res.append(self.AZURITE_LOG)
                 if Path(self.KAFKA_LOG).exists():
@@ -851,60 +886,17 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         except Exception as e:
             print(f"WARNING: Failed to collect logs: {e}")
             traceback.print_exc()
-            info.add_workflow_warning(
-                f"Failed to collect all logs, ex [{e}], see job.log"
+            info.add_workflow_report_message(
+                f"Failed to collect all logs in job [{info.job_name}], ex [{e}], see job.log"
             )
         return res
 
     def _collect_core_dumps(self) -> List[str]:
-        # Server cores land in `run_r*` because each server is started with
-        # `cwd=run_path` (see `start`) and is not a daemon, so
-        # `BaseDaemon`'s `chdir` into a `core_path` directory is skipped. Setting
-        # `--daemon` or a `core_path` would move them into `run_rN/cores/` and this
-        # glob would stop finding them.
-        result = []
-        # One AES key for the whole job. Artifacts are uploaded under their
-        # basename alone, so a key per directory would emit several different
-        # `aes.key.rsa` files that overwrite each other in the report, leaving the
-        # cores of every directory but the last one undecryptable.
-        aes_key_path = f"{temp_dir}/aes.key"
-        for run_dir in sorted(p_temp_dir.glob("run_r*")):
-            result.extend(
-                ClickHouseService.collect_cores(
-                    run_dir,
-                    aes_key_path=aes_key_path,
-                    # `core.<comm>.<pid>` collides across replicas running the
-                    # same thread; keep the basenames distinct.
-                    name_prefix=f"{Path(run_dir).name}.",
-                )
-            )
-        # `Path.glob` yields nothing for a missing directory, so a declared path
-        # that does not exist needs no separate guard.
-        if self.client_core_path:
-            result.extend(
-                ClickHouseService.collect_cores(
-                    self.client_core_path,
-                    aes_key_path=aes_key_path,
-                    name_prefix="client.",
-                )
-            )
-        return result
-
-    @staticmethod
-    def _collect_diagnostic_reports() -> List[str]:
-        # macOS writes .ips crash reports to /Library/Logs/DiagnosticReports as
-        # root. Grant read access so the runner can list and read the files
-        # in place; the darwin fast-test pre-hook wipes the directory under
-        # sudo before the run, so anything we see here belongs to the current
-        # run even if the previous runner was terminated unexpectedly.
-        if platform.system() != "Darwin":
-            return []
-        reports_dir = Path("/Library/Logs/DiagnosticReports")
-        Shell.check(
-            f"sudo chmod -R a+rX {reports_dir}",
-            verbose=True,
-        )
-        return [str(p) for p in reports_dir.glob("*.ips")]
+        cores = list(p_temp_dir.glob("run_r*/core.*"))[:3]
+        return [
+            Utils.encrypt(Utils.compress_zst(f), f"{repo_dir}/ci/defs/public.pem", self.aes_key)
+            for f in cores
+        ]
 
     @classmethod
     def _get_logs_archive_coordination(cls):
@@ -947,42 +939,16 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
             latest_profiles[pid] = file_with_max_third_number
 
-        # Symbolizing a heap profile is unbounded work: it scales with the number of distinct
-        # addresses in the profile, and on a coverage build a single jeprof run has taken over an
-        # hour, timing the whole job out here, long after every test had finished (the sibling
-        # shard of the same build symbolized six profiles in 13 minutes). The flamegraphs are an
-        # artifact of the job, not its result, so give them up rather than the job.
-        deadline = time.time() + cls.JEMALLOC_SYMBOLIZATION_BUDGET
-
         chbinary = Shell.get_output("readlink -f $(which clickhouse)")
         for pid, profile in latest_profiles.items():
-            budget = int(deadline - time.time())
-            if budget <= 0:
-                print(f"WARNING: Out of time to symbolize the profile of process {pid}")
-                continue
-
-            text_report = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt"
-            if not Shell.check(
-                f"timeout --verbose --signal=TERM --kill-after=60 {budget} jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {text_report} 2>/dev/null",
+            Shell.check(
+                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
                 verbose=True,
-            ):
-                print(f"WARNING: Failed to symbolize {profile}, dropping {text_report}")
-                Path(text_report).unlink(missing_ok=True)
-
-            budget = int(deadline - time.time())
-            if budget <= 0:
-                print(f"WARNING: Out of time to build the flamegraph of process {pid}")
-                continue
-
-            flamegraph = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg"
-            # The whole pipeline is under the timeout: killing jeprof alone would leave
-            # flamegraph.pl to write a truncated graph out of what it had received.
-            if not Shell.check(
-                f"timeout --verbose --signal=TERM --kill-after=60 {budget} bash -c 'jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {flamegraph}'",
+            )
+            Shell.check(
+                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
                 verbose=True,
-            ):
-                print(f"WARNING: Failed to symbolize {profile}, dropping {flamegraph}")
-                Path(flamegraph).unlink(missing_ok=True)
+            )
 
         Shell.check(
             f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",
@@ -1029,56 +995,33 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 return None
             return max(candidates, key=lambda p: p.stat().st_mtime)
 
-        def pick_file_with(pattern: str, needle: str) -> Path | None:
-            # Select the specific log that contains the hit, not merely the most
-            # recently modified one. On multi-server runs (e.g. DatabaseReplicated)
-            # the crashed server stops logging first and so has the OLDEST mtime,
-            # while surviving replicas keep writing - picking by mtime would hand
-            # the parser a log without the crash and yield a bogus "Unknown error".
-            out = Shell.get_output(
-                f"cd {self.log_dir} && grep -la '{needle}' {pattern} 2>/dev/null | head -n 1 || true"
-            ).strip()
-            return Path(self.log_dir) / out if out else None
-
         sanitizer_hits = Shell.get_output(
             f"sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log 2>/dev/null | "
             f'grep -a -v "ASan doesn\'t fully support makecontext/swapcontext functions" | '
-            f'grep -a -v "ASan is ignoring requested __asan_handle_no_return" | '
-            f'grep -a -v "False positive error reports may follow" | '
-            f'grep -a -v "For details see https://github.com/google/sanitizers" | '
-            f'grep -a -v -F -x "Not running the leak check: other threads are still running." | '
             "head -n 1 || true"
         )
         fatal_hits = Shell.get_output(
             f"cd {self.log_dir} && grep -a '<Fatal>' clickhouse-server*.log 2>/dev/null | head -n 1 || true"
         )
         if sanitizer_hits or fatal_hits:
-            server_log = (
-                pick_file_with("clickhouse-server*.err.log", "<Fatal>")
-                or pick_file_with("clickhouse-server*.log", "<Fatal>")
-                or pick_latest_file("clickhouse-server*.err.log")
-                or pick_latest_file("clickhouse-server*.log")
-            )
+            server_log = pick_latest_file(
+                "clickhouse-server*.err.log"
+            ) or pick_latest_file("clickhouse-server*.log")
             stderr_log = pick_latest_file("stderr*.log")
             if not (server_log or stderr_log):
                 results.append(
                     Result.create_from(
                         name="Sanitizer assert or Fatal messages in server logs",
                         info="no server logs found",
-                        status=Result.Status.FAIL,
+                        status=Result.StatusExtended.FAIL,
                         labels=[Result.Label.BLOCKER],  # to explicitly block the merge
                     )
                 )
             else:
                 try:
-                    # Either log may be absent (e.g. a sanitizer report goes
-                    # only to stderr when the server dies before opening its
-                    # log). `str(None)` would become the literal path "None",
-                    # which `FuzzerLogParser.get_stack_trace` then fails to
-                    # open; fall back to whichever log exists instead.
                     log_parser = FuzzerLogParser(
-                        server_log=str(server_log or stderr_log),
-                        stderr_log=str(stderr_log or server_log),
+                        server_log=str(server_log),
+                        stderr_log=str(stderr_log),
                         fuzzer_log="",
                     )
                     name, description, files = log_parser.parse_failure()
@@ -1086,7 +1029,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         Result.create_from(
                             name=name,
                             info=description,
-                            status=Result.Status.FAIL,
+                            status=Result.StatusExtended.FAIL,
                             files=files,
                             labels=[
                                 Result.Label.BLOCKER
@@ -1098,51 +1041,23 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         Result.create_from(
                             name="Failed to parse sanitizer/fatal failure from server logs",
                             info=traceback.format_exc(),
-                            status=Result.Status.FAIL,
+                            status=Result.StatusExtended.FAIL,
                             labels=[
                                 Result.Label.BLOCKER
                             ],  # to explicitly block the merge
                         )
                     )
 
-        # Both "No such key" checks below run the same scan, so the ignore list is
-        # built once - keep it in sync with check_logs_for_critical_errors() in
-        # tests/docker_scripts/stress_tests.lib. Ignored:
-        #  - "a.myext" is used by 02724_database_s3.sh and does not exist
-        #  - "DistributedCacheTCPHandler" and "caller id: None:DistribCache" happen
-        #    inside the distributed cache server
-        #  - "ReadBuffer is canceled by the exception" is a normal cancellation, the
-        #    message is kept for debugging purposes
-        #  - "ReadBufferFromDistributedCache", "AsynchronousBoundedReadBuffer",
-        #    "ReadBufferFromS3", "ReadBufferFromAzureBlobStorage" are printed
-        #    internally by a buffer, the exception is rethrown and handled correctly
-        #  - "Error during background download" is printed by the filesystem cache
-        #    background download worker (CacheMetadata): the prefetched object can be
-        #    concurrently removed (DROP, mutation, part removal), the download is just
-        #    marked as failed and the data is re-read from the source later
-        no_such_key_ignores = " ".join(
-            f"-e '{ignore}'"
-            for ignore in (
-                "a.myext",
-                "ReadBuffer is canceled by the exception",
-                "DistributedCacheTCPHandler",
-                "ReadBufferFromDistributedCache",
-                "ReadBufferFromS3",
-                "ReadBufferFromAzureBlobStorage",
-                "AsynchronousBoundedReadBuffer",
-                "Error during background download",
-                "caller id: None:DistribCache",
-            )
-        )
-        no_such_key_command = (
-            f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' "
-            f"clickhouse-server*.log | grep -v {no_such_key_ignores} "
-            "| head -n100 | tee /dev/stderr | grep -q ."
-        )
         results.append(
             Result.from_commands_run(
                 name="Lost s3 keys",
-                command=no_such_key_command,
+                command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'ReadBuffer is canceled by the exception' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
+            )
+        )
+        results.append(
+            Result.from_commands_run(
+                name="Lost forever for SharedMergeTree",
+                command=f"cd {self.log_dir} && ! grep -a 'it is lost forever' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
@@ -1154,7 +1069,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         results.append(
             Result.from_commands_run(
                 name="S3_ERROR No such key thrown (in clickhouse-server.log or clickhouse-server.err.log)",
-                command=no_such_key_command,
+                command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'ReadBuffer is canceled by the exception'  -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         oom_check = self.check_ch_is_oom_killed()
@@ -1165,36 +1080,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         # convert statuses to CH tests notation
         for result in results:
             if result.is_ok():
-                result.set_status(Result.Status.OK)
+                result.set_status(Result.StatusExtended.OK)
             else:
-                result.set_status(Result.Status.FAIL)
-            # These are server-log / runner health checks, not test cases.
-            # The bugfix-validation inverter uses this label so a clean check
-            # (OK) is left as-is instead of being flipped into a spurious
-            # failure. A failing check still flips like a test (a fatal on the
-            # validated binary is the bug reproducing).
-            result.set_label(Result.Label.LOG_CHECK)
+                result.set_status(Result.StatusExtended.FAIL)
         return results
-
-    # `timeout --verbose` logs this to stderr when it escalates to SIGKILL
-    # after --kill-after; it proves a 137 came from the wrapper itself rather
-    # than from an external/OOM SIGKILL of `clickhouse local`.
-    _TIMEOUT_KILL_DIAG = "sending signal KILL to command"
-
-    def _timeout_wrapper_expired(self, res, stderr):
-        # 124: the child died on timeout's initial SIGTERM - always an expiry.
-        # 137 (128+9): any SIGKILL death; trust it as an expiry only when
-        # timeout's own KILL diagnostic is present in stderr.
-        return res == 124 or (res == 137 and self._TIMEOUT_KILL_DIAG in stderr)
-
-    def _annotate_timeout(self, res, stderr):
-        # Prepend the "timed out" annotation only to proven wrapper expiries,
-        # so a stuck dump is reported as a timeout rather than an opaque
-        # non-zero failure, while an OOM or externally killed dump (bare 137)
-        # keeps its raw stderr. Returns the (possibly) annotated stderr.
-        if self._timeout_wrapper_expired(res, stderr):
-            return f"timed out after {self.DUMP_SYSTEM_TABLE_TIMEOUT}s\n{stderr}"
-        return stderr
 
     def dump_system_tables(self):
         # Stop server so we can safely read data with clickhouse-local.
@@ -1217,8 +1106,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             "error_log",
             "query_metric_log",
             "part_log",
+            "minio_audit_logs",
+            "minio_server_logs",
         ]
-        ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 20_000_000
+        ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 10_000_000
 
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
@@ -1241,26 +1132,16 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         #
         #   [2]: https://github.com/ClickHouse/ClickHouse/issues/77320
         #
-        command_args_post = "-- --zookeeper.implementation=testkeeper"
-
-        # Bound each dump: a single hanging table must not consume the whole
-        # 9000s job budget. On expiry timeout sends SIGTERM and returns 124; a
-        # dump that ignores SIGTERM is escalated with SIGKILL after --kill-after
-        # and returns 128+9 = 137. --verbose makes timeout log its own KILL to
-        # stderr, so _annotate_timeout can tell a wrapper expiry from an
-        # external/OOM SIGKILL of the dump (also 137).
-        dump_prefix = f"timeout --verbose --signal=TERM --kill-after=60 {self.DUMP_SYSTEM_TABLE_TIMEOUT} "
+        command_args_post = f"-- --zookeeper.implementation=testkeeper"
 
         Utils.clean_dir(p_temp_dir / "system_tables")
         res = True
 
         self.restore_system_metadata_files_from_remote_database_disk()
 
-        # Caches created via the disk() function live one level deeper, under
-        # disks/<name>/status.
         cache_status_files = glob.glob(
             f"{self.ch_var_lib_dir}/filesystem_caches/*/status"
-        ) + glob.glob(f"{self.ch_var_lib_dir}/filesystem_caches/disks/*/status")
+        )
         if cache_status_files:
             print(
                 f"WARNING: Server died? Removing cache status files: {cache_status_files}"
@@ -1268,15 +1149,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             for cache_status_path in cache_status_files:
                 Shell.check(f"rm {cache_status_path}", verbose=True)
 
-        scraping_system_table = Result(name="Scraping system tables", status=Result.Status.OK)
+        scraping_system_table = Result(name=f"Scraping system tables", status="OK")
         for table in TABLES:
             path_arg = f" --path {self.run_path0}"
             res, stdout, stderr = Shell.get_res_stdout_stderr(
-                f"cd {self.run_path0} && {dump_prefix}clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
+                f"cd {self.run_path0} && clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
                 verbose=True,
             )
             if res != 0:
-                stderr = self._annotate_timeout(res, stderr)
                 print(f"ERROR: Failed to dump system table: {table}\nError: {stderr}")
                 scraping_system_table.set_info(
                     f"Failed to dump system table: {table}\nError: {stderr}"
@@ -1293,14 +1173,16 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         f"System table {table} has too many rows {lines_count} > {ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT}"
                     )
 
+            if "minio" in table:
+                # minio tables are not replicated
+                continue
             if self.is_shared_catalog or self.is_db_replicated:
                 path_arg = f" --path {self.run_path1}"
                 res, stdout, stderr = Shell.get_res_stdout_stderr(
-                    f"cd {self.run_path1} && {dump_prefix}clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.1.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
+                    f"cd {self.run_path1} && clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.1.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
                     verbose=True,
                 )
                 if res != 0:
-                    stderr = self._annotate_timeout(res, stderr)
                     print(
                         f"ERROR: Failed to dump system table from replica 1: {table}\nError: {stderr}"
                     )
@@ -1323,11 +1205,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             if self.is_db_replicated:
                 path_arg = f" --path {self.run_path2}"
                 res, stdout, stderr = Shell.get_res_stdout_stderr(
-                    f"cd {self.run_path2} && {dump_prefix}clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.2.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
+                    f"cd {self.run_path2} && clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.2.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
                     verbose=True,
                 )
                 if res != 0:
-                    stderr = self._annotate_timeout(res, stderr)
                     print(
                         f"ERROR: Failed to dump system table from replica 2: {table}\nError: {stderr}"
                     )
@@ -1348,7 +1229,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         )
 
         if scraping_system_table.info:
-            scraping_system_table.set_status(Result.Status.FAIL)
+            scraping_system_table.set_status(Result.StatusExtended.FAIL)
             self.extra_tests_results.append(scraping_system_table)
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
 
@@ -1430,7 +1311,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
     @staticmethod
     def set_random_timezone():
         tz = Shell.get_output(
-            "rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -n1"
+            f"rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{{print $3}}' | shuf | head -n1"
         )
         print(f"Chosen random timezone: {tz}")
         assert tz, "Failed to get random TZ"
@@ -1470,15 +1351,13 @@ if __name__ == "__main__":
                 res = ch.stop_log_exports()
             else:
                 res = True
-        elif command == "start_seaweedfs":
+        elif command == "start_minio":
             param = sys.argv[2]
             assert param in ["stateless"]
-            res = ch.start_seaweedfs(param)
-        elif command == "start_azurite":
-            res = ch.start_azurite()
+            res = ch.start_minio(param)
         else:
             raise ValueError(f"Unknown command: {command}")
-    except Exception:
+    except Exception as e:
         print(f"ERROR: Failed to do [{command}]")
         traceback.print_exc()
 
