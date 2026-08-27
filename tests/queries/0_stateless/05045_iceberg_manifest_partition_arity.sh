@@ -109,7 +109,7 @@ pruned() { # pruned <tag> <counter> <query>
     ${CLICKHOUSE_CLIENT} --query "
         SELECT max(ProfileEvents['$2']) > 0
         FROM system.query_log
-        WHERE log_comment = '${CLICKHOUSE_DATABASE}_$1' AND type = 'QueryFinish'
+        WHERE current_database = currentDatabase() AND log_comment = '${CLICKHOUSE_DATABASE}_$1' AND type = 'QueryFinish'
         SETTINGS enable_parallel_replicas = 0"
 }
 
