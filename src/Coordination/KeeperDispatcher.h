@@ -8,10 +8,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <chrono>
-#include <condition_variable>
 #include <functional>
-#include <mutex>
 #include <unordered_set>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/Keeper4LWInfo.h>
@@ -23,8 +20,6 @@
 #include <Coordination/KeeperRequestDispatcherOld.h>
 #include <Coordination/KeeperRequestDispatcher.h>
 
-#include <future>
-
 namespace DB
 {
 
@@ -33,8 +28,6 @@ namespace DB
 class KeeperDispatcher
 {
 private:
-    friend class KeeperDispatcherTestAccessor;
-
     using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;
 
     SnapshotsQueue snapshots_queue{1};
@@ -51,10 +44,6 @@ private:
 
     /// Cleaning old dead sessions
     ThreadFromGlobalPool session_cleaner_thread;
-    /// TTL expiry: leader enqueues TryRemove for expired empty nodes
-    ThreadFromGlobalPool ttl_garbage_collector_thread;
-    /// Container cleanup: leader enqueues TryRemove for childless container nodes
-    ThreadFromGlobalPool container_garbage_collector_thread;
     /// Dumping new snapshots to disk
     ThreadFromGlobalPool snapshot_thread;
     /// Apply or wait for configuration changes
@@ -82,20 +71,8 @@ private:
     KeeperContextPtr keeper_context;
 
     /// Flag to signal TCP handlers that they should close connections.
-    /// Not to be confused with keeper_context->isShutdownCalled(), which happens later.
-    /// This flag means we should avoid taking new requests, while existing requests and RAFT etc
-    /// may keep running normally. Then after client sessions are closed shutdown() is called to
-    /// stop all activity and join threads.
+    /// Set before the full shutdown() to allow handlers to exit promptly.
     std::atomic<bool> shutting_down{false};
-
-    /// Notified when shutting_down (not to be confused with keeper_context->isShutdownCalled())
-    /// becomes true. Wakes up interruptibleSleep().
-    std::mutex early_shutdown_wait_mutex;
-    std::condition_variable early_shutdown_wait_cv;
-
-    /// Sleep for `period`, returning early if `shutting_down` becomes true.
-    /// Useful for containerGarbageCollectorThread that sleeps for a minute by default.
-    void interruptibleSleep(std::chrono::milliseconds period);
 
     /// Thread clean disconnected sessions from memory
     void sessionCleanerTask();
@@ -113,17 +90,7 @@ private:
     void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
     void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
 
-    void ttlGarbageCollectorThread(size_t batch_size);
-    void containerGarbageCollectorThread(size_t batch_size, UInt64 max_never_used_interval_ms);
-
     void onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept;
-
-    /// The only place that knows which responses do not go to a per-session response callback.
-    bool tryRouteSpecialResponse(const KeeperResponseForSession & response) noexcept;
-
-    /// Completes every waiter that can no longer receive a response. Call once no dispatcher can
-    /// produce one.
-    void failPendingSessionIDRequests() noexcept;
 
 public:
     KeeperDispatcher();
@@ -152,9 +119,8 @@ public:
     /// Process reconfiguration 4LW command: rcfg, it's another option to update cluster configuration
     Poco::JSON::Object::Ptr reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command);
 
-    /// Signal TCP handlers to close connections before the full shutdown, and wake the
-    /// GC threads from their inter-tick wait so they exit promptly.
-    void signalShutdown();
+    /// Signal TCP handlers to close connections before the full shutdown.
+    void signalShutdown() { shutting_down.store(true, std::memory_order_relaxed); }
 
     /// Returns true if signalShutdown() was called.
     bool isShuttingDown() const { return shutting_down.load(std::memory_order_relaxed); }
@@ -230,7 +196,7 @@ public:
 
     Keeper4LWInfo getKeeper4LWInfo() const;
 
-    const KeeperStateMachine & getStateMachine() const
+    const IKeeperStateMachine & getStateMachine() const
     {
         return *server->getKeeperStateMachine();
     }
@@ -255,10 +221,9 @@ public:
         keeper_stats.incrementPacketsReceived();
     }
 
-    void resetServerStats()
+    void resetConnectionStats()
     {
         keeper_stats.reset();
-        server->resetLeaderMetrics();
     }
 
     /// Create snapshot manually, return the last committed log index in the snapshot
@@ -271,16 +236,6 @@ public:
     KeeperLogInfo getKeeperLogInfo()
     {
         return server->getKeeperLogInfo();
-    }
-
-    std::vector<KeeperClusterMemberInfo> getClusterMembersInfo() const
-    {
-        return server->getClusterMembersInfo();
-    }
-
-    std::vector<KeeperChangelogStatus> getChangelogsStatus() const
-    {
-        return server->getChangelogsStatus();
     }
 
     /// Request to be leader.

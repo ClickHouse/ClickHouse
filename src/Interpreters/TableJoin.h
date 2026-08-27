@@ -18,7 +18,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <memory>
-#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -100,7 +99,7 @@ public:
 
         size_t keysCount() const
         {
-            chassert(key_names_left.size() == key_names_right.size());
+            assert(key_names_left.size() == key_names_right.size());
             return key_names_right.size();
         }
 
@@ -169,13 +168,9 @@ private:
     const bool enable_software_prefetch_in_join = false;
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
-    const bool join_runtime_filter_from_fixed_hash_table = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
-
-    /// Decision by the planner whether to enable row store tranformation or not.
-    bool enable_row_store = false;
 
     ASTs key_asts_left;
     ASTs key_asts_right;
@@ -203,10 +198,6 @@ private:
     NameToTypeMap left_type_map;
     NameToTypeMap right_type_map;
 
-    /// Special-storage right keys whose type is corrected after the join by a USING promotion.
-    /// Filled by JoinStepLogical; empty means no key is promoted.
-    NameSet using_promoted_right_keys;
-
     /// Name -> original name. Names are the same as in columns_from_joined_table list.
     std::unordered_map<String, String> original_names;
     /// Original name -> name. Only renamed columns.
@@ -227,12 +218,9 @@ private:
 
     std::shared_ptr<const IKeyValueEntity> right_kv_storage;
 
-    std::optional<bool> join_expression_value = std::nullopt;
+    bool is_join_with_constant = false;
 
     bool enable_analyzer = false;
-
-    /// Which statistics EXPLAIN ANALYZ` needs from this join
-    JoinAnalyzeMode analyze_mode = JoinAnalyzeMode::None;
 
     Names requiredJoinedNames() const;
 
@@ -273,7 +261,7 @@ private:
 public:
     TableJoin() = default;
 
-    TableJoin(const Settings & settings, JoinAnalyzeMode analyze_mode_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
+    TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
     TableJoin(const JoinSettings & settings, bool join_use_nulls_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
 
     /// for StorageJoin
@@ -293,12 +281,6 @@ public:
 
     bool enableAnalyzer() const { return enable_analyzer; }
     void assertEnableAnalyzer() const;
-
-    JoinAnalyzeMode analyzeMode() const { return analyze_mode; }
-
-    bool collectAnalyzeStats() const { return analyze_mode != JoinAnalyzeMode::None; }
-    bool collectExactMatches() const { return analyze_mode == JoinAnalyzeMode::Exact; }
-
     TemporaryDataOnDiskScopePtr getTempDataOnDisk();
 
     ActionsDAG createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const;
@@ -350,15 +332,6 @@ public:
     bool enableSoftwarePrefetchInJoin() const { return enable_software_prefetch_in_join; }
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
-    bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
-    void setRowStoreEnabled(bool value) { enable_row_store = value; }
-    bool isRowStoreEnabled() const { return enable_row_store; }
-
-    const std::vector<std::pair<String, String>> & getSharedRuntimeFilterDescriptors() const
-    {
-        static const std::vector<std::pair<String, String>> empty;
-        return join_operator ? join_operator->shared_runtime_filter_descriptors : empty;
-    }
 
     bool oneDisjunct() const;
 
@@ -412,17 +385,12 @@ public:
 
     bool isJoinWithConstant() const
     {
-        return join_expression_value.has_value();
+        return is_join_with_constant;
     }
 
-    std::optional<bool> getJoinExpressionValue() const
+    void setIsJoinWithConstant(bool is_join_with_constant_value)
     {
-        return join_expression_value;
-    }
-
-    void setJoinExpressionValue(bool join_expression_value_)
-    {
-        join_expression_value = join_expression_value_;
+        is_join_with_constant = is_join_with_constant_value;
     }
 
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
@@ -476,8 +444,6 @@ public:
 
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
-    void setUsingPromotedRightKeys(NameSet keys) { using_promoted_right_keys = std::move(keys); }
-
     String renamedRightColumnName(const String & name) const;
     String renamedRightColumnNameWithAlias(const String & name) const;
     void setRename(const String & from, const String & to);
@@ -502,6 +468,7 @@ public:
 bool allowParallelHashJoin(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
+    JoinStrictness strictness,
     bool is_special_storage,
     bool one_disjunct);
 }

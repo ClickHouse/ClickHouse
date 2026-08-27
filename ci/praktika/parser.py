@@ -21,7 +21,6 @@ class WorkflowYaml:
         addons: List["WorkflowYaml.JobAddonYaml"]
         gh_app_auth: bool
         run_unless_cancelled: bool
-        run_on_upstream_failure: bool
         parameter: Any
         secret_names_gh: List[str] = dataclasses.field(default_factory=list)
         variable_names_gh: List[str] = dataclasses.field(default_factory=list)
@@ -137,7 +136,6 @@ class WorkflowConfigParser:
                 runs_on=[],
                 gh_app_auth=False,
                 run_unless_cancelled=job.run_unless_cancelled,
-                run_on_upstream_failure=job.run_on_upstream_failure,
                 parameter=None,
             )
             self.workflow_yaml_config.jobs.append(job_yaml_config)

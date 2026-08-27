@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionFlattenTuple final : public IFunction
+class FunctionFlattenTuple : public IFunction
 {
 public:
     static constexpr auto name = "flattenTuple";
@@ -98,9 +98,9 @@ INSERT INTO tab VALUES ((3, ('c', 4)));
 SELECT flattenTuple(t) FROM tab;
         )",
         R"(
-┌─flattenTuple(t)─┐
-│ (3,'c',4)       │
-└─────────────────┘
+┌─flattenTuple(t)┐
+│ (3, 'c', 4)    │
+└────────────────┘
         )"
     }
     };

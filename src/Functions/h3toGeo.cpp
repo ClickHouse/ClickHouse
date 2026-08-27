@@ -33,7 +33,7 @@ namespace
 
 /// Implements the function h3ToGeo which takes a single argument (h3Index)
 /// and returns the longitude and latitude that correspond to the provided h3 index
-class FunctionH3ToGeo final : public IFunction
+class FunctionH3ToGeo : public IFunction
 {
     const bool h3togeo_lon_lat_result_order;
     H3Validator validator;
@@ -161,7 +161,7 @@ The previous behavior can be restored using setting `h3togeo_lon_lat_result_orde
             "SELECT h3ToGeo(644325524701193974) AS coordinates",
             R"(
 ┌─coordinates───────────────────────────┐
-│ (55.71290243145667,37.79506616830249) │
+│ (55.71290243145668,37.79506616830252) │
 └───────────────────────────────────────┘
             )"
         }

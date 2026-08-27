@@ -26,7 +26,7 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class FunctionH3EdgeLengthKm final : public IFunction
+class FunctionH3EdgeLengthKm : public IFunction
 {
 public:
     static constexpr auto name = "h3EdgeLengthKm";
@@ -117,7 +117,7 @@ Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3I
             "SELECT h3EdgeLengthKm(15) AS edgeLengthKm",
             R"(
 ┌─edgeLengthKm─┐
-│  0.000584169 │
+│  0.000509713 │
 └──────────────┘
             )"
         }

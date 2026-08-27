@@ -3,9 +3,6 @@
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
-#include <Common/CurrentThread.h>
-#include <Common/ProfileEvents.h>
-#include <Common/ThreadStatus.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -13,20 +10,11 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
-#include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
-
-#include <limits>
-
-namespace ProfileEvents
-{
-    extern const Event TextIndexTemporarySegmentsWritten;
-}
 
 namespace DB
 {
@@ -35,24 +23,15 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
-    extern const MergeTreeSettingsNonZeroUInt64 text_index_max_memory_usage_before_flush;
-    extern const MergeTreeSettingsNonZeroUInt64 text_index_max_processed_tokens_before_flush;
 }
 
 namespace
 {
-
-Int64 getCurrentThreadMemoryUsage()
-{
-    const auto & thread = CurrentThread::get();
-    return thread.memory_tracker.get() + thread.untracked_memory.load();
-}
 
 CompressionCodecPtr makeMarksCompressionCodec(const String & marks_compression_codec)
 {
@@ -120,8 +99,7 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     MutableDataPartStoragePtr temporary_storage_,
     MergeTreeWriterSettings writer_settings_,
     CompressionCodecPtr default_codec_,
-    String marks_file_extension_,
-    const MergeTreeSettings & storage_settings)
+    String marks_file_extension_)
     : ISimpleTransform(header, header, false)
     , index_file_prefix(std::move(index_file_prefix_))
     , indexes(std::move(indexes_))
@@ -130,9 +108,6 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     , default_codec(std::move(default_codec_))
     , marks_file_extension(std::move(marks_file_extension_))
     , segment_numbers(indexes.size(), 0)
-    , estimated_allocated_bytes(indexes.size(), 0)
-    , max_processed_tokens(storage_settings[MergeTreeSetting::text_index_max_processed_tokens_before_flush])
-    , max_allocated_bytes(storage_settings[MergeTreeSetting::text_index_max_memory_usage_before_flush])
 {
 
     for (size_t i = 0; i < indexes.size(); ++i)
@@ -162,20 +137,19 @@ void BuildTextIndexTransform::aggregate(const Block & block)
     if (block.rows() == 0)
         return;
 
+    /// Threshold for the number of processed tokens to flush the segment.
+    /// Calculating used RAM or number of processed unique tokens adds significant overhead,
+    /// so we use a simple trade-off threshold, which is reasonable in normal scenarios.
+    static constexpr size_t max_processed_tokens = 100'000'000;
     num_processed_rows += block.rows();
 
     for (size_t i = 0; i < indexes.size(); ++i)
     {
         size_t pos = 0;
         auto & aggregator_text = typeid_cast<MergeTreeIndexAggregatorText &>(*aggregators[i]);
-        const auto memory_usage_before_update = getCurrentThreadMemoryUsage();
         aggregator_text.update(block, &pos, block.rows());
-        const auto memory_usage_after_update = getCurrentThreadMemoryUsage();
 
-        if (memory_usage_after_update > memory_usage_before_update)
-            estimated_allocated_bytes[i] += static_cast<size_t>(memory_usage_after_update - memory_usage_before_update);
-
-        if (aggregator_text.getNumProcessedTokens() > max_processed_tokens || estimated_allocated_bytes[i] > max_allocated_bytes)
+        if (aggregator_text.getNumProcessedTokens() > max_processed_tokens)
             writeTemporarySegment(i);
     }
 }
@@ -214,7 +188,6 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
 
     auto & aggregator_text = typeid_cast<MergeTreeIndexAggregatorText &>(*aggregators[i]);
     auto granule = aggregator_text.getGranuleAndReset();
-    estimated_allocated_bytes[i] = 0;
     aggregator_text.setCurrentRow(num_processed_rows);
 
     auto [streams, streams_holders] = makeOutputStreams(
@@ -230,26 +203,6 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
 
     for (auto & stream : streams_holders)
         stream->finalize();
-
-    ProfileEvents::increment(ProfileEvents::TextIndexTemporarySegmentsWritten);
-}
-
-static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex & index)
-{
-    const auto & text_index = typeid_cast<const MergeTreeIndexText &>(index);
-    const auto * codec = text_index.getPostingListCodec();
-    auto codec_type = codec ? codec->getType() : IPostingListCodec::Type::None;
-    auto codec_copy = PostingListCodecFactory::createPostingListCodec(codec_type);
-
-    return PostingsSerialization(std::move(codec_copy), text_index.getParams().serialization_version);
-}
-
-static PostingsSerialization createSourcePostingsSerialization(MergeTreeIndexReaderStream & header_stream)
-{
-    header_stream.seekToStart();
-    /// Only the version and codec are needed here, so skip deserializing the sparse index.
-    auto header = TextIndexSerialization::deserializeHeaderPrefix(*header_stream.getDataBuffer());
-    return PostingsSerialization(PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
 }
 
 MergeTextIndexesTask::MergeTextIndexesTask(
@@ -259,26 +212,22 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     MergeTreeIndexPtr index_ptr_,
     std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
     const MergeTreeReaderSettings & reader_settings_,
-    const MergeTreeWriterSettings & writer_settings_,
-    bool need_fsync_)
+    const MergeTreeWriterSettings & writer_settings_)
     : segments(std::move(segments_))
     , new_data_part(std::move(new_data_part_))
     , num_rows(num_rows_)
     , index_ptr(std::move(index_ptr_))
     , merged_part_offsets(std::move(merged_part_offsets_))
     , writer_settings(writer_settings_)
-    , need_fsync(need_fsync_)
     , step_time_ms((*new_data_part->storage.getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds())
-    , postings_serialization(createPostingsSerialization(*index_ptr))
+    , postings_serialization(typeid_cast<const MergeTreeIndexText &>(*index_ptr).getPostingListCodec())
 {
     cursors.resize(segments.size());
     inputs.resize(segments.size());
     input_streams.resize(segments.size());
 
     output_tokens = ColumnString::create();
-
-    const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*index_ptr);
-    params = text_index.getParams();
+    params = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getParams();
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
@@ -305,15 +254,6 @@ MergeTextIndexesTask::MergeTextIndexesTask(
             input_streams[i][substream.type] = stream.get();
             input_streams_holders.emplace_back(std::move(stream));
         }
-    }
-
-    /// Resolve each source part's codec from its own header.
-    source_postings_serializations.reserve(segments.size());
-
-    for (size_t i = 0; i < segments.size(); ++i)
-    {
-        auto * stream = input_streams[i].at(MergeTreeIndexSubstream::Type::Regular);
-        source_postings_serializations.emplace_back(createSourcePostingsSerialization(*stream));
     }
 }
 
@@ -347,186 +287,59 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
     if (data_buffer->eof())
         return;
 
-    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer);
+    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, &postings_serialization);
     const auto & tokens = inputs[source_num].tokens;
     cursors[source_num].reset({tokens}, getHeader(), tokens->size());
     queue.push(cursors[source_num]);
 }
 
-UInt32 MergeTextIndexesTask::adjustPartOffset(size_t part_index, UInt32 row_id) const
+std::vector<PostingListPtr> MergeTextIndexesTask::readPostingLists(size_t source_num)
 {
-    chassert(merged_part_offsets);
-    UInt64 new_offset = (*merged_part_offsets)[part_index, row_id];
+    const auto & token_info = inputs[source_num].token_infos[queue.current()->getRow()];
 
-    if (new_offset > std::numeric_limits<UInt32>::max())
-    {
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Cannot merge text index: remapped row id {} exceeds the maximum supported row id {}",
-            new_offset, std::numeric_limits<UInt32>::max());
-    }
-
-    return static_cast<UInt32>(new_offset);
-}
-
-void MergeTextIndexesTask::appendPostingsToBitmap(std::span<UInt32> row_ids)
-{
-    /// If output bitmap is empty, add values directly to it.
-    /// Otherwise, create a new bitmap and union it with the output bitmap.
-    /// Union works in one pass, while adding row ids with `addMany` shifts those
-    /// already placed, and causes reallocations in case when postings are interleaved.
-    if (output_postings_bitmap.isEmpty())
-        output_postings_bitmap.addMany(row_ids.size(), row_ids.data());
-    else
-        output_postings_bitmap |= PostingList(row_ids.size(), row_ids.data());
-}
-
-void MergeTextIndexesTask::appendPostings(size_t source_num, std::span<UInt32> row_ids)
-{
-    if (row_ids.empty())
-        return;
-
-    if (merged_part_offsets)
-    {
-        size_t part_index = segments[source_num].part_index;
-        for (UInt32 & row_id : row_ids)
-            row_id = adjustPartOffset(part_index, row_id);
-    }
-
-    /// Postings of a token are collected in the buffer while they fit into it.
-    if (output_postings_bitmap.isEmpty() && output_postings_array.size() + row_ids.size() <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
-    {
-        output_postings_array.insert(row_ids.begin(), row_ids.end());
-        return;
-    }
-
-    if (!output_postings_array.empty())
-    {
-        appendPostingsToBitmap(output_postings_array);
-        output_postings_array.clear();
-    }
-
-    appendPostingsToBitmap(row_ids);
-}
-
-void MergeTextIndexesTask::readAndAppendPostings(size_t source_num, TokenPostingsInfo & token_info)
-{
-    if (!token_info.embedded_postings.empty())
-    {
-        appendPostings(source_num, token_info.embedded_postings);
-        return;
-    }
+    if (token_info.embedded_postings)
+        return {token_info.embedded_postings};
 
     auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     auto * data_buffer = stream->getDataBuffer();
-    auto & serialization = source_postings_serializations[source_num];
-
-    /// Bitpacked and raw postings are stored as plain row ids: decode them into an array,
-    /// adjust in place and add to the output postings, without materializing an intermediate
-    /// posting list. Roaring postings are decoded into an array only if they must be adjusted.
-    bool deserialize_to_array = merged_part_offsets
-        || token_info.header & (PostingsSerialization::Flags::IsCompressed | PostingsSerialization::Flags::RawPostings);
+    std::vector<PostingListPtr> postings;
+    postings.reserve(token_info.offsets.size());
 
     for (const auto offset_in_file : token_info.offsets)
     {
         stream->seekToMark({offset_in_file, 0});
-
-        if (deserialize_to_array)
-        {
-            row_ids_buffer.clear();
-            serialization.deserializeToArray(*data_buffer, token_info.header, token_info.cardinality, row_ids_buffer);
-            appendPostings(source_num, row_ids_buffer);
-        }
-        else
-        {
-            /// Flush the array first to keep at most one of the output containers non-empty.
-            if (!output_postings_array.empty())
-            {
-                appendPostingsToBitmap(output_postings_array);
-                output_postings_array.clear();
-            }
-
-            auto posting = serialization.deserializeToBitmap(*data_buffer, token_info.header, token_info.cardinality);
-            output_postings_bitmap |= *posting;
-        }
+        postings.emplace_back(postings_serialization.deserialize(*data_buffer, token_info.header, token_info.cardinality));
     }
+
+    return postings;
 }
 
-void MergeTextIndexesTask::readAndAppendPositions(size_t source_num, TokenPostingsInfo & token_info)
+PostingListPtr MergeTextIndexesTask::adjustPartOffsets(size_t source_num, PostingListPtr posting_list)
 {
-    auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
-    auto * data_buffer = stream->getDataBuffer();
-    stream->seekToMark({token_info.position_offset, 0});
+    if (!merged_part_offsets)
+        return posting_list;
 
-    position_entries_buffer.clear();
-    TextIndexPositionCodec::decode(*data_buffer, position_entries_buffer);
+    std::vector<UInt32> offsets(posting_list->cardinality());
+    posting_list->toUint32Array(offsets.data());
+    size_t part_index = segments[source_num].part_index;
 
-    /// Adjust doc_ids if merging parts with offset remapping.
-    if (merged_part_offsets)
-    {
-        size_t part_index = segments[source_num].part_index;
-        for (auto & entry : position_entries_buffer)
-            entry = entry.withDocId(adjustPartOffset(part_index, entry.doc_id));
-    }
+    for (auto & offset : offsets)
+        offset = static_cast<UInt32>((*merged_part_offsets)[part_index, offset]);
 
-    output_positions.insert(output_positions.end(), position_entries_buffer.begin(), position_entries_buffer.end());
+    return std::make_shared<PostingList>(offsets.size(), offsets.data());
 }
 
 void MergeTextIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
-    TokenPostingsInfo token_info;
+    PostingListBuilder builder(&output_postings);
+    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
 
-    if (output_postings_bitmap.isEmpty())
-    {
-        std::sort(output_postings_array.begin(), output_postings_array.end());
-        auto postings_span = std::span<const UInt32>(output_postings_array.data(), output_postings_array.size());
-
-        token_info = TextIndexSerialization::serializePostings(postings_span, *postings_stream, params, postings_serialization);
-
-        if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
-            token_info.embedded_postings.assign(output_postings_array.begin(), output_postings_array.end());
-    }
-    else
-    {
-        /// The array is flushed into the bitmap whenever the bitmap becomes non-empty.
-        chassert(output_postings_array.empty());
-        /// The bitmap is populated only when the cardinality exceeds MAX_CARDINALITY_FOR_RAW_POSTINGS, so never embedded here.
-        chassert(!(token_info.header & PostingsSerialization::Flags::EmbeddedPostings));
-
-        PostingListBuilder builder(&output_postings_bitmap);
-        token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
-    }
-
-    /// Serialize position data if positions are enabled.
-    if (params.positions && !output_positions.empty())
-    {
-        auto * positions_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPositions);
-
-        /// Entries from multiple source parts may interleave after doc_id remapping.
-        std::sort(output_positions.begin(), output_positions.end());
-
-        size_t out = 0;
-        for (size_t i = 1; i < output_positions.size(); ++i)
-        {
-            if (output_positions[out].sameBucket(output_positions[i]))
-                output_positions[out].mergeBitmap(output_positions[i]);
-            else
-                output_positions[++out] = output_positions[i];
-        }
-
-        output_positions.resize(out + 1);
-
-        token_info.header |= PostingsSerialization::Flags::HasPositions;
-        token_info.position_offset = positions_stream->plain_hashing.count();
-        token_info.position_cardinality = static_cast<UInt32>(output_positions.size());
-
-        TextIndexPositionCodec::encode(output_positions, positions_stream->plain_hashing);
-    }
+    if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
+        token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
 
     output_infos.push_back(token_info);
-    output_postings_array.clear();
-    output_postings_bitmap.clear();
-    output_positions.clear();
+    output_postings.clear();
 }
 
 void MergeTextIndexesTask::flushDictionaryBlock()
@@ -562,16 +375,18 @@ void MergeTextIndexesTask::flushDictionaryBlock()
         TextIndexSerialization::serializeTokenInfo(ostr, output_infos[i]);
 
         if (output_infos[i].header & PostingsSerialization::Flags::EmbeddedPostings)
-            PostingsSerialization::serializeRaw(output_infos[i].embedded_postings, ostr);
+        {
+            const auto & roaring_bitmap = output_infos[i].embedded_postings->roaring;
+            postings_serialization.serialize(roaring_bitmap, output_infos[i].header, ostr);
+        }
     }
 
     output_tokens = ColumnString::create();
-    output_postings_bitmap.clear();
-    output_postings_array.clear();
+    output_postings.clear();
     output_infos.clear();
 }
 
-bool MergeTextIndexesTask::isNewToken(const TokenSortCursor & cursor) const
+bool MergeTextIndexesTask::isNewToken(const SortCursor & cursor) const
 {
     const auto & input_str = assert_cast<const ColumnString &>(*inputs[cursor->order].tokens);
     const auto & output_str = assert_cast<const ColumnString &>(*output_tokens);
@@ -585,12 +400,16 @@ bool MergeTextIndexesTask::executeStep()
     {
         is_initialized = true;
         initializeQueue();
-
         /// Write marks for compatibility with other skip indexes.
-        /// An empty part carries no marks at all, exactly like every other skip index on an empty part.
+        /// An empty part carries no marks at all, exactly like every other skip index on an
+        /// empty part. Writing one here would leave the marks file with a single mark while
+        /// `getMarksCountForSkipIndex` reports zero, so reading the marks back (e.g. when the
+        /// mark cache is prewarmed on attach) fails with `Too many marks in file`.
+        /// The part is not finalized yet at this stage, so its `index_granularity` is empty;
+        /// rely on the merged row count instead.
+        chassert(new_data_part);
         if (num_rows != 0)
         {
-            chassert(new_data_part);
             bool can_use_adaptive_granularity = new_data_part->index_granularity_info.mark_type.adaptive;
             writeMarks(output_streams, can_use_adaptive_granularity);
         }
@@ -606,46 +425,35 @@ bool MergeTextIndexesTask::executeStep()
 
     do
     {
-        auto [current_ptr, batch_size] = queue.current();
-        TokenSortCursor & current = *current_ptr;
+        SortCursor current = queue.current();
 
-        size_t source_num = current->order;
-        auto & source_block = inputs[source_num];
-
-        /// All rows of a batch belong to one dictionary block, whose tokens are strictly
-        /// increasing. Only the first row of the batch can continue the current token.
-        bool first_row_is_new_token = isNewToken(current);
-        size_t row = current->getRow();
-
-        for (size_t i = 0; i < batch_size; ++i, ++row)
+        if (isNewToken(current))
         {
-            if (i > 0 || first_row_is_new_token)
-            {
-                if (!output_postings_bitmap.isEmpty() || !output_postings_array.empty())
-                    flushPostingList();
+            if (!output_postings.isEmpty())
+                flushPostingList();
 
-                if (output_tokens->size() >= params.dictionary_block_size)
-                    flushDictionaryBlock();
+            if (output_tokens->size() >= params.dictionary_block_size)
+                flushDictionaryBlock();
 
-                auto & output_tokens_str = assert_cast<ColumnString &>(*output_tokens);
-                output_tokens_str.insertFrom(*source_block.tokens, row);
-            }
-
-            auto & token_info = source_block.token_infos[row];
-            readAndAppendPostings(source_num, token_info);
-
-            if (params.positions && (token_info.header & PostingsSerialization::Flags::HasPositions))
-                readAndAppendPositions(source_num, token_info);
+            output_tokens->insertFrom(*inputs[current->order].tokens, current->getRow());
         }
 
-        if (!current->isLast(batch_size))
+        auto read_postings = readPostingLists(current->order);
+
+        for (auto & posting : read_postings)
         {
-            queue.next(batch_size);
+            posting = adjustPartOffsets(current->order, posting);
+            output_postings |= *posting;
+        }
+
+        if (!current->isLast())
+        {
+            queue.next();
         }
         else
         {
             queue.removeTop();
-            readDictionaryBlock(source_num);
+            readDictionaryBlock(current->order);
         }
     } while (queue.isValid() && watch.elapsedMilliseconds() < step_time_ms);
 
@@ -654,7 +462,7 @@ bool MergeTextIndexesTask::executeStep()
 
 void MergeTextIndexesTask::finalize()
 {
-    if (!output_postings_bitmap.isEmpty() || !output_postings_array.empty())
+    if (!output_postings.isEmpty())
         flushPostingList();
 
     if (!output_tokens->empty())
@@ -662,20 +470,10 @@ void MergeTextIndexesTask::finalize()
 
     auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
     DictionarySparseIndex sparse_index(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
-    TextIndexSerialization::serializeHeader(params.serialization_version, sparse_index, postings_serialization.getPostingListCodec()->getType(), params.positions, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeSparseIndex(sparse_index, index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();
-
-    /// Same as in `MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization`
-    if (need_fsync)
-    {
-        std::vector<const MergeTreeWriterStream *> streams_to_sync;
-        streams_to_sync.reserve(output_streams_holders.size());
-        for (const auto & stream : output_streams_holders)
-            streams_to_sync.push_back(stream.get());
-        parallelSyncFiles(streams_to_sync);
-    }
 }
 
 void MergeTextIndexesTask::cancel() noexcept

@@ -25,7 +25,7 @@ using namespace GatherUtils;
 namespace
 {
 
-class ConcatImpl final : public IFunction
+class ConcatImpl : public IFunction
 {
 public:
     ConcatImpl(const char * name_, bool is_injective_)
@@ -114,14 +114,14 @@ private:
     ColumnPtr executeFormatImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const size_t num_arguments = arguments.size();
-        chassert(num_arguments >= 2);
+        assert(num_arguments >= 2);
 
         auto col_res = ColumnString::create();
-        VectorWithMemoryTracking<const ColumnString::Chars *> data(num_arguments);
-        VectorWithMemoryTracking<const ColumnString::Offsets *> offsets(num_arguments);
-        VectorWithMemoryTracking<size_t> fixed_string_sizes(num_arguments);
-        VectorWithMemoryTracking<std::optional<String>> constant_strings(num_arguments);
-        VectorWithMemoryTracking<ColumnString::MutablePtr> converted_col_ptrs(num_arguments);
+        std::vector<const ColumnString::Chars *> data(num_arguments);
+        std::vector<const ColumnString::Offsets *> offsets(num_arguments);
+        std::vector<size_t> fixed_string_sizes(num_arguments);
+        std::vector<std::optional<String>> constant_strings(num_arguments);
+        std::vector<ColumnString::MutablePtr> converted_col_ptrs(num_arguments);
         bool has_column_string = false;
         bool has_column_fixed_string = false;
         for (size_t i = 0; i < num_arguments; ++i)
@@ -146,7 +146,12 @@ private:
             else
             {
                 /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String.
-                auto full_column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+                /// Only strip top-level wrappers (Const, Sparse, LowCardinality) without recursing into subcolumns.
+                /// Using the recursive convertToFullIfNeeded would strip LowCardinality from inside
+                /// compound types like Variant while the type is not updated, creating a type/column mismatch.
+                auto full_column = column->convertToFullColumnIfConst()
+                    ->convertToFullColumnIfSparse()
+                    ->convertToFullColumnIfLowCardinality();
                 auto serialization = arguments[i].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
                 ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
@@ -194,7 +199,7 @@ private:
 
 /// Works with arrays via `arrayConcat`, maps via `mapConcat`, and tuples via `tupleConcat`.
 /// Additionally, allows concatenation of arbitrary types that can be cast to string using the corresponding default serialization.
-class ConcatOverloadResolver final : public IFunctionOverloadResolver
+class ConcatOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "concat";
@@ -259,7 +264,7 @@ REGISTER_FUNCTION(Concat)
     FunctionDocumentation::Description description = R"(
 Concatenates the given arguments.
 
-Arguments which are not of types [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) are converted to strings using their default serialization.
+Arguments which are not of types [`String`](../data-types/string.md) or [`FixedString`](../data-types/fixedstring.md) are converted to strings using their default serialization.
 As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 )";
     FunctionDocumentation::Syntax syntax = "concat([s1, s2, ...])";
@@ -311,17 +316,13 @@ Can be used for optimization of `GROUP BY`.
     FunctionDocumentation::Examples examples_injective = {
     {
         "Group by optimization",
+        "SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)",
         R"(
-CREATE TABLE key_val (key1 String, key2 String, value UInt32) ENGINE = Memory;
-INSERT INTO key_val VALUES ('Hello, ', 'World!', 1), ('Hello, ', 'World!', 2), ('Hello, ', 'World', 3);
-
-SELECT concatAssumeInjective(key1, key2) AS key, sum(value) FROM key_val GROUP BY key ORDER BY key;
-        )",
-        R"(
-┌─key───────────┬─sum(value)─┐
-│ Hello, World  │          3 │
-│ Hello, World! │          3 │
-└───────────────┴────────────┘
+┌─concat(key1, key2)─┬─sum(value)─┐
+│ Hello, World!      │          3 │
+│ Hello, World!      │          2 │
+│ Hello, World       │          3 │
+└────────────────────┴────────────┘
         )"
     }
     };

@@ -141,14 +141,6 @@
             text-decoration: none;
         }
 
-        /* File size shown next to a file link - same font size, but muted */
-        .file-size {
-            color: var(--text-color);
-            font-weight: normal;
-            opacity: 0.7;
-            white-space: nowrap;
-        }
-
         .external-link {
             color: var(--file-link-color);
             font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -347,11 +339,6 @@
             text-decoration: underline;
         }
 
-        .status-column a {
-            text-decoration: underline;
-            cursor: pointer;
-        }
-
         th, td {
             padding: 8px;
             border: 1px solid var(--table-border-color);
@@ -525,10 +512,10 @@
         const status_ = status.toLowerCase();
 
         const isFailure =
-            (status_.includes('fail') || status_.includes('error') || status_.includes('dropped') || status_ === 'xpass' || status_ === 'slower')
+            (status_.includes('fail') || status_.includes('error') || status_.includes('dropped') || status_ === 'xpass')
             && status_ !== 'xfail';
         const isWarning =
-            status_.includes('pending') || status_.includes('running') || status_ === 'unstable';
+            status_.includes('pending') || status_.includes('running');
 
         if (filter === 'failures') {
             return isFailure;
@@ -676,21 +663,14 @@
         const statusLower = (status || '').toLowerCase();
         if (statusLower.includes('error')) return 0;
         if (statusLower.includes('fail') && statusLower !== 'xfail') return 1;
-        // Perf-comparison per-query statuses (compare.sh emits slower/unstable/success).
-        if (statusLower === 'slower') return 1;
-        if (statusLower === 'unstable') return 2;
-        // Keep UNKNOWN right under the errors/failures: these are tests whose real
-        // result was lost (e.g. demoted when the run aborted), so they are the rows
-        // worth looking at first, not buried below all the OK rows.
-        if (statusLower.includes('unknown')) return 2;
-        if (statusLower === 'xpass') return 3;
-        if (statusLower.includes('running')) return 4;
-        if (statusLower.includes('dropped')) return 5;
-        if (statusLower.includes('pending')) return 6;
-        if (statusLower === 'ok' || statusLower.includes('success')) return 7;
-        if (statusLower === 'xfail') return 8;
-        if (statusLower.includes('skipped')) return 9;
-        return 10;
+        if (statusLower === 'xpass') return 2;
+        if (statusLower.includes('running')) return 3;
+        if (statusLower.includes('dropped')) return 4;
+        if (statusLower.includes('pending')) return 5;
+        if (statusLower === 'ok' || statusLower.includes('success')) return 6;
+        if (statusLower === 'xfail') return 7;
+        if (statusLower.includes('skipped')) return 8;
+        return 9;
     }
 
     function formatTimestamp(timestamp, showDate = true) {
@@ -711,20 +691,16 @@
     }
 
     function formatDuration(durationInSeconds, detailed = false) {
-        // Treat null/undefined/non-numeric as "unknown"; a literal 0 is a
-        // real measurement and flows through the precision ladder below
-        // (otherwise sub-millisecond perf-comparison rows showed up as the
-        // misleading placeholder "00s").
-        if (durationInSeconds === null || durationInSeconds === undefined) {
-            return '00s';
-        }
-        const duration = parseFloat(durationInSeconds);
-        if (isNaN(duration)) {
+        // Check if the duration is empty, null, or not a number
+        if (!durationInSeconds || isNaN(durationInSeconds)) {
             return '00s';
         }
 
-        if (detailed && duration >= 1) {
-            // H/M/S format for job-level totals (e.g. "1h 23m 45s").
+        // Ensure duration is a floating-point number
+        const duration = parseFloat(durationInSeconds);
+
+        if (detailed) {
+            // Format in the detailed format with hours, minutes, and seconds
             const hours = Math.floor(duration / 3600);
             const minutes = Math.floor((duration % 3600) / 60);
             const seconds = Math.floor(duration % 60);
@@ -734,74 +710,20 @@
             const formattedSeconds = `${String(seconds).padStart(2, '0')}s`;
 
             return `${formattedHours}${formattedMinutes}${formattedSeconds}`.trim();
-        }
+        } else {
+            if (duration < 1) {
+                // Sub-second durations: show milliseconds
+                return `${Math.floor(duration * 1000)}ms`;
+            }
+            // Format in the default format with seconds and milliseconds
+            const seconds = Math.floor(duration);
+            const milliseconds = Math.floor((duration % 1) * 1000);
 
-        // Sub-second precision ladder: drop to a smaller unit when the
-        // next-coarser one would round to zero. Covers true zero too.
-        if (duration < 0.00001) {
-            // < 0.01ms — integer nanoseconds.
-            return `${Math.round(duration * 1e9)}ns`;
-        }
-        if (duration < 0.001) {
-            // < 1ms but >= 0.01ms — two decimals in ms.
-            return `${(duration * 1000).toFixed(2)}ms`;
-        }
-        if (duration < 1) {
-            // Sub-second: integer milliseconds.
-            return `${Math.floor(duration * 1000)}ms`;
-        }
+            const formattedSeconds = String(seconds);
+            const formattedMilliseconds = String(milliseconds).padStart(2, 0).slice(-2);
 
-        // >= 1s and not detailed: seconds with two-digit milliseconds.
-        const seconds = Math.floor(duration);
-        const milliseconds = Math.floor((duration % 1) * 1000);
-
-        const formattedSeconds = String(seconds);
-        const formattedMilliseconds = String(milliseconds).padStart(2, 0).slice(-2);
-
-        return `${formattedSeconds}.${formattedMilliseconds}`;
-    }
-
-    // e.g. 1288490189 -> "1.2 GiB"; empty string for an unknown size.
-    function formatFileSize(sizeInBytes) {
-        if (sizeInBytes === null || sizeInBytes === undefined) {
-            return '';
+            return `${formattedSeconds}.${formattedMilliseconds}`;
         }
-        const size = parseFloat(sizeInBytes);
-        if (isNaN(size) || size < 0) {
-            return '';
-        }
-        const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
-        let unitIdx = 0;
-        let value = size;
-        while (value >= 1024 && unitIdx < units.length - 1) {
-            value /= 1024;
-            unitIdx++;
-        }
-        return `${unitIdx === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIdx]}`;
-    }
-
-    // Size of the linked file, reused from StorageUsage (uploaded_details is
-    // keyed by basename, which is the link's last path component). undefined if
-    // unknown, e.g. a link to another report.
-    function sizeForLink(link, storage_usage) {
-        const details = storage_usage && storage_usage.uploaded_details;
-        if (!details) return undefined;
-        let name = link.split('/').pop().split('?')[0];
-        try {
-            name = decodeURIComponent(name);
-        } catch (e) {
-        }
-        return details[name];
-    }
-
-    // Appends " (1.2 GiB)" to a file link element, if the size is known.
-    function appendFileSize(linkElement, sizeInBytes) {
-        const text = formatFileSize(sizeInBytes);
-        if (!text) return;
-        const sizeElement = document.createElement('span');
-        sizeElement.className = 'file-size';
-        sizeElement.textContent = ` (${text})`;
-        linkElement.appendChild(sizeElement);
     }
 
     // Function to determine status class based on value
@@ -809,7 +731,6 @@
         const lowerStatus = status.toLowerCase();
         if (lowerStatus === 'xfail') return 'status-other';  // expected failure: gray (known, not alarming)
         if (lowerStatus === 'xpass') return 'status-fail';    // unexpected pass: red
-        if (lowerStatus === 'slower') return 'status-fail';    // perf regression: red, as shouldShowRow counts it
         if (lowerStatus.includes('success') || lowerStatus === 'ok') return 'status-success';
         if (lowerStatus.includes('fail')) return 'status-fail';
         if (lowerStatus.includes('pending')) return 'status-pending';
@@ -884,41 +805,7 @@
         element.style.verticalAlign = 'middle';
     }
 
-    // Render the current Result's own labels in the sidebar. Without this the
-    // labels of a drilled-into job would only be visible in the parent
-    // overview row, never on the job's own page.
-    function addLabelsWidget(ext) {
-        const labels = normalizeLabels(ext?.labels, ext?.hlabels);
-        if (labels.length === 0) return;
-
-        const statusContainer = document.getElementById('status-container');
-        const widget = document.createElement('div');
-        widget.className = 'status-widget';
-        widget.style.textAlign = 'left';
-
-        labels.forEach(({name, link, hint}) => {
-            const element = link ? document.createElement('a') : document.createElement('span');
-            if (link) {
-                element.href = link;
-                element.target = '_blank';
-                element.rel = 'noopener noreferrer';
-            }
-            applyLabelStyles(element, name);
-            element.style.marginLeft = '0';
-            if (hint) {
-                element.title = hint;
-                element.style.cursor = link ? 'pointer' : 'help';
-            }
-            const line = document.createElement('div');
-            line.style.margin = '4px 0';
-            line.appendChild(element);
-            widget.appendChild(line);
-        });
-
-        statusContainer.appendChild(widget);
-    }
-
-    function addFileLinksWidget(links, storage_usage = null) {
+    function addFileLinksWidget(links) {
         if (!Array.isArray(links) || links.length === 0) return;
 
         const statusContainer = document.getElementById('status-container');
@@ -934,7 +821,6 @@
             fileLink.target = '_blank';
             fileLink.className = 'file-link';
             fileLink.textContent = link.includes(base_url) ? "Report" : link.split('/').pop();
-            appendFileSize(fileLink, sizeForLink(link, storage_usage));
 
             // Wrap each link in its own line for spacing
             const line = document.createElement('div');
@@ -1102,41 +988,16 @@
         const clampedDuration = Math.max(minValue, Math.min(duration, maxValue));
         const durationLeft = ((clampedDuration - minValue) / range) * 100;
 
-        // Percentile rank of this run's duration among recent runs, so the
-        // header can show how it compares (e.g. "faster than 60%").
-        const percentileOf = (d) => {
-            if (d <= values[0]) return keys[0];
-            if (d >= values[values.length - 1]) return keys[keys.length - 1];
-            for (let i = 0; i < values.length - 1; i++) {
-                if (d >= values[i] && d <= values[i + 1]) {
-                    const span = values[i + 1] - values[i] || 1;
-                    return keys[i] + ((d - values[i]) / span) * (keys[i + 1] - keys[i]);
-                }
-            }
-            return keys[keys.length - 1];
-        };
-        const fasterThan = Math.max(0, Math.min(100, Math.round(100 - percentileOf(duration))));
+        const topLabelBox = document.createElement("div");
+        //topLabelBox.style.fontSize = "10px";
+        topLabelBox.style.marginBottom = "4px";
 
-        // Header matches the storage-usage / host-usage widgets: a plain label,
-        // then the value + comparison on the next line, right-aligned and faded.
-        const infoContainer = document.createElement("div");
-        infoContainer.style.display = "flex";
-        infoContainer.style.flexDirection = "column";
-        infoContainer.style.fontSize = "0.8em";
-        infoContainer.style.marginBottom = "4px";
+        const currentLabel = document.createElement("div");
+        currentLabel.style.textAlign = "left";
+        currentLabel.textContent = `duration: ${formatDurationMs(duration)}`;
 
-        const nameRow = document.createElement("div");
-        nameRow.textContent = "duration";
-
-        const detailsRow = document.createElement("div");
-        detailsRow.style.textAlign = "right";
-        detailsRow.style.fontSize = "0.85em";
-        detailsRow.style.color = "#666";
-        detailsRow.textContent = `${formatDurationMs(duration)} (faster than ${fasterThan}%)`;
-
-        infoContainer.appendChild(nameRow);
-        infoContainer.appendChild(detailsRow);
-        chartWrapper.appendChild(infoContainer);
+        topLabelBox.appendChild(currentLabel);
+        chartWrapper.appendChild(topLabelBox);
 
         // --- Bar
         const bar = document.createElement("div");
@@ -1190,334 +1051,6 @@
         }
     }
 
-    // Renders the whole-VM CPU/RAM timeline collected by praktika's
-    // HostMetricsCollector and stored in a job Result's ext.metrics.
-    // Shape: { interval, duration, mem_total_gb, n_raw, peaks: {cpu, mem, mem_gb},
-    //          psi?: {...}, series: { cpu: [[t,avg,peak],...], iowait?: [...], mem: [...] } }
-    function addHostMetricsChart(metrics) {
-        // Require the current schema (with exact `peaks`). Reports produced by
-        // the earlier version lack it and use [t, v] points - skip rather than
-        // degrade, so the chart code only ever handles one shape.
-        if (!metrics || !metrics.series || !metrics.peaks) return;
-        const cpu = metrics.series.cpu || [];
-        // Reports from before iowait was collected simply have no series.
-        const iowait = metrics.series.iowait || [];
-        const mem = metrics.series.mem || [];
-        const disk = metrics.series.disk || [];
-        if (cpu.length < 2 && mem.length < 2 && disk.length < 2) return;
-
-        const statusContainer = document.getElementById("status-container");
-        const wrapper = document.createElement("div");
-        wrapper.className = "status-widget";
-        wrapper.style.position = "relative";
-
-        const CPU_COLOR = "#4e79a7";
-        const IOWAIT_COLOR = "#f28e2b";
-        const MEM_COLOR = "#e15759";
-        const DISK_COLOR = "#59a14f";
-
-        // Series points are [t, avg, peak].
-        const avgOf = (p) => p[1];
-        const peakOf = (p) => p[2];
-        // Exact global peaks (max over every fine sample, never decimated away).
-        const cpuPeak = metrics.peaks.cpu;
-        const iowaitPeak = metrics.peaks.iowait;
-        const memPeak = metrics.peaks.mem;
-        const diskPeak = metrics.peaks.disk;
-        const lastT = (s) => (s.length ? s[s.length - 1][0] : 0);
-        const duration = Math.max(
-            metrics.duration || 0,
-            lastT(cpu), lastT(iowait), lastT(mem), lastT(disk),
-            1
-        );
-
-        const fmtT = (sec) => {
-            sec = Math.round(sec);
-            const h = Math.floor(sec / 3600);
-            const m = Math.floor((sec % 3600) / 60);
-            const s = sec % 60;
-            if (h > 0) return `${h}h${String(m).padStart(2, "0")}m`;
-            if (m > 0) return `${m}m${String(s).padStart(2, "0")}s`;
-            return `${s}s`;
-        };
-
-        // Header: a title, then two columns - the colour-keyed peak legend on
-        // the left and the PSI stall totals on the right. Each entry is its own
-        // nowrap line so nothing wraps in the narrow status panel.
-        const title = document.createElement("div");
-        title.textContent = "host usage";
-        title.style.fontSize = "0.8em";
-        title.style.marginBottom = "2px";
-        wrapper.appendChild(title);
-
-        const cols = document.createElement("div");
-        cols.style.display = "flex";
-        cols.style.justifyContent = "space-between";
-        cols.style.gap = "10px";
-        cols.style.fontSize = "0.75em";
-        cols.style.marginBottom = "4px";
-
-        const mkCol = (align) => {
-            const c = document.createElement("div");
-            c.style.display = "flex";
-            c.style.flexDirection = "column";
-            c.style.whiteSpace = "nowrap";
-            c.style.textAlign = align;
-            return c;
-        };
-        const addRow = (col, html) => {
-            const d = document.createElement("div");
-            d.innerHTML = html;
-            col.appendChild(d);
-        };
-
-        // Left column: peak legend, one metric per line.
-        const legendCol = mkCol("left");
-        addRow(legendCol, `<span style="color:${CPU_COLOR}">■</span> cpu ${cpuPeak.toFixed(0)}% peak`);
-        if (iowait.length && iowaitPeak != null) {
-            addRow(legendCol, `<span style="color:${IOWAIT_COLOR}">■</span> iowait ${iowaitPeak.toFixed(0)}% peak`);
-        }
-        addRow(legendCol, `<span style="color:${MEM_COLOR}">■</span> ram ${memPeak.toFixed(0)}%` +
-            (metrics.mem_total_gb ? ` of ${metrics.mem_total_gb}GB` : ""));
-        if (disk.length) {
-            addRow(legendCol, `<span style="color:${DISK_COLOR}">■</span> disk ${diskPeak.toFixed(0)}%` +
-                (metrics.disk_total_gb ? ` of ${metrics.disk_total_gb}GB` : ""));
-        }
-        cols.appendChild(legendCol);
-
-        // Right column: PSI stall totals (kernel-accumulated over the run, so
-        // they reflect contention even between samples), one per line.
-        if (metrics.psi) {
-            const psi = metrics.psi;
-            const psiCol = mkCol("right");
-            psiCol.style.opacity = "0.7";
-            if (psi.cpu_s != null) addRow(psiCol, `cpu stalled ${psi.cpu_s}s`);
-            if (psi.mem_some_s != null) addRow(psiCol, `mem stalled ${psi.mem_some_s}s`);
-            if (psi.mem_full_s) addRow(psiCol, `mem stalled(all) ${psi.mem_full_s}s`);
-            if (psi.io_some_s != null) addRow(psiCol, `io stalled ${psi.io_some_s}s`);
-            if (psi.io_full_s) addRow(psiCol, `io stalled(all) ${psi.io_full_s}s`);
-            if (psiCol.children.length) cols.appendChild(psiCol);
-        }
-
-        wrapper.appendChild(cols);
-
-        // Responsive SVG (scales to the widget width via viewBox).
-        const W = 320, H = 130, ML = 26, MR = 6, TP = 6, BP = 16;
-        const plotW = W - ML - MR, plotH = H - TP - BP;
-        const svgNS = "http://www.w3.org/2000/svg";
-        const svg = document.createElementNS(svgNS, "svg");
-        svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-        svg.setAttribute("preserveAspectRatio", "none");
-        svg.style.width = "100%";
-        svg.style.height = `${H}px`;
-        svg.style.display = "block";
-        svg.style.cursor = "crosshair";
-
-        const gridColor =
-            getComputedStyle(document.body).getPropertyValue("--table-border-color").trim() || "#ccc";
-        const textColor =
-            getComputedStyle(document.body).getPropertyValue("--text-color").trim() || "#555";
-
-        const xScale = (t) => ML + (t / duration) * plotW;
-        const yScale = (v) => TP + (1 - Math.max(0, Math.min(100, v)) / 100) * plotH;
-
-        const mkLine = (x1, y1, x2, y2, color, opacity) => {
-            const l = document.createElementNS(svgNS, "line");
-            l.setAttribute("x1", x1); l.setAttribute("y1", y1);
-            l.setAttribute("x2", x2); l.setAttribute("y2", y2);
-            l.setAttribute("stroke", color);
-            if (opacity != null) l.setAttribute("stroke-opacity", opacity);
-            svg.appendChild(l);
-            return l;
-        };
-        const mkText = (x, y, str, anchor) => {
-            const t = document.createElementNS(svgNS, "text");
-            t.setAttribute("x", x); t.setAttribute("y", y);
-            t.setAttribute("font-size", "8");
-            t.setAttribute("fill", textColor);
-            t.setAttribute("text-anchor", anchor || "start");
-            t.textContent = str;
-            svg.appendChild(t);
-        };
-
-        // Horizontal gridlines + y labels at 0/50/100%.
-        [0, 50, 100].forEach((v) => {
-            const y = yScale(v);
-            mkLine(ML, y, W - MR, y, gridColor, 0.5);
-            mkText(ML - 3, y + 3, `${v}`, "end");
-        });
-        // X axis time labels.
-        mkText(ML, H - 4, "0s", "start");
-        mkText(W - MR, H - 4, fmtT(duration), "end");
-
-        const mkPath = (series, color, valueFn, width, opacity) => {
-            if (series.length < 2) return;
-            const d = series
-                .map((p, i) => `${i === 0 ? "M" : "L"}${xScale(p[0]).toFixed(1)} ${yScale(valueFn(p)).toFixed(1)}`)
-                .join(" ");
-            const path = document.createElementNS(svgNS, "path");
-            path.setAttribute("d", d);
-            path.setAttribute("fill", "none");
-            path.setAttribute("stroke", color);
-            path.setAttribute("stroke-width", width);
-            path.setAttribute("stroke-opacity", opacity);
-            path.setAttribute("vector-effect", "non-scaling-stroke");
-            svg.appendChild(path);
-        };
-        // Faint peak envelope behind the solid average line for each metric.
-        mkPath(disk, DISK_COLOR, peakOf, "1", "0.35");
-        mkPath(disk, DISK_COLOR, avgOf, "1.2", "1");
-        mkPath(mem, MEM_COLOR, peakOf, "1", "0.35");
-        mkPath(mem, MEM_COLOR, avgOf, "1.2", "1");
-        mkPath(iowait, IOWAIT_COLOR, peakOf, "1", "0.35");
-        mkPath(iowait, IOWAIT_COLOR, avgOf, "1.2", "1");
-        mkPath(cpu, CPU_COLOR, peakOf, "1", "0.35");
-        mkPath(cpu, CPU_COLOR, avgOf, "1.2", "1");
-
-        // Hover cursor + tooltip.
-        const cursor = mkLine(ML, TP, ML, TP + plotH, textColor, 0);
-        const tip = document.createElement("div");
-        tip.style.position = "absolute";
-        tip.style.pointerEvents = "none";
-        tip.style.padding = "2px 5px";
-        tip.style.font = "11px monospace";
-        tip.style.background = "var(--info-background, rgba(0,0,0,0.8))";
-        tip.style.color = "var(--text-color, #fff)";
-        tip.style.border = `1px solid ${gridColor}`;
-        tip.style.borderRadius = "3px";
-        tip.style.whiteSpace = "nowrap";
-        tip.style.display = "none";
-        tip.style.zIndex = "10";
-        wrapper.appendChild(tip);
-
-        const nearest = (series, t) => {
-            if (!series.length) return null;
-            let best = series[0];
-            for (const p of series) {
-                if (Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
-            }
-            return best;
-        };
-
-        activeListeners.add(svg, "mousemove", (e) => {
-            const rect = svg.getBoundingClientRect();
-            // Map pixel x back to viewBox coordinates (svg is width-scaled).
-            const vx = ((e.clientX - rect.left) / rect.width) * W;
-            const t = ((vx - ML) / plotW) * duration;
-            if (t < 0 || t > duration) { cursor.setAttribute("stroke-opacity", 0); tip.style.display = "none"; return; }
-            const cx = xScale(t);
-            cursor.setAttribute("x1", cx); cursor.setAttribute("x2", cx);
-            cursor.setAttribute("stroke-opacity", 0.4);
-            const c = nearest(cpu, t), w = nearest(iowait, t), m = nearest(mem, t), d = nearest(disk, t);
-            const fmtPt = (label, color, p) =>
-                `<span style="color:${color}">${label}</span> ${avgOf(p).toFixed(0)}%` +
-                ` <span style="opacity:0.7">(peak ${peakOf(p).toFixed(0)}%)</span>`;
-            tip.innerHTML =
-                `${fmtT(t)}<br>` +
-                (c ? fmtPt("cpu", CPU_COLOR, c) + "<br>" : "") +
-                (w ? fmtPt("iowait", IOWAIT_COLOR, w) + "<br>" : "") +
-                (m ? fmtPt("ram", MEM_COLOR, m) + (d ? "<br>" : "") : "") +
-                (d ? fmtPt("disk", DISK_COLOR, d) : "");
-            tip.style.display = "block";
-            const left = Math.min(
-                (e.clientX - rect.left) + 8,
-                wrapper.clientWidth - tip.offsetWidth - 4
-            );
-            tip.style.left = `${Math.max(0, left)}px`;
-            tip.style.top = "20px";
-        });
-        activeListeners.add(svg, "mouseleave", () => {
-            cursor.setAttribute("stroke-opacity", 0);
-            tip.style.display = "none";
-        });
-
-        wrapper.appendChild(svg);
-        statusContainer.appendChild(wrapper);
-    }
-
-    // Whole-pipeline utilization KPI, accumulated across qualifying jobs into
-    // the workflow Result (see PipelineUtilization). Only present on the
-    // workflow-level result; values are capacity-time-weighted running sums, so
-    // the percentages are derived here as area / provisioned-resource-seconds.
-    function addPipelineUtilizationWidget(u) {
-        if (!u || !u.cpu_core_s) return;
-        const CPU_COLOR = "#4e79a7";
-        const MEM_COLOR = "#e15759";
-        const DISK_COLOR = "#59a14f";
-        const pct = (area, weight) => (weight ? Math.min(100, area / weight) : 0);
-        const cpuUtil = pct(u.cpu_used_area, u.cpu_core_s);
-        const memUtil = pct(u.mem_used_area, u.mem_gb_s);
-        const diskUtil = pct(u.disk_used_area, u.disk_gb_s);
-        // "some" stalls are wall-clock pressure fractions -> weighted by runtime;
-        // "full" stalls waste every core -> weighted by provisioned core-seconds.
-        const cpuStall = pct(u.cpu_stall_area, u.wall_time_s);
-        const memStall = pct(u.mem_stall_area, u.wall_time_s);
-        const ioStall = pct(u.io_stall_area, u.wall_time_s);
-        const memFull = pct(u.mem_full_area, u.cpu_core_s);
-        const ioFull = pct(u.io_full_area, u.cpu_core_s);
-        // Provisioned capacity-time, in hours (cores/GB * duration).
-        const cpuHours = u.cpu_core_s / 3600;
-        const memHours = u.mem_gb_s / 3600;
-        const diskHours = u.disk_gb_s / 3600;
-
-        const statusContainer = document.getElementById("status-container");
-        const wrapper = document.createElement("div");
-        wrapper.className = "status-widget";
-
-        const title = document.createElement("div");
-        title.style.fontSize = "0.8em";
-        title.textContent = "pipeline utilization";
-        wrapper.appendChild(title);
-
-        // Faded sub-line: job count and provisioned capacity-time.
-        const sub = document.createElement("div");
-        sub.style.fontSize = "0.7em";
-        sub.style.opacity = "0.55";
-        sub.style.marginBottom = "4px";
-        const fmtH = (h) => (h >= 100 ? Math.round(h) : h.toFixed(1));
-        sub.textContent =
-            `${u.jobs} job${u.jobs === 1 ? "" : "s"} · ${fmtH(cpuHours)} cpu-h · ${fmtH(memHours)} GiB-h` +
-            (u.disk_gb_s ? ` · ${fmtH(diskHours)} disk-GiB-h` : "");
-        wrapper.appendChild(sub);
-
-        const cols = document.createElement("div");
-        cols.style.display = "flex";
-        cols.style.justifyContent = "space-between";
-        cols.style.gap = "10px";
-        cols.style.fontSize = "0.75em";
-        const mkCol = (align) => {
-            const c = document.createElement("div");
-            c.style.display = "flex";
-            c.style.flexDirection = "column";
-            c.style.whiteSpace = "nowrap";
-            c.style.textAlign = align;
-            return c;
-        };
-        const addRow = (col, html) => {
-            const d = document.createElement("div");
-            d.innerHTML = html;
-            col.appendChild(d);
-        };
-
-        const utilCol = mkCol("left");
-        addRow(utilCol, `<span style="color:${CPU_COLOR}">■</span> cpu ${cpuUtil.toFixed(0)}%`);
-        addRow(utilCol, `<span style="color:${MEM_COLOR}">■</span> ram ${memUtil.toFixed(0)}%`);
-        if (u.disk_gb_s) {
-            addRow(utilCol, `<span style="color:${DISK_COLOR}">■</span> disk ${diskUtil.toFixed(0)}%`);
-        }
-        cols.appendChild(utilCol);
-
-        const stallCol = mkCol("right");
-        stallCol.style.opacity = "0.7";
-        addRow(stallCol, `cpu stalled ${cpuStall.toFixed(0)}%`);
-        addRow(stallCol, `mem stalled ${memStall.toFixed(0)}%` + (memFull >= 1 ? ` (full ${memFull.toFixed(0)}%)` : ""));
-        addRow(stallCol, `io stalled ${ioStall.toFixed(0)}%` + (ioFull >= 1 ? ` (full ${ioFull.toFixed(0)}%)` : ""));
-        cols.appendChild(stallCol);
-
-        wrapper.appendChild(cols);
-        statusContainer.appendChild(wrapper);
-    }
-
     function addStorageUsageChartToStatus(usage_data) {
         const statusContainer = document.getElementById("status-container");
 
@@ -1566,7 +1099,7 @@
         nameRow.style.textOverflow = "ellipsis";
         nameRow.style.letterSpacing = "-0.02em"; // Slightly condensed letter spacing
         nameRow.id = "storage-usage-name";
-        nameRow.textContent = "uploaded";
+        nameRow.textContent = "uploaded:";
 
         // Second line: XX% ...padding... YYYMB
         const detailsRow = document.createElement("div");
@@ -1653,7 +1186,7 @@
 
         // Show the total uploaded by default
         const showTotalUploaded = () => {
-            updateDisplay("uploaded", uploadedMB, 100);
+            updateDisplay("uploaded:", uploadedMB, 100);
         };
 
         // Show details for specific segment
@@ -1895,7 +1428,7 @@
             nameLine.style.whiteSpace = "normal";
             nameLine.style.overflow = "hidden";
             nameLine.style.maxWidth = "100%";
-            nameLine.style.height = "3.9em"; // Reserve space for 3 lines
+            nameLine.style.height = "2.6em"; // Reserve space for 2 lines
             nameLine.style.lineHeight = "1.3em";
             nameLine.style.textAlign = "left";
             widget.appendChild(nameLine);
@@ -2023,20 +1556,16 @@
 
                 if (column === 'status') {
                     const value_ = value ? value.toLowerCase() : "";
-                    const clickable = (result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0) || (Array.isArray(result.results) && result.results.length > 0);
-                    const statusEl = clickable ? document.createElement('a') : document.createElement('span');
-                    statusEl.className = getStatusClass(value_);
-                    statusEl.textContent = value_;
+                    const span = document.createElement('span');
+                    span.className = getStatusClass(value_);
+                    span.textContent = value_;
                     td.classList.add('status-column');
                     row.dataset.status = value_;
-                    if (clickable) {
-                        statusEl.href = '#';
-                        statusEl.addEventListener('click', (e) => {
-                            e.preventDefault();
-                            toggleInfoRow(row, result.info, result.results, result.links, result.ext?.storage_usage);
-                        });
+                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0) || (Array.isArray(result.results) && result.results.length > 0)) {
+                        span.style.cursor = "pointer";
+                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.results, result.links));
                     }
-                    td.appendChild(statusEl);
+                    td.appendChild(span);
                     row.style.display = shouldShowRow(filter, row.dataset.status) ? '' : 'none';
                 } else if (column === 'name') {
                     const statusValue = result["status"] ? result["status"].toLowerCase() : "";
@@ -2105,7 +1634,7 @@
 
             // unfold all for preview mode (nest_level = 0 in this case)
             if (nest_level === 0 && result.results.length > 0) {
-                toggleInfoRow(row, result.info, result.results, result.links, result.ext?.storage_usage);
+                toggleInfoRow(row, result.info, result.results, result.links);
             }
 
         });
@@ -2114,7 +1643,7 @@
     /**
      * Toggles an additional row below the clicked row to display the "info" text.
      */
-    function toggleInfoRow(row, infoText, sub_results = [], links = [], storage_usage = null) {
+    function toggleInfoRow(row, infoText, sub_results = [], links = []) {
         let nextRow = row.nextElementSibling;
 
         // Check if the next row is already an "info" row
@@ -2159,6 +1688,7 @@
                     let linkElement = document.createElement('a');
                     linkElement.href = link;
                     linkElement.target = "_blank"; // Open in a new tab
+                    linkElement.style.display = "block"; // Each link on a new line
 
                     if (!link.includes(base_url)) {
                         // External link: Show file name
@@ -2166,12 +1696,7 @@
                     } else {
                         linkElement.textContent = "Report";
                     }
-                    appendFileSize(linkElement, sizeForLink(link, storage_usage));
-
-                    // Each link, with its size, on a new line
-                    const line = document.createElement('div');
-                    line.appendChild(linkElement);
-                    linksContainer.appendChild(line);
+                    linksContainer.appendChild(linkElement);
                 });
 
                 infoCell.appendChild(linksContainer);
@@ -2362,21 +1887,14 @@
         if (runtimeCache.commitLink) createLinkElement(runtimeCache.commitLink, 'Commit', footerRight);
         const runLink = result?.ext?.run_url || runtimeCache.runLink;
         if (runLink) createLinkElement(runLink, 'Run', footerRight);
-        if (result) {
-            let i = 1;
-            for (const name of nameParams) {
-                if (name === result.name) {
-                    break;
-                }
-                i++;
+        let i = 1;
+        for (const name of nameParams) {
+            if (name === result.name) {
+                break;
             }
-            fillInNavigationBar(nameParams.slice(0, i + 1));
-        } else {
-            // The report is missing/expired so there is no result to align to.
-            // Still render the full path as breadcrumbs so the parent layers
-            // remain reachable (e.g. to return to the workflow or PR view).
-            fillInNavigationBar(nameParams);
+            i++;
         }
+        fillInNavigationBar(nameParams.slice(0, i + 1))
     }
 
     function renderNotificationPanels(container, ext, resultName) {
@@ -2486,9 +2004,8 @@
             duration: result.duration
         };
         let statusWidget = addStatusWidget(result.name, result.status, result.start_time, result.duration);
-        addLabelsWidget(result.ext);
         if (nameParams.length > 1) {
-            addFileLinksWidget(result.links, result.ext?.storage_usage);
+            addFileLinksWidget(result.links);
             if (nameParams.length === 2) {
                 addStatisticsWidget(nameParams[1], result.duration * 1000)
             }
@@ -2496,8 +2013,6 @@
             addTimeTraceWidget(result.results, statusWidget, originalWorkflowDetails);
         }
         addStorageUsageChartToStatus(result.ext?.storage_usage)
-        addPipelineUtilizationWidget(result.ext?.pipeline_utilization)
-        addHostMetricsChart(result.ext?.metrics)
     }
 
     const persistentStorage = {
@@ -2602,8 +2117,10 @@
         const results = await Promise.all(fetchTasks);
 
         if (nameParams.length > 1) {
-            const { data, updated } = results[0]; // First request result
-            // A missing per-job report is not a missing report.
+            const { data, updated, status } = results[0]; // First request result
+            if (status === 403) {
+                return { error: 403, message: 'Report does not exist or expired' };
+            }
             if (updated) {
                 runtimeCache.json1 = data;
                 hasNewData = true;
@@ -2732,12 +2249,13 @@
                     // For single-level results, check json0 status
                     shouldContinue = ["running", "pending"].includes((runtimeCache?.json0?.status || '').toLowerCase());
                 } else if (nameParams?.length === 2) {
-                    // For two-level results, check the status of the node actually rendered
-                    const target = runtimeCache?.json1 || getTargetResults(nameParams);
-                    // An unresolved target means nothing is loaded yet, so keep polling.
-                    shouldContinue = target
-                        ? ["running", "pending"].includes((target.status || '').toLowerCase())
-                        : true;
+                    // For two-level results, check json1 status (or json0 if json1 is null)
+                    if (runtimeCache?.json1) {
+                        shouldContinue = ["running", "pending"].includes((runtimeCache?.json1?.status || '').toLowerCase());
+                    } else {
+                        // If json1 is null, we might still be loading, so continue
+                        shouldContinue = true;
+                    }
                 }
 
                 if (!shouldContinue) {

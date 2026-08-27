@@ -5,7 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorSet.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorAnd.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
 
@@ -14,10 +14,7 @@ namespace DB::PrometheusQueryToSQL
 {
 
 SQLQueryPiece applyBinaryOperatorUnless(
-    const PrometheusQueryTree::BinaryOperator * operator_node,
-    SQLQueryPiece && left_argument,
-    SQLQueryPiece && right_argument,
-    ConverterContext & context)
+    const PQT::BinaryOperator * operator_node, SQLQueryPiece && left_argument, SQLQueryPiece && right_argument, ConverterContext & context)
 {
     checkArgumentTypesForSetBinaryOperator(operator_node, left_argument, right_argument, context);
 
@@ -43,7 +40,7 @@ SQLQueryPiece applyBinaryOperatorUnless(
 
     /// Step 1:
     /// SELECT timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
-    ///        groupBitOrForEach(arrayMap(x -> isNotNull(x), values)) AS join_presence
+    ///        countForEach(values) AS join_count
     /// GROUP BY join_group
     /// FROM right
     ///
@@ -59,8 +56,8 @@ SQLQueryPiece applyBinaryOperatorUnless(
             right_metric_name_dropped));
         builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
 
-        builder.select_list.push_back(makePresenceMask(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
-        builder.select_list.back()->setAlias(ColumnNames::JoinPresence);
+        builder.select_list.push_back(makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+        builder.select_list.back()->setAlias(ColumnNames::JoinCount);
 
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
 
@@ -73,7 +70,7 @@ SQLQueryPiece applyBinaryOperatorUnless(
 
     /// Step 2:
     /// SELECT group,
-    ///        if(notEmpty(join_presence), arrayMap(x, y -> if(y = 0, x, NULL), values, join_presence), values) AS values
+    ///        if(notEmpty(join_count), arrayMap(x, y -> if(y = 0, x, NULL), values, join_count), values) AS values
     /// FROM left LEFT ANY JOIN step1
     /// ON timeSeriesRemoveAllTagsExcept(group, on_tags) == join_group
     ///
@@ -85,7 +82,7 @@ SQLQueryPiece applyBinaryOperatorUnless(
 
         builder.select_list.push_back(makeASTFunction(
             "if",
-            makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::JoinPresence)),
+            makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::JoinCount)),
             makeASTFunction(
                 "arrayMap",
                 makeASTFunction(
@@ -97,7 +94,7 @@ SQLQueryPiece applyBinaryOperatorUnless(
                         make_intrusive<ASTIdentifier>("x"),
                         make_intrusive<ASTLiteral>(Field{} /* NULL */))),
                 make_intrusive<ASTIdentifier>(ColumnNames::Values),
-                make_intrusive<ASTIdentifier>(ColumnNames::JoinPresence)),
+                make_intrusive<ASTIdentifier>(ColumnNames::JoinCount)),
             make_intrusive<ASTIdentifier>(ColumnNames::Values)));
 
         builder.select_list.back()->setAlias(ColumnNames::Values);

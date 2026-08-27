@@ -1,8 +1,6 @@
 #include <Storages/System/StorageSystemDetachedTables.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
-#include <Common/Exception.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -27,15 +25,10 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 namespace
 {
 
-class DetachedTablesBlockSource final : public ISource
+class DetachedTablesBlockSource : public ISource
 {
 public:
     DetachedTablesBlockSource(
@@ -85,18 +78,7 @@ protected:
                 = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!detached_tables_it || !detached_tables_it->isValid())
-            {
-                try
-                {
-                    detached_tables_it = database->getDetachedTablesIterator(context, {}, false);
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
-                        continue;
-                    throw;
-                }
-            }
+                detached_tables_it = database->getDetachedTablesIterator(context, {}, false);
 
             for (; rows_count < max_block_size && detached_tables_it->isValid(); detached_tables_it->next())
             {
@@ -274,6 +256,3 @@ void ReadFromSystemDetachedTables::initializePipeline(QueryPipelineBuilder & pip
     pipeline.init(std::move(pipe));
 }
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDetachedTables) }

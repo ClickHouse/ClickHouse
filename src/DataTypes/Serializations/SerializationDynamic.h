@@ -10,7 +10,7 @@ namespace DB
 
 class SerializationDynamicElement;
 
-class SerializationDynamic final : public ISerialization
+class SerializationDynamic : public ISerialization
 {
 private:
     explicit SerializationDynamic(
@@ -101,7 +101,8 @@ public:
         size_t & total_size_of_variants) const;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -154,7 +155,7 @@ private:
     {
         SerializationVersion structure_version;
         DataTypePtr variant_type;
-        size_t num_dynamic_types{};
+        size_t num_dynamic_types;
         ColumnDynamic::StatisticsPtr statistics;
 
         /// For flattened serialization only.

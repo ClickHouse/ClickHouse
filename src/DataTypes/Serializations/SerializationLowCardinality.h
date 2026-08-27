@@ -8,7 +8,7 @@ namespace DB
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
-class SerializationLowCardinality final : public ISerialization
+class SerializationLowCardinality : public ISerialization
 {
 private:
     DataTypePtr dictionary_type;
@@ -53,7 +53,8 @@ public:
             SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-            IColumn & column,
+            ColumnPtr & column,
+            size_t rows_offset,
             size_t limit,
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state,

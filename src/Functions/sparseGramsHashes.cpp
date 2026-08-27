@@ -16,7 +16,7 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 template <bool is_utf8>
-class SparseGramsHashes final : public IFunction
+class SparseGramsHashes : public IFunction
 {
 public:
     static constexpr auto name = is_utf8 ? "sparseGramsHashesUTF8" : "sparseGramsHashes";
@@ -109,9 +109,9 @@ Uses `CRC32` as a hash function.
         "Usage example",
         "SELECT sparseGramsHashes('alice', 3)",
         R"(
-┌─sparseGramsHashes('alice', 3)────────────────┐
-│ [3851133533,3120039944,646693941,2577359366] │
-└──────────────────────────────────────────────┘
+┌─sparseGramsHashes('alice', 3)──────────────────────┐
+│ [1481062250,2450405249,4012725991,1918774096]      │
+└────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -129,9 +129,9 @@ Uses `CRC32` as a hash function.
         "Usage example",
         "SELECT sparseGramsHashesUTF8('алиса', 3)",
         R"(
-┌─sparseGramsHashesUTF8('алиса', 3)───────────────────────┐
-│ [1328958118,547287748,4155892324,2403052185,1673399070] │
-└─────────────────────────────────────────────────────────┘
+┌─sparseGramsHashesUTF8('алиса', 3)─┐
+│ [4178533925,3855635300,561830861] │
+└───────────────────────────────────┘
         )"
     }
     };

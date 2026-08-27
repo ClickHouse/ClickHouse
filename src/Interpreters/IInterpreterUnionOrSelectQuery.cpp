@@ -1,6 +1,5 @@
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 
-#include <Columns/ColumnConst.h>
 #include <Common/logger_useful.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
@@ -146,7 +145,6 @@ void IInterpreterUnionOrSelectQuery::setQuota(QueryPipeline & pipeline) const
         quota = context->getQuota();
 
     pipeline.setQuota(quota);
-    pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
 }
 
 static ASTPtr parseAdditionalPostFilter(const Context & context)

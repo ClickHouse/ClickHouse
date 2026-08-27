@@ -18,7 +18,7 @@ namespace ErrorCodes
 /// Function timeSeriesGroupToSamplingKey(group) returns a stable UInt64 hash derived from the tags
 /// of a specified group. The value is intended as a deterministic sort key for sampling operations
 /// like `limitk` and `limit_ratio`, where Prometheus requires a "deterministic pseudo-random" order.
-class FunctionTimeSeriesGroupToSamplingKey final : public IFunction
+class FunctionTimeSeriesGroupToSamplingKey : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesGroupToSamplingKey";
@@ -101,7 +101,7 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
         )",
         R"(
 ┌─group─┬─────────sampling_key─┐
-│     1 │ 15511321834549144507 │
+│     1 │ 12876543210987654321 │
 └───────┴──────────────────────┘
         )"
     }

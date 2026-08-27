@@ -3,13 +3,12 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/IDataType.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace DB
 {
 
-class DataTypeObject final : public IDataType
+class DataTypeObject : public IDataType
 {
 public:
     enum class SchemaFormat
@@ -71,10 +70,6 @@ public:
     const SchemaFormat & getSchemaFormat() const { return schema_format; }
     String getSchemaFormatString() const;
     const std::unordered_map<String, DataTypePtr> & getTypedPaths() const { return typed_paths; }
-
-    /// Returns a map from typed-path name to its default serialization, resolved once.
-    /// Used by mergedJSONPatch to serialize/deserialize typed-path values without a type tag.
-    UnorderedMapWithMemoryTracking<String, SerializationPtr> getTypedPathSerializations() const;
     const std::unordered_set<String> & getPathsToSkip() const { return paths_to_skip; }
     const std::vector<String> & getPathRegexpsToSkip() const { return path_regexps_to_skip; }
 

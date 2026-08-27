@@ -19,15 +19,14 @@ using FunctionNotLike = FunctionsStringSearch<NotLikeImpl>;
 
 REGISTER_FUNCTION(NotLike)
 {
-    FunctionDocumentation::Description description = "Similar to [`like`](#like) but negates the result. Supports the optional `ESCAPE` clause (see `like`).";
+    FunctionDocumentation::Description description = "Similar to [`like`](#like) but negates the result.";
     FunctionDocumentation::Syntax syntax = R"(
-notLike(haystack, pattern[, escape_character])
--- haystack NOT LIKE pattern [ESCAPE 'escape_character']
+notLike(haystack, pattern)
+-- haystack NOT LIKE pattern
     )";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "String in which the search is performed.", {"String", "FixedString"}},
-        {"pattern", "LIKE pattern to match against.", {"String"}},
-        {"escape_character", "Optional single-character string to use as the escape character instead of `\\`. Default: `\\`.", {"String"}}
+        {"pattern", "LIKE pattern to match against.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string does not match the `LIKE` pattern, otherwise `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
@@ -35,18 +34,18 @@ notLike(haystack, pattern[, escape_character])
         "Usage example",
         "SELECT notLike('ClickHouse', '%House%');",
         R"(
-┌─notLike('ClickHouse', '%House%')─┐
-│                                0 │
-└──────────────────────────────────┘
+┌─notLike('Cli⋯ '%House%')─┐
+│                        0 │
+└──────────────────────────┘
         )"
     },
     {
         "Non-matching pattern",
         "SELECT notLike('ClickHouse', '%SQL%');",
         R"(
-┌─notLike('ClickHouse', '%SQL%')─┐
-│                              1 │
-└────────────────────────────────┘
+┌─notLike('Cli⋯', '%SQL%')─┐
+│                        1 │
+└──────────────────────────┘
         )"
     }
     };

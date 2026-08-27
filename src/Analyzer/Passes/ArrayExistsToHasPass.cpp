@@ -2,7 +2,6 @@
 
 #include <Functions/array/has.h>
 
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -11,9 +10,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getLeastSupertype.h>
 
 namespace DB
@@ -25,45 +22,6 @@ namespace Setting
 
 namespace
 {
-
-/// `equals` compares the string family zero-padded, so a needle whose extra bytes are all NUL
-/// still matches a narrower element. `has` compares either the String supertype, which strips
-/// trailing NULs, or raw Fields, which are not padded. The two therefore agree only when the
-/// element and needle types are identical, and a container agrees only when its members do.
-bool stringFamilyPairIsNotEqualityEquivalent(const DataTypePtr & element_type, const DataTypePtr & needle_type)
-{
-    auto element = removeNullable(removeLowCardinality(element_type));
-    auto needle = removeNullable(removeLowCardinality(needle_type));
-
-    const auto * element_tuple = typeid_cast<const DataTypeTuple *>(element.get());
-    const auto * needle_tuple = typeid_cast<const DataTypeTuple *>(needle.get());
-    if (element_tuple && needle_tuple)
-    {
-        const auto & element_elements = element_tuple->getElements();
-        const auto & needle_elements = needle_tuple->getElements();
-        if (element_elements.size() != needle_elements.size())
-            return false;
-
-        for (size_t i = 0; i < element_elements.size(); ++i)
-            if (stringFamilyPairIsNotEqualityEquivalent(element_elements[i], needle_elements[i]))
-                return true;
-
-        return false;
-    }
-
-    const auto * element_array = typeid_cast<const DataTypeArray *>(element.get());
-    const auto * needle_array = typeid_cast<const DataTypeArray *>(needle.get());
-    if (element_array && needle_array)
-        return stringFamilyPairIsNotEqualityEquivalent(element_array->getNestedType(), needle_array->getNestedType());
-
-    const auto * element_map = typeid_cast<const DataTypeMap *>(element.get());
-    const auto * needle_map = typeid_cast<const DataTypeMap *>(needle.get());
-    if (element_map && needle_map)
-        return stringFamilyPairIsNotEqualityEquivalent(element_map->getKeyType(), needle_map->getKeyType())
-            || stringFamilyPairIsNotEqualityEquivalent(element_map->getValueType(), needle_map->getValueType());
-
-    return isStringOrFixedString(element) && isStringOrFixedString(needle) && !element->equals(*needle);
-}
 
 class RewriteArrayExistsToHasVisitor : public InDepthQueryTreeVisitorWithContext<RewriteArrayExistsToHasVisitor>
 {
@@ -89,20 +47,13 @@ public:
         if (!lambda_node)
             return;
 
-        const auto & lambda_argument_names = lambda_node->getArguments().getNames();
-        if (lambda_argument_names.size() != 1)
+        auto & lambda_arguments_nodes = lambda_node->getArguments().getNodes();
+        if (lambda_arguments_nodes.size() != 1)
             return;
 
-        const auto & lambda_argument_name = lambda_argument_names[0];
-        auto lambda_arguments_node = lambda_node->getArgumentsTyped();
-
-        /// The lambda parameter is referenced in the body as a column sourced from the lambda arguments node.
-        auto is_lambda_argument = [&](const QueryTreeNodePtr & argument_node)
-        {
-            const auto * column_node = argument_node->as<ColumnNode>();
-            return column_node && column_node->getColumnName() == lambda_argument_name
-                && column_node->getColumnSourceOrNull() == lambda_arguments_node;
-        };
+        const auto & lambda_argument_column_node = lambda_arguments_nodes[0];
+        if (lambda_argument_column_node->getNodeType() != QueryTreeNodeType::COLUMN)
+            return;
 
         auto * filter_node = lambda_node->getExpression()->as<FunctionNode>();
         if (!filter_node || filter_node->getFunctionName() != "equals")
@@ -122,14 +73,14 @@ public:
 
         if (filter_lhs_argument_node_type == QueryTreeNodeType::COLUMN &&
             filter_rhs_argument_node_type == QueryTreeNodeType::CONSTANT &&
-            is_lambda_argument(filter_lhs_argument_node))
+            filter_lhs_argument_node->isEqual(*lambda_argument_column_node))
         {
             /// Rewrite arrayExists(x -> x = elem, arr) -> has(arr, elem)
             has_constant_element_argument = filter_rhs_argument_node;
         }
         else if (filter_lhs_argument_node_type == QueryTreeNodeType::CONSTANT &&
             filter_rhs_argument_node_type == QueryTreeNodeType::COLUMN &&
-            is_lambda_argument(filter_rhs_argument_node))
+            filter_rhs_argument_node->isEqual(*lambda_argument_column_node))
         {
             /// Rewrite arrayExists(x -> elem = x, arr) -> has(arr, elem)
             has_constant_element_argument = filter_lhs_argument_node;
@@ -161,11 +112,6 @@ public:
 
         const auto * constant_node = has_constant_element_argument->as<ConstantNode>();
         if (constant_node && constant_node->getValue().isNull())
-            return;
-
-        /// Such a pair has a supertype, so the check below admits it, but the two spellings
-        /// still disagree.
-        if (stringFamilyPairIsNotEqualityEquivalent(nested_type, constant_type))
             return;
 
         bool types_compatible = (isNativeNumber(nested_type) || isEnum(nested_type)) && isNativeNumber(constant_type);

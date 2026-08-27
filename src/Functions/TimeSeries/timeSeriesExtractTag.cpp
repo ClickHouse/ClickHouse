@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesExtractTag(group, tag_to_extract) returns a Nullable(String) containing either the value of a specified tag
 /// or NULL if there is no such tag in the specified group.
-class FunctionTimeSeriesExtractTag final : public IFunction
+class FunctionTimeSeriesExtractTag : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesExtractTag";
@@ -88,7 +88,7 @@ REGISTER_FUNCTION(TimeSeriesExtractTag)
 {
     FunctionDocumentation::Description description = R"(
 Extracts the value of a specified tag from the group. Returns NULL if not found.
-See also function [timeSeriesGroupToTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
+See also function [timeSeriesGroupToTags()](/sql-reference/functions/time-series-functions#timeSeriesGroupToTags).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesExtractTag(group)";
     FunctionDocumentation::Arguments arguments = {
