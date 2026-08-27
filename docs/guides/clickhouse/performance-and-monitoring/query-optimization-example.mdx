@@ -23,7 +23,7 @@ The source Parquet file contains approximately 329 million rows. The timings in 
 
 When applying this method to your own workload, use [Diagnose slow queries](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) to identify a recurring query pattern and choose a representative run before changing the query or schema.
 
-## How it works {#how-it-works}
+## Process overview {#process-overview}
 
 The example uses the following three stages:
 
@@ -33,7 +33,7 @@ The example uses the following three stages:
 
 Changing the schema and ordering key in separate stages makes their effects easier to distinguish. [Optimization approaches](/guides/clickhouse/performance-and-monitoring/optimization-approaches) explains when to consider these changes and how to validate them. For more guidance on collecting comparable measurements, see [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks).
 
-## Define the baseline workload {#establish-the-baseline}
+## Define the baseline workload {#define-the-baseline-workload}
 
 In the same client session used to run the workload, disable the filesystem cache for remote data, the query cache, and the query-condition cache:
 
@@ -102,7 +102,7 @@ The original measurements were:
 
 All three queries read approximately 329 million rows, which is close to the number of rows in the table. This establishes the opportunity to improve two different aspects of the workload: make the selected columns cheaper to process, then reduce the number of rows selected when the filters permit it.
 
-## Optimize the schema {#basic-optimization}
+## Optimize the schema {#optimize-the-schema}
 
 Schema inference is a practical way to begin exploring a dataset, but the inferred types can be wider or more permissive than the workload requires. Inspect the data before changing the schema rather than assuming that an inferred type is unnecessary.
 
@@ -269,7 +269,7 @@ ORDER BY sum(data_compressed_bytes) DESC;
 
 For this dataset, the optimized schema reduces compressed storage by approximately 34%, from 7.38 GiB to 4.89 GiB.
 
-## Optimize the ordering key {#the-importance-of-primary-keys}
+## Optimize the ordering key {#optimize-the-ordering-key}
 
 In the [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) family, the ordering key determines how rows are arranged on disk. ClickHouse builds a sparse primary index over that order so that it can skip granules that cannot satisfy a query's filters. Unlike a primary key in many transactional databases, it does not enforce uniqueness.
 
@@ -277,7 +277,7 @@ The ordering key should reflect the filters used by important recurring queries.
 
 For this example, use `(passenger_count, pickup_datetime, dropoff_datetime)`. `passenger_count` has few distinct values and appears in the passenger-count filter, while `pickup_datetime` appears in the date-range aggregation. Although `pickup_datetime` is not the first column, ClickHouse can still use values from later key columns to exclude data when the leading column is unconstrained. Filtering on a useful prefix of the ordering key generally provides stronger pruning.
 
-### Apply the ordering-key change {#apply-the-primary-key-change}
+### Apply the ordering-key change {#apply-the-ordering-key-change}
 
 Create a table with the same optimized schema used in the previous stage. Change only the ordering key:
 

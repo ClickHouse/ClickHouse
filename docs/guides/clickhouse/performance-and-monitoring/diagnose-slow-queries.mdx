@@ -19,7 +19,7 @@ The examples in this guide use the `nyc_taxi.trips_small_inferred` table. To run
   <NYCTaxiExampleDataset />
 </Accordion>
 
-To reproduce the query-log results in this guide, run all three [example workload queries](/guides/clickhouse/performance-and-monitoring/query-optimization-example#establish-the-baseline) at least twice after loading the dataset. Then flush the query log so that the completed runs are available to the examples below:
+To reproduce the query-log results in this guide, run all three [example workload queries](/guides/clickhouse/performance-and-monitoring/query-optimization-example#define-the-baseline-workload) at least twice after loading the dataset. Then flush the query log so that the completed runs are available to the examples below:
 
 ```sql
 SYSTEM FLUSH LOGS;
@@ -42,6 +42,8 @@ The examples set [`skip_unavailable_shards`](/reference/settings/session-setting
 </Note>
 
 ## Diagnose a slow query {#diagnose-a-slow-query}
+
+With completed runs in the query log, work through these three steps in order. You will identify a recurring slow-query pattern, choose a representative run, and inspect the query's execution plan.
 
 <Steps titleSize="h3">
 

@@ -20,17 +20,13 @@ The first three guides form an end-to-end workflow, but you can also enter at th
   <Card title="Isolate query bottlenecks" icon="layer-group" href="/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks">
     Start here when you have a slow query but do not yet know which operations dominate its performance. Compare progressively simpler forms of the query under controlled conditions.
   </Card>
-  <Card title="Optimization approaches" icon="sliders" href="/guides/clickhouse/performance-and-monitoring/optimization-approaches">
-    Start here when you have evidence about the bottleneck and need to choose a targeted change. Compare approaches for reducing the data processed, improving data selection, or precomputing repeatable work.
+  <Card title="Choose an optimization approach" icon="sliders" href="/guides/clickhouse/performance-and-monitoring/optimization-approaches">
+    Start here when you have evidence about the bottleneck and need to choose a targeted change. Compare approaches for reducing the data that is read, aligning the data layout with your queries, or precomputing repeatable work.
   </Card>
 </CardGroup>
 
-## See the workflow in practice {#see-the-workflow-in-practice}
+## Example {#example}
 
 <Card title="Worked optimization example" icon="flask" href="/guides/clickhouse/performance-and-monitoring/query-optimization-example">
-  Follow a complete example that applies schema and ordering-key changes to the NYC Taxi dataset one at a time, then compares each result with the original baseline.
+  Start with workload queries against the NYC Taxi dataset, then apply schema and ordering-key changes, measuring each stage against the same baseline.
 </Card>
-
-## Understand query execution {#understand-query-execution}
-
-For more detail about how ClickHouse builds and executes a query plan, see the [query analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) and [query execution](/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer) guides.

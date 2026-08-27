@@ -1,9 +1,9 @@
 ---
 slug: /optimize/optimization-approaches
-sidebarTitle: 'Optimization approaches'
-sidebar_label: 'Optimization approaches'
+sidebarTitle: 'Choose an optimization approach'
+sidebar_label: 'Choose an optimization approach'
 sidebar_position: 4
-title: 'Optimization approaches'
+title: 'Choose an optimization approach'
 description: 'Use evidence from a slow ClickHouse query to evaluate appropriate optimization approaches'
 doc_type: 'guide'
 keywords: ['query optimization', 'data types', 'ordering key', 'materialized views', 'projections']
@@ -122,13 +122,13 @@ SETTINGS
 On ClickHouse 25.9 and later, these settings ensure that `EXPLAIN` reports the indexes used and the parts and granules they eliminate.
 </Note>
 
-Use this output as the baseline. To complete the comparison, follow [Apply the ordering-key change](/guides/clickhouse/performance-and-monitoring/query-optimization-example#apply-the-primary-key-change) in the worked example to create a table with an ordering key that includes `pickup_datetime`, then run the same `EXPLAIN` against it. The primary-key section of the plan should show fewer selected granules before you use duration or memory measurements to evaluate the overall change.
+Use this output as the baseline. To complete the comparison, follow [Apply the ordering-key change](/guides/clickhouse/performance-and-monitoring/query-optimization-example#apply-the-ordering-key-change) in the worked example to create a table with an ordering key that includes `pickup_datetime`, then run the same `EXPLAIN` against it. The primary-key section of the plan should show fewer selected granules before you use duration or memory measurements to evaluate the overall change.
 
 <Tip>
 [`PREWHERE`](/optimize/prewhere) can reduce the column values read without changing the number of rows processed. ClickHouse moves eligible conditions from `WHERE` to `PREWHERE` automatically when `optimize_move_to_prewhere` is enabled, which is the default. Inspect the plan before adding `PREWHERE` manually, and use `read_bytes` as well as `read_rows` when measuring its effect.
 </Tip>
 
-### Evaluate specialized skipping mechanisms {#evaluate-specialized-skipping-mechanisms}
+### Evaluate additional indexing and data-layout options {#evaluate-additional-indexing-and-data-layout-options}
 
 If the ordering key cannot efficiently support an important access pattern, evaluate the more specialized options that follow.
 
