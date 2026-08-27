@@ -203,6 +203,7 @@ namespace ProfileEvents
     extern const Event ReadBufferFromS3Bytes;
     extern const Event WriteBufferFromS3Bytes;
     extern const Event ReadBufferFromAzureBytes;
+    extern const Event WriteBufferFromAzureBytes;
     extern const Event NetworkReceiveBytes;
     extern const Event NetworkSendBytes;
 }
@@ -2112,6 +2113,7 @@ void ClientBase::onProfileEvents(Block & block)
         std::string_view s3_read_bytes_name = ProfileEvents::getName(ProfileEvents::ReadBufferFromS3Bytes);
         std::string_view s3_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromS3Bytes);
         std::string_view azure_read_bytes_name = ProfileEvents::getName(ProfileEvents::ReadBufferFromAzureBytes);
+        std::string_view azure_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromAzureBytes);
         std::string_view net_read_bytes_name = ProfileEvents::getName(ProfileEvents::NetworkReceiveBytes);
         std::string_view net_write_bytes_name = ProfileEvents::getName(ProfileEvents::NetworkSendBytes);
 
@@ -2147,7 +2149,7 @@ void ClientBase::onProfileEvents(Block & block)
                 thread_times[host_name].temp_data_on_disk_usage = value;
             /// IO: block devices (OS), object storage (S3, Azure), and network — all summed.
             else if (event_name == os_read_bytes_name || event_name == s3_read_bytes_name || event_name == azure_read_bytes_name
-                || event_name == os_write_bytes_name || event_name == s3_write_bytes_name
+                || event_name == os_write_bytes_name || event_name == s3_write_bytes_name || event_name == azure_write_bytes_name
                 || event_name == net_read_bytes_name || event_name == net_write_bytes_name)
                 thread_times[host_name].io_bytes += value;
         }

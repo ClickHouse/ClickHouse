@@ -863,6 +863,8 @@ The server successfully detected this situation and will download merged part fr
     M(ReadBufferFromAzureBytes, "Bytes read from Azure.", ValueType::Bytes) \
     M(ReadBufferFromAzureRequestsErrors, "Number of exceptions while reading from Azure", ValueType::Number) \
     \
+    M(WriteBufferFromAzureBytes, "Bytes written to Azure.", ValueType::Bytes) \
+    \
     M(CachedReadBufferReadFromCacheHits, "Number of times the read from filesystem cache hit the cache.", ValueType::Number) \
     M(CachedReadBufferReadFromCacheMisses, "Number of times the read from filesystem cache miss the cache.", ValueType::Number) \
     M(CachedReadBufferReadFromSourceMicroseconds, "Time reading from filesystem cache source (from remote filesystem, etc)", ValueType::Microseconds) \

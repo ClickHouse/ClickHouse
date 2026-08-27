@@ -27,6 +27,7 @@ namespace ProfileEvents
     extern const Event AzureCopyObject;
     extern const Event AzureStageBlock;
     extern const Event AzureCommitBlockList;
+    extern const Event WriteBufferFromAzureBytes;
 
     extern const Event DiskAzureCopyObject;
     extern const Event DiskAzureStageBlock;
@@ -176,6 +177,8 @@ namespace
 
             Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), total_size);
 
+            ProfileEvents::increment(ProfileEvents::WriteBufferFromAzureBytes, total_size);
+
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
@@ -295,6 +298,7 @@ namespace
             ProfileEvents::increment(ProfileEvents::AzureStageBlock);
             if (client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureStageBlock);
+            ProfileEvents::increment(ProfileEvents::WriteBufferFromAzureBytes, part_size);
 
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
             auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
