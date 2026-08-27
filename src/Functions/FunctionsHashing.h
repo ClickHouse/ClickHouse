@@ -1664,6 +1664,31 @@ public:
 
 ) // DECLARE_MULTITARGET_CODE
 
+struct ImplWyHash64;
+
+/// AVX-512 is not a win for every hash, so an implementation can opt out of it. Measured over every
+/// (function, argument type) pair, AVX-512 wins 243 of them and loses 35, and all 35 belong to the
+/// three implementations below.
+///
+/// `javaHash` and `hiveHash` are a byte-serial `h = 31 * h + c` chain, run once per input byte. The
+/// AVX2 body vectorizes that loop across rows; at 512 bits LLVM's cost model abandons vectorization
+/// and emits scalar code instead. The trip count decides which way it goes, so the two bodies split by
+/// argument width: for 16- and 32-byte arguments (`UUID`, `IPv6`, `(U)Int128/256`, `Decimal128/256`)
+/// AVX-512 is 1.9x to 2.5x slower, while for arguments of 8 bytes and under it is 1.1x to 1.4x faster.
+/// Opting out keeps the baseline body for both, trading those smaller wins on narrow types for the far
+/// larger losses on wide ones - `hiveHash`/`javaHash` are Hive and Java compatibility functions, so
+/// strings (where the two bodies tie) and `UUID` dominate their real use.
+///
+/// `wyHash64` is 0.79x on 8-byte scalars and ties everywhere else, so AVX-512 buys it nothing.
+///
+/// Everything else keeps AVX-512, worth up to 1.86x (`xxHash64`), 1.65x (`murmurHash2_64`) and
+/// 1.31x (`cityHash64`) on 8-byte arguments.
+template <typename Impl>
+constexpr bool hash_prefers_avx512 = true;
+template <> inline constexpr bool hash_prefers_avx512<JavaHashImpl> = false;
+template <> inline constexpr bool hash_prefers_avx512<HiveHashImpl> = false;
+template <> inline constexpr bool hash_prefers_avx512<ImplWyHash64> = false;
+
 /// The implementation is picked once, from what the CPU supports. Everything except execution comes from
 /// the default implementation, which this class derives from.
 template <typename Impl, bool Keyed = false, typename KeyType = char, typename KeyColumnsType = char>
@@ -1673,10 +1698,13 @@ public:
     explicit FunctionAnyHash([[maybe_unused]] ContextPtr context)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::x86_64_v4))
+        if constexpr (hash_prefers_avx512<Impl>)
         {
-            impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-            return;
+            if (isArchSupported(TargetArch::x86_64_v4))
+            {
+                impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+                return;
+            }
         }
 #endif
 #if USE_MULTITARGET_CODE && !defined(__AVX2__)
