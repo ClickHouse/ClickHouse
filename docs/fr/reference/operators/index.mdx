@@ -13,6 +13,10 @@ ClickHouse transforme les opérateurs en fonctions correspondantes lors de l’a
 </div>
 
 `a[N]` – Accès à un élément d’un tableau. Fonction `arrayElement(a, N)`.
+`N` peut également être un tableau d’entiers, auquel cas les éléments situés à toutes ces positions sont renvoyés sous forme de tableau,
+comme avec `arrayMap(i -> a[i], N)`. Les positions peuvent être nullables. Une position `NULL` produit `NULL` lorsque le type d’élément
+peut être encapsulé dans `Nullable` ; pour les types d’éléments qui ne peuvent pas être contenus dans `Nullable` (comme `Array`, `Map`), elle produit
+la valeur par défaut du type d’élément, comme pour un index `NULL` scalaire.
 
 `a.N` – Accès à un élément d’un tuple. Fonction `tupleElement(a, N)`.
 

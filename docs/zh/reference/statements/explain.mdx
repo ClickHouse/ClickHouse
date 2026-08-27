@@ -124,6 +124,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
 * `oneline` – 以单行形式输出查询。默认值：`0`。
 * `run_query_tree_passes` – 在转储查询树之前运行查询树处理阶段。默认值：`0`。
 * `query_tree_passes` – 如果设置了 `run_query_tree_passes`，则指定要运行的处理阶段数量。若未指定 `query_tree_passes`，则会运行所有处理阶段。
+* `single_record` – 将格式化后的查询作为单个多行记录返回，而不是每行一个记录。默认值：`1` (由 `explain_syntax_single_record` 设置控制) 。设置为 `0` 可恢复历史的每行一个记录输出，也可以将 `explain_syntax_single_record = 0` (全局或在每个查询的 `SETTINGS` 中) 设置为 `0`，或将 `compatibility` 设置为早于 `26.8` 的任意版本。
 
 示例：
 

@@ -39,7 +39,7 @@ ClickHouse는 테이블의 데이터를 자동으로 삭제하지 않습니다. 
 * `event_time` ([DateTime](/ko/reference/data-types/datetime)) — 뷰 실행이 완료된 날짜와 시간입니다.
 * `event_time_microseconds` ([DateTime64(6)](/ko/reference/data-types/datetime64)) — 뷰 실행이 완료된 날짜와 시간을 마이크로초 정밀도로 나타냅니다.
 * `view_duration_ms` ([UInt64](/ko/reference/data-types/int-uint)) — 뷰 실행 시간(각 단계의 합계)을 밀리초 단위로 나타냅니다.
-* `initial_query_id` ([String](/ko/reference/data-types/string)) — 초기 쿼리의 ID입니다(분산 쿼리 실행용).
+* `initial_query_id` ([String](/ko/reference/data-types/string)) — 동일한 쿼리 체인에 속한 초기 쿼리의 ID입니다.
 * `view_name` ([String](/ko/reference/data-types/string)) — 뷰 이름입니다.
 * `view_uuid` ([UUID](/ko/reference/data-types/uuid)) — 뷰의 UUID입니다.
 * `view_type` ([Enum8(&#39;Default&#39; = 1, &#39;Materialized&#39; = 2, &#39;Live&#39; = 3, &#39;Window&#39; = 4)](/ko/reference/data-types/enum)) — 뷰의 유형입니다. 값: &#39;Default&#39; = 1 — 기본 뷰입니다. 이 로그에는 나타나지 않아야 합니다. &#39;Materialized&#39; = 2 — materialized view, &#39;Live&#39; = 3 — 라이브 view입니다.

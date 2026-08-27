@@ -7,6 +7,7 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
+#include <functional>
 #include <stack>
 
 namespace DB
@@ -123,6 +124,12 @@ void DelayedMaterializingCTEsStep::optimizePlans(const QueryPlanOptimizationSett
 {
     for (const auto & cte : ctes)
     {
+        /// The plan is absent when `makePlansForCTEs` already moved it out, or when the
+        /// reference reached this list before its plan was built. Skipping before the
+        /// claim leaves the flag for whoever holds the plan, so that plan is optimized.
+        if (!cte->plan)
+            continue;
+
         /// Multiple `DelayedMaterializingCTEsStep` instances can reference the
         /// same `MaterializedCTE` (e.g. a UNION-level step plus one per UNION
         /// branch, all planted by `addBuildSubqueriesForMaterializedCTEsIfNeeded`).
@@ -133,14 +140,14 @@ void DelayedMaterializingCTEsStep::optimizePlans(const QueryPlanOptimizationSett
         if (cte->is_plan_optimized.exchange(true))
             continue;
 
-        /// `cte->plan` can already be `nullptr` if a recursive `buildSetInplace`
-        /// path won an earlier `is_materialization_planned` race and
-        /// `std::move`d the plan out via `makePlansForCTEs`. Skip the call
-        /// rather than throwing an exception; the materialization has
-        /// already run inplace.
-        if (cte->plan)
-            cte->plan->optimize(optimization_settings);
+        cte->plan->optimize(optimization_settings);
     }
+}
+
+bool DelayedMaterializingCTEsStep::eraseCTEs(const MaterializedCTESet & ctes_to_erase)
+{
+    std::erase_if(ctes, [&](const MaterializedCTEPtr & cte) { return ctes_to_erase.contains(cte); });
+    return ctes.empty();
 }
 
 std::vector<DelayedMaterializingCTEsStep::ClaimedCTE> DelayedMaterializingCTEsStep::makePlansForCTEs(DelayedMaterializingCTEsStep && step)
@@ -148,6 +155,11 @@ std::vector<DelayedMaterializingCTEsStep::ClaimedCTE> DelayedMaterializingCTEsSt
     std::vector<ClaimedCTE> claimed;
     for (auto & materialized_cte : step.ctes)
     {
+        /// Every claimed entry carries a plan, so the attach site can dereference it. Skipping
+        /// before the claim leaves the flag for whoever holds the subquery that will plan it.
+        if (!materialized_cte->plan)
+            continue;
+
         if (materialized_cte->is_materialization_planned.exchange(true))
             continue;
 
@@ -194,7 +206,14 @@ std::vector<DelayedMaterializingCTEsStep::ClaimedCTE> DelayedMaterializingCTEsSt
 /// tree, so a tree walk of the immediate plan does not reach them. Their
 /// own safety-nets remain available for their own `buildSetInplace` /
 /// `buildOrderedSetInplace` consumers.
-void removeAllDelayedMaterializingCTEsStep(QueryPlan & plan)
+///
+/// `predicate` is invoked once per `DelayedMaterializingCTEsStep` node
+/// found; the node is spliced out of the tree only when it returns true. It is
+/// allowed to mutate the step (that is how `removeDelayedMaterializingCTEsStepFor`
+/// drops a subset of a step's CTEs and keeps the rest).
+static void removeDelayedMaterializingCTEsStepIf(
+    QueryPlan & plan,
+    const std::function<bool(DelayedMaterializingCTEsStep &)> & predicate)
 {
     /// Strip any `DelayedMaterializingCTEsStep` chain at the root via
     /// `replaceRootNode`. We loop because consecutive root-level safety-nets
@@ -206,7 +225,8 @@ void removeAllDelayedMaterializingCTEsStep(QueryPlan & plan)
         auto * root = plan.getRootNode();
         if (!root)
             return;
-        if (!typeid_cast<DelayedMaterializingCTEsStep *>(root->step.get()))
+        auto * delayed = typeid_cast<DelayedMaterializingCTEsStep *>(root->step.get());
+        if (!delayed || !predicate(*delayed))
             break;
         if (root->children.size() != 1)
             throw Exception(
@@ -221,10 +241,10 @@ void removeAllDelayedMaterializingCTEsStep(QueryPlan & plan)
         return;
 
     /// Walk every node below the root; for each child pointer, while the
-    /// referenced child is a `DelayedMaterializingCTEsStep`, replace the
-    /// pointer with its single grandchild. The orphaned step's `Node`
-    /// remains in `QueryPlan::nodes` (memory is owned by the list) but is
-    /// no longer reachable from the root.
+    /// referenced child is a `DelayedMaterializingCTEsStep` that must go,
+    /// replace the pointer with its single grandchild. The orphaned step's
+    /// `Node` remains in `QueryPlan::nodes` (memory is owned by the list) but
+    /// is no longer reachable from the root.
     std::stack<QueryPlan::Node *> stack;
     stack.push(root);
     while (!stack.empty())
@@ -234,8 +254,10 @@ void removeAllDelayedMaterializingCTEsStep(QueryPlan & plan)
 
         for (auto & child : node->children)
         {
-            while (typeid_cast<DelayedMaterializingCTEsStep *>(child->step.get()))
+            while (auto * delayed = typeid_cast<DelayedMaterializingCTEsStep *>(child->step.get()))
             {
+                if (!predicate(*delayed))
+                    break;
                 if (child->children.size() != 1)
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -248,6 +270,20 @@ void removeAllDelayedMaterializingCTEsStep(QueryPlan & plan)
         for (auto * child : node->children)
             stack.push(child);
     }
+}
+
+void removeAllDelayedMaterializingCTEsStep(QueryPlan & plan)
+{
+    removeDelayedMaterializingCTEsStepIf(plan, [](DelayedMaterializingCTEsStep &) { return true; });
+}
+
+void removeDelayedMaterializingCTEsStepFor(QueryPlan & plan, const MaterializedCTESet & ctes_to_remove)
+{
+    if (ctes_to_remove.empty())
+        return;
+
+    removeDelayedMaterializingCTEsStepIf(
+        plan, [&](DelayedMaterializingCTEsStep & step) { return step.eraseCTEs(ctes_to_remove); });
 }
 
 }
