@@ -1,4 +1,5 @@
 SET enable_json_type = 1;
+SET mutations_sync = 0, alter_sync = 0;
 
 DROP TABLE IF EXISTS json_path_values_per_part_config;
 
