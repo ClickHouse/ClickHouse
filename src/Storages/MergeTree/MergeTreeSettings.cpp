@@ -643,7 +643,7 @@ Also lowered automatically when merging that many parts of this table would not 
 )", 0) \
     DECLARE(UInt64, merge_memory_estimate_per_source_part_column, 4096, R"(
 Estimated memory, in bytes, that a merge needs per (source part, column) regardless of how much data the
-parts hold, used to lower `max_parts_to_merge_at_once` so that one merge takes at most an eighth of the
+parts hold, used to lower `max_parts_to_merge_at_once` so that one merge takes at most a sixteenth of the
 server's memory limit (`max_server_memory_usage`).
 
 A merge keeps one block from every source part alive at the same time, and every column of every one of
