@@ -224,6 +224,25 @@ RETURNS return_type
     - `serialization_format` String — Format used to serialize argument blocks passed to the module and to parse the returned result. Used only by `ABI BUFFERED_V1`. Supported values: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, `Buffers`, and [`ColumnBinary`](/reference/formats/ColumnBinary). Default: `MsgPack`. Block-based formats such as `Buffers` and `ColumnBinary` must return a single column whose type matches the declared function signature.
     - `webassembly_udf_enable_fuel` Bool — Enables finite fuel budgeting for the function. Default: `true`. When `false`, the query-level setting `webassembly_udf_max_fuel` is ignored for this function. Disabling fuel limits may improve performance when using the `wasmtime` engine. However, for untrusted or buggy guest code, it can increase the risk of runaway execution.
 
+## NULL handling {#null-handling}
+
+Whether a WASM UDF sees `NULL` values at all is decided by the return type declared in `RETURNS`.
+
+- If the declared return type is **not** `Nullable`, ClickHouse applies its ordinary null propagation:
+  `NULL` arguments are stripped before the call, the module is never handed a nullable column, and any
+  row where an argument is `NULL` yields `NULL` in the result without the module being consulted for it.
+  This is the same behaviour as built-in functions. The one exception is a return type that cannot be
+  placed inside `Nullable` at all, such as `Array(...)`: there the result stays non-nullable and rows with
+  a `NULL` argument are evaluated over the argument's default value instead.
+- If the declared return type **is** `Nullable`, the module owns null propagation. ClickHouse passes the
+  nullable argument columns through unchanged, and the module decides, per row, which results are `NULL`.
+  With `ABI BUFFERED_V1`, nullability is visible through the chosen `serialization_format` — for example
+  the `COL_IS_NULLABLE` flag and null map of [`ColumnBinary`](/reference/formats/ColumnBinary), or a JSON
+  `null` with `JSONEachRow`.
+
+So a module that needs to distinguish "the argument was `NULL`" from "the argument was the default value"
+must declare a `Nullable` return type, even if it never actually returns `NULL`.
+
 ## ABIs Versions
 
 To interact with ClickHouse, WebAssembly modules must adhere to one of the supported ABIs (Application Binary Interfaces).
