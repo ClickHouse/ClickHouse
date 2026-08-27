@@ -65,6 +65,16 @@ SELECT count() FROM points_xy WHERE pointInEllipses(x, y, 0., 0., inf, 10.);
 -- NOT: no pruning is claimed, the result stays correct
 SELECT count() FROM points_xy WHERE NOT pointInEllipses(x, y, 0., 0., 5000., 5000.);
 
+-- A coordinate that is an expression, not a key column: no index analysis, correct result
+SELECT count() FROM points_xy WHERE pointInEllipses(x + 0., y, 0., 0., 5000., 5000.);
+
+-- A degenerate box: the center is so large that `x0 - a` equals `x0 + a` in Float64;
+-- such a ring is not valid, no pruning, the result stays correct
+SELECT count() FROM points_xy WHERE pointInEllipses(x, y, 1e16, 0., 1., 5000.);
+
+-- Non-constant ellipse parameters are rejected by the function itself
+SELECT count() FROM points_xy WHERE pointInEllipses(x, y, 0., 0., materialize(5000.), 5000.); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 DROP TABLE points_xy;
 
 -- The point as the two elements of a tuple-typed (Point) key column
@@ -90,6 +100,12 @@ SELECT trimLeft(explain) AS explain FROM (
     SELECT count() FROM points_tuple WHERE pointInPolygon((coord.1, coord.2), [(0, 0), (0, 25000), (25000, 25000), (25000, 0)])
 ) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%';
 
+-- Swapped elements do not form the point: no index analysis, correct result
+SELECT count() FROM points_tuple WHERE pointInPolygon((coord.2, coord.1), [(0, 0), (0, 25000), (25000, 25000), (25000, 0)]);
+
+-- The element index constants may be of a signed type
+SELECT count() FROM points_tuple WHERE pointInPolygon((tupleElement(coord, toInt64(1)), tupleElement(coord, toInt64(2))), [(0, 0), (0, 25000), (25000, 25000), (25000, 0)]) SETTINGS force_primary_key = 1;
+
 DROP TABLE points_tuple;
 
 -- The point as the two named elements of a tuple-typed key column
@@ -106,4 +122,17 @@ SELECT trimLeft(explain) AS explain FROM (
     SELECT count() FROM named_points WHERE pointInPolygon((p.x, p.y), [(0, 0), (0, 25000), (25000, 25000), (25000, 0)])
 ) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%';
 
+-- The explicit tupleElement form with element names
+SELECT count() FROM named_points WHERE pointInPolygon((tupleElement(p, 'x'), tupleElement(p, 'y')), [(0, 0), (0, 25000), (25000, 25000), (25000, 0)]) SETTINGS force_primary_key = 1;
+
 DROP TABLE named_points;
+
+-- A tuple key column of three elements is not a point: no index analysis, correct result
+DROP TABLE IF EXISTS points3;
+CREATE TABLE points3 (t Tuple(Float64, Float64, Float64)) ENGINE = MergeTree ORDER BY t SETTINGS index_granularity = 1000;
+
+INSERT INTO points3 SELECT (number, number, number) FROM numbers(10000);
+
+SELECT count() FROM points3 WHERE pointInEllipses(t.1, t.2, 0., 0., 5000., 5000.);
+
+DROP TABLE points3;

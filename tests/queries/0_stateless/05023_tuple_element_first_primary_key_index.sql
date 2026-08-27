@@ -53,6 +53,9 @@ SELECT trimLeft(explain) AS explain FROM (
 -- The explicit tupleElement form works the same as the dot form
 SELECT count() FROM points WHERE tupleElement(coord, 1) <= 25000 SETTINGS force_primary_key = 1;
 
+-- The element index constant may be of a signed type
+SELECT count() FROM points WHERE tupleElement(coord, toInt64(1)) <= 25000 SETTINGS force_primary_key = 1;
+
 -- The second element is not monotonic w.r.t. the tuple order:
 -- the result is correct, and the index cannot be used
 SELECT count() FROM points WHERE coord.2 <= 25000;
@@ -96,3 +99,13 @@ SELECT trimLeft(explain) AS explain FROM (
 ) WHERE explain LIKE '%Parts%' OR explain LIKE '%Granules%';
 
 DROP TABLE element_key;
+
+-- tupleElement over a non-tuple (Array(Tuple)) key column: no index analysis, correct result
+DROP TABLE IF EXISTS array_key;
+CREATE TABLE array_key (arr Array(Tuple(UInt64, UInt64))) ENGINE = MergeTree ORDER BY arr;
+
+INSERT INTO array_key SELECT [(number, number)] FROM numbers(1000);
+
+SELECT count() FROM array_key WHERE tupleElement(arr, 1) = [5];
+
+DROP TABLE array_key;
