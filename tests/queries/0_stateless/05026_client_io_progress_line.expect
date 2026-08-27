@@ -1,0 +1,44 @@
+#!/usr/bin/expect -f
+
+# The live IO meter of https://github.com/ClickHouse/ClickHouse/issues/116565, asserted on the
+# rendered progress line itself (ClientBase::onProfileEvents -> ProgressIndication::writeProgress).
+# Network throughput is part of the IO sum, so the assertion needs no disk, O_DIRECT, or taskstats;
+# the disk-side counters behind the same meter are pinned by 05026_client_disk_io_progress_streaming.sql.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+# The profiling suffix `(... CPU, ... IO)` is dropped when it does not fit next to the progress bar,
+# and the width is re-read from the pty on every render - so make the pty wide.
+set stty_init "rows 60 columns 300"
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# CLICKHOUSE_CLIENT_EXPECT_OPT is not used because it forces --progress no.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --no-warnings --progress-table off --enable-progress-table-toggle 0 --highlight 0 --history_file=$history_file"
+expect ":) "
+
+# ~30 MB stream to the client's outfile, paced to ~3 seconds by the server-side sleeps (one per
+# 1 MB block), so ProfileEvents packets carry nonzero NetworkSendBytes deltas every ~100 ms.
+# FORMAT Null would not do: the server sends no data for it, and the IO meter would stay at zero.
+send -- "SELECT randomString(100000) AS s, sleepEachRow(0.01) FROM numbers(300) INTO OUTFILE '/dev/null' APPEND FORMAT TSV SETTINGS max_block_size = 10\r"
+expect -re {[0-9.]+ [A-Za-z]*B/s IO}
+expect ":) "
+
+send -- "\4"
+expect eof
