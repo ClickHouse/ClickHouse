@@ -25,6 +25,7 @@
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -751,6 +752,20 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base
         || !node.function_base->isSpatialPredicate() || node.children.size() < 2)
+        return NodeBboxStatus::NotApplicable;
+
+    /// A predicate whose result type is `Nullable(Nothing)` never runs at all, so nothing it could
+    /// raise is left for pruning to hide. That is the strongest lenient state of
+    /// `variant_throw_on_type_mismatch = 0` / `dynamic_throw_on_type_mismatch = 0`: when EVERY
+    /// alternative of the `Variant`/`Dynamic` argument is incompatible, `FunctionBaseVariantAdaptor`/
+    /// `FunctionBaseDynamicAdaptor` resolve the whole node to `Nullable(Nothing)` and their
+    /// `ExecutableFunction` returns NULL rows without ever building the wrapped spatial predicate --
+    /// including for a rejection at a DIFFERENT argument position, which the kind checks below would
+    /// otherwise fail closed for (e.g. a WKB `String` in `pointInPolygon`'s polygon argument, where
+    /// `getReturnTypeImpl` raises on argument 0 before it ever inspects argument 1). Returning
+    /// `NotApplicable` lets a sibling conjunct on an indexed column keep its pruning; the query is
+    /// still correct, since this conjunct is NULL on every row and selects nothing anyway.
+    if (node.result_type && typeid_cast<const DataTypeNothing *>(&GeoBboxDetail::unwrapGeoKindWrappers(*node.result_type)))
         return NodeBboxStatus::NotApplicable;
 
     /// Any argument besides the single accepted geometry column input and constant geometry
