@@ -2,6 +2,7 @@
 
 #include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <base/unit.h>
 
 namespace DB
 {
@@ -15,12 +16,6 @@ struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization
     bool need_string_data = false;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override;
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (column)
-            callback(column);
-    }
 };
 
 class SerializationString final : public ISerialization
@@ -29,6 +24,9 @@ private:
     explicit SerializationString(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
 
 public:
+    /// Arbitrary guard against absurd sizes from corrupted input, large enough for any real string.
+    static constexpr size_t MAX_STRING_SIZE = 16_GiB;
+
     static UInt128 getHash(MergeTreeStringSerializationVersion version_);
     static SerializationPtr create(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
 
@@ -80,7 +78,6 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
     void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 

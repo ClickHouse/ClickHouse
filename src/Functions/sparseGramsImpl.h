@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/ColumnNumbers.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/types.h>
@@ -49,11 +48,12 @@ private:
 
     /// Current batch of answers. The size of result can not be greater than `convex_hull`.
     /// The size of `convex_hull` should not be large, see comment to `convex_hull` for more details.
-    VectorWithMemoryTracking<SubString> result;
+    std::vector<SubString> result;
     size_t iter_result = 0;
 
     struct PositionAndHash
     {
+        size_t position;
         size_t left_ngram_position;
         size_t symbol_index;
         size_t hash;
@@ -117,11 +117,11 @@ private:
     /// The convex hull contains the maximum values ​​of the suffixes that start from the current right iterator.
     /// For example, if we have n-gram hashes like [1,5,2,4,1,3] and current right position is 4 (the last one)
     /// than our convex hull will consists of elements:
-    /// [{left_ngram_position:1, hash:5}, {left_ngram_position:3, hash:4}, {left_ngram_position:4,hash:1}]
+    /// [{position:1, hash:5}, {position:3, hash:4}, {position:4,hash:1}]
     /// Assuming that hashes are uniformly distributed, the expected size of convex_hull is N^{1/3},
     /// where N is the length of the string.
     /// Proof: https://math.stackexchange.com/questions/3469295/expected-number-of-vertices-in-a-convex-hull
-    VectorWithMemoryTracking<PositionAndHash> convex_hull;
+    std::vector<PositionAndHash> convex_hull;
     NGramSymbolIterator symbol_iterator;
 
     /// Get the next batch of answers. Returns false if there can be no more answers.
@@ -167,11 +167,12 @@ private:
                 });
         }
 
-        /// There should not be identical hashes in the convex hull. If there are, then we leave only the last one
+        /// there should not be identical hashes in the convex hull. If there are, then we leave only the last one
         while (!convex_hull.empty() && convex_hull.back().hash == right_border_ngram_hash)
             convex_hull.pop_back();
 
         convex_hull.push_back(PositionAndHash{
+            .position = right_position,
             .left_ngram_position = ngram_left_position,
             .symbol_index = right_symbol_index,
             .hash = right_border_ngram_hash
@@ -180,20 +181,20 @@ private:
         return true;
     }
 
-    /// Drain the current batch of answers, refilling it via `consume` until there is a result or the input ends.
-    bool getNextIndices(SubString & out)
+    std::optional<SubString> getNextIndices()
     {
-        while (result.size() <= iter_result)
+        if (result.size() <= iter_result)
         {
             result.clear();
             iter_result = 0;
 
             if (!consume())
-                return false;
+                return std::nullopt;
+
+            return getNextIndices();
         }
 
-        out = result[iter_result++];
-        return true;
+        return result[iter_result++];
     }
 
 public:
@@ -276,17 +277,23 @@ public:
     /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
-        SubString cur_result{};
-        while (getNextIndices(cur_result))
+        while (true)
         {
-            if (min_cutoff_length && *min_cutoff_length > cur_result.symbols_between)
+            auto cur_result = getNextIndices();
+            if (!cur_result)
+                return false;
+
+            auto iter_left = cur_result->left_index;
+            auto iter_right = cur_result->right_index;
+            auto length = cur_result->symbols_between;
+
+            if (min_cutoff_length && *min_cutoff_length > length)
                 continue;
 
-            token_begin = pos + cur_result.left_index;
-            token_end = pos + cur_result.right_index;
+            token_begin = pos + iter_left;
+            token_end = pos + iter_right;
             return true;
         }
-        return false;
     }
 };
 

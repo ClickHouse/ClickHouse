@@ -1,6 +1,7 @@
 import copy
 import dataclasses
 import json
+import os
 import time
 import urllib
 from typing import List, Optional
@@ -290,18 +291,14 @@ ORDER BY day DESC
             return data.encode("utf-8")
         return data
 
-    def insert_rows(self, jsons, retries=3, table=""):
-        """Insert JSONEachRow records into `table`, by default the main results
-        table. Jobs that keep their own table in the CI database pass it here,
-        e.g. the `Revert CI regressions` job and `checks_investigated`."""
-        table = table or Settings.CI_DB_TABLE_NAME
-        assert table
+    def insert_rows(self, jsons, retries=3):
         params = {
             "database": Settings.CI_DB_DB_NAME,
-            "query": f"INSERT INTO {table} FORMAT JSONEachRow",
+            "query": f"INSERT INTO {Settings.CI_DB_TABLE_NAME} FORMAT JSONEachRow",
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
         }
+        assert Settings.CI_DB_TABLE_NAME
 
         for retry in range(retries):
             try:
@@ -407,7 +404,7 @@ ORDER BY day DESC
         # Create a session object
         params = {
             "database": Settings.CI_DB_DB_NAME,
-            "query": "SELECT 1",
+            "query": f"SELECT 1",
         }
         error = ""
         for retry in range(2):

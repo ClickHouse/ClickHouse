@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class PlanSquashingTransform final : public ExceptionKeepingTransform
+class PlanSquashingTransform : public ExceptionKeepingTransform
 {
 public:
     PlanSquashingTransform(

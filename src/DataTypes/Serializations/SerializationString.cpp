@@ -9,7 +9,6 @@
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationStringSize.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/ParseError.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
@@ -63,7 +62,7 @@ void SerializationString::serializeBinary(const Field & field, WriteBuffer & ost
 
 void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    UInt64 size = 0;
+    UInt64 size;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
@@ -102,7 +101,7 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();
 
-    UInt64 size = 0;
+    UInt64 size;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
@@ -168,16 +167,15 @@ try
         if (istr.eof())
             break;
 
-        UInt64 size = 0;
+        UInt64 size;
         readVarUInt(size, istr);
 
-        static constexpr size_t max_string_size = 16_GiB;   /// Arbitrary value to prevent logical errors and overflows, but large enough.
-        if (size > max_string_size)
+        if (size > SerializationString::MAX_STRING_SIZE)
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
                 "Too large string size: {}. The maximum is: {}.",
                 size,
-                max_string_size);
+                SerializationString::MAX_STRING_SIZE);
 
         offset += size;
         if (unlikely(offset > data.size()))
@@ -226,7 +224,7 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
     /// Skip certain number of values if requested
     for (size_t i = 0; i < rows_offset; ++i)
     {
-        UInt64 size = 0;
+        UInt64 size;
         readVarUInt(size, istr);
         istr.ignore(size);
     }
@@ -387,11 +385,6 @@ void SerializationString::deserializeBinaryBulkWithoutSizeStream(
     ISerialization::deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, cache);
 }
 
-void SerializationString::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
-{
-    writeString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
-}
-
 void SerializationString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
@@ -439,9 +432,7 @@ static inline ReturnType read(IColumn & column, Reader && reader)
         restore_column();
         if constexpr (throw_exception)
             throw;
-        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
-        rethrowIfNotParseError();
-        if constexpr (!throw_exception)
+        else
             return false;
     }
 }
@@ -526,9 +517,9 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
     {
         String field;
         readJSONField(field, istr, settings.json);
-        Float64 tmp = 0;
+        Float64 tmp;
         ReadBufferFromString buf(field);
-        if (tryReadFloatTextPrecise(tmp, buf) && buf.eof())
+        if (tryReadFloatText(tmp, buf) && buf.eof())
             read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON String value here: {}", field);
@@ -571,9 +562,9 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
         if (!tryReadJSONField(field, istr, settings.json))
             return false;
 
-        Float64 tmp = 0;
+        Float64 tmp;
         ReadBufferFromString buf(field);
-        if (tryReadFloatTextPrecise(tmp, buf) && buf.eof())
+        if (tryReadFloatText(tmp, buf) && buf.eof())
         {
             read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
             return true;
@@ -758,12 +749,6 @@ struct DeserializeBinaryBulkStateStringWithSizeStream : public ISerialization::D
         res->size_column = size_column;
         return res;
     }
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (size_column)
-            callback(size_column);
-    }
 };
 
 void SerializationString::deserializeBinaryBulkStatePrefix(
@@ -868,13 +853,10 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     size_t initial_size = data.size();
     data.resize(initial_size + bytes_to_read);
     stream->ignore(bytes_to_skip);
-    stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
-    data.resize(initial_size + bytes_to_read);
+    size_t size = stream->readBig(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
+    data.resize(initial_size + size);
     column = std::move(mutable_column);
-    /// Unlike the sizes column above, `column` never receives the skipped `rows_offset` rows (they were
-    /// only skipped over in the data stream, not inserted), so it only grew by `num_read_rows - rows_offset`
-    /// rows in this call — that is what a later cache lookup must be able to take off its tail.
-    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows - rows_offset);
+    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows);
     settings.path.pop_back();
 }
 

@@ -569,12 +569,21 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (function_name == "notIn"  || function_name == "globalNotIn")
             out.function = RPNElement::FUNCTION_NOT_IN;
 
+        /// `nullIn` (transform_null_in=1) selects the same rows as `in` only for a NULL-free,
+        /// single-column, non-Array set whose type matches the index; otherwise no pruning.
+        if ((function_name == "nullIn" || function_name == "globalNullIn") && prepared_set
+            && prepared_set->getDataTypes().size() == 1 && !prepared_set->hasNull()
+            && prepared_set->areTypesEqual(0, index_type)
+            && !typeid_cast<const DataTypeArray *>(index_type.get()))
+            out.function = RPNElement::FUNCTION_IN;
+
         return true;
     }
 
     /// Try to match the column name to a JSONAllPaths index for JSON subcolumn IN filtering.
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions.
     /// NOT IN is not supported because after BoolMask inversion it never skips any granules.
+    /// nullIn/globalNullIn are deliberately not wired here: JSON paths need per-path NULL checks.
     if (auto json_info = tryMatchNodeToJSONIndex(key_node, header, "JSONAllPaths"))
     {
         if (function_name != "in" && function_name != "globalIn")
@@ -676,6 +685,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             return false;
         }
 
+        /// nullIn/globalNullIn are deliberately not wired here, as in the JSON branch above.
         if (function_name == "in" || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
 
@@ -990,8 +1000,8 @@ MergeTreeIndexAggregatorBloomFilter::MergeTreeIndexAggregatorBloomFilter(
     size_t bits_per_row_, size_t hash_functions_, const Names & columns_name_)
     : bits_per_row(bits_per_row_), hash_functions(hash_functions_), index_columns_name(columns_name_), column_hashes(columns_name_.size())
 {
-    chassert(bits_per_row != 0);
-    chassert(hash_functions != 0);
+    assert(bits_per_row != 0);
+    assert(hash_functions != 0);
 }
 
 bool MergeTreeIndexAggregatorBloomFilter::empty() const
@@ -1019,11 +1029,7 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
     for (size_t column = 0; column < index_columns_name.size(); ++column)
     {
         const auto & column_and_type = block.getByName(index_columns_name[column]);
-        /// A bloom filter only needs the set of distinct hashes, so for LowCardinality
-        /// columns this returns one hash per distinct dictionary value present in the
-        /// granule instead of one per row -- turning O(rows) hash-set inserts into
-        /// O(distinct). For other columns it is one hash per row, as before.
-        auto index_column = BloomFilterHash::hashWithColumnDistinct(column_and_type.type, column_and_type.column, *pos, max_read_rows);
+        auto index_column = BloomFilterHash::hashWithColumn(column_and_type.type, column_and_type.column, *pos, max_read_rows);
 
         const auto & index_col = checkAndGetColumn<ColumnUInt64>(*index_column);
         const auto & index_data = index_col.getData();
@@ -1036,16 +1042,15 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
 }
 
 MergeTreeIndexBloomFilter::MergeTreeIndexBloomFilter(
-    StorageMetadataPtr metadata_snapshot_,
     const IndexDescription & index_,
     size_t bits_per_row_,
     size_t hash_functions_)
-    : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
+    : IMergeTreeIndex(index_)
     , bits_per_row(bits_per_row_)
     , hash_functions(hash_functions_)
 {
-    chassert(bits_per_row != 0);
-    chassert(hash_functions != 0);
+    assert(bits_per_row != 0);
+    assert(hash_functions != 0);
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const
@@ -1083,7 +1088,7 @@ static void assertIndexColumnsType(const Block & header)
 }
 
 MergeTreeIndexPtr bloomFilterIndexCreator(
-    StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
+    const IndexDescription & index)
 {
     double false_positive_rate = 0.025;
 
@@ -1096,10 +1101,10 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
     const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(false_positive_rate);
 
     return std::make_shared<MergeTreeIndexBloomFilter>(
-        std::move(metadata_snapshot), index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);
+        index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);
 }
 
-void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
+void bloomFilterIndexValidator(const IndexDescription & index, bool attach)
 {
     assertIndexColumnsType(index.sample_block);
 

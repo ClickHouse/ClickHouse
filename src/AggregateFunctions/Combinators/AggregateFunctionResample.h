@@ -63,7 +63,7 @@ public:
         else
         {
             Key dif;
-            size_t sum = 0;
+            size_t sum;
             if (common::subOverflow(end, begin, dif)
                 || common::addOverflow(static_cast<size_t>(dif), step, sum))
             {
@@ -194,7 +194,7 @@ public:
         nested_function->add(place + pos * size_of_data, columns, row_num, arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, arena);
@@ -242,13 +242,6 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         insertResultIntoImpl<true>(place, to, arena);
-    }
-
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        auto arguments = nested_function->getArgumentsThatCanBeOnlyNull();
-        arguments.insert(last_col);
-        return arguments;
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

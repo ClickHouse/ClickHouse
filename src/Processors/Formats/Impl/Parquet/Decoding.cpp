@@ -5,7 +5,6 @@
 #include <Common/FloatUtils.h>
 
 #include <arrow/util/bit_stream_utils_internal.h>
-#include <arrow/util/byte_stream_split_internal.h>
 
 namespace DB::ErrorCodes
 {
@@ -87,7 +86,7 @@ struct BitPackedRLEDecoder : public PageDecoder
 
     void startRun()
     {
-        UInt64 len = 0;
+        UInt64 len;
         data = readVarUInt(len, data, end - data);
         if (len & 1)
         {
@@ -160,7 +159,7 @@ struct BitPackedRLEDecoder : public PageDecoder
                 {
                     for (size_t i = 0; i < n; ++i)
                     {
-                        size_t x = 0;
+                        size_t x;
                         memcpy(&x, data + (bit_idx >> 3), 8);
                         x = (x >> (bit_idx & 7)) & value_mask;
 
@@ -240,7 +239,7 @@ struct PlainBooleanDecoder : public PageDecoder
         size_t end_bit_idx = bit_idx + num_values;
         if ((end_bit_idx + 7) / 8 > size_t(end - data))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of page data");
-        char * to = nullptr;
+        char * to;
         bool direct = converter->isTrivial();
         if (direct)
         {
@@ -273,7 +272,7 @@ struct PlainBooleanDecoder : public PageDecoder
         size_t end_bit_idx = bit_idx + num_values;
         if ((end_bit_idx + 7) / 8 > size_t(end - data))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of page data");
-        char * to = nullptr;
+        char * to;
         bool direct = converter->isTrivial();
         if (direct)
         {
@@ -329,7 +328,7 @@ struct PlainStringDecoder : public PageDecoder
     {
         for (size_t i = 0; i < num_values; ++i)
         {
-            UInt32 x = 0;
+            UInt32 x;
             memcpy(&x, data, 4); /// omitting range check because input is padded
             size_t len = 4 + size_t(x);
             requireRemainingBytes(len);
@@ -351,7 +350,7 @@ struct PlainStringDecoder : public PageDecoder
             col_str.reserve(col_str.size() + to_reserve);
             for (size_t i = 0; i < num_values; ++i)
             {
-                UInt32 x = 0;
+                UInt32 x;
                 memcpy(&x, data, 4); /// omitting range check because input is padded
                 size_t len = 4 + size_t(x);
                 requireRemainingBytes(len);
@@ -373,7 +372,7 @@ struct PlainStringDecoder : public PageDecoder
                 {
                     for (size_t i = 0; i < num_values; ++i)
                     {
-                        UInt32 x = 0;
+                        UInt32 x;
                         memcpy(&x, data, 4);
                         data += 4 + size_t(x);
                     }
@@ -384,7 +383,7 @@ struct PlainStringDecoder : public PageDecoder
                 size_t offset = 0;
                 for (size_t i = 0; i < num_values; ++i)
                 {
-                    UInt32 x = 0;
+                    UInt32 x;
                     memcpy(&x, data, 4);
                     size_t len = 4 + size_t(x);
                     requireRemainingBytes(len);
@@ -406,7 +405,7 @@ struct PlainStringDecoder : public PageDecoder
             size_t offset = 0;
             for (size_t i = 0; i < num_values; ++i)
             {
-                UInt32 x = 0;
+                UInt32 x;
                 memcpy(&x, data, 4); /// omitting range check because input is padded
                 size_t len = 4 + size_t(x);
                 requireRemainingBytes(len);
@@ -440,7 +439,7 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     size_t miniblock_idx = 0; // within block
     /// Initially set to 1 as a special case to report the first value.
     size_t miniblock_values_remaining = 1;
-    arrow::bit_util::BitReader bit_reader{};
+    arrow::bit_util::BitReader bit_reader;
 
     PODArray<UInt64> temp_values;
 
@@ -596,7 +595,7 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     void decodeImplFull(size_t num_values, IColumn & col)
     {
         bool direct = converter->isTrivial();
-        char * to = nullptr;
+        char * to;
         if (direct)
         {
             auto to_span = col.insertRawUninitialized(num_values);
@@ -828,7 +827,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
             if (!filter)
             {
                 bool direct = string_converter->isTrivial();
-                ColumnString * col_str = nullptr;
+                ColumnString * col_str;
                 if (direct)
                     col_str = assert_cast<ColumnString *>(&col);
                 else
@@ -945,10 +944,11 @@ struct ByteStreamSplitDecoder : public PageDecoder
         temp_buffer.resize(num_values * num_streams);
         char * to = temp_buffer.data();
         requireRemainingBytes(num_values);
-        arrow::util::internal::ByteStreamSplitDecode(
-            reinterpret_cast<const uint8_t *>(data), static_cast<int>(num_streams),
-            static_cast<int64_t>(num_values), static_cast<int64_t>(stream_size),
-            reinterpret_cast<uint8_t *>(to));
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            for (size_t stream = 0; stream < num_streams; ++stream)
+                to[i * num_streams + stream] = data[i + stream * stream_size];
+        }
         data += num_values;
         size_t out_idx = 0;
         for (size_t i = 0; i < num_values; ++i)
@@ -987,12 +987,35 @@ struct ByteStreamSplitDecoder : public PageDecoder
 
         requireRemainingBytes(num_values);
 
-        /// De-interleave the byte streams back into values. Arrow has SIMD (NEON/AVX2/SSE4.2) implementations of
-        /// exactly this transpose, gated behind the ARROW_HAVE_* defines enabled in contrib/arrow-cmake.
-        arrow::util::internal::ByteStreamSplitDecode(
-            reinterpret_cast<const uint8_t *>(data), static_cast<int>(num_streams),
-            static_cast<int64_t>(num_values), static_cast<int64_t>(stream_size),
-            reinterpret_cast<uint8_t *>(to));
+        size_t i = 0;
+        while (i < num_values)
+        {
+            if (num_values - i >= 8)
+            {
+                /// Slightly faster code path that reads 8 bytes at once.
+                /// Arrow has ByteStreamSplitDecode with various fancy simd implementations, maybe
+                /// we should reuse that instead.
+                for (size_t stream = 0; stream < num_streams; ++stream)
+                {
+                    UInt64 x = unalignedLoad<UInt64>(&data[i + stream * stream_size]);
+                    to[(i + 0) * num_streams + stream] = char(UInt8(x >> 0));
+                    to[(i + 1) * num_streams + stream] = char(UInt8(x >>  8));
+                    to[(i + 2) * num_streams + stream] = char(UInt8(x >> 16));
+                    to[(i + 3) * num_streams + stream] = char(UInt8(x >> 24));
+                    to[(i + 4) * num_streams + stream] = char(UInt8(x >> 32));
+                    to[(i + 5) * num_streams + stream] = char(UInt8(x >> 40));
+                    to[(i + 6) * num_streams + stream] = char(UInt8(x >> 48));
+                    to[(i + 7) * num_streams + stream] = char(UInt8(x >> 56));
+                }
+                i += 8;
+            }
+            else
+            {
+                for (size_t stream = 0; stream < num_streams; ++stream)
+                    to[i * num_streams + stream] = data[i + stream * stream_size];
+                i += 1;
+            }
+        }
         data += num_values;
 
         if (!direct)
@@ -1148,11 +1171,6 @@ double Dictionary::getAverageValueSize() const
     return 0;
 }
 
-size_t Dictionary::allocatedBytes() const
-{
-    return decompressed_buf.allocated_bytes() + offsets.allocated_bytes() + (col ? col->allocatedBytes() : 0);
-}
-
 void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type)
 {
     chassert(mode == Mode::Uninitialized);
@@ -1184,7 +1202,7 @@ void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & i
         const char * end = data.data() + data.size();
         for (size_t i = 0; i < num_values; ++i)
         {
-            UInt32 x = 0;
+            UInt32 x;
             memcpy(&x, ptr, 4); /// omitting range check because input is padded
             size_t len = 4 + size_t(x);
             if (len > size_t(end - ptr))
@@ -1225,95 +1243,6 @@ void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & i
 
     if (mode == Mode::FixedSize && data.size() != count * value_size)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect dictionary page size: {} != {} * {}", data.size(), count, value_size);
-}
-
-size_t Dictionary::decodedFootprintUpperBound(
-    parq::CompressionCodec::type codec, parq::Encoding::type encoding, const PageDecoderInfo & info,
-    size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type)
-{
-    /// Mirror the mode selection in decode(). The decompressed page payload (`decompressed_buf`) is
-    /// held for a compressed column chunk; on top of it the trivial fast paths add either nothing
-    /// (FixedSize: `data` points into the buffer) or a UInt32 offset per value (StringPlain), while the
-    /// generic path materializes a whole column (`col`). Keep this in sync with decode().
-    if (encoding == parq::Encoding::PLAIN_DICTIONARY)
-        encoding = parq::Encoding::PLAIN;
-
-    /// Saturating arithmetic: on overflow report an unbounded footprint so the pruning path rejects the
-    /// dictionary up front (full scan) instead of wrapping around to a small, unsafe bound.
-    auto sat_add = [](size_t a, size_t b) -> size_t
-    {
-        size_t r = 0;
-        return __builtin_add_overflow(a, b, &r) ? std::numeric_limits<size_t>::max() : r;
-    };
-    auto sat_mul = [](size_t a, size_t b) -> size_t
-    {
-        size_t r = 0;
-        return __builtin_mul_overflow(a, b, &r) ? std::numeric_limits<size_t>::max() : r;
-    };
-
-    /// Sum of the *logical* payload sizes of the buffers decode() holds. This is turned into a true
-    /// upper bound on allocatedBytes() below.
-    ///
-    /// The page payload counts only when the column chunk is compressed: only then does
-    /// `Reader::decodeDictionaryPageImpl` decompress it into `decompressed_buf`, which decode() keeps
-    /// alive. For an `UNCOMPRESSED` chunk `decompressed_buf` stays empty and `data` points straight into
-    /// the prefetched page buffer (`dictionary_page_prefetch`), whose bytes are already charged to the
-    /// pruning stage by `Prefetcher::startPrefetch`; counting them here again would double-count the
-    /// page against the memory budget and reject dictionaries whose real incremental footprint fits it.
-    /// The same reasoning applies to the compressed frame of a compressed chunk, which is why the caller
-    /// passes the *decompressed* page size here and never the compressed one: the compressed bytes also
-    /// live in the prefetch buffer, including in the (rare, but perfectly legal) case where the codec
-    /// expands an incompressible page past its own payload.
-    size_t logical = codec == parq::CompressionCodec::UNCOMPRESSED ? 0 : page_payload_size;
-
-    if (encoding == parq::Encoding::PLAIN && info.fixed_size_converter && info.fixed_size_converter->isTrivial())
-    {
-        /// Mode::FixedSize: no per-entry allocation.
-    }
-    else if (encoding == parq::Encoding::PLAIN && info.string_converter && info.string_converter->isTrivial())
-    {
-        /// Mode::StringPlain: a UInt32 offset per value.
-        logical = sat_add(logical, sat_mul(num_values, sizeof(UInt32)));
-    }
-    else
-    {
-        /// decode_generic: a fully materialized column of `num_values` decoded values (`col`) is built
-        /// while `decompressed_buf` is still held.
-        if (raw_decoded_type.haveMaximumSizeOfValue())
-        {
-            /// Fixed-size decoded types take `num_values * value_size` regardless of the page encoding.
-            logical = sat_add(logical, sat_mul(num_values, raw_decoded_type.getMaximumSizeOfValueInMemory()));
-        }
-        else if (encoding == parq::Encoding::PLAIN)
-        {
-            /// Variable-size types (e.g. String) take a per-value offset plus a chars buffer. For the
-            /// only in-spec (PLAIN) dictionary encoding each value is stored as a 4-byte length plus its
-            /// raw bytes, so the decoded chars are no larger than the page payload, plus a per-value
-            /// UInt64 offset.
-            logical = sat_add(logical, sat_add(sat_mul(num_values, sizeof(UInt64)), page_payload_size));
-        }
-        else
-        {
-            /// Non-PLAIN encodings of a variable-size type (e.g. DELTA_BYTE_ARRAY, DELTA_LENGTH_BYTE_ARRAY)
-            /// undo prefix/length compression while decoding, so the decoded chars can be many times the
-            /// page payload and cannot be bounded from the page header alone. Dictionary pages are PLAIN
-            /// in-spec; accepting other encodings here is a ClickHouse extension (see decode()). Report an
-            /// unbounded footprint so the pruning path rejects such a dictionary up front (full scan)
-            /// instead of overshooting the memory budget inside decode() and only catching it afterwards.
-            return std::numeric_limits<size_t>::max();
-        }
-    }
-
-    /// Turn the logical payload sum into a genuine upper bound on `allocatedBytes()`. Every buffer above
-    /// is `PODArray`-backed (`decompressed_buf`, `offsets`, and the `PODArray`s inside `col`), and each
-    /// over-allocates its logical size by up to ~2x: `PODArray::reserve`/`resize` round the capacity up to
-    /// the next power of two (`reallocPowerOfTwoElements`), and `ColumnString`'s `chars` grow geometrically
-    /// (allocated bytes doubled on each realloc) as `decode` appends. So `allocatedBytes()` is bounded by
-    /// twice the logical footprint plus a small per-buffer padding allowance (`pad_left`/`pad_right`). If we
-    /// only reserved the logical sum, a dictionary that just fits the budget could still allocate almost
-    /// twice that during decode and let concurrent pruning batches collectively overshoot the watermark.
-    static constexpr size_t padding_slack = 256;
-    return sat_add(sat_mul(logical, 2), padding_slack);
 }
 
 template<size_t value_size>
@@ -1538,7 +1467,7 @@ void Float16Converter::convertColumn(std::span<const char> data, size_t num_valu
     out_data.reserve(out_data.size() + num_values);
     for (size_t i = 0; i < num_values; ++i)
     {
-        uint16_t x = 0;
+        uint16_t x;
         memcpy(&x, data.data() + i * 2, 2);
         out_data.push_back(convertFloat16ToFloat32(x));
     }
@@ -1680,7 +1609,7 @@ T BigEndianHelper<T>::convertPaddedValue(const char * data) const
 {
     /// We take advantage of input padding and do fixed-size memcpy of size sizeof(T) instead
     /// of variable-size memcpy of size input_size. Variable-size memcpy is slow.
-    T x{};
+    T x;
     memcpy(&x, data - value_offset, sizeof(T));
     fixupValue(x);
     return x;
@@ -1795,7 +1724,7 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
         /// arrow/cpp/src/parquet/types.h) and with a test file written by spark
         /// (tests/queries/0_stateless/02998_native_parquet_reader.sh).
         bool overflow = false;
-        Int64 x = 0;
+        Int64 x;
         overflow |= common::subOverflow(julian_day, static_cast<Int64>(2440588l), x); // unix day number
         overflow |= common::mulOverflow(x, day_nanos, x); // unix nanoseconds
         overflow |= common::addOverflow(x, nanos, x);
@@ -1824,7 +1753,7 @@ void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * off
                 result_object = parseWKBFormat(in_buffer);
                 break;
             case GeoEncoding::WKT:
-                result_object = parseWKTFormat(in_buffer, precise_float_parsing);
+                result_object = parseWKTFormat(in_buffer);
                 break;
         }
         appendObjectToGeoColumn(result_object, geo_metadata.type, col);

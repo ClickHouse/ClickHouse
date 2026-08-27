@@ -88,7 +88,7 @@ void ArrayJoinStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
 }
 
-void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 }
@@ -108,20 +108,15 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
-QueryPlanStepPtr ArrayJoinStep::clone() const
-{
-    return std::make_unique<ArrayJoinStep>(*this);
-}
-
 QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
 {
-    UInt8 flags = 0;
+    UInt8 flags;
     readIntBinary(flags, ctx.in);
 
     bool is_left = bool(flags & 1);
     bool is_unaligned = bool(flags & 2);
 
-    UInt64 num_columns = 0;
+    UInt64 num_columns;
     readVarUInt(num_columns, ctx.in);
 
     ArrayJoin array_join;
@@ -139,7 +134,6 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_lazy_columns_replication]);
 }
 
-void registerArrayJoinStep(QueryPlanStepRegistry & registry);
 void registerArrayJoinStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ArrayJoin", ArrayJoinStep::deserialize);
