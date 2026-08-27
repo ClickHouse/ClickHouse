@@ -1458,7 +1458,7 @@ StorageWindowView::StorageWindowView(
             : getWindowUpperBound(now());
     }
 
-    std::exchange(has_inner_table, true);
+    has_inner_table = true;
     if (mode < LoadingStrictnessLevel::ATTACH)
     {
         auto inner_create_query = getInnerTableCreateQuery(inner_query, inner_table_id);
