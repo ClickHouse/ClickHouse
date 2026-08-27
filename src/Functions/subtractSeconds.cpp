@@ -14,15 +14,15 @@ REGISTER_FUNCTION(SubtractSeconds)
 Subtracts a specified number of seconds from a date, a date with time or a string-encoded date or date with time.
 
 For a `DateTime64` or a `Time64` argument, and for a string-encoded one, `num` may have a fractional part:
-it is rounded to the nearest tick of the result's scale. For the other argument types, whose resolution is
-one second or coarser, `num` is converted to a whole number of seconds.
+it is rounded to the nearest tick of the result's scale, a tie away from zero. For the other argument
+types, whose resolution is one second or coarser, the fractional part of `num` is truncated.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 subtractSeconds(datetime, num)
     )";
     FunctionDocumentation::Arguments arguments =
     {
-        {"datetime", "Date or date with time to subtract specified number of seconds from.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
+        {"datetime", "Date or date with time to subtract specified number of seconds from.", {"Date", "Date32", "DateTime", "DateTime64", "Time", "Time64", "String"}},
         {"num", "Number of seconds to subtract.", {"(U)Int*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` minus `num` seconds", {"DateTime", "DateTime64(3)"}};

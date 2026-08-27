@@ -50,22 +50,39 @@ inline Int64 rescaleWholeToTicks(Int64 whole, Int64 multiplier, Int64 rem)
 }
 
 /// Adds a fractional number of seconds to a `DateTime64`/`Time64` tick value of the given scale.
-/// The whole part is scaled in Int64 to keep large deltas exact (a Float64 cannot hold 10^18 ticks); only
-/// the remainder goes through floating point, rounded to the nearest tick - truncating would turn
-/// `DateTime64(6) + 0.1` into 99999 ticks, as the closest double to 0.1 is slightly below it.
+/// The delta is scaled to ticks in one multiplication and rounded to the nearest tick, so the same
+/// fraction behaves the same whatever the whole part is: splitting the whole part off first would round
+/// `+ 0.15` at scale 1 up to 2 ticks while leaving `+ 1.15` at 11, because the remainder of the latter is
+/// exact and lands just below the midpoint the former rounds up to. The product is off by at most half of
+/// the resolution `delta` itself has, so it is never the dominant error. Beyond 2^53 ticks a Float64 no
+/// longer holds every integer, and the whole part is scaled in Int64 instead, where it stays exact.
 inline Int64 addFractionalSeconds(Int64 t, Float64 delta, UInt16 scale)
 {
-    const Float64 whole = std::trunc(delta);
-
-    Int64 whole_seconds = 0;
-    if (!isFinite(delta) || !accurate::convertNumeric<Float64, Int64, false>(whole, whole_seconds))
+    if (!isFinite(delta))
         throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
 
     const Int64 multiplier = DecimalUtils::scaleMultiplier<Int64>(scale);
+    const Float64 ticks = delta * static_cast<Float64>(multiplier);
+
+    Int64 result = 0;
+
+    if (std::abs(ticks) < 9007199254740992.0) /// 2^53
+    {
+        if (common::addOverflow(t, static_cast<Int64>(std::llround(ticks)), result))
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+
+        return result;
+    }
+
+    const Float64 whole = std::trunc(delta);
+
+    Int64 whole_seconds = 0;
+    if (!accurate::convertNumeric<Float64, Int64, false>(whole, whole_seconds))
+        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+
     /// |delta - whole| < 1 and multiplier <= 10^9, so this cannot overflow.
     const Int64 fractional_ticks = static_cast<Int64>(std::llround((delta - whole) * static_cast<Float64>(multiplier)));
 
-    Int64 result = 0;
     if (!DecimalUtils::tryMultiplyAdd(whole_seconds, multiplier, t, result)
         || common::addOverflow(result, fractional_ticks, result))
         throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");

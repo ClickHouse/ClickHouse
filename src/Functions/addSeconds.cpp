@@ -13,14 +13,14 @@ REGISTER_FUNCTION(AddSeconds)
 Adds a specified number of seconds to a date, a date with time or a string-encoded date or date with time.
 
 For a `DateTime64` or a `Time64` argument, and for a string-encoded one, `num` may have a fractional part:
-it is rounded to the nearest tick of the result's scale. For the other argument types, whose resolution is
-one second or coarser, `num` is converted to a whole number of seconds.
+it is rounded to the nearest tick of the result's scale, a tie away from zero. For the other argument
+types, whose resolution is one second or coarser, the fractional part of `num` is truncated.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 addSeconds(datetime, num)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"datetime", "Date or date with time to add specified number of seconds to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
+        {"datetime", "Date or date with time to add specified number of seconds to.", {"Date", "Date32", "DateTime", "DateTime64", "Time", "Time64", "String"}},
         {"num", "Number of seconds to add.", {"(U)Int*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` seconds", {"DateTime", "DateTime64(3)"}};

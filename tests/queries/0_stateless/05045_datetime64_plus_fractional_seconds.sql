@@ -21,9 +21,22 @@ SELECT '-- addSeconds and subtractSeconds';
 WITH toDateTime64('2023-06-01 18:10:01.212348', 6, 'UTC') AS t
 SELECT addSeconds(t, 0.1), subtractSeconds(t, 0.1), addSeconds(materialize(t), 0.1), addSeconds(t, materialize(0.1));
 
-SELECT '-- decimal literals a truncating implementation would get wrong';
+SELECT '-- common decimal fractions land on the exact tick';
 WITH toDateTime64('2023-06-01 18:10:01.000000', 6, 'UTC') AS t
 SELECT t + 0.3, t + 0.7, t + 0.29, t + 0.07;
+
+SELECT '-- fractions a truncating implementation would get wrong';
+SELECT toDateTime64('2023-06-01 18:10:01.00', 2, 'UTC') + 0.29;
+SELECT toDateTime64('2023-06-01 18:10:01.0', 1, 'UTC') + 0.15;
+SELECT toDateTime64('2023-06-01 18:10:01.000', 3, 'UTC') + 0.0005;
+SELECT toDateTime64('2023-06-01 18:10:01.000000', 6, 'UTC') + 0.9999995;
+
+SELECT '-- the same fraction is kept whatever the whole part is';
+WITH toDateTime64('2023-06-01 18:10:01.0', 1, 'UTC') AS t
+SELECT t + 0.15, t + 1.15, t + 2.15, (t + 1.15) - (t + 0.15) = 1;
+
+WITH toDateTime64('2023-06-01 18:10:01.000', 3, 'UTC') AS t
+SELECT t + 0.0005, t + 1.0005, t + 3.0005;
 
 SELECT '-- every scale';
 SELECT toDateTime64('2023-06-01 18:10:01', 0, 'UTC') + 1.5;
