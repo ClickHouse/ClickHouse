@@ -2813,18 +2813,29 @@ void registerStatementColumnsTransformers(StatementFactory & factory)
 {
     factory.registerStatement("APPLY modifier",
     {
-        .description = R"(
-Invokes a function for each column returned by the expression it is applied to, which is usually the asterisk or a
-columns matcher.
+        .description = R"DOCS_MD(
+> Allows you to invoke some function for each row returned by an outer table expression of a query.
 
-**Examples**
+## Syntax {#syntax}
 
-**Apply a function to every column**
-
-```sql title="Query"
-SELECT * APPLY(max) FROM columns_transformers;
+```sql
+SELECT <expr> APPLY( <func> ) FROM [db.]table_name
 ```
-)",
+
+## Example {#example}
+
+```sql
+CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
+INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
+SELECT * APPLY(sum) FROM columns_transformers;
+```
+
+```response
+┌─sum(i)─┬─sum(j)─┬─sum(k)─┐
+│    220 │     18 │    347 │
+└────────┴────────┴────────┘
+```
+)DOCS_MD",
         .syntax = R"(
 SELECT <expr> APPLY(<func>) FROM [db.]table_name
 )",
@@ -2834,18 +2845,28 @@ SELECT <expr> APPLY(<func>) FROM [db.]table_name
 
     factory.registerStatement("EXCEPT modifier",
     {
-        .description = R"(
-Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the
-output.
+        .description = R"DOCS_MD(
+> Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.
 
-**Examples**
+## Syntax {#syntax}
 
-**Exclude a column from the result**
+```sql
+SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
+```
+
+## Examples {#examples}
 
 ```sql title="Query"
-SELECT * EXCEPT (i) FROM columns_transformers;
+SELECT * EXCEPT (i) from columns_transformers;
 ```
-)",
+
+```response title="Response"
+┌──j─┬───k─┐
+│ 10 │ 324 │
+│  8 │  23 │
+└────┴─────┘
+```
+)DOCS_MD",
         .syntax = R"(
 SELECT <expr> EXCEPT (col_name1 [, col_name2, col_name3, ...]) FROM [db.]table_name
 )",
@@ -2855,19 +2876,33 @@ SELECT <expr> EXCEPT (col_name1 [, col_name2, col_name3, ...]) FROM [db.]table_n
 
     factory.registerStatement("REPLACE modifier",
     {
-        .description = R"(
-Specifies one or more expression aliases. Each alias must match a column name of the `SELECT *` statement, and the
-matching column is replaced by the expression in the output column list. The modifier does not change the names or the
-order of the columns, but it can change the values and their types.
+        .description = R"DOCS_MD(
+> Allows you to specify one or more [expression aliases](/reference/syntax#expression-aliases).
 
-**Examples**
+Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches
+the alias is replaced by the expression in that `REPLACE`.
 
-**Replace the expression of a column**
+This modifier does not change the names or order of columns. However, it can change the value and the value type.
 
-```sql title="Query"
-SELECT * REPLACE(i + 1 AS i) FROM columns_transformers;
+**Syntax:**
+
+```sql
+SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
 ```
-)",
+
+**Example:**
+
+```sql
+SELECT * REPLACE(i + 1 AS i) from columns_transformers;
+```
+
+```response
+┌───i─┬──j─┬───k─┐
+│ 101 │ 10 │ 324 │
+│ 121 │  8 │  23 │
+└─────┴────┴─────┘
+```
+)DOCS_MD",
         .syntax = R"(
 SELECT <expr> REPLACE(<expr> AS col_name) FROM [db.]table_name
 )",
