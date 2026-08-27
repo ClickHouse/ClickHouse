@@ -22,7 +22,8 @@ ColumnsDescription StorageSystemHypotheticalProjections::getColumnsDescription()
         {"table",    std::make_shared<DataTypeString>(), "Table name"},
         {"name",     std::make_shared<DataTypeString>(), "Projection name"},
         {"type",     std::make_shared<DataTypeString>(), "Projection type (normal or aggregate)"},
-        {"query",    std::make_shared<DataTypeString>(), "Projection SELECT query"},
+        {"query",    std::make_shared<DataTypeString>(), "Projection SELECT query, empty for the INDEX ... TYPE ... form"},
+        {"definition", std::make_shared<DataTypeString>(), "Full projection declaration as written"},
         {"settings", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
                      "Projection settings from WITH SETTINGS"},
     };
@@ -60,6 +61,12 @@ void StorageSystemHypotheticalProjections::fillData(
             : nullptr;
         if (declaration && declaration->query)
             res_columns[col++]->insert(declaration->query->formatForLogging());
+        else
+            res_columns[col++]->insertDefault();
+
+        /// the query column is empty for the INDEX form, so always expose the whole declaration
+        if (entry.projection.definition_ast)
+            res_columns[col++]->insert(entry.projection.definition_ast->formatForLogging());
         else
             res_columns[col++]->insertDefault();
 

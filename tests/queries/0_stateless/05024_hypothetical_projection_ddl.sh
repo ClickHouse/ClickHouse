@@ -59,7 +59,8 @@ $CLICKHOUSE_CLIENT -q "
 echo "--- the INDEX form of a projection declaration is accepted ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_idx ON t_hypo_proj_ddl INDEX b TYPE basic;
-    SELECT name, type FROM system.hypothetical_projections WHERE table = 't_hypo_proj_ddl' AND name = 'p_idx';
+    SELECT name, type, query = '' AS query_is_empty, definition
+    FROM system.hypothetical_projections WHERE table = 't_hypo_proj_ddl' AND name = 'p_idx';
 "
 
 echo "--- WITH SETTINGS survives into the system table ---"
