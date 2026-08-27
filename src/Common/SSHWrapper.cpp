@@ -435,8 +435,6 @@ SSHClientConfiguration getSSHClientConfiguration(const String & host, const Stri
         || ssh_options_set(session, SSH_OPTIONS_PORT, &port_number) != SSH_OK)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot set the parameters of an SSH session: {}", ssh_get_error(session));
 
-    /// The names of the config files are passed explicitly, because libssh takes the home directory
-    /// from the passwd database, while the rest of the client honors the `HOME` environment variable.
     /// libssh prepends each `IdentityFile` of the config to the list of the built-in default identities
     /// (`~/.ssh/id_ed25519` and so on), so the configured identities come out in the reverse order.
     /// Count the defaults up front to restore the order of the configured identities afterwards.
@@ -450,6 +448,8 @@ SSHClientConfiguration getSSHClientConfiguration(const String & host, const Stri
         }
     }
 
+    /// The names of the config files are passed explicitly, because libssh takes the home directory
+    /// from the passwd database, while the rest of the client honors the `HOME` environment variable.
     String home_directory = getHomeDirectory();
     for (const String & config_file : {home_directory + "/.ssh/config", String(GLOBAL_SSH_CONFIG_FILE)})
         if (ssh_options_parse_config(session, config_file.c_str()) != SSH_OK)
