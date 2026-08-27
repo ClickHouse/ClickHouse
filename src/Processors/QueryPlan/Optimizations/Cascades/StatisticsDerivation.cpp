@@ -108,13 +108,33 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
         /// matching duplicate of the first input at this step (a separate `Distinct` above
         /// deduplicates), and `EXCEPT` keeps at most the first input.
         ExpressionStatistics result = input_statistics(0);
-        if (intersect_or_except_step->getOperator() == IntersectOrExceptStep::Operator::INTERSECT_ALL)
+        const auto op = intersect_or_except_step->getOperator();
+        if (op == IntersectOrExceptStep::Operator::INTERSECT_ALL
+            || op == IntersectOrExceptStep::Operator::INTERSECT_DISTINCT)
         {
+            /// Every output row also matches a row of each other input, so a column's NDV is
+            /// bounded by every input's NDV at the same position. Without this the `Distinct`
+            /// above would estimate from the first input's NDVs alone.
+            const auto & input_headers = intersect_or_except_step->getInputHeaders();
             for (size_t input_index = 1; input_index < expression->inputs.size(); ++input_index)
             {
                 const auto & other = input_statistics(input_index);
-                result.estimated_row_count = std::min(result.estimated_row_count, other.estimated_row_count);
-                result.max_row_count = std::min(result.max_row_count, other.max_row_count);
+                if (op == IntersectOrExceptStep::Operator::INTERSECT_ALL)
+                {
+                    result.estimated_row_count = std::min(result.estimated_row_count, other.estimated_row_count);
+                    result.max_row_count = std::min(result.max_row_count, other.max_row_count);
+                }
+                for (size_t position = 0; position < input_headers.at(0)->columns(); ++position)
+                {
+                    auto output_column = result.column_statistics.find(input_headers.at(0)->getByPosition(position).name);
+                    if (output_column == result.column_statistics.end())
+                        continue;
+                    auto other_column = other.column_statistics.find(input_headers.at(input_index)->getByPosition(position).name);
+                    if (other_column == other.column_statistics.end())
+                        continue;
+                    output_column->second.num_distinct_values
+                        = std::min(output_column->second.num_distinct_values, other_column->second.num_distinct_values);
+                }
             }
             /// Without the clamp a row-count reduction could leave a column NDV above the row count.
             for (auto & [column_name, column_stats] : result.column_statistics)
