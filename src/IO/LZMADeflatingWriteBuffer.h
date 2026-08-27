@@ -34,10 +34,10 @@ private:
 
     void nextImpl() override;
 
-    void finalFlushBefore() override;
-    void finalFlushAfter() override;
+    void finalizeBefore() override;
+    void finalizeAfter() override;
 
-    lzma_stream lstr{};
+    lzma_stream lstr;
 
     bool compress_empty = true;
 };

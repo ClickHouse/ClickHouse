@@ -1,6 +1,4 @@
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTJSONHelpers.h>
-#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
 
 
@@ -9,26 +7,9 @@ namespace DB
 
 ASTPtr ASTExpressionList::clone() const
 {
-    auto clone = make_intrusive<ASTExpressionList>(*this);
+    auto clone = std::make_shared<ASTExpressionList>(*this);
     clone->cloneChildren();
     return clone;
-}
-
-void ASTExpressionList::writeJSON(WriteBuffer & out) const
-{
-    JSONObjectWriter w(out, "ExpressionList");
-    if (getSeparator() != ',')
-        w.writeString("separator", String(1, getSeparator()));
-    w.writeChildren(children);
-}
-
-void ASTExpressionList::readJSON(const Poco::JSON::Object & json)
-{
-    JSONObjectReader r(json);
-    String sep = r.getString("separator");
-    if (!sep.empty())
-        setSeparator(sep[0]);
-    children = r.readChildren();
 }
 
 void ASTExpressionList::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -40,8 +21,8 @@ void ASTExpressionList::formatImpl(WriteBuffer & ostr, const FormatSettings & se
     {
         if (i)
         {
-            if (char sep = getSeparator())
-                ostr << sep;
+            if (separator)
+                ostr << separator;
             ostr << ' ';
         }
 
@@ -72,8 +53,8 @@ void ASTExpressionList::formatImplMultiline(WriteBuffer & ostr, const FormatSett
 
     for (size_t i = 0, size = children.size(); i < size; ++i)
     {
-        if (char sep = getSeparator(); i && sep)
-            ostr << sep;
+        if (i && separator)
+            ostr << separator;
 
         if (size > 1 || frame.expression_list_always_start_on_new_line)
             ostr << indent_str;

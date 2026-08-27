@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Common/SettingsChanges.h>
-#include <Common/assert_cast.h>
 
 #include <Core/NamesAndTypes.h>
+#include <Core/Field.h>
 
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -63,7 +63,7 @@ using QueryNodePtr = std::shared_ptr<QueryNode>;
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 
-class QueryNode final : public ITableExpressionNode
+class QueryNode final : public IQueryTreeNode
 {
 public:
     /// Construct query node with context and changed settings
@@ -143,18 +143,6 @@ public:
         cte_name = std::move(cte_name_value);
     }
 
-    /// Returns true if query node is a MATERIALIZED CTE, false otherwise
-    bool isMaterialized() const noexcept
-    {
-        return is_materialized;
-    }
-
-    /// Set query node is MATERIALIZED CTE value
-    void setIsMaterialized(bool is_materialized_value) noexcept
-    {
-        is_materialized = is_materialized_value;
-    }
-
     /// Returns true if query node has RECURSIVE WITH, false otherwise
     bool isRecursiveWith() const
     {
@@ -177,16 +165,6 @@ public:
     void setIsDistinct(bool is_distinct_value)
     {
         is_distinct = is_distinct_value;
-    }
-
-    bool isLimitByAll() const
-    {
-        return is_limit_by_all;
-    }
-
-    void setIsLimitByAll(bool is_limit_by_all_value)
-    {
-        is_limit_by_all = is_limit_by_all_value;
     }
 
     /// Returns true if query node has LIMIT WITH TIES, false otherwise
@@ -328,28 +306,15 @@ public:
     }
 
     /// Get JOIN TREE section node
-    const ITableExpressionNode & getJoinTree() const
-    {
-        return children[join_tree_child_index]->assertTableExpression();
-    }
-
-    /// Get JOIN TREE section node
-    QueryTreeNodePtr & getJoinTreeNode()
+    const QueryTreeNodePtr & getJoinTree() const
     {
         return children[join_tree_child_index];
     }
 
     /// Get JOIN TREE section node
-    const QueryTreeNodePtr & getJoinTreeNode() const
+    QueryTreeNodePtr & getJoinTree()
     {
         return children[join_tree_child_index];
-    }
-
-    /// Get JOIN TREE section node
-    TableExpressionNodePtr getJoinTreeNodeTyped() const
-    {
-        children[join_tree_child_index]->assertTableExpression();
-        return static_pointer_cast<ITableExpressionNode>(children[join_tree_child_index]);
     }
 
     /// Returns true if query node PREWHERE section is not empty, false otherwise
@@ -698,11 +663,6 @@ public:
         projection_aliases_to_override = std::move(pr_aliases);
     }
 
-    const Names & getProjectionAliasesToOverride() const
-    {
-        return projection_aliases_to_override;
-    }
-
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
 
@@ -715,7 +675,6 @@ protected:
 private:
     bool is_subquery = false;
     bool is_cte = false;
-    bool is_materialized = false;
     bool is_recursive_with = false;
     bool is_distinct = false;
     bool is_limit_with_ties = false;
@@ -725,7 +684,6 @@ private:
     bool is_group_by_with_grouping_sets = false;
     bool is_group_by_all = false;
     bool is_order_by_all = false;
-    bool is_limit_by_all = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;

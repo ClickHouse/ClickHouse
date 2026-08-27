@@ -6,11 +6,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 query_id="${CLICKHOUSE_DATABASE}_$$"
 benchmark_args=(
-    # A loaded runner can take longer than the default 10 s handshake_timeout_ms
-    # to send Hello; the benchmark then exits without running a query and
-    # query_log has 0 rows instead of 3.
-    --connect_timeout 60
-    --handshake_timeout_ms 60000
     --iterations 1
     --log_queries 1
     --query_id "$query_id"
@@ -27,4 +22,4 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 # -- NOTE: this test cannot use 'current_database = $CLICKHOUSE_DATABASE',
 # -- because it does not propagated via remote queries,
 # -- but it uses query_id, and this is enough.
-$CLICKHOUSE_CLIENT --param_query_id="$query_id" -q "SELECT count() FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id = {query_id:String}"
+$CLICKHOUSE_CLIENT --param_query_id="$query_id" -q "SELECT count() FROM system.query_log WHERE event_date >= yesterday() AND initial_query_id = {query_id:String}"

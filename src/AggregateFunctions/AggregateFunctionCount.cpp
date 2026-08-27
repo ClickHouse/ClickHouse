@@ -1,10 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/scope_guard_safe.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -21,19 +17,6 @@ namespace ErrorCodes
 }
 
 struct Settings;
-
-ColumnPtr createSingleCountStateColumn(const AggregateFunctionPtr & count_function, UInt64 num_rows)
-{
-    VectorWithMemoryTracking<char> state(count_function->sizeOfData());
-    AggregateDataPtr place = state.data();
-    count_function->create(place);
-    SCOPE_EXIT_MEMORY_SAFE(count_function->destroy(place));
-    AggregateFunctionCount::set(place, num_rows);
-
-    auto column = ColumnAggregateFunction::create(count_function);
-    column->insertFrom(place);
-    return column;
-}
 
 /// Simply count number of not-NULL values.
 class AggregateFunctionCountNotNullUnary final
@@ -95,7 +78,7 @@ public:
             AggregateFunctionFactory::instance().get(getName(), NullsAction::EMPTY, {}, {}, properties), DataTypes{}, Array{});
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).count += data(rhs).count;
     }
@@ -142,7 +125,7 @@ bool AggregateFunctionCount::isCompilable() const
 {
     bool is_compilable = true;
     for (const auto & argument_type : argument_types)
-        is_compilable &= canBeNativeType(*argument_type);
+    is_compilable &= canBeNativeType(*argument_type);
 
     return is_compilable;
 }
@@ -268,77 +251,10 @@ AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, cons
 
 }
 
-void registerAggregateFunctionCount(AggregateFunctionFactory &);
-
 void registerAggregateFunctionCount(AggregateFunctionFactory & factory)
 {
-    FunctionDocumentation::Description description = R"(
-Counts the number of rows or not-NULL values.
-
-ClickHouse supports the following syntaxes for `count`:
-- `count(expr)` or `COUNT(DISTINCT expr)`.
-- `count()` or `COUNT(*)`. The `count()` syntax is ClickHouse-specific.
-
-**Details**
-
-ClickHouse supports the `COUNT(DISTINCT ...)` syntax.
-The behavior of this construction depends on the [`count_distinct_implementation`](/reference/settings/session-settings/count-distinct#count_distinct_implementation) setting.
-It defines which of the [uniq*](/reference/functions/aggregate-functions/uniq) functions is used to perform the operation.
-The default is the [uniqExact](/reference/functions/aggregate-functions/uniqExact) function.
-
-The `SELECT count() FROM table` query is optimized by default using metadata from MergeTree.
-If you need to use row-level security, disable optimization using the [`optimize_trivial_count_query`](/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) setting.
-
-However `SELECT count(nullable_column) FROM table` query can be optimized by enabling the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting.
-With `optimize_functions_to_subcolumns = 1` the function reads only [`null`](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data.
-The query `SELECT count(n) FROM table` transforms to `SELECT sum(NOT n.null) FROM table`.
-
-:::tip Improving COUNT(DISTINCT expr) performance
-If your `COUNT(DISTINCT expr)` query is slow, consider adding a [`GROUP BY`](/reference/statements/select/group-by) clause as this improves parallelization.
-You can also use a [projection](/reference/statements/alter/projection) to create an index on the target column used with `COUNT(DISTINCT target_col)`.
-:::
-    )";
-    FunctionDocumentation::Syntax syntax = "count([expr])";
-    FunctionDocumentation::Arguments arguments = {
-        {"expr", "Optional. An expression. The function counts how many times this expression returned not null.", {"Expression"}}
-    };
-    FunctionDocumentation::Parameters parameters = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the a row count if the function is called without parameters, otherwise returns a count of how many times the passed expression returned not null.", {"UInt64"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Basic row count",
-        R"(
-SELECT count() FROM t
-        )",
-        R"(
-┌─count()─┐
-│       5 │
-└─────────┘
-        )"
-    },
-    {
-        "COUNT(DISTINCT) example",
-        R"(
--- This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
-SELECT name, value FROM system.settings WHERE name = 'count_distinct_implementation';
-SELECT count(DISTINCT num) FROM t
-        )",
-        R"(
-┌─name──────────────────────────┬─value─────┐
-│ count_distinct_implementation │ uniqExact │
-└───────────────────────────────┴───────────┘
-┌─uniqExact(num)─┐
-│              3 │
-└────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
-
-    factory.registerFunction("count", {createAggregateFunctionCount, documentation, properties}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("count", {createAggregateFunctionCount, properties}, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

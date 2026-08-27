@@ -1,2 +1,0 @@
-SELECT 1\nFROM v0\nCROSS JOIN\n(\n    SELECT 1\n    FROM system.one\n) AS y\nCROSS JOIN\n(\n    SELECT 1 AS x\n    FROM system.one\n) AS x\nWHERE equals(x.x, 1)
-WITH\n    rhs AS\n    (\n        SELECT 1\n        FROM system.one\n    )\nSELECT lhs.d2\nFROM view(\n    SELECT dummy AS d2\n    FROM system.one\n    ALL INNER JOIN\n    (\n        SELECT *\n        FROM view(\n            SELECT dummy AS d2\n            FROM system.one\n        )\n    ) AS a ON equals(a.d2, d2)\n) AS lhs\nALL RIGHT JOIN rhs USING (d1)

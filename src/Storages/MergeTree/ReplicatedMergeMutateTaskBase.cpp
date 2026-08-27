@@ -5,9 +5,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 
@@ -36,12 +33,8 @@ StorageID ReplicatedMergeMutateTaskBase::getStorageID() const
 
 void ReplicatedMergeMutateTaskBase::onCompleted()
 {
-    /// `common_assignee_trigger` treats the argument as "delay the next attempt": a successfully
-    /// finished task does not have to be retried, and a failed one is paced by the queue's
-    /// exponential backoff. A task that intentionally did nothing because it waits for another
-    /// replica has no such pacing, so ask for a delay explicitly.
-    bool delay_next_attempt = state == State::SUCCESS || postpone_next_attempt;
-    task_result_callback(delay_next_attempt);
+    bool successfully_executed = state == State::SUCCESS;
+    task_result_callback(successfully_executed);
 }
 
 
@@ -53,8 +46,6 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
     std::exception_ptr saved_exception;
 
     bool need_to_save_exception = true;
-
-    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeMutateTaskBase::executeStep");
     try
     {
         /// We don't have any backoff for failed entries
@@ -152,7 +143,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_mutate_entry)
-        switcher.emplace((*merge_mutate_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+        switcher.emplace((*merge_mutate_entry)->thread_group, "", /*allow_existing_group*/ true);
 
     auto remove_processed_entry = [&] () -> bool
     {
@@ -201,7 +192,6 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             auto prepare_result = prepare();
 
             part_log_writer = prepare_result.part_log_writer;
-            postpone_next_attempt = prepare_result.postpone_next_attempt;
 
             /// Avoid rescheduling, execute fetch here, in the same thread.
             if (!prepare_result.prepared_successfully)
@@ -303,7 +293,7 @@ void ReplicatedMergeMutateTaskBase::maybeSleepBeforeZeroCopyLock(uint64_t estima
 
         if (log_scale)
         {
-            double start_to_sleep_seconds = static_cast<double>(std::logf(static_cast<float>(min_parts_size_sleep)));
+            double start_to_sleep_seconds = std::logf(min_parts_size_sleep);
             right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_result) - start_to_sleep_seconds + 0.5) * 1000);
         }
 

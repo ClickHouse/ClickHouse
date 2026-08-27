@@ -77,28 +77,27 @@ StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, Cont
             patch_part_desc.add(ColumnDescription(col.name, col.type));
 
     /// Use hash of column names to put patch parts with different structure to different partitions.
-    auto part_identifier = make_intrusive<ASTIdentifier>("_part");
+    auto part_identifier = std::make_shared<ASTIdentifier>("_part");
     auto columns_hash = getColumnsHash(patch_part_desc.getNamesOfPhysical());
-    auto hash_literal = make_intrusive<ASTLiteral>(std::move(columns_hash));
+    auto hash_literal = std::make_shared<ASTLiteral>(std::move(columns_hash));
 
     auto partition_by_expression = makeASTFunction("__patchPartitionID", part_identifier, hash_literal);
-    part_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_expression, patch_part_desc, {}, local_context);
+    part_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_expression, patch_part_desc, local_context);
 
     const auto & key_columns = getPatchPartKeyColumns();
-    auto order_by_expression = makeASTOperator("tuple");
+    auto order_by_expression = makeASTFunction("tuple");
 
     for (const auto & [key_column_name, _] : key_columns)
-        order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(key_column_name));
+        order_by_expression->arguments->children.push_back(std::make_shared<ASTIdentifier>(key_column_name));
 
     addCodecsForPatchSystemColumns(patch_part_desc);
 
     IndicesDescription secondary_indices;
-    constexpr bool escape_index_filenames = true; /// It doesn't matter, the hardcoded names don't contain non ascii characters
-    secondary_indices.push_back(createImplicitMinMaxIndexDescription(BlockNumberColumn::name, patch_part_desc, escape_index_filenames, local_context));
-    secondary_indices.push_back(createImplicitMinMaxIndexDescription(BlockOffsetColumn::name, patch_part_desc, escape_index_filenames, local_context));
+    secondary_indices.push_back(createImplicitMinMaxIndexDescription(BlockNumberColumn::name, patch_part_desc, local_context));
+    secondary_indices.push_back(createImplicitMinMaxIndexDescription(BlockOffsetColumn::name, patch_part_desc, local_context));
 
-    part_metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_expression, patch_part_desc, {}, local_context);
-    part_metadata.primary_key = KeyDescription::getKeyFromAST(order_by_expression, patch_part_desc, {}, local_context);
+    part_metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_by_expression, patch_part_desc, local_context, {});
+    part_metadata.primary_key = KeyDescription::getKeyFromAST(order_by_expression, patch_part_desc, local_context);
     part_metadata.primary_key.definition_ast = nullptr;
     part_metadata.setSecondaryIndices(std::move(secondary_indices));
     part_metadata.setColumns(std::move(patch_part_desc));
@@ -148,7 +147,7 @@ std::pair<UInt64, UInt64> getPartNameRange(const ColumnLowCardinality & part_nam
 
     const auto [begin, end] = std::ranges::equal_range(
         indices,
-        std::string_view{part_name},
+        StringRef{part_name},
         std::less{},
         [&](const auto idx) { return part_name_column.getDataAt(idx); });
 
@@ -169,15 +168,15 @@ std::pair<UInt64, UInt64> getPartNameOffsetRange(
         const auto & [name, result_idx] = name_with_idx;
 
         auto data = part_name_column.getDataAt(index);
-        int res = memcmp(data.data(), name.data(), std::min(data.size(), name.size()));
+        int res = memcmp(data.data, name.data(), std::min(data.size, name.size()));
 
         if (res != 0)
             return res;
 
-        if (data.size() < name.size())
+        if (data.size < name.size())
             return -1;
 
-        if (data.size() > name.size())
+        if (data.size > name.size())
             return 1;
 
         UInt64 patch_idx = part_offset_data[index];
@@ -392,57 +391,6 @@ PatchInfosByPartition getPatchPartsByPartition(const std::vector<MergeTreePartIn
             res[partition_id].push_back(info);
     }
     return res;
-}
-
-static void sortDataVersions(DataVersionsByPartition & data_versions)
-{
-    for (auto & [_, versions] : data_versions)
-    {
-        std::sort(versions.begin(), versions.end());
-        versions.erase(std::unique(versions.begin(), versions.end()), versions.end());
-    }
-}
-
-DataVersionsByPartition getDataVersionsByPartition(const DataPartsVector & parts)
-{
-    DataVersionsByPartition res;
-    for (const auto & part : parts)
-    {
-        if (!part->info.isPatch())
-            res[part->info.getPartitionId()].push_back(part->info.getDataVersion());
-    }
-
-    sortDataVersions(res);
-    return res;
-}
-
-DataVersionsByPartition getDataVersionsByPartition(const std::vector<MergeTreePartInfo> & parts)
-{
-    DataVersionsByPartition res;
-    for (const auto & info : parts)
-    {
-        if (!info.isPatch())
-            res[info.getPartitionId()].push_back(info.getDataVersion());
-    }
-
-    sortDataVersions(res);
-    return res;
-}
-
-std::optional<Int64> findDataVersionInRange(const DataVersionsByPartition & data_versions, const String & partition_id, Int64 from, Int64 to)
-{
-    auto it = data_versions.find(partition_id);
-    if (it == data_versions.end())
-        return {};
-
-    const auto & versions = it->second;
-    const auto [lower_bound, upper_bound] = std::minmax(from, to);
-    auto version_it = std::lower_bound(versions.begin(), versions.end(), lower_bound);
-
-    if (version_it == versions.end() || *version_it >= upper_bound)
-        return {};
-
-    return *version_it;
 }
 
 }

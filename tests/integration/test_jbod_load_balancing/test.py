@@ -12,9 +12,9 @@ node = cluster.add_instance(
         "configs/config.d/storage_configuration.xml",
     ],
     tmpfs=[
-        "/test_jbod_load_balancing_jbod1:size=100M",
-        "/test_jbod_load_balancing_jbod2:size=200M",
-        "/test_jbod_load_balancing_jbod3:size=300M",
+        "/jbod1:size=100M",
+        "/jbod2:size=200M",
+        "/jbod3:size=300M",
     ],
 )
 
@@ -114,11 +114,8 @@ def test_jbod_load_balancing_least_used_next_disk(start_cluster):
 
             SYSTEM STOP MERGES data_least_used_next_disk;
 
-            -- 100MiB each part, 3 parts in total.
-            -- max_insert_threads = 1 keeps the parts written one after another: with
-            -- concurrent writers a reserve can observe another part mid-write, and
-            -- which disk is least used at that moment is interleaving dependent.
-            INSERT INTO data_least_used_next_disk SELECT repeat('a', 100) FROM numbers(3e6) SETTINGS max_block_size='1Mi', max_insert_threads = 1;
+            -- 100MiB each part, 3 parts in total
+            INSERT INTO data_least_used_next_disk SELECT repeat('a', 100) FROM numbers(3e6) SETTINGS max_block_size='1Mi';
         """
         )
 
@@ -166,7 +163,7 @@ def test_jbod_load_balancing_least_used_detect_background_changes(start_cluster)
             """
         )
 
-        node.exec_in_container(["fallocate", "-l200M", "/test_jbod_load_balancing_jbod3/.test"])
+        node.exec_in_container(["fallocate", "-l200M", "/jbod3/.test"])
         node.query(
             """
             INSERT INTO data_least_used_detect_background_changes SELECT * FROM numbers(10);
@@ -180,7 +177,7 @@ def test_jbod_load_balancing_least_used_detect_background_changes(start_cluster)
             ["4", "jbod2"],
         ]
 
-        node.exec_in_container(["rm", "/test_jbod_load_balancing_jbod3/.test"])
+        node.exec_in_container(["rm", "/jbod3/.test"])
         node.query(
             """
             INSERT INTO data_least_used_detect_background_changes SELECT * FROM numbers(10);
@@ -197,7 +194,7 @@ def test_jbod_load_balancing_least_used_detect_background_changes(start_cluster)
             ["4", "jbod3"],
         ]
     finally:
-        node.exec_in_container(["rm", "-f", "/test_jbod_load_balancing_jbod3/.test"])
+        node.exec_in_container(["rm", "-f", "/jbod3/.test"])
         node.query(
             "DROP TABLE IF EXISTS data_least_used_detect_background_changes SYNC"
         )

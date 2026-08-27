@@ -283,8 +283,7 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request, uint64_t * co
 			reconnect(connect_time);
         if (!request.has(HTTPMessage::CONNECTION))
             request.setKeepAlive(keepAlive);
-        if (keepAlive && !request.getSuppressKeepAliveHeader() && !request.has(HTTPMessage::CONNECTION_KEEP_ALIVE)
-            && _keepAliveTimeout.totalSeconds() > 0)
+        if (keepAlive && !request.has(HTTPMessage::CONNECTION_KEEP_ALIVE) && _keepAliveTimeout.totalSeconds() > 0)
             request.setKeepAliveTimeout(_keepAliveTimeout.totalSeconds(), _keepAliveMaxRequests);
 		if (!request.has(HTTPRequest::HOST) && !_host.empty())
 			request.setHost(_host, _port);
@@ -301,9 +300,6 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request, uint64_t * co
 		{
 			HTTPHeaderOutputStream hos(*this);
 			request.write(hos);
-			/// flush header to make sure that it is sent before the body
-			/// if flash is delayed until d-tor of HTTPHeaderOutputStream, then possible exception is muted and lost
-			hos.flush();
 			_pRequestStream = new HTTPChunkedOutputStream(*this);
 		}
 		else if (request.hasContentLength())

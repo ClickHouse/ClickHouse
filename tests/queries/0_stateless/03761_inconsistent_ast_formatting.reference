@@ -1,2 +1,0 @@
-SELECT arrayElement(negate(42), 3)\nFROM system.one
-SELECT tupleElement(negate(\'a\'), 1)\nFROM system.one

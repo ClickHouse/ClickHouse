@@ -130,9 +130,9 @@ Returns the index of the first element in the source array for which `func(x[, y
 )";
     FunctionDocumentation::Syntax syntax_first = "arrayFirstIndex(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_first = {
-        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)."},
-        {"source_arr", "The source array to process. [`Array(T)`](/reference/data-types/array)."},
-        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/reference/data-types/array)."}
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source_arr", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_first = {"Returns the index of the first element of the source array for which `func` is true, otherwise returns `0`", {"UInt32"}};
     FunctionDocumentation::Examples examples_first = {
@@ -141,7 +141,7 @@ Returns the index of the first element in the source array for which `func(x[, y
     };
     FunctionDocumentation::IntroducedIn introduced_in_first = {1, 1};
     FunctionDocumentation::Category category_first = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_first = {description_first, syntax_first, arguments_first, {}, returned_value_first, examples_first, introduced_in_first, category_first};
+    FunctionDocumentation documentation_first = {description_first, syntax_first, arguments_first, returned_value_first, examples_first, introduced_in_first, category_first};
 
     factory.registerFunction<FunctionArrayFirstIndex>(documentation_first);
 
@@ -161,7 +161,7 @@ Returns the index of the last element in the source array for which `func(x[, y1
     };
     FunctionDocumentation::IntroducedIn introduced_in_last = {1, 1};
     FunctionDocumentation::Category category_last = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_last = {description_last, syntax_last, arguments_last, {}, returned_value_last, examples_last, introduced_in_last, category_last};
+    FunctionDocumentation documentation_last = {description_last, syntax_last, arguments_last, returned_value_last, examples_last, introduced_in_last, category_last};
 
     factory.registerFunction<FunctionArrayLastIndex>(documentation_last);
 }

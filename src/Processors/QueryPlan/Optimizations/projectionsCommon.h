@@ -36,7 +36,7 @@ private:
 
 struct ProjectionCandidate
 {
-    const ProjectionDescription * projection{};
+    const ProjectionDescription * projection;
 
     /// Estimated total marks to read (including parent and projection)
     size_t sum_marks = 0;
@@ -69,30 +69,22 @@ size_t filterPartsByProjection(
 
 /// This function fills ProjectionCandidate structure for specified projection.
 /// It returns false if for some reason we cannot read from projection.
-/// `top_k_filter_info` is the TopK stamp of the read the projection would replace (if any), so
-/// that the query condition cache consult inside the candidate analysis observes the same TopK
-/// gating and key salting as the read itself.
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
     const MergeTreeDataSelectExecutor & reader,
     MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     const Names & required_column_names,
-    const StorageMetadataPtr & parent_metadata,
     ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
     const SelectQueryInfo & projection_query_info,
-    const std::optional<TopKFilterInfo> & top_k_filter_info,
     const ContextPtr & context);
 
-/// Performs part-level filtering using projection to skip irrelevant data parts.
-/// Also collects projections to build filters that will be applied during MergeTree reading for fine-grained row-level filtering.
-void filterPartsAndCollectProjectionCandidates(
-    ReadFromMergeTree & reading,
+/// Attempts to filter out data parts using projections.
+void filterPartsUsingProjection(
     const ProjectionDescription & projection,
     const MergeTreeDataSelectExecutor & reader,
     MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
     const SelectQueryInfo & projection_query_info,
-    const ActionsDAG::Node * filter_node,
     const ContextPtr & context);
 
 /// When parallel replicas are enabled, projections are read directly on the initial replica if both projection and part streams are present.

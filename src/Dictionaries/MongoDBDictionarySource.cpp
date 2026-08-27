@@ -1,8 +1,6 @@
 #include "config.h"
 
 #include <Dictionaries/DictionarySourceFactory.h>
-#include <Common/Exception.h>
-
 #if USE_MONGODB
 #include <Dictionaries/MongoDBDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -29,13 +27,11 @@ namespace ErrorCodes
     #if USE_MONGODB
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
     #else
     extern const int SUPPORT_IS_DISABLED;
     #endif
 }
 
-void registerDictionarySourceMongoDB(DictionarySourceFactory & factory);
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
     #if USE_MONGODB
@@ -54,9 +50,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         {
             if (named_collection->has("uri"))
             {
-                if (named_collection->has("options"))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'options' key should not be set when using 'uri', as connection options are already part of the URI");
-                validateNamedCollection(*named_collection, {"uri", "collection"}, {});
+                validateNamedCollection(*named_collection, {"collection"}, {});
                 configuration->uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
             }
             else
@@ -120,89 +114,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
     };
     #endif
 
-    factory.registerSource("mongodb", create_dictionary_source, Documentation{
-        .description = R"DOCS_MD(
-# MongoDB dictionary source
-
-Example of settings:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-SOURCE(MONGODB(
-    host 'localhost'
-    port 27017
-    user ''
-    password ''
-    db 'test'
-    collection 'dictionary_source'
-    options 'ssl=true'
-))
-```
-
-Or using a URI:
-
-```sql
-SOURCE(MONGODB(
-    uri 'mongodb://localhost:27017/clickhouse'
-    collection 'dictionary_source'
-))
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<source>
-    <mongodb>
-        <host>localhost</host>
-        <port>27017</port>
-        <user></user>
-        <password></password>
-        <db>test</db>
-        <collection>dictionary_source</collection>
-        <options>ssl=true</options>
-    </mongodb>
-</source>
-```
-
-Or using a URI:
-
-```xml
-<source>
-    <mongodb>
-        <uri>mongodb://localhost:27017/test?ssl=true</uri>
-        <collection>dictionary_source</collection>
-    </mongodb>
-</source>
-```
-
-</Tab>
-</Tabs>
-<br/>
-
-Setting fields:
-
-| Setting | Description |
-|---------|-------------|
-| `host` | The MongoDB host. |
-| `port` | The port on the MongoDB server. |
-| `user` | Name of the MongoDB user. |
-| `password` | Password of the MongoDB user. |
-| `db` | Name of the database. |
-| `collection` | Name of the collection. |
-| `options` | MongoDB connection string options. Optional. |
-| `uri` | URI for establishing the connection (alternative to individual host/port/db fields). |
-
-[More information about the engine](/reference/engines/table-engines/integrations/mongodb)
-)DOCS_MD"
-#if !USE_MONGODB
-            "\n\nCurrently unavailable, because this ClickHouse build does not include MongoDB support."
-#endif
-        ,
-        .syntax = "SOURCE(MONGODB(host 'host' port 27017 user '' password '' db 'db' collection 'collection'))",
-        .related = {}});
+    factory.registerSource("mongodb", create_dictionary_source);
 }
 
 #if USE_MONGODB
@@ -226,14 +138,12 @@ MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource &
 
 MongoDBDictionarySource::~MongoDBDictionarySource() = default;
 
-BlockIO MongoDBDictionarySource::loadAll()
+QueryPipeline MongoDBDictionarySource::loadAll()
 {
-    BlockIO io;
-    io.pipeline = QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(), mongocxx::options::find(), sample_block, max_block_size));
-    return io;
+    return QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(), mongocxx::options::find(), sample_block, max_block_size));
 }
 
-BlockIO MongoDBDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
+QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -242,13 +152,11 @@ BlockIO MongoDBDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> 
     for (const auto & id : ids)
         ids_array.append(static_cast<Int64>(id));
 
-    BlockIO io;
-    io.pipeline = QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(kvp(dict_struct.id->name, make_document(kvp("$in", ids_array)))), mongocxx::options::find(), sample_block, max_block_size));
-    return io;
+    return QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(kvp(dict_struct.id->name, make_document(kvp("$in", ids_array)))), mongocxx::options::find(), sample_block, max_block_size));
 }
 
 
-BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
+QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");
@@ -274,16 +182,14 @@ BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const Vec
             else if (type.isInt())
                 key.append(make_document(kvp(dict_key.name, key_columns[i]->getInt(row))));
             else if (type.isString())
-                key.append(make_document(kvp(dict_key.name, key_columns[i]->getDataAt(row))));
+                key.append(make_document(kvp(dict_key.name, key_columns[i]->getDataAt(row).toString())));
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type '{}' of key in MongoDB dictionary", dict_key.type->getName());
         }
         keys.append(make_document(kvp("$and", key)));
     }
 
-    BlockIO io;
-    io.pipeline = QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(kvp("$or", keys)), mongocxx::options::find(), sample_block, max_block_size));
-    return io;
+    return QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(kvp("$or", keys)), mongocxx::options::find(), sample_block, max_block_size));
 }
 
 std::string MongoDBDictionarySource::toString() const

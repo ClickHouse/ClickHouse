@@ -37,8 +37,8 @@ bool MarkRange::operator<(const MarkRange & rhs) const
     /// (ranges are intersect)
     if (*this != rhs)
     {
-        const bool is_intersection = (begin <= rhs.begin && rhs.begin < end)
-            || (rhs.begin <= begin && begin < rhs.end);
+        const bool is_intersection = (begin <= rhs.begin && rhs.begin < end) ||
+            (rhs.begin <= begin && begin < rhs.end);
 
         if (is_intersection)
             throw Exception(
@@ -53,10 +53,10 @@ bool MarkRange::operator<(const MarkRange & rhs) const
 
 size_t getLastMark(const MarkRanges & ranges)
 {
-    size_t last_mark = 0;
+    size_t current_task_last_mark = 0;
     for (const auto & mark_range : ranges)
-        last_mark = std::max(last_mark, mark_range.end);
-    return last_mark;
+        current_task_last_mark = std::max(current_task_last_mark, mark_range.end);
+    return current_task_last_mark;
 }
 
 std::string toString(const MarkRanges & ranges)

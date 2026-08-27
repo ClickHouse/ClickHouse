@@ -2,9 +2,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/MutationCommands.h>
-#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -12,9 +10,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
-#include <Columns/ColumnConst.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <queue>
 #include <ranges>
 
 namespace ProfileEvents
@@ -45,30 +40,35 @@ namespace ErrorCodes
 /// to reacreate mutation command as "UPDATE c1 = 'x' WHERE <cond>"
 static MutationCommand createCommandWithUpdatedColumns(
     const MutationCommand & command,
-    const std::unordered_map<String, ASTPtr> & available_columns)
+    std::unordered_map<String, ASTPtr> available_columns)
 {
     chassert(command.type == MutationCommand::Type::UPDATE);
-    chassert(!command.ast_text.empty());
+    chassert(command.ast);
 
     MutationCommand res;
     res.type = command.type;
+    res.ast = command.ast->clone();
+
+    if (command.predicate)
+        res.predicate = command.predicate->clone();
+
+    if (command.partition)
+        res.partition = command.partition->clone();
+
+    res.column_to_update_expression = std::move(available_columns);
     res.mutation_version = command.mutation_version;
-    res.max_parser_depth = command.max_parser_depth;
-    res.max_parser_backtracks = command.max_parser_backtracks;
-    res.ast_text = command.ast_text;
 
-    auto handle = res.mutateAst();
-    auto new_assignments = make_intrusive<ASTExpressionList>();
+    auto & alter_ast = assert_cast<ASTAlterCommand &>(*res.ast);
+    auto new_assignments = std::make_shared<ASTExpressionList>();
 
-    for (const auto & child : handle->update_assignments->children)
+    for (const auto & child : alter_ast.update_assignments->children)
     {
         const auto & assignment = assert_cast<const ASTAssignment &>(*child);
-        if (available_columns.contains(assignment.column_name))
+        if (res.column_to_update_expression.contains(assignment.column_name))
             new_assignments->children.push_back(child->clone());
     }
 
-    handle->update_assignments = handle->children.emplace_back(std::move(new_assignments)).get();
-    handle.commit();
+    alter_ast.update_assignments = alter_ast.children.emplace_back(std::move(new_assignments)).get();
     return res;
 }
 
@@ -90,22 +90,16 @@ static bool isLightweightDeleteCommand(const String & column_name, const ASTPtr 
 static MutationCommand createLightweightDeleteCommand(const MutationCommand & command)
 {
     chassert(command.type == MutationCommand::Type::UPDATE);
-    auto src_alter = command.ast();
-    chassert(src_alter && src_alter->predicate != nullptr);
+    chassert(command.predicate != nullptr);
 
-    auto alter_command = make_intrusive<ASTAlterCommand>();
+    auto alter_command = std::make_shared<ASTAlterCommand>();
     alter_command->type = ASTAlterCommand::DELETE;
 
-    if (src_alter->partition)
-        alter_command->partition = alter_command->children.emplace_back(src_alter->partition->clone()).get();
+    if (command.partition)
+        alter_command->partition = alter_command->children.emplace_back(command.partition->clone()).get();
 
-    alter_command->predicate = alter_command->children.emplace_back(src_alter->predicate->clone()).get();
-    auto mutation_command = MutationCommand::parse(
-        *alter_command,
-        /* parse_alter_commands = */ false,
-        /* with_pure_metadata_commands = */ false,
-        command.max_parser_depth,
-        command.max_parser_backtracks);
+    alter_command->predicate = alter_command->children.emplace_back(command.predicate->clone()).get();
+    auto mutation_command = MutationCommand::parse(alter_command.get());
 
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}", alter_command->formatForErrorMessage());
@@ -142,17 +136,6 @@ bool AlterConversions::hasLightweightDelete() const
     return all_updated_columns.contains(RowExistsColumn::name);
 }
 
-bool AlterConversions::hasDeleteMutation() const
-{
-    /// A lightweight DELETE arrives as a DELETE-typed command too, so this also covers it; the
-    /// distinct point of this predicate is the ordinary ALTER DELETE, which adds nothing to
-    /// all_updated_columns and does not set _row_exists.
-    for (const auto & command : mutation_commands)
-        if (command.type == MutationCommand::Type::DELETE)
-            return true;
-    return false;
-}
-
 bool AlterConversions::isSupportedDataMutation(MutationCommand::Type type)
 {
     return type == MutationCommand::UPDATE || type == MutationCommand::DELETE;
@@ -165,8 +148,7 @@ bool AlterConversions::isSupportedAlterMutation(MutationCommand::Type type)
 
 bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
 {
-    return type == MutationCommand::RENAME_COLUMN
-        || type == MutationCommand::DROP_COLUMN;
+    return type == MutationCommand::RENAME_COLUMN;
 }
 
 void AlterConversions::addMutationCommand(const MutationCommand & command, const ContextPtr & context)
@@ -175,44 +157,12 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
 
     if (command.type == RENAME_COLUMN)
     {
-        /// Handle chained renames: if column A was renamed to B, and now B is renamed to C,
-        /// update the existing entry to map A directly to C instead of having two separate entries.
-        bool chained = false;
-        for (auto & entry : rename_map)
-        {
-            if (entry.rename_to == command.column_name)
-            {
-                entry.rename_to = command.rename_to;
-                chained = true;
-                break;
-            }
-        }
-        if (!chained)
-            rename_map.emplace_back(RenamePair{command.rename_to, command.column_name});
-    }
-    else if (command.type == DROP_COLUMN)
-    {
-        /// Handle a drop after a rename: if column A was renamed to B and B is now dropped,
-        /// record the drop under A, and erase the mapping of A to B.
-        auto dropped_column_name = command.column_name;
-        auto it = std::ranges::find(rename_map, command.column_name, &RenamePair::rename_to);
-        if (it != rename_map.end())
-        {
-            dropped_column_name = it->rename_from;
-            rename_map.erase(it);
-        }
-
-        dropped_columns.emplace(std::move(dropped_column_name));
+        rename_map.emplace_back(RenamePair{command.rename_to, command.column_name});
     }
     else if (command.type == READ_COLUMN)
     {
         ++number_of_alter_mutations;
         version_of_alter_mutation = command.mutation_version;
-
-        /// This is needed to ignore skip indices that use the column as it's changing its type and no longer applies
-        /// Note that data_type is only set on ADD_COLUMN and MODIFY_COLUMN commands
-        if (command.data_type)
-            all_updated_columns.insert(command.column_name);
     }
     else if (command.type == UPDATE || command.type == DELETE)
     {
@@ -226,11 +176,8 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
                 "ALTER UPDATE/ALTER DELETE statements with nondeterministic deterministic functions cannot be applied on fly. "
                 "Function '{}' is non-deterministic", *result.nondeterministic_function_name);
 
-        if (auto alter = command.ast(); alter && alter->update_assignments)
-        {
-            for (const auto & child : alter->update_assignments->children)
-                all_updated_columns.insert(child->as<ASTAssignment &>().column_name);
-        }
+        for (const auto & [column, _] : command.column_to_update_expression)
+            all_updated_columns.insert(column);
 
         mutation_commands.push_back(command);
     }
@@ -304,103 +251,18 @@ std::string AlterConversions::getColumnOldName(const std::string & new_name) con
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} was not renamed", new_name);
 }
 
-bool AlterConversions::isColumnDropped(const std::string & name, bool share_nested_offsets) const
-{
-    /// Check exact match (e.g. DROP COLUMN `n.s`)
-    if (dropped_columns.contains(name))
-        return true;
-
-    /// When share_nested_offsets is disabled, dotted-name columns are independent
-    /// and dropping `n` should not affect `n.a`.
-    if (!share_nested_offsets)
-        return false;
-
-    /// Check if the parent nested column was dropped (e.g. DROP COLUMN `n` should match `n.s`, `n.d`, etc.)
-    auto nested_prefix_end = name.find('.');
-    if (nested_prefix_end != std::string::npos && dropped_columns.contains(name.substr(0, nested_prefix_end)))
-        return true;
-
-    return false;
-}
-
 PrewhereExprSteps AlterConversions::getMutationSteps(
     const IMergeTreeDataPartInfoForReader & part_info,
     const NamesAndTypesList & read_columns,
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context) const
 {
-    if (mutation_commands.empty())
-        return {};
-
-    auto chain = buildMutationChainForRead(read_columns, metadata_snapshot, context);
+    auto actions_chain = getMutationActions(part_info, read_columns, metadata_snapshot, context);
     auto settings = ExpressionActionsSettings(context);
-
-    /// Columns the surviving on-fly chain will overwrite. Attached to every
-    /// pre-`MODIFY` step so `MergeTreeReadersChain::executeActionsBeforePrewhere`
-    /// can skip `performRequiredConversions` for them: their on-disk value is
-    /// about to be replaced and pre-casting it could fail on values the chain
-    /// will discard (for example, `_CAST('x', UInt64)` before `UPDATE v = '100'`).
-    ///
-    /// The set is built from the chain that `filterMutationCommands` actually
-    /// returns for this `read_columns`. Commands the query does not need are
-    /// dropped there, otherwise an earlier surviving step that reads one of
-    /// those columns as a source would see the on-disk type while the block
-    /// already advertises the post-`MODIFY` type.
-    ///
-    /// `MutationActions::dag.getOutputs()` would give a superset (it lists
-    /// passthrough columns too), so we read the assignment targets directly
-    /// from the surviving commands.
-    ///
-    /// The skip is keyed on storage column names downstream
-    /// (`MergeTreeReadersChain::executeActionsBeforePrewhere` calls
-    /// `getNameInStorage()`). Assignment targets are top-level columns today;
-    /// if per-subcolumn assignments to `Nested` columns ever become
-    /// supported, the reader-side key has to switch accordingly.
-    NameSet columns_overwritten_by_chain;
-    for (const auto & command : chain.commands)
-    {
-        auto ast = command.ast();
-        if (!ast)
-        {
-            continue;
-        }
-        if (command.type == MutationCommand::UPDATE)
-        {
-            for (const auto & [column, _] : getColumnToUpdateExpression(*ast))
-            {
-                columns_overwritten_by_chain.insert(column);
-            }
-        }
-        else if (command.type == MutationCommand::DELETE)
-        {
-            /// Inserted for any chained `DELETE`. Lightweight delete
-            /// arrives as a `DELETE`-typed command without the original
-            /// `_row_exists = 0` assignment, so the explicit insert is
-            /// the only way to keep it skipped. Plain `ALTER DELETE` does
-            /// not have an on-disk `_row_exists`, so the insert is a
-            /// no-op for `performRequiredConversions`.
-            columns_overwritten_by_chain.insert(RowExistsColumn::name);
-        }
-    }
-
-    auto actions_chain = getMutationActions(part_info, std::move(chain), metadata_snapshot, context);
-
-    /// A mutation expression is evaluated with the sample factor its background materialization sees,
-    /// which is 1 (`createMergeTreeSequentialSource`), never the reading query's factor. Only the
-    /// expression's dependency is rebound; the column the step forwards to the query is unaffected.
-    const bool bind_sample_factor = metadata_snapshot->isVirtualColumn("_sample_factor");
 
     PrewhereExprSteps steps;
     for (auto & actions : actions_chain)
     {
-        if (bind_sample_factor)
-        {
-            DataTypePtr type = std::make_shared<DataTypeFloat64>();
-            auto column = type->createColumnConst(1, Field(1.0));
-            actions.dag.substituteInputForConsumersOnly(
-                "_sample_factor", ColumnWithTypeAndName{column->getPtr(), type, "_sample_factor"});
-        }
-
         /// For mutations before ALTER MODIFY we should not apply conversions
         /// because correctness of ALTER MODIFY may depend on the result of mutation.
         bool perform_alter_conversions = !version_of_alter_mutation || actions.mutation_version > version_of_alter_mutation;
@@ -414,7 +276,6 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
             .remove_filter_column = false,
             .need_filter = is_filter,
             .perform_alter_conversions = perform_alter_conversions,
-            .columns_overwritten_by_chain = perform_alter_conversions ? NameSet{} : columns_overwritten_by_chain,
             .mutation_version = actions.mutation_version,
         };
 
@@ -433,7 +294,7 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
 
     for (const auto & patch : patch_parts)
     {
-        bool has_column_in_patch = false;
+        bool has_column_in_patch;
         const auto & patch_conversions = patch.part->getAlterConversions();
 
         /// If patch has lightweight delete we have to always apply it.
@@ -479,80 +340,33 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
     return patches_to_read;
 }
 
-/// Extends the read set with the columns needed to recalculate the MATERIALIZED columns it contains.
-/// A MATERIALIZED column is stored, so a query selecting it does not ask for what its expression reads,
-/// yet the read set gates which commands survive `filterMutationCommands` — a missing dependency leaves
-/// the pending mutation unapplied for this read task and returns the stale stored value.
-static void addColumnsRequiredForMaterialized(
-    Names & read_columns,
-    NameSet & read_columns_set,
-    const MaterializedColumnDependencies & dependencies,
-    const NameSet & updated_columns)
-{
-    std::queue<String> columns_to_visit(read_columns_set.begin(), read_columns_set.end());
-
-    while (!columns_to_visit.empty())
-    {
-        auto column_name = std::move(columns_to_visit.front());
-        columns_to_visit.pop();
-
-        /// Asked per column rather than as a precomputed set, so only the reachable part of the
-        /// graph is analysed.
-        for (const auto & dependency : dependencies.findColumnsToRecalculate(column_name, updated_columns))
-        {
-            if (read_columns_set.emplace(dependency).second)
-            {
-                read_columns.push_back(dependency);
-                columns_to_visit.push(dependency);
-            }
-        }
-    }
-}
-
-AlterConversions::MutationChainForRead AlterConversions::buildMutationChainForRead(
+std::vector<MutationActions> AlterConversions::getMutationActions(
+    const IMergeTreeDataPartInfoForReader & part_info,
     const NamesAndTypesList & read_columns,
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context) const
 {
-    MutationChainForRead chain;
-    NameSet read_columns_set;
+    if (mutation_commands.empty())
+        return {};
 
-    for (const auto & column : read_columns)
-    {
-        auto name_in_storage = column.getNameInStorage();
-        if (read_columns_set.emplace(name_in_storage).second)
-            chain.read_columns.emplace_back(name_in_storage);
-    }
-
-    MaterializedColumnDependencies dependencies(metadata_snapshot->getColumns(), context);
-
-    /// Adding what a MATERIALIZED recalculation needs and filtering the commands feed each other: the
-    /// filter keeps a command only if it touches the read set, and adds what that command reads —
-    /// possibly a MATERIALIZED column (`DELETE WHERE m2 > 100`) whose own dependencies the next round
-    /// adds in turn.
-    size_t old_read_columns_size = 0;
-    do
-    {
-        old_read_columns_size = chain.read_columns.size();
-        addColumnsRequiredForMaterialized(chain.read_columns, read_columns_set, dependencies, all_updated_columns);
-        chain.commands = filterMutationCommands(chain.read_columns, read_columns_set, metadata_snapshot);
-    } while (old_read_columns_size != chain.read_columns.size());
-
-    return chain;
-}
-
-std::vector<MutationActions> AlterConversions::getMutationActions(
-    const IMergeTreeDataPartInfoForReader & part_info,
-    MutationChainForRead chain,
-    const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & context) const
-{
     const auto * loaded_part_info = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(&part_info);
     if (!loaded_part_info)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Applying mutations on-fly is supported only for loaded data parts");
 
-    auto & filtered_commands = chain.commands;
+    Names storage_read_columns;
+    NameSet storage_read_columns_set;
+
+    for (const auto & column : read_columns)
+    {
+        auto name_in_storage = column.getNameInStorage();
+        if (storage_read_columns_set.emplace(name_in_storage).second)
+            storage_read_columns.emplace_back(name_in_storage);
+    }
+
+    addColumnsRequiredForMaterialized(storage_read_columns, storage_read_columns_set, metadata_snapshot, context);
+    auto filtered_commands = filterMutationCommands(storage_read_columns, std::move(storage_read_columns_set));
+
     if (filtered_commands.empty())
         return {};
 
@@ -562,7 +376,6 @@ std::vector<MutationActions> AlterConversions::getMutationActions(
     MutationsInterpreter::Settings settings(true);
     settings.return_all_columns = true;
     settings.recalculate_dependencies_of_updated_columns = false;
-    settings.apply_on_fly_for_read = true;
 
     const auto & part = loaded_part_info->getDataPart();
     auto alter_conversions = std::make_shared<AlterConversions>();
@@ -573,33 +386,48 @@ std::vector<MutationActions> AlterConversions::getMutationActions(
         alter_conversions,
         metadata_snapshot,
         std::move(filtered_commands),
-        std::move(chain.read_columns),
+        std::move(storage_read_columns),
         context,
         settings);
 
     return interpreter.getMutationActions();
 }
 
-MutationCommands AlterConversions::filterMutationCommands(
+void AlterConversions::addColumnsRequiredForMaterialized(
     Names & read_columns,
     NameSet & read_columns_set,
-    const StorageMetadataPtr & metadata_snapshot) const
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context) const
 {
+    NameSet required_source_columns;
     const auto & columns_desc = metadata_snapshot->getColumns();
+    auto source_columns = metadata_snapshot->getColumns().getAllPhysical();
 
-    /// The read set is keyed on storage column names, but identifiers collected from command
-    /// expressions are as written, so `t.a` has to become `t`. Names the table does not know
-    /// (virtual columns, `_row_exists`) pass through.
-    auto add_to_read_set = [&](const String & column_name)
+    for (const auto & column_name : read_columns_set)
     {
-        auto name_in_storage = column_name;
-        if (auto column = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name))
-            name_in_storage = column->getNameInStorage();
+        auto default_desc = columns_desc.getDefault(column_name);
+        if (default_desc && default_desc->kind == ColumnDefaultKind::Materialized)
+        {
+            auto query = default_desc->expression->clone();
+            auto syntax_result = TreeRewriter(context).analyze(query, source_columns);
 
-        if (read_columns_set.emplace(name_in_storage).second)
-            read_columns.push_back(name_in_storage);
-    };
+            for (const auto & dependency : syntax_result->requiredSourceColumns())
+            {
+                if (all_updated_columns.contains(dependency))
+                    required_source_columns.insert(dependency);
+            }
+        }
+    }
 
+    for (const auto & column_name : required_source_columns)
+    {
+        if (read_columns_set.emplace(column_name).second)
+            read_columns.push_back(column_name);
+    }
+}
+
+MutationCommands AlterConversions::filterMutationCommands(Names & read_columns, NameSet read_columns_set) const
+{
     MutationCommands filtered_commands;
 
     /// We need to read all columns that are used in mutation.
@@ -610,7 +438,7 @@ MutationCommands AlterConversions::filterMutationCommands(
         IdentifierNameSet source_columns;
         if (command.type == MutationCommand::Type::DELETE)
         {
-            command.ast()->predicate->collectIdentifierNames(source_columns);
+            command.predicate->collectIdentifierNames(source_columns);
             filtered_commands.push_back(command);
         }
         else if (command.type == MutationCommand::Type::UPDATE)
@@ -618,36 +446,30 @@ MutationCommands AlterConversions::filterMutationCommands(
             bool has_lightweight_delete = false;
             std::unordered_map<String, ASTPtr> new_updated_columns;
 
-            auto alter = command.ast();
-            if (alter && alter->update_assignments)
+            for (const auto & [column, ast] : command.column_to_update_expression)
             {
-                for (const auto & child : alter->update_assignments->children)
+                if (isLightweightDeleteCommand(column, ast))
                 {
-                    const auto & assignment = child->as<ASTAssignment &>();
-                    auto expr = assignment.expression();
-                    if (isLightweightDeleteCommand(assignment.column_name, expr))
-                    {
-                        has_lightweight_delete = true;
-                    }
-                    else if (read_columns_set.contains(assignment.column_name))
-                    {
-                        expr->collectIdentifierNames(source_columns);
-                        new_updated_columns.emplace(assignment.column_name, expr->clone());
-                    }
+                    has_lightweight_delete = true;
+                }
+                else if (read_columns_set.contains(column))
+                {
+                    ast->collectIdentifierNames(source_columns);
+                    new_updated_columns.emplace(column, ast->clone());
                 }
             }
 
             if (has_lightweight_delete)
             {
                 auto new_command = createLightweightDeleteCommand(command);
-                new_command.ast()->predicate->collectIdentifierNames(source_columns);
+                new_command.predicate->collectIdentifierNames(source_columns);
                 filtered_commands.push_back(std::move(new_command));
             }
 
             if (!new_updated_columns.empty())
             {
-                auto new_command = createCommandWithUpdatedColumns(command, new_updated_columns);
-                new_command.ast()->predicate->collectIdentifierNames(source_columns);
+                auto new_command = createCommandWithUpdatedColumns(command, std::move(new_updated_columns));
+                new_command.predicate->collectIdentifierNames(source_columns);
                 filtered_commands.push_back(std::move(new_command));
             }
         }
@@ -659,7 +481,10 @@ MutationCommands AlterConversions::filterMutationCommands(
         }
 
         for (const auto & column : source_columns)
-            add_to_read_set(column);
+        {
+            if (read_columns_set.emplace(column).second)
+                read_columns.push_back(column);
+        }
     }
 
     std::reverse(filtered_commands.begin(), filtered_commands.end());

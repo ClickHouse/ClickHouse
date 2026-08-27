@@ -13,7 +13,6 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
-#include <Storages/StorageFactory.h>
 
 namespace DB
 {
@@ -390,16 +389,27 @@ namespace
         std::shared_ptr<const ContextAccessWrapper> current_user_access,
         const AccessRightsElements & elements_to_grant)
     {
-        auto current_user_grantable_rights = current_user_access->getAccessRights()->getGrantableRights();
+        AccessRightsElements current_user_grantable_elements;
+        auto available_grant_elements = current_user_access->getAccessRights()->getElements();
+        AccessRights current_user_rights;
+        for (auto & element : available_grant_elements)
+        {
+            if (!element.grant_option && !element.is_partial_revoke)
+                continue;
+
+            if (element.is_partial_revoke)
+                current_user_rights.revoke(element);
+            else
+                current_user_rights.grant(element);
+        }
+
         rights.grant(elements_to_grant);
-        rights.makeIntersection(current_user_grantable_rights);
+        rights.makeIntersection(current_user_rights);
     }
 
     /// Updates grants of a specified user or role.
     void updateFromQuery(IAccessEntity & grantee, const ASTGrantQuery & query)
     {
-        query.access_rights_elements.throwIfFilterIsNotCompilable();
-
         AccessRightsElements elements_to_grant;
         AccessRightsElements elements_to_revoke;
         collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
@@ -429,23 +439,6 @@ BlockIO InterpreterGrantQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     auto current_user_access = getContext()->getAccess();
 
-    /// Validate TABLE ENGINE parameter names if explicitly specified
-    for (const auto & element : query.access_rights_elements)
-    {
-        if (element.isGlobalWithParameter()
-            && (element.access_flags.getParameterType() == AccessFlags::TABLE_ENGINE)
-            && !element.anyParameter())
-        {
-            /// Will throw UNKNOWN_STORAGE if engine is unknown
-            (void)StorageFactory::instance().getStorageFeatures(element.parameter);
-        }
-    }
-
-    /// The parser does not compile the pattern of `GRANT READ ON S3('s3://foo/.*')` - that would
-    /// put a regex engine in it - so it is validated here, and on every other path that turns an
-    /// `ASTGrantQuery` into access rights.
-    query.access_rights_elements.throwIfFilterIsNotCompilable();
-
     std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
 
     /// Collect access rights and roles we're going to grant or revoke.
@@ -456,19 +449,6 @@ BlockIO InterpreterGrantQuery::execute()
     std::vector<UUID> roles_to_grant;
     RolesOrUsersSet roles_to_revoke;
     collectRolesToGrantOrRevoke(access_control, query, roles_to_grant, roles_to_revoke);
-
-    /// A role cannot be granted to itself.
-    for (const auto & grantee_id : grantees)
-    {
-        if (std::find(roles_to_grant.begin(), roles_to_grant.end(), grantee_id) != roles_to_grant.end())
-        {
-            auto entity = access_control.tryRead(grantee_id);
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot grant role '{}' to itself",
-                entity ? entity->getName() : String{});
-        }
-    }
 
     /// Replacing empty database with the default. This step must be done before replication to avoid privilege escalation.
     String current_database = getContext()->getCurrentDatabase();
@@ -532,7 +512,6 @@ void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery
     updateFromQuery(role, query);
 }
 
-void registerInterpreterGrantQuery(InterpreterFactory & factory);
 void registerInterpreterGrantQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

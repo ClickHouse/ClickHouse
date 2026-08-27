@@ -4,10 +4,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Pin the busy wait: the test checks what asynchronous inserts write to the logs, not how long they are
-# batched. These go on the command line, because the reference prints the SETTINGS clause of every insert.
-async_insert_opts=(--async_insert_use_adaptive_busy_timeout 0 --async_insert_busy_timeout_ms 1)
-
 function print_flush_query_logs()
 {
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log, query_log, query_views_log, part_log"
@@ -31,7 +27,7 @@ function print_flush_query_logs()
           exception_code
       FROM system.query_log
       WHERE
-          event_date >= yesterday() AND event_time >= now() - 600
+          event_date >= yesterday()
       AND initial_query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND query_id = '$1')
       -- AND current_database = currentDatabase() -- Just to silence style check: this is not ok for this test since the query uses default values
       ORDER BY type DESC
@@ -53,7 +49,7 @@ function print_flush_query_logs()
           exception_code
       FROM system.query_views_log
       WHERE
-          event_date >= yesterday() AND event_time >= now() - 600
+          event_date >= yesterday()
       AND initial_query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND query_id = '$1')
       ORDER BY view_name
       FORMAT Vertical"
@@ -68,7 +64,7 @@ function print_flush_query_logs()
           rows
       FROM system.part_log
       WHERE
-          event_date >= yesterday() AND event_time >= now() - 600
+          event_date >= yesterday()
       AND query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND query_id = '$1')
       ORDER BY table
       FORMAT Vertical"
@@ -78,7 +74,7 @@ function print_flush_query_logs()
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE async_insert_landing (id UInt32) ENGINE = MergeTree ORDER BY id"
 
 query_id="$(random_str 10)"
-${CLICKHOUSE_CLIENT} --query_id="${query_id}" "${async_insert_opts[@]}" -q "INSERT INTO async_insert_landing SETTINGS wait_for_async_insert=1, async_insert=1 values (1), (2), (3), (4);"
+${CLICKHOUSE_CLIENT} --query_id="${query_id}" -q "INSERT INTO async_insert_landing SETTINGS wait_for_async_insert=1, async_insert=1 values (1), (2), (3), (4);"
 print_flush_query_logs ${query_id}
 
 
@@ -86,11 +82,11 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE async_insert_target (id UInt32) ENGINE = M
 ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW async_insert_mv TO async_insert_target AS SELECT id + throwIf(id = 42) AS id FROM async_insert_landing"
 
 query_id="$(random_str 10)"
-${CLICKHOUSE_CLIENT} --query_id="${query_id}" "${async_insert_opts[@]}" -q "INSERT INTO async_insert_landing SETTINGS wait_for_async_insert=1, async_insert=1 values (11), (12), (13);"
+${CLICKHOUSE_CLIENT} --query_id="${query_id}" -q "INSERT INTO async_insert_landing SETTINGS wait_for_async_insert=1, async_insert=1 values (11), (12), (13);"
 print_flush_query_logs ${query_id}
 
 
 query_id="$(random_str 10)"
 # Use materialized_views_ignore_errors to guarantee it lands in the landing table, making the test stable
-${CLICKHOUSE_CLIENT} --query_id="${query_id}" "${async_insert_opts[@]}" -q "INSERT INTO async_insert_landing SETTINGS wait_for_async_insert=1, async_insert=1, materialized_views_ignore_errors=1 values (42), (12), (13)" 2>/dev/null || true
+${CLICKHOUSE_CLIENT} --query_id="${query_id}" -q "INSERT INTO async_insert_landing SETTINGS wait_for_async_insert=1, async_insert=1, materialized_views_ignore_errors=1 values (42), (12), (13)" 2>/dev/null || true
 print_flush_query_logs ${query_id}

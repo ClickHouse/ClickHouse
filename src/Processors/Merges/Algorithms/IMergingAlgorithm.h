@@ -2,10 +2,7 @@
 
 #include <Processors/Chunk.h>
 #include <Common/PODArray_fwd.h>
-#include <Core/Block.h>
-#include <Core/Block_fwd.h>
-#include <Core/SortDescription.h>
-#include <Columns/IColumn.h>
+#include <Common/ProfileEvents.h>
 
 namespace DB
 {
@@ -20,11 +17,6 @@ public:
         Chunk chunk;
         bool is_finished = false;
         ssize_t required_source = -1;
-
-        /// Additional sources that are worth reading ahead because the merge is likely
-        /// to need them soon (e.g. sources deferred behind a virtual row). Unlike
-        /// `required_source`, the algorithm does not wait for data from them.
-        std::vector<size_t> sources_to_prefetch;
 
         explicit Status(Chunk chunk_) : chunk(std::move(chunk_)) {}
         explicit Status(Chunk chunk_, bool is_finished_) : chunk(std::move(chunk_)), is_finished(is_finished_) {}
@@ -69,56 +61,10 @@ public:
             removeConstAndSparse(input);
     }
 
-    static void removeReplicatedFromSortingColumns(const SharedHeader & header, Input & input, const SortDescription & description)
-    {
-        if (!input.chunk)
-            return;
-
-        size_t num_rows = input.chunk.getNumRows();
-        auto columns = input.chunk.detachColumns();
-        for (const auto & column_desc : description)
-        {
-            size_t column_number = header->getPositionByName(column_desc.column_name);
-            columns[column_number] = columns[column_number]->convertToFullColumnIfReplicated();
-        }
-        input.chunk.setColumns(std::move(columns), num_rows);
-    }
-
-    static void removeReplicatedFromSortingColumns(const SharedHeader & header, Inputs & inputs, const SortDescription & description)
-    {
-        for (auto & input : inputs)
-            removeReplicatedFromSortingColumns(header, input, description);
-    }
-
-    static void removeReplicatedFromSortingColumns(Input & input, const SortDescriptionWithPositions & description)
-    {
-        if (!input.chunk)
-            return;
-
-        size_t num_rows = input.chunk.getNumRows();
-        auto columns = input.chunk.detachColumns();
-        for (const auto & column_desc : description)
-            columns[column_desc.column_number] = columns[column_desc.column_number]->convertToFullColumnIfReplicated();
-        input.chunk.setColumns(std::move(columns), num_rows);
-    }
-
-    static void removeReplicatedFromSortingColumns(Inputs & inputs, const SortDescriptionWithPositions & description)
-    {
-        for (auto & input : inputs)
-            removeReplicatedFromSortingColumns(input, description);
-    }
-
     virtual const char * getName() const = 0;
     virtual void initialize(Inputs inputs) = 0;
     virtual void consume(Input & input, size_t source_num) = 0;
     virtual Status merge() = 0;
-
-    /// Called when a source the merge requested turns out to be finished without delivering
-    /// any data (e.g. all its rows were filtered out upstream), so `consume` is never called
-    /// for it. The merge loop already drops such a source from its queue; this notification
-    /// lets algorithms that keep per-source bookkeeping (e.g. the read-ahead for sources
-    /// deferred behind virtual rows) release it. The default implementation does nothing.
-    virtual void onSourceExhausted(size_t /*source_num*/) {}
 
     IMergingAlgorithm() = default;
     virtual ~IMergingAlgorithm() = default;

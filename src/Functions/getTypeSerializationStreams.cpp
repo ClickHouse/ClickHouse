@@ -15,7 +15,7 @@ namespace
 {
 
 /// Enumerate stream paths of data type.
-class FunctionGetTypeSerializationStreams final : public IFunction
+class FunctionGetTypeSerializationStreams : public IFunction
 {
 public:
     static constexpr auto name = "getTypeSerializationStreams";
@@ -46,19 +46,14 @@ public:
         auto type = getType(arguments[0]);
 
         SerializationPtr serialization = type->getDefaultSerialization();
-        auto col_res_strings_column = ColumnString::create();
-        auto col_res_offsets_column = ColumnArray::ColumnOffsets::create();
-        ColumnString & col_res_strings = *col_res_strings_column;
-        ColumnArray::Offsets & col_res_offsets = col_res_offsets_column->getData();
-
-        ISerialization::EnumerateStreamsSettings settings;
-        settings.enumerate_virtual_streams = true;
-        serialization->enumerateStreams(
-            settings,
-            [&](const ISerialization::SubstreamPath & substream_path) { col_res_strings.insert(substream_path.toString()); },
-            ISerialization::SubstreamData(serialization));
+        auto col_res = ColumnArray::create(ColumnString::create());
+        ColumnString & col_res_strings = typeid_cast<ColumnString &>(col_res->getData());
+        ColumnFixedSizeHelper::Offsets & col_res_offsets = typeid_cast<ColumnArray::Offsets &>(col_res->getOffsets());
+        serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            col_res_strings.insert(substream_path.toString());
+        });
         col_res_offsets.push_back(col_res_strings.size());
-        auto col_res = ColumnArray::create(std::move(col_res_strings_column), std::move(col_res_offsets_column));
         return ColumnConst::create(std::move(col_res), input_rows_count);
     }
 
@@ -70,7 +65,7 @@ private:
         if (!arg_string)
             return argument.type;
 
-        return DataTypeFactory::instance().get(std::string{arg_string->getDataAt(0)});
+        return DataTypeFactory::instance().get(arg_string->getDataAt(0).toString());
     }
 };
 
@@ -78,24 +73,7 @@ private:
 
 REGISTER_FUNCTION(GetTypeSerializationStreams)
 {
-    FunctionDocumentation::Description description = R"(
-Enumerates stream paths of a data type.
-This function is intended for developmental use.
-    )";
-    FunctionDocumentation::Syntax syntax = "getTypeSerializationStreams(col)";
-    FunctionDocumentation::Arguments arguments = {
-        {"col", "Column or string representation of a data-type from which the data type will be detected.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with all the serialization sub-stream paths.", {"Array(String)"}};
-    FunctionDocumentation::Examples examples = {
-        {"tuple", "SELECT getTypeSerializationStreams(tuple('a', 1, 'b', 2))", "['{TupleElement(1), Regular}','{TupleElement(2), Regular}','{TupleElement(3), Regular}','{TupleElement(4), Regular}']"},
-        {"map", "SELECT getTypeSerializationStreams('Map(String, Int64)')", "['{ArraySizes}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}']"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionGetTypeSerializationStreams>(documentation);
+    factory.registerFunction<FunctionGetTypeSerializationStreams>();
 }
 
 }

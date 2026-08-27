@@ -59,7 +59,6 @@ namespace KernelUtils
 };
 
 std::string getPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map);
-std::optional<std::string> tryGetPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map);
 
 }
 

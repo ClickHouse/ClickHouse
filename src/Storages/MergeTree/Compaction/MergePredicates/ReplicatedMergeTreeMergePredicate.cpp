@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
-#include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -63,14 +62,7 @@ ReplicatedMergeTreeLocalMergePredicate::ReplicatedMergeTreeLocalMergePredicate(R
 
     {
         std::lock_guard lock(queue_.state_mutex);
-        auto patch_infos = virtual_parts_ptr->getPatchPartInfos();
-
-        /// Virtual parts also contain the results of the entries that are still in the queue,
-        /// so a data version assigned by a mutation is seen before that mutation is executed.
-        if (!patch_infos.empty())
-            data_versions_by_partition = getDataVersionsByPartition(virtual_parts_ptr->getPartInfos());
-
-        patches_by_partition = getPatchPartsByPartition(patch_infos, {});
+        patches_by_partition = getPatchPartsByPartition(virtual_parts_ptr->getPatchPartInfos(), {});
     }
 }
 
@@ -120,14 +112,7 @@ ReplicatedMergeTreeZooKeeperMergePredicate::ReplicatedMergeTreeZooKeeperMergePre
 
     {
         std::lock_guard lock(queue.state_mutex);
-        auto patch_infos = virtual_parts_ptr->getPatchPartInfos();
-
-        /// Virtual parts also contain the results of the entries that are still in the queue,
-        /// so a data version assigned by a mutation is seen before that mutation is executed.
-        if (!patch_infos.empty())
-            data_versions_by_partition = getDataVersionsByPartition(virtual_parts_ptr->getPartInfos());
-
-        patches_by_partition = getPatchPartsByPartition(patch_infos, *committing_blocks_ptr);
+        patches_by_partition = getPatchPartsByPartition(virtual_parts_ptr->getPatchPartInfos(), *committing_blocks_ptr);
     }
 
     /// Initialize ReplicatedMergeTree Merge preconditions
@@ -169,10 +154,7 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeZooKeeperMergePredicate:
     /// We cannot mutate part if it's being inserted with quorum and it's not
     /// already reached.
     if (inprogress_quorum_part && part->name == *inprogress_quorum_part)
-    {
-        queue.addPartsPostponeReasons(part->name, PostponeReasons::QUORUM_NOT_REACHED);
         return {};
-    }
 
     std::lock_guard lock(queue.state_mutex);
 
@@ -284,17 +266,7 @@ bool ReplicatedMergeTreeZooKeeperMergePredicate::isMutationFinished(
             continue;
 
         if (partition_ids_hint && !partition_ids_hint->contains(partition_id))
-        {
-            /// The partition was in the hint initially but was removed by `getCommittingBlocks`
-            /// because it no longer exists in ZooKeeper (e.g. it was forgotten via `FORGET PARTITION`).
-            /// If there's no block_numbers directory for this partition, there can be no committing blocks.
-            /// But if the partition still has parts, it's a bug — the block_numbers node should exist.
-            if (prev_virtual_parts && prev_virtual_parts->hasPartitionId(partition_id))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Committing blocks were not loaded for non-empty partition {}, it's a bug", partition_id);
-
-            checked_partitions_cache.insert(partition_id);
-            continue;
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Committing blocks were not loaded for partition {}, it's a bug", partition_id);
 
         auto partition_it = committing_blocks->find(partition_id);
         if (partition_it != committing_blocks->end())

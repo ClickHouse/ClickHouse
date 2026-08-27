@@ -1,8 +1,5 @@
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
-#include <Common/CurrentThread.h>
-#include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolBinary.h>
 #include <Core/MySQL/PacketsProtocolText.h>
@@ -20,11 +17,6 @@ using namespace MySQLProtocol;
 using namespace MySQLProtocol::Generic;
 using namespace MySQLProtocol::ProtocolText;
 using namespace MySQLProtocol::ProtocolBinary;
-
-namespace ErrorCodes
-{
-    extern const int QUERY_WAS_CANCELLED;
-}
 
 MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
@@ -76,18 +68,10 @@ void MySQLOutputFormat::writePrefix()
 
 void MySQLOutputFormat::consume(Chunk chunk)
 {
-    LOG_TEST(getLogger("MySQLOutputFormat"), "Consume a chunk");
-
-    if (isCancelled())
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-
     if (!use_binary_result_set)
     {
         for (size_t row = 0; row < chunk.getNumRows(); ++row)
         {
-            if (isCancelled())
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-
             ProtocolText::ResultSetRow row_packet(serializations, data_types, chunk.getColumns(), row);
             packet_endpoint->sendPacket(row_packet, false);
         }
@@ -96,9 +80,6 @@ void MySQLOutputFormat::consume(Chunk chunk)
     {
         for (size_t row = 0; row < chunk.getNumRows(); ++row)
         {
-            if (isCancelled())
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-
             ProtocolBinary::ResultSetRow row_packet(serializations, data_types, chunk.getColumns(), row);
             packet_endpoint->sendPacket(row_packet, false);
         }
@@ -120,12 +101,12 @@ void MySQLOutputFormat::finalizeImpl()
             affected_rows = info.written_rows;
             double elapsed_seconds = static_cast<double>(info.elapsed_microseconds) / 1000000.0;
             human_readable_info = fmt::format(
-                "Read {} rows, {} in {:.3f} sec., {} rows/sec., {}/sec.",
+                "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
                 info.read_rows,
                 ReadableSize(info.read_bytes),
                 elapsed_seconds,
-                static_cast<size_t>(static_cast<double>(info.read_rows) / elapsed_seconds),
-                ReadableSize(static_cast<double>(info.read_bytes) / elapsed_seconds));
+                static_cast<size_t>(info.read_rows / elapsed_seconds),
+                ReadableSize(info.read_bytes / elapsed_seconds));
         }
 
         const auto & header = getPort(PortKind::Main).getHeader();
@@ -157,7 +138,6 @@ void MySQLOutputFormat::flushImpl()
     packet_endpoint->out->next();
 }
 
-void registerOutputFormatMySQLWire(FormatFactory & factory);
 void registerOutputFormatMySQLWire(FormatFactory & factory)
 {
     factory.registerOutputFormat(
@@ -168,41 +148,6 @@ void registerOutputFormatMySQLWire(FormatFactory & factory)
            FormatFilterInfoPtr /*format_filter_info*/) { return std::make_shared<MySQLOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
     factory.markOutputFormatNotTTYFriendly("MySQLWire");
     factory.setContentType("MySQLWire", "application/octet-stream");
-
-    factory.setDocumentation("MySQLWire", Documentation{
-        .description = R"DOCS_MD(
-| Input | Output | Alias |
-|-------|--------|-------|
-| ✗     | ✔      |       |
-
-## Description {#description}
-
-The `MySQLWire` format serializes query results as a MySQL wire-protocol result set. It writes the column count and
-column definitions followed by one protocol row packet for each result row and a final `EOF` or `OK` packet. The row
-packets use the text protocol for normal queries and the binary protocol for prepared statements.
-
-This is an output-only binary format intended for clients connected through ClickHouse's
-[MySQL interface](/concepts/features/interfaces/mysql). The interface selects `MySQLWire` automatically and supplies
-protocol state such as the client's capabilities and the packet sequence number. It's not intended for displaying or
-storing query results as a standalone file.
-
-## Example usage {#example-usage}
-
-After enabling the MySQL interface, use a compatible client to execute a query:
-
-```shell
-mysql --protocol tcp -h 127.0.0.1 -u default -P 9004 default \
-    -e "SELECT number, number * 2 AS doubled FROM numbers(3)"
-```
-
-The interface sends the result using `MySQLWire`; an explicit `FORMAT MySQLWire` clause is optional. Other explicit
-output formats aren't supported over the MySQL interface.
-
-## Format settings {#format-settings}
-
-There are no user-configurable format settings. The MySQL interface derives the required settings from the client
-handshake and the command being executed.
-)DOCS_MD"});
 }
 
 }

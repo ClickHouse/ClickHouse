@@ -87,9 +87,9 @@ struct ArrayFirstLastImpl
                     if (end_offset > start_offset)
                     {
                         if constexpr (strategy == ArrayFirstLastStrategy::First)
-                            out->insertFrom(data, start_offset);
+                            out->insert(data[start_offset]);
                         else
-                            out->insertFrom(data, end_offset - 1);
+                            out->insert(data[end_offset - 1]);
                     }
                     else
                     {
@@ -148,7 +148,7 @@ struct ArrayFirstLastImpl
                 {
                     if (filter[start_offset])
                     {
-                        out->insertFrom(data, start_offset);
+                        out->insert(data[start_offset]);
                         exists = true;
                         break;
                     }
@@ -160,7 +160,7 @@ struct ArrayFirstLastImpl
                 {
                     if (filter[end_offset - 1])
                     {
-                        out->insertFrom(data, end_offset - 1);
+                        out->insert(data[end_offset - 1]);
                         exists = true;
                         break;
                     }
@@ -208,9 +208,9 @@ Returns the first element in the source array for which `func(x[, y1, y2, ... yN
     )";
     FunctionDocumentation::Syntax syntax = "arrayFirst(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments = {
-        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)."},
-        {"source_arr", "The source array to process. [`Array(T)`](/reference/data-types/array)."},
-        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/reference/data-types/array)."}
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source_arr", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the first element of the source array for which `λ` is true, otherwise returns the default value of `T`."};
     FunctionDocumentation::Examples examples = {
@@ -219,7 +219,7 @@ Returns the first element in the source array for which `func(x[, y1, y2, ... yN
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayFirst>(documentation);
 
@@ -241,7 +241,7 @@ Returns the first element in the source array for which `func(x[, y1, y2, ... yN
     };
     FunctionDocumentation::IntroducedIn introduced_in_orNull = {1, 1};
     FunctionDocumentation::Category category_orNull = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_orNull = {description_orNull, syntax_orNull, arguments_orNull, {}, returned_value_orNull, examples_orNull, introduced_in_orNull, category_orNull};
+    FunctionDocumentation documentation_orNull = {description_orNull, syntax_orNull, arguments_orNull, returned_value_orNull, examples_orNull, introduced_in_orNull, category_orNull};
 
     factory.registerFunction<FunctionArrayFirstOrNull>(documentation_orNull);
 
@@ -252,9 +252,9 @@ Returns the last element in the source array for which a lambda `func(x [, y1, y
     )";
     FunctionDocumentation::Syntax syntax_last = "arrayLast(func(x[, y1, ..., yN]), source[, cond1, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_last = {
-        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)."},
-        {"source", "The source array to process. [`Array(T)`](/reference/data-types/array)."},
-        {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/reference/data-types/array)."}
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_last = {"Returns the last element of the source array for which `func` is true, otherwise returns the default value of `T`."};
     FunctionDocumentation::Examples examples_last = {
@@ -267,7 +267,7 @@ Returns the last element in the source array for which a lambda `func(x [, y1, y
     };
     FunctionDocumentation::IntroducedIn introduced_in_last = {1, 1};
     FunctionDocumentation::Category category_last = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_last = {description_last, syntax_last, arguments_last, {}, returned_value_last, examples_last, introduced_in_last, category_last};
+    FunctionDocumentation documentation_last = {description_last, syntax_last, arguments_last, returned_value_last, examples_last, introduced_in_last, category_last};
     factory.registerFunction<FunctionArrayLast>(documentation_last);
 
     /// arrayLastOrNull
@@ -277,9 +277,9 @@ Returns the last element in the source array for which a lambda `func(x [, y1, y
     )";
     FunctionDocumentation::Syntax syntax_last_null = "arrayLastOrNull(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_last_null = {
-        {"func(x [, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)."},
-        {"source_arr", "The source array to process. [`Array(T)`](/reference/data-types/array)."},
-        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/reference/data-types/array)."}
+        {"func(x [, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source_arr", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_last_null = {"Returns the last element of the source array for which `λ` is not true, otherwise returns `NULL`."};
     FunctionDocumentation::Examples examples_last_null = {
@@ -292,7 +292,7 @@ Returns the last element in the source array for which a lambda `func(x [, y1, y
     };
     FunctionDocumentation::IntroducedIn introduced_in_last_null = {1, 1};
     FunctionDocumentation::Category category_last_null = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_last_null = {description_last_null, syntax_last_null, arguments_last_null, {}, returned_value_last_null, examples_last_null, introduced_in_last_null, category_last_null};
+    FunctionDocumentation documentation_last_null = {description_last_null, syntax_last_null, arguments_last_null, returned_value_last_null, examples_last_null, introduced_in_last_null, category_last_null};
 
     factory.registerFunction<FunctionArrayLastOrNull>(documentation_last_null);
 }
