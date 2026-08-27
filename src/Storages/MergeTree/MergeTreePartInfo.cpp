@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/SipHash.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
@@ -205,6 +206,18 @@ String MergeTreePartInfo::getPartNameForLogs() const
 {
     /// We don't care about format version here
     return getPartNameV1();
+}
+
+UInt64 MergeTreePartInfo::hash() const
+{
+    /// Every field `operator==` compares except `kind`, which is a pure function of the partition id
+    SipHash state;
+    state.update(partition_id);
+    state.update(min_block);
+    state.update(max_block);
+    state.update(level);
+    state.update(mutation);
+    return state.get64();
 }
 
 String MergeTreePartInfo::getPartNameV1() const
