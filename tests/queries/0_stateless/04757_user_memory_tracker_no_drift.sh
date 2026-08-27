@@ -35,7 +35,9 @@ snapshot() {
 base=0
 for _ in {1..200}; do
     read -r running held < <(snapshot)
-    if [ "$running" -ge 1 ]; then
+    # Wait for the memory too, not just for the query to show up: the user's row appears as soon as it has a
+    # query, a moment before anything is charged to it, and a base of zero would fail the check below.
+    if [ "${running:-0}" -ge 1 ] && [ "${held:-0}" -gt 0 ]; then
         base=$held
         break
     fi
