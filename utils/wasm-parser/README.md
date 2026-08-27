@@ -79,15 +79,15 @@ a shim in a browser.
 
 ## What it costs
 
-Stripped, 334 translation units, `-Oz` with full LTO and `-fvirtual-function-elimination`, built
+Stripped, 341 translation units, `-Oz` with full LTO and `-fvirtual-function-elimination`, built
 with wasi-sdk 33:
 
 | build | bytes | gzip -9 | brotli -q 11 | zstd --ultra -22 |
 | --- | ---: | ---: | ---: | ---: |
-| everything | 1192938 | 373235 | 280590 | 300190 |
-| `-DENABLE_DCL=OFF` | 991349 | 306793 | 231848 | 248273 |
-| `-DENABLE_FORMATTING=OFF` | 950695 | 308082 | 236600 | 253745 |
-| both off | 778457 | 251073 | 195080 | 208982 |
+| everything | 1337627 | 397284 | 294923 | 315433 |
+| `-DENABLE_DCL=OFF` | 1134031 | 329871 | 245306 | 262425 |
+| `-DENABLE_FORMATTING=OFF` | 982314 | 316184 | 243251 | 260327 |
+| both off | 808093 | 259148 | 200848 | 215081 |
 
 Brotli is what a browser will actually get, and it is 25% better than gzip here.
 
@@ -112,15 +112,15 @@ Sorted by brotli, which is what a browser negotiates:
 | [`@clickhouse/parser`](https://github.com/ClickHouse/clickhouse-js-parser) 0.3.0 + `zod`, JS | 1128583 | 196944 | 153347 | 161974 |
 | [`libpg-query`](https://github.com/launchql/libpg-query-node) 17.7.4, wasm | 1150984 | 229158 | 168575 | 176785 |
 | — its emscripten glue, on top of that | 58903 | 16679 | 14888 | 15718 |
-| **this, both off** | 778457 | 251073 | 195080 | 208982 |
+| **this, both off** | 808093 | 259148 | 200848 | 215081 |
 | [`sql.js`](https://github.com/sql-js/sql.js) 1.14.1, wasm | 659730 | 322193 | 278641 | 289690 |
-| **this, everything** | 1192938 | 373235 | 280590 | 300190 |
+| **this, everything** | 1337627 | 397284 | 294923 | 315433 |
 | `node-sql-parser` 5.4.0, all 20+ dialects, JS | 2609025 | 504010 | 333174 | 360819 |
 | [`@polyglot-sql/sdk`](https://github.com/tobilg/polyglot) 0.6.2, wasm | 21656938 | 4805067 | 2020675 | 2150089 |
 
 The row to measure against is **`libpg-query`**: the same idea, a production database's own parser
 compiled to WebAssembly rather than reimplemented. With its glue it is 183463 brotli against this
-build's 195080 — the same ballpark, for a grammar of comparable size.
+build's 200848 — the same ballpark, for a grammar of comparable size.
 
 The two JS parsers are smaller, and both are reimplementations. `@clickhouse/parser` is a Peggy
 grammar with Zod schemas for the same dialect, so it can drift from the server, where this cannot;
@@ -221,12 +221,12 @@ view still parses: it is part of `CREATE`, not of access management.
 It is worth a build option because nothing else comes close. Below is what each family of
 statements costs at the margin - the whole module, minus that one family. Only the first row is
 re-measured against the table above; the rest are from the original measurement, and are indicative
-rather than current - the DCL row moved by 190 bytes between the two, which is the order of drift
-to expect:
+rather than current - the DCL row moved by 190 bytes between the first two measurements, which is
+the order of drift to expect:
 
 | left out | bytes | gzip -9 |
 | --- | ---: | ---: |
-| DCL (`-DENABLE_DCL=OFF`) | 201589 | 66442 |
+| DCL (`-DENABLE_DCL=OFF`) | 203596 | 67413 |
 | `CREATE TABLE` / `VIEW` / `DATABASE` | 56533 | 16731 |
 | functions, workloads, resources, named collections, indexes | 45644 | 13070 |
 | `ALTER` | 35978 | 7857 |

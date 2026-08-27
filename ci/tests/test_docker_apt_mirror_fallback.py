@@ -13,6 +13,13 @@ image build, and reading "this mirror withheld a file" out of a log that merely
 mentions apt would both waste that build and bury a genuine packaging error behind it.
 So the arms below pin that only the step the build stopped on is consulted, that apt's
 own `W:`/`E:` severity is respected, and that the loop is actually wired to it.
+
+The classifier reaches none of that unless it can find the failing step first, and it
+finds it by the wording of buildx's own top-level error. That wording moved - buildx
+0.23 turned `ERROR: failed to solve:` into `ERROR: failed to build: failed to solve:` -
+which made the fallback dead code and reded every arm64 server and keeper image on
+master on 2026-08-26 on a `503` from `us-east-1.ec2.ports.ubuntu.com`. Hence the first
+arm: the fixture below speaks the current wording, and both are pinned.
 """
 
 import os
@@ -37,6 +44,14 @@ from ci.praktika.result import Result
 
 REGION = "us-east-1"
 
+# How buildx words its top-level failure. It printed the first form up to 0.22 and the
+# second from 0.23 on (measured on 0.30.1); the classifier must read both, because
+# pinning one of them is what broke the fallback - see the module docstring.
+SOLVE_ERROR_WORDINGS = [
+    "ERROR: failed to solve:",
+    "ERROR: failed to build: failed to solve:",
+]
+
 # An `apt-get update` that missed an index and carried on. apt marks it `W:`, the step
 # is `DONE`, and the image is built from the stale lists - this is not why any later
 # build failed, and it is the shape that makes matching the whole log wrong.
@@ -49,8 +64,13 @@ RECOVERED_UPDATE = """\
 """
 
 
-def _buildx_failure(step, body):
-    """A failed `docker buildx build --progress=plain` tail, in its real shape."""
+def _buildx_failure(step, body, solve_error=SOLVE_ERROR_WORDINGS[-1]):
+    """A failed `docker buildx build --progress=plain` tail, in its real shape.
+
+    Including the source-context block buildx prints after the closing fence, because
+    its `--------------------` rules are near-misses for the `------` fence the
+    classifier keys on and so belong in every arm below.
+    """
     run = f'process "/bin/sh -c {step}" did not complete successfully: exit code: 100'
     return (
         f"#12 [linux/arm64 stage-0 4/6] RUN {step}\n"
@@ -60,7 +80,13 @@ def _buildx_failure(step, body):
         f" > [linux/arm64 stage-0 4/6] RUN {step}:\n"
         + "".join(f"61.2 {line}\n" for line in body)
         + "------\n"
-        f"ERROR: failed to solve: {run}\n"
+        "Dockerfile.distroless:31\n"
+        "--------------------\n"
+        "  30 |     # The same uid/gid (101) is used both for alpine and ubuntu.\n"
+        f"  31 | >>> RUN {step}\n"
+        "  32 |     \n"
+        "--------------------\n"
+        f"{solve_error} {run}\n"
     )
 
 
@@ -78,6 +104,26 @@ BROKEN_PACKAGE_NAME = _buildx_failure(
     "apt-get install -y clickhosue-server",
     ["E: Unable to locate package clickhosue-server"],
 )
+
+
+def test_every_buildx_wording_of_the_top_level_error_is_read():
+    """The regression that made the whole fallback dead code.
+
+    `terminal_build_failure` identifies the failing step by scanning for buildx's
+    top-level error, so the exact wording of that one line decides whether any of the
+    classifier runs at all. buildx reworded it, the old spelling stopped appearing, and
+    every arm64 image failure on master was silently classified as "no mirror to blame".
+    A canned fixture cannot notice the *next* rewording, so match the parts that carry
+    the meaning rather than the sentence, and keep both known spellings passing.
+    """
+    for wording in SOLVE_ERROR_WORDINGS:
+        withheld = _buildx_failure(
+            "apt-get install -y tzdata",
+            ["E: Failed to fetch http://mirror/tzdata_2026c_all.deb  503"],
+            solve_error=wording,
+        )
+        assert is_apt_mirror_failure(withheld), wording
+        assert should_try_next_mirror(withheld), wording
 
 
 def test_only_the_step_the_build_stopped_on_decides():
