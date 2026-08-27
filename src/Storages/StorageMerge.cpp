@@ -1,3 +1,4 @@
+#include <cmath>
 #include <functional>
 #include <iterator>
 #include <Access/ContextAccess.h>
@@ -15,6 +16,7 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/traverseQueryTree.h>
 #include <Common/Logger.h>
+#include <Common/NaNUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Columns/ColumnString.h>
@@ -69,8 +71,10 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageFile.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageURL.h>
 #include <Storages/StorageView.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -119,6 +123,7 @@ extern const int DATABASE_ACCESS_DENIED;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
+extern const int PARAMETER_OUT_OF_BOUND;
 extern const int UNSUPPORTED_METHOD;
 }
 
@@ -153,6 +158,22 @@ StoragePtr tableForRead(const DatabasePtr & database, const String & table_name,
         return table;
 
     return database->getTableForRead(table_name, table, local_context);
+}
+
+/// The planner bounds-checks only `max_streams * max_streams_to_max_threads_ratio`, so the product
+/// of the requested number of streams and the (clamped) `max_streams_multiplier_for_merge_tables`
+/// can still exceed the range of `size_t`, and casting such a `Float64` to `size_t` is undefined
+/// behavior.
+size_t applyStreamsMultiplier(size_t requested_num_streams, Float64 num_streams_multiplier)
+{
+    Float64 num_streams = static_cast<Float64>(requested_num_streams) * num_streams_multiplier;
+    if (!canConvertTo<size_t>(num_streams))
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Exceeded limit for the number of streams with `max_streams_multiplier_for_merge_tables`. "
+            "Make sure that `max_streams * max_streams_multiplier_for_merge_tables` is in some reasonable boundaries, "
+            "current value: {}",
+            num_streams);
+    return static_cast<size_t>(num_streams);
 }
 
 /// `ColumnsDescription` registers no subcolumns for an ALIAS column, so a name like `arr.size0`
@@ -791,9 +812,8 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         size_t tables_count = selected_tables.size();
         Float64 num_streams_multiplier = std::min(
             static_cast<Float64>(tables_count),
-            static_cast<Float64>(
-                std::max(1UL, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables]))));
-        size_t num_streams = static_cast<size_t>(static_cast<double>(requested_num_streams) * num_streams_multiplier);
+            std::floor(std::max(1.0, static_cast<Float64>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables]))));
+        size_t num_streams = applyStreamsMultiplier(requested_num_streams, num_streams_multiplier);
 
         pipeline.narrow(num_streams);
     }
@@ -865,7 +885,39 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     Float64 num_streams_multiplier = std::min(
         static_cast<Float64>(tables_count),
         std::max(1.0, static_cast<double>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
-    size_t num_streams = static_cast<size_t>(static_cast<double>(requested_num_streams) * num_streams_multiplier);
+    size_t num_streams = applyStreamsMultiplier(requested_num_streams, num_streams_multiplier);
+
+    /// A trivial LIMIT bounds the rows that all child reads can produce. `GenerateRandom`
+    /// creates blocks of `required_max_block_size` rows and limits its sources accordingly.
+    /// Apply the same bound here, so the aggregate guard does not reject a safe limited read
+    /// before the child storage gets the opportunity to apply its reduction.
+    if (query_info_.trivial_limit)
+    {
+        const size_t streams_for_limit = static_cast<size_t>(query_info_.trivial_limit / required_max_block_size)
+            + (query_info_.trivial_limit % required_max_block_size != 0);
+        num_streams = std::min(num_streams, streams_for_limit);
+    }
+
+    /// Check the aggregate source count before building child plans: `Merge` fan-out can keep every
+    /// child below the limit while exceeding it in total. Storages which know a tighter bound expose
+    /// it through `IStorage::getMaxReadStreams`; proxies forward that capability to their nested storage.
+    /// When there are fewer requested streams than tables, every table still gets one stream.
+    /// Otherwise, the current distributor gives every table `num_streams / tables_count` streams
+    /// and discards the remainder.
+    static constexpr size_t max_streams_for_merge_read = 65536;
+    const size_t streams_per_table = tables_count >= num_streams ? 1 : num_streams / tables_count;
+    size_t total_streams = 0;
+    for (const auto & table : selected_tables)
+    {
+        const size_t child_streams = std::get<1>(table)->getMaxReadStreams(streams_per_table, context);
+        if (child_streams > max_streams_for_merge_read - total_streams)
+            throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                "Too many streams for a `Merge` table read (the maximum is {}). "
+                "Lower `max_streams_to_max_threads_ratio`, `max_threads`, or `max_streams_multiplier_for_merge_tables`",
+                max_streams_for_merge_read);
+        total_streams += child_streams;
+    }
+
     size_t remaining_streams = num_streams;
 
     if (order_info)
@@ -945,6 +997,11 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             size_t current_streams = std::min(current_need_streams, remaining_streams);
             remaining_streams -= current_streams;
             current_streams = std::max(1uz, current_streams);
+
+            /// Storages with a tighter source bound may otherwise recreate the raw stream request
+            /// with their optional output resize, so preserve the reported bound here.
+            if (storage->getMaxReadStreams(current_streams, context) < current_streams)
+                modified_context->setSetting("parallelize_output_from_storages", Field(0));
 
             bool sampling_requested = query_info.query->as<ASTSelectQuery>()->sampleSize() != nullptr;
             if (query_info.table_expression_modifiers)
@@ -1614,7 +1671,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             modified_context,
             processed_stage,
             max_block_size,
-            UInt32(streams_num));
+            streams_num);
 
         if (!plan.isInitialized())
             return {};
