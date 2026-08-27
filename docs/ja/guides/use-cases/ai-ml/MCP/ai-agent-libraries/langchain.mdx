@@ -28,7 +28,9 @@ doc_type: 'guide'
 以下の手順は、Python REPL でもスクリプトでも実行できます。
 
 <Steps>
-  <Step title="ライブラリのインストール" id="install-libraries">
+  <Step>
+    ## ライブラリのインストール
+
     次のコマンドを実行して、必要なライブラリをインストールします。
 
     ```python
@@ -37,7 +39,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="認証情報を設定する" id="setup-credentials">
+  <Step>
+    ## 認証情報を設定する
+
     次に、Anthropic APIキーを指定する必要があります。
 
     ```python
@@ -57,7 +61,9 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step title="MCPサーバーを初期化する" id="initialize-mcp-and-agent">
+  <Step>
+    ## MCPサーバーを初期化する
+
     次に、ClickHouse MCP serverがClickHouse SQL playgroundを参照するように設定します。
 
     ```python
@@ -83,7 +89,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="ストリームハンドラーを設定する" id="configure-the-stream-handler">
+  <Step>
+    ## ストリームハンドラーを設定する
+
     Langchain と ClickHouse MCP server を使用する場合、クエリ結果は単一のレスポンスではなく、ストリーミングデータとして返されることがよくあります。大規模なデータセットや、処理に時間がかかる可能性のある複雑な分析クエリでは、ストリームハンドラーを設定しておくことが重要です。適切に処理しないと、このストリーミング出力はアプリケーション内で扱いづらくなることがあります。
 
     ストリーミング出力を扱いやすくするため、ハンドラーを設定します:
@@ -102,11 +110,11 @@ doc_type: 'guide'
                 data = chunk.get("data", {})
                 chunk_data = data.get("chunk", {})
                 
-                # Only handle actual text content, skip tool invocation streams
+                # 実際のテキストコンテンツのみを処理し、ツール呼び出しストリームはスキップする
                 if hasattr(chunk_data, 'content'):
                     content = chunk_data.content
                     if isinstance(content, str) and not content.startswith('{"'):
-                        # Add space after tool completion if needed
+                        # 必要に応じてツール完了後にスペースを追加する
                         if self.last_was_tool:
                             print(" ", end="", flush=True)
                             self.last_was_tool = False
@@ -119,7 +127,7 @@ doc_type: 'guide'
                                 'partial_json' not in str(item)):
                                 text = item.get('text', '')
                                 if text and not text.startswith('{"'):
-                                    # Add space after tool completion if needed
+                                    # 必要に応じてツール完了後にスペースを追加する
                                     if self.last_was_tool:
                                         print(" ", end="", flush=True)
                                         self.last_was_tool = False
@@ -137,7 +145,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="エージェントに問い合わせる" id="call-the-agent">
+  <Step>
+    ## エージェントに問い合わせる
+
     最後に、エージェントに問い合わせて、ClickHouse に最も多くのコードをコミットしたのが誰かを確認します。
 
     ```python
@@ -160,28 +170,28 @@ doc_type: 'guide'
     以下のような応答が表示されるはずです。
 
     ```response title="Response"
-    I'll help you find who has committed the most code to ClickHouse by exploring the available databases and tables to locate git commit data.
-    🔧 list_databases ✅ I can see there's a `git` database which likely contains git commit information. Let me explore the tables in that database:
-    🔧 list_tables ✅ Perfect! I can see the `clickhouse_commits` table in the git database contains ClickHouse commit data with 80,644 commits. This table has information about each commit including the author, lines added/deleted, files modified, etc. Let me query this table to find who has committed the most code based on different metrics.
-    🔧 run_select_query ✅ Let me also look at just the lines added to see who has contributed the most new code:
-    🔧 run_select_query ✅ Based on the ClickHouse git commit data, **Alexey Milovidov** has committed the most code to ClickHouse by several measures:
+    利用可能なデータベースとテーブルを調査してgitコミットデータを特定し、ClickHouseに最も多くのコードをコミットした人物を見つけるお手伝いをします。
+    🔧 list_databases ✅ `git` データベースが存在することを確認しました。これにはgitコミット情報が含まれている可能性があります。そのデータベース内のテーブルを調べてみましょう：
+    🔧 list_tables ✅ 完璧です！gitデータベース内の `clickhouse_commits` テーブルに、80,644件のコミットを含むClickHouseのコミットデータが格納されていることを確認しました。このテーブルには、著者、追加/削除された行数、変更されたファイルなど、各コミットに関する情報が含まれています。さまざまなメトリクスに基づいて最も多くのコードをコミットした人物を特定するため、このテーブルにクエリを実行してみましょう。
+    🔧 run_select_query ✅ 追加された行数だけを見て、最も多くの新しいコードを貢献した人物も確認してみましょう：
+    🔧 run_select_query ✅ ClickHouseのgitコミットデータに基づくと、**Alexey Milovidov** が複数の指標においてClickHouseに最も多くのコードをコミットしています：
 
-    ## Key Statistics:
+    ## 主要な統計：
 
-    1. **Most Total Lines Changed**: Alexey Milovidov with **1,696,929 total lines changed** (853,049 added + 843,880 deleted)
-    2. **Most Lines Added**: Alexey Milovidov with **853,049 lines added**
-    3. **Most Commits**: Alexey Milovidov with **15,375 commits**
-    4. **Most Files Changed**: Alexey Milovidov with **73,529 files changed**
+    1. **変更された総行数が最多**：Alexey Milovidov — **1,696,929行**（853,049行追加 + 843,880行削除）
+    2. **追加された行数が最多**：Alexey Milovidov — **853,049行追加**
+    3. **コミット数が最多**：Alexey Milovidov — **15,375コミット**
+    4. **変更されたファイル数が最多**：Alexey Milovidov — **73,529ファイル変更**
 
-    ## Top Contributors by Lines Added:
+    ## 追加行数によるトップコントリビューター：
 
-    1. **Alexey Milovidov**: 853,049 lines added (15,375 commits)
-    2. **s-kat**: 541,609 lines added (50 commits) 
-    3. **Nikolai Kochetov**: 219,020 lines added (4,218 commits)
-    4. **alesapin**: 193,566 lines added (4,783 commits)
-    5. **Vitaly Baranov**: 168,807 lines added (1,152 commits)
+    1. **Alexey Milovidov**：853,049行追加（15,375コミット）
+    2. **s-kat**：541,609行追加（50コミット）
+    3. **Nikolai Kochetov**：219,020行追加（4,218コミット）
+    4. **alesapin**：193,566行追加（4,783コミット）
+    5. **Vitaly Baranov**：168,807行追加（1,152コミット）
 
-    Alexey Milovidov is clearly the most prolific contributor to ClickHouse, which makes sense as he is one of the original creators and lead developers of the project. His contribution dwarfs others both in terms of total code volume and number of commits, with nearly 16,000 commits and over 850,000 lines of code added to the project.
+    Alexey Milovidovは明らかにClickHouseへの最大のコントリビューターであり、プロジェクトの創設者の一人かつリード開発者であることを考えると納得できます。彼の貢献はコードの総量・コミット数ともに他を大きく引き離しており、約16,000件のコミットと85万行以上のコードがプロジェクトに追加されています。
     ```
   </Step>
 </Steps>

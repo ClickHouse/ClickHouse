@@ -2,8 +2,6 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
@@ -271,7 +269,7 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
     static const MergeTreeSettings default_settings;
     auto index_ptr = MergeTreeIndexFactory::instance().get(metadata_snapshot, *it, default_settings);
     /// Check that index exists in data part. It may be absent for parts created in earlier versions.
-    if (!index_ptr->getDeserializedFormat(*patch_part, index_ptr->getFileName()))
+    if (!index_ptr->getDeserializedFormat(patch_part->checksums, index_ptr->getFileName(), &patch_part->getDataPartStorage()))
         return {};
 
     size_t total_marks_without_final = patch_part->index_granularity->getMarksCountWithoutFinal();
@@ -283,7 +281,7 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
 
     MergeTreeIndexReader reader(
         index_ptr,
-        std::make_shared<LoadedMergeTreeDataPartInfoForReader>(patch_part, std::make_shared<AlterConversions>()),
+        patch_part,
         total_marks_without_final,
         index_mark_ranges,
         mark_cache.get(),

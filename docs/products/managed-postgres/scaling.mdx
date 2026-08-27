@@ -2,21 +2,21 @@
 slug: /cloud/managed-postgres/scaling
 sidebarTitle: 'Scaling'
 title: 'Scaling'
-description: 'Scale your ClickHouse Managed Postgres instance vertically with flexible VM types and independent resource scaling'
+description: 'Scale your Postgres managed by ClickHouse instance vertically with flexible VM types and independent resource scaling'
 keywords: ['postgres scaling', 'vertical scaling', 'vm types', 'nvme scaling', 'instance types', 'performance scaling']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
-ClickHouse Managed Postgres provides flexible scaling options to match your workload requirements. With 50+ NVMe-backed instance types to choose from, you can independently scale CPU, memory, and storage to optimize performance and cost for your specific use case.
+Managed Postgres provides flexible scaling options to match your workload requirements. With 50+ NVMe-backed instance types to choose from, you can independently scale CPU, memory, and storage to optimize performance and cost for your specific use case.
 
 ## Instance types and flexibility {#instance-types}
 
-ClickHouse Managed Postgres offers a wide range of instance types, each optimized for different workload characteristics:
+Managed Postgres offers a wide range of instance types, each optimized for different workload characteristics:
 
 - **50+ instance types** available across compute, memory, and storage-optimized configurations
 - **NVMe-backed storage** on all instance types for consistent, high-performance disk I/O
@@ -40,7 +40,7 @@ For safety reasons, you may not be able to switch to instance types whose storag
 
 ## How scaling works {#how-scaling-works}
 
-When you change instance types, ClickHouse Managed Postgres performs a vertical scaling operation that provisions new infrastructure and migrates your database with minimal downtime.
+When you change instance types, Managed Postgres performs a vertical scaling operation that provisions new infrastructure and migrates your database with minimal downtime.
 
 <Image img="/images/managed-postgres/scaling-settings.webp" alt="Scaling Settings" size="md" border/>
 
@@ -83,7 +83,7 @@ Your application will experience approximately 30 seconds of downtime during the
 
 ### Parallel restore with WAL-G {#parallel-restore}
 
-ClickHouse Managed Postgres uses [WAL-G](https://github.com/wal-g/wal-g) to accelerate backup restoration during scaling operations. Notably, the creator of WAL-G is part of the Ubicloud team who we have partnered with, bringing deep expertise to the restoration process.
+Managed Postgres uses [WAL-G](https://github.com/wal-g/wal-g) to accelerate backup restoration during scaling operations. Notably, the creator of WAL-G is part of the Ubicloud team who we have partnered with, bringing deep expertise to the restoration process.
 
 WAL-G provides:
 
@@ -96,7 +96,7 @@ These optimizations significantly reduce the time required to bring up the new s
 
 ### Initiating a scaling operation {#initiating-scaling}
 
-To scale your ClickHouse Managed Postgres instance:
+To scale your Managed Postgres instance:
 
 1. Navigate to the **Settings** tab of your instance
 2. In the **Scaling** section, scroll to **Service size**
@@ -107,7 +107,7 @@ To scale your ClickHouse Managed Postgres instance:
 
 ### Vertical scaling {#vertical-scaling}
 
-Vertical scaling (changing instance types) is the primary method for adjusting resources in ClickHouse Managed Postgres. This approach provides:
+Vertical scaling (changing instance types) is the primary method for adjusting resources in Managed Postgres. This approach provides:
 
 - **Granular control**: Choose from 50+ instance types to fine-tune CPU, memory, and storage
 - **Workload optimization**: Select configurations optimized for your specific workload (compute, memory, or storage-intensive)
@@ -135,41 +135,7 @@ This allows you to optimize the replication throughput separately from your Post
 
 ## Autoscaling {#autoscaling}
 
-ClickHouse Managed Postgres monitors disk usage and scales storage automatically so your instance doesn't run out of space:
-
-- **85% disk usage**: You receive a [notification](/products/managed-postgres/monitoring/notifications) through the cloud console and email.
-- **90% disk usage**: Autoscaling starts. Storage is increased to the next larger size available for your instance family. CPU and memory stay the same unless the current instance size doesn't support a larger disk, in which case the instance size is increased as well. [Read replicas](/products/managed-postgres/read-replicas) are scaled alongside the primary.
-- **95% disk usage**: The cutover skips any configured maintenance window and happens as soon as the new server is ready.
-
-If your instance is already at the largest available configuration, autoscaling can't go further. Free up disk space or contact [support](https://clickhouse.com/support/program).
-
-### Cutover and connections {#autoscaling-cutover}
-
-Storage isn't resized in place. Autoscaling follows the same [scaling process](#scaling-process) as a manual instance type change: a replacement server with more storage is provisioned, restored from the latest backup, catches up on WAL, and a controlled cutover promotes it to the new primary. Instances with [high availability](/products/managed-postgres/high-availability) get replacement standbys at the new size as part of the same operation.
-
-The cutover is the only step with downtime, typically under a minute. If a [maintenance window](/products/managed-postgres/upgrades#maintenance-windows) is configured, the cutover waits for it unless disk usage reaches 95%. During the cutover, open connections are dropped and in-flight transactions are rolled back. Your connection string doesn't change: DNS is updated to point at the new primary, and applications with standard reconnect logic recover automatically.
-
-### Read-only mode {#autoscaling-read-only}
-
-If writes fill the disk faster than autoscaling can complete, the instance goes read-only to prevent full disk exhaustion. The trigger is remaining free space:
-
-| Total disk size | Read-only below | Writes resume above |
-|-----------------|-----------------|---------------------|
-| Up to 64 GB     | 1 GB free       | 2 GB free           |
-| Up to 128 GB    | 5 GB free       | 7 GB free           |
-| Up to 512 GB    | 7 GB free       | 10 GB free          |
-| Over 512 GB     | 2% free         | 3% free             |
-
-Reads keep working, while writes fail with the standard Postgres error `cannot execute INSERT in a read-only transaction`. If free space keeps shrinking, existing connections are terminated so that every session picks up the read-only setting; reads work again once clients reconnect. Read-only mode lifts automatically once free space recovers, usually right after the scale-up cutover completes.
-
-### Example {#autoscaling-example}
-
-An instance with 1024 GB of storage runs a write-heavy workload:
-
-1. At 870 GB used (85%), you receive the storage notification.
-2. At 922 GB used (90%), autoscaling starts. A replacement server with 2048 GB of storage is provisioned and restored from the latest backup while your instance keeps serving traffic.
-3. Once the replacement has caught up, the cutover runs, within your maintenance window if one is configured. Connections drop for under a minute, your application reconnects to the same hostname, and usage is back around 45%.
-4. If free space drops below 2% (about 20 GB) before the cutover completes, the instance goes read-only. Writes resume automatically once the cutover to the larger disk finishes.
+At 90% disk usage your instance type will be adjusted to a larger instance type.
 
 ## Additional resources {#resources}
 

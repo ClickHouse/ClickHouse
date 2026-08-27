@@ -12,7 +12,7 @@ doc_type: 'referencia'
 
 Recopila en una sola tabla la documentación integrada de los componentes uniformes del sistema. Cada fila corresponde a una entidad (una función, un motor de tabla, un tipo de dato, etc.) y contiene la documentación de referencia de esa entidad en formato Markdown: el mismo contenido que se publica en el sitio web y que exponen las tablas `system.*` específicas de cada tipo.
 
-La `description` se compone a partir de las partes estructuradas de la documentación integrada (`description`, `syntax`, argumentos, ejemplos, etc.), de modo que una sola columna contiene la documentación completa de una entidad. Cuando la documentación integrada contiene en su `description` toda la página de referencia (como ocurre con los componentes cuyas páginas web se generan automáticamente a partir de ella: motores de tabla, motores de base de datos, tipos de datos, formatos y funciones de tabla), la página se publica tal cual, sin añadir secciones compuestas a partir de los campos de metadatos estructurados, ya que el cuerpo de la página ya cubre ese material. Los alias se muestran como una referencia breve a la entidad canónica; por ejemplo, ``Alias of `trunc`.``
+La `description` se compone a partir de las partes estructuradas de la documentación integrada (`description`, `syntax`, argumentos, ejemplos, etc.), de modo que una sola columna contiene la documentación completa de una entidad. Los alias se muestran como una referencia breve a la entidad canónica; por ejemplo, ``Alias of `trunc`.``
 
 Esta tabla, en cierto modo, recopila la información disponible en las tablas de documentación específicas de cada tipo ([`system.functions`](/es/reference/system-tables/functions), [`system.table_engines`](/es/reference/system-tables/table_engines), [`system.data_type_families`](/es/reference/system-tables/data_type_families) y otras). Está pensada, en particular, como base para un comando `help` interactivo en el client, pero también es útil por sí sola.
 
@@ -29,21 +29,12 @@ Se recopilan los siguientes tipos de entidades (el valor de la columna `type` se
 * Combinadores de funciones de agregación (`Aggregate Function Combinator`)
 * Tipos de índices de omisión de datos (`Data Skipping Index`)
 * Tipos de disco (`Disk Type`)
-* SETTINGS (`Setting`)
-* SETTINGS de MergeTree (`MergeTree Setting`)
-* SETTINGS del servidor (`Server Setting`)
+* Ajustes (`Setting`)
+* Ajustes de MergeTree (`MergeTree Setting`)
+* Ajustes del servidor (`Server Setting`)
 * Formatos (`Format`)
-* Códecs de compresión (`Compression Codec`)
-* Eventos de perfil (`Profile Event`)
-* Métricas actuales (`Current Metric`)
-* Métricas asincrónicas (`Asynchronous Metric`)
-* Tablas del sistema (`System Table`)
 
-En el caso de los SETTINGS (de cualquier tipo), la documentación es la descripción del SETTING, junto con su tipo y su valor predeterminado; los SETTINGS obsoletos no se exponen. También contiene el historial de los cambios en el valor predeterminado del SETTING entre las versiones de ClickHouse: la versión en la que se introdujo el SETTING y cada cambio posterior de su valor predeterminado, con el valor anterior, el valor nuevo y el motivo del cambio. Son los mismos datos que sirven de base para el SETTING `compatibility` y [`system.settings_changes`](/es/reference/system-tables/settings_changes), por lo que cubren los cambios registrados desde que se introdujo ese mecanismo: un SETTING antiguo cuyo valor predeterminado nunca cambió no tiene historial, ni tampoco los SETTINGS del servidor, que `compatibility` no cubre. Un cambio registrado bajo un alias de un SETTING pertenece al historial de ese SETTING, del mismo modo que lo aplica `compatibility`, por lo que el historial de un SETTING que se renombró no se interrumpe en el cambio de nombre; la excepción es un registro escrito bajo un alias con el único propósito de registrar ese alias, que pertenece únicamente al historial del alias. Un alias contiene el historial de su propio nombre: cada registro escrito bajo él, además del registro que lo registró como alias, que el archivo de historial a veces escribe bajo otro nombre del mismo SETTING.
-
-En el caso de las tablas del sistema, la documentación es el comentario de la tabla junto con la lista de sus columnas (el nombre, el tipo y la descripción de cada una).
-
-La columna `source` contiene la ruta del archivo fuente donde se define la documentación de la entidad, relativa a la raíz del repositorio. Para la mayoría de las entidades, se captura automáticamente en el lugar donde se construye el objeto de documentación (el punto de registro del componente); para los tipos que se documentan cada uno en un único archivo fuente (como los SETTINGS, los eventos de perfil y las métricas actuales), ese archivo es el que se usa.
+En el caso de los ajustes, la documentación es la descripción del ajuste; los ajustes obsoletos no se exponen.
 
 <div id="columns">
   ## Columnas
@@ -51,10 +42,9 @@ La columna `source` contiene la ruta del archivo fuente donde se define la docum
 
 {/*AUTOGENERATED_START*/}
 
-* `name` ([String](/es/reference/data-types/string)) — El nombre de la entidad, p. ej. `domainWithoutWWW` o `MergeTree`.
-* `type` ([Enum8(&#39;Function&#39; = 1, &#39;Aggregate Function&#39; = 2, &#39;Table Function&#39; = 3, &#39;Table Engine&#39; = 4, &#39;Database Engine&#39; = 5, &#39;Data Type&#39; = 6, &#39;Dictionary Layout&#39; = 7, &#39;Dictionary Source&#39; = 8, &#39;Aggregate Function Combinator&#39; = 9, &#39;Data Skipping Index&#39; = 10, &#39;Disk Type&#39; = 11, &#39;Setting&#39; = 12, &#39;MergeTree Setting&#39; = 13, &#39;Server Setting&#39; = 14, &#39;Format&#39; = 15, &#39;Compression Codec&#39; = 16, &#39;Profile Event&#39; = 17, &#39;Current Metric&#39; = 18, &#39;Asynchronous Metric&#39; = 19, &#39;System Table&#39; = 20)](/es/reference/data-types/enum)) — El tipo de la entidad, p. ej. `Function` o `Table Engine`.
-* `description` ([String](/es/reference/data-types/string)) — La documentación de referencia de la entidad en formato Markdown, generada a partir de la documentación integrada (el mismo contenido que se publica en el sitio web), incluida la sintaxis, los ejemplos y otras partes estructuradas, si las hay.
-* `source` ([String](/es/reference/data-types/string)) — La ruta al archivo fuente donde se define la documentación de la entidad, relativa a la raíz del repositorio. Vacío si se desconoce la ubicación del archivo fuente.
+* `name` ([String](/es/reference/data-types/index)) — El nombre de la entidad, p. ej. `domainWithoutWWW` o `MergeTree`.
+* `type` ([Enum8(&#39;Function&#39; = 1, &#39;Aggregate Function&#39; = 2, &#39;Table Function&#39; = 3, &#39;Table Engine&#39; = 4, &#39;Database Engine&#39; = 5, &#39;Data Type&#39; = 6, &#39;Dictionary Layout&#39; = 7, &#39;Dictionary Source&#39; = 8, &#39;Aggregate Function Combinator&#39; = 9, &#39;Data Skipping Index&#39; = 10, &#39;Disk Type&#39; = 11, &#39;Setting&#39; = 12, &#39;MergeTree Setting&#39; = 13, &#39;Server Setting&#39; = 14, &#39;Format&#39; = 15)](/es/reference/data-types/index)) — El tipo de la entidad, p. ej. `Function` o `Table Engine`.
+* `description` ([String](/es/reference/data-types/index)) — La documentación de referencia de la entidad en formato Markdown, generada a partir de la documentación integrada (el mismo contenido que se publica en el sitio web), incluida la sintaxis, los ejemplos y otras partes estructuradas, si las hay.
 
 {/*AUTOGENERATED_END*/}
 
@@ -71,7 +61,7 @@ WHERE type = 'Table Engine' AND name = 'MergeTree'
 FORMAT TSVRaw;
 ```
 
-El mismo nombre puede referirse a varios tipos de entidades (por ejemplo, existe tanto la función de tabla `file` como la fuente `file`), por lo que conviene buscar ese nombre en todos los tipos:
+El mismo nombre puede referirse a varios tipos de entidades (por ejemplo, existe tanto la función de tabla `file` como el origen del diccionario `file`), por lo que conviene buscar ese nombre en todos los tipos:
 
 ```sql title="Query"
 SELECT type, name
@@ -89,15 +79,6 @@ GROUP BY type
 ORDER BY count() DESC;
 ```
 
-Descubre en qué versión se introdujo un SETTING y cómo ha cambiado su valor predeterminado desde entonces:
-
-```sql title="Query"
-SELECT description
-FROM system.documentation
-WHERE type = 'Setting' AND name = 'async_insert_max_data_size'
-FORMAT TSVRaw;
-```
-
 <div id="see-also">
   ## Véase también
 </div>
@@ -108,8 +89,7 @@ FORMAT TSVRaw;
 * [`system.database_engines`](/es/reference/system-tables/database_engines) — Motores de base de datos.
 * [`system.data_type_families`](/es/reference/system-tables/data_type_families) — Tipos de datos.
 * [`system.disk_types`](/es/reference/system-tables/disk_types) — Tipos de disco.
-* [`system.settings`](/es/reference/system-tables/settings) — SETTINGS.
-* [`system.merge_tree_settings`](/es/reference/system-tables/merge_tree_settings) — SETTINGS de MergeTree.
-* [`system.server_settings`](/es/reference/system-tables/server_settings) — SETTINGS del servidor.
-* [`system.settings_changes`](/es/reference/system-tables/settings_changes) — Historial de cambios en los valores predeterminados de los SETTINGS.
+* [`system.settings`](/es/reference/system-tables/settings) — Ajustes.
+* [`system.merge_tree_settings`](/es/reference/system-tables/merge_tree_settings) — Ajustes de MergeTree.
+* [`system.server_settings`](/es/reference/system-tables/server_settings) — Ajustes del servidor.
 * [`system.formats`](/es/reference/system-tables/formats) — Formatos.

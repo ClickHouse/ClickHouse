@@ -70,13 +70,13 @@ Conéctese a su instancia de Crunchy Bridge Postgres con el usuario `postgres` y
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-La publicación `clickpipes` define el conjunto de tablas cuyos eventos de cambio se enviarán en streaming a ClickPipes. Recomendamos no usar `FOR ALL TABLES` a menos que tenga la intención de replicar todas las tablas, ya que incluir tablas innecesarias aumenta el tráfico de WAL desde Postgres hacia ClickPipes y reduce la eficiencia general de la replicación.
+La publicación `clickpipes` contendrá el conjunto de eventos de cambio generados por las tablas especificadas y más adelante se utilizará para ingestar el flujo de replicación.
 
 <div id="safe-list-clickpipes-ips">
   ## Incluir las IP de ClickPipes en la lista segura
 </div>
 
-Incluye las [IP de ClickPipes](/es/integrations/clickpipes/networking/static-ips) en la lista segura agregando las reglas de firewall en Crunchy Bridge.
+Incluye las [IP de ClickPipes](/es/integrations/clickpipes/home#list-of-static-ips) en la lista segura agregando las reglas de firewall en Crunchy Bridge.
 
 <Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/firewall_rules_crunchy_bridge.webp" alt="¿Dónde encontrar las reglas de firewall en Crunchy Bridge?" border />
 

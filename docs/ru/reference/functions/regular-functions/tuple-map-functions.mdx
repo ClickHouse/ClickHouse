@@ -18,27 +18,27 @@ doc_type: 'reference'
   ## extractKeyValuePairs
 </div>
 
-Добавлено в: v23.4.0
+Добавленный в: v23.4.0
 
-Извлекает пары «ключ‑значение» из любой строки. Строка не обязательно должна быть полностью структурирована в формате пары ключ-значение;
+Извлекает пары ключ-значение из любой строки. Строка не обязана быть полностью структурирована в формате ключ-значение;
 
 Он может содержать шум (например, файлы журналов). Формат пар ключ-значение для интерпретации задаётся через аргументы функции.
 
-Пара ключ-значение состоит из ключа, за которым следует `key_value_delimiter`, и значения. Поддерживаются ключи и значения в кавычках. Пары ключ-значение должны разделяться разделителями пар.
+Пара ключ-значение состоит из ключа, за которым следует `key_value_delimiter`, и значения. Ключи и значения в кавычках также поддерживаются. Пары ключ-значение должны разделяться разделителями пар.
 
 **Синтаксис**
 
 ```sql
-extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
 ```
 
 **Аргументы**
 
 * `data` — строка, из которой извлекаются пары «ключ-значение». [String](/ru/reference/data-types/string) или [FixedString](/ru/reference/data-types/fixedstring).
-* `key_value_delimiter` - Символ, используемый в качестве разделителя между ключом и значением. По умолчанию `:`. [String](/ru/reference/data-types/string) или [FixedString](/ru/reference/data-types/fixedstring).
-* `pair_delimiters` - Набор символов, используемых в качестве разделителей между парами. По умолчанию `\space`, `,` и `;`. [String](/ru/reference/data-types/string) или [FixedString](/ru/reference/data-types/fixedstring).
-* `quoting_character` - Символ, используемый в качестве символа кавычек. По умолчанию `"`. [String](/ru/reference/data-types/string) или [FixedString](/ru/reference/data-types/fixedstring).
-* `unexpected_quoting_character_strategy` - Стратегия обработки символов кавычек в неожиданных местах на этапе `read_key` и `read_value`. Возможные значения: `invalid`, `accept` и `promote`. `invalid` отбрасывает ключ/значение и возвращает в состояние `WAITING_KEY`. `accept` рассматривает его как обычный символ. `promote` переводит в состояние `READ_QUOTED_{KEY/VALUE}` и начинает со следующего символа. Значение по умолчанию — `PROMOTE`
+  * `key_value_delimiter` - Символ, используемый в качестве разделителя между ключом и значением. По умолчанию `:`. [String](/ru/reference/data-types/string) или [FixedString](/ru/reference/data-types/fixedstring).
+  * `pair_delimiters` - Набор символов, используемых в качестве разделителей между парами. По умолчанию `\space`, `,` и `;`. [String](/ru/reference/data-types/string) или [FixedString](/ru/reference/data-types/fixedstring).
+  * `quoting_character` - Символ, используемый в качестве символа кавычек. По умолчанию `"`. [String](/ru/reference/data-types/string) или [FixedString](/ru/reference/data-types/fixedstring).
+  * `unexpected_quoting_character_strategy` - Стратегия обработки символов кавычек в неожиданных местах на этапе `read_key` и `read_value`. Возможные значения: `invalid`, `accept` и `promote`. `invalid` отбрасывает ключ/значение и возвращает в состояние `WAITING_KEY`. `accept` рассматривает его как обычный символ. `promote` переводит в состояние `READ_QUOTED_{KEY/VALUE}` и начинает со следующего символа. Значение по умолчанию — `INVALID`
 
 **Возвращаемые значения**
 
@@ -53,27 +53,27 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 ```sql
 arthur :) select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
 
-SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
+            SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
 
-Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
+            Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
 
-┌─kv──────────────────────────────────────────────────────────────────────┐
-│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
-└─────────────────────────────────────────────────────────────────────────┘
+            ┌─kv──────────────────────────────────────────────────────────────────────┐
+            │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
+            └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Одинарная кавычка как символ кавычек**
+**Одинарная кавычка в качестве символа кавычки**
 
 ```sql
 arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 
-SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
+            SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 
-Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
+            Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
 
-┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+            ┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+            │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
+            └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Примеры unexpected&#95;quoting&#95;character&#95;strategy:
@@ -86,8 +86,8 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
 
 ```text
 ┌─kv────────────────┐
-│ {'abc':'5'}       │
-└───────────────────┘
+            │ {'abc':'5'}  │
+            └───────────────────┘
 ```
 
 ```sql
@@ -96,8 +96,8 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') as kv;
 
 ```text
 ┌─kv──┐
-│ {}  │
-└─────┘
+            │ {}  │
+            └─────┘
 ```
 
 unexpected&#95;quoting&#95;character&#95;strategy=accept
@@ -108,60 +108,60 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 
 ```text
 ┌─kv────────────────┐
-│ {'name"abc':'5'}  │
-└───────────────────┘
+            │ {'name"abc':'5'}  │
+            └───────────────────┘
 ```
 
 ```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
+            SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 ```
 
 ```text
-┌─kv─────────────────┐
-│ {'name"abc"':'5'}  │
-└────────────────────┘
+            ┌─kv─────────────────┐
+            │ {'name"abc"':'5'}  │
+            └────────────────────┘
 ```
 
 unexpected&#95;quoting&#95;character&#95;strategy=promote
 
 ```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+            SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 ```
 
 ```text
-┌─kv──┐
-│ {}  │
-└─────┘
+            ┌─kv──┐
+            │ {}  │
+            └─────┘
 ```
 
 ```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+            SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 ```
 
 ```text
-┌─kv───────────┐
-│ {'abc':'5'}  │
-└──────────────┘
+            ┌─kv───────────┐
+            │ {'abc':'5'}  │
+            └──────────────┘
 ```
 
-**Экранирующие последовательности без их поддержки**
+**Управляющие последовательности без их поддержки**
 
 ```sql
-arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
+            arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
 
-SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
+            SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
 
-Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
+            Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 
-┌─kv─────────────────────┐
-│ {'age':'a\\x0A\\n\\0'} │
-└────────────────────────┘
+            ┌─kv────────────────────┐
+            │ {'age':'a\\x0A\\n\\0'} │
+            └───────────────────────┘
 ```
 
 **Синтаксис**
 
 ```sql
-extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
+extractKeyValuePairs(input)
 ```
 
 **Псевдонимы**: `str_to_map`, `mapFromString`
@@ -190,28 +190,28 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 входную строку: `a: "aaaa\"bbb"`. Ожидаемый результат: `a: aaaa\"bbbb`.
 
 * Предварительное экранирование: в этом случае результат будет таким: `a: "aaaa"bbb"`, а затем `extractKeyValuePairs` вернет: `a: aaaa`
-* Последующее экранирование: `extractKeyValuePairs` вернет `a: aaaa\`, а последующее экранирование оставит это без изменений.
+  * Последующее экранирование: `extractKeyValuePairs` вернет `a: aaaa\`, а последующее экранирование оставит это без изменений.
 
 Начальные экранирующие последовательности в ключах будут пропускаться, а в значениях будут считаться недопустимыми.
 
 **Экранирующие последовательности при включенной поддержке экранирования**
 
 ```sql
-arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
+            arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
 
-SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
+            SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
 
-Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
+            Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 
-┌─kv────────────────┐
-│ {'age':'a\n\n\0'} │
-└───────────────────┘
+            ┌─kv───────────────┐
+            │ {'age':'a\n\n\0'} │
+            └──────────────────┘
 ```
 
 **Синтаксис**
 
 ```sql
-extractKeyValuePairsWithEscaping(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
+extractKeyValuePairsWithEscaping(input)
 ```
 
 **Аргументы**
@@ -785,7 +785,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 Добавленный в: v21.2.0
 
 Возвращает ключи заданного Map.
-Эту функцию можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
+Эту функцию можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings#optimize_functions_to_subcolumns).
 Когда настройка включена, функция считывает только подстолбец `keys`, а не весь Map.
 Запрос `SELECT mapKeys(m) FROM table` преобразуется в `SELECT m.keys FROM table`.
 
@@ -801,7 +801,7 @@ mapKeys(map)
 
 **Возвращаемое значение**
 
-Возвращает массив, содержащий все ключи Map. [`Array(T)`](/ru/reference/data-types/array)
+Возвращает массив, содержащий все ключи карты. [`Array(T)`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -1098,7 +1098,7 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 Добавленный в: v21.2.0
 
 Возвращает значения указанного Map.
-Эту функцию можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
+Эту функцию можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings#optimize_functions_to_subcolumns).
 Если настройка включена, функция считывает только подстолбец `values`, а не весь Map.
 Запрос `SELECT mapValues(m) FROM table` преобразуется в `SELECT m.values FROM table`.
 

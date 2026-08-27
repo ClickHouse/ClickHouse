@@ -329,7 +329,7 @@ if err := rows.Err(); err != nil {
   ## Inserção assíncrona
 </div>
 
-As inserções assíncronas podem ser feitas executando uma inserção por meio do método `ExecContext`. Para isso, passe a ele um contexto com o modo assíncrono habilitado, como mostrado abaixo. Isso permite que o usuário especifique se o cliente deve aguardar o servidor concluir a inserção ou responder assim que os dados forem recebidos. Isso controla efetivamente o parâmetro [wait&#95;for&#95;async&#95;insert](/pt-BR/reference/settings/session-settings/wait-for#wait_for_async_insert).
+As inserções assíncronas podem ser feitas executando uma inserção por meio do método `ExecContext`. Para isso, passe a ele um contexto com o modo assíncrono habilitado, como mostrado abaixo. Isso permite que o usuário especifique se o cliente deve aguardar o servidor concluir a inserção ou responder assim que os dados forem recebidos. Isso controla efetivamente o parâmetro [wait&#95;for&#95;async&#95;insert](/pt-BR/reference/settings/session-settings#wait_for_async_insert).
 
 ```go
 const ddl = `

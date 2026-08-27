@@ -6,7 +6,7 @@ title: 'Functions for working with strings'
 doc_type: 'reference'
 ---
 
-import { VersionBadge } from "/snippets/components/VersionBadge/VersionBadge.jsx";
+import VersionBadge from "/snippets/components/VersionBadge/VersionBadge.jsx";
 
 Functions for [searching](/reference/functions/regular-functions/string-search-functions) in strings and for [replacing](/reference/functions/regular-functions/string-replace-functions) in strings are described separately.
 
@@ -1860,7 +1860,6 @@ SELECT leftUTF8('Привет', -4)
 Introduced in: v1.1.0
 
 Returns the length of a string in Unicode code points rather than in bytes or characters.
-To calculate the length of a string in bytes, use the [`length`](/reference/functions/regular-functions/array-functions#length) function.
 It assumes that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
 
@@ -3148,8 +3147,6 @@ Byte counting starts from 1 with the following logic:
 - If `offset` is negative, the substring starts `offset` characters from the end of the string, rather than from the beginning.
 
 An optional argument `length` specifies the maximum number of bytes the returned substring may have.
-
-See also the [`digits`](/reference/functions/regular-functions/other-functions#digits) function, which performs the analogous operation on the digits of a number.
 
 **Syntax**
 

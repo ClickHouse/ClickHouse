@@ -31,24 +31,32 @@ doc_type: 'guide'
 </div>
 
 <Steps>
-  <Step title="二重インジェストを設定する" id="configure-dual-ingestion">
+  <Step>
+    #### 二重インジェストを設定する
+
     データ収集パイプラインを設定し、Elastic と ClickStack の両方へ同時にデータを送信します。
 
     具体的な方法は、現在収集に使用しているエージェントによって異なります。[&quot;Migrating Agents&quot;](/ja/clickstack/migration/elastic/migrating-agents) を参照してください。
   </Step>
 
-  <Step title="保持期間を調整する" id="adjust-retention-period">
+  <Step>
+    #### 保持期間を調整する
+
     Elastic の有効期限 (TTL) 設定を、希望する保持期間に合わせて構成します。ClickStack 側でも、同じ期間データを保持するように [有効期限 (TTL)](/ja/clickstack/managing/production#configure-ttl) を設定します。
   </Step>
 
-  <Step title="検証と比較を行う" id="validate-and-compare">
+  <Step>
+    #### 検証と比較を行う
+
     * 両方のシステムに対してクエリを実行し、データの整合性を確認する
-    * クエリパフォーマンスと結果を比較する
+    * クエリのパフォーマンスと結果を比較する
     * ダッシュボードとアラートを ClickStack に移行する。現在、これは手動で行う必要があります。
     * 重要なダッシュボードとアラートがすべて ClickStack で期待どおりに動作することを確認する
   </Step>
 
-  <Step title="段階的に移行する" id="graudal-transition">
+  <Step>
+    #### 段階的に移行する
+
     * Elastic のデータが自然に期限切れになるにつれて、ClickStack への依存度は徐々に高まります
     * ClickStack への信頼性を確認できたら、クエリとダッシュボードの切り替えを開始できます
   </Step>
@@ -133,7 +141,9 @@ ClickHouse は、データの有効期限を管理するために、MergeTree �
 以下の手順では、ClickHouse を使って単一の Elasticsearch 索引を移行できます。
 
 <Steps>
-  <Step title="スキーマの移行" id="migrate-scheme">
+  <Step>
+    ### スキーマの移行
+
     Elasticsearchから移行する索引に対応するテーブルをClickHouseに作成します。[ElasticsearchのタイプをClickHouseの対応するタイプ](/ja/clickstack/migration/elastic/types)にマッピングできます。または、ClickHouseのJSONデータ型を利用する方法もあります。この場合、データが挿入されると適切な型のカラムが動的に作成されます。
 
     `syslog` データを含むインデックスに対する以下の Elasticsearch マッピングを確認してください。
@@ -568,7 +578,9 @@ ClickHouse は、データの有効期限を管理するために、MergeTree �
     スキーマでのJSON型の使用方法と効率的な適用方法の詳細については、ガイド [&quot;スキーマの設計&quot;](/ja/guides/clickhouse/data-formats/json/schema) を参照してください。
   </Step>
 
-  <Step title={<><code>elasticdump</code> をインストールする</>} id="install-elasticdump">
+  <Step>
+    ### `elasticdump` をインストールする
+
     Elasticsearch からデータをエクスポートするには、[`elasticdump`](https://github.com/elasticsearch-dump/elasticsearch-dump) の使用を推奨します。このツールには `node` が必要で、Elasticsearch と ClickHouse の両方にネットワーク的に近いマシンにインストールする必要があります。ほとんどのエクスポートでは、少なくとも 4 コアと 16GB の RAM を備えた専用サーバーを推奨します。
 
     ```shell
@@ -584,15 +596,19 @@ ClickHouse は、データの有効期限を管理するために、MergeTree �
     可能であれば、ネットワーク egress を最小限に抑え、スループットを最大化するために、ClickHouse、Elasticsearch、`elastic dump` はすべて同じアベイラビリティゾーンまたはデータセンター内で実行することを推奨します。
   </Step>
 
-  <Step title="ClickHouse client をインストールする" id="install-clickhouse-client">
+  <Step>
+    ### ClickHouse client をインストールする
+
     `elasticdump` が配置されているサーバーに、[ClickHouse がインストールされている](/ja/get-started/setup/install)ことを確認してください。**ClickHouse server は起動しないでください**。この手順で必要なのは client のみです。
   </Step>
 
-  <Step title="データをストリーミング" id="stream-data">
+  <Step>
+    ### データをストリーミング
+
     Elasticsearch と ClickHouse 間でデータをストリーミングするには、`elasticdump` コマンドを使用し、その出力を ClickHouse client に直接パイプします。以下の例では、データを適切に構造化されたテーブル `logs_system_syslog` に挿入します。
 
     ```shell
-    # export url and credentials
+    # URLと認証情報をエクスポート
     export ELASTICSEARCH_INDEX=.ds-logs-system.syslog-default-2025.06.03-000001
     export ELASTICSEARCH_URL=
     export ELASTICDUMP_INPUT_USERNAME=
@@ -601,7 +617,7 @@ ClickHouse は、データの有効期限を管理するために、MergeTree �
     export CLICKHOUSE_PASSWORD=
     export CLICKHOUSE_USER=default
 
-    # command to run - modify as required
+    # 実行するコマンド - 必要に応じて変更
     elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true | 
     clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
     --min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog FORMAT JSONEachRow"
@@ -644,7 +660,9 @@ ClickHouse は、データの有効期限を管理するために、MergeTree �
     </Info>
   </Step>
 
-  <Step title="データの変換 (任意)" id="transform-data">
+  <Step>
+    ### データの変換 (任意)
+
     上記のコマンドは、Elasticsearch のフィールドと ClickHouse のカラムが 1:1 で対応していることを前提としています。多くの場合、ClickHouse に挿入する前に、Elasticsearch のデータをフィルタリングして変換する必要があります。
 
     これは、[`input`](/ja/reference/functions/table-functions/input) テーブル関数を使って実現できます。この関数を使うと、標準出力に対して任意の `SELECT` クエリを実行できます。

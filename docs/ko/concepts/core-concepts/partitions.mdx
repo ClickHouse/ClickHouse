@@ -44,7 +44,7 @@ ClickHouse SQL Playground에서 [이 테이블을 쿼리할 수 있습니다](ht
   ### 디스크상의 구조
 </div>
 
-테이블에 행 집합이 삽입될 때마다, 삽입된 모든 행을 담은 단일 데이터 파트 하나를 (적어도 [하나](/ko/reference/settings/session-settings/max-insert#max_insert_block_size)) 생성하는 대신([여기](/ko/concepts/core-concepts/parts)에서 설명한 대로), ClickHouse는 삽입된 행들에서 고유한 각 파티션 키 값마다 새로운 데이터 파트 하나를 생성합니다:
+테이블에 행 집합이 삽입될 때마다, 삽입된 모든 행을 담은 단일 데이터 파트 하나를 (적어도 [하나](/ko/reference/settings/session-settings#max_insert_block_size)) 생성하는 대신([여기](/ko/concepts/core-concepts/parts)에서 설명한 대로), ClickHouse는 삽입된 행들에서 고유한 각 파티션 키 값마다 새로운 데이터 파트 하나를 생성합니다:
 
 <Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="삽입 처리" />
 
@@ -217,7 +217,7 @@ WHERE date >= '2020-12-01'
 Peak memory usage: 2.73 MiB.
 ```
 
-이는 ClickHouse가 쿼리 결과를 계산하기 위해 6밀리초 동안 1개의 granule([8192](/ko/reference/settings/merge-tree-settings/index-granularity#index_granularity)행으로 이루어진 블록)을 스캔하고 처리했다는 의미입니다.
+이는 ClickHouse가 쿼리 결과를 계산하기 위해 6밀리초 동안 1개의 granule([8192](/ko/reference/settings/merge-tree-settings#index_granularity)행으로 이루어진 블록)을 스캔하고 처리했다는 의미입니다.
 
 <div id="partitioning-is-primarily-a-data-management-feature">
   ### 파티셔닝은 주로 데이터 관리 기능입니다

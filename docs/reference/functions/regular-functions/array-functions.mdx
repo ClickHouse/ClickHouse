@@ -700,13 +700,6 @@ Gets the element of the provided array with index `n` where `n` can be any integ
 If the index falls outside of the bounds of an array, it returns a default value (0 for numbers, an empty string for strings, etc.),
 except for arguments of a non-constant array and a constant index 0. In this case there will be an error `Array indices are 1-based`.
 
-When `n` is an array of integers, returns an array of the elements at the specified positions (a gather operation).
-This is equivalent to `arrayMap(i -> arr[i], n)`, but has a separate, more efficient implementation.
-Out-of-bounds positions produce the default value, the same as for a scalar index.
-The index elements may be nullable. A `NULL` index produces `NULL` (and makes the result element type nullable) when the element type can be
-wrapped in `Nullable`; for element types that cannot be inside `Nullable` (such as `Array`, `Map`), a `NULL` index produces the
-default value instead. This is the same behavior as for a scalar `NULL` index.
-
 <Note>
 Arrays in ClickHouse are one-indexed.
 </Note>
@@ -714,8 +707,6 @@ Arrays in ClickHouse are one-indexed.
 Negative indexes are supported. In this case, the corresponding element is selected, numbered from the end. For example, `arr[-1]` is the last item in the array.
 
 Operator `[n]` provides the same functionality.
-
-The first argument may also be a [QBit](/reference/data-types/qbit): the n-th vector element is reconstructed at the full precision of the QBit element type, reading only the bit planes of the stride group that contains it.
     
 
 **Syntax**
@@ -726,11 +717,11 @@ arrayElement(arr, n)
 
 **Arguments**
 
-- `arr` — The array to search. [`Array(T)`](/reference/data-types/array) or [`QBit`](/reference/data-types/qbit). - `n` — Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). 
+- `arr` — The array to search. [`Array(T)`](/reference/data-types/array). - `n` — Position of the element to get. [`(U)Int*`](/reference/data-types/int-uint). 
 
 **Returned value**
 
-When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(Nullable(T))` if the index elements are nullable and `T` can be wrapped in `Nullable`, otherwise `Array(T)`. [`Any`](/reference/data-types/index) or [`Array(T)`](/reference/data-types/array) or [`Array(Nullable(T))`](/reference/data-types/array)
+Returns a single combined array from the provided array arguments [`Array(T)`](/reference/data-types/array)
 
 **Examples**
 
@@ -774,28 +765,12 @@ SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 0
 ```
 
-**Array of indices**
-
-```sql title=Query
-SELECT [10, 20, 30, 40][[2, 4, 1]]
-```
-
-```response title=Response
-[20,40,10]
-```
-
 ## arrayElementOrNull {#arrayElementOrNull}
 
 Introduced in: v1.1.0
 
 Gets the element of the provided array with index `n` where `n` can be any integer type.
-If the index falls outside of the bounds of an array, `NULL` is returned instead of a default value,
-as long as the result type can be nullable. For element types that are not already nullable and cannot be
-put inside `Nullable` (such as `Array`, `Map`), the default value of the element type is returned instead.
-
-When `n` is an array of integers, returns an array of the elements at the specified positions.
-This is equivalent to `arrayMap(i -> arrayElementOrNull(arr, i), n)`, but has a separate, more efficient implementation.
-Out-of-bounds positions and `NULL` indexes produce `NULL` values in the result array, following the same rule as for a scalar index.
+If the index falls outside of the bounds of an array, `NULL` is returned instead of a default value.
 
 <Note>
 Arrays in ClickHouse are one-indexed.
@@ -806,16 +781,16 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
 **Syntax**
 
 ```sql
-arrayElementOrNull(arr, n)
+arrayElementOrNull(arrays)
 ```
 
 **Arguments**
 
-- `arr` — The array to search. [`Array(T)`](/reference/data-types/array). - `n` — Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). 
+- `arrays` — Arbitrary number of array arguments. [`Array`](/reference/data-types/array)
 
 **Returned value**
 
-When `n` is a scalar, returns `Nullable(T)` if `T` can be wrapped in `Nullable`, otherwise `T`. When `n` is an array, returns `Array(Nullable(T))` if `T` can be wrapped in `Nullable`, otherwise `Array(T)`. [`Any`](/reference/data-types/index) or [`Nullable(T)`](/reference/data-types/nullable) or [`Array(T)`](/reference/data-types/array) or [`Array(Nullable(T))`](/reference/data-types/array)
+Returns a single combined array from the provided array arguments. [`Array(T)`](/reference/data-types/array)
 
 **Examples**
 
@@ -847,16 +822,6 @@ SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 
 ```response title=Response
 NULL
-```
-
-**Array of indices**
-
-```sql title=Query
-SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])
-```
-
-```response title=Response
-[10,NULL,20]
 ```
 
 ## arrayEnumerate {#arrayEnumerate}
@@ -1708,12 +1673,6 @@ and Aggregate Functions which take a group of rows and "compress" or "reduce" th
 
 All the values in the columns are simply copied, except the values in the column where this function is applied;
 these are replaced with the corresponding array value.
-
-`arrayJoin`, including via its `unnest` alias, cannot be used in a `JOIN ON` condition that is evaluated during the join, because such a condition must
-preserve the number of rows. A condition that applies to one side only, and an equality key over `arrayJoin`, are
-extracted before the join and are unaffected. A non-disjunctive `ALL INNER JOIN` condition is also unaffected,
-because there the condition is applied after the join instead.
-Where the expansion depends on one side only, move it into an `ARRAY JOIN` in a subquery before the join; a condition whose `arrayJoin` argument reads columns from both sides has to be restructured.
 
 <Note>
 This function is non-deterministic: it can return different results for the same arguments.
@@ -3558,9 +3517,6 @@ Introduced in: v1.1.0
 
 Returns a slice of the array, with `NULL` elements included.
 
-The first argument may also be a [QBit](/reference/data-types/qbit): the result is a QBit over the selected dimensions (a projection to a subset of dimensions). In that case `offset` and `length` must be constants, because the dimension of a QBit is part of its type, and the slice must select at least one dimension. A slice aligned to the QBit's stride-group boundaries keeps the stride and reuses the stored bit-plane streams without copying.
-    
-
 **Syntax**
 
 ```sql
@@ -3569,7 +3525,7 @@ arraySlice(arr, offset [, length])
 
 **Arguments**
 
-- `arr` — Array to slice. [`Array(T)`](/reference/data-types/array) or [`QBit`](/reference/data-types/qbit)
+- `arr` — Array to slice. [`Array(T)`](/reference/data-types/array)
 - `offset` — Indent from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with `1`. [`(U)Int*`](/reference/data-types/int-uint)
 - `length` — The length of the required slice. If you specify a negative value, the function returns an open slice `[offset, array_length - length]`. If you omit the value, the function returns the slice `[offset, the_end_of_array]`. [`(U)Int*`](/reference/data-types/int-uint)
 
@@ -4156,7 +4112,7 @@ Checks whether the input array is empty.
 An array is considered empty if it does not contain any elements.
 
 <Note>
-Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](/reference/settings/session-settings#optimize_functions_to_subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
 </Note>
 
 The function also works for Strings or UUIDs.
@@ -5008,11 +4964,6 @@ Returns the index of the first element with value 'x' (starting from 1) if it is
 If the array does not contain the searched-for value, the function returns `0`.
 
 Elements set to `NULL` are handled as normal values.
-
-`NaN` elements do not follow the `NULL` rule above.
-A scalar comparison of two `NaN` values (`NaN = NaN`) is `0`, but `indexOf` may still report a `NaN` element as found.
-Whether it does is an implementation detail. Do not rely on a specific behavior.
-To find one, test for it: `arrayFirstIndex(x -> isNaN(x), arr)` returns its position, `arrayExists(x -> isNaN(x), arr)` a flag.
     
 
 **Syntax**
@@ -5209,7 +5160,7 @@ Checks whether the input array is non-empty.
 An array is considered non-empty if it contains at least one element.
 
 <Note>
-Can be optimized by enabling the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
+Can be optimized by enabling the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
 </Note>
 
 The function also works for Strings or UUIDs.
@@ -5241,69 +5192,6 @@ SELECT notEmpty([1,2]);
 1
 ```
 
-## notHas {#notHas}
-
-Introduced in: v26.8.0
-
-Returns whether the array does not contain the specified element, the map does not contain the specified key, or the JSON object does not contain the specified path. The negation of `has`.
-
-**Syntax**
-
-```sql
-notHas(haystack, needle)
-```
-
-**Arguments**
-
-- `haystack` — The source array, map, or JSON. [`Array`](/reference/data-types/array) or [`Map`](/reference/data-types/map) or [`JSON`](/reference/data-types/newjson)
-- `needle` — The value to search for (element in array, key in map, or path string in JSON). 
-
-**Returned value**
-
-Returns `1` if the haystack does not contain the specified needle, otherwise `0`. [`UInt8`](/reference/data-types/int-uint)
-
-**Examples**
-
-**Array basic usage**
-
-```sql title=Query
-SELECT notHas([1, 2, 3], 2)
-```
-
-```response title=Response
-0
-```
-
-**Array not found**
-
-```sql title=Query
-SELECT notHas([1, 2, 3], 4)
-```
-
-```response title=Response
-1
-```
-
-**Map basic usage**
-
-```sql title=Query
-SELECT notHas(map('a', 1, 'b', 2), 'c')
-```
-
-```response title=Response
-1
-```
-
-**JSON basic usage**
-
-```sql title=Query
-SELECT notHas('{"a" : 1, "b" : {"c" : 2}}'::JSON, 'b.c')
-```
-
-```response title=Response
-0
-```
-
 ## randomHadamardTransform {#randomHadamardTransform}
 
 Introduced in: v26.7.0
@@ -5333,8 +5221,7 @@ zero-padding to a longer power of two; it is **rejected with an exception** rath
 returning a longer vector. Use a supported length, or pass `output_dims` to compute a truncated
 projection of an arbitrary length (see below).
 
-The result has the same element type as the input; an empty input array returns an empty array
-(`output_dims` does not apply to it).
+The result has the same element type as the input; an empty input array returns an empty array.
 
 - `seed` (optional, default `0`): selects the sign pattern; the same seed always yields the same
   transform.
@@ -5415,7 +5302,7 @@ The supported types are:
 - `Int8/16/32/64]`
 
 - All arguments `start`, `end`, `step` must be one of the above supported types. Elements of the returned array will be a super type of the arguments.
-- An exception is thrown if the function returns an array with a total length more than the number of elements specified by setting [`function_range_max_elements_in_block`](/reference/settings/session-settings/function#function_range_max_elements_in_block).
+- An exception is thrown if the function returns an array with a total length more than the number of elements specified by setting [`function_range_max_elements_in_block`](/reference/settings/session-settings#function_range_max_elements_in_block).
 - Returns `NULL` if any argument has Nullable(nothing) type. An exception is thrown if any argument has `NULL` value (Nullable(T) type).
     
 

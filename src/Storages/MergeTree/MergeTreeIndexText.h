@@ -8,7 +8,6 @@
 #include <Common/BitPackedStringArray.h>
 #include <Common/BitPackedUInt64Array.h>
 #include <Common/Logger.h>
-#include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
@@ -193,14 +192,12 @@ struct PostingsSerialization
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 
 private:
-    const IPostingListCodec & resolveCodec(UInt64 header);
-
     PostingListCodecPtr posting_list_codec;
     MergeTreeTextIndexSerializationVersion serialization_version;
 
     /// Reusable buffers to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;
-    PaddedPODArray<char> deserialization_buffer;
+    std::vector<char> deserialization_buffer;
 };
 
 /// Closed range of rows.
@@ -519,9 +516,6 @@ private:
 
     String index_column_name;
     MergeTreeIndexTextParams params;
-    /// A private clone of the index tokenizer when it is stateful (e.g. the Japanese or sparse-grams
-    /// tokenizers), so concurrent aggregators do not share mutable parsing state; null otherwise.
-    std::shared_ptr<const ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
     MergeTreeIndexTextGranuleBuilder granule_builder;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
@@ -546,11 +540,10 @@ public:
     bool isTextIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
-    using IMergeTreeIndex::getPhysicalFormat;
-    MergeTreeIndexFormat getPhysicalFormat(
+    MergeTreeIndexFormat getDeserializedFormat(
         const MergeTreeDataPartChecksums & checksums,
-        const IDataPartStorage & storage,
-        const std::string & relative_path_prefix) const override;
+        const std::string & path_prefix,
+        const IDataPartStorage * storage) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
@@ -564,8 +557,6 @@ public:
     std::unique_ptr<IPostingListCodec> posting_list_codec;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
     MergeTreeIndexTextPostprocessorPtr postprocessor;
-    /// Name of the index expression rewritten as `optimize_empty_string_comparisons` rewrites queries.
-    std::optional<String> normalized_index_column_name;
 };
 
 }

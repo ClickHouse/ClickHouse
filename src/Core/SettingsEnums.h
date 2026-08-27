@@ -246,14 +246,6 @@ enum class CleanDeletedRows : uint8_t
 
 DECLARE_SETTING_ENUM(CleanDeletedRows)
 
-enum class UniqueKeyProbeImplementation : uint8_t
-{
-    Auto = 0, /// Pick the default; currently the simple baseline.
-    Simple,   /// Single-threaded baseline probe.
-};
-
-DECLARE_SETTING_ENUM(UniqueKeyProbeImplementation)
-
 enum class MySQLDataTypesSupport : uint8_t
 {
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
@@ -323,7 +315,6 @@ enum class Dialect : uint8_t
     prql,
     promql,
     polyglot,
-    clickhouse_json,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -464,9 +455,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     ICEBERG_ONELAKE,
     ICEBERG_BIGLAKE,
     PAIMON_REST,
-    S3_TABLES,
     ICEBERG_DELTA_SHARING,
-    ICEBERG_HORIZON,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
@@ -567,7 +556,6 @@ DECLARE_SETTING_ENUM(MergeTreePartMinMaxIndexColumns)
 enum class MergeCoordinatorDistributionAlgorithm : uint64_t
 {
     WATER_FILLING = 0,
-    SAINTE_LAGUE = 1,
 };
 
 DECLARE_SETTING_ENUM(MergeCoordinatorDistributionAlgorithm)

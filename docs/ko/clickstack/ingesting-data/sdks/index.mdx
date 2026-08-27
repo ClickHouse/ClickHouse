@@ -2,13 +2,12 @@
 slug: /use-cases/observability/clickstack/sdks
 description: 'ClickStack용 Language SDKs - ClickHouse Observability Stack'
 title: 'Language SDKs'
-sidebarTitle: '개요'
 doc_type: 'guide'
 keywords: ['ClickStack SDKs', 'ClickStack language SDKs', 'OpenTelemetry SDKs ClickStack', '애플리케이션 계측 SDKs
 ', '텔레메트리 수집 SDKs']
 ---
 
-데이터는 일반적으로 **OpenTelemetry (OTel) collector**를 통해 ClickStack으로 전송되며, language SDKs에서 직접 보내거나 에이전트 역할을 하는 중간 OpenTelemetry collector를 거쳐 보낼 수 있습니다. 예를 들어 인프라 메트릭과 로그를 수집하는 경우가 여기에 해당합니다.
+데이터는 일반적으로 **OpenTelemetry (OTel) collector**를 통해 ClickStack으로 전송되며, 언어별 SDK에서 직접 보내거나 에이전트 역할을 하는 중간 OpenTelemetry collector를 거쳐 보낼 수 있습니다. 예를 들어 인프라 메트릭과 로그를 수집하는 경우가 여기에 해당합니다.
 
 Language SDKs는 애플리케이션 내부에서 텔레메트리를 수집하고, 특히 **트레이스**와 **로그**를 수집하는 역할을 합니다. 또한 이 데이터를 OTLP endpoint를 통해 OpenTelemetry collector로 내보내며, collector는 이를 ClickHouse로 수집합니다.
 

@@ -13,8 +13,14 @@ CREATE ROW POLICY 04098_p1 ON t_row_policy_or USING id = 1 AS permissive TO ALL;
 CREATE ROW POLICY 04098_p2 ON t_row_policy_or USING id = 3 AS permissive TO ALL;
 CREATE ROW POLICY 04098_p3 ON t_row_policy_or USING id = 5 AS permissive TO ALL;
 
--- The OR chain is converted to IN by LogicalExpressionOptimizerPass applied to the
--- row policy filter in buildFilterInfo.
+-- With the old analyzer the OR chain is converted to IN by LogicalExpressionsOptimizer.
+-- With the analyzer the same should happen via LogicalExpressionOptimizerPass
+-- applied to the row policy filter in buildFilterInfo.
+
+SET enable_analyzer = 0;
+SELECT 'old analyzer';
+SELECT explain FROM (EXPLAIN actions = 1 SELECT id FROM t_row_policy_or)
+WHERE explain LIKE '%Row level filter column:%';
 
 SET enable_analyzer = 1;
 SELECT 'analyzer';

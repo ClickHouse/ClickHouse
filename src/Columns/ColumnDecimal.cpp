@@ -1,6 +1,5 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/transformEndianness.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
@@ -79,28 +78,52 @@ int ColumnDecimal<T>::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int)
 }
 
 template <is_decimal T>
-Int64 ColumnDecimal<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs_, int) const
+[[nodiscard]] Int64 ColumnDecimal<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int) const
 {
-    const auto & other = assert_cast<const Self &>(rhs_);
-    const T * lhs_data = data.data();
-    const T * rhs_data = other.data.data();
-    const T a = lhs_data[n];
-    const T b = rhs_data[m];
-    static constexpr size_t linear_probe = 16;
+    auto & other = assert_cast<const Self &>(rhs);
+    const T * pa = &data[n];
+    const T * pb = &other.data[m];
 
-    /// The scale dispatch is hoisted out of the run search; same-scale probes are native comparisons.
     if (scale == other.scale)
-        return compareTrackAtImpl(
-            a > b ? 1 : (a < b ? -1 : 0),
-            n, m, data.size(), other.data.size(), linear_probe,
-            [&](size_t row) { return lhs_data[row] < b; },
-            [&](size_t row) { return rhs_data[row] < a; });
+    {
+        Int64 res = (*pa) > (*pb) ? 1 : ((*pa) < (*pb) ? -1 : 0);
 
-    return compareTrackAtImpl(
-        decimalLess<T>(b, a, other.scale, scale) ? 1 : (decimalLess<T>(a, b, scale, other.scale) ? -1 : 0),
-        n, m, data.size(), other.data.size(), linear_probe,
-        [&](size_t row) { return decimalLess<T>(lhs_data[row], b, scale, other.scale); },
-        [&](size_t row) { return decimalLess<T>(rhs_data[row], a, other.scale, scale); });
+        if (res < 0)
+        {
+            const T * pa_end = data.data() + size();
+            ++pa;
+            for (; pa < pa_end && (*pa) < (*pb); ++pa)
+                --res;
+        }
+        else if (res > 0)
+        {
+            const T * pb_end = other.data.data() + other.size();
+            ++pb;
+            for (; pb < pb_end && (*pb) < (*pa); ++pb)
+                ++res;
+        }
+        return res;
+    }
+    else
+    {
+        Int64 res = decimalLess<T>(*pb, *pa, other.scale, scale) ? 1 : (decimalLess<T>(*pa, *pb, scale, other.scale) ? -1 : 0);
+
+        if (res < 0)
+        {
+            const T * pa_end = data.data() + size();
+            ++pa;
+            for (; pa < pa_end && decimalLess<T>(*pa, *pb, scale, other.scale); ++pa)
+                --res;
+        }
+        else if (res > 0)
+        {
+            const T * pb_end = other.data.data() + other.size();
+            ++pb;
+            for (; pb < pb_end && decimalLess<T>(*pb, *pa, other.scale, scale); ++pb)
+                ++res;
+        }
+        return res;
+    }
 }
 
 template <is_decimal T>
@@ -668,36 +691,6 @@ void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_
 {
     const auto & src_data = assert_cast<const Self &>(src).getData();
     data[dst_pos] = src_data[src_pos];
-}
-
-template <is_decimal T>
-void ColumnDecimal<T>::serializeAsComparable(size_t n, String & out) const
-{
-    using Native = T::NativeType;
-    if constexpr (!std::is_same_v<T, Time64> && (std::is_integral_v<Native> || is_big_int_v<Native>))
-    {
-        Native value = data[n].value;
-        transformEndianness<std::endian::big>(value);
-        char * bytes = reinterpret_cast<char *>(&value);
-        bytes[0] ^= 0x80;
-        out.append(reinterpret_cast<const char *>(&value), sizeof(Native));
-    }
-    else
-    {
-        IColumn::serializeAsComparable(n, out);
-    }
-}
-
-template <is_decimal T>
-void ColumnDecimal<T>::batchSerializeAsComparable(
-    size_t num_rows,
-    VectorWithMemoryTracking<String> & out,
-    const IColumn::Permutation * permutation,
-    const UInt8 * null_map) const
-{
-    batchSerializeAsComparableImpl(
-        num_rows, out, permutation, null_map,
-        [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
 }
 
 template class ColumnDecimal<Decimal32>;

@@ -1745,7 +1745,7 @@ void StorageURL::processNamedCollectionResult(Configuration & configuration, con
 static String removeDotSegments(const String & path)
 {
     /// Fast path: no dot segments present.
-    if (!path.contains("/."))
+    if (path.find("/.") == String::npos)
         return path;
 
     /// Split the path into segments and process each one.
@@ -1815,7 +1815,7 @@ static String normalizeDotSegmentsInURL(const String & url, size_t authority_sta
     String path = url.substr(path_start, path_end - path_start);
 
     /// Fast check: no dot segments.
-    if (!path.contains("/."))
+    if (path.find("/.") == String::npos)
         return url;
 
     String normalized = removeDotSegments(path);
@@ -1838,7 +1838,7 @@ static bool urlHasUserInfo(const String & url)
     return authority_end == String::npos || at_pos < authority_end;
 }
 
-String StorageURL::resolveURLBase(const String & url, const String & base, const String & base_setting_name)
+String StorageURL::resolveURLBase(const String & url, const String & base)
 {
     if (base.empty())
         return url;
@@ -1854,11 +1854,6 @@ String StorageURL::resolveURLBase(const String & url, const String & base, const
     /// A scheme is [A-Za-z][A-Za-z0-9+.-]*: per RFC 3986.
     /// We check that the colon appears before any '/', '?', or '#' to avoid false positives
     /// from embedded URLs in query parameters (e.g. "data.csv?next=https://other/a").
-    /// The scheme must be followed by "//": a name whose first path segment contains a colon
-    /// (e.g. `report:2026.csv`) technically parses as a URI with the scheme `report`, but every
-    /// scheme supported here uses the `scheme://` form, so such a name is not a usable absolute
-    /// URL. Per RFC 3986 it would have to be written as `./report:2026.csv` to be a relative
-    /// reference; instead of demanding that, it is resolved against the base as a relative path.
     if (!url.empty() && std::isalpha(static_cast<unsigned char>(url[0])))
     {
         auto colon_pos = url.find(':');
@@ -1876,14 +1871,14 @@ String StorageURL::resolveURLBase(const String & url, const String & base, const
                     break;
                 }
             }
-            if (valid_scheme && url.compare(colon_pos + 1, 2, "//") == 0)
+            if (valid_scheme)
                 return url;
         }
     }
 
     auto scheme_end = base.find("://");
     if (scheme_end == String::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `{}` setting must contain a scheme (e.g. https://), got: {}", base_setting_name, base);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `url_base` setting must contain a scheme (e.g. https://), got: {}", base);
 
     /// Find the boundary of the path component in the base URL (before '?' or '#').
     auto authority_start = scheme_end + 3; /// skip "://"
@@ -1895,21 +1890,6 @@ String StorageURL::resolveURLBase(const String & url, const String & base, const
     /// Dot segments in the path are normalized per RFC 3986.
     if (url.starts_with("//"))
     {
-        /// A `file://` base has no meaningful authority, and a reference like `//tmp/data.csv` is
-        /// a POSIX absolute path with redundant leading slashes rather than a scheme-relative
-        /// reference. Taking the scheme-relative branch would produce `file://tmp/data.csv` -- a
-        /// path relative to the user files directory -- silently reading the wrong file. Collapse
-        /// the leading slashes and resolve to an absolute local path, preserving the semantics
-        /// that the `Filesystem` database had for absolute paths.
-        String scheme = base.substr(0, scheme_end);
-        boost::to_lower(scheme);
-        if (scheme == "file")
-        {
-            auto non_slash = url.find_first_not_of('/');
-            String path = "/" + (non_slash == String::npos ? String{} : url.substr(non_slash));
-            return normalizeDotSegmentsInURL(base.substr(0, scheme_end + 3) + path, scheme_end + 3);
-        }
-
         String merged = base.substr(0, scheme_end + 1) + url;
         return normalizeDotSegmentsInURL(merged, scheme_end + 3);
     }
@@ -1937,16 +1917,6 @@ String StorageURL::resolveURLBase(const String & url, const String & base, const
         auto base_without_fragment = (existing_fragment == String::npos) ? base : base.substr(0, existing_fragment);
         return base_without_fragment + url;
     }
-
-    /// An authority-less base like `file://` resolves a path-relative reference by simple
-    /// concatenation: `file://` + `data.csv` = `file://data.csv`, which the `file://` scheme
-    /// treats as a path relative to the user_files directory (the current directory in
-    /// clickhouse-local). Dot segments are kept as-is (`file://` + `../a.csv` = `file://../a.csv`),
-    /// the target engine resolves them against its own base directory. Strict RFC 3986 merging
-    /// would produce `file:///data.csv` -- an absolute path -- making relative references
-    /// useless with such a base.
-    if (authority_start == base_before_query.size())
-        return base_before_query + url;
 
     /// Path-relative URL: merge with the base path per RFC 3986.
     /// Replace everything after the last '/' in the path portion of the base URL,
@@ -2101,7 +2071,7 @@ AzureURLParts parseAzureURL(const String & url)
     const String host = (slash_pos == String::npos) ? rest : rest.substr(0, slash_pos);
     const String path = (slash_pos == String::npos) ? "" : rest.substr(slash_pos + 1);
 
-    if (!host.contains('.'))
+    if (host.find('.') == String::npos)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Azure `{}` URL must include the storage account host, e.g. "
@@ -2157,12 +2127,11 @@ void StorageURL::overrideURLInEngineArgs(ASTs & args, const String & resolved_ur
     }
 
     /// Named-collection or key-value form: `URL(nc)`, `URL(nc, url='...')`, or `URL(url='...', ...)`.
-    /// Read the `url` key directly instead of going through `processNamedCollectionResult`:
-    /// this function is also called for collections of other engines (e.g. `S3`), whose keys
-    /// would not pass the `URL` engine validation.
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context, /*throw_unknown_collection=*/false))
     {
-        if (named_collection->getOrDefault<String>("url", "") == resolved_url)
+        Configuration unresolved;
+        StorageURL::processNamedCollectionResult(unresolved, *named_collection);
+        if (unresolved.url == resolved_url)
             return;
     }
 
@@ -2289,15 +2258,14 @@ public:
     /// `SHOW CREATE TABLE` and `system.tables`, even though reads/writes go to the delegate.
     String getName() const override { return "URL"; }
 
-    /// Engine classification is used by policy checks (e.g. the `disable_insertion_and_mutation`
-    /// guard in `InterpreterInsertQuery`, which exempts external engines), so report the class of
-    /// the delegate instead of the `IStorage` default of a local engine. Deliberately not done in
-    /// `StorageProxy`: the lazy proxies (`StorageTableProxy`, `StorageTableFunctionProxy`) would
-    /// have to materialize and start up the nested storage just to answer a classification query.
-    bool isDataLake() const override { return nested->isDataLake(); }
-    bool isExternalDatabase() const override { return nested->isExternalDatabase(); }
-    bool isObjectStorage() const override { return nested->isObjectStorage(); }
-    bool isMessageQueue() const override { return nested->isMessageQueue(); }
+    /// Forward the delegate's subcolumn-optimization contract. `StorageProxy` forwards
+    /// `supportsSubcolumns` to the delegate (true for `File`/object storage), but not
+    /// `supportsOptimizationToSubcolumns`. Without this override the wrapper would fall back to
+    /// `IStorage::supportsOptimizationToSubcolumns`, which defaults to `supportsSubcolumns` and would
+    /// therefore report `true`, while the direct `StorageFile` and plain `StorageURL` deliberately
+    /// return `false`. `FunctionToSubcolumnsPass` reads this bit, so `ENGINE = URL('file://...')`
+    /// would otherwise receive subcolumn rewrites the backend explicitly disables.
+    bool supportsOptimizationToSubcolumns() const override { return nested->supportsOptimizationToSubcolumns(); }
 
     /// Forward the delegate's narrower PREWHERE contract. `StorageProxy` forwards `supportsPrewhere`,
     /// but not `supportedPrewhereColumns`/`canMoveConditionsToPrewhere`. Without these overrides the
@@ -2600,24 +2568,12 @@ void registerStorageURL(StorageFactory & factory)
             /// still holds the raw user-provided URL. Without this override, e.g.
             /// `SET url_base = 'http://host'; ENGINE = URL('/data/**/part*.tsv', 'TSV')`
             /// would build the object storage from an unresolved relative URL.
-            ///
-            /// `args.engine_args` is a reference to the arguments of the `CREATE` AST, so materialize
-            /// the resolved URL there with the same `skip_userinfo=true` policy as the other
-            /// `url_base` materialization paths: a resolved URL may carry `user:pass@` coming from
-            /// `url_base`, and persisting it would expose the credentials through `SHOW CREATE TABLE`
-            /// and the table metadata. The object storage itself has to be built from the fully
-            /// resolved URL including userinfo, so it is initialized from a scratch copy of the
-            /// arguments that never reaches the AST.
-            StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ true);
-
-            ASTs object_storage_args;
-            object_storage_args.reserve(engine_args.size());
-            for (const auto & engine_arg : engine_args)
-                object_storage_args.push_back(engine_arg->clone());
-            StorageURL::overrideURLInEngineArgs(object_storage_args, config.url, context, /*skip_userinfo=*/ false);
+            /// `skip_userinfo=false`: the object storage stays in memory and credentials are
+            /// not persisted to the AST.
+            StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ false);
 
             auto configuration = std::make_shared<StorageWebConfiguration>();
-            StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
+            StorageObjectStorageConfiguration::initialize(*configuration, engine_args, context, /* with_table_structure */ false);
 
             /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the
             /// `file_like_engine_default_partition_strategy` default; ATTACH / startup / RESTORE must
@@ -2655,7 +2611,7 @@ void registerStorageURL(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](/reference/engines/table-engines/special/file) engine.
+Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](../../../engines/table-engines/special/file.md) engine.
 
 The `URL` engine is also a unified wrapper that dispatches to the right backend based on the URL scheme, so a recognized non-HTTP scheme is delegated to the matching engine — see [Dispatching by URL scheme](#scheme-dispatch) below.
 
@@ -2663,7 +2619,7 @@ Syntax: `URL(URL [,Format] [,CompressionMethod])`
 
 - The `URL` parameter must conform to the structure of a Uniform Resource Locator. For an `http`/`https` URL (the default backend), it must point to a server that uses HTTP or HTTPS, and getting a response from the server does not require any additional headers. A URL with a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is instead delegated to the matching engine — see [Dispatching by URL scheme](#scheme-dispatch) below.
 
-- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/reference/formats#formats-overview).
+- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/interfaces/formats#formats-overview).
 
     If this argument is not specified, ClickHouse detects the format automatically from the suffix of the `URL` parameter. If the suffix of `URL` parameter does not match any supported formats, it fails to create table. For example, for engine expression `URL('http://localhost/test.json')`, `JSON` format is applied.
 
@@ -2689,11 +2645,11 @@ For example, for engine expression `URL('http://localhost/test.gzip')`, `gzip` c
 
 ## Dispatching by URL scheme {#scheme-dispatch}
 
-The `URL` engine is a unified wrapper on top of the other file- and object-storage engines: it dispatches to the right backend based on the URL scheme. `http`/`https` (and any unrecognized scheme) are served by the `URL` engine itself; `file://` is served by the [File](/reference/engines/table-engines/special/file) engine; `s3://`, `gs://`, `gcs://`, `oss://` by the [S3](/reference/engines/table-engines/integrations/s3) engine; `az://`, `azure://`, `abfss://`, `abfs://` by the [AzureBlobStorage](/reference/engines/table-engines/integrations/azureBlobStorage) engine; and `hdfs://` by the [HDFS](/reference/engines/table-engines/integrations/hdfs) engine.
+The `URL` engine is a unified wrapper on top of the other file- and object-storage engines: it dispatches to the right backend based on the URL scheme. `http`/`https` (and any unrecognized scheme) are served by the `URL` engine itself; `file://` is served by the [File](../../../engines/table-engines/special/file.md) engine; `s3://`, `gs://`, `gcs://`, `oss://` by the [S3](/engines/table-engines/integrations/s3) engine; `az://`, `azure://`, `abfss://`, `abfs://` by the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage) engine; and `hdfs://` by the [HDFS](/engines/table-engines/integrations/hdfs) engine.
 
-Only the S3 schemes that the S3 URI mapper resolves to a concrete endpoint without extra configuration (`s3`, plus `gs`/`gcs`/`oss`) are dispatched. Other S3-compatible vendor schemes (`cos`, `obs`, `eos`, …) are region-specific and have no default endpoint mapping, so passing such a URL to the `URL` engine is treated as an unrecognized scheme and reported as an error; use the [S3](/reference/engines/table-engines/integrations/s3) engine directly (with `url_scheme_mappers` configured) for those backends.
+Only the S3 schemes that the S3 URI mapper resolves to a concrete endpoint without extra configuration (`s3`, plus `gs`/`gcs`/`oss`) are dispatched. Other S3-compatible vendor schemes (`cos`, `obs`, `eos`, …) are region-specific and have no default endpoint mapping, so passing such a URL to the `URL` engine is treated as an unrecognized scheme and reported as an error; use the [S3](/engines/table-engines/integrations/s3) engine directly (with `url_scheme_mappers` configured) for those backends.
 
-The [url_base](/reference/settings/session-settings/url#url_base) setting is applied before scheme dispatch, so a relative reference is first resolved against the base and then routed to the matching engine.
+The [url_base](/operations/settings/settings.md#url_base) setting is applied before scheme dispatch, so a relative reference is first resolved against the base and then routed to the matching engine.
 
 ```sql
 CREATE TABLE file_via_url (a UInt32, b String) ENGINE = URL('file://data.csv', CSV);
@@ -2706,14 +2662,14 @@ CREATE TABLE s3_via_url (a UInt32, b String) ENGINE = URL('s3://bucket/key.csv',
 respectively. For processing `POST` requests, the remote server must support
 [Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
-You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](/reference/settings/session-settings/max#max_http_get_redirects) setting.
+You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](/operations/settings/settings#max_http_get_redirects) setting.
 
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 
-When [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
-This is the same mechanism as the [`url`](/reference/functions/table-functions/url#wildcards-with-http-index-pages) table function.
+When [allow_experimental_url_wildcard_from_index_pages](/operations/settings/settings#allow_experimental_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
+This is the same mechanism as the [`url`](/sql-reference/table-functions/url#wildcards-with-http-index-pages) table function.
 
-Expansion is limited by [max_http_index_page_size](/reference/settings/server-settings/settings/max#max_http_index_page_size) for each fetched index page and by [url_wildcard_max_directories_to_read](/reference/settings/session-settings/url#url_wildcard_max_directories_to_read) for recursive directory traversal.
+Expansion is limited by [max_http_index_page_size](/operations/server-configuration-parameters/settings#max_http_index_page_size) for each fetched index page and by [url_wildcard_max_directories_to_read](/operations/settings/settings#url_wildcard_max_directories_to_read) for recursive directory traversal.
 
 ## Example {#example}
 
@@ -2778,7 +2734,7 @@ SELECT * FROM url_engine_table
 
 ## Resolving relative URLs {#resolving-relative-urls}
 
-The [url_base](/reference/settings/session-settings/url#url_base) setting allows using a relative URL in the `URL` engine. When `url_base` is set, the URL passed to the engine is resolved against it per [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For a full description of the resolution rules, see the [url table function docs](/reference/functions/table-functions/url#resolving-relative-urls).
+The [url_base](/operations/settings/settings.md#url_base) setting allows using a relative URL in the `URL` engine. When `url_base` is set, the URL passed to the engine is resolved against it per [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For a full description of the resolution rules, see the [url table function docs](../../../sql-reference/table-functions/url.md#resolving-relative-urls).
 
 **Example**
 
@@ -2790,9 +2746,9 @@ SELECT * FROM url_engine_table;
 
 ## Storage settings {#storage-settings}
 
-- [engine_url_skip_empty_files](/reference/settings/session-settings/other#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
-- [enable_url_encoding](/reference/settings/session-settings/enable#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
-- [url_base](/reference/settings/session-settings/url#url_base) - base URL for resolving relative URLs passed to the engine.
+- [engine_url_skip_empty_files](/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [enable_url_encoding](/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
+- [url_base](/operations/settings/settings.md#url_base) - base URL for resolving relative URLs passed to the engine.
 )DOCS_MD",
             .syntax = "ENGINE = URL(url[, format[, compression]])",
             .related = {"File"}});

@@ -135,13 +135,8 @@ struct CallbackRunnerTask
 template <typename Result, typename Callback = std::function<Result()>>
 ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(ThreadPool & pool, ThreadName thread_name)
 {
-    return [my_pool = &pool, thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
+    return [my_pool = &pool, thread_group = getCurrentThreadGroup(), thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
     {
-        /// Since it is a wrapper for a task that will be reused for each task
-        /// we need to obtain ThreadGroup here not during creating the task wrapper,
-        /// otherwise the accounting will be incorrect
-        auto thread_group = getCurrentThreadGroup();
-
         auto task = std::make_shared<detail::CallbackRunnerTask<Result, Callback>>(thread_group, thread_name, std::move(callback));
 
         auto future = task->promise.get_future();

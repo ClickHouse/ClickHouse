@@ -263,7 +263,16 @@ public:
         data_out->finalize();
         data_out_compressed->finalize();
 
-        storage.saveIndicesAndFileSizes(lock);
+        /// Save the new indices.
+        storage.saveIndices(lock);
+
+        // While executing save file sizes the exception might occurs. S3::TooManyRequests for example.
+        fiu_do_on(FailPoints::stripe_log_sink_write_fallpoint,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault for inserting into StipeLog table");
+        });
+        /// Save the new file sizes.
+        storage.saveFileSizes(lock);
 
         storage.updateTotalRows(lock);
 
@@ -550,33 +559,10 @@ void StorageStripeLog::removeUnsavedIndices(const WriteLock & /* already locked 
 
 void StorageStripeLog::saveFileSizes(const WriteLock & /* already locked for writing */)
 {
-    file_checker.updateAndSave({data_file_path, index_file_path});
+    file_checker.update(data_file_path);
+    file_checker.update(index_file_path);
+    file_checker.save();
     total_bytes = file_checker.getTotalSize();
-}
-
-
-void StorageStripeLog::saveIndicesAndFileSizes(const WriteLock & lock)
-{
-    /// The index file is itself one of the files whose size is recorded, so the count of saved indices
-    /// is only valid while those sizes are: repair() truncates the file back to the recorded size.
-    size_t num_indices_saved_before = num_indices_saved;
-    try
-    {
-        saveIndices(lock);
-
-        // While executing save file sizes the exception might occurs. S3::TooManyRequests for example.
-        fiu_do_on(FailPoints::stripe_log_sink_write_fallpoint,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault for inserting into StipeLog table");
-        });
-
-        saveFileSizes(lock);
-    }
-    catch (...)
-    {
-        num_indices_saved = num_indices_saved_before;
-        throw;
-    }
 }
 
 
@@ -737,7 +723,8 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
         }
 
         /// Finish writing.
-        saveIndicesAndFileSizes(lock);
+        saveIndices(lock);
+        saveFileSizes(lock);
         updateTotalRows(lock);
     }
     catch (...)
@@ -784,9 +771,9 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 <CloudNotSupportedBadge/>
 
-This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](/reference/engines/table-engines/log-family/index) article.
+This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/index.md) article.
 
-Use this engine in scenarios when you need to write many tables with a small amount of data (less than 1 million rows). For example, this table can be used to store incoming data batches for transformation where atomic processing of them is required. 100k instances of this table type are viable for a ClickHouse server. This table engine should be preferred over [Log](/reference/engines/table-engines/log-family/log) when a high number of tables are required. This is at the expense of read efficiency.
+Use this engine in scenarios when you need to write many tables with a small amount of data (less than 1 million rows). For example, this table can be used to store incoming data batches for transformation where atomic processing of them is required. 100k instances of this table type are viable for a ClickHouse server. This table engine should be preferred over [Log](./log.md) when a high number of tables are required. This is at the expense of read efficiency.
 
 ## Creating a table {#table_engines-stripelog-creating-a-table}
 
@@ -799,7 +786,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = StripeLog
 ```
 
-See the detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
+See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 ## Writing the data {#table_engines-stripelog-writing-the-data}
 

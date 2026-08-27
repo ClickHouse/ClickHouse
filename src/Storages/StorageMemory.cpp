@@ -193,24 +193,8 @@ VirtualColumnsDescription StorageMemory::createVirtuals()
 
 StorageMemory::~StorageMemory() = default;
 
-StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
 {
-    /// A pinned snapshot is captured in advance for atomic `CREATE MATERIALIZED VIEW ... POPULATE`,
-    /// so the population reads exactly the data that existed when the view was subscribed to new inserts.
-    /// The pin is stored on the query context, so consult it as well: the population's read runs under
-    /// contexts derived from the query context rather than the exact context the pin was set on (the same
-    /// reason `MergeTreeData::getStorageSnapshot` consults the query context).
-    if (query_context)
-    {
-        if (auto pinned = query_context->getPinnedStorageSnapshot(getStorageID().uuid))
-            return pinned;
-        if (query_context->hasQueryContext())
-        {
-            if (auto pinned = query_context->getQueryContext()->getPinnedStorageSnapshot(getStorageID().uuid))
-                return pinned;
-        }
-    }
-
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->blocks = data.get();
     /// Not guaranteed to match `blocks`, but that's ok. It would probably be better to move
@@ -334,12 +318,12 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     /// all expected blocks, and a partial result must not be swapped into a `Memory` table.
     const auto final_status = executor.getExecutionStatus();
     const bool cancelled
-        = final_status == PipelineExecutionStatus::CancelledByTimeout
-        || final_status == PipelineExecutionStatus::CancelledByUser;
+        = final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
+        || final_status == PipelineExecutor::ExecutionStatus::CancelledByUser;
 
     auto throw_on_cancellation = [&]
     {
-        if (final_status == PipelineExecutionStatus::CancelledByTimeout)
+        if (final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while mutating `Memory` table");
     };
@@ -772,7 +756,7 @@ void registerStorageMemory(StorageFactory & factory)
 :::note
 When using the Memory table engine on ClickHouse Cloud, data is not replicated across all nodes (by design). To guarantee that all queries are routed to the same node and that the Memory table engine works as expected, you can do one of the following:
 - Execute all operations in the same session
-- Use a client that uses TCP or the native interface (which enables support for sticky connections) such as [clickhouse-client](/concepts/features/interfaces/client)
+- Use a client that uses TCP or the native interface (which enables support for sticky connections) such as [clickhouse-client](/interfaces/client)
 :::
 
 The Memory engine stores data in RAM, in uncompressed form. Data is stored in exactly the same form as it is received when read. In other words, reading from this table is completely free.

@@ -129,11 +129,8 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
     {
         /// If exception was thrown while pipeline initialization, it means that query pipeline was not build correctly.
         /// It is logical error, and we need more information about pipeline.
-        /// Label the nodes with addresses so that they can be matched against the endpoints
-        /// named by the exception (e.g. from `ExecutingGraph::addEdge`) even when `getUniqID`
-        /// degrades to the `_0` suffix because `CurrentThread` is not initialized.
         WriteBufferFromOwnString buf;
-        printPipeline(*processors, buf, /* with_profile = */ false, /* with_addresses = */ true);
+        printPipeline(*processors, buf);
         buf.finalize();
         exception.addMessage("Query pipeline:\n" + buf.str());
 
@@ -229,7 +226,7 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
         span.addAttribute(DB::ExecutionStatus::fromCurrentException());
 
 #ifndef NDEBUG
-        LOG_TRACE(log, "Exception while executing query. Current state:\n{}", graph->dump());
+        LOG_TRACE(log, "Exception while executing query. Current state:\n{}", dumpPipeline());
 #endif
         throw;
     }
@@ -347,7 +344,7 @@ void PipelineExecutor::finalizeExecution()
     }
 
     if (!all_processors_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", graph->dump(), tasks.dump());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
 }
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, WorkloadResources && resources)
@@ -739,6 +736,42 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
 
         throw;
     }
+}
+
+String PipelineExecutor::dumpPipeline() const
+{
+    for (const auto & node : graph->nodes)
+    {
+        {
+            WriteBufferFromOwnString buffer;
+            buffer << "(" << node.num_executed_jobs << " jobs";
+
+#ifndef NDEBUG
+            buffer << ", execution time: " << static_cast<double>(node.execution_time_ns) / 1e9 << " sec.";
+            buffer << ", preparation time: " << static_cast<double>(node.preparation_time_ns) / 1e9 << " sec.";
+#endif
+
+            buffer << ")";
+            node.processor()->setDescription(buffer.str());
+        }
+    }
+
+    std::vector<std::optional<IProcessor::Status>> statuses;
+    std::vector<IProcessor *> proc_list;
+    statuses.reserve(graph->nodes.size());
+    proc_list.reserve(graph->nodes.size());
+
+    for (const auto & node : graph->nodes)
+    {
+        proc_list.emplace_back(node.processor());
+        statuses.emplace_back(node.last_processor_status);
+    }
+
+    WriteBufferFromOwnString out;
+    printPipeline(graph->getProcessors(), statuses, out);
+    out.finalize();
+
+    return out.str();
 }
 
 }

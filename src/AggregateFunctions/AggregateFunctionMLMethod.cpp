@@ -259,7 +259,7 @@ SELECT length(stochasticLinearRegression(0.01)(target, x1, x2)) FROM train_data
     // stochasticLogisticRegression documentation
     FunctionDocumentation::Description description_logistic = R"(
 This function implements stochastic logistic regression.
-It can be used for binary classification problem, supports the same custom parameters as [`stochasticLinearRegression`](/reference/functions/aggregate-functions/stochasticLinearRegression) and works the same way.
+It can be used for binary classification problem, supports the same custom parameters as [`stochasticLinearRegression`](/sql-reference/aggregate-functions/reference/stochasticlinearregression) and works the same way.
 
 **Usage**
 

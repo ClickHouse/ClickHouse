@@ -1,15 +1,16 @@
 #include <Storages/Statistics/Statistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <IO/ReadBufferFromString.h>
+#include <Common/Exception.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/logger_useful.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/StatisticsBasic.h>
@@ -19,9 +20,10 @@
 #include <Storages/Statistics/StatisticsUniq.h>
 #include <Storages/Statistics/StatisticsUniqV2.h>
 #include <Storages/StatisticsDescription.h>
-#include <Common/Exception.h>
-#include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/logger_useful.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include "config.h" /// USE_DATASKETCHES
 
@@ -30,11 +32,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
-extern const int ILLEGAL_STATISTICS;
-extern const int INCORRECT_QUERY;
-extern const int NOT_IMPLEMENTED;
-extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_STATISTICS;
+    extern const int INCORRECT_QUERY;
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -59,16 +61,14 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value,
 
     try
     {
-        if (value.getType() == Field::Types::String)
-        {
-            ReadBufferFromString buffer(value.safeGet<String>());
-            Float64 result = 0;
-            readFloatTextPrecise(result, buffer);
-            assertEOF(buffer);
-            return result;
-        }
+        auto column = data_type->createColumn();
+        column->insert(value);
+        ColumnsWithTypeAndName arguments({ColumnWithTypeAndName(std::move(column), data_type, "stats_const")});
 
-        return applyVisitor(FieldVisitorConvertToNumber<Float64>(), value);
+        auto cast_resolver = FunctionFactory::instance().get("toFloat64", nullptr);
+        auto cast_function = cast_resolver->build(arguments);
+        ColumnPtr result = cast_function->execute(arguments, std::make_shared<DataTypeFloat64>(), 1, false);
+        return result->getFloat64(0);
     }
     catch (...)
     {
@@ -84,31 +84,11 @@ namespace
 /// before the result is converted to Float64.
 /// Int256/UInt256 have no wider type, so they are intentionally omitted here and
 /// fall back to the Float64 path in `interpolateLessLinear` instead.
-template <typename T>
-struct WiderIntType
-{
-    using type = T;
-};
-template <>
-struct WiderIntType<UInt64>
-{
-    using type = UInt128;
-};
-template <>
-struct WiderIntType<Int64>
-{
-    using type = Int128;
-};
-template <>
-struct WiderIntType<UInt128>
-{
-    using type = UInt256;
-};
-template <>
-struct WiderIntType<Int128>
-{
-    using type = Int256;
-};
+template <typename T> struct WiderIntType { using type = T; };
+template <> struct WiderIntType<UInt64>  { using type = UInt128; };
+template <> struct WiderIntType<Int64>   { using type = Int128; };
+template <> struct WiderIntType<UInt128> { using type = UInt256; };
+template <> struct WiderIntType<Int128>  { using type = Int256; };
 
 /// Computes (v - mn) / (mx - mn) * row_count as Float64. Widens to a larger type before
 /// subtracting so that values near 2^53 are not collapsed by the eventual Float64 conversion
@@ -119,15 +99,13 @@ Float64 interpolateLessLinearTyped(const Field & val, const Field & min, const F
     T v = val.safeGet<T>();
     T mn = min.safeGet<T>();
     T mx = max.safeGet<T>();
-    if (v < mn)
-        return 0.0;
-    if (v > mx)
-        return static_cast<Float64>(row_count);
-    if (mn == mx)
-        return (v == mx) ? static_cast<Float64>(row_count) : 0.0;
+    if (v < mn) return 0.0;
+    if (v > mx) return static_cast<Float64>(row_count);
+    if (mn == mx) return (v == mx) ? static_cast<Float64>(row_count) : 0.0;
     using W = typename WiderIntType<T>::type;
-    return static_cast<Float64>(static_cast<W>(v) - static_cast<W>(mn)) / static_cast<Float64>(static_cast<W>(mx) - static_cast<W>(mn))
-        * static_cast<Float64>(row_count);
+    return static_cast<Float64>(static_cast<W>(v) - static_cast<W>(mn))
+         / static_cast<Float64>(static_cast<W>(mx) - static_cast<W>(mn))
+         * static_cast<Float64>(row_count);
 }
 
 }
@@ -140,10 +118,10 @@ std::optional<Float64> StatisticsUtils::interpolateLessLinear(
     {
         switch (val.getType())
         {
-            case Field::Types::UInt64: return interpolateLessLinearTyped<UInt64>(val, min, max, row_count);
-            case Field::Types::Int64: return interpolateLessLinearTyped<Int64>(val, min, max, row_count);
+            case Field::Types::UInt64:  return interpolateLessLinearTyped<UInt64>(val, min, max, row_count);
+            case Field::Types::Int64:   return interpolateLessLinearTyped<Int64>(val, min, max, row_count);
             case Field::Types::UInt128: return interpolateLessLinearTyped<UInt128>(val, min, max, row_count);
-            case Field::Types::Int128: return interpolateLessLinearTyped<Int128>(val, min, max, row_count);
+            case Field::Types::Int128:  return interpolateLessLinearTyped<Int128>(val, min, max, row_count);
             /// Int256/UInt256 have no wider type, so `(v - mn)` and `(mx - mn)` can overflow
             /// inside `interpolateLessLinearTyped`. Fall through to the Float64 fallback below.
             case Field::Types::Float64: return interpolateLessLinearTyped<Float64>(val, min, max, row_count);
@@ -175,8 +153,7 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
-ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
-    : stats_desc(stats_desc_)
+ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_) : stats_desc(stats_desc_)
 {
 }
 
@@ -246,9 +223,9 @@ UInt64 IStatistics::estimateCardinality() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cardinality estimation is not implemented for this type of statistics");
 }
 
-std::optional<Float64> IStatistics::estimateEqual(const Field & /*val*/) const
+Float64 IStatistics::estimateEqual(const Field & /*val*/) const
 {
-    return std::nullopt;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Equality estimation is not implemented for this type of statistics");
 }
 
 std::optional<Float64> IStatistics::estimateLess(const Field & /*val*/) const
@@ -308,10 +285,6 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
     if (val.isNaN())
         return 0;
 
-    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
-        if (auto estimate = it->second->estimateEqual(val))
-            return estimate;
-
     const IStatistics * uniq_stats = findUniqStats(stats);
     if (stats_desc.data_type->isValueRepresentedByNumber() && uniq_stats != nullptr && stats.contains(StatisticsType::TDigest))
     {
@@ -364,11 +337,6 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
     return *right_count - *left_count;
 }
 
-bool ColumnStatistics::hasCardinality() const
-{
-    return findUniqStats(stats) != nullptr;
-}
-
 UInt64 ColumnStatistics::estimateCardinality() const
 {
     if (const IStatistics * uniq_stats = findUniqStats(stats))
@@ -383,15 +351,6 @@ bool ColumnStatistics::hasNullCount() const
 {
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
         return assert_cast<const StatisticsBasic &>(*it->second).hasNullCount();
-    return false;
-}
-
-bool ColumnStatistics::hasMinMax() const
-{
-    if (stats.contains(StatisticsType::MinMax))
-        return true;
-    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
-        return assert_cast<const StatisticsBasic &>(*it->second).hasNumericMinMax();
     return false;
 }
 
@@ -414,17 +373,6 @@ UInt64 ColumnStatistics::getNonNullRowCount() const
         return null_count <= rows ? rows - null_count : 0;
     }
     return rows;
-}
-
-UInt64 ColumnStatistics::estimateDefaults() const
-{
-    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
-    {
-        const auto & basic = assert_cast<const StatisticsBasic &>(*it->second);
-        if (basic.hasDefaultCount())
-            return basic.getDefaultCount();
-    }
-    return 0;
 }
 
 Float64 ColumnStatistics::estimateIsNull() const
@@ -468,8 +416,6 @@ Estimate ColumnStatistics::getEstimate() const
         }
         if (basic_stats.hasNullCount())
             info.estimated_null_count = basic_stats.getNullCount();
-        if (basic_stats.hasDefaultCount())
-            info.estimated_default_count = basic_stats.getDefaultCount();
     }
     else if (auto minmax_it = stats.find(StatisticsType::MinMax); minmax_it != stats.end())
     {
@@ -497,7 +443,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     writeIntBinary(StatisticsFileVersion::V4, buf);
 
     UInt64 stat_types_mask = 0;
-    for (const auto & [type, _] : stats)
+    for (const auto & [type, _]: stats)
         stat_types_mask |= 1ULL << static_cast<UInt8>(type);
 
     writeIntBinary(stat_types_mask, buf);
@@ -525,12 +471,17 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     readIntBinary(version_raw, buf);
     auto version = static_cast<StatisticsFileVersion>(version_raw);
 
-    /// `V3` was written only by builds of `master` between PR #102356 and its revert; no stable
-    /// release produced it. It is still read here: parts written by such a build are otherwise
-    /// unreadable, and `ALTER TABLE ... MATERIALIZE STATISTICS` cannot rewrite them on a readonly
-    /// disk. See the `V3` note in `Statistics.h` for the two differences from `V4`.
-    if (version != StatisticsFileVersion::V1 && version != StatisticsFileVersion::V2
-        && version != StatisticsFileVersion::V3 && version != StatisticsFileVersion::V4)
+    /// `V3` was briefly written by reverted PR #102356 and is permanently reserved. Refuse to read it
+    /// rather than silently misinterpret a `V3` payload as `V4`.
+    if (version == StatisticsFileVersion::V3)
+        throw Exception(
+            ErrorCodes::ILLEGAL_STATISTICS,
+            "Statistics file version V3 is reserved and is never produced by any released build. "
+            "Please run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics.");
+
+    if (version != StatisticsFileVersion::V1
+        && version != StatisticsFileVersion::V2
+        && version != StatisticsFileVersion::V4)
         throw Exception(
             ErrorCodes::ILLEGAL_STATISTICS,
             "Tried to read statistics file with unsupported format version {}. "
@@ -544,27 +495,20 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     ColumnStatisticsDescription stats_desc;
     stats_desc.data_type = data_type;
 
-    if (version == StatisticsFileVersion::V3 || version == StatisticsFileVersion::V4)
+    if (version == StatisticsFileVersion::V4)
     {
         /// V4 layout: stored_type_name, then per-stat size prefix. Return nullptr if the stored
         /// column type differs from the current type — statistics built on a different type are
         /// stale (e.g. a MODIFY COLUMN mutation is in progress) and must not be used.
-        /// V3 is the same layout without `stored_type_name`, so it has no such guard, exactly like
-        /// V1 / V2.
-        if (version == StatisticsFileVersion::V4)
+        String stored_type_name;
+        readStringBinary(stored_type_name, buf);
+        if (stored_type_name != data_type->getName())
         {
-            String stored_type_name;
-            readStringBinary(stored_type_name, buf);
-            if (stored_type_name != data_type->getName())
-            {
-                LOG_TRACE(
-                    getLogger("ColumnStatistics"),
-                    "Skipping statistics: stored type {} does not match current column type {}. "
-                    "Statistics will be ignored until rematerialized after the MODIFY COLUMN mutation completes.",
-                    stored_type_name,
-                    data_type->getName());
-                return nullptr;
-            }
+            LOG_TRACE(getLogger("ColumnStatistics"),
+                "Skipping statistics: stored type {} does not match current column type {}. "
+                "Statistics will be ignored until rematerialized after the MODIFY COLUMN mutation completes.",
+                stored_type_name, data_type->getName());
+            return nullptr;
         }
 
         UInt64 rows_value = 0;
@@ -582,15 +526,6 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
             readIntBinary(stat_size, buf);
 
             auto type = static_cast<StatisticsType>(i);
-
-            /// This bit was the reverted `NullCount` statistic in `V3` and is `Basic` today, so a
-            /// `V3` payload here is not a `Basic` payload. The size prefix lets us skip it.
-            if (version == StatisticsFileVersion::V3 && type == StatisticsType::Basic)
-            {
-                buf.ignore(stat_size);
-                continue;
-            }
-
             if (auto stat_ptr = factory.tryCreateSingle(type, data_type))
             {
                 /// Track bytes consumed so we can detect a per-stat parser drift and either pad the
@@ -605,9 +540,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
                         ErrorCodes::ILLEGAL_STATISTICS,
                         "Statistics deserialization for type {} consumed {} bytes but stat_size was {}. "
                         "The statistics file may be corrupted.",
-                        statisticsTypeToString(type),
-                        consumed,
-                        stat_size);
+                        statisticsTypeToString(type), consumed, stat_size);
 
                 auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
                 result->stats_desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, ast, false));
@@ -686,9 +619,7 @@ void checkColumnTypeMatchesStatistics(const String & column_name, const ColumnSt
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Type mismatch when building statistics for column '{}': statistics expect type {} but block has type {}",
-            column_name,
-            stats_data_type->getName(),
-            column_type->getName());
+            column_name, stats_data_type->getName(), column_type->getName());
 }
 
 }
@@ -744,8 +675,7 @@ void MergeTreeStatisticsFactory::registerCreator(StatisticsType stats_type, Crea
 void MergeTreeStatisticsFactory::registerValidator(StatisticsType stats_type, Validator validator)
 {
     if (!validators.emplace(stats_type, std::move(validator)).second)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticsFactory: the statistics validator type {} is not unique", stats_type);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticsFactory: the statistics validator type {} is not unique", stats_type);
 }
 
 MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
@@ -777,8 +707,7 @@ MergeTreeStatisticsFactory & MergeTreeStatisticsFactory::instance()
     return instance;
 }
 
-void MergeTreeStatisticsFactory::validate(
-    const ColumnStatisticsDescription & stats, const DataTypePtr & data_type, bool allow_deprecated_minmax) const
+void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type, bool allow_deprecated_minmax) const
 {
     for (const auto & [type, desc] : stats.types_to_desc)
     {
@@ -792,13 +721,11 @@ void MergeTreeStatisticsFactory::validate(
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'", type);
 
         if (!it->second(desc, data_type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type '{}' does not support data type type {}", type, data_type->getName());
+            throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type '{}' does not support data type type {}", type, data_type->getName());
     }
 }
 
-ColumnStatisticsDescription
-MergeTreeStatisticsFactory::cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const
+ColumnStatisticsDescription MergeTreeStatisticsFactory::cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const
 {
     ColumnStatisticsDescription result;
     result.data_type = data_type;
@@ -829,10 +756,7 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
     {
         auto it = creators.find(type);
         if (it == creators.end())
-            throw Exception(
-                ErrorCodes::INCORRECT_QUERY,
-                "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
-                type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
 
         auto stat_ptr = (it->second)(desc, stats_desc.data_type);
         column_stat->stats[type] = stat_ptr;
@@ -841,25 +765,20 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
     return column_stat;
 }
 
-ColumnStatisticsDescription::StatisticsTypeDescMap
-MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const
+ColumnStatisticsDescription::StatisticsTypeDescMap MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const
 {
     ColumnStatisticsDescription::StatisticsTypeDescMap result;
     for (const auto & type : stat_types)
     {
         auto it = validators.find(type);
         if (it == validators.end())
-            throw Exception(
-                ErrorCodes::INCORRECT_QUERY,
-                "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
-                type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
 
         auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
         SingleStatisticsDescription desc(type, ast, false);
 
         if (!it->second(desc, data_type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type '{}' does not support data type {}", type, data_type->getName());
+            throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type '{}' does not support data type {}", type, data_type->getName());
 
         result.emplace(type, desc);
     }
@@ -913,19 +832,17 @@ void removeImplicitStatistics(ColumnsDescription & columns)
         if (default_kind == ColumnDefaultKind::Alias || default_kind == ColumnDefaultKind::Ephemeral)
             continue;
 
-        columns.modify(
-            column.name,
-            [&](ColumnDescription & column_desc)
+        columns.modify(column.name, [&](ColumnDescription & column_desc)
+        {
+            auto & stats = column_desc.statistics.types_to_desc;
+            for (auto it = stats.begin(); it != stats.end();)
             {
-                auto & stats = column_desc.statistics.types_to_desc;
-                for (auto it = stats.begin(); it != stats.end();)
-                {
-                    if (it->second.is_implicit)
-                        it = stats.erase(it);
-                    else
-                        ++it;
-                }
-            });
+                if (it->second.is_implicit)
+                    it = stats.erase(it);
+                else
+                    ++it;
+            }
+        });
     }
 }
 
@@ -951,10 +868,10 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
 
         if (!stats_desc.empty())
         {
-            columns.modify(
-                column.name,
-                [&](ColumnDescription & column_desc)
-                { column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/true); });
+            columns.modify(column.name, [&](ColumnDescription & column_desc)
+            {
+                column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/ true);
+            });
         }
     }
 }

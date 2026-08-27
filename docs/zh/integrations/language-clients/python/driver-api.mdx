@@ -8,7 +8,7 @@ doc_type: 'reference'
 ---
 
 <Note>
-  对于客户端工厂以及具有大量可选参数的方法，建议使用关键字参数传参。
+  由于可用参数较多，且其中大多数为可选参数，因此建议大多数 API 方法使用关键字参数。
 
   *此处未文档说明的方法不属于 API 的一部分，后续可能会被移除或更改。*
 </Note>
@@ -17,59 +17,50 @@ doc_type: 'reference'
   ## 客户端初始化
 </div>
 
-使用 `clickhouse_connect.get_client` 创建同步 `Client`；或者安装 `async` 扩展，并通过 await 调用 `clickhouse_connect.get_async_client` 来创建原生 `AsyncClient`。
+`clickhouse_connect.driver.client` 类是 Python 应用程序与 ClickHouse 数据库 server 之间的主要接口。使用 `clickhouse_connect.get_client` 函数获取 Client 实例，该函数接受以下参数：
 
 <div id="connection-arguments">
   ### 连接参数
 </div>
 
-| 参数                         | 类型                           | 默认值                    | 说明                                                                                                                                                                                                                                                   |
-| -------------------------- | ---------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `interface`                | str                          | `"http"`               | `"http"` 或 `"https"`。同步工厂也接受 Experimental `"chdb"` 后端。                                                                                                                                                                                               |
-| `host`                     | str                          | `"localhost"`          | ClickHouse server 的主机名或 IP 地址。                                                                                                                                                                                                                       |
-| `端口`                       | int 或 None                   | `8123` 或 `8443`        | HTTP 默认为 8123，HTTPS 默认为 8443。传入 `None` 表示使用默认值。                                                                                                                                                                                                      |
-| `username`                 | str 或 None                   | `"default"`            | ClickHouse 用户名。也可使用别名 `user` 和 `user_name`。                                                                                                                                                                                                          |
-| `password`                 | str                          | `""`                   | `username` 的密码。请勿将用户名/密码身份验证与标记身份验证结合使用。                                                                                                                                                                                                             |
-| `access_token`             | str 或 None                   | `None`                 | ClickHouse Cloud JWT 访问令牌。与 `token_provider` 以及用户名/密码身份验证互斥。                                                                                                                                                                                         |
-| `token_provider`           | callable 或 None              | `None`                 | 可调用对象，用于在初始请求时以及身份验证被拒绝后提供 JWT。异步提供函数可与 `get_async_client` 搭配使用。                                                                                                                                                                                     |
-| `database`                 | str 或 None                   | 用户默认                   | 默认数据库。传入 `None` 则使用服务器为该用户设置的默认数据库。                                                                                                                                                                                                                  |
-| `secure`                   | bool 或 str                   | `False`                | 启用 HTTPS/TLS。`interface="https"` 也会启用 HTTPS；如果未设置 `interface`，使用端口 443 或 8443 也会启用 HTTPS。                                                                                                                                                            |
-| `dsn`                      | str 或 None                   | `None`                 | 连接 URL。显式关键字参数的优先次序高于从 DSN 解析出的值。对凭据和数据库名称中的保留字符进行百分比编码。                                                                                                                                                                                             |
-| `settings`                 | dict 或 None                  | `None`                 | 应用于客户端每个请求的 ClickHouse 设置。                                                                                                                                                                                                                           |
-| `headers`                  | dict 或 None                  | `None`                 | 应用于所有请求 (包括客户端初始化) 的 HTTP 请求头。用户自定义请求头会在驱动默认请求头之后应用，并可覆盖这些默认值。                                                                                                                                                                                       |
-| `compress`                 | bool 或 str                   | `True`                 | 启用压缩，或指定 `"lz4"`、`"zstd"`、`"br"` 或 `"gzip"`。请参阅[压缩](/zh/integrations/language-clients/python/additional-options#compression)。                                                                                                                           |
-| `query_limit`              | int                          | `0`                    | 会为符合条件的查询追加默认行数限制。0 表示不限制。对于大型结果，建议以流式方式处理，而不是将其全部物化到内存中。                                                                                                                                                                                            |
-| `query_retries`            | int                          | `2`                    | 用于可重试读取失败的重试次数预算。命令和插入操作通常不进行重试，因为重放可能会导致副作用重复发生。                                                                                                                                                                                                    |
-| `connect_timeout`          | int                          | `10`                   | 连接超时时间，单位为秒。                                                                                                                                                                                                                                         |
-| `send_receive_timeout`     | int                          | `300`                  | 套接字读取超时时间，单位为秒。                                                                                                                                                                                                                                      |
-| `client_name`              | str 或 None                   | `None`                 | 添加到 HTTP User-Agent 前的前缀，用于在 `system.query_log` 中进行标识。                                                                                                                                                                                               |
-| `session_id`               | str 或 None                   | 同步时自动生成                | 显式指定的 ClickHouse session ID。同步客户端默认会生成一个；异步客户端则不会。                                                                                                                                                                                                   |
-| `autogenerate_session_id`  | Bool 或 None                  | 同步时遵循全局设置，异步时为 `False` | 覆盖自动生成 session ID 的设置。对于会被并发操作共享的客户端，除非需要保留会话状态，否则应禁用此功能。                                                                                                                                                                                            |
-| `autogenerate_query_id`    | bool 或 None                  | 全局设置，`True`            | 覆盖自动生成 UUID 查询 ID 的行为。                                                                                                                                                                                                                               |
-| `http_proxy`               | str 或 None                   | 环境变量/默认值               | 每个客户端的 HTTP 代理地址。                                                                                                                                                                                                                                    |
-| `https_proxy`              | str 或 None                   | 环境变量/默认值               | 每个客户端的 HTTPS 代理地址。                                                                                                                                                                                                                                   |
-| `pool_mgr`                 | `urllib3.PoolManager` 或 None | 共享默认值                  | 仅用于同步客户端的自定义连接池管理器。                                                                                                                                                                                                                                  |
-| `tz_source`                | str 或 None                   | `"auto"`               | 用于没有时区元数据的列的后备时区来源：`"auto"`、`"server"` 或 `"local"`。                                                                                                                                                                                                  |
-| `tz_mode`                  | str 或 None                   | `"naive_utc"`          | UTC 结果处理策略：`"naive_utc"`、`"aware"` 或 `"schema"`。参见 [时区](/zh/integrations/language-clients/python/advanced-querying#time-zones)。                                                                                                                         |
-| `show_clickhouse_errors`   | bool、布尔值字符串、`"scrub"` 或 None | `True`                 | 控制服务器错误、传输错误和流中 `StreamFailureError` 的 `str(exc)`。`True` 会包含请求 URL 和服务器版本尾注。`"scrub"` 会保留 SQL 错误文本和符号名称，但会移除主机名/URL 及 `(version ...)` 尾注。`False` 会返回通用消息 (服务器错误仍会设置 `code`) 。接受布尔值字符串。其他字符串会引发 `ProgrammingError`。对于传输错误，`__cause__` 和回溯信息仍包含原始传输异常。 |
-| `proxy_path`               | str                          | `""`                   | 通过代理路由时，添加到服务器 URL 的路径前缀。                                                                                                                                                                                                                            |
-| `form_encode_query_params` | bool                         | `False`                | 始终将查询参数放入采用表单编码的请求体中。即使该值为 false，较大的非二进制参数载荷也会自动移入请求体中。                                                                                                                                                                                              |
-| `rename_response_column`   | str 或 None                   | `None`                 | 列重命名策略：`"remove_prefix"`、`"to_camelcase"`、`"to_camelcase_without_prefix"`、`"to_underscore"` 或 `"to_underscore_without_prefix"`。                                                                                                                      |
-
-异步工厂还接受 `connector_limit=100`、`connector_limit_per_host=20` 和 `keepalive_timeout=30.0`，用于配置其 aiohttp 连接池。它不支持 `pool_mgr`。同步 chDB 后端则接受 `path` 和 `chdb_options`；请参见 [嵌入式 chDB 后端](#embedded-chdb-backend)。
+| 参数                                   | 类型          | 默认值                           | 描述                                                                                                                       |
+| ------------------------------------ | ----------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| interface                            | str         | http                          | 必须为 http 或 https。                                                                                                        |
+| host                                 | str         | localhost                     | ClickHouse 服务器的主机名或 IP 地址。如果未设置，将使用 `localhost`。                                                                         |
+| port                                 | int         | 8123 or 8443                  | ClickHouse 的 HTTP 或 HTTPS 端口。如果未设置，默认使用 8123；如果 *secure*=*True* 或 *interface*=*https*，则默认使用 8443。                        |
+| username                             | str         | default                       | ClickHouse 用户名。如果未设置，将使用 `default` 用户。                                                                                   |
+| password                             | str         | *&lt;empty string&gt;*        | *username* 对应的密码。                                                                                                        |
+| database                             | str         | *None*                        | 此连接使用的默认数据库。如果未设置，ClickHouse Connect 将使用 *username* 的默认数据库。                                                              |
+| secure                               | bool        | False                         | 使用 HTTPS/TLS。此设置会覆盖根据 interface 或 port 参数推断出的值。                                                                          |
+| dsn                                  | str         | *None*                        | 符合标准 DSN (数据源名称) 格式的字符串。如果未通过其他方式设置，其他连接值 (例如 host 或 user) 将从该字符串中提取。                                                    |
+| compress                             | bool or str | True                          | 为 ClickHouse HTTP insert 和查询结果启用压缩。参见 [其他选项 (压缩) ](/zh/integrations/language-clients/python/additional-options#compression) |
+| query&#95;limit                      | int         | 0 (unlimited)                 | 任意 `query` 响应可返回的最大行数。将其设为 0 表示返回不限数量的行。请注意，如果结果未以流式方式处理，较大的查询限制可能导致内存不足异常，因为所有结果都会一次性加载到内存中。                            |
+| query&#95;retries                    | int         | 2                             | `query` 请求的最大重试次数。只有“可重试”的 HTTP 响应才会被重试。为避免出现非预期的重复请求，驱动不会自动重试 `command` 或 `insert` 请求。                                  |
+| connect&#95;timeout                  | int         | 10                            | HTTP 连接超时时间 (秒) 。                                                                                                        |
+| send&#95;receive&#95;timeout         | int         | 300                           | HTTP 连接的发送/接收超时时间 (秒) 。                                                                                                  |
+| client&#95;name                      | str         | *None*                        | 添加在 HTTP User-Agent 请求头前部的 client&#95;name。设置后可在 ClickHouse `system.query_log` 中跟踪客户端查询。                                 |
+| pool&#95;mgr                         | obj         | *&lt;default PoolManager&gt;* | 要使用的 `urllib3` 库 PoolManager。适用于需要为不同主机使用多个连接池的高级场景。                                                                     |
+| http&#95;proxy                       | str         | *None*                        | HTTP 代理地址 (等同于设置 HTTP&#95;PROXY 环境变量) 。                                                                                  |
+| https&#95;proxy                      | str         | *None*                        | HTTPS 代理地址 (等同于设置 HTTPS&#95;PROXY 环境变量) 。                                                                                |
+| apply&#95;server&#95;timezone        | bool        | True                          | 对带时区的查询结果使用服务器时区。参见 [时区优先级](/zh/integrations/language-clients/python/advanced-querying#time-zones)                          |
+| show&#95;clickhouse&#95;errors       | bool        | True                          | 在客户端异常中包含详细的 ClickHouse 服务器错误消息和异常代码。                                                                                    |
+| autogenerate&#95;session&#95;id      | bool        | *None*                        | 覆盖全局 `autogenerate_session_id` 设置。如果为 True，则在未提供会话 ID 时自动生成 UUID4 会话 ID。                                                 |
+| proxy&#95;path                       | str         | &lt;empty string&gt;          | 可选的路径前缀，会添加到 ClickHouse 服务器 URL 中，用于代理配置。                                                                                |
+| form&#95;encode&#95;query&#95;params | bool        | False                         | 将查询参数作为表单编码数据放在请求体中发送，而不是作为 URL 参数发送。适用于参数集较大、可能超出 URL 长度限制的查询。                                                          |
+| rename&#95;response&#95;column       | str         | *None*                        | 可选的回调函数或列名映射，用于重命名查询结果中的响应列。                                                                                             |
 
 <div id="httpstls-arguments">
   ### HTTPS/TLS 参数
 </div>
 
-| 参数                 | 类型          | 默认值    | 描述                                                                                                                                          |
-| ------------------ | ----------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `verify`           | bool or str | `True` | 验证服务器证书和主机名。`verify="proxy"` 会启用代理 TLS 模式。                                                                                                  |
-| `ca_cert`          | str or None | `None` | CA 证书包路径。使用 `"certifi"` 可选择 `certifi` 包附带的证书包。                                                                                              |
-| `client_cert`      | str or None | `None` | PEM 客户端证书；在需要时应包含中间证书。                                                                                                                      |
-| `client_cert_key`  | str or None | `None` | 如果私钥未包含在 `client_cert` 中，则指定其私钥路径。                                                                                                          |
-| `server_host_name` | str or None | `None` | 当 TLS 证书/SNI 主机名与 `host` 不同时使用，例如通过隧道或私网端点访问时。                                                                                              |
-| `tls_mode`         | str or None | `None` | `"mutual"` 使用 ClickHouse 双向 TLS 身份验证。`"proxy"` 和 `"strict"` 会在 TLS 层发送证书，但不会启用 ClickHouse 证书身份验证请求头。默认值 `None` 在提供客户端证书时的行为与 `"mutual"` 相同。 |
+| 参数                       | 类型   | 默认值    | 描述                                                                                                                                                 |
+| ------------------------ | ---- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| verify                   | bool | True   | 如果使用 HTTPS/TLS，则验证 ClickHouse 服务器 的 TLS/SSL 证书 (主机名、有效期等) 。                                                                                     |
+| ca&#95;cert              | str  | *None* | 如果 *verify*=*True*，则指定用于验证 ClickHouse 服务器 证书的证书颁发机构 (CA) 根证书文件路径，格式为 .pem。若 verify 为 False，则会忽略此项。如果 ClickHouse 服务器 证书链的根证书已被操作系统信任，则无需设置此项。 |
+| client&#95;cert          | str  | *None* | TLS 客户端证书文件路径，格式为 .pem (用于双向 TLS 身份验证) 。该文件应包含完整的证书链，包括所有中间证书。                                                                                     |
+| client&#95;cert&#95;key  | str  | *None* | 客户端证书私钥文件路径。如果私钥未包含在客户端证书文件中，则此项为必填。                                                                                                               |
+| server&#95;host&#95;name | str  | *None* | ClickHouse 服务器 的主机名，以其 TLS 证书中的 CN 或 SNI 为准。通过主机名不同的代理或隧道连接时，设置此项可避免 SSL 错误                                                                     |
+| tls&#95;mode             | str  | *None* | 控制高级 TLS 行为。`proxy` 和 `strict` 不会发起 ClickHouse 双向 TLS 连接，但仍会发送客户端证书和私钥。`mutual` 表示假定 ClickHouse 使用基于客户端证书的双向 TLS 身份验证。*None* / 默认行为为 `mutual`      |
 
 <div id="settings-argument">
   ### Settings 参数
@@ -77,19 +68,17 @@ doc_type: 'reference'
 
 最后，`get_client` 的 `settings` 参数用于在每次客户端请求时，向服务器传递额外的 ClickHouse 设置。请注意，在大多数情况下，具有 *readonly*=*1* 权限的用户无法修改随查询一起发送的设置，因此 ClickHouse Connect 会在最终请求中丢弃此类设置，并记录一条警告。以下设置仅适用于 ClickHouse Connect 使用的 HTTP 查询/会话，不属于通用 ClickHouse 设置文档中的内容。
 
-| Setting                   | Description                      |
-| ------------------------- | -------------------------------- |
-| `buffer_size`             | 服务器端 HTTP 响应缓冲区大小，以字节为单位。        |
-| `session_id`              | 用于关联相关请求的会话 ID。临时表和会话状态需要此项。     |
-| `compress`                | 请求服务器压缩 HTTP 响应。通常由客户端压缩选项控制。    |
-| `decompress`              | 告知服务器解压请求体。用于预先压缩的原始插入。          |
-| `quota_key`               | 与该请求关联的配额键。                      |
-| `session_check`           | 请求服务器验证会话是否存在。                   |
-| `session_timeout`         | 会话非活动超时，单位为秒。                    |
-| `wait_end_of_query`       | 在服务器端缓冲完整响应。客户端会在需要非流式摘要信息时设置此项。 |
-| `query_id`                | 该请求的显式查询 ID。                     |
-| `client_protocol_version` | Native 格式客户端协议能力级别。通常会自动协商。      |
-| `role`                    | 该请求/会话使用的 ClickHouse role。       |
+| Setting                       | Description                                          |
+| ----------------------------- | ---------------------------------------------------- |
+| buffer&#95;size               | ClickHouse 服务器在写入 HTTP 通道之前使用的缓冲区大小 (以字节为单位) 。       |
+| session&#95;id                | 用于在服务器上关联相关查询的唯一会话 ID。临时表需要此项。                       |
+| compress                      | 是否应由 ClickHouse 服务器压缩 POST 响应数据。此设置仅应用于“原始”查询。       |
+| decompress                    | 发送到 ClickHouse 服务器的数据是否需要解压。此设置仅应用于“原始”插入。           |
+| quota&#95;key                 | 与此请求关联的 quota key。请参阅 ClickHouse 服务器中关于 quotas 的文档。  |
+| session&#95;check             | 用于检查会话状态。                                            |
+| session&#95;timeout           | 由会话 ID 标识的会话在超时并不再被视为有效之前，允许处于非活动状态的秒数。默认为 60 秒。     |
+| wait&#95;end&#95;of&#95;query | 在 ClickHouse 服务器端缓冲整个响应。返回摘要信息时需要此设置，并且会在非流式查询中自动设置。 |
+| role                          | 该会话使用的 ClickHouse role。它是一个有效的传输设置，可以包含在查询上下文中。      |
 
 有关可随每个查询一起发送的其他 ClickHouse 设置，请参阅 [ClickHouse 文档](/zh/reference/settings/session-settings)。
 
@@ -104,6 +93,7 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 print(client.server_version)
+# 输出: '22.10.1.98'
 ```
 
 * 连接到安全 (HTTPS) 的外部 ClickHouse 服务器
@@ -111,14 +101,9 @@ print(client.server_version)
 ```python
 import clickhouse_connect
 
-client = clickhouse_connect.get_client(
-    host="play.clickhouse.com",
-    secure=True,
-    port=443,
-    username="play",
-    password="clickhouse",
-)
-print(client.command("SELECT timezone()"))
+client = clickhouse_connect.get_client(host='play.clickhouse.com', secure=True, port=443, user='play', password='clickhouse')
+print(client.command('SELECT timezone()'))
+# 输出: 'Etc/UTC'
 ```
 
 * 使用会话 ID、其他自定义连接参数以及 ClickHouse 设置进行连接。
@@ -127,36 +112,18 @@ print(client.command("SELECT timezone()"))
 import clickhouse_connect
 
 client = clickhouse_connect.get_client(
-    host="play.clickhouse.com",
-    username="play",
-    password="clickhouse",
+    host='play.clickhouse.com',
+    user='play',
+    password='clickhouse',
     port=443,
-    secure=True,
-    session_id="example_session_1",
+    session_id='example_session_1',
     connect_timeout=15,
-    database="github",
-    settings={"distributed_ddl_task_timeout": 300},
+    database='github',
+    settings={'distributed_ddl_task_timeout':300},
 )
 print(client.database)
-# Output: github
+# 输出: 'github'
 ```
-
-<div id="embedded-chdb-backend">
-  ### 嵌入式 chDB 后端
-</div>
-
-安装 `clickhouse-connect[chdb]` 以使用 Experimental 的进程内 chDB 后端。它提供同步客户端的查询、插入、流式和 Arrow 方法：
-
-```python
-import clickhouse_connect
-
-with clickhouse_connect.get_client(interface="chdb") as client:
-    result = client.query("SELECT sum(number) FROM numbers(10)")
-    print(result.first_row)
-    # Output: (45,)
-```
-
-默认使用的是内存数据库。传入 `path="/data/my_chdb"` 或使用 `dsn="chdb:///data/my_chdb"` 可启用持久化存储。该后端每个进程只允许使用一个 engine 路径，并且不支持 `get_async_client` 或外部数据。
 
 <div id="client-lifecycle-and-best-practices">
   ## 客户端生命周期和最佳实践
@@ -169,7 +136,7 @@ with clickhouse_connect.get_client(interface="chdb") as client:
 </div>
 
 * **复用客户端**：在应用启动时创建一次客户端，并在整个应用生命周期内重复使用
-* **避免频繁创建**：不要为每个查询或请求都新建客户端
+* **避免频繁创建**：不要为每个查询或请求都新建客户端 (这会让每次操作额外耗费数百毫秒)
 * **正确清理**：应用关闭时务必关闭客户端，以释放连接池资源
 * **尽可能共享**：单个客户端可通过其连接池处理大量并发查询 (参见下方的线程说明)
 
@@ -177,37 +144,29 @@ with clickhouse_connect.get_client(interface="chdb") as client:
   ### 基本原则
 </div>
 
-复用同一个客户端：
+**✅ 推荐：复用同一个客户端**
 
 ```python
 import clickhouse_connect
 
-# Create once at startup
-client = clickhouse_connect.get_client(
-    host="my-host",
-    username="default",
-    password="password",
-)
+# 启动时创建一次
+client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
 
-# Reuse for all queries
+# 所有查询复用同一客户端
 for i in range(1000):
-    result = client.query("SELECT count() FROM users")
+    result = client.query('SELECT count() FROM users')
 
-# Close on shutdown
+# 关闭时销毁
 client.close()
 ```
 
-避免反复创建客户端：
+**❌ 不推荐：反复创建客户端**
 
 ```python
-# BAD: Creates 1000 clients with expensive initialization overhead
+# 错误做法：创建 1000 个客户端，产生高昂的初始化开销
 for i in range(1000):
-    client = clickhouse_connect.get_client(
-        host="my-host",
-        username="default",
-        password="password",
-    )
-    result = client.query("SELECT count() FROM users")
+    client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
+    result = client.query('SELECT count() FROM users')
     client.close()
 ```
 
@@ -225,16 +184,16 @@ for i in range(1000):
 import clickhouse_connect
 import threading
 
-# Option 1: Disable sessions (recommended for shared clients)
+# 选项 1：禁用会话（推荐用于共享客户端）
 client = clickhouse_connect.get_client(
-    host="my-host",
-    username="default",
-    password="password",
-    autogenerate_session_id=False,
+    host='my-host',
+    username='default',
+    password='password',
+    autogenerate_session_id=False  # 线程安全必需
 )
 
 def worker(thread_id):
-    # All threads can now safely use the same client
+    # 所有线程现在均可安全共用同一客户端
     result = client.query(f"SELECT {thread_id}")
     print(f"Thread {thread_id}: {result.result_rows[0][0]}")
 
@@ -245,20 +204,27 @@ for t in threads:
     t.join()
 
 client.close()
+# 输出：
+# Thread 0: 0
+# Thread 7: 7
+# Thread 1: 1
+# Thread 9: 9
+# Thread 4: 4
+# Thread 2: 2
+# Thread 8: 8
+# Thread 5: 5
+# Thread 6: 6
+# Thread 3: 3
 ```
 
 **session 的替代方案：** 如果你需要使用 session (例如用于临时表) ，请为每个线程单独创建一个客户端：
 
 ```python
 def worker(thread_id):
-    # Each thread gets its own client with isolated session
-    client = clickhouse_connect.get_client(
-        host="my-host",
-        username="default",
-        password="password",
-    )
-    client.command("CREATE TEMPORARY TABLE temp (id UInt32) ENGINE = Memory")
-    # ... use temp table ...
+    # 每个线程拥有独立的客户端和会话
+    client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
+    client.command('CREATE TEMPORARY TABLE temp (id UInt32) ENGINE = Memory')
+    # ... 使用临时表 ...
     client.close()
 ```
 
@@ -269,13 +235,9 @@ def worker(thread_id):
 务必在关闭时关闭客户端。请注意，只有当客户端拥有自己的连接池管理器时 (例如，使用自定义 TLS/代理选项创建时) ，`client.close()` 才会释放客户端并关闭池化的 HTTP 连接。对于默认的共享连接池，请使用 `client.close_connections()` 主动清理套接字；否则，连接会在空闲超时后以及进程退出时自动回收。
 
 ```python
-client = clickhouse_connect.get_client(
-    host="my-host",
-    username="default",
-    password="password",
-)
+client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
 try:
-    result = client.query("SELECT 1")
+    result = client.query('SELECT 1')
 finally:
     client.close()
 ```
@@ -283,12 +245,8 @@ finally:
 或者使用上下文管理器：
 
 ```python
-with clickhouse_connect.get_client(
-    host="my-host",
-    username="default",
-    password="password",
-) as client:
-    result = client.query("SELECT 1")
+with clickhouse_connect.get_client(host='my-host', username='default', password='password') as client:
+    result = client.query('SELECT 1')
 ```
 
 <div id="when-to-use-multiple-clients">
@@ -319,30 +277,20 @@ ClickHouse Connect 客户端的 `query*` 和 `command` 方法都接受一个可�
   #### 服务器端绑定
 </div>
 
-ClickHouse 支持对查询值使用[服务器端绑定](/zh/concepts/features/interfaces/client#cli-queries-with-parameters)。绑定的值会作为 HTTP 参数与查询分开发送。ClickHouse Connect 在检测到形如 `{<name>:<datatype>}` 的表达式时，会使用此模式。请以 Python 字典形式传入这些值。
+ClickHouse 支持对大多数查询值使用[服务器端绑定](/zh/concepts/features/interfaces/client#cli-queries-with-parameters)，即将绑定的值作为 HTTP 查询参数与查询语句分开发送。如果 ClickHouse Connect 检测到形如 `{<name>:<datatype>}` 的绑定表达式，就会添加相应的查询参数。对于服务器端绑定，`parameters` 参数应为 Python 字典。
 
-对于可空值，请使用 Python `None`。`Array` 和 `Tuple` 参数中支持嵌套的 `None` 值；当 `dict_parameter_format` 设置为 `"map"` 时，`Map` 字面量中也支持嵌套的 `None` 值。
-
-* 使用 Python 字典、日期时间值和字符串值的服务器端绑定
+* 使用 Python 字典、DateTime 值和字符串值进行服务器端绑定
 
 ```python
 import datetime
 
 my_date = datetime.datetime(2022, 10, 1, 15, 20, 5)
 
-parameters = {
-    "table": "my_table",
-    "v1": my_date,
-    "v2": "a string with a single quote'",
-}
-client.query(
-    "SELECT * FROM {table:Identifier} "
-    "WHERE date >= {v1:DateTime} AND string ILIKE {v2:String}",
-    parameters=parameters,
-)
+parameters = {'table': 'my_table', 'v1': my_date, 'v2': "a string with a single quote'"}
+client.query('SELECT * FROM {table:Identifier} WHERE date >= {v1:DateTime} AND string ILIKE {v2:String}', parameters=parameters)
 ```
 
-这相当于：
+这会在服务端生成以下查询：
 
 ```sql
 SELECT *
@@ -352,7 +300,7 @@ WHERE date >= '2022-10-01 15:20:05'
 ```
 
 <Warning>
-  `SELECT` 查询支持服务器端绑定。`ALTER`、`DELETE`、`INSERT` 或其他类型的语句不支持。
+  服务器端绑定目前仅支持 `SELECT` 查询 (由 ClickHouse 服务器支持) 。它不适用于 `ALTER`、`DELETE`、`INSERT` 或其他类型的查询。未来可能会有所变化；请参见 https://github.com/ClickHouse/ClickHouse/issues/42092。
 </Warning>
 
 <div id="client-side-binding">
@@ -363,19 +311,15 @@ ClickHouse Connect 也支持客户端参数绑定，这样在生成模板化 SQL
 
 请注意，与服务器端绑定不同，客户端绑定不适用于数据库标识符，例如 database、表或列名，因为 Python 风格的格式化无法区分不同类型的字符串，而这些字符串需要采用不同的格式化方式 (数据库标识符使用反引号或双引号，数据值使用单引号) 。
 
-* 使用 Python Dictionary、日期时间 值和字符串转义的示例
+* 使用 Python Dictionary、DateTime 值和字符串转义的示例
 
 ```python
 import datetime
 
 my_date = datetime.datetime(2022, 10, 1, 15, 20, 5)
 
-parameters = {"v1": my_date, "v2": "a string with a single quote'"}
-client.query(
-    "SELECT * FROM my_table "
-    "WHERE date >= %(v1)s AND string ILIKE %(v2)s",
-    parameters=parameters,
-)
+parameters = {'v1': my_date, 'v2': "a string with a single quote'"}
+client.query('SELECT * FROM my_table WHERE date >= %(v1)s AND string ILIKE %(v2)s', parameters=parameters)
 ```
 
 这会在服务器端生成以下查询：
@@ -393,80 +337,66 @@ WHERE date >= '2022-10-01 15:20:05'
 import ipaddress
 
 parameters = (35200.44, ipaddress.IPv4Address(0x443d04fe))
-client.query(
-    "SELECT * FROM some_table WHERE metric >= %s AND ip_address = %s",
-    parameters=parameters,
-)
+client.query('SELECT * FROM some_table WHERE metric >= %s AND ip_address = %s', parameters=parameters)
 ```
 
-这会在服务器端生成以下查询：
+这将在服务器端生成以下查询：
 
 ```sql
 SELECT *
 FROM some_table
 WHERE metric >= 35200.44
-  AND ip_address = '68.61.4.254'
+  AND ip_address = '68.61.4.254''
 ```
 
 <Note>
-  Datetime 绑定会将不带时区信息的值视为墙钟时间。客户端会原样格式化不带时区信息的 `datetime`。ClickHouse 会根据服务器端占位符中声明的时区 (例如 `{dt:DateTime('Europe/Berlin')}`) 解释它，随后使用已设置的 `session_timezone`，最后使用服务器时区。带时区信息的 `datetime` 会转换为占位符中声明的时区 (如有) ，否则转换为连接时报告的服务器时区。如果 `session_timezone` 设置与报告的服务器时区不同，请在占位符中声明时区，以确保带时区信息的值保持预期的时间点。
+  要绑定 DateTime64 参数 (即具有子秒级精度的 ClickHouse 类型) ，需要使用以下两种自定义方法之一：
 
-  如需临时兼容较旧的主机本地转换方式，请在绑定参数前设置 `common.set_setting("naive_datetime_binding", "legacy")`。为保留时间点，请在将 `datetime` 值作为参数传递前附加预期的 `tzinfo`。默认情况下，通过 `client.insert` 插入时，会在进程本地时区中解释不带时区信息的 `datetime` 值。将全局 `naive_datetime_insert` 设置设为 `"server"`，可将其解释为列时区中的墙钟时间；如果列没有时区，则使用服务器时区。请参阅[不带时区信息的 datetime 对象](/zh/integrations/language-clients/python/advanced-inserting#timezone-naive-datetime-objects)。
+  * 将 Python `datetime.datetime` 值封装到新的 DT64Param 类中，例如：
+    ```python
+      query = 'SELECT {p1:DateTime64(3)}'  # 使用字典进行服务器端绑定
+      parameters={'p1': DT64Param(dt_value)}
 
-  对于服务器端的 `{value:DateTime64(precision)}` 占位符，已声明的类型会自动保留子秒级精度，在 `Array` 和 `Tuple` 提示中也是如此。
+      query = 'SELECT %s as string, toDateTime64(%s,6) as dateTime' # 使用列表进行客户端绑定 
+      parameters=['a string', DT64Param(datetime.now())]
+    ```
+    * 如果使用参数值字典，请在参数名后附加字符串 `_64`
+    ```python
+      query = 'SELECT {p1:DateTime64(3)}, {a1:Array(DateTime(3))}'  # 使用字典进行服务器端绑定
 
-  客户端 `%s` 绑定没有声明类型。如果必须以子秒级精度进行格式化，请将 `datetime` 封装在 `DT64Param` 中：
-
-  ```python
-  from datetime import datetime
-
-  from clickhouse_connect.driver.binding import DT64Param
-
-  query = "SELECT toDateTime64(%s, 6)"
-  parameters = [DT64Param(datetime.now())]
-  client.query(query, parameters=parameters)
-  ```
-
-  为保持向后兼容，如果字典参数名以 `_64` 结尾，即使查询中不存在这个带该后缀的确切名称，也会请求按 DateTime64 格式进行格式化。
-
-  `datetime.time` 或 `datetime.timedelta` 参数会格式化为 `[-]HH:MM:SS[.ffffff]` 字面量，适用于 ClickHouse `Time` 和 `Time64` 列；无论使用哪种绑定方式，也包括 `Array` 和 `Tuple` 值中的参数。客户端会添加引号，因此不要在查询中为占位符加引号。`timedelta` 可以为负数，也可以超过 24 小时。pandas `Timedelta` 会保留纳秒，并为 `Time64(9)` 格式化为九位小数部分。带时区信息的 `time` 中的时区信息会被忽略，因为 ClickHouse `Time` 没有时区。
+      parameters={'p1_64': dt_value, 'a1_64': [dt_value1, dt_value2]}
+    ```
 </Note>
 
 <div id="settings-argument">
   ### Settings 参数
 </div>
 
-所有关键的 ClickHouse Connect 客户端 &quot;insert&quot; 和 &quot;select&quot; 方法都接受一个可选的 `settings` 关键字参数，用于为包含的 SQL 语句传递 ClickHouse 服务器的[用户设置](/zh/reference/settings/session-settings)。`settings` 参数应为一个字典。每一项都应包含一个 ClickHouse 设置名称及其对应的值。请注意，这些值在作为查询参数发送到服务器时会被转换为字符串。
+所有关键的 ClickHouse Connect 客户端 `insert` 和 `select` 方法都接受一个可选的 `settings` 关键字参数，用于为包含的 SQL 语句传递 ClickHouse 服务器的[用户设置](/zh/reference/settings/session-settings)。`settings` 参数应为一个字典。每一项都应包含一个 ClickHouse 设置名称及其对应的值。请注意，这些值在作为查询参数发送到服务器时会被转换为字符串。
 
-与客户端级别的设置一样，ClickHouse Connect 会丢弃任何被服务器标记为 *readonly*=*1* 的设置，并记录相应的日志消息。仅适用于通过 ClickHouse HTTP 接口 发起查询的设置始终有效。这些设置在 `get_client` [API](#settings-argument) 下有说明。
+与客户端级别的设置一样，ClickHouse Connect 会丢弃任何被服务器标记为 *readonly*=*1* 的设置，并记录相应的日志消息。仅适用于通过 ClickHouse HTTP interface 发起查询的设置始终有效。这些设置在 `get_client` [API](#settings-argument) 下有说明。
 
 使用 ClickHouse 设置的示例：
 
 ```python
-settings = {
-    "merge_tree_min_rows_for_concurrent_read": 65535,
-    "session_id": "session_1234",
-    "use_skip_indexes": False,
-}
-client.query(
-    "SELECT event_type, sum(timeout) "
-    "FROM event_errors WHERE event_time > '2022-08-01'",
-    settings=settings,
-)
+settings = {'merge_tree_min_rows_for_concurrent_read': 65535,
+            'session_id': 'session_1234',
+            'use_skip_indexes': False}
+client.query("SELECT event_type, sum(timeout) FROM event_errors WHERE event_time > '2022-08-01'", settings=settings)
 ```
 
 <div id="client-command-method">
   ## Client `command` 方法
 </div>
 
-对于不返回表格数据集的语句，或者返回单个基本类型值或单行的查询，请使用 `Client.command`。根据响应内容，它会返回字符串、整数、字符串序列或 `QuerySummary`。如果读取操作产生空结果集，则返回空字符串。
+使用 `Client.command` 方法向 ClickHouse 服务器发送 SQL 查询，这类查询通常不返回数据，或者返回单个基本类型值或数组值，而不是完整的数据集。此方法接受以下参数：
 
 | Parameter              | Type             | Default    | Description                                                                                                                     |
 | ---------------------- | ---------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | cmd                    | str              | *Required* | 一条返回单个值或单行值的 ClickHouse SQL 语句。                                                                                                 |
-| parameters             | dict or sequence | *None*     | 请参阅[参数说明](#parameters-argument)。                                                                                                |
+| parameters             | dict or iterable | *None*     | 请参阅[参数说明](#parameters-argument)。                                                                                                |
 | data                   | str or bytes     | *None*     | 可选数据，作为 POST 请求体随命令一同发送。                                                                                                        |
-| settings               | dict             | *None*     | 请参阅[settings 说明](#settings-argument-1)。                                                                                         |
+| settings               | dict             | *None*     | 请参阅[settings 说明](#settings-argument)。                                                                                           |
 | use&#95;database       | bool             | True       | 使用客户端数据库 (在创建客户端时指定) 。False 表示该命令将使用当前连接用户在 ClickHouse 服务器上的默认数据库。                                                              |
 | external&#95;data      | ExternalData     | *None*     | 一个 `ExternalData` 对象，包含供查询使用的文件或二进制数据。请参阅 [高级查询 (外部数据) ](/zh/integrations/language-clients/python/advanced-querying#external-data) |
 | transport&#95;settings | dict             | *None*     | 可选字典，包含要随此请求发送的 HTTP 请求头。每个键值对都会作为一个 HTTP 请求头添加 (例如 `{'X-Custom-Header': 'value'}`) 。这对于代理身份验证、请求链路追踪，或传递中间基础设施所需的请求头非常有用。      |
@@ -484,18 +414,14 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# Create a table. A successful DDL returns QuerySummary.
-summary = client.command(
-    "CREATE TABLE test_command "
-    "(col_1 String, col_2 DateTime) "
-    "ENGINE MergeTree ORDER BY tuple()"
-)
-print(summary.query_id())
+# 创建表
+result = client.command("CREATE TABLE test_command (col_1 String, col_2 DateTime) ENGINE MergeTree ORDER BY tuple()")
+print(result)  # 返回带有 query_id 的 QuerySummary
 
-# Show table definition
+# 显示表定义
 result = client.command("SHOW CREATE TABLE test_command")
 print(result)
-# Output:
+# 输出：
 # CREATE TABLE default.test_command
 # (
 #     `col_1` String,
@@ -504,7 +430,7 @@ print(result)
 # ENGINE = MergeTree
 # ORDER BY tuple()
 
-# Drop table
+# 删除表
 client.command("DROP TABLE test_command")
 ```
 
@@ -517,13 +443,15 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# Single value result
+# 单值结果
 count = client.command("SELECT count() FROM system.tables")
 print(count)
+# 输出：151
 
-# Server version
+# 服务器版本
 version = client.command("SELECT version()")
 print(version)
+# 输出："25.8.2.29"
 ```
 
 <div id="commands-with-parameters">
@@ -566,29 +494,27 @@ result = client.command(
 ```
 
 <div id="client-query-method">
-  ## Client `query` 方法
+  ## 客户端 `query` 方法
 </div>
 
-`Client.query` 以 ClickHouse Native 格式检索表格数据集，并返回一个 `QueryResult`。访问结果属性时，会将完整结果物化。对于不应保存在内存中的结果，请使用流式方法。
+`Client.query` 方法是从 ClickHouse 服务器 检索单个“批次”数据集的主要方式。它通过 HTTP 使用 ClickHouse Native 格式高效传输大型数据集 (最多约一百万行) 。此方法接受以下参数：
 
-| 参数                   | 类型             | 默认值     | 描述                                                                                                              |
-| -------------------- | -------------- | ------- | --------------------------------------------------------------------------------------------------------------- |
-| `query`              | str            | 必填      | 返回表格结果的 ClickHouse 查询，最常见的是 `SELECT` 或 `DESCRIBE`。如果由 `context` 提供，则可省略。                                        |
-| `parameters`         | dict 或序列       | `None`  | 请参见 [Parameters 参数](#parameters-argument)。                                                                      |
-| `settings`           | dict           | `None`  | 请参见 [Settings 参数](#settings-argument-1)。                                                                        |
-| `query_formats`      | dict           | `None`  | 按 ClickHouse 类型指定读取格式。请参见 [Read formats](/zh/integrations/language-clients/python/advanced-querying#read-formats)。 |
-| `column_formats`     | dict           | `None`  | 按结果列指定读取格式，包括 Nested type 格式映射。                                                                                 |
-| `encoding`           | str            | `None`  | String 列编码。默认为 UTF-8。                                                                                           |
-| `use_none`           | bool           | `True`  | 对 SQL NULL 返回 `None`。当为 false 时，返回该类型的默认空值。NumPy/Pandas 方法会选择偏重性能的默认值。                                          |
-| `column_oriented`    | bool           | `False` | 将结果按列而非按行组织。                                                                                                    |
-| `use_numpy`          | bool           | `False` | 将兼容的结果列读取到 `QueryResult` 内部的 NumPy 数组中。如果期望结果是单个 NumPy 矩阵，优先使用 `query_np`。                                      |
-| `max_str_len`        | int            | `0`     | 配合 `use_numpy` 使用时，对长度不超过此值的 String 列使用固定宽度的 Unicode dtype。为零时使用对象数组。                                           |
-| `context`            | `QueryContext` | `None`  | 可复用的查询上下文。显式传入的方法参数会覆盖上下文值。                                                                                     |
-| `query_tz`           | str 或 `tzinfo` | `None`  | 应用于所有 `DateTime` 和 `DateTime64` 结果列的时区。                                                                         |
-| `column_tzs`         | dict           | `None`  | 按列设置的时区映射。                                                                                                      |
-| `external_data`      | `ExternalData` | `None`  | 外部文件或二进制数据。请参见 [External data](/zh/integrations/language-clients/python/advanced-querying#external-data)。          |
-| `transport_settings` | dict           | `None`  | 添加到此请求的 HTTP 请求头。                                                                                               |
-| `tz_mode`            | str            | 客户端默认值  | 针对 `"naive_utc"`、`"aware"` 或 `"schema"` 时区处理方式的单次查询覆盖设置。                                                        |
+| 参数                          | 类型               | 默认值    | 描述                                                                                                                               |
+| --------------------------- | ---------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| query                       | str              | *必需*   | ClickHouse SQL 的 SELECT 或 DESCRIBE 查询。                                                                                           |
+| parameters                  | dict or iterable | *None* | 参见[parameters 说明](#parameters-argument)。                                                                                         |
+| settings                    | dict             | *None* | 参见[settings 说明](#settings-argument)。                                                                                             |
+| query&#95;formats           | dict             | *None* | 结果值的数据类型格式化规范。参见高级用法 (读取格式)                                                                                                      |
+| column&#95;formats          | dict             | *None* | 按列指定的数据类型格式化。参见高级用法 (读取格式)                                                                                                       |
+| encoding                    | str              | *None* | 用于将 ClickHouse String 列解码为 Python 字符串的编码。如果未设置，Python 默认使用 `UTF-8`。                                                              |
+| use&#95;none                | bool             | True   | 对 ClickHouse null 值使用 Python 的 *None* 类型。如果为 False，则对 ClickHouse null 值使用该数据类型的默认值 (例如 0) 。注意：出于性能原因，在 NumPy/Pandas 中默认为 False。  |
+| column&#95;oriented         | bool             | False  | 将结果按列序列而非按行序列返回。这有助于将 Python 数据转换为其他面向列的数据格式。                                                                                    |
+| query&#95;tz                | str              | *None* | `zoneinfo` 数据库中的时区名称。此时区将应用于查询返回的所有 datetime 或 Pandas Timestamp 对象。                                                              |
+| column&#95;tzs              | dict             | *None* | 从列名到时区名称的字典。与 `query_tz` 类似，但允许为不同列指定不同的时区。                                                                                      |
+| use&#95;extended&#95;dtypes | bool             | True   | 使用 Pandas 扩展数据类型 (如 StringArray) ，并使用 pandas.NA 和 pandas.NaT 表示 ClickHouse NULL 值。仅适用于 `query_df` 和 `query_df_stream` 方法。        |
+| external&#95;data           | ExternalData     | *None* | 一个 ExternalData 对象，包含查询可使用的文件或二进制数据。参见[高级查询 (外部数据) ](/zh/integrations/language-clients/python/advanced-querying#external-data)      |
+| context                     | QueryContext     | *None* | 可复用的 QueryContext 对象可用于封装上述方法参数。参见[高级查询 (QueryContexts) ](/zh/integrations/language-clients/python/advanced-querying#querycontexts) |
+| transport&#95;settings      | dict             | *None* | 可选字典，用于指定随此请求发送的 HTTP 请求头。每个键值对都会作为一个 HTTP 请求头添加 (例如 `{'X-Custom-Header': 'value'}`) 。适用于代理身份验证、请求追踪，或传递中间基础设施所需的请求头。            |
 
 <div id="query-examples">
   ### 查询示例
@@ -603,24 +529,22 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# Simple SELECT query
-result = client.query(
-    "SELECT number, toString(number) AS label FROM numbers(3)"
-)
+# 简单的 SELECT 查询
+result = client.query("SELECT name, database FROM system.tables LIMIT 3")
 
-# Access results as rows
+# 以行的形式访问结果
 for row in result.result_rows:
     print(row)
-# Output:
-# (0, '0')
-# (1, '1')
-# (2, '2')
+# 输出：
+# ('CHARACTER_SETS', 'INFORMATION_SCHEMA')
+# ('COLLATIONS', 'INFORMATION_SCHEMA')
+# ('COLUMNS', 'INFORMATION_SCHEMA')
 
-# Access column names and types
+# 访问列名和类型
 print(result.column_names)
-# Output: ('number', 'label')
+# 输出：("name", "database")
 print([col_type.name for col_type in result.column_types])
-# Output: ['UInt64', 'String']
+# 输出：['String', 'String']
 ```
 
 <div id="accessing-query-results">
@@ -634,29 +558,29 @@ client = clickhouse_connect.get_client()
 
 result = client.query("SELECT number, toString(number) AS str FROM system.numbers LIMIT 3")
 
-# Row-oriented access (default)
+# 按行访问（默认）
 print(result.result_rows)
-# Output: [(0, '0'), (1, '1'), (2, '2')]
+# Output: [[0, "0"], [1, "1"], [2, "2"]]
 
-# Column-oriented access
+# 按列访问
 print(result.result_columns)
-# Output: [[0, 1, 2], ['0', '1', '2']]
+# Output: [[0, 1, 2], ["0", "1", "2"]]
 
-# Named results (list of dictionaries)
+# 命名结果（字典列表）
 for row_dict in result.named_results():
     print(row_dict)
-# Output:
-# {'number': 0, 'str': '0'}
-# {'number': 1, 'str': '1'}
-# {'number': 2, 'str': '2'}
+# Output: 
+# {"number": 0, "str": "0"}
+# {"number": 1, "str": "1"}
+# {"number": 2, "str": "2"}
 
-# First row as dictionary
+# 第一行（字典形式）
 print(result.first_item)
-# Output: {'number': 0, 'str': '0'}
+# Output: {"number": 0, "str": "0"}
 
-# First row as tuple
+# 第一行（元组形式）
 print(result.first_row)
-# Output: (0, '0')
+# Output: (0, "0")
 ```
 
 <div id="query-with-client-side-parameters">
@@ -718,21 +642,24 @@ result = client.query(
   ### `QueryResult` 对象
 </div>
 
-基本 `query` 方法会返回一个 `QueryResult` 对象，包含以下公共属性：
+基础 `query` 方法会返回一个 `QueryResult` 对象，包含以下公共属性：
 
-* `result_rows` -- 按行组织的结果矩阵。
-* `result_columns` -- 按列组织的结果矩阵。
-* `result_set` -- 根据查询结果的组织方向，为 `result_rows` 或 `result_columns`。
-* `column_names` -- 结果列名的 Tuple。
-* `column_types` -- `ClickHouseType` 对象的 Tuple。
-* `row_count` -- 已 materialized 的结果行数。
-* `query_id` -- 为该请求报告或生成的 Query ID。空字符串表示没有可用值。
-* `summary` -- 从 `X-ClickHouse-Summary` 响应请求头解码得到的字典。
-* `first_item` -- 第一行的字典形式；如果结果为空，则为 `None`。
-* `first_row` -- 第一行的序列形式；如果结果为空，则为 `None`。
-* `column_block_stream`、`row_block_stream` 和 `rows_stream` -- 内部流上下文。请改用对应的客户端流式方法。
+* `result_rows` -- 以行 Sequence 形式返回的数据矩阵，其中每个行元素都是由列值组成的序列。
+* `result_columns` -- 以列 Sequence 形式返回的数据矩阵，其中每个列元素都是由该列各行的值组成的序列
+* `column_names` -- 一个字符串元组，表示 `result_set` 中的列名
+* `column_types` -- 一个 ClickHouseType 实例元组，表示 `result_columns` 中每一列的 ClickHouse 数据类型
+* `query_id` -- ClickHouse 的 query&#95;id (可用于在 `system.query_log` 表中查看该查询)
+* `summary` -- `X-ClickHouse-Summary` HTTP 响应请求头中返回的任何数据
+* `first_item` -- 一个便捷属性，用于以字典形式获取响应中的第一行 (键为列名)
+* `first_row` -- 一个便捷属性，用于返回结果中的第一行
+* `column_block_stream` -- 以列导向格式返回查询结果的生成器。不应直接引用此属性 (见下文) 。
+* `row_block_stream` -- 以行导向格式返回查询结果的生成器。不应直接引用此属性 (见下文) 。
+* `rows_stream` -- 一个每次调用产出单行的查询结果生成器。不应直接引用此属性 (见下文) 。
+* `summary` -- 如 `command` 方法部分所述，这是一个包含 ClickHouse 返回的摘要信息的字典
 
-有关受支持的 `StreamContext` API，请参见 [流式查询](/zh/integrations/language-clients/python/advanced-querying#streaming-queries)。
+`*_stream` 属性会返回一个 Python Context，可用作返回数据的迭代器。只能通过 Client 的 `*_stream` 方法间接访问它们。
+
+有关流式查询结果 (使用 StreamContext 对象) 的完整说明，请参阅[高级查询 (流式查询) ](/zh/integrations/language-clients/python/advanced-querying#streaming-queries)。
 
 <div id="consuming-query-results-with-numpy-pandas-or-arrow">
   ## 使用 NumPy、Pandas 或 Arrow 处理查询结果
@@ -752,20 +679,20 @@ ClickHouse Connect 提供了针对 NumPy、Pandas 和 Arrow 数据格式的专�
 
 对于向 ClickHouse 插入多条记录这一常见场景，可以使用 `Client.insert` 方法。它接受以下参数：
 
-| 参数                   | Type                       | 默认值             | 说明                                                                                                      |
-| -------------------- | -------------------------- | --------------- | ------------------------------------------------------------------------------------------------------- |
-| `table`              | str                        | Required        | 目标表。允许使用带数据库限定的名称。如果由 `context` 提供，则可省略。                                                                |
-| `data`               | Sequence of Sequences      | Required        | 按行组织或按列组织的数据矩阵。也可以稍后通过 `InsertContext` 提供。                                                              |
-| `column_names`       | str or Sequence[str]       | `"*"`           | 按顺序排列的列。`"*"` 会执行一次元数据查询，以发现所有可插入的列。                                                                    |
-| `database`           | str or None                | Client database | 当 `table` 未限定数据库时使用的目标数据库。                                                                              |
-| `column_types`       | Sequence[`ClickHouseType`] | `None`          | 显式指定的列类型。提供后可避免执行元数据查询。                                                                                 |
-| `column_type_names`  | Sequence[str]              | `None`          | 显式指定的 ClickHouse 类型名称。可替代 `column_types`。                                                               |
-| `column_oriented`    | bool                       | `False`         | 将 `data` 解释为列而不是行。                                                                                      |
-| `settings`           | dict                       | `None`          | 参见 [Settings argument](#settings-argument-1)。                                                           |
-| `context`            | `InsertContext`            | `None`          | 可复用的插入上下文。参见 [InsertContexts](/zh/integrations/language-clients/python/advanced-inserting#insertcontexts)。 |
-| `transport_settings` | dict                       | `None`          | 添加到此请求的 HTTP 请求头。                                                                                       |
+| 参数                        | Type                              | 默认值         | 说明                                                                                                                                    |
+| ------------------------- | --------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| table                     | str                               | *必填*        | 要插入到的 ClickHouse 表。允许使用完整表名 (包括数据库名) 。                                                                                                |
+| data                      | Sequence of Sequences             | *必填*        | 要插入的数据矩阵，可以是由多行组成的 Sequence，其中每一行都是列值序列；也可以是由多列组成的 Sequence，其中每一列都是行值序列。                                                              |
+| column&#95;names          | Sequence of str, or str           | &#39;*&#39; | 数据矩阵对应的 `column_names` 列表。如果改为使用 `'*'`，ClickHouse Connect 将执行一次“预查询”来获取该表的所有列名。                                                       |
+| database                  | str                               | &#39;&#39;  | 插入操作的目标数据库。如果未指定，则默认使用该客户端对应的数据库。                                                                                                     |
+| column&#95;types          | Sequence of ClickHouseType        | *None*      | ClickHouseType 实例列表。如果既未指定 column&#95;types，也未指定 column&#95;type&#95;names，ClickHouse Connect 将执行一次“预查询”来获取该表的所有列类型。                  |
+| column&#95;type&#95;names | Sequence of ClickHouse type names | *None*      | ClickHouse 数据类型名称列表。如果既未指定 column&#95;types，也未指定 column&#95;type&#95;names，ClickHouse Connect 将执行一次“预查询”来获取该表的所有列类型。                  |
+| column&#95;oriented       | bool                              | False       | 如果为 True，则假定 `data` 参数是按列组织的 Sequence (因此插入数据时无需再做“转置”) 。否则，`data` 会被解释为按行组织的 Sequence。                                               |
+| settings                  | dict                              | *None*      | 参见 [settings 说明](#settings-argument)。                                                                                                 |
+| context                   | InsertContext                     | *None*      | 可复用的 InsertContext 对象可用于封装上述方法参数。参见 [高级插入 (InsertContexts) ](/zh/integrations/language-clients/python/advanced-inserting#insertcontexts) |
+| transport&#95;settings    | dict                              | *None*      | 可选字典，用于指定随此请求发送的 HTTP 请求头。每个键值对都会作为一个 HTTP 请求头 添加 (例如 `{'X-Custom-Header': 'value'}`) 。这对于代理身份验证、请求跟踪，或传递中间基础设施所需的请求头都很有用。            |
 
-此方法返回 `QuerySummary`。其 `summary` 字典包含服务器报告的值。`written_rows` 是一个便捷属性，而 `written_bytes()` 和 `query_id()` 会返回对应的值。插入失败时会引发异常。
+此方法会返回一个“查询摘要”字典，具体说明见“command”方法部分。如果插入因任何原因失败，则会引发异常。
 
 如需使用适用于 Pandas DataFrames、PyArrow Tables 和 Arrow-backed DataFrames 的专用插入方法，请参见 [高级插入 (专用插入方法) ](/zh/integrations/language-clients/python/advanced-inserting#specialized-insert-methods)。
 
@@ -788,10 +715,11 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# Row-oriented data: each inner list is a row
+# 行式数据：每个内部列表代表一行
 data = [
-    [13, "user_1", 25],
-    [79, "user_2", 30],
+    [1, "Alice", 25],
+    [2, "Bob", 30],
+    [3, "Joe", 28],
 ]
 
 client.insert("users", data, column_names=["id", "name", "age"])
@@ -806,11 +734,11 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# Column-oriented data: each inner list is a column
+# 列式数据：每个内部列表对应一列
 data = [
-    [13, 79],  # id column
-    ["user_1", "user_2"],  # name column
-    [25, 30],  # age column
+    [1, 2, 3],  # id 列
+    ["Alice", "Bob", "Joe"],  # name 列
+    [25, 30, 28],  # age 列
 ]
 
 client.insert("users", data, column_names=["id", "name", "age"], column_oriented=True)
@@ -825,10 +753,11 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# Useful when you want to avoid a DESCRIBE query to the server
+# 当您希望避免向服务器发送 DESCRIBE 查询时很有用
 data = [
-    [13, "user_1", 25],
-    [79, "user_2", 30],
+    [1, "Alice", 25],
+    [2, "Bob", 30],
+    [3, "Joe", 28],
 ]
 
 client.insert(
@@ -849,11 +778,11 @@ import clickhouse_connect
 client = clickhouse_connect.get_client()
 
 data = [
-    [13, "user_1", 25],
-    [79, "user_2", 30],
+    [1, "Alice", 25],
+    [2, "Bob", 30],
 ]
 
-# Insert into a table in a specific database
+# 将数据插入指定数据库中的表
 client.insert(
     "users",
     data,
@@ -874,55 +803,17 @@ client.insert(
 
 对于需要直接访问 ClickHouse HTTP 接口且不进行类型转换的高级用例，请参阅[高级用法 (原始 API) ](/zh/integrations/language-clients/python/advanced-usage#raw-api)。
 
-<div id="python-db-api-20">
-  ## Python DB-API 2.0
-</div>
-
-`clickhouse_connect.dbapi` 模块实现了 PEP 249 规定的连接和游标接口。它声明 API 级别为 2.0、`threadsafety=2` 以及 `paramstyle="pyformat"`。该模块还提供 PEP 249 类型构造函数 `Date`、`Time`、`Timestamp` 和 `Binary`，以及 `DateFromTicks`、`TimeFromTicks` 和 `TimestampFromTicks` 函数。
-
-```python
-from clickhouse_connect import dbapi
-
-connection = dbapi.connect(
-    host="localhost",
-    username="default",
-    password="password",
-    database="default",
-)
-cursor = connection.cursor()
-
-try:
-    cursor.execute(
-        "SELECT name FROM system.tables "
-        "WHERE database = %(database)s ORDER BY name LIMIT 5",
-        {"database": "system"},
-    )
-    print(cursor.description)
-    print(cursor.fetchall())
-finally:
-    cursor.close()
-    connection.close()
-```
-
-`Cursor.execute` 和 `Cursor.executemany` 都接受额外的 `settings` 和 `query_formats` 关键字参数。`settings` 用于传递 ClickHouse 设置。当语句返回行时，`query_formats` 会根据 ClickHouse 类型应用读取格式，其映射方式与 `Client.query` 相同。对于兼容的 `INSERT ... VALUES` 语句，如果提供的是已 materialized 的行序列，`executemany` 会使用驱动的 Native 批量 insert 路径。`fetchone`、`fetchmany` 和 `fetchall` 会读取当前已 materialized 的结果。
-
-`Cursor.description` 会根据每个结果列的类型确定 `null_ok`。不可为 NULL 的类型返回 `False`，可为 NULL 的类型返回 `True`，包括 `Nullable` 包装器、`Variant` 和 `Dynamic`。`None` 表示可空性未知。当以 `SELECT` 或 `WITH` 开头的查询 (忽略前导注释) 既不返回行也不返回列元数据时，游标会执行 `LIMIT 0` 元数据查询来填充 `description`。如果该元数据查询失败，`description` 将保持为空。
-
-ClickHouse 不通过此 HTTP 接口提供传统事务。`Connection.commit()` 和 `Connection.rollback()` 都是空操作。共享 connection 时，[会话 ID 并发规则](/zh/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids)仍然适用。
-
 <div id="utility-classes-and-functions">
   ## 实用类和函数
 </div>
 
-以下模块提供客户端应用程序可用的其他公开辅助工具。
-
-已安装的软件包版本会以字符串 `clickhouse_connect.__version__` 的形式公开。
+以下类和函数也被视为“公开”的 `clickhouse-connect` API 的一部分，并且与上文介绍的类和方法一样，在各个次要版本之间保持稳定。对这些类和函数的破坏性变更只会出现在次要版本发布中 (而非补丁版本) ，并且至少会在一个次要版本内以弃用状态提供。
 
 <div id="exceptions">
   ### 异常
 </div>
 
-自定义异常 (包括 DB-API 2.0 异常层次结构) 定义在 `clickhouse_connect.driver.exceptions` 中。`DatabaseError` 和 `OperationalError` 都会提供数值型 `code` attribute，用于表示 ClickHouse 错误代码；还会提供 `name` attribute，用于表示符号名称，例如 `UNKNOWN_TABLE`，这样应用程序就可以根据 `exc.code` 进行分支判断，而不必解析消息。即使禁用了 `show_clickhouse_errors`，`code` 也会被设置；而 `name` 则要求提供错误详情 (`True` 或 `"scrub"`)。两者在不可用时 (例如发生传输错误时) 都会是 `None`。当应允许最终用户查看 SQL 错误但不显示 host 或服务器版本信息时，请使用 `show_clickhouse_errors="scrub"`。该设置还控制流中 `StreamFailureError` 消息和通用传输消息。它仅控制 `str(exc)`。传输错误仍会作为 `__cause__` 附加，且 tracebacks 可能包含原始 host、URL 或 library 错误文本。
+所有自定义异常 (包括 DB API 2.0 规范中定义的异常) 均定义在 `clickhouse_connect.driver.exceptions` 模块中。驱动程序实际检测到的异常会使用其中一种类型。
 
 <div id="clickhouse-sql-utilities">
   ### ClickHouse SQL 实用工具
@@ -936,11 +827,11 @@ ClickHouse 不通过此 HTTP 接口提供传统事务。`Connection.commit()` �
 
 有关在多线程、多进程和异步/事件驱动应用中使用 ClickHouse Connect 的信息，请参阅[高级用法 (多线程、多进程和异步/事件驱动使用场景) ](/zh/integrations/language-clients/python/advanced-usage#multithreaded-multiprocess-and-asyncevent-driven-use-cases)。
 
-<div id="asyncclient">
-  ## AsyncClient
+<div id="asyncclient-wrapper">
+  ## AsyncClient 包装器
 </div>
 
-有关原生 asyncio 用法，请参阅 [高级用法 (AsyncClient)](/zh/integrations/language-clients/python/advanced-usage#asyncclient)。
+有关如何在 asyncio 环境中使用 AsyncClient 包装器，请参阅 [高级用法 (AsyncClient 包装器) ](/zh/integrations/language-clients/python/advanced-usage#asyncclient-wrapper)。
 
 <div id="managing-clickhouse-session-ids">
   ## 管理 ClickHouse 会话 ID

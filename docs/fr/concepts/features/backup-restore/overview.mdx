@@ -25,7 +25,7 @@ table ou d&#39;une table sur le mauvais cluster, et bogues logiciels entraînant
 des données ou leur corruption.
 
 Dans de nombreux cas, ce type d&#39;erreur affectera toutes les répliques. ClickHouse intègre des
-mécanismes de protection pour éviter certains types d&#39;erreurs. Par exemple, [par défaut](/fr/reference/settings/session-settings/max#max_table_size_to_drop)
+mécanismes de protection pour éviter certains types d&#39;erreurs. Par exemple, [par défaut](/fr/reference/settings/session-settings#max_table_size_to_drop),
 vous ne pouvez pas simplement supprimer des tables utilisant un moteur de la famille `MergeTree` contenant plus de
 50 Go de données. Cependant, ces mécanismes de protection ne couvrent pas tous les cas possibles et
 des problèmes peuvent malgré tout survenir.
@@ -68,7 +68,7 @@ Les sauvegardes peuvent :
 * être [compressées ou non compressées](#compressed-vs-uncompressed)
 * utiliser des [collections nommées](#using-named-collections)
 * être protégées par mot de passe
-* porter sur des [tables système, tables de journalisation ou tables de gestion des accès](#system-backups)
+* porter sur des [tables système, tables de logs ou tables de gestion des accès](#system-backups)
 
 <div id="backup-types">
   ## Types de sauvegarde

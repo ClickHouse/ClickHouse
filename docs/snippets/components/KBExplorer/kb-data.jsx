@@ -108,6 +108,16 @@ export const kbIndex = {
       ]
     },
     {
+      "id": "tables-schema/schema-migration-tools",
+      "title": "Automatic schema migration tools for ClickHouse",
+      "description": "Learn about automatic schema migration tools for ClickHouse and how to manage changing database schemas over time.",
+      "href": "/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
+      "category": "Tables & schema",
+      "tags": [
+        "Tools and Utilities"
+      ]
+    },
+    {
       "id": "cloud-services/aws-privatelink-setup-for-msk-clickpipes",
       "title": "AWS PrivateLink setup to expose MSK for ClickPipes",
       "description": "Setup steps to expose a private MSK via MSK multi-VPC connectivity to ClickPipes.",
@@ -201,7 +211,7 @@ export const kbIndex = {
     {
       "id": "configuration-settings/change-the-prompt-in-clickhouse-client",
       "title": "Change the prompt in clickhouse-client",
-      "description": "This article explains how to change the prompt in your ClickHouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
+      "description": "This article explains how to change the prompt in your Clickhouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
       "href": "/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
       "category": "Configuration & settings",
       "tags": [
@@ -228,6 +238,16 @@ export const kbIndex = {
       "category": "Queries & SQL",
       "tags": [
         "Performance and Optimizations"
+      ]
+    },
+    {
+      "id": "configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
+      "title": "Configuring CAP_IPC_LOCK and CAP_SYS_NICE Capabilities in Docker",
+      "description": "Learn how to resolve Docker capability warnings for `CAP_IPC_LOCK` and `CAP_SYS_NICE` when running ClickHouse in a container.",
+      "href": "/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
+      "category": "Configuration & settings",
+      "tags": [
+        "Errors and Exceptions"
       ]
     },
     {
@@ -891,7 +911,7 @@ export const kbIndex = {
     },
     {
       "id": "performance-optimization/finding-expensive-queries-by-memory-usage",
-      "title": "Identifying expensive queries by memory usage in ClickHouse",
+      "title": "Identifying Expensive Queries by Memory Usage in ClickHouse",
       "description": "Learn how to use the `system.query_log` table to find the most memory-intensive queries in ClickHouse, with examples for clustered and standalone setups.",
       "href": "/resources/support-center/knowledge-base/performance-optimization/finding-expensive-queries-by-memory-usage",
       "category": "Performance & optimization",
@@ -1061,23 +1081,23 @@ export const kbIndex = {
       ]
     },
     {
+      "id": "troubleshooting/exception-too-many-parts",
+      "title": "Resolving \"Too Many Parts\" error in ClickHouse",
+      "description": "Learn how to address the \"Too many parts\" error in ClickHouse by optimizing insert rates, configuring MergeTree settings, and managing partitions effectively.",
+      "href": "/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
+      "category": "Troubleshooting & errors",
+      "tags": [
+        "Errors and Exceptions"
+      ]
+    },
+    {
       "id": "troubleshooting/certificate-verify-failed-error",
-      "title": "Resolving SSL certificate verify error in ClickHouse",
+      "title": "Resolving SSL Certificate Verify Error in ClickHouse",
       "description": "Learn how to resolve the SSL Exception CERTIFICATE_VERIFY_FAILED error.",
       "href": "/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
       "category": "Troubleshooting & errors",
       "tags": [
         "Security and Authentication",
-        "Errors and Exceptions"
-      ]
-    },
-    {
-      "id": "troubleshooting/exception-too-many-parts",
-      "title": "Resolving the \"Too many parts\" exception in ClickHouse",
-      "description": "Learn how to diagnose and resolve the \"Too many parts\" exception by batching inserts, using asynchronous inserts, and choosing an appropriate partitioning key.",
-      "href": "/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
-      "category": "Troubleshooting & errors",
-      "tags": [
         "Errors and Exceptions"
       ]
     },
@@ -1100,16 +1120,6 @@ export const kbIndex = {
       "tags": [
         "Runbooks",
         "Data Modelling"
-      ]
-    },
-    {
-      "id": "tables-schema/schema-migration-tools",
-      "title": "Schema migration tools for ClickHouse",
-      "description": "Learn about schema migration tools for ClickHouse and how to manage changing database schemas over time.",
-      "href": "/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
-      "category": "Tables & schema",
-      "tags": [
-        "Tools and Utilities"
       ]
     },
     {
@@ -1307,18 +1317,6 @@ export const kbIndex = {
       "href": "/resources/support-center/knowledge-base/general-faqs/who-is-using-clickhouse",
       "category": "General & FAQs",
       "tags": []
-    },
-    {
-      "id": "security/set-role-not-persisting-in-sql-console",
-      "title": "Why `SET ROLE` does not persist in the ClickHouse Cloud SQL Console",
-      "description": "Learn why `SET ROLE` does not persist in the ClickHouse Cloud SQL Console and how to assign persistent per-user permissions.",
-      "href": "/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console",
-      "category": "Security & access control",
-      "tags": [
-        "Security and Authentication",
-        "Managing Cloud",
-        "Troubleshooting"
-      ]
     },
     {
       "id": "data-management/dictionaries-consistent-state",

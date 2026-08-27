@@ -6,9 +6,9 @@ title: 'Other functions'
 doc_type: 'reference'
 ---
 
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
+import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import DeprecatedBadge from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
 
 <Note>
 The function documentation below is generated from the `system.functions` system table.
@@ -548,7 +548,7 @@ communicate using a HTTP interface. By default, port `9012` is used. A different
 
 See [Training and applying models](https://catboost.ai/docs/features/training.html#training) for how to train catboost models from a training data set.
 
-The model file must be located inside the [`user_files`](/reference/settings/server-settings/settings/user#user_files_path) directory, like for the [`file`](/reference/functions/regular-functions/files#file) function.
+The model file must be located inside the [`user_files`](/reference/settings/server-settings/settings#user_files_path) directory, like for the [`file`](/reference/functions/regular-functions/files#file) function.
 
 <Note>
 This function is non-deterministic: it can return different results for the same arguments.
@@ -967,42 +967,6 @@ SELECT CURRENT_DATABASE
 └──────────────────┘
 ```
 
-## currentHandler {#currentHandler}
-
-Introduced in: v26.6.0
-
-Returns the name of the SQL-defined HTTP handler (created with `CREATE HANDLER`) that invoked the query.
-Returns an empty string if the query was not invoked through such a handler.
-
-Useful to customize query behavior depending on the invoked handler.
-    
-
-<Note>
-This function is non-deterministic: it can return different results for the same arguments.
-</Note>
-
-**Syntax**
-
-```sql
-currentHandler()
-```
-
-**Arguments**
-
-- None.
-
-**Returned value**
-
-Returns the current handler name. [`String`](/reference/data-types/string)
-
-**Examples**
-
-**Usage example**
-
-```sql title=Query
-SELECT currentHandler()
-```
-
 ## currentProfiles {#currentProfiles}
 
 Introduced in: v21.9.0
@@ -1077,43 +1041,6 @@ SELECT currentQueryID();
 ┌─currentQueryID()─────────────────────┐
 │ 1280d0e8-1a08-4524-be6e-77975bb68e7d │
 └──────────────────────────────────────┘
-```
-
-## currentRequestURL {#currentRequestURL}
-
-Introduced in: v26.6.0
-
-Returns the HTTP request URL (path and query string) that invoked the query.
-Returns an empty string if the query was not invoked through HTTP.
-
-Useful, in combination with SQL-defined HTTP handlers (`CREATE HANDLER`), to extract parameters
-embedded in the request path.
-    
-
-<Note>
-This function is non-deterministic: it can return different results for the same arguments.
-</Note>
-
-**Syntax**
-
-```sql
-currentRequestURL()
-```
-
-**Arguments**
-
-- None.
-
-**Returned value**
-
-Returns the current HTTP request URL. [`String`](/reference/data-types/string)
-
-**Examples**
-
-**Usage example**
-
-```sql title=Query
-SELECT currentRequestURL()
 ```
 
 ## currentRoles {#currentRoles}
@@ -1441,8 +1368,6 @@ Counting starts from 1 with the following logic:
 An optional argument `length` uses the following logic:
 - If `length` is positive, it means number of digits to take from offset
 - If `length` is negative, it means number of digits from the right of the number to exclude
-
-See also the [`substring`](/reference/functions/regular-functions/string-functions#substring) function, which performs the analogous operation on strings.
     
 
 **Syntax**
@@ -1783,7 +1708,7 @@ SELECT formatReadableSize(filesystemAvailable()) AS "Available space";
 Introduced in: v20.1.0
 
 Returns the capacity of the filesystem in bytes.
-Needs the [path](/reference/settings/server-settings/settings/other#path) to the data directory to be configured.
+Needs the [path](/reference/settings/server-settings/settings#path) to the data directory to be configured.
 
 <Note>
 This function is non-deterministic: it can return different results for the same arguments.
@@ -1918,9 +1843,9 @@ Introduced in: v25.11.0
 
 Flips the x and y coordinates of geometric objects. This operation swaps latitude and longitude, which is useful for converting between different coordinate systems or correcting coordinate order.
 
-For a Point, it swaps the x and y coordinates. For complex geometries (MultiPoint, LineString, Polygon, MultiPolygon, Ring, MultiLineString), it recursively applies the transformation to each coordinate pair.
+For a Point, it swaps the x and y coordinates. For complex geometries (LineString, Polygon, MultiPolygon, Ring, MultiLineString), it recursively applies the transformation to each coordinate pair.
 
-The function supports both individual geometry types (Point, MultiPoint, Ring, Polygon, MultiPolygon, LineString, MultiLineString) and the Geometry variant type.
+The function supports both individual geometry types (Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString) and the Geometry variant type.
 
 **Syntax**
 
@@ -1930,11 +1855,11 @@ flipCoordinates(geometry)
 
 **Arguments**
 
-- `geometry` — The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), MultiPoint (Array(Point)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)), or Geometry (a variant containing any of these types). 
+- `geometry` — The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)), or Geometry (a variant containing any of these types). 
 
 **Returned value**
 
-The geometry with flipped coordinates. The return type matches the input type. [`Point`](/reference/data-types/geo#point) or [`MultiPoint`](/reference/data-types/geo#multipoint) or [`Ring`](/reference/data-types/geo#ring) or [`Polygon`](/reference/data-types/geo#polygon) or [`MultiPolygon`](/reference/data-types/geo#multipolygon) or [`LineString`](/reference/data-types/geo#linestring) or [`MultiLineString`](/reference/data-types/geo#multilinestring) or [`Geometry`](/reference/data-types/geo)
+The geometry with flipped coordinates. The return type matches the input type. [`Point`](/reference/data-types/geo#point) or [`Ring`](/reference/data-types/geo#ring) or [`Polygon`](/reference/data-types/geo#polygon) or [`MultiPolygon`](/reference/data-types/geo#multipolygon) or [`LineString`](/reference/data-types/geo#linestring) or [`MultiLineString`](/reference/data-types/geo#multilinestring) or [`Geometry`](/reference/data-types/geo)
 
 **Examples**
 
@@ -2023,61 +1948,6 @@ SELECT
     b
 FROM tab
 WHERE (a > 3) AND (b < 3)
-```
-
-## formatQueryFromJSON {#formatQueryFromJSON}
-
-Introduced in: v26.8.0
-
-Takes a JSON representation of a SQL AST (as produced by `parseQueryToJSON`) and formats it back into a SQL query string.
-
-With one argument, produces canonically formatted SQL.
-With two arguments `(json, original_query)`, preserves comments, whitespace, and indentation from the original query on a best-effort basis.
-
-The deserialized AST is bounded by the current session's `max_ast_depth` and `max_ast_elements` settings.
-Together with `parseQueryToJSON`, this function enables programmatic inspection and transformation of queries
-through their JSON AST form.
-    
-
-**Syntax**
-
-```sql
-formatQueryFromJSON(json[, original_query])
-```
-
-**Arguments**
-
-- `json` — A JSON string representing a SQL AST. [`String`](/reference/data-types/string)
-- `original_query` — Optional. The original SQL query to preserve formatting from. [`String`](/reference/data-types/string)
-
-**Returned value**
-
-A SQL query string. [`String`](/reference/data-types/string)
-
-**Examples**
-
-**Round-trip**
-
-```sql title=Query
-SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a, b FROM t WHERE x > 1'));
-```
-
-```response title=Response
-┌─formatQueryFromJSON(parseQueryToJSON('SELECT a, b FROM t WHERE x > 1'))─┐
-│ SELECT a, b FROM t WHERE x > 1                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-**Preserve formatting**
-
-```sql title=Query
-SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t'), 'SELECT /* comment */ a FROM t');
-```
-
-```response title=Response
-┌─formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t'), 'SELECT /* comment */ a FROM t')─┐
-│ SELECT /* comment */ a FROM t                                                             │
-└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## formatQueryOrNull {#formatQueryOrNull}
@@ -2523,7 +2393,7 @@ Introduced in: v25.1.0
 Generates and returns sequential numbers starting from the previous counter value.
 This function takes a string argument - a series identifier, and an optional starting value.
 The server should be configured with Keeper.
-The series are stored in Keeper nodes under the path, which can be configured in [`series_keeper_path`](/reference/settings/server-settings/settings/other#series_keeper_path) in the server configuration.
+The series are stored in Keeper nodes under the path, which can be configured in [`series_keeper_path`](/reference/settings/server-settings/settings#series_keeper_path) in the server configuration.
     
 
 <Note>
@@ -2669,7 +2539,7 @@ SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header
 Introduced in: v20.1.0
 
 Returns the value of a macro from the server configuration file.
-Macros are defined in the [`<macros>`](/reference/settings/server-settings/settings/other#macros) section of the configuration file and can be used to distinguish servers by convenient names even if they have complicated hostnames.
+Macros are defined in the [`<macros>`](/reference/settings/server-settings/settings#macros) section of the configuration file and can be used to distinguish servers by convenient names even if they have complicated hostnames.
 If the function is executed in the context of a distributed table, it generates a normal column with values relevant to each shard.
 
 <Note>
@@ -4481,54 +4351,6 @@ SELECT obfuscateQueryWithSeed('SELECT 1', 100) = obfuscateQueryWithSeed('SELECT 
 true
 ```
 
-## parseQueryToJSON {#parseQueryToJSON}
-
-Introduced in: v26.8.0
-
-Parses a SQL query string into its AST (Abstract Syntax Tree) and returns a JSON representation of that tree.
-The resulting JSON can be passed to `formatQueryFromJSON` to reconstruct the SQL query, or sent directly
-to the server using the `clickhouse_json` value of the `dialect` setting (gated by `enable_json_ast_dialect`).
-
-This is useful for tools that want to inspect or transform queries programmatically without going through
-the SQL grammar.
-
-Not every SQL query has a faithful JSON representation. Queries that carry data the JSON form cannot
-reproduce (for example inline `INSERT ... VALUES` / `INSERT ... FORMAT` data) and AST node types that do
-not yet implement JSON serialization are rejected with `BAD_ARGUMENTS`, rather than producing JSON that
-`formatQueryFromJSON` could not read back.
-
-Parsing limits (`max_query_size`, `max_parser_depth`, `max_parser_backtracks`) are taken from the current
-session settings.
-    
-
-**Syntax**
-
-```sql
-parseQueryToJSON(sql)
-```
-
-**Arguments**
-
-- `sql` — A SQL query string to parse. [`String`](/reference/data-types/string)
-
-**Returned value**
-
-A JSON string representing the AST. [`String`](/reference/data-types/string)
-
-**Examples**
-
-**Simple SELECT**
-
-```sql title=Query
-SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1'));
-```
-
-```response title=Response
-┌─formatQueryFromJSON(parseQueryToJSON('SELECT 1'))─┐
-│ SELECT 1                                          │
-└───────────────────────────────────────────────────┘
-```
-
 ## parseReadableSize {#parseReadableSize}
 
 Introduced in: v24.6.0
@@ -4772,88 +4594,6 @@ SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
 └───┴───┴────────────────┴───────────────┘
 ```
 
-## pgGetUserById {#pgGetUserById}
-
-Introduced in: v26.8.0
-
-Compatibility function for the PostgreSQL wire protocol, an analog of `pg_catalog.pg_get_userbyid`.
-PostgreSQL clients (for example, the `\d` command in `psql`) use it to display the owner of a table.
-ClickHouse does not track table ownership, so the function ignores the argument and returns the name of the current user.
-    
-
-<Note>
-This function is non-deterministic: it can return different results for the same arguments.
-</Note>
-
-**Syntax**
-
-```sql
-pgGetUserById(oid)
-```
-
-**Aliases**: `pg_get_userbyid`
-
-**Arguments**
-
-- `oid` — Object identifier of the role. The value is ignored. [`UInt32`](/reference/data-types/int-uint)
-
-**Returned value**
-
-Returns the name of the current user. [`String`](/reference/data-types/string)
-
-**Examples**
-
-**Usage example**
-
-```sql title=Query
-SELECT pg_get_userbyid(10)
-```
-
-```response title=Response
-┌─pgGetUserById(10)─┐
-│ default           │
-└───────────────────┘
-```
-
-## pgTableIsVisible {#pgTableIsVisible}
-
-Introduced in: v26.8.0
-
-Compatibility function for the PostgreSQL wire protocol, an analog of `pg_catalog.pg_table_is_visible`.
-PostgreSQL clients (for example, the `\d` command in `psql`) use it to filter tables visible in the search path.
-Since the `pg_class` view emulated by ClickHouse exposes only the tables of the current database, which are all visible, the function unconditionally returns `1`.
-    
-
-**Syntax**
-
-```sql
-pgTableIsVisible(oid)
-```
-
-**Aliases**: `pg_table_is_visible`
-
-**Arguments**
-
-- `oid` — Object identifier of the table, as exposed by the emulated `pg_class` view. The value is ignored. [`UInt32`](/reference/data-types/int-uint)
-
-**Returned value**
-
-Always returns `1`. [`UInt8`](/reference/data-types/int-uint)
-
-**Examples**
-
-**Usage example**
-
-```sql title=Query
-SELECT pg_table_is_visible(0)
-```
-
-```response title=Response
-┌─pgTableIsVisible(0)─┐
-│                   1 │
-└─────────────────────┘
-```
-
 ## queryID {#queryID}
 
 Introduced in: v21.9.0
@@ -5076,7 +4816,7 @@ Accumulates the states of an aggregate function for each row of a data block.
 
 The state is reset for each new block of data.
 Due to this error-prone behavior the function has been deprecated, and you are advised to use [window functions](/reference/functions/window-functions/index) instead.
-You can use setting [`allow_deprecated_error_prone_window_functions`](/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) to allow usage of this function.
+You can use setting [`allow_deprecated_error_prone_window_functions`](/reference/settings/session-settings#allow_deprecated_error_prone_window_functions) to allow usage of this function.
 </Warning>
 
 **Syntax**
@@ -5189,7 +4929,7 @@ Only returns differences inside the currently processed data block.
 Because of this error-prone behavior, the function is deprecated.
 It is advised to use [window functions](/reference/functions/window-functions/index) instead.
 
-You can use setting [`allow_deprecated_error_prone_window_functions`](/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) to allow usage of this function.
+You can use setting [`allow_deprecated_error_prone_window_functions`](/reference/settings/session-settings#allow_deprecated_error_prone_window_functions) to allow usage of this function.
 </Warning>
 
 The result of the function depends on the affected data blocks and the order of data in the block.
@@ -5463,7 +5203,6 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 Introduced in: v22.6.0
 
 Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured.
-An empty map is returned if the server has no certificate, for example, when the certificate is provisioned with ACME and has not been issued yet.
 See [Configuring TLS](/concepts/features/security/tls/configuring-tls) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
     
 
