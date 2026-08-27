@@ -444,6 +444,16 @@ profiles:
             verbose=True,
         )
 
+    def _set_pid(self, replica_num, pid):
+        if replica_num == 1:
+            self.pid_1 = pid
+        elif replica_num == 2:
+            self.pid_2 = pid
+        elif replica_num == 0:
+            self.pid_0 = pid
+        else:
+            assert False
+
     def start(self, replica_num=0):
         if replica_num == 0:
             # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host
@@ -466,6 +476,9 @@ profiles:
 
         print(f"Starting ClickHouse server replica {replica_num}, command: {command}")
 
+        # The cached pid mirrors this file and must not outlive it: stop_server()
+        # keys its pid-less kill path off the cached value.
+        self._set_pid(replica_num, 0)
         Path(pid_file).unlink(missing_ok=True)
         Utils.clean_dir(Path(run_path))
         Utils.clean_dir(p_temp_dir / "jemalloc_profiles")
@@ -516,14 +529,7 @@ profiles:
                     continue
                 started = True
                 print(f"Got pid from fs [{pid}]")
-                if replica_num == 1:
-                    self.pid_1 = int(pid)
-                elif replica_num == 2:
-                    self.pid_2 = int(pid)
-                elif replica_num == 0:
-                    self.pid_0 = int(pid)
-                else:
-                    assert False
+                self._set_pid(replica_num, int(pid))
                 break
         except Exception:
             pass
@@ -1030,11 +1036,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 except subprocess.TimeoutExpired:
                     proc.kill()
             elif proc:
-                # start() spawned a server but timed out before the pid file
-                # appeared, so `pid` is unset and the graceful branch is skipped.
-                # `proc` may be the `sh -c` wrapper rather than the server, so
-                # kill by the unique --pid-file token (reaches wrapper, server
-                # and any duplicate), then reap the wrapper.
+                # `proc` is the `sh -c` wrapper, not the server, so kill by the
+                # unique --pid-file token, then reap the wrapper.
                 Shell.check(f"pkill -9 -f -- '--pid-file {pid_file}'", verbose=True)
                 try:
                     proc.wait(timeout=10)
