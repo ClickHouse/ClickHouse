@@ -322,6 +322,9 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
         && !has_multiple_needles)
         return false;
 
+    if (value_field.isNull())
+        return false;
+
     /// `startsWith` uses a binary search over the ordered token dictionary instead of scanning it.
     if (function_name != "equals"
         && function_name != "has"
