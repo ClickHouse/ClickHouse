@@ -360,9 +360,22 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
-    std::string result = joinPathUnderPrefix(
-        include_connection_info ? configuration.getDataSourceDescription() : configuration.getNamespace(),
-        object_info.getPath());
+    auto path = object_info.getPath();
+    if (path.starts_with("/"))
+        path = path.substr(1);
+
+    const size_t scheme_end
+        = configuration.isDataLakeConfiguration() && configuration.getType() == ObjectStorageType::S3
+        ? path.find("://")
+        : std::string::npos;
+
+    std::string result;
+    if (scheme_end != std::string::npos)
+        result = path.substr(scheme_end + 3);
+    else
+        result = joinPathUnderPrefix(
+            include_connection_info ? configuration.getDataSourceDescription() : configuration.getNamespace(),
+            path);
 
     /// For web URL shards the same relative path can be produced by different expanded URL options
     /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache
@@ -656,7 +669,7 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto reading_path = configuration->getPathForRead().path;
 
-            if (!full_path.starts_with(reading_path))
+            if (!full_path.starts_with(reading_path) && !full_path.contains("://"))
                 full_path = fs::path(reading_path) / object_info->getPath();
 
             auto object_metadata = object_info->getObjectMetadata();

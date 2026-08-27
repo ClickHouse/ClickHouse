@@ -99,10 +99,14 @@ public:
         /// Normalize: non-URI table_location should start with '/'
         if (!table_location.empty() && !table_location.contains("://") && table_location[0] != '/')
             table_location = "/" + table_location;
+
+        table_location_namespace = parseNamespace(table_location);
     }
 
     /// Convert a metadata path to an actual storage path for I/O operations.
     String resolve(const IcebergPathFromMetadata & metadata_path) const;
+
+    static String parseNamespace(const String & path);
 
     IcebergPathFromMetadata reverseResolve(const String & storage_path) const
     {
@@ -126,10 +130,13 @@ public:
     const String & getTableRoot() const { return table_root; }
 
 private:
+    bool isInForeignNamespace(const String & raw_path) const;
+
     String table_location;
     String table_root;
     String blob_storage_type_name;
     String blob_storage_namespace_name;
+    String table_location_namespace;
 };
 
 }

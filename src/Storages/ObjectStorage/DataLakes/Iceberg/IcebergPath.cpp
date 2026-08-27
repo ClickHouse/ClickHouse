@@ -69,6 +69,32 @@ IcebergPathResolver::TableRootDerivation IcebergPathResolver::deriveTableRoot(
     return {String(candidate), RootRelation::AdoptedDescendant};
 }
 
+String IcebergPathResolver::parseNamespace(const String & path)
+{
+    const size_t scheme_end = path.find("://");
+    if (scheme_end == std::string::npos)
+        return {};
+
+    const size_t namespace_begin = scheme_end + 3;
+    const size_t namespace_end = path.find('/', namespace_begin);
+    if (namespace_end == std::string::npos || namespace_end == namespace_begin)
+        return {};
+
+    return path.substr(namespace_begin, namespace_end - namespace_begin);
+}
+
+bool IcebergPathResolver::isInForeignNamespace(const String & raw_path) const
+{
+    if (blob_storage_type_name != "s3" || blob_storage_namespace_name.empty())
+        return false;
+
+    auto path_namespace = parseNamespace(raw_path);
+    if (path_namespace.empty())
+        return false;
+
+    return path_namespace != blob_storage_namespace_name && path_namespace != table_location_namespace;
+}
+
 // This function is used to get the file path inside the directory which corresponds to Iceberg table from the full blob path which is written in manifest and metadata files.
 // For example, if the full blob path is s3://bucket/table_name/data/00000-1-1234567890.avro, the function will return table_name/data/00000-1-1234567890.avro
 // Common path should end with "<table_name>" or "<table_name>/".
@@ -91,6 +117,9 @@ String IcebergPathResolver::resolve(const IcebergPathFromMetadata & metadata_pat
         auto result = std::filesystem::path{table_root} / trim_forward_slash(raw_path.substr(table_location.size()));
         return result;
     }
+
+    if (isInForeignNamespace(raw_path))
+        return raw_path;
 
     if (table_root.empty())
     {
