@@ -96,9 +96,10 @@ ASTPtr ASTStreamSettings::clone() const
 
 void ASTStreamSettings::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    /// The stream modifiers and the cursor tree and the watermark column/idle timeout are not
+    /// The cursor tree, the watermark column/idle timeout and the two modifier flags are not
     /// children (only the watermark expression is, see `setWatermark`), so hash them explicitly.
-    static_assert(sizeof(*this) <= 72, "If members were added to ASTStreamSettings, hash them here unless they are purely cosmetic.");
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 72, "If members were added to ASTStreamSettings, hash them here unless they are purely cosmetic.");
     hash_state.update(subscribe_for_updates);
     hash_state.update(unordered);
     hash_state.update(cursor != nullptr);
@@ -248,6 +249,14 @@ void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
         setCursor(buildCursorTree(map));
     }
 
+    /// The parser produces the three watermark fields only together, as one
+    /// `WATERMARK FOR <col> AS <expr> ...` clause, and `writeJSON` emits them together too. Orphaned
+    /// fields without 'watermark_column' would be silently dropped here, so the query would hash,
+    /// format, and execute as if no watermark existed - reject them as parser-impossible.
+    if (!r.has("watermark_column") && (r.has("watermark_expression") || r.has("watermark_idle_timeout_ms")))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`StreamSettings` 'watermark_expression' and 'watermark_idle_timeout_ms' require 'watermark_column' during AST JSON deserialization");
+
     if (r.has("watermark_column"))
     {
         auto column = r.getString("watermark_column");
@@ -270,15 +279,6 @@ void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
         new_watermark->expression = std::move(expression);
         new_watermark->idle_timeout = std::chrono::milliseconds(idle_timeout_ms);
         setWatermark(std::move(new_watermark));
-    }
-    else if (r.has("watermark_expression") || r.has("watermark_idle_timeout_ms"))
-    {
-        /// `writeJSON` emits the three watermark keys together, so a payload carrying only some of
-        /// them is malformed. Accepting it would silently deserialize into a watermark-less query,
-        /// which is a different AST than the one the payload describes.
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`StreamSettings` 'watermark_expression' and 'watermark_idle_timeout_ms' require "
-            "'watermark_column' during AST JSON deserialization");
     }
 }
 

@@ -7,3 +7,7 @@
 1
 1
 1
+= a deferred prewhere does not borrow the preprocessor from a sibling where =
+0
+2
+0

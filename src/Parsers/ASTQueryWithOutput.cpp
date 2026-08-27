@@ -31,28 +31,33 @@ void ASTQueryWithOutput::writeOutputOptionsJSON(JSONObjectWriter & w) const
 
 void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
 {
+    /// The children are appended in the canonical order (see `output_option_members`), so
+    /// the deserialized AST has the same child order - and the same tree hash - as a
+    /// freshly parsed one.
     /// `ParserQueryWithOutput` accepts only specific node types for these fields, and
     /// downstream code (e.g. `ClientBase`) downcasts them unconditionally with `as<...>`.
     /// Validate the concrete node type here so malformed `clickhouse_json` is rejected
     /// with a `BAD_ARGUMENTS` parse error instead of reaching a logical exception later,
     /// and so it cannot build an AST that the SQL parser could never produce.
     out_file = r.readChildOfType<ASTLiteral>("out_file");
-    /// `out_file` is parsed by `ParserStringLiteral`.
-    if (out_file && out_file->as<ASTLiteral &>().value.getType() != Field::Types::String)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Output 'out_file' must be a string literal during AST JSON deserialization");
-
-    /// `format_ast` is parsed by `ParserIdentifier`.
-    format_ast = r.readChildOfType<ASTIdentifier>("format_ast");
-
-    /// `settings_ast` is parsed by `ParserSetQuery`.
-    settings_ast = r.readChildOfType<ASTSetQuery>("settings_ast");
+    if (out_file)
+    {
+        /// `out_file` is parsed by `ParserStringLiteral`.
+        if (out_file->as<ASTLiteral &>().value.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Output 'out_file' must be a string literal during AST JSON deserialization");
+        children.push_back(out_file);
+    }
 
     compression = r.readChildOfType<ASTLiteral>("compression");
-    /// `compression` is parsed by `ParserStringLiteral`.
-    if (compression && compression->as<ASTLiteral &>().value.getType() != Field::Types::String)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Output 'compression' must be a string literal during AST JSON deserialization");
+    if (compression)
+    {
+        /// `compression` is parsed by `ParserStringLiteral`.
+        if (compression->as<ASTLiteral &>().value.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Output 'compression' must be a string literal during AST JSON deserialization");
+        children.push_back(compression);
+    }
 
     compression_level = r.readChildOfType<ASTLiteral>("compression_level");
     if (compression_level)
@@ -62,13 +67,18 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
         if (type != Field::Types::UInt64 && type != Field::Types::Int64 && type != Field::Types::Float64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Output 'compression_level' must be a numeric literal during AST JSON deserialization");
+        children.push_back(compression_level);
     }
 
-    /// Append the children in the same canonical order the parser and `cloneOutputOptions`
-    /// use, so a JSON round-trip preserves the child order and therefore the tree hash.
-    for (auto member : output_option_members)
-        if (this->*member)
-            children.push_back(this->*member);
+    /// `format_ast` is parsed by `ParserIdentifier`.
+    format_ast = r.readChildOfType<ASTIdentifier>("format_ast");
+    if (format_ast)
+        children.push_back(format_ast);
+
+    /// `settings_ast` is parsed by `ParserSetQuery`.
+    settings_ast = r.readChildOfType<ASTSetQuery>("settings_ast");
+    if (settings_ast)
+        children.push_back(settings_ast);
 
     setIsOutfileAppend(r.getBool("is_outfile_append"));
     setIsOutfileTruncate(r.getBool("is_outfile_truncate"));
@@ -174,8 +184,9 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
         ast_with_output->reset(ast_with_output->compression);
         ast_with_output->reset(ast_with_output->compression_level);
 
-        /// The modifiers are formatted only inside the `INTO OUTFILE` branch, so with `out_file`
-        /// gone they can no longer reach the output; leaving them set keeps them in the tree hash.
+        /// The `APPEND` / `TRUNCATE` / `AND STDOUT` modifiers are flags, not children, and they are
+        /// part of the tree hash; callers use this function to normalize the AST before hashing
+        /// (e.g. the query result cache), so they must be cleared together with `out_file`.
         ast_with_output->setIsOutfileAppend(false);
         ast_with_output->setIsOutfileTruncate(false);
         ast_with_output->setIsIntoOutfileWithStdout(false);

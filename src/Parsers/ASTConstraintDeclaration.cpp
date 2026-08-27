@@ -31,7 +31,8 @@ ASTPtr ASTConstraintDeclaration::clone() const
 void ASTConstraintDeclaration::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     /// `name` and `type` (CHECK/ASSUME) are not children, so the default implementation does not see them.
-    static_assert(sizeof(*this) <= 72, "If members were added to ASTConstraintDeclaration, hash them here unless they are purely cosmetic.");
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 72, "If members were added to ASTConstraintDeclaration, hash them here unless they are purely cosmetic.");
     hash_state.update(name.size());
     hash_state.update(name);
     hash_state.update(type);
