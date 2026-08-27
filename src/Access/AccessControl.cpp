@@ -295,7 +295,6 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
 
     setBcryptWorkfactor(config_.getInt("bcrypt_workfactor", 12));
 
-    /// Caps concurrent bcrypt verifications process-wide to bound CPU under an auth flood. 0 = unlimited (default).
     AuthenticationData::Util::setMaxConcurrentBcryptAuthentications(config_.getUInt64("max_concurrent_bcrypt_authentications", 0));
 
     /// Optional improvements in access control system.

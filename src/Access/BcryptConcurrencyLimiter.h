@@ -10,19 +10,13 @@ namespace DB
 
 /// Bounds the number of bcrypt verifications running concurrently across the whole process.
 ///
-/// bcrypt is deliberately CPU-expensive, so an unauthenticated flood of *distinct* passwords
-/// (which the per-credential bcrypt cache cannot absorb) can saturate every core. This limiter
-/// caps the in-flight verification count so worst-case bcrypt CPU is bounded regardless of how
-/// many distinct passwords an attacker tries.
-///
-/// A limit of 0 means unlimited (the default, preserving historical behavior).
-/// Admission is fail-fast (never blocks): a thread that cannot get a slot is rejected immediately
-/// rather than queued, so a flood cannot pile up connection threads and amplify the DoS.
+/// A limit of 0 means unlimited. Admission is fail-fast and never blocks: a thread that cannot get
+/// a slot is rejected immediately rather than queued.
 class BcryptConcurrencyLimiter
 {
 public:
-    /// RAII token returned by tryAcquire(). When acquired(), a slot is held and released on destruction.
-    /// Move-only; an empty (default-constructed / moved-from) guard holds nothing.
+    /// RAII token returned by `tryAcquire`. While `acquired`, a slot is held; it is released on
+    /// destruction. Move-only; an empty (default-constructed / moved-from) guard holds nothing.
     class Guard
     {
     public:
@@ -60,16 +54,15 @@ public:
         BcryptConcurrencyLimiter * limiter = nullptr;
     };
 
-    /// 0 = unlimited. Safe to call at any time (e.g. on config reload).
+    /// 0 = unlimited. Thread-safe: a new value applies from the next `tryAcquire` onwards.
     void setLimit(UInt64 limit_) { limit.store(limit_, std::memory_order_relaxed); }
     UInt64 getLimit() const { return limit.load(std::memory_order_relaxed); }
 
     UInt64 getInFlight() const { return in_flight.load(std::memory_order_relaxed); }
 
-    /// Reserves a slot. Returns an acquired() guard on success, or an empty guard when the limit is
-    /// already reached. With limit == 0 it always succeeds. in_flight stays exactly equal to the
-    /// number of held slots, so the bound holds at every instant (no transient over-count) and a
-    /// concurrent flood is never under-rejected past the limit.
+    /// Reserves a slot. Returns an `acquired` guard on success, or an empty guard when the limit is
+    /// already reached; with a limit of 0 it always succeeds. `in_flight` stays exactly equal to the
+    /// number of held slots, so the bound holds at every instant.
     Guard tryAcquire()
     {
         const UInt64 max = limit.load(std::memory_order_relaxed);

@@ -127,11 +127,9 @@ namespace
         return limiter;
     }
 
-    /// Thrown out of the cache load function when admission is denied. It escapes getOrSet without
-    /// being cached (the cache only stores values the load function returns), so a later retry under
-    /// lower load is not poisoned by a "wrong" entry. checkPasswordBcrypt catches it and reports a
-    /// failed bcrypt method (see the catch site for why this must not propagate).
-    /// Derives from std::exception only to satisfy hicpp-exception-baseclass; it never reaches a client.
+    /// Thrown out of the cache load function when admission is denied: it escapes getOrSet uncached,
+    /// because the cache stores only values the load function returns, so a throttled correct
+    /// password is not remembered as wrong.
     struct BcryptThrottled : std::exception
     {
     };
@@ -174,11 +172,8 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
     {
         auto [result, _] = bcrypt_cache.getOrSet(cache_key, [&] -> std::shared_ptr<bool>
             {
-                /// Only cache misses reach here (getOrSet runs this under a per-key token), so the limiter
-                /// protects the expensive path while leaving cache hits, including repeated identical
-                /// credentials, completely unthrottled. Admission is fail-fast: exceeding the limit signals
-                /// BcryptThrottled instead of running bcrypt. The signal escapes uncached, so a legitimate
-                /// client retrying under lower load is not poisoned by a "wrong" entry.
+                /// Only cache misses reach here (getOrSet runs this under a per-key token), so cache
+                /// hits are never throttled.
                 auto guard = bcryptConcurrencyLimiter().tryAcquire();
                 if (!guard.acquired())
                 {
@@ -199,10 +194,9 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
     }
     catch (const BcryptThrottled &)
     {
-        /// Report a failed bcrypt method rather than propagating. A user may list several
-        /// authentication methods as alternatives (e.g. bcrypt_password and plaintext_password);
-        /// IAccessStorage::authenticateImpl tries the next method only when this one returns false.
-        /// Throwing here would abort that loop and reject a login that a later method would accept.
+        /// Report a failed bcrypt method rather than propagating: a user may list several
+        /// authentication methods as alternatives, and IAccessStorage::authenticateImpl tries the
+        /// next one only when this one returns false.
         return false;
     }
 #else

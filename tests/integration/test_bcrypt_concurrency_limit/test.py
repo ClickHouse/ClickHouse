@@ -110,17 +110,13 @@ def test_zero_limit_preserves_unlimited_behavior(started_cluster):
 
 
 def test_throttled_bcrypt_method_falls_through_to_next_method(started_cluster):
-    # Scenario (d): a user may list several authentication methods as alternatives. When an earlier
-    # bcrypt method is throttled, the limiter denial must behave like a *failed* bcrypt method (so the
-    # auth loop tries the next method), not abort the whole login. Otherwise a valid login via a later
-    # method (here plaintext) would be wrongly rejected whenever the bcrypt method happens to be
-    # throttled. Regression test for clickhouse-gh[bot] review on AuthenticationData.cpp.
+    # Scenario (d): a user may list several authentication methods as alternatives, so a throttled
+    # bcrypt method must behave like a failed one and let the next method authenticate the login.
     #
-    # The bug only manifests on a bcrypt cache MISS that is throttled, so each probe must use a
-    # DISTINCT, never-before-seen correct password (a repeated password becomes a bcrypt cache hit,
-    # which bypasses the limiter and would mask the bug). We therefore create many multi-method users,
-    # each with its own password, and log into each exactly once while a separate user's bcrypt slot
-    # is saturated. Pre-fix: nearly all of these correct logins fail. Post-fix: none do.
+    # Only a throttled cache MISS can deny the bcrypt method, so each probe needs its own correct
+    # password that has never been used: a repeated password is a cache hit and bypasses the limiter.
+    # Hence one multi-method user per probe, each logged into exactly once while a separate user's
+    # flood keeps the single bcrypt slot busy.
     n_users = 30
     for i in range(n_users):
         limited.query(f"DROP USER IF EXISTS m_user_{i}")
@@ -130,8 +126,6 @@ def test_throttled_bcrypt_method_falls_through_to_next_method(started_cluster):
             f"plaintext_password BY 'pt-{i}'"
         )
 
-    # A dedicated bcrypt-only user drives the saturating flood (distinct cache-missing passwords),
-    # keeping the single global bcrypt slot busy while the probes below run.
     limited.query("DROP USER IF EXISTS flooder")
     limited.query("CREATE USER flooder IDENTIFIED WITH bcrypt_password BY 'flood-secret'")
 
@@ -150,10 +144,7 @@ def test_throttled_bcrypt_method_falls_through_to_next_method(started_cluster):
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
         floods = [pool.submit(saturate, w) for w in range(16)]
         try:
-            # Give the flood a moment to saturate the slot, then probe each fresh user's correct
-            # plaintext password exactly once. With the bcrypt method throttled, the login must still
-            # succeed via the plaintext method (fall-through). Pre-fix code throws on throttle and
-            # aborts the loop, so these correct logins are rejected.
+            # Let the flood saturate the slot, then probe each user's correct plaintext password once.
             time.sleep(2)
             failures = []
             for i in range(n_users):

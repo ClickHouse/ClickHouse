@@ -43,7 +43,7 @@
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.", ValueType::Number) \
     M(FailedAsyncInsertQuery, "Number of failed ASYNC INSERT queries.", ValueType::Number) \
-    M(BcryptAuthenticationThrottled, "Number of bcrypt authentication attempts rejected because the limit on concurrent bcrypt verifications (max_concurrent_bcrypt_authentications) was reached. The attempt fails as if the password were wrong; legitimate clients can retry once load drops.", ValueType::Number) \
+    M(BcryptAuthenticationThrottled, "Number of `bcrypt_password` verifications denied because the limit on concurrent bcrypt verifications (`max_concurrent_bcrypt_authentications`) was reached. A denied verification fails like a wrong password, so any other authentication method listed for the user is still tried; legitimate clients can retry once load drops.", ValueType::Number) \
     M(ASTFuzzerQueries, "Number of fuzzed queries attempted by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerSkippedBackupRestore, "Number of fuzzed BACKUP/RESTORE queries the server-side AST fuzzer skipped instead of executing.", ValueType::Number) \
     M(ASTFuzzerSkippedReplicatedDDLInternal, "Number of times the server-side AST fuzzer skipped fuzzing because an internal replicated-database DDL execution (a live ZooKeeperMetadataTransaction) was in flight on the context.", ValueType::Number) \

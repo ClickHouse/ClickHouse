@@ -133,21 +133,23 @@ bcrypt's computational overhead at higher work factors.
 
 Maximum number of `bcrypt_password` verifications allowed to run concurrently across the whole server.
 
-bcrypt is intentionally CPU-expensive, so a flood of authentication attempts with many distinct passwords can saturate all CPU cores and cause a denial of service. This setting bounds the worst-case bcrypt CPU usage regardless of how many distinct passwords are tried. Attempts that exceed the limit fail fast with the generic authentication error, exactly as if the password were wrong, and are counted by the `BcryptAuthenticationThrottled` event in [`system.events`](/operations/system-tables/events). Only the expensive path is limited: an attempt served from the bcrypt result cache is never throttled.
+bcrypt is intentionally CPU-expensive, so a flood of authentication attempts with many distinct passwords can saturate all CPU cores and cause a denial of service. This setting bounds the worst-case bcrypt CPU usage regardless of how many distinct passwords are tried. A verification that exceeds the limit fails as if the password were wrong, so any other authentication method listed for the user is still tried, and it is counted by the `BcryptAuthenticationThrottled` event in [`system.events`](/reference/system-tables/events). Only the expensive path is limited: a verification served from the bcrypt result cache is never throttled.
 
-A value of `0` (the default) means no limit, preserving the previous behavior. A non-zero value should be chosen with care: setting it too low can reject legitimate concurrent logins (for example during a fleet restart). A small fraction of the available CPU cores is a reasonable starting point.
+A value of `0` means no limit, preserving the previous behavior. A non-zero value should be chosen with care: setting it too low can reject legitimate concurrent logins (for example during a fleet restart). A small fraction of the available CPU cores is a reasonable starting point.
+
+- **Default:** `0`
 
 ```xml
 <max_concurrent_bcrypt_authentications>0</max_concurrent_bcrypt_authentications>
 ```
 
-:::note
+<Note>
 The bcrypt result cache is a fixed-capacity server-wide LRU that also stores negative results, so a sustained flood of distinct passwords can evict a cached entry. Once evicted, the next attempt with that password is a cache miss again and can be rejected by this limit, so a non-zero value does not guarantee that a given client is always admitted.
-:::
+</Note>
 
-:::note
+<Note>
 Like [`bcrypt_workfactor`](#bcrypt_workfactor), this setting is read once at server startup and is not re-applied by `SYSTEM RELOAD CONFIG`. A server restart is required for a change to take effect.
-:::
+</Note>
 
 ## table_engines_require_grant {#table_engines_require_grant}
 If set to true, users require a grant to create a table with a specific engine e.g. `GRANT TABLE ENGINE ON TinyLog to user`.

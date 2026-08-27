@@ -88,7 +88,7 @@ TEST(BcryptConcurrencyLimiter, LimitCanBeRaisedAndLowered)
     EXPECT_TRUE(g1.acquired());
     EXPECT_FALSE(limiter.tryAcquire().acquired());
 
-    /// Raising the limit immediately admits more (config reload).
+    /// Raising the limit immediately admits more.
     limiter.setLimit(3);
     auto g2 = limiter.tryAcquire();
     auto g3 = limiter.tryAcquire();
