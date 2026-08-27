@@ -16,25 +16,6 @@ We also consider the test to be unstable, if the observed difference is less tha
 performance differences above 5% more often than in 5% runs, so the test is likely
 to have false positives.
 
-### Where the results live
-
-In addition to the static `report.html` and `logs.tar.zst` bundle described
-below, every perf-comparison run uploads its results to the `play.clickhouse.com`
-ClickHouse cluster.
-
-| Table | Contents |
-| --- | --- |
-| `query_metrics_v2` | One row per `(test, query_index, metric)` with medians, diff and stat threshold. |
-| `query_metric_runs_v1` | Full per-run data (one row per `(test, query_index, side, query_id, metric)`). |
-| `perf_test_times_v1` | Per-test run times (Test Times section). |
-| `perf_test_perf_changes_v1` | Per-test summary of performance changes. |
-| `perf_partial_queries_v1` | Backward-incompatible queries that ran only on the new server. |
-| `perf_skipped_tests_v1` | Tests skipped during the run and why. |
-| `perf_run_errors_v1` | Errors captured from `run-errors.tsv`. |
-| `perf_metric_changes_v1` | Changes in `system.asynchronous_metric_log` medians. |
-| `perf_flamegraph_stacks_v1` | Collapsed flamegraph stacks per query/side/trace type. |
-
-
 ### How to Read the Report
 
 The check status summarizes the report in a short text message like `1 faster, 10 unstable`:
@@ -72,14 +53,14 @@ A query is supposed to run longer than 0.1 second. If your query runs faster, in
 #### Backward-incompatible Queries
 Action required for the cells marked in red.
 
-Shows the queries we are unable to run on an old server -- probably because they contain a new function. You should see this table when you add a new function and a performance test for it. A test whose `create_query`/`fill_query` is marked with `do_not_check_in_pr="<this PR's number>"` and fails on the old server also lands here, with all of its queries, in the PR that introduces it. Check that the run time and variance are acceptable (run time between 0.1 and 1 seconds, variance below 10%). If not, they will be highlighted in red.
+Shows the queries we are unable to run on an old server -- probably because they contain a new function. You should see this table when you add a new function and a performance test for it. Check that the run time and variance are acceptable (run time between 0.1 and 1 seconds, variance below 10%). If not, they will be highlighted in red.
 
 #### Changes in Performance
 Action required for the cells marked in red, and some cheering is appropriate for the cells marked in green.
 
 These are the queries for which we observe a statistically significant change in performance. Note that there will always be some false positives -- we try to filter by p < 0.001, and have 2000 queries, so two false positives per run are expected. In practice we have more -- e.g. code layout changed because of some unknowable jitter in compiler internals, so the change we observe is real, but it is a 'false positive' in the sense that it is not directly caused by your changes. If, based on your knowledge of ClickHouse internals, you can decide that the observed test changes are not relevant to the changes made in the tested PR, you can ignore them.
 
-You can find flame graphs for queries with performance changes in the test output archive, in files named as 'my_test_0_Cpu_SELECT 1 FROM....FORMAT Null.left.svg'. First goes the test name, then the query number in the test, then the trace type (same as in `system.trace_log`), and then the server version (left is old and right is new). Besides the CPU and real-time profilers, the profile runs also enable allocation sampling, so `MemorySample` (`MemoryTracker` samples) and `JemallocSample` (jemalloc heap samples) flame graphs are produced as well; these are weighted by allocated bytes rather than by sample count.
+You can find flame graphs for queries with performance changes in the test output archive, in files named as 'my_test_0_Cpu_SELECT 1 FROM....FORMAT Null.left.svg'. First goes the test name, then the query number in the test, then the trace type (same as in `system.trace_log`), and then the server version (left is old and right is new).
 Apart from flame graphs for execution on each of the nodes, we also build differential flame graphs, that can be quite useful to quickly spot the cause of a performance change. See an example [here](https://github.com/ClickHouse/ClickHouse/pull/87366#discussion_r2426184017).
 
 #### Unstable Queries
@@ -150,7 +131,7 @@ More stages are available, e.g. restart servers or run the tests. See the code.
 
 #### Run a single test on the already configured servers
 ```
-tests/performance/scripts/perf.py --host=localhost --port=9000 tests/performance/logical_functions_small.xml
+tests/performance/scripts/perf.py --host=localhost --port=9000 --runs=1 tests/performance/logical_functions_small.xml
 ```
 
 #### Run all tests on some custom configuration

@@ -1,41 +1,20 @@
 #include <algorithm>
 #include <memory>
 #include <stack>
-#include <unordered_map>
 
-#include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
-#include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteBufferFromString.h>
-#include <Interpreters/Context.h>
 
-#include <Processors/ConcatProcessor.h>
-#include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
-#include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/GatherSendStep.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
-#include <Processors/QueryPlan/AnalyzePlanStats.h>
-#include <Processors/Sources/DelayedSource.h>
-#include <Processors/Sources/ReadFromDistributedPlanSource.h>
 
-#include <QueryPipeline/DistributedPlanExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Planner/Utils.h>
 
@@ -50,41 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int SUPPORT_IS_DISABLED;
-}
-
-const QueryPlan::Node * findNonSerializableStep(
-    const QueryPlan::Node * root, const std::function<bool(const IQueryPlanStep &)> & ignore)
-{
-    std::vector<const QueryPlan::Node *> stack;
-    if (root)
-        stack.push_back(root);
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-        if (node->step && !node->step->isSerializable() && !(ignore && ignore(*node->step)))
-            return node;
-        for (const auto * child : node->children)
-            stack.push_back(child);
-    }
-    return nullptr;
-}
-
-namespace
-{
-
-/// A stage fragment is shipped to workers by serializing its query plan, so every step must support
-/// serialization. Check up front (without serializing) so an unsupported plan fails early with a clear
-/// message instead of late, mid-execution, with a generic error.
-void assertFragmentSerializable(const QueryPlan & fragment, const String & stage_name)
-{
-    if (const auto * node = findNonSerializableStep(fragment.getRootNode()))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan cannot distribute this query: step '{}' in stage '{}' is not "
-            "serializable for remote execution", node->step->getName(), stage_name);
-}
-
 }
 
 SettingsChanges ExplainPlanOptions::toSettingsChanges() const
@@ -101,7 +45,6 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
     changes.emplace_back("column_structure", int(column_structure));
     changes.emplace_back("pretty", int(pretty));
     changes.emplace_back("compact", int(compact));
-    changes.emplace_back("estimates", int(estimates));
 
     return changes;
 }
@@ -109,7 +52,7 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
 QueryPlan::QueryPlan() = default;
 QueryPlan::~QueryPlan() = default;
 QueryPlan::QueryPlan(QueryPlan &&) noexcept = default;
-QueryPlan & QueryPlan::operator=(QueryPlan &&) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+QueryPlan & QueryPlan::operator=(QueryPlan &&) noexcept = default;
 
 void QueryPlan::checkInitialized() const
 {
@@ -240,9 +183,6 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     if (do_optimize)
         optimize(optimization_settings);
 
-    if (optimization_settings.make_distributed_plan)
-        convertToDistributed(optimization_settings);
-
     struct Frame
     {
         Node * node = {};
@@ -272,10 +212,6 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
             if (limit_max_threads && max_threads)
                 last_pipeline->limitMaxThreads(max_threads);
-
-            for (const auto & processor : last_pipeline->getProcessors())
-                if (!processor->getQueryPlanStep())
-                    processor->setQueryPlanStep(frame.node->step.get());
 
             stack.pop();
         }
@@ -410,37 +346,19 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
 
 static void explainStep(
     IQueryPlanStep & step,
-    const std::optional<CostEstimationInfo> & cost_estimation,
     IQueryPlanStep::FormatSettings & settings,
     const ExplainPlanOptions & options,
-    size_t max_description_length,
-    const AnalyzeStepsStats * steps_to_stats = nullptr)
+    size_t max_description_length)
 {
 
     settings.out << settings.header_prefix << step.getName();
     const auto & prefix = settings.detail_prefix;
 
     auto description = step.getStepDescription();
-
-    String pretty_description;
-    if (settings.pretty)
-    {
-        pretty_description = QueryPlanFormat::trimColumnIdentifier(description);
-        description = pretty_description;
-    }
-
     if (max_description_length)
         description = description.substr(0, max_description_length);
     if (options.description && !description.empty())
         settings.out <<" (" << description << ')';
-
-    if (options.estimates)
-    {
-        if (cost_estimation.has_value())
-            settings.out << fmt::format(" (rows: ~{:.1f}, cost: {:.1f})", cost_estimation->rows, cost_estimation->cost);
-        else
-            settings.out << " (rows: <unknown>, cost: <unknown>)";
-    }
 
     settings.out.write('\n');
 
@@ -522,7 +440,7 @@ static void explainStep(
         if (const auto & sort_description = step.getSortDescription(); !sort_description.empty())
         {
             settings.out << prefix << "Sorting: ";
-            dumpSortDescription(sort_description, settings);
+            dumpSortDescription(sort_description, settings.out);
             settings.out.write('\n');
         }
     }
@@ -538,17 +456,14 @@ static void explainStep(
 
     if (options.distributed)
         step.describeDistributedPlan(settings, options);
-
-    if (steps_to_stats)
-        steps_to_stats->printStepStats(&step, settings.out, prefix, options.processors_profile);
 }
 
 std::string debugExplainStep(IQueryPlanStep & step)
 {
     WriteBufferFromOwnString out;
     ExplainPlanOptions options{.actions = true};
-    IQueryPlanStep::FormatSettings settings{.out = out, .header_prefix = "", .detail_prefix = "", .pretty_names = {}, .runtime_filter_names = {}};
-    explainStep(step, std::nullopt, settings, options, 0);
+    IQueryPlanStep::FormatSettings settings{.out = out, .header_prefix = "", .detail_prefix = ""};
+    explainStep(step, settings, options, 0);
     return out.str();
 }
 
@@ -574,33 +489,18 @@ namespace ExplainPlan
 static void buildTreeOffset(
     const std::deque<ExplainPlan::Frame> & frames,
     const ExplainPlan::Frame & current,
-    IQueryPlanStep::FormatSettings & settings_format,
-    const std::string & parent_tree_prefix = "",
-    bool is_last_child_plan = true)
+    IQueryPlanStep::FormatSettings & settings_format)
 {
     if (frames.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Frames stack for building tree offset cannot be empty");
 
-    settings_format.header_prefix = parent_tree_prefix;
-    settings_format.detail_prefix = parent_tree_prefix;
-
-    bool has_children = !current.node->children.empty() || !current.node->step->getChildPlans().empty();
+    settings_format.header_prefix.clear();
+    settings_format.detail_prefix.clear();
 
     if (frames.size() == 1)
     {
-        if (!parent_tree_prefix.empty())
-        {
-            settings_format.header_prefix += is_last_child_plan ? "└──" : "├──";
-            settings_format.detail_prefix += is_last_child_plan ? "   " : "│  ";
-        }
-        settings_format.detail_prefix += has_children ? "│  " : "   ";
+        settings_format.detail_prefix += current.node->children.empty() ? "   " : "│  ";
         return;
-    }
-
-    if (!parent_tree_prefix.empty())
-    {
-        settings_format.header_prefix += is_last_child_plan ? "   " : "│  ";
-        settings_format.detail_prefix += is_last_child_plan ? "   " : "│  ";
     }
 
     for (size_t i = 0; i < frames.size() - 2; ++i)
@@ -612,7 +512,7 @@ static void buildTreeOffset(
 
     settings_format.header_prefix += current.is_last_child ? "└──" : "├──";
     settings_format.detail_prefix += current.is_last_child ? "   " : "│  ";
-    settings_format.detail_prefix += has_children ? "│  " : "   ";
+    settings_format.detail_prefix += current.node->children.empty() ? "   " : "│  ";
 }
 
 static void buildIndentOffset(const std::deque<ExplainPlan::Frame> & frames, IQueryPlanStep::FormatSettings & settings_format, size_t indent_offset)
@@ -622,38 +522,9 @@ static void buildIndentOffset(const std::deque<ExplainPlan::Frame> & frames, IQu
     settings_format.detail_prefix = settings_format.header_prefix;
 }
 
-void QueryPlan::explainPlan(
-    WriteBuffer & buffer,
-    const ExplainPlanOptions & options,
-    size_t offset,
-    size_t max_description_length,
-    const PrettyNamesPerPlan * precomputed_pretty_names,
-    const std::string & parent_tree_prefix,
-    bool is_last_child_plan,
-    AnalyzeStepsStats * steps_to_stats) const
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t offset, size_t max_description_length) const
 {
     checkInitialized();
-
-    PrettyNames empty_pretty_names;
-
-    /// Pretty rendering uses per-plan scoped name maps (see PrettyNamesPerPlan). Callers that must build
-    /// names before the plan is consumed (EXPLAIN ANALYZE) pass a prebuilt registry; otherwise build it
-    /// here for this plan's whole subtree, so self-contained renders such as distributed child plans
-    /// (ReadFromRemote::describeDistributedPlan) don't fall back to empty names.
-    PrettyNamesPerPlan local_pretty_names;
-    if (options.pretty && !precomputed_pretty_names)
-    {
-        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this);
-        precomputed_pretty_names = &local_pretty_names;
-    }
-
-    /// Pick the map scoped to this exact plan; child and distributed plans look up their own entry.
-    const PrettyNames * plan_pretty_names = nullptr;
-    if (precomputed_pretty_names)
-    {
-        if (auto it = precomputed_pretty_names->names.find(this); it != precomputed_pretty_names->names.end())
-            plan_pretty_names = &it->second;
-    }
 
     IQueryPlanStep::FormatSettings settings{
         .out = buffer,
@@ -661,34 +532,21 @@ void QueryPlan::explainPlan(
         .detail_prefix = "",
         .write_header = options.header,
         .compact = options.compact,
-        .pretty = options.pretty,
-        .pretty_names = plan_pretty_names ? plan_pretty_names->pretty_names : empty_pretty_names.pretty_names,
-        .runtime_filter_names = plan_pretty_names ? plan_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names
+        .pretty = options.pretty
     };
 
     auto skip_expressions = [&](Node * node) -> Node * {
-        if (steps_to_stats)
-            return node;
-
-        while (options.actions && settings.compact && node->step->getName() == "Expression" && !node->children.empty())
+        while (settings.compact && node->step->getName() == "Expression" && !node->children.empty())
             node = node->children[0];
         return node;
     };
 
     std::deque<ExplainPlan::Frame> stack;
 
-    if (settings.pretty && parent_tree_prefix.empty())
-    {
-        QueryPlanFormat::formatOutputColumns(settings.pretty_names, settings.out, *root->step, settings.header_prefix);
-        settings.out << '\n';
-    }
-
     /// Skip the expression steps if we are in the compact mode
     auto * first_node = skip_expressions(root);
 
-    stack.push_back(ExplainPlan::Frame{
-        .node = first_node,
-    });
+    stack.push_back(ExplainPlan::Frame{.node = first_node});
 
     while (!stack.empty())
     {
@@ -697,26 +555,24 @@ void QueryPlan::explainPlan(
         if (!frame.is_description_printed)
         {
             if (options.pretty)
-                buildTreeOffset(stack, frame, settings, parent_tree_prefix, is_last_child_plan);
+                buildTreeOffset(stack, frame, settings);
             else
                 buildIndentOffset(stack, settings, offset);
 
-            explainStep(*frame.node->step, frame.node->cost_estimation, settings, options, max_description_length, steps_to_stats);
+            explainStep(*frame.node->step, settings, options, max_description_length);
             frame.is_description_printed = true;
         }
 
         if (frame.next_child < frame.node->children.size())
         {
-            size_t child_idx = frame.next_child;
-
-            bool has_child_plans_below = !frame.node->step->getChildPlans().empty();
-            bool is_last = (frame.next_child + 1) == (frame.node->children.size()) && !has_child_plans_below;
+            bool is_last = (frame.next_child + 1) == (frame.node->children.size());
             /// Skip the expression steps if we are in the compact mode
-            auto * next_node = skip_expressions(frame.node->children[child_idx]);
+            auto * next_node = skip_expressions(frame.node->children[frame.next_child]);
 
-            stack.push_back(ExplainPlan::Frame{
-                .node = next_node,
-                .is_last_child = is_last,
+            stack.push_back(ExplainPlan::Frame{next_node,
+                0,
+                false,
+                is_last
             });
             ++frame.next_child;
         }
@@ -724,32 +580,15 @@ void QueryPlan::explainPlan(
         {
             auto child_plans = frame.node->step->getChildPlans();
 
-            std::string base_prefix;
-            if (options.pretty && !child_plans.empty())
-            {
-                if (!parent_tree_prefix.empty())
-                    base_prefix += is_last_child_plan ? "   " : "│  ";
-                for (size_t i = 0; i < stack.size() - 1; ++i)
-                    base_prefix += stack[i + 1].is_last_child ? "   " : "│  ";
-                base_prefix = parent_tree_prefix + base_prefix;
-            }
-
-            size_t plan_idx = 0;
-
             for (const auto & child_plan : child_plans)
-            {
-                bool is_last_plan = (plan_idx + 1 == child_plans.size());
-                child_plan->explainPlan(buffer, options, offset + stack.size(),
-                                        max_description_length, precomputed_pretty_names, base_prefix, is_last_plan, steps_to_stats);
-                ++plan_idx;
-            }
+                child_plan->explainPlan(buffer, options, offset + stack.size());
 
             stack.pop_back();
         }
     }
 }
 
-static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings, bool distributed)
+static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings)
 {
     settings.out << String(settings.offset, settings.indent_char) << "(" << step.getName() << ")\n";
 
@@ -757,24 +596,13 @@ static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSet
     step.describePipeline(settings);
     if (current_offset == settings.offset)
         settings.offset += settings.base_indent;
-
-    if (distributed)
-        step.describeDistributedPipeline(settings, distributed);
 }
 
 void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const
 {
     checkInitialized();
 
-    IQueryPlanStep::FormatSettings settings{
-        .out = buffer,
-        .header_prefix = "",
-        .detail_prefix = "",
-        .write_header = options.header,
-        .compact_repeated_processor_chains = options.compact_repeated_processor_chains,
-        .pretty_names = {},
-        .runtime_filter_names = {}
-    };
+    IQueryPlanStep::FormatSettings settings{.out = buffer, .header_prefix = "", .detail_prefix = "", .write_header = options.header};
 
     struct Frame
     {
@@ -794,7 +622,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
         if (!frame.is_description_printed)
         {
             settings.offset = frame.offset;
-            explainPipelineStep(*frame.node->step, settings, options.distributed);
+            explainPipelineStep(*frame.node->step, settings);
             frame.offset = settings.offset;
             frame.is_description_printed = true;
         }
@@ -813,11 +641,6 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryPlanOptimizeMicroseconds);
 
-    /// Reject unsupported sets before the optimization passes: second-pass index analysis can
-    /// synchronously execute a set subquery, and no set should be built for a rejected query.
-    if (optimization_settings.make_distributed_plan)
-        validateSetsForDistributedPlan(*root);
-
     /// optimization need to be applied before "mergeExpressions" optimization
     /// it removes redundant sorting steps, but keep underlying expressions,
     /// so "mergeExpressions" optimization handles them afterwards
@@ -826,232 +649,10 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes, *this);
-
-    /// Defer set/CTE expansion: a distributed plan builds the sets on the initiator and ships
-    /// their values with the worker tasks, so the non-serializable `CreatingSetsStep` expansion
-    /// must not reach the fragment cut. `convertToDistributed` adds the sets back to the
-    /// initiator plan (or to the collapsed plan when it becomes a single local stage).
-    if (optimization_settings.make_distributed_plan)
-        return;
-
-    /// `addStepsToBuildSets` is invoked before `resolveMaterializingCTEs` so
-    /// that `DelayedCreatingSetsStep::makePlansForSets` (and any synchronous
-    /// `buildSetInplace` / `buildOrderedSetInplace` it triggers via the
-    /// recursive `plan->optimize`) can materialize a referenced CTE through
-    /// the safety-net `DelayedMaterializingCTEsStep` planted by
-    /// `forceMaterializeCTE` before the outer `DelayedMaterializingCTEsStep`
-    /// in this plan is claimed. `resolveMaterializingCTEs` then only
-    /// materializes the CTEs that were not already materialized inplace.
-    if (optimization_settings.build_sets)
-        QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
     if (optimization_settings.materialize_ctes)
         QueryPlanOptimizations::resolveMaterializingCTEs(optimization_settings, *this, *root, nodes);
-}
-
-namespace QueryPlanOptimizations
-{
-
-bool canExecuteRemotely(const QueryPlan::Node & node);
-bool planContainsLogicalExchange(const QueryPlan::Node & root);
-void convertLogicalJoinsForLocalExecution(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
-
-}
-
-void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
-{
-    if (!QueryPlanOptimizations::canExecuteRemotely(*root))
-    {
-        /// The plan cannot run on a worker (a leaf is neither a MergeTree read nor serializable). If it
-        /// still contains logical exchanges, running it locally would execute them as no-ops and drop
-        /// the merge or redistribution they stand for, giving wrong results, so throw. A plan with no
-        /// exchange runs correctly on one node, so fall back to it.
-        if (QueryPlanOptimizations::planContainsLogicalExchange(*root))
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "make_distributed_plan cannot distribute this query: it contains distributed exchange "
-                "steps but a step that cannot run on a remote worker, and the exchanges would be no-ops "
-                "if executed locally (producing wrong results)");
-        /// Joins were kept logical for distributed planning; running locally needs them physical.
-        QueryPlanOptimizations::convertLogicalJoinsForLocalExecution(*root, nodes, optimization_settings);
-        /// `optimize` deferred set/CTE expansion for distributed planning; without it the plan
-        /// still carries `DelayedCreatingSets` placeholders, which cannot build a pipeline.
-        /// The expansion must use local settings: the set build plans execute in this process,
-        /// and with `make_distributed_plan` kept on, their own optimization would try to
-        /// distribute them again.
-        QueryPlanOptimizationSettings local_settings = optimization_settings;
-        local_settings.make_distributed_plan = false;
-        if (local_settings.build_sets)
-            QueryPlanOptimizations::addStepsToBuildSets(local_settings, *this, *root, nodes);
-        if (local_settings.materialize_ctes)
-            QueryPlanOptimizations::resolveMaterializingCTEs(local_settings, *this, *root, nodes);
-        return;
-    }
-
-    /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
-    /// fragments never carry their placeholder steps; the sets are added back below.
-    auto delayed_sets = extractSetsForDistributedPlan(root);
-
-    SharedHeader result_header = root->step->getOutputHeader();
-
-    QueryPlan::Nodes old_nodes = std::move(nodes);
-    QueryPlan::Node * old_root = root;
-    root = nullptr;
-    auto distributed_plan = QueryPlanOptimizations::makeDistributedPlan(std::move(old_nodes), old_root, optimization_settings);
-
-    for (const auto & stage : distributed_plan.stages)
-    {
-        auto it = distributed_plan.stage_depends_on.find(stage.first);
-        const auto & dependencies = it != distributed_plan.stage_depends_on.end() ? it->second : std::unordered_map<String, String>{};
-        LOG_TEST(getLogger("optimize"), "Distributed stage: '{}' depends on: [{}] plan:\n{}",
-            stage.first, fmt::join(dependencies, ", "), dumpQueryPlan(stage.second.query_plan_fragment));
-    }
-
-    {
-        ExchangeDescription final_result_exchange
-        {
-            .name = "final_result",
-            .kind = optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming,
-            .source_bucket_count = 1,
-            .destination_bucket_count = 1
-        };
-        auto result_stream_id = ExchangeStreamId(final_result_exchange.name, 0, 0);
-
-        /// Add a step that writes the result of the main stage to the file
-        auto & main_stage = distributed_plan.stages["main"];
-        if (!main_stage.query_plan_fragment.isCompleted())
-        {
-            main_stage.query_plan_fragment.addStep(std::make_unique<GatherSendStep>(result_header, final_result_exchange.name));
-            main_stage.tasks.front().output_exchange_streams.emplace_back(result_stream_id);
-            distributed_plan.exchange_descriptions[final_result_exchange.name] = final_result_exchange;
-            distributed_plan.final_result_stream_name = result_stream_id.toString();
-        }
-
-        /// Fail early (before execution) if any fragment contains a step that cannot be serialized
-        /// for remote execution, instead of throwing late from serializeQueryPlan.
-        for (const auto & [stage_name, stage] : distributed_plan.stages)
-            assertFragmentSerializable(stage.query_plan_fragment, stage_name);
-
-        /// Collect the list of all temporary files
-        Strings all_temporary_files_for_cleanup;
-        for (const auto & stage : distributed_plan.stages)
-        {
-            for (const auto & task : stage.second.tasks)
-            {
-                for (const auto & stream_id : task.output_exchange_streams)
-                {
-                    if (distributed_plan.exchange_descriptions.at(stream_id.exchange_id).kind == ExchangeDescription::Kind::Persisted)
-                        all_temporary_files_for_cleanup.push_back(stream_id.toString());
-                }
-            }
-        }
-
-        auto context = CurrentThread::tryGetQueryContext();
-        chassert(context);
-        /// The query's single decision on where the plan runs. Every consumer below derives from it,
-        /// directly or from `task_to_host_map` being null, so none of them re-reads the setting from
-        /// the ambient context, which a subquery-scoped SETTINGS clause can leave disagreeing.
-        const bool execute_locally = optimization_settings.distributed_plan_execute_locally;
-        /// Local execution runs every task in-process and needs no worker hosts; constructing
-        /// TaskToHostMap would require a configured worker cluster and fail on a plain single server.
-        TaskToHostMapPtr task_to_host_map = execute_locally
-            ? nullptr
-            : std::make_shared<TaskToHostMap>(distributed_plan, context);
-
-        /// Generate random unique id for the query
-        /// We cannot use query_id from the context because user can put any string there and it might be not unique
-        UUID unique_query_id = UUIDHelpers::generateV4();
-
-        /// Make plan stub that reads from the executor that executes the distributed plan
-        Pipe run_distributed_plan(std::make_shared<ReadFromDistributedPlanSource>(result_header, unique_query_id, std::move(distributed_plan), task_to_host_map));
-        Pipes pipes;
-        pipes.emplace_back(std::move(run_distributed_plan));
-
-        auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(toString(unique_query_id), context);
-
-        /// TODO: do this only if final_result_exchange is persisted
-        auto temporary_files = createTemporaryFilesLookup(
-            object_storage, object_storage_path, {result_stream_id.toString()}, {});
-
-        ExchangeDescriptions exchange_descriptions;
-        exchange_descriptions[final_result_exchange.name] = final_result_exchange;
-        auto exchange_lookup = createExchangeLookup(
-            toString(unique_query_id),
-            exchange_descriptions,
-            task_to_host_map ? ExchangeStreamSources{task_to_host_map->getExchangeStreamSourceHosts()} : ExchangeStreamSources{},
-            temporary_files,
-            context,
-            execute_locally);
-
-        auto lazily_create_result_reader = [result_header, exchange_lookup, result_stream_id]() -> QueryPipelineBuilder
-        {
-            Pipe read_result_from(exchange_lookup->createSource(result_header, result_stream_id));
-            /// An in-memory exchange source emits zero-row chunks as scheduling ticks while
-            /// waiting for data; drop them so they do not reach the client as empty `Data` packets.
-            read_result_from.addTransform(makeSkipZeroRowChunksTransform(result_header));
-            QueryPipelineBuilder builder;
-            builder.init(std::move(read_result_from));
-            return builder;
-        };
-        pipes.emplace_back(createDelayedPipe(result_header, lazily_create_result_reader, false, false));
-
-        Pipe inputs = Pipe::unitePipes(std::move(pipes));
-        /// For streaming exchange we start both inputs in parallel to let the main task send back the result to the initiator.
-        /// In case of persisted exchange use ConcatProcessor to first execute the whole distributed plan and after that read the result from the file.
-        if (final_result_exchange.kind == ExchangeDescription::Kind::Persisted)
-            inputs.addTransform(std::make_shared<ConcatProcessor>(inputs.getSharedHeader(), inputs.numOutputPorts()));
-
-        /// Plan stub that will be used if distributed plan is enabled
-        QueryPlan read_from_distributed;
-
-        read_from_distributed.addStep(std::make_unique<ReadFromPreparedSource>(std::move(inputs)));
-
-        /// Preserve original table locks and storage holders across the move-assign
-        /// so the final pipeline keeps the tables referenced by serialized fragments alive.
-        QueryPlanResourceHolder preserved_resources = std::move(resources);
-        *this = std::move(read_from_distributed);
-        resources = std::move(preserved_resources);
-
-        /// Sets that planning did not build (e.g. an `IN` whose result is used as a value) are
-        /// added here and expanded the ordinary way, so this pipeline builds them before the
-        /// distributed source sends the worker tasks with their values. The cache is skipped:
-        /// a cached set has no values.
-        bool has_sets_to_build = false;
-        for (const auto & future_set : delayed_sets)
-            has_sets_to_build |= future_set && !future_set->get();
-        if (has_sets_to_build && optimization_settings.build_sets)
-        {
-            for (const auto & future_set : delayed_sets)
-                if (future_set)
-                    future_set->prepareForDistributedPlan(context);
-
-            addStep(std::make_unique<DelayedCreatingSetsStep>(
-                getCurrentHeader(),
-                std::move(delayed_sets),
-                optimization_settings.network_transfer_limits,
-                /*prepared_sets_cache_=*/nullptr));
-
-            /// The build plans execute on the initiator: expand them with local settings, so a
-            /// source that was not converted, and any sets nested inside it, expand locally.
-            QueryPlanOptimizationSettings sets_expansion_settings = optimization_settings;
-            sets_expansion_settings.prepared_sets_cache = nullptr;
-            sets_expansion_settings.make_distributed_plan = false;
-            QueryPlanOptimizations::addStepsToBuildSets(sets_expansion_settings, *this, *root, nodes);
-        }
-
-        /// In-memory exchanges (execute_locally) must outlive the executor: the result reader drains
-        /// final_result after the driver has finished. Remove them when the pipeline resources go away.
-        resources.custom_resources.emplace_back(makeInMemoryExchangesCleaner(toString(unique_query_id)));
-
-        /// Add temporary files cleaner to the resources so that all temporary files are removed after the pipeline is executed
-        if (final_result_exchange.kind == ExchangeDescription::Kind::Persisted)
-            all_temporary_files_for_cleanup.push_back(result_stream_id.toString());
-
-        if (object_storage)
-        {
-            auto temporary_files_cleaner = makeTemporaryFilesCleaner(object_storage, object_storage_path, all_temporary_files_for_cleanup);
-            resources.custom_resources.emplace_back(std::move(temporary_files_cleaner));
-        }
-    }
+    if (optimization_settings.build_sets)
+        QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns) const
@@ -1220,35 +821,6 @@ QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
 
 void QueryPlan::cloneInplace(Node * node_to_replace, Node * subplan_root)
 {
-    cloneSubplanAndReplace(node_to_replace, subplan_root, nodes);
-}
-
-QueryPlan QueryPlan::clone() const
-{
-    QueryPlan result;
-    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
-    auto * current_subplan_copy_root = &result.nodes.back();
-
-    result.cloneInplace(current_subplan_copy_root, root);
-    result.root = current_subplan_copy_root;
-
-    return result;
-}
-
-QueryPlan QueryPlan::cloneSubtree(Node * subplan_root)
-{
-    QueryPlan result;
-    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
-    auto * subplan_copy_root = &result.nodes.back();
-
-    result.cloneInplace(subplan_copy_root, subplan_root);
-    result.root = subplan_copy_root;
-
-    return result;
-}
-
-void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes)
-{
     if (!subplan_root)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot clone subplan in place because subplan root is null");
 
@@ -1259,9 +831,6 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
         std::vector<Node *> children = {};
     };
 
-    std::unordered_map<const Node *, Node *> original_to_clone;
-    std::vector<CommonSubplanReferenceStep *> cloned_references;
-
     std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
 
     while (!nodes_to_process.empty())
@@ -1271,11 +840,6 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
         {
             frame.clone->step = frame.node->step->clone();
             frame.clone->children = std::move(frame.children);
-
-            original_to_clone[frame.node] = frame.clone;
-            if (auto * subplan_reference = typeid_cast<CommonSubplanReferenceStep *>(frame.clone->step.get()))
-                cloned_references.push_back(subplan_reference);
-
             nodes_to_process.pop_back();
         }
         else
@@ -1292,18 +856,56 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
             nodes_to_process.push_back(Frame{ .node = child, .clone = child_clone });
         }
     }
+}
 
-    /// A cloned CommonSubplanReferenceStep must reference the clone of its subplan root whenever the root
-    /// belongs to the cloned subplan. Keeping the original pointer would tie the two plans together:
-    /// the in-memory buffer optimization rewrites the *referenced* node's step
-    /// (see useMemoryBufferForCommonSubplanResult), so optimizing one plan would mutate the other one,
-    /// and the consumer would end up in a different pipeline than its producer.
-    /// A reference to a node outside of the cloned subplan is left as is.
-    for (auto * subplan_reference : cloned_references)
+QueryPlan QueryPlan::clone() const
+{
+    QueryPlan result;
+    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
+    auto * current_subplan_copy_root = &result.nodes.back();
+
+    result.cloneInplace(current_subplan_copy_root, root);
+    result.root = current_subplan_copy_root;
+
+    return result;
+}
+
+void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes)
+{
+    if (!subplan_root)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot clone subplan in place because subplan root is null");
+
+    struct Frame
     {
-        auto it = original_to_clone.find(subplan_reference->getSubplanReferenceRoot());
-        if (it != original_to_clone.end())
-            subplan_reference->setSubplanReferenceRoot(it->second);
+        Node * node;
+        Node * clone;
+        std::vector<Node *> children = {};
+    };
+
+    std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
+
+    while (!nodes_to_process.empty())
+    {
+        auto & frame = nodes_to_process.back();
+        if (frame.children.size() == frame.node->children.size())
+        {
+            frame.clone->step = frame.node->step->clone();
+            frame.clone->children = std::move(frame.children);
+            nodes_to_process.pop_back();
+        }
+        else
+        {
+            size_t next_child = frame.children.size();
+            auto * child = frame.node->children[next_child];
+
+            nodes.emplace_back(Node{ .step = {} });
+            nodes.back().children.reserve(child->children.size());
+            auto * child_clone = &nodes.back();
+
+            frame.children.push_back(child_clone);
+
+            nodes_to_process.push_back(Frame{ .node = child, .clone = child_clone });
+        }
     }
 }
 
@@ -1312,24 +914,16 @@ void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlan plan)
 {
     chassert(nodes.end() != std::find_if(cbegin(nodes), cend(nodes), [node](const Node & n) { return n.step == node->step; }));
 
-    SharedHeader expected_header;
     if (node->step)
-        expected_header = node->step->getOutputHeader();
-
-    replaceNodeWithPlan(node, std::move(plan), std::move(expected_header));
-}
-
-void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlan plan, SharedHeader expected_header)
-{
-    if (expected_header)
     {
+        const auto & header = node->step->getOutputHeader();
         const auto & plan_header = plan.getCurrentHeader();
 
-        if (!blocksHaveEqualStructure(*expected_header, *plan_header))
+        if (!blocksHaveEqualStructure(*header, *plan_header))
         {
             auto converting_dag = ActionsDAG::makeConvertingActions(
                 plan_header->getColumnsWithTypeAndName(),
-                expected_header->getColumnsWithTypeAndName(),
+                header->getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name,
                 nullptr);
 
