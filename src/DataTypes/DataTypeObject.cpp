@@ -394,7 +394,7 @@ MutableColumnPtr DataTypeObject::createColumn(const ISerialization & serializati
         return ColumnReplicated::create(createColumn(*replicated->getNested()), ColumnUInt8::create());
 
     if (const auto * detached = typeid_cast<const SerializationDetached *>(current_serialization))
-        return createColumn(*detached->getNested());
+        return ColumnBLOB::create(createColumn(*detached->getNested()));
 
     const std::unordered_map<String, SerializationPtr> * typed_path_serializations = nullptr;
     String paths_prefix;
