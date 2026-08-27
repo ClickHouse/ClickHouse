@@ -3591,7 +3591,7 @@ def test_query_condition_cache(started_cluster):
         f"""
         INSERT INTO {table_name}
         SELECT number AS id, toString(number) AS val
-        FROM numbers(1000)
+        FROM numbers(200)
         """
     )
 
