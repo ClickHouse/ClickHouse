@@ -503,15 +503,20 @@ public:
     /// indexed column was free to prune every granule -- and on a pruned, `0`-row block
     /// `ExecutableFunctionDynamicAdaptor`/`ExecutableFunctionVariantAdaptor` return an empty result
     /// without ever building the rejecting overload, answering `0` instead of surfacing the
-    /// mismatch. Comparing kind names fails closed for anything it cannot resolve: a declared
-    /// argument that is no geometry at all reports no kind and rejects every geometry kind, which is
-    /// exactly what `getReturnTypeImpl` does with it.
+    /// mismatch. The comparison fails closed for anything it cannot resolve: a declared argument
+    /// that is no geometry at all stands for no representation and so rejects every geometry kind,
+    /// which is exactly what `getReturnTypeImpl` does with it.
     bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override
     {
         const auto & expected_arguments = user_defined_function->getArguments();
         if (arg_index >= expected_arguments.size())
             return true;
-        return GeoBboxDetail::declaredGeoKindName(*expected_arguments[arg_index]) != kind_name;
+        /// Compared as REPRESENTATIONS, not names: `getReturnTypeImpl` accepts an argument whose type
+        /// `equals` the declared one, and `equals` ignores custom names, so a UDF declared on `Ring`
+        /// runs on a `LineString`/`MultiPoint` just as well. Reporting those as rejected would cost
+        /// pruning for a query that cannot raise.
+        return GeoBboxDetail::declaredGeoRepresentationName(*expected_arguments[arg_index])
+            != GeoBboxDetail::geoKindRepresentationName(kind_name);
     }
 
     /// Every rejection above is decided by `getReturnTypeImpl` from the argument's `DataType`, before

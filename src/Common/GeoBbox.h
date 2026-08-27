@@ -565,22 +565,43 @@ inline bool rejectsUnnamedGeometryType(const IDataType & type, const IFunctionBa
     return rejectsAnyGeometryKind(function, arg_index);
 }
 
-/// The geometry kind name a DECLARED argument type stands for, whether it is spelled with a custom
-/// name (`Point`, `Ring`, `LineString`, ...) or structurally (`Tuple(Float64, Float64)`,
-/// `Array(Tuple(Float64, Float64))`, ...). Empty when the type is no geometry at all.
+/// The REPRESENTATION a geometry kind name reduces to. `DataTypeArray::equals` and
+/// `DataTypeTuple::equals` compare only the nested types, ignoring the outer custom name, so kinds
+/// that differ by name alone are one and the same type to `IDataType::equals`: `Ring`, `LineString`
+/// and `MultiPoint` are all `Array(Tuple(Float64, Float64))`, and `Polygon` and `MultiLineString`
+/// are both one `Array` level above that. A predicate that accepts an argument by comparing types
+/// with `equals` therefore accepts every kind sharing the representation, and must be asked about
+/// the representation rather than the name -- otherwise it would report a rejection for a kind it
+/// runs on perfectly well, costing pruning for a query that cannot raise.
+inline std::string_view geoKindRepresentationName(std::string_view kind_name)
+{
+    if (kind_name == "LineString" || kind_name == "MultiPoint")
+        return "Ring";
+    if (kind_name == "MultiLineString")
+        return "Polygon";
+    return kind_name;
+}
+
+/// The representation (see `geoKindRepresentationName`) a DECLARED argument type stands for, whether
+/// it is spelled with a custom name (`Point`, `Ring`, `LineString`, ...) or structurally
+/// (`Tuple(Float64, Float64)`, `Array(Tuple(Float64, Float64))`, ...). Empty when the type is no
+/// geometry at all.
 ///
 /// This is the mirror image of the two lookups above: `geoKindNameOfType` answers for a named type
 /// and `structuralGeoKindName` for an unnamed one, and a declared argument may be written either
-/// way. It lets a predicate whose accepted kinds ARE its declared argument types -- an
+/// way. It lets a predicate whose accepted arguments ARE its declared types -- an
 /// `is_spatial_predicate` `LANGUAGE WASM` UDF, whose `getReturnTypeImpl` raises
-/// `ILLEGAL_TYPE_OF_ARGUMENT` for anything else -- answer `rejectsColumnGeometryKind` by comparison
-/// instead of leaving it at its default `false`.
-inline std::string declaredGeoKindName(const IDataType & type)
+/// `ILLEGAL_TYPE_OF_ARGUMENT` for anything its declared type does not `equals` -- answer
+/// `rejectsColumnGeometryKind` by comparison instead of leaving it at its default `false`.
+inline std::string declaredGeoRepresentationName(const IDataType & type)
 {
-    auto kind_name = geoKindNameOfType(type);
-    if (!kind_name.empty())
-        return kind_name;
-    return std::string{structuralGeoKindName(type)};
+    /// `structuralGeoKindName` already answers in representations: it names an unnamed type by its
+    /// `Array` depth, so it never reports `LineString`/`MultiPoint`/`MultiLineString` in the first
+    /// place.
+    const auto kind_name = geoKindNameOfType(type);
+    if (kind_name.empty())
+        return std::string{structuralGeoKindName(type)};
+    return std::string{geoKindRepresentationName(kind_name)};
 }
 
 /// Whether `type` resolves its geometry kind only at execution time -- a `Dynamic`, or a `Variant`
