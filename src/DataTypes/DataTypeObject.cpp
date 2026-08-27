@@ -1,7 +1,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
@@ -50,17 +49,10 @@ bool containsObjectType(const IDataType & type)
 {
     if (isObject(type))
         return true;
-    if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
-        return containsObjectType(*array->getNestedType());
-    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
-        return containsObjectType(*nullable->getNestedType());
-    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
-    {
-        for (const auto & element : tuple->getElements())
-            if (containsObjectType(*element))
-                return true;
-    }
-    return false;
+
+    bool contains_object = false;
+    type.forEachChild([&](const IDataType & child) { contains_object |= isObject(child); });
+    return contains_object;
 }
 
 namespace Setting
