@@ -32,6 +32,12 @@ namespace ErrorCodes
     extern const int EXPERIMENTAL_FEATURE_ERROR;
 }
 
+LoggerPtr getJoinOrderOptimizerLogger()
+{
+    static LoggerPtr log = getLogger("JoinOrderOptimizer");
+    return log;
+}
+
 DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_)
     : relations()
     , cost(0.0)

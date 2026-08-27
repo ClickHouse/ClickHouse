@@ -11,11 +11,7 @@ namespace DB
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
-inline LoggerPtr getJoinOrderOptimizerLogger()
-{
-    static LoggerPtr log = getLogger("JoinOrderOptimizer");
-    return log;
-}
+LoggerPtr getJoinOrderOptimizerLogger();
 
 DPJoinEntryPtr solveGreedyJoinOrder(QueryGraph & query_graph);
 
