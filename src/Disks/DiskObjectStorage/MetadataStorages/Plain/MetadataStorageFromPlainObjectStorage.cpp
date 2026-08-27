@@ -1,4 +1,3 @@
-#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 #include <Disks/IDisk.h>
@@ -11,7 +10,6 @@
 
 #include <IO/Expect404ResponseScope.h>
 
-#include <filesystem>
 
 namespace DB
 {
@@ -36,7 +34,7 @@ MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
     ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
     : object_storage(object_storage_)
     , storage_path_prefix(std::move(storage_path_prefix_))
-    , storage_path_full(pathToGenericString(fs::path(object_storage->getRootPrefix()) / storage_path_prefix))
+    , storage_path_full(appendObjectStorageKeySegment(object_storage->getRootPrefix(), storage_path_prefix))
 {
     if (object_metadata_cache_size)
         object_metadata_cache = std::make_shared<CacheBase<UInt128, ObjectMetadataEntry>>(CurrentMetrics::end(), CurrentMetrics::end(), object_metadata_cache_size);
@@ -56,16 +54,16 @@ bool MetadataStorageFromPlainObjectStorage::existsFile(const std::string & path)
 
     /// The path does not correspond to a directory.
     /// This check is required for a local object storage since it supports hierarchy.
-    auto directory = std::filesystem::path(object_key.serialize()) / "";
-    ObjectStorageKey directory_key = getKeyForPath(object_storage->getCommonKeyPrefix(), pathToGenericString(directory));
-    return !object_storage->exists(StoredObject(directory_key.serialize(), pathToGenericString(directory)));
+    auto directory = appendObjectStorageKeySegment(object_key.serialize(), "");
+    ObjectStorageKey directory_key = getKeyForPath(object_storage->getCommonKeyPrefix(), directory);
+    return !object_storage->exists(StoredObject(directory_key.serialize(), directory));
 }
 
 bool MetadataStorageFromPlainObjectStorage::existsDirectory(const std::string & path) const
 {
     auto key_prefix = getKeyForPath(object_storage->getCommonKeyPrefix(), path).serialize();
-    auto directory = std::filesystem::path(std::move(key_prefix)) / "";
-    return object_storage->existsOrHasAnyChild(pathToGenericString(directory));
+    auto directory = appendObjectStorageKeySegment(key_prefix, "");
+    return object_storage->existsOrHasAnyChild(directory);
 }
 
 bool MetadataStorageFromPlainObjectStorage::existsFileOrDirectory(const std::string & path) const
@@ -140,7 +138,7 @@ DirectoryIteratorPtr MetadataStorageFromPlainObjectStorage::iterateDirectory(con
     auto paths = listDirectory(path);
 
     /// Prepend path, since iterateDirectory() includes path, unlike listDirectory()
-    std::for_each(paths.begin(), paths.end(), [&](auto & child) { child = pathToGenericString(fs::path(path) / child); });
+    std::for_each(paths.begin(), paths.end(), [&](auto & child) { child = appendObjectStorageKeySegment(path, child); });
     return std::make_unique<StaticDirectoryIterator>(std::move(paths));
 }
 

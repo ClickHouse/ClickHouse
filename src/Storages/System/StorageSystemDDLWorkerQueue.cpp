@@ -1,4 +1,3 @@
-#include <base/pathToString.h>
 #include <Storages/System/StorageSystemDDLWorkerQueue.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Interpreters/DDLTask.h>
@@ -18,7 +17,6 @@
 #include <Parsers/parseQuery.h>
 
 
-namespace fs = std::filesystem;
 
 
 namespace DB
@@ -240,9 +238,9 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
 {
     auto component_guard = Coordination::setCurrentComponent("StorageSystemDDLWorkerQueue::fillData");
     auto & ddl_worker = context->getDDLWorker();
-    fs::path ddl_zookeeper_path = ddl_worker.getQueueDir();
+    String ddl_zookeeper_path = ddl_worker.getQueueDir();
     zkutil::ZooKeeperPtr zookeeper = ddl_worker.getZooKeeperFromContext();
-    Strings ddl_task_paths = zookeeper->getChildren(pathToGenericString(ddl_zookeeper_path));
+    Strings ddl_task_paths = zookeeper->getChildren(ddl_zookeeper_path);
 
 
     std::vector<std::string> ddl_task_full_paths;
@@ -252,10 +250,10 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
 
     for (const auto & task_path : ddl_task_paths)
     {
-        ddl_task_full_paths.push_back(pathToGenericString(ddl_zookeeper_path / task_path));
+        ddl_task_full_paths.push_back(zkutil::joinZooKeeperPath(ddl_zookeeper_path, task_path));
         /// List status dirs. Active host may become finished, so we list active first.
-        ddl_task_status_paths.push_back(pathToGenericString(ddl_zookeeper_path / task_path / "active"));
-        ddl_task_status_paths.push_back(pathToGenericString(ddl_zookeeper_path / task_path / "finished"));
+        ddl_task_status_paths.push_back(zkutil::joinZooKeeperPath(ddl_zookeeper_path, task_path, "active"));
+        ddl_task_status_paths.push_back(zkutil::joinZooKeeperPath(ddl_zookeeper_path, task_path, "finished"));
     }
 
     auto ddl_tasks_info = zookeeper->tryGet(ddl_task_full_paths);
@@ -271,7 +269,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             continue;
         }
 
-        DDLTask task{ddl_task_paths[i], pathToGenericString(ddl_zookeeper_path / ddl_task_paths[i])};
+        DDLTask task{ddl_task_paths[i], ddl_task_full_paths[i]};
         try
         {
             task.entry.parse(task_info.data);

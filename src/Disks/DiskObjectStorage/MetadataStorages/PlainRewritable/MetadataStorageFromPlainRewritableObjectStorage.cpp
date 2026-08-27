@@ -23,6 +23,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ObjectStorageKey.h>
 #include <Common/ProfileEvents.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -104,8 +105,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
         /// LocalObjectStorage creates an empty top-level directory even when no data is stored,
         /// unlike blob storage, which has no concept of directories, therefore existsOrHasAnyChild
         /// is not applicable.
-        auto common_key_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
-        bool has_data = object_storage->isRemote() ? object_storage->existsOrHasAnyChild(pathToGenericString(common_key_prefix)) : object_storage->iterate(pathToGenericString(common_key_prefix), 0, /*with_tags=*/ false, std::nullopt)->isValid();
+        auto common_key_prefix = appendObjectStorageKeySegment(object_storage->getCommonKeyPrefix(), "");
+        bool has_data = object_storage->isRemote() ? object_storage->existsOrHasAnyChild(common_key_prefix) : object_storage->iterate(common_key_prefix, 0, /*with_tags=*/ false, std::nullopt)->isValid();
         /// No metadata directory: legacy layout is likely in use.
         if (has_data && !has_metadata)
         {
@@ -257,7 +258,7 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
     : object_storage(std::move(object_storage_))
     , metrics(createPlainRewritableMetrics(object_storage->getType()))
     , storage_path_prefix(std::move(storage_path_prefix_))
-    , storage_path_full(pathToGenericString(fs::path(object_storage->getRootPrefix()) / storage_path_prefix))
+    , storage_path_full(appendObjectStorageKeySegment(object_storage->getRootPrefix(), storage_path_prefix))
     , fs(metrics->directory_map_size, metrics->file_count)
     , layout(std::make_shared<PlainRewritableLayout>(object_storage->getCommonKeyPrefix()))
 {
@@ -331,7 +332,7 @@ DirectoryIteratorPtr MetadataStorageFromPlainRewritableObjectStorage::iterateDir
     auto paths = listDirectory(path);
 
     /// Prepend path, since iterateDirectory() includes path, unlike listDirectory()
-    std::for_each(paths.begin(), paths.end(), [&](auto & child) { child = pathToGenericString(fs::path(path) / child); });
+    std::for_each(paths.begin(), paths.end(), [&](auto & child) { child = appendObjectStorageKeySegment(path, child); });
     return std::make_unique<StaticDirectoryIterator>(std::move(paths));
 }
 
