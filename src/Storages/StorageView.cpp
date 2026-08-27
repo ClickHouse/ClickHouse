@@ -675,6 +675,20 @@ void StorageView::readImpl(
         && (has_row_policy || has_additional_filter || canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, view_context));
     const ActionsDAG * post_filter = hides_rows ? nullptr : query_info.filter_actions_dag.get();
 
+    /// Task-based parallel replicas ship the inner query as SQL text to the other replicas, where
+    /// it is re-planned under the connection's own identity: the replica applies the row policies
+    /// of its connecting user and of the *initial* user (the invoker), but the definer is neither
+    /// of those, so the definer's row policies on the inner tables and the definer profile's
+    /// `additional_table_filters` are silently dropped and the rows they hide come back through
+    /// the union into the invoker's plan, above the barrier. Fail closed: a view whose filtering
+    /// must be trusted reads its inner query without parallel replicas.
+    if (hides_rows && view_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] != 0)
+    {
+        auto no_parallel_replicas_context = Context::createCopy(view_context);
+        no_parallel_replicas_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field{0});
+        view_context = no_parallel_replicas_context;
+    }
+
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(
