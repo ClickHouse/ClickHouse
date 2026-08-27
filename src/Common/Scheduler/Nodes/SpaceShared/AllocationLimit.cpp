@@ -86,6 +86,24 @@ void AllocationLimit::approveIncrease()
 {
     SCHED_DBG("{} -- approveIncrease({})", getPath(), increase->allocation.id);
     chassert(increase);
+    if (increase == suspended_growth)
+    {
+        suspended_growth = nullptr;
+        suspended_growth_retry_pending = false;
+        memory_growth_suspension_beneficiaries = 0;
+        ++memory_growth_suspension_generation;
+    }
+    else if (suspended_growth
+        && (increase->kind == IncreaseRequest::Kind::Pending || increase->kind == IncreaseRequest::Kind::Initial)
+        && (increase->allocation.memory_growth_suspension_owner != this
+            || increase->allocation.memory_growth_suspension_generation != memory_growth_suspension_generation))
+    {
+        /// This allocation was admitted only because the blocked growth yielded. Keep the suspension
+        /// alive until the beneficiary releases, finishes, or becomes blocked on its own growth.
+        increase->allocation.memory_growth_suspension_owner = this;
+        increase->allocation.memory_growth_suspension_generation = memory_growth_suspension_generation;
+        ++memory_growth_suspension_beneficiaries;
+    }
     apply(*increase);
     increase = nullptr;
     child->approveIncrease();
@@ -99,9 +117,44 @@ void AllocationLimit::approveDecrease()
     chassert(decrease);
     apply(*decrease);
 
+    ResourceAllocation & decreased_allocation = decrease->allocation;
+    const bool removed_suspended_growth = suspended_growth
+        && &decreased_allocation == &suspended_growth->allocation
+        && decrease->removing_allocation;
+    const bool retry_from_other_queue = suspended_growth
+        && &decreased_allocation.queue != &suspended_growth->allocation.queue
+        && !removed_suspended_growth;
+    const bool removed_beneficiary = suspended_growth
+        && decrease->removing_allocation
+        && decreased_allocation.memory_growth_suspension_owner == this
+        && decreased_allocation.memory_growth_suspension_generation == memory_growth_suspension_generation;
+
     // Check if allocation being killed released all its resources
     if (&decrease->allocation == allocation_to_kill && decrease->removing_allocation)
         allocation_to_kill = nullptr;
+    if (removed_suspended_growth)
+    {
+        suspended_growth = nullptr;
+        suspended_growth_retry_pending = false;
+        memory_growth_suspension_beneficiaries = 0;
+        ++memory_growth_suspension_generation;
+    }
+    else
+    {
+        if (removed_beneficiary)
+        {
+            chassert(memory_growth_suspension_beneficiaries > 0);
+            --memory_growth_suspension_beneficiaries;
+        }
+
+        if (retry_from_other_queue)
+        {
+            /// The leaf that owns the parked growth cannot observe releases in sibling queues. Wake it
+            /// explicitly; the retry remains event-driven and is evaluated after this decrease is applied.
+            suspended_growth_retry_pending = true;
+            suspended_growth->allocation.queue.retrySuspendedIncrease(suspended_growth->allocation);
+        }
+    }
 
     decrease = nullptr;
 
@@ -110,7 +163,7 @@ void AllocationLimit::approveDecrease()
     setDecrease(child->decrease);
     // Check if we can now process pending increase request in case it was not changed (e.g. other allocation was decreased here)
     // NOTE: if increase was changed, it is already propagated in approveDecrease()
-    if (old_increase == increase && setIncrease(child->increase, true))
+    if (!suspended_growth_retry_pending && old_increase == increase && setIncrease(child->increase, true))
         propagate(Update().setIncrease(increase));
 }
 
@@ -139,6 +192,10 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
         // next `setIncrease(..., reapply_constraint=true)` below picks a fresh victim. The
         // previously-issued `killAllocation` is harmless if its target has already cleaned up.
         allocation_to_kill = nullptr;
+        suspended_growth = nullptr;
+        suspended_growth_retry_pending = false;
+        memory_growth_suspension_beneficiaries = 0;
+        ++memory_growth_suspension_generation;
         reapply_constraint = true;
     }
     // Publish the decrease BEFORE evaluating the increase: the eviction decision in `setIncrease` skips
@@ -164,7 +221,10 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
 
 bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_constraint)
 {
-    if (!new_increase)
+    if (new_increase && new_increase->allocation.isIncreaseSuspended())
+        new_increase = nullptr;
+
+    if (!new_increase && !suspended_growth)
     {
         // There is no increase request to satisfy anymore, so forget any victim we were
         // reclaiming from. The killer increase that selected `allocation_to_kill` is gone — its
@@ -179,6 +239,17 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
         // if its target has already cleaned up.
         allocation_to_kill = nullptr;
     }
+
+    /// A non-reapply call represents a fresh child-policy observation (normally an activation).
+    /// It completes the deferred hierarchy update requested by the previous suspension/retry.
+    if (!reapply_constraint && suspended_growth_retry_pending)
+        suspended_growth_retry_pending = false;
+
+    /// The hierarchy has exhausted every visible alternative. Keep the growth parked while work admitted
+    /// by this suspension is still productive. With no beneficiary left, eviction is the last resort.
+    if (!new_increase && suspended_growth && !suspended_growth_retry_pending && decrease == nullptr
+        && memory_growth_suspension_beneficiaries == 0 && !allocation_to_kill)
+        selectAndKill(*suspended_growth);
 
     if (!reapply_constraint && increase == new_increase)
         return false;
@@ -198,29 +269,39 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                 /// The child can then expose other work hidden behind running-query growth. Memory releases
                 /// retry the parked growth, so independent work can continue while pressure drains. If
                 /// nothing can make progress, the existing kill policy remains the fallback.
-                if (new_increase->kind == IncreaseRequest::Kind::Regular
-                    && new_increase->allocation.queue.trySuspendMemoryGrowth(new_increase->allocation))
+                bool suspended = false;
+                if (!suspended_growth)
                 {
-                    SCHED_DBG("{} -- suspending memory growth(allocated={}, increase_size={}, max={}, allocation={})",
+                    suspended = new_increase->kind == IncreaseRequest::Kind::Regular
+                        && new_increase->allocation.queue.trySuspendIncrease(new_increase->allocation);
+                    if (suspended)
+                    {
+                        suspended_growth = new_increase;
+                        memory_growth_suspension_beneficiaries = 0;
+                        ++memory_growth_suspension_generation;
+                    }
+                }
+                else if (new_increase == suspended_growth)
+                {
+                    suspended = new_increase->allocation.queue.trySuspendIncrease(new_increase->allocation);
+                }
+                else if (&new_increase->allocation.queue == &suspended_growth->allocation.queue
+                    && new_increase->kind != IncreaseRequest::Kind::Regular)
+                {
+                    /// Continue the same queue-local search past alternatives that do not fit.
+                    suspended = new_increase->allocation.queue.trySuspendIncrease(new_increase->allocation);
+                }
+
+                if (suspended)
+                {
+                    /// Wait until the changed eligibility has propagated through the child policy before
+                    /// interpreting a null increase as exhaustion of the suspension round.
+                    suspended_growth_retry_pending = true;
+                    SCHED_DBG("{} -- suspending increase(allocated={}, increase_size={}, max={}, allocation={})",
                         getPath(), allocated, new_increase->size, max_allocated, new_increase->allocation.id);
                 }
                 else
-                {
-                    String details;
-                    allocation_to_kill = selectAllocationToKill(*new_increase, max_allocated, details);
-                    if (allocation_to_kill)
-                    {
-                        SCHED_DBG("{} -- killing(allocated={}, increase_size={}, max={}, increasing={}, killing={})",
-                            getPath(), allocated, new_increase->size, max_allocated, new_increase->allocation.id, allocation_to_kill->id);
-                        allocation_to_kill->killAllocation(std::make_exception_ptr(
-                            Exception(ErrorCodes::RESOURCE_LIMIT_EXCEEDED,
-                                "Workload '{}' limit is hit for resource '{}': {}", getWorkloadName(), getResourceName(), details)));
-
-                        // Introspection
-                        new_increase->allocation.queue.countKiller(*this);
-                        allocation_to_kill->queue.countVictim(*this);
-                    }
-                }
+                    selectAndKill(*new_increase);
             }
             // Block until there is enough resource to process child's increase request
             increase = nullptr;
@@ -229,9 +310,28 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
             increase = child->increase; // Can safely process child's increase request
     }
     else
+    {
         increase = nullptr; // No more increase requests
+    }
 
     return increase != old_increase;
+}
+
+void AllocationLimit::selectAndKill(IncreaseRequest & killer)
+{
+    String details;
+    allocation_to_kill = selectAllocationToKill(killer, max_allocated, details);
+    if (!allocation_to_kill)
+        return;
+
+    SCHED_DBG("{} -- killing(allocated={}, increase_size={}, max={}, increasing={}, killing={})",
+        getPath(), allocated, killer.size, max_allocated, killer.allocation.id, allocation_to_kill->id);
+    allocation_to_kill->killAllocation(std::make_exception_ptr(
+        Exception(ErrorCodes::RESOURCE_LIMIT_EXCEEDED,
+            "Workload '{}' limit is hit for resource '{}': {}", getWorkloadName(), getResourceName(), details)));
+
+    killer.allocation.queue.countKiller(*this);
+    allocation_to_kill->queue.countVictim(*this);
 }
 
 bool AllocationLimit::setDecrease(DecreaseRequest * new_decrease)

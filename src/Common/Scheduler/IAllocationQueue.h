@@ -36,11 +36,16 @@ public:
     /// `decrease_size` must be positive.
     virtual void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) = 0;
 
-    /// Temporarily parks an over-limit regular increase before eviction. A memory release may make the
-    /// same growth eligible for another attempt. Returns true when the request was parked, false when the
-    /// current attempt has already yielded without progress. Deliberately non-blocking because
+    /// Temporarily parks an over-limit regular increase before eviction, or an alternative request that
+    /// cannot fit during the same suspension round. A memory release makes the requests eligible for
+    /// another attempt. Returns true when the request was parked, false when suspension is exhausted.
+    /// Deliberately non-blocking because
     /// a parent constraint may call it while an `AllocationQueue` mutex is held during decrease propagation.
-    virtual bool trySuspendMemoryGrowth(ResourceAllocation & allocation) = 0;
+    virtual bool trySuspendIncrease(ResourceAllocation & allocation) = 0;
+
+    /// Starts a new fit-check round for a previously suspended regular increase. Used by the hard-limit
+    /// owner when memory is released in another queue of the same scheduling subtree.
+    virtual void retrySuspendedIncrease(ResourceAllocation & allocation) = 0;
 
     /// Requests to remove an allocation from the queue.
     /// The removal is processed asynchronously by the scheduler thread.

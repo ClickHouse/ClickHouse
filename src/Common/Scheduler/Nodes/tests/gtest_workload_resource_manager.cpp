@@ -2561,7 +2561,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingAllocationWaits)
     }
 }
 
-TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseOfRunningHasPriorityOverPending)
+TEST(SchedulerWorkloadResourceManager, MemoryReservationBlockedGrowthResumesAfterRunningRelease)
 {
     ResourceTest t;
 
@@ -2579,22 +2579,26 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseOfRunningHasPrio
         a1->waitSync();
         a2.waitSync();
 
-        // Make pending allocation that hit the limit
+        // Queue an alternative that cannot fit in the remaining capacity.
         TestAllocation a3(link, "Pending3", 40);
 
-        // Increase running allocation to hit the limit
-        a2.setSize(70); // this is lower than 80, so a1 should be killed
-        a1->waitKilled();
-        a1.reset(); // Destroy killed allocation to free resources
+        // The running increase is suspended first and the pending alternative is evaluated. It cannot
+        // fit, but a1 is still productive running work, so it gets a chance to release memory before any
+        // victim is selected.
+        a2.setSize(70);
+        a1->setSize(20);
+        a1->waitSync();
         a2.waitSync();
+        a1->throwReason(); // No kill was needed: the release made a2's growth fit.
 
-        // Resource released by killing a1 should NOT allow a3 to proceed, but should be used to satisfy a2 increase
+        // The +40 pending request still cannot fit at 20 + 70 and remains queued.
         a3.assertIncreaseEnqueued();
 
         // Clean up
         a2.setSize(10);
         a2.waitSync();
         a3.waitSync();
+        a1.reset();
     }
 }
 

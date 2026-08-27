@@ -2,6 +2,8 @@
 #include <Common/Scheduler/Debug.h>
 #include <Common/Exception.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -171,7 +173,11 @@ bool PrecedenceAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRe
 
     // Update current increase request
     IncreaseRequest * old_increase = increase;
-    increase_child = increasing_children.empty() ? nullptr : &*increasing_children.begin();
+    auto eligible = std::find_if(increasing_children.begin(), increasing_children.end(), [](const ISpaceSharedNode & child)
+    {
+        return child.increase && !child.increase->allocation.isIncreaseSuspended();
+    });
+    increase_child = eligible == increasing_children.end() ? nullptr : &*eligible;
     increase = increase_child ? increase_child->increase : nullptr;
     return old_increase != increase;
 }

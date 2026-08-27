@@ -14,6 +14,7 @@ namespace DB
 class ISpaceSharedNode;
 class IAllocationQueue;
 class AllocationQueue;
+class AllocationLimit;
 
 /// Represents a resource allocation that could change its size during its lifetime.
 /// Both increase and decrease of size are done through interaction with IAllocationQueue.
@@ -47,8 +48,13 @@ public:
     IAllocationQueue & queue; /// Queue that manages this allocation.
     String const id; /// ID of this allocation for introspection purposes.
 
+    /// Suspended increases remain queued but are temporarily invisible to every scheduling layer.
+    /// The allocation itself keeps running and may still release resources.
+    bool isIncreaseSuspended() const { return memory_growth_suspended; }
+
 private:
     friend class AllocationQueue;
+    friend class AllocationLimit;
 
     ResourceCost allocated = 0; /// Currently allocated.
     bool admitted = false; /// True once `apply(IncreaseRequest)` has incremented `allocations` in the hierarchy for this allocation.
@@ -56,8 +62,10 @@ private:
     /// request can be considered. The allocation can still decrease or be removed while growth is parked.
     bool memory_growth_suspended = false; /// Scheduler-thread only.
     bool memory_growth_suspension_attempted = false; /// Scheduler-thread only.
-    /// True while this allocation is running after being admitted ahead of suspended memory growth.
-    bool memory_growth_suspension_beneficiary = false; /// Scheduler-thread only.
+    /// Identifies the hard-limit suspension round that admitted this allocation as productive work.
+    /// The generation makes an old marker inert without requiring allocation during pressure cleanup.
+    AllocationLimit * memory_growth_suspension_owner = nullptr; /// Scheduler-thread only.
+    UInt64 memory_growth_suspension_generation = 0; /// Scheduler-thread only.
 
     IncreaseRequest increase;
     DecreaseRequest decrease;

@@ -4,12 +4,21 @@
 #include <Common/Scheduler/Nodes/SpaceShared/SpaceSharedScheduler.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationLimit.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
+#include <Common/Scheduler/Nodes/SpaceShared/FairAllocation.h>
+#include <Common/Scheduler/Nodes/SpaceShared/PrecedenceAllocation.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/MemoryTracker.h>
 
+#include <algorithm>
+#include <array>
 #include <barrier>
+#include <chrono>
+#include <cstdlib>
 #include <future>
+#include <iostream>
+#include <random>
 #include <thread>
+#include <vector>
 
 using namespace DB;
 
@@ -715,7 +724,7 @@ TEST(SchedulerSpaceShared, MemoryReleaseLetsSuspendedGrowthResume)
     r.registerResource();
 
     ManualAllocation heavy(queue, "heavy", 6000);
-    ManualAllocation releaser(queue, "releaser", 3000);
+    auto releaser = std::make_unique<ManualAllocation>(queue, "releaser", 3000);
 
     std::promise<void> entered;
     std::promise<void> release;
@@ -798,6 +807,118 @@ TEST(SchedulerSpaceShared, BlockedAlternativeFallsBackToEviction)
 }
 
 
+/// A non-fitting alternative must not terminate the search. The queue preserves FIFO order for normal
+/// admission, but within a suspension round every later request gets a fit check before eviction.
+TEST(SchedulerSpaceShared, FittingAllocationBehindBlockedAlternativeRunsBeforeEviction)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation heavy(queue, "heavy", 8000);
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    heavy.increaseAsync(5000);
+    auto blocked = std::make_unique<ManualAllocation>(queue, "blocked", 3000, /* wait_for_admission = */ false);
+    auto fitting = std::make_unique<ManualAllocation>(queue, "fitting", 1000, /* wait_for_admission = */ false);
+    release.set_value();
+
+    fitting->waitSynced();
+    EXPECT_EQ(fitting->size(), 1000);
+    EXPECT_EQ(blocked->size(), 0);
+    EXPECT_EQ(heavy.killCount(), 0u);
+
+    /// Releasing the fitting beneficiary starts a new resource-state round. The +3000 request is
+    /// reconsidered, still cannot fit, and only then may the original growth reach eviction.
+    fitting.reset();
+    heavy.waitKills(1);
+    EXPECT_EQ(heavy.killCount(), 1u);
+}
+
+
+template <typename Policy>
+void suspendedIncreaseIsHiddenThroughPolicyHierarchy()
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+
+    auto limit = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 10000);
+    auto policy = std::make_shared<Policy>(t.scheduler.event_queue, SchedulerNodeInfo{});
+    policy->basename = "policy";
+    limit->attachChild(policy);
+
+    SchedulerNodeInfo heavy_info;
+    heavy_info.setPrecedence(0);
+    auto heavy_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, heavy_info);
+    heavy_queue->basename = "heavy_queue";
+    AllocationQueue * heavy_queue_ptr = heavy_queue.get();
+    policy->attachChild(heavy_queue);
+
+    SchedulerNodeInfo small_info;
+    small_info.setPrecedence(1);
+    auto small_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, small_info);
+    small_queue->basename = "small_queue";
+    AllocationQueue * small_queue_ptr = small_queue.get();
+    policy->attachChild(small_queue);
+
+    r.root_node = limit;
+    /// The holder must own the complete subtree so destruction happens on the scheduler thread.
+    small_queue.reset();
+    heavy_queue.reset();
+    policy.reset();
+    limit.reset();
+    r.registerResource();
+
+    ManualAllocation heavy(heavy_queue_ptr, "heavy", 8000);
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    /// The sibling activation is queued before the heavy queue's post-suspension activation. Parent
+    /// policies must nevertheless stop selecting the stale +5000 request as soon as it is suspended.
+    heavy.increaseAsync(5000);
+    auto small = std::make_unique<ManualAllocation>(small_queue_ptr, "small", 1000, /* wait_for_admission = */ false);
+
+    std::promise<std::pair<ResourceCost, size_t>> observed;
+    auto observed_future = observed.get_future();
+    t.scheduler.event_queue.enqueue([&]
+    {
+        observed.set_value({small->size(), heavy.killCount()});
+    });
+    release.set_value();
+
+    auto [small_size, heavy_kills] = observed_future.get();
+    EXPECT_EQ(small_size, 1000);
+    EXPECT_EQ(heavy_kills, 0u);
+
+    /// The admitted sibling remains productive work, so the heavy query stays suspended until the
+    /// sibling releases its allocation. That release retries the growth across queue boundaries.
+    EXPECT_EQ(heavy.killCount(), 0u);
+    small.reset();
+    heavy.waitKills(1);
+}
+
+
+TEST(SchedulerSpaceShared, SuspendedIncreaseIsHiddenThroughFairHierarchy)
+{
+    suspendedIncreaseIsHiddenThroughPolicyHierarchy<FairAllocation>();
+}
+
+
+TEST(SchedulerSpaceShared, SuspendedIncreaseIsHiddenThroughPrecedenceHierarchy)
+{
+    suspendedIncreaseIsHiddenThroughPolicyHierarchy<PrecedenceAllocation>();
+}
+
+
 /// Parking is only a step before eviction. If a blocked regular increase has no request behind it, it is
 /// immediately restored and the next evaluation follows the existing hard-limit kill policy.
 TEST(SchedulerSpaceShared, BlockedGrowthWithoutBeneficiaryStillKills)
@@ -814,4 +935,360 @@ TEST(SchedulerSpaceShared, BlockedGrowthWithoutBeneficiaryStillKills)
 
     EXPECT_EQ(heavy.killCount(), 1u);
     EXPECT_EQ(heavy.size(), 8000);
+}
+
+
+
+/// A long-lived allocation can yield the same blocked growth more than once. Every partial release
+/// retries that growth; while it still cannot fit, it must be parked again instead of being killed.
+/// Smaller reservations must keep flowing through every suspension round.
+TEST(SchedulerSpaceShared, LongLivedGrowthCanBeParkedRepeatedly)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation heavy(queue, "heavy", 6000);
+    ManualAllocation releaser(queue, "releaser", 3000);
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    heavy.increaseAsync(6000); // Impossible even if every other allocation releases its memory.
+    auto anchor = std::make_unique<ManualAllocation>(queue, "anchor", 500, /* wait_for_admission = */ false);
+    release.set_value();
+
+    anchor->waitSynced();
+    ASSERT_EQ(heavy.killCount(), 0u);
+
+    constexpr std::array<ResourceCost, 4> releases{200, 300, 400, 500};
+    for (size_t round = 0; round < releases.size(); ++round)
+    {
+        releaser->decreaseAsync(releases[round]); // Retries and re-parks the blocked heavy growth.
+        releaser->waitSynced();
+        ASSERT_EQ(heavy.killCount(), 0u) << "round=" << round;
+
+        ManualAllocation fitting(queue, fmt::format("fitting_{}", round), 100);
+        EXPECT_EQ(fitting.size(), 100);
+        EXPECT_EQ(fitting.killCount(), 0u);
+    }
+
+    EXPECT_EQ(heavy.size(), 6000);
+    EXPECT_EQ(releaser->size(), 1600);
+
+    /// Every other productive allocation must finish before suspension is exhausted. The impossible
+    /// growth must then reach
+    /// the existing last-resort eviction path.
+    releaser.reset();
+    anchor.reset();
+    heavy.waitKills(1);
+    EXPECT_EQ(heavy.killCount(), 1u);
+}
+
+
+/// Property-style stress test for the flow invariant. A permanently impossible growth request is
+/// kept alive while a deterministic random stream mixes:
+/// - pending allocations, including batches queued behind the blocked growth;
+/// - fitting growth of already admitted allocations;
+/// - partial releases;
+/// - short- and long-lived allocations.
+///
+/// Every generated request is bounded by the free capacity observed by the model. Therefore every
+/// one must be approved, no fitting allocation may be killed, and accounted usage must stay within
+/// the hard limit. Fixed seeds make failures exactly reproducible.
+TEST(SchedulerSpaceShared, RandomizedFittingAllocationsAlwaysProgress)
+{
+    constexpr ResourceCost limit = 10000;
+    constexpr size_t rounds = 32;
+    std::vector<UInt64> seeds{
+        0x13579BDFULL,
+        0x5EED1234ULL,
+        0xC0FFEE42ULL,
+        0xDEADBEEFULL,
+    };
+    if (const char * seed_from_environment = std::getenv("CLICKHOUSE_SCHEDULER_RANDOM_SEED"))
+    {
+        char * parse_end = nullptr;
+        UInt64 base_seed = static_cast<UInt64>(std::strtoull(seed_from_environment, &parse_end, 10));
+        ASSERT_NE(parse_end, seed_from_environment);
+        ASSERT_EQ(*parse_end, 0);
+
+        size_t iterations = 1;
+        if (const char * iterations_from_environment = std::getenv("CLICKHOUSE_SCHEDULER_RANDOM_ITERATIONS"))
+        {
+            parse_end = nullptr;
+            iterations = static_cast<size_t>(std::strtoull(iterations_from_environment, &parse_end, 10));
+            ASSERT_NE(parse_end, iterations_from_environment);
+            ASSERT_EQ(*parse_end, 0);
+            ASSERT_GT(iterations, 0u);
+            ASSERT_LE(iterations, 1000000u);
+        }
+
+        seeds.clear();
+        seeds.reserve(iterations);
+        for (size_t iteration = 0; iteration < iterations; ++iteration)
+            seeds.push_back(base_seed + iteration);
+    }
+
+    const bool report_metrics = std::getenv("CLICKHOUSE_SCHEDULER_REPORT_METRICS") != nullptr;
+    const auto benchmark_started = std::chrono::steady_clock::now();
+    size_t total_fitting_requests_approved = 0;
+    size_t total_progress_events = 0;
+    size_t total_release_retry_checkpoints = 0;
+    size_t total_queries_completed = 0;
+    size_t peak_live_queries = 0;
+    ResourceCost peak_allocated = 0;
+    ResourceCost total_fitting_bytes_approved = 0;
+    ResourceCost total_bytes_released = 0;
+    size_t total_last_resort_kills = 0;
+
+    for (UInt64 seed : seeds)
+    {
+        SCOPED_TRACE(fmt::format("seed={}", seed));
+
+        SpaceSharedTest t;
+        SpaceSharedResourceHolder r(t);
+        r.addLimit("/", limit);
+        AllocationQueue * queue = r.addQueue("/queue");
+        r.registerResource();
+
+        std::mt19937_64 rng(seed);
+        auto randomBetween = [&](ResourceCost minimum, ResourceCost maximum)
+        {
+            std::uniform_int_distribution<ResourceCost> distribution(minimum, maximum);
+            return distribution(rng);
+        };
+
+        ManualAllocation heavy(queue, "heavy", 5000);
+        auto releaser = std::make_unique<ManualAllocation>(queue, "releaser", 3000);
+
+        std::promise<void> entered;
+        std::promise<void> release;
+        t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+        entered.get_future().get();
+
+        heavy.increaseAsync(6000); // 5000 + 6000 > limit even when heavy is alone.
+        auto anchor = std::make_unique<ManualAllocation>(queue, "anchor", 200, /* wait_for_admission = */ false);
+        release.set_value();
+        anchor->waitSynced();
+
+        struct LiveQuery
+        {
+            std::unique_ptr<ManualAllocation> allocation;
+            size_t rounds_left;
+        };
+
+        std::vector<LiveQuery> live_queries;
+        size_t fitting_requests_approved = 1; // The anchor.
+        size_t progress_events = 0;
+        size_t release_retry_checkpoints = 0;
+        size_t queries_completed = 0;
+        ResourceCost fitting_bytes_approved = anchor->size();
+        ResourceCost bytes_released = 0;
+
+        auto totalAllocated = [&]()
+        {
+            ResourceCost total = heavy.size() + releaser->size() + anchor->size();
+            for (auto & query : live_queries)
+                total += query.allocation->size();
+            return total;
+        };
+        peak_allocated = std::max(peak_allocated, totalAllocated());
+
+        for (size_t round = 0; round < rounds; ++round)
+        {
+            /// Complete queries whose randomized lifetime expired. The anchor remains alive, so
+            /// these releases retry/re-park heavy growth without exhausting suspension.
+            for (auto it = live_queries.begin(); it != live_queries.end();)
+            {
+                if (--it->rounds_left == 0)
+                {
+                    ResourceCost completed_size = it->allocation->size();
+                    it = live_queries.erase(it);
+                    ++progress_events;
+                    ++release_retry_checkpoints;
+                    ++queries_completed;
+                    bytes_released += completed_size;
+                }
+                else
+                    ++it;
+            }
+
+            /// Guarantee repeated progress checkpoints for the long-lived blocked growth.
+            if (round % 4 == 0)
+            {
+                ResourceCost release_size = randomBetween(50, 200);
+                release_size = std::min(release_size, releaser->size());
+                releaser->decreaseAsync(release_size);
+                releaser->waitSynced();
+                ++progress_events;
+                ++release_retry_checkpoints;
+                bytes_released += release_size;
+                ASSERT_EQ(heavy.killCount(), 0u) << "round=" << round;
+            }
+
+            ResourceCost free = limit - totalAllocated();
+            while (free < 4 && !live_queries.empty())
+            {
+                ResourceCost completed_size = live_queries.front().allocation->size();
+                live_queries.erase(live_queries.begin());
+                ++progress_events;
+                ++release_retry_checkpoints;
+                ++queries_completed;
+                bytes_released += completed_size;
+                free = limit - totalAllocated();
+            }
+            ASSERT_GT(free, 0);
+
+            /// Queue a random fitting batch while the scheduler is parked so every request is
+            /// simultaneously visible behind the suspended heavy growth.
+            size_t max_batch = static_cast<size_t>(std::min<ResourceCost>(4, free));
+            size_t batch_size = static_cast<size_t>(randomBetween(1, static_cast<ResourceCost>(max_batch)));
+            ResourceCost batch_total = randomBetween(
+                static_cast<ResourceCost>(batch_size),
+                std::min<ResourceCost>(free, 600));
+
+            std::vector<ResourceCost> expected_sizes;
+            expected_sizes.reserve(batch_size);
+            ResourceCost remaining = batch_total;
+            for (size_t index = 0; index < batch_size; ++index)
+            {
+                ResourceCost remaining_queries = static_cast<ResourceCost>(batch_size - index - 1);
+                ResourceCost size = index + 1 == batch_size
+                    ? remaining
+                    : randomBetween(1, remaining - remaining_queries);
+                expected_sizes.push_back(size);
+                remaining -= size;
+            }
+
+            std::promise<void> batch_entered;
+            std::promise<void> batch_release;
+            t.scheduler.event_queue.enqueue([&] { batch_entered.set_value(); batch_release.get_future().get(); });
+            batch_entered.get_future().get();
+
+            std::vector<std::unique_ptr<ManualAllocation>> batch;
+            batch.reserve(batch_size);
+            for (size_t index = 0; index < batch_size; ++index)
+            {
+                batch.emplace_back(std::make_unique<ManualAllocation>(
+                    queue,
+                    fmt::format("random_{}_{}_{}", seed, round, index),
+                    expected_sizes[index],
+                    /* wait_for_admission = */ false));
+            }
+            batch_release.set_value();
+
+            for (size_t index = 0; index < batch_size; ++index)
+            {
+                batch[index]->waitSynced();
+                ASSERT_EQ(batch[index]->size(), expected_sizes[index]);
+                ASSERT_EQ(batch[index]->killCount(), 0u);
+                live_queries.push_back({
+                    .allocation = std::move(batch[index]),
+                    .rounds_left = static_cast<size_t>(randomBetween(1, 8)),
+                });
+                ++fitting_requests_approved;
+                fitting_bytes_approved += expected_sizes[index];
+            }
+            peak_live_queries = std::max(peak_live_queries, live_queries.size());
+            peak_allocated = std::max(peak_allocated, totalAllocated());
+
+            /// Randomly grow one admitted query, but never ask for more than the modelled free
+            /// capacity. This covers fitting regular increases as well as fitting admissions.
+            free = limit - totalAllocated();
+            if (free > 0 && !live_queries.empty() && randomBetween(0, 1) != 0)
+            {
+                size_t index = static_cast<size_t>(
+                    randomBetween(0, static_cast<ResourceCost>(live_queries.size() - 1)));
+                ManualAllocation & query = *live_queries[index].allocation;
+                ResourceCost increase = randomBetween(1, std::min<ResourceCost>(free, 250));
+                ResourceCost old_size = query.size();
+
+                query.increaseAsync(increase);
+                query.waitSynced();
+
+                ASSERT_EQ(query.size(), old_size + increase);
+                ASSERT_EQ(query.killCount(), 0u);
+                ++fitting_requests_approved;
+                fitting_bytes_approved += increase;
+                peak_allocated = std::max(peak_allocated, totalAllocated());
+            }
+
+            /// Randomly release part of a live query. Each release is another resource-state
+            /// checkpoint that retries the long-lived growth and may park it again.
+            if (!live_queries.empty() && randomBetween(0, 1) != 0)
+            {
+                size_t index = static_cast<size_t>(
+                    randomBetween(0, static_cast<ResourceCost>(live_queries.size() - 1)));
+                ManualAllocation & query = *live_queries[index].allocation;
+                ResourceCost old_size = query.size();
+                if (old_size > 0)
+                {
+                    ResourceCost decrease = randomBetween(1, old_size);
+                    query.decreaseAsync(decrease);
+                    query.waitSynced();
+                    ASSERT_EQ(query.size(), old_size - decrease);
+                    ++progress_events;
+                    ++release_retry_checkpoints;
+                    bytes_released += decrease;
+                }
+            }
+
+            ASSERT_LE(totalAllocated(), limit);
+            ASSERT_EQ(heavy.killCount(), 0u) << "round=" << round;
+            for (auto & query : live_queries)
+                ASSERT_EQ(query.allocation->killCount(), 0u);
+        }
+
+        EXPECT_GT(fitting_requests_approved, rounds);
+        EXPECT_GE(progress_events, rounds / 4);
+
+        for (const auto & query : live_queries)
+            bytes_released += query.allocation->size();
+        queries_completed += live_queries.size();
+        release_retry_checkpoints += live_queries.size();
+        live_queries.clear();
+        bytes_released += releaser->size();
+        ++release_retry_checkpoints;
+        releaser.reset();
+        anchor.reset();
+
+        /// Once every beneficiary finishes, the heavy request is still impossible and must reach
+        /// the existing last-resort kill path rather than remain parked forever.
+        heavy.waitKills(1);
+        EXPECT_EQ(heavy.killCount(), 1u);
+
+        total_fitting_requests_approved += fitting_requests_approved;
+        total_progress_events += progress_events;
+        total_release_retry_checkpoints += release_retry_checkpoints;
+        total_queries_completed += queries_completed;
+        total_fitting_bytes_approved += fitting_bytes_approved;
+        total_bytes_released += bytes_released;
+        total_last_resort_kills += heavy.killCount();
+    }
+
+    if (report_metrics)
+    {
+        const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - benchmark_started).count();
+        std::cout
+            << "SCHEDULER_METRICS"
+            << " seeds=" << seeds.size()
+            << " rounds_per_seed=" << rounds
+            << " fitting_requests_approved=" << total_fitting_requests_approved
+            << " fitting_bytes_approved=" << total_fitting_bytes_approved
+            << " queries_completed=" << total_queries_completed
+            << " progress_events=" << total_progress_events
+            << " release_retry_checkpoints=" << total_release_retry_checkpoints
+            << " peak_live_queries=" << peak_live_queries
+            << " peak_allocated=" << peak_allocated
+            << " bytes_released=" << total_bytes_released
+            << " last_resort_kills=" << total_last_resort_kills
+            << " elapsed_us=" << elapsed_us
+            << std::endl;
+    }
 }

@@ -117,22 +117,48 @@ void AllocationQueue::decreaseAllocation(ResourceAllocation & allocation, Resour
         scheduleActivation();
 }
 
-bool AllocationQueue::trySuspendMemoryGrowth(ResourceAllocation & allocation)
+bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
 {
-    if (allocation.memory_growth_suspension_attempted)
-        return false;
-    if (suspended_growth && suspended_growth != &allocation)
-        return false;
+    chassert(&allocation.queue == this);
 
-    allocation.memory_growth_suspension_attempted = true;
+    if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
+    {
+        if (allocation.memory_growth_suspension_attempted)
+            return false;
+        if (suspended_growth && suspended_growth != &allocation)
+            return false;
+
+        allocation.memory_growth_suspension_attempted = true;
+        if (!suspended_growth)
+            suspended_growth = &allocation;
+    }
+    else
+    {
+        /// A pending/initial request is not the memory holder whose growth started this round.
+        /// Park it only while searching for work behind an already suspended regular increase.
+        if (!suspended_growth || allocation.memory_growth_suspended)
+            return false;
+    }
+
     allocation.memory_growth_suspended = true;
-    if (!suspended_growth)
-        suspended_growth = &allocation;
     memory_growth_suspension_changed = true;
     /// Recompute the eligible increase on the scheduler thread. Do not take `mutex` here: the parent
     /// `AllocationLimit` may make this decision while an `AllocationQueue` decrease is being propagated.
     scheduleActivation();
     return true;
+}
+
+void AllocationQueue::retrySuspendedIncrease(ResourceAllocation & allocation)
+{
+    chassert(&allocation.queue == this);
+    if (suspended_growth != &allocation)
+        return;
+
+    allocation.memory_growth_suspended = false;
+    allocation.memory_growth_suspension_attempted = false;
+    memory_growth_suspension_retry_requested = true;
+    memory_growth_suspension_changed = true;
+    scheduleActivation();
 }
 
 void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
@@ -159,7 +185,7 @@ void AllocationQueue::purgeQueue()
     chassert(parent == nullptr);
     cancelActivation();
     suspended_growth = nullptr;
-    memory_growth_suspension_beneficiaries = 0;
+    memory_growth_suspension_retry_requested = false;
 
     auto reason = std::make_exception_ptr(
         Exception(ErrorCodes::INVALID_SCHEDULER_NODE,
@@ -267,13 +293,6 @@ void AllocationQueue::approveIncrease()
         /// round; the remaining allocations continue under the normal queue policy.
         clearMemoryGrowthSuspension();
     }
-    else if (suspended_growth && !allocation.memory_growth_suspension_beneficiary)
-    {
-        /// This allocation made progress because another allocation yielded its blocked growth.
-        /// Keep that growth parked until resource state changes; admission alone is not enough.
-        allocation.memory_growth_suspension_beneficiary = true;
-        ++memory_growth_suspension_beneficiaries;
-    }
     /// A successfully approved request gets a fresh suspension chance on its next growth conflict.
     allocation.memory_growth_suspended = false;
     allocation.memory_growth_suspension_attempted = false;
@@ -297,7 +316,6 @@ void AllocationQueue::approveDecrease()
 
     chassert(decrease);
     ResourceAllocation & allocation = decrease->allocation;
-    bool suspension_beneficiary = allocation.memory_growth_suspension_beneficiary;
     SCHED_DBG("{} -- approveDecrease(id={}, size={}, allocated={})", getPath(), allocation.id, decrease->size, allocated);
     decreasing_allocations.erase(decreasing_allocations.iterator_to(allocation));
 
@@ -320,20 +338,23 @@ void AllocationQueue::approveDecrease()
             increasing_allocations.insert(allocation);
     }
 
-    if (suspension_beneficiary && decrease->removing_allocation)
-    {
-        allocation.memory_growth_suspension_beneficiary = false;
-        chassert(memory_growth_suspension_beneficiaries > 0);
-        --memory_growth_suspension_beneficiaries;
-    }
-
     /// Any released memory is a progress event. Give parked growth another chance immediately, even while
-    /// beneficiaries keep running. If it still does not fit, `trySuspendMemoryGrowth` parks it again.
+    /// beneficiaries keep running. If it still does not fit, `trySuspendIncrease` parks it again.
     bool retry_suspended_growth = suspended_growth != nullptr;
     if (retry_suspended_growth)
     {
         suspended_growth->memory_growth_suspended = false;
         suspended_growth->memory_growth_suspension_attempted = false;
+        /// Capacity changed, so every alternative rejected in the previous round deserves a fresh
+        /// fit check as well. This preserves queue order without letting one oversized request hide
+        /// a later fitting request permanently.
+        for (ResourceAllocation & pending : pending_allocations)
+            pending.memory_growth_suspended = false;
+        for (ResourceAllocation & increasing : increasing_allocations)
+        {
+            if (&increasing != suspended_growth)
+                increasing.memory_growth_suspended = false;
+        }
         memory_growth_suspension_changed = true;
     }
 
@@ -357,22 +378,9 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
 
     std::lock_guard lock(mutex);
 
-    // Normally a pending allocation must not evict a running allocation in its own queue. The exception
-    // is memory growth which was already suspended on the eviction path. Do not evict it while a previous
-    // beneficiary is still running: that work may release enough memory for the pending allocation.
+    // A pending allocation must not evict a running allocation in its own queue.
     if (killer.kind == IncreaseRequest::Kind::Pending && &killer.allocation.queue == this)
-    {
-        if (!suspended_growth)
-            return nullptr;
-        if (memory_growth_suspension_beneficiaries != 0)
-            return nullptr;
-
-        details = fmt::format(
-            "Evicting suspended allocation of size {} in workload '{}' after no beneficiary can make further progress.",
-            formatReadableCost(suspended_growth->allocated),
-            getWorkloadName());
-        return suspended_growth;
-    }
+        return nullptr;
 
     if (running_allocations.empty())
         return nullptr;
@@ -401,6 +409,16 @@ void AllocationQueue::processActivation()
     Update update;
     {
         std::lock_guard lock(mutex);
+
+        if (memory_growth_suspension_retry_requested)
+        {
+            /// A release elsewhere in the constrained subtree starts a new fit-check round here.
+            for (ResourceAllocation & pending : pending_allocations)
+                pending.memory_growth_suspended = false;
+            for (ResourceAllocation & increasing : increasing_allocations)
+                increasing.memory_growth_suspended = false;
+            memory_growth_suspension_retry_requested = false;
+        }
 
         // Remove allocation if necessary
         while (!removing_allocations.empty())
@@ -524,18 +542,17 @@ bool AllocationQueue::setIncrease() // TSA_REQUIRES(mutex)
     });
     if (eligible != increasing_allocations.end())
         increase = &eligible->increase;
-    else if (!pending_allocations.empty())
-        increase = &pending_allocations.begin()->increase;
-    else if (suspended_growth && memory_growth_suspension_beneficiaries == 0)
-    {
-        /// No work admitted by the suspension is still running. Restore the parked growth; if it still
-        /// cannot fit, `AllocationLimit` will use the existing eviction path because its attempt bit stays set.
-        suspended_growth->memory_growth_suspended = false;
-        increase = &suspended_growth->increase;
-        suspended_growth = nullptr;
-    }
     else
-        increase = nullptr;
+    {
+        auto pending = std::find_if(pending_allocations.begin(), pending_allocations.end(), [](const ResourceAllocation & allocation)
+        {
+            return !allocation.memory_growth_suspended;
+        });
+        if (pending != pending_allocations.end())
+            increase = &pending->increase;
+        else
+            increase = nullptr;
+    }
 
     return increase != old_increase;
 }
@@ -545,12 +562,17 @@ void AllocationQueue::clearMemoryGrowthSuspension() // TSA_REQUIRES(mutex)
     if (suspended_growth)
         suspended_growth->memory_growth_suspended = false;
     suspended_growth = nullptr;
-    memory_growth_suspension_beneficiaries = 0;
+    memory_growth_suspension_retry_requested = false;
 
     /// Beneficiaries are always running allocations. Avoid allocating an auxiliary container here: this
     /// path exists specifically for memory pressure, so an O(n) cleanup is preferable to extra allocation.
     for (ResourceAllocation & allocation : running_allocations)
-        allocation.memory_growth_suspension_beneficiary = false;
+    {
+        allocation.memory_growth_suspended = false;
+        allocation.memory_growth_suspension_attempted = false;
+    }
+    for (ResourceAllocation & allocation : pending_allocations)
+        allocation.memory_growth_suspended = false;
 }
 
 bool AllocationQueue::setDecrease() // TSA_REQUIRES(mutex)

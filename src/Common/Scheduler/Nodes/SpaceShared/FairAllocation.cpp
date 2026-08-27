@@ -2,6 +2,8 @@
 #include <Common/Scheduler/Debug.h>
 #include <Common/Exception.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -148,9 +150,15 @@ bool FairAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest 
     // Update current increase request
     // To avoid thrashing we first server running allocation increase requests, then pending ones
     IncreaseRequest * old_increase = increase;
-    increase_child = !increasing_children.empty() ?
-        &*increasing_children.begin() :
-        (!pending_children.empty() ? &*pending_children.begin() : nullptr);
+    auto eligible = [](const ISpaceSharedNode & child)
+    {
+        return child.increase && !child.increase->allocation.isIncreaseSuspended();
+    };
+    auto increasing = std::find_if(increasing_children.begin(), increasing_children.end(), eligible);
+    auto pending = std::find_if(pending_children.begin(), pending_children.end(), eligible);
+    increase_child = increasing != increasing_children.end()
+        ? &*increasing
+        : (pending != pending_children.end() ? &*pending : nullptr);
     increase = increase_child ? increase_child->increase : nullptr;
     return old_increase != increase;
 }

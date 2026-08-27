@@ -32,11 +32,18 @@ public:
 private:
     bool setIncrease(IncreaseRequest * new_increase, bool reapply_constraint);
     bool setDecrease(DecreaseRequest * new_decrease);
+    void selectAndKill(IncreaseRequest & killer);
 
     ResourceCost max_allocated = default_max_allocated;
 
     /// Allocation that is being killed (if any)
     ResourceAllocation * allocation_to_kill = nullptr;
+
+    /// Regular growth whose first hard-limit conflict yielded to other work in this subtree.
+    IncreaseRequest * suspended_growth = nullptr;
+    bool suspended_growth_retry_pending = false;
+    UInt64 memory_growth_suspension_generation = 0;
+    size_t memory_growth_suspension_beneficiaries = 0;
 
     SpaceSharedNodePtr child;
 };
