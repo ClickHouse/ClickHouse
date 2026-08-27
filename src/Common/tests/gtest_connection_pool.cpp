@@ -7,6 +7,7 @@
 #include <base/scope_guard.h>
 
 #include <Poco/URI.h>
+#include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/MessageHeader.h>
 #include <Poco/Net/HTTPServerRequest.h>
@@ -1131,10 +1132,13 @@ TEST_F(ConnectionPoolTest, ProxyTunnelDialsTheCallerResolvedAddress)
     /// The HTTPS tunnel must dial the proxy address the caller already resolved instead of
     /// resolving the proxy hostname again. Two same-process resolutions of one name always agree,
     /// so DNS alone cannot tell the two apart; instead the pinned address and the hostname
-    /// deliberately disagree: `localhost` resolves to a live listener bound to 127.0.0.1 only,
-    /// while the address passed to connect() is 127.0.0.99, where nothing listens. Honoring the
-    /// pinned address gets the TCP connect refused; a regression to re-resolution reaches the
-    /// listener instead and fails later, in the CONNECT exchange or the TLS handshake.
+    /// deliberately disagree: the proxy config names a literal `127.0.0.1`, where the listener is
+    /// bound, while the address passed to connect() is 127.0.0.99, where nothing listens. A literal
+    /// instead of `localhost` keeps this deterministic on dual-stack hosts, where `localhost` can
+    /// resolve to `::1`: there a regression to re-resolution would hit an unbound `[::1]` port and
+    /// still raise ConnectionRefusedException, silently staying green. With the literal, honoring
+    /// the pinned address gets the TCP connect refused; a regression reaches the listener instead
+    /// and fails later, in the CONNECT exchange or the TLS handshake.
     Poco::Net::ServerSocket proxy_socket(Poco::Net::SocketAddress(Poco::Net::IPAddress("127.0.0.1"), 0));
     const auto proxy_port = proxy_socket.address().port();
     Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new HTTPRequestHandlerFactory(options);
@@ -1151,7 +1155,7 @@ TEST_F(ConnectionPoolTest, ProxyTunnelDialsTheCallerResolvedAddress)
     EphemeralCert cert;
     ExposedSession session("tunnel-target.invalid", 9999, cert.makeContext(Poco::Net::Context::CLIENT_USE));
     Poco::Net::HTTPClientSession::ProxyConfig proxy_config;
-    proxy_config.host = "localhost";
+    proxy_config.host = "127.0.0.1";
     proxy_config.port = proxy_port;
     session.setProxyConfig(proxy_config);
 
@@ -1211,4 +1215,38 @@ TEST_F(ConnectionPoolTest, ReconnectWithoutPoolNamesThePeer)
         ASSERT_NE(std::string::npos, text.find(endpoint)) << "Peer address missing: " << text;
         ASSERT_EQ(text.find(endpoint), text.rfind(endpoint)) << "Peer address repeated: " << text;
     }
+}
+
+TEST_F(ConnectionPoolTest, DirectSessionReconnectNamesThePeer)
+{
+    /// Sessions built without this pool - `src/IO/S3/Credentials.cpp`, `src/Client/JWTProvider.cpp`,
+    /// `src/Client/BuzzHouse/Generator/ExternalIntegrations.cpp` and the like - go straight through
+    /// `Poco::Net::HTTPClientSession::sendRequest` -> `reconnect` -> `connect`. The rewrite of bare
+    /// deferred connect errors lives in `reconnect` precisely so those callers name the peer too,
+    /// not just pool-backed sessions.
+    Poco::Net::ServerSocket port_probe(Poco::Net::SocketAddress(Poco::Net::IPAddress("127.0.0.1"), 0));
+    const auto dead_port = port_probe.address().port();
+    port_probe.close();
+    const String endpoint = "127.0.0.1:" + std::to_string(dead_port);
+
+    bool refused = false;
+    try
+    {
+        Poco::Net::HTTPClientSession session("127.0.0.1", dead_port);
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
+        session.sendRequest(request);
+        FAIL() << "Expected the connect to be refused";
+    }
+    catch (const Poco::Net::ConnectionRefusedException & e)
+    {
+        const auto text = e.displayText();
+        EXPECT_NE(std::string::npos, text.find(endpoint)) << "Peer address missing: " << text;
+        EXPECT_EQ(text.find(endpoint), text.rfind(endpoint)) << "Peer address repeated: " << text;
+        refused = true;
+    }
+    catch (const Poco::Exception & e)
+    {
+        FAIL() << "Unexpected exception kind: " << e.displayText();
+    }
+    ASSERT_TRUE(refused);
 }
