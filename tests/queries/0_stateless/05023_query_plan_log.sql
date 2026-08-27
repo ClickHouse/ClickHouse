@@ -1,5 +1,10 @@
+-- Tags: no-old-analyzer
+
 -- Verifies system.query_plan_log: which queries are captured, which are not, and that the
 -- captured row contains the plan, its runtime statistics and correct metadata.
+--
+-- Only InterpreterSelectQueryAnalyzer captures plans, so nothing at all is logged with
+-- `enable_analyzer = 0` and every assertion below would fail.
 --
 -- Rows are matched by joining on query_id against system.query_log restricted to
 -- currentDatabase(), so the assertions only see queries issued by this run of this test.
@@ -24,6 +29,15 @@ SELECT number FROM numbers(1000000) WHERE number % 7 = 0 AND '05023_finish' != '
 
 -- Nested interpreters must not produce one row each.
 SELECT max(x) FROM (SELECT number AS x FROM numbers(100) WHERE number > 10 AND '05023_subquery' != '') FORMAT Null;
+
+-- A join reports its own metrics (matched rows, hash table size) only when the query runs with the
+-- analyze mode on, which only EXPLAIN ANALYZE turns on. The plan of an ordinary query must
+-- therefore render without them: `parallel_hash` does not even allocate the object holding those
+-- counters, so asking the join for them used to abort the server.
+SELECT count() FROM (SELECT number AS k FROM numbers(100000)) AS l
+JOIN (SELECT number AS k FROM numbers(1000)) AS r USING (k)
+WHERE '05023_join' != ''
+SETTINGS join_algorithm = 'parallel_hash' FORMAT Null;
 
 -- EXPLAIN ANALYZE runs through InterpreterExplainQuery, which does not support plan profiling.
 -- It is wrapped in a subquery so its output (which contains timings) is discarded and the test
@@ -98,6 +112,17 @@ SELECT
 FROM system.query_plan_log
 WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
   AND position(query_string, '05023_finish') > 0;
+
+-- The join step is rendered with its stages and I/O, just without the join-specific metrics.
+SELECT
+    'join',
+    count(),
+    anyLast(position(ascii_plan, 'Join')) > 0,
+    anyLast(position(ascii_plan, 'I/O: rows')) > 0,
+    anyLast(position(ascii_plan, 'unique keys')) = 0
+FROM system.query_plan_log
+WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
+  AND position(query_string, '05023_join') > 0;
 
 -- A failed query keeps its plan but has no statistics: BlockIO::onException runs the exception
 -- callbacks and resets the pipeline without ever calling the finalize callback, which is where

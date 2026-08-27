@@ -24,6 +24,7 @@
     <crash_log remove="remove"/>
     <session_log remove="remove"/>
     <processors_profile_log remove="remove"/>
+    <query_plan_log remove="remove"/>
     <asynchronous_insert_log remove="remove"/>
     <backup_log remove="remove"/>
     <s3queue_log remove="remove"/>

@@ -441,7 +441,6 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     /// would double-count the optimization phase.
     query_plan.optimize(optimization_settings);
 
-
     /// This is necessary because:
     ///  - buildQueryPipeline moves each step's ActionsDAG into its ExpressionActions, and
     ///    buildPrettyNamesPerPlan reads those DAGs, so the names must be built first;

@@ -725,9 +725,7 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
     }
 
     if (auto plan_profiler = context->getPlanProfiler(); plan_profiler && plan_profiler->hasQueryPlan())
-        plan_profiler->renderWithStats(
-          query_pipeline);
-
+        plan_profiler->renderWithStats(query_pipeline);
 
     /// Reset pipeline before fetching profile counters
     query_pipeline.reset();
@@ -1109,7 +1107,7 @@ void logExceptionBeforeStart(
     }
 
     if (auto plan_profiler = context->getPlanProfiler(); plan_profiler && plan_profiler->hasQueryPlan())
-          logQueryPlan(context, elem, QueryLogElementType::EXCEPTION_BEFORE_START);
+        logQueryPlan(context, elem, QueryLogElementType::EXCEPTION_BEFORE_START);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)
@@ -3145,7 +3143,6 @@ static BlockIO executeQueryImpl(
                     }
 
                     res = interpreter->execute();
-
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
                     if (checkCanWriteQueryResultCache(out_ast, context))

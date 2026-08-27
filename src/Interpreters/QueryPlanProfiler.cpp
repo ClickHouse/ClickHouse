@@ -54,44 +54,44 @@ void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline) const
 }
 
 String QueryPlanProfiler::render(AnalyzeStepsStats * stats) const
-  {
-      if (!canRender())
-          return {};
+{
+    if (!canRender())
+        return {};
 
-      /// Rendering runs on the query-finish path, which BlockIO::onFinish calls without a guard, after
-      /// the client has already received the result. An exception here would fail a query that had
-      /// already succeeded, so diagnostics must not propagate. The memory blocker keeps the plan text —
-      /// which can be large — from being charged to the query and tripping max_memory_usage, matching
-      /// what SystemLogQueue::add does for the row itself.
-      try
-      {
-          MemoryTrackerBlockerInThread block_memory_tracker;
+    /// Rendering runs on the query-finish path, which BlockIO::onFinish calls without a guard, after
+    /// the client has already received the result. An exception here would fail a query that had
+    /// already succeeded, so diagnostics must not propagate. The memory blocker keeps the plan text —
+    /// which can be large — from being charged to the query and tripping max_memory_usage, matching
+    /// what SystemLogQueue::add does for the row itself.
+    try
+    {
+        MemoryTrackerBlockerInThread block_memory_tracker;
 
-          String result;
-          WriteBufferFromString out(result);
-          ExplainPlanOptions explain_options {
-              .actions = true,
-              .indexes = true,
-              .compact = true,
-              .pretty = true};
-          query_plan->explainPlan(
-              out,
-              explain_options,
-              /*offset=*/ 0,
-              max_description_length,
-              &pretty_names.value(),
-              /*parent_tree_prefix=*/ "",
-              /*is_last_child_plan=*/ true,
-              stats);
-          out.finalize();
-          return result;
-      }
-      catch (...)
-      {
-          tryLogCurrentException(__PRETTY_FUNCTION__);
-          return "FAILED TO RENDER PLAN: " + getCurrentExceptionMessage(/*with_stacktrace=*/ false);
-      }
-  }
+        String result;
+        WriteBufferFromString out(result);
+        ExplainPlanOptions explain_options {
+            .actions = true,
+            .indexes = true,
+            .compact = true,
+            .pretty = true};
+        query_plan->explainPlan(
+            out,
+            explain_options,
+            /*offset=*/ 0,
+            max_description_length,
+            &pretty_names.value(),
+            /*parent_tree_prefix=*/ "",
+            /*is_last_child_plan=*/ true,
+            stats);
+        out.finalize();
+        return result;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return "FAILED TO RENDER PLAN: " + getCurrentExceptionMessage(/*with_stacktrace=*/ false);
+    }
+}
 
 void QueryPlanProfiler::renderWithStats(const QueryPipeline & pipeline)
 {
