@@ -214,6 +214,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         std::move(added_columns.offsets_to_replicate),
         std::move(added_columns.filter),
         std::move(added_columns.matched_rows),
+        added_columns.lazy_output.hash_table_matches,
         std::move(block),
         HashJoinResult::Properties{
             *join.table_join,
@@ -280,8 +281,15 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
     constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
 
     const IColumn * asof_column [[maybe_unused]] = nullptr;
+    [[maybe_unused]] TypeIndex asof_type{};
+    [[maybe_unused]] ASOFJoinInequality asof_inequality{};
     if constexpr (is_asof_join)
+    {
         asof_column = key_columns.back();
+        /// Hoisted out of the loop below, see `Inserter::insertAsof`.
+        asof_type = *join.getAsofType();
+        asof_inequality = join.getAsofInequality();
+    }
 
     auto key_getter = createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
 
@@ -289,6 +297,8 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
     is_inserted = !mapped_one || is_asof_join;
 
     const size_t rows = ScatteredBlock::Selector::size(selector);
+    /// Hoisted out of the loop below, see `Inserter::insertOne`.
+    [[maybe_unused]] const bool any_take_last_row = join.anyTakeLastRow();
 
     /// Software prefetch during the build phase.
     constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, HashMap>;
@@ -325,9 +335,9 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
             continue;
 
         if constexpr (is_asof_join)
-            Inserter<HashMap, KeyGetter>::insertAsof(join, map, key_getter, stored_block_no, ind, pool, *asof_column);
+            Inserter<HashMap, KeyGetter>::insertAsof(asof_type, asof_inequality, map, key_getter, stored_block_no, ind, pool, *asof_column);
         else if constexpr (mapped_one)
-            is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(join, map, key_getter, stored_block_no, ind, pool);
+            is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(any_take_last_row, map, key_getter, stored_block_no, ind, pool);
         else
             all_values_unique &= Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block_no, ind, pool);
     }
