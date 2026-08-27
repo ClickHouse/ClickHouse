@@ -2056,19 +2056,19 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     if (json_index_info)
     {
-        /// FixedString set elements carry zero padding that participates in zero-pad-aware
-        /// string comparison but not in the exact tokens a String or Dynamic path stores
-        /// ('a' and toFixedString('a', 3) compare equal, but their tokens differ). Exact-match
-        /// tokens cannot be built from padded values, so do not use the index — unless the
-        /// path itself is declared FixedString, where both sides carry the same padding.
-        if (WhichDataType(set_column->getDataType()).isFixedString())
+        /// FixedString and String compare with zero-padding, but exact tokens preserve bytes.
+        /// Use the index only when both sides have identical FixedString representations.
+        const bool set_is_fixed_string = WhichDataType(set_column->getDataType()).isFixedString();
+        const auto path_type = json_index_info->source_type
+            ? removeNullableOrLowCardinalityNullable(json_index_info->source_type)
+            : nullptr;
+        const bool path_is_fixed_string = path_type && WhichDataType(path_type).isFixedString();
+        if (set_is_fixed_string != path_is_fixed_string)
+            return false;
+
+        if (set_is_fixed_string)
         {
-            const auto path_type = json_index_info->source_type
-                ? removeNullableOrLowCardinalityNullable(json_index_info->source_type)
-                : nullptr;
-            if (!path_type
-                || !WhichDataType(path_type).isFixedString()
-                || assert_cast<const ColumnFixedString &>(*set_column).getN()
+            if (assert_cast<const ColumnFixedString &>(*set_column).getN()
                     != assert_cast<const DataTypeFixedString &>(*path_type).getN())
                 return false;
         }
