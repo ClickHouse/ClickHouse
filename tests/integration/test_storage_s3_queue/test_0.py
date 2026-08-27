@@ -1013,8 +1013,10 @@ def test_move_after_processing_reprocessed_same_file_collision(started_cluster):
 
     When `tracked_file_ttl_sec` or `tracked_files_limit` evicts the file's Keeper state, a subsequent
     upload of the identical file is processed again. The destination already exists from the first
-    move, so the second guarded move must recognize that the existing object has a different move token,
-    report a collision, and leave the second source object in place.
+    move, and only its provenance proves whose copy it is: an unchanged source version (key, ETag,
+    last-modification time) completes an interrupted move, but a re-uploaded source carries a fresh
+    last-modification time that no longer matches, so this second move must be refused as a collision
+    with the second source object left in place.
     """
     node = started_cluster.instances["instance"]
     token = generate_random_string()
@@ -1188,6 +1190,86 @@ def test_move_after_processing_retry_recognizes_its_own_copy(started_cluster):
     assert count_minio_objects(started_cluster, bucket, files_path) == 0
     # Its own committed copy is not a collision.
     assert move_collisions() == collisions_before
+
+
+def test_move_after_processing_recognizes_own_copy_across_attempts(started_cluster):
+    """The own-committed-copy proof must outlive a single attempt's memory: whatever died between
+    committing the guarded copy and removing the source - server restart, task cancellation - left no
+    attempt state behind, so the next processing attempt of the very same source file has to prove
+    from the destination provenance alone that it meets its own earlier copy rather than a foreign
+    collision that would strand the source forever.
+
+    Simulated without restarting anything: `after_processing_retries = 0` ends the first attempt on
+    the injected failure right after the commit, and `tracked_file_ttl_sec` evicts the file's Keeper
+    record so the queue picks the same key up again as a brand-new attempt.
+    """
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_own_copy_next_attempt_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    file_name = "a.csv"
+    processed_prefix = f"{token}_own_copy_prefix"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    bucket = started_cluster.minio_bucket
+
+    put_s3_file_content(started_cluster, f"{files_path}/{file_name}", b"1,2,3\n")
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "after_processing_retries": 0,
+            # The first attempt marks the file processed despite its unfinished move, so the retry
+            # below comes solely from the TTL eviction re-listing the untouched source; polling stays
+            # flat and fast so every wait window sees the transitions immediately.
+            "tracked_file_ttl_sec": 1,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 200,
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 100,
+            "polling_backoff_ms": 0,
+        },
+        engine_name="S3Queue",
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_after_move_copy")
+    try:
+        create_mv(node, table_name, dst_table_name)
+        for _ in range(1000):
+            if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1:
+                break
+            time.sleep(0.1)
+        assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1
+
+        # The first attempt committed its copy and was aborted before the removal.
+        for _ in range(100):
+            if (
+                count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+                and count_minio_objects(started_cluster, bucket, files_path) == 1
+            ):
+                break
+            time.sleep(0.1)
+        assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+        assert count_minio_objects(started_cluster, bucket, files_path) == 1
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_move_copy")
+
+    # Nothing of the first attempt remains, and the destination provenance records the unchanged
+    # source version: the retried move finishes by removing the source instead of refusing it as a
+    # foreign collision.
+    for _ in range(1000):
+        if count_minio_objects(started_cluster, bucket, files_path) == 0:
+            break
+        time.sleep(0.1)
+    assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+    assert count_minio_objects(started_cluster, bucket, files_path) == 0
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
