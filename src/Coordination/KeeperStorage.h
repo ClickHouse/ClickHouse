@@ -155,8 +155,6 @@ public:
 
     KeeperReadThreadPool read_thread_pool;
 
-    static bool checkDigest(const KeeperDigest & first, const KeeperDigest & second);
-
     void finalize();
 
     bool isFinalized() const;
@@ -315,22 +313,13 @@ public:
         int64_t new_last_zxid,
         bool check_acl,
         int64_t log_idx);
-    /// Committing a batch of previously preprocessed requests goes like this:
-    ///   beginProcessBatch(batch);
-    ///   for each request: processOneRequest(...);   // in order; skipped for requests that
-    ///                                               // create no storage transactions (SessionID)
-    ///   endProcessBatch(batch);
-    /// The three steps don't need to happen in one critical section, but must happen on one
-    /// thread, with no other batch committed in between (interleaving processLocalRequests
-    /// in between is fine).
-    /// beginProcessBatch checks that `batch` is the next uncommitted batch; endProcessBatch
-    /// publishes the committed digest and pops the batch from the uncommitted list.
-    void beginProcessBatch(const KeeperRequestBatch & batch);
+    /// Call after calling processOneRequest for all requests in batch (except ones that don't need
+    /// transactions, like SessionID).
     void endProcessBatch(const KeeperRequestBatch & batch);
 
-    /// Commit one previously preprocessed request of the current batch (bracketed by
-    /// beginProcessBatch/endProcessBatch). Apply the changes to the committed state.
-    /// Produce response for the request + triggered watch notifications.
+    /// Commit one previously preprocessed request of the current batch. Apply the changes to the
+    /// committed state. Produce response for the request + triggered watch notifications.
+    /// Caller must call endProcessBatch at the end of batch.
     virtual KeeperResponsesForSessions processOneRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,

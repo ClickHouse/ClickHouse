@@ -112,8 +112,15 @@ struct KeeperRequestBatch
 
     int64_t getZxid(size_t request_idx) const { return first_zxid == 0 ? 0 : first_zxid + static_cast<int64_t>(request_idx); }
     int64_t getLastZxid() const { return getZxid(requests.size() - 1); }
+
+    std::string toString() const;
 };
 using KeeperRequestBatchPtr = std::shared_ptr<KeeperRequestBatch>;
+
+bool checkDigest(const KeeperDigest & first, const KeeperDigest & second);
+
+/// If `batch.digest` and `actual` are presend but different, logs and error and crashes.
+void assertDigest(const KeeperRequestBatch & batch, const KeeperDigest & actual, const char * operation);
 
 inline static constexpr std::string_view tmp_keeper_file_prefix = "tmp_";
 

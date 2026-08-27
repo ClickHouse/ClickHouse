@@ -243,32 +243,6 @@ void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uin
 namespace
 {
 
-void assertDigest(
-    const KeeperDigest & expected,
-    const KeeperDigest & actual,
-    const Coordination::ZooKeeperRequest & request,
-    uint64_t log_idx,
-    uint64_t session_id,
-    bool committing)
-{
-    if (!KeeperStorage::checkDigest(expected, actual))
-    {
-        LOG_FATAL(
-            getLogger("KeeperStateMachine"),
-            "Digest for nodes is not matching after {} request of type '{}' at log index {} for session {}.\nExpected digest - {}, actual digest - {} "
-            "(digest {}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
-            committing ? "committing" : "preprocessing",
-            request.getOpNum(),
-            log_idx,
-            session_id,
-            expected.value,
-            actual.value,
-            expected.version,
-            request.toString());
-        std::terminate();
-    }
-}
-
 /// Macros to construct timed lock guards for state_machine_storage_mutex with appropriate ProfileEvents.
 /// We cannot use a factory function because TSA does not track lock ownership across function boundaries.
 #define KEEPER_STORAGE_LOCK_EXCLUSIVE(name) \
@@ -815,13 +789,7 @@ std::optional<KeeperDigest> KeeperStateMachine::preprocessBatch(const KeeperRequ
         return std::nullopt;
 
     if (keeper_context->digestEnabled())
-        assertDigest(
-            batch.digest,
-            *digest_after_preprocessing,
-            *batch.requests.back().request,
-            batch.log_idx,
-            batch.requests.back().session_id,
-            false);
+        assertDigest(batch, *digest_after_preprocessing, "preprocessing");
 
     return digest_after_preprocessing;
 }
@@ -918,16 +886,12 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     if (!keeper_context->localLogsPreprocessed() && !preprocessBatch(*batch, /*lock_mutex=*/ true))
         return nullptr;
 
-    {
-        KEEPER_STORAGE_LOCK_SHARED(lock);
-        storage->beginProcessBatch(*batch);
-    }
-
     for (size_t request_idx = 0; request_idx < batch->requests.size(); ++request_idx)
     {
         const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
 
         const auto & request_for_session = batch->requests[request_idx];
+        bool is_last_in_batch = request_idx + 1 == batch->requests.size();
 
         const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
         {
@@ -971,6 +935,9 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
                 response->session_id = session_id;
                 if (response_callback)
                     response_callback(std::move(response_for_session));
+
+                if (is_last_in_batch)
+                    storage->endProcessBatch(*batch);
             }
             else
             {
@@ -993,6 +960,9 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
                         if (response_callback)
                             response_callback(std::move(response_for_session));
                     }
+
+                    if (is_last_in_batch)
+                        storage->endProcessBatch(*batch);
                 }
             }
 
@@ -1009,21 +979,6 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
         }
 
         maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::OK, "");
-    }
-
-    {
-        KEEPER_STORAGE_LOCK_SHARED(lock);
-        /// (Publishes the committed digest, so must happen before the assert.)
-        storage->endProcessBatch(*batch);
-
-        if (keeper_context->digestEnabled())
-            assertDigest(
-                batch->digest,
-                storage->getNodesDigest(true, /*lock_transaction_mutex=*/true),
-                *batch->requests.back().request,
-                log_idx,
-                batch->requests.back().session_id,
-                true);
     }
 
     keeper_context->setLastCommitIndex(log_idx);
