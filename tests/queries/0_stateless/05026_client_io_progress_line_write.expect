@@ -1,0 +1,61 @@
+#!/usr/bin/expect -f
+# Tags: no-darwin, no-object-storage
+# no-darwin: OSWriteBytes comes from Linux taskstats only.
+# no-object-storage: the parts must land on local disk so the writes show up in OSWriteBytes.
+
+# The write leg of the IO meter of https://github.com/ClickHouse/ClickHouse/issues/116565, asserted
+# end-to-end through the client path: OSWriteBytes -> streamed ProfileEvents ->
+# ClientBase::onProfileEvents -> ProgressIndication::writeProgress. The INSERT below runs entirely
+# server-side, so the client connection stays at a few KB/s and the MB-scale rate the test expects
+# can only come from the write byte counters. The read and network legs are covered by
+# 05026_client_io_progress_line_disk.expect and 05026_client_io_progress_line.expect.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+# The profiling suffix `(... CPU, ... IO)` is dropped when it does not fit next to the progress bar,
+# and the width is re-read from the pty on every render - so make the pty wide.
+set stty_init "rows 60 columns 300"
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# CLICKHOUSE_CLIENT_EXPECT_OPT is not used because it forces --progress no.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --no-warnings --progress-table off --enable-progress-table-toggle 0 --highlight 0 --history_file=$history_file"
+expect ":) "
+
+# Wait for "Ok." before the prompt: the echo of a sent query redraws ":) ", so a bare prompt
+# match would fire early and race the next send against the still-running statement.
+send -- "CREATE TABLE client_io_progress_write (s String, x UInt8) ENGINE = MergeTree ORDER BY tuple()\r"
+expect "Ok."
+expect ":) "
+
+# ~30 MB of incompressible parts written at ~10 MB/s: the sleeps pace the source to one 1 MB block
+# per 0.1 s, and disabled squashing flushes each block as its own part, so OSWriteBytes deltas
+# stream steadily while the paced source also keeps the query under 50% done at the 0.5 s mark
+# (before which writeProgress does not render the profiling suffix at all).
+send -- "INSERT INTO client_io_progress_write SELECT randomString(100000) AS s, sleepEachRow(0.01) AS x FROM numbers(300) SETTINGS max_block_size = 10, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1\r"
+expect -re {[0-9.]+ [MGT]B/s IO}
+expect "Ok."
+expect ":) "
+
+send -- "DROP TABLE client_io_progress_write\r"
+expect "Ok."
+expect ":) "
+
+send -- "\4"
+expect eof
