@@ -163,15 +163,18 @@ class S3:
             )
             if not no_strict:
                 raise
+            return False
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code", "")
             print(f"ERROR: Failed to upload to S3 using boto3: {error_code}")
             if not no_strict:
                 raise
+            return False
         except Exception as e:
             print(f"ERROR: Failed to upload to S3 using boto3: {e}")
             if not no_strict:
                 raise
+            return False
 
         # Common cleanup and return for both paths
         try:
