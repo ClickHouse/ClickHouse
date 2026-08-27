@@ -1,7 +1,7 @@
 -- fixture is multi-part
 1
-1
-0
+filter above exchange	1
+filter above exchange, plain GROUP BY control	0
 -- deferred prewhere, filter above the exchange
 
 b

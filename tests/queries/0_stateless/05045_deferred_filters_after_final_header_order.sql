@@ -48,14 +48,19 @@ SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 -- from `ReadFromMergeTree` by an exchange, which is what makes the header cross a stage boundary.
 -- The second statement is the negative control: the same query with a plain `GROUP BY` keeps both in
 -- one stage and prints 0. The explained query re-enables the two settings the surrounding statement
--- has to switch off, because a distributed plan cannot read from an `EXPLAIN`.
-SELECT minIf(n, explain ILIKE '%Filter%') < maxIf(n, explain ILIKE '%Exchange%')
+-- has to switch off, because a distributed plan cannot read from an `EXPLAIN`. The `countIf` guard is
+-- not redundant: with no `Filter` row at all `minIf` returns 0, which satisfies the ordering.
+SELECT 'filter above exchange',
+       countIf(explain ILIKE '%Filter%') > 0
+   AND minIf(n, explain ILIKE '%Filter%') < maxIf(n, explain ILIKE '%Exchange%')
    AND maxIf(n, explain ILIKE '%Exchange%') < maxIf(n, explain ILIKE '%ReadFromMergeTree%') AS filter_above_exchange
 FROM (SELECT rowNumberInAllBlocks() AS n, explain FROM (
     EXPLAIN distributed = 1 SELECT s FROM t_hdr_05045 FINAL PREWHERE v <= 10 WHERE 10 > v GROUP BY ALL WITH CUBE ORDER BY s
     SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 1, enable_cascades_optimizer = 1, make_distributed_plan = 1))
 SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
-SELECT minIf(n, explain ILIKE '%Filter%') < maxIf(n, explain ILIKE '%Exchange%')
+SELECT 'filter above exchange, plain GROUP BY control',
+       countIf(explain ILIKE '%Filter%') > 0
+   AND minIf(n, explain ILIKE '%Filter%') < maxIf(n, explain ILIKE '%Exchange%')
    AND maxIf(n, explain ILIKE '%Exchange%') < maxIf(n, explain ILIKE '%ReadFromMergeTree%') AS filter_above_exchange
 FROM (SELECT rowNumberInAllBlocks() AS n, explain FROM (
     EXPLAIN distributed = 1 SELECT s FROM t_hdr_05045 FINAL PREWHERE v <= 10 WHERE 10 > v GROUP BY s ORDER BY s
