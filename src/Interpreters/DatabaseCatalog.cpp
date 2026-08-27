@@ -1593,12 +1593,19 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
                 /// The UUID mapping was not removed by the failed attach, so unlike
                 /// `enqueueDroppedTableCleanup` we must not add it again. The original `drop_time`
                 /// already includes the drop delay.
-                std::lock_guard lock(tables_marked_dropped_mutex);
-                tables_marked_dropped.push_back(dropped_table);
-                if (first_async_drop_in_queue == tables_marked_dropped.end())
-                    --first_async_drop_in_queue;
-                tables_marked_dropped_ids.insert(dropped_table.table_id.uuid);
-                CurrentMetrics::add(CurrentMetrics::TablesToDropQueueSize, 1);
+                {
+                    std::lock_guard lock(tables_marked_dropped_mutex);
+                    tables_marked_dropped.push_back(dropped_table);
+                    if (first_async_drop_in_queue == tables_marked_dropped.end())
+                        --first_async_drop_in_queue;
+                    tables_marked_dropped_ids.insert(dropped_table.table_id.uuid);
+                    CurrentMetrics::add(CurrentMetrics::TablesToDropQueueSize, 1);
+                }
+
+                /// The background drop task can fire and go back to sleep with no next wakeup
+                /// while the queue is empty between the erase above and this rollback, so the
+                /// restored entry needs an explicit reschedule.
+                rescheduleDropTableTask();
             }
         }
         catch (...)
