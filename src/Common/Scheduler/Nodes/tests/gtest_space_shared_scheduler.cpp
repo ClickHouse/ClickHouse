@@ -738,13 +738,13 @@ TEST(SchedulerSpaceShared, MemoryReleaseLetsSuspendedGrowthResume)
     small->waitSynced(); // Total is now 9500; `heavy` remains parked and `small` keeps running.
     EXPECT_EQ(heavy.killCount(), 0u);
 
-    releaser.decreaseAsync(2000); // Total becomes 7500, enough to satisfy `heavy`'s parked +2000.
-    releaser.waitSynced();
+    releaser->decreaseAsync(2000); // Total becomes 7500, enough to satisfy `heavy`'s parked +2000.
+    releaser->waitSynced();
     heavy.waitSynced();
 
     EXPECT_EQ(heavy.killCount(), 0u);
     EXPECT_EQ(heavy.size(), 8000);
-    EXPECT_EQ(releaser.size(), 1000);
+    EXPECT_EQ(releaser->size(), 1000);
     EXPECT_EQ(small->size(), 500);
 }
 
@@ -951,7 +951,7 @@ TEST(SchedulerSpaceShared, LongLivedGrowthCanBeParkedRepeatedly)
     r.registerResource();
 
     ManualAllocation heavy(queue, "heavy", 6000);
-    ManualAllocation releaser(queue, "releaser", 3000);
+    auto releaser = std::make_unique<ManualAllocation>(queue, "releaser", 3000);
 
     std::promise<void> entered;
     std::promise<void> release;
@@ -1010,7 +1010,7 @@ TEST(SchedulerSpaceShared, RandomizedFittingAllocationsAlwaysProgress)
         0xC0FFEE42ULL,
         0xDEADBEEFULL,
     };
-    if (const char * seed_from_environment = std::getenv("CLICKHOUSE_SCHEDULER_RANDOM_SEED"))
+    if (const char * seed_from_environment = std::getenv("CLICKHOUSE_SCHEDULER_RANDOM_SEED")) // NOLINT(concurrency-mt-unsafe)
     {
         char * parse_end = nullptr;
         UInt64 base_seed = static_cast<UInt64>(std::strtoull(seed_from_environment, &parse_end, 10));
@@ -1018,7 +1018,7 @@ TEST(SchedulerSpaceShared, RandomizedFittingAllocationsAlwaysProgress)
         ASSERT_EQ(*parse_end, 0);
 
         size_t iterations = 1;
-        if (const char * iterations_from_environment = std::getenv("CLICKHOUSE_SCHEDULER_RANDOM_ITERATIONS"))
+        if (const char * iterations_from_environment = std::getenv("CLICKHOUSE_SCHEDULER_RANDOM_ITERATIONS")) // NOLINT(concurrency-mt-unsafe)
         {
             parse_end = nullptr;
             iterations = static_cast<size_t>(std::strtoull(iterations_from_environment, &parse_end, 10));
@@ -1034,7 +1034,7 @@ TEST(SchedulerSpaceShared, RandomizedFittingAllocationsAlwaysProgress)
             seeds.push_back(base_seed + iteration);
     }
 
-    const bool report_metrics = std::getenv("CLICKHOUSE_SCHEDULER_REPORT_METRICS") != nullptr;
+    const bool report_metrics = std::getenv("CLICKHOUSE_SCHEDULER_REPORT_METRICS") != nullptr; // NOLINT(concurrency-mt-unsafe)
     const auto benchmark_started = std::chrono::steady_clock::now();
     size_t total_fitting_requests_approved = 0;
     size_t total_progress_events = 0;
