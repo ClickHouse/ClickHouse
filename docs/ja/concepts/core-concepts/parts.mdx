@@ -56,7 +56,7 @@ ClickHouse server が上の図に示した 4 行のサンプル insert (たと�
   ## パーツのマージ
 </div>
 
-テーブルごとのパーツ数を管理するため、[バックグラウンドマージ](/ja/concepts/core-concepts/merges)ジョブが定期的に小さなパーツをより大きなパーツへ統合し、[設定可能な](/ja/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)圧縮サイズ (通常は約 150 GB) に達するまでこの処理を続けます。マージ済みパーツは非アクティブとしてマークされ、[設定可能な](/ja/reference/settings/merge-tree-settings#old_parts_lifetime)期間の経過後に削除されます。時間の経過とともに、このプロセスによってマージ済みパーツの階層構造が形成されるため、これが MergeTree テーブルと呼ばれる理由です。
+テーブルごとのパーツ数を管理するため、[バックグラウンドマージ](/ja/concepts/core-concepts/merges)ジョブが定期的に小さなパーツをより大きなパーツへ統合し、[設定可能な](/ja/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool)圧縮サイズ (通常は約 150 GB) に達するまでこの処理を続けます。マージ済みパーツは非アクティブとしてマークされ、[設定可能な](/ja/reference/settings/merge-tree-settings/other#old_parts_lifetime)期間の経過後に削除されます。時間の経過とともに、このプロセスによってマージ済みパーツの階層構造が形成されるため、これが MergeTree テーブルと呼ばれる理由です。
 
 <Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
 

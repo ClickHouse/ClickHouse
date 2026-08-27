@@ -107,6 +107,8 @@ public:
         /// It is a constant calculated from deterministic functions (See IFunction::isDeterministic).
         /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
         bool is_deterministic_constant = true;
+        /// Marks the const column that carries a join runtime-filter id (added by `tryAddJoinRuntimeFilter`).
+        bool is_runtime_filter_id = false;
         /// Display-only: this constant holds a secret (e.g. an `encrypt` key). The value stays in
         /// `column` so the query still executes, but plan dumps must render `[HIDDEN]` instead of it.
         /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
@@ -171,7 +173,13 @@ public:
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
-    const Node & addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant = true, bool is_masked_secret = false);
+    const Node & addColumn(
+        ColumnConstPtr column,
+        DataTypePtr type,
+        std::string name,
+        bool is_deterministic_constant = true,
+        bool is_masked_secret = false,
+        bool is_runtime_filter_id = false);
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
     const Node & addFunction(
@@ -308,6 +316,11 @@ public:
     /// Replace each node listed in `substitutions` (a node of this DAG) with a constant COLUMN node.
     void substitute(const std::unordered_map<const Node *, ColumnWithTypeAndName> & substitutions);
 
+    /// Rewire consumers of the input named `input_name` to a constant. The input node and the output
+    /// list are unchanged, so an output that IS that input keeps the value supplied for it; an output
+    /// computed FROM it, including an alias, is a consumer and sees `replacement`.
+    void substituteInputForConsumersOnly(const std::string & input_name, const ColumnWithTypeAndName & replacement);
+
     /// Clone the DAG, retaining only the subgraph computable from the specified available input columns.
     /// Special handling for logical AND: non-computable children are replaced with constant true.
     /// Useful for evaluating boolean filters in projection indices when some input columns are missing.
@@ -434,13 +447,17 @@ public:
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
     SplitResult splitActionsBeforeArrayJoin(const Names & array_joined_columns) const;
 
-    /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
-    /// Outputs of initial actions must contain column_name.
-    SplitResult splitActionsForFilter(const std::string & column_name) const;
+    /// Splits actions into two parts. First part has minimal size sufficient for calculation of
+    /// column_name and additional_split_nodes. Outputs of initial actions must contain column_name.
+    SplitResult splitActionsForFilter(
+        const std::string & column_name,
+        std::unordered_set<const Node *> additional_split_nodes = {}) const;
 
-    /// Splits actions into two parts. The first part contains all the calculations required to calculate sort_columns.
-    /// The second contains the rest.
-    SplitResult splitActionsBySortingDescription(const NameSet & sort_columns) const;
+    /// Splits actions into two parts. The first part contains all the calculations required to calculate sort_columns
+    /// and additional_split_nodes. The second contains the rest.
+    SplitResult splitActionsBySortingDescription(
+        const NameSet & sort_columns,
+        std::unordered_set<const Node *> additional_split_nodes = {}) const;
 
     /** Returns true if filter DAG is always false for inputs with default values.
       *
