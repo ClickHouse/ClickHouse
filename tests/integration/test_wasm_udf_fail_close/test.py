@@ -138,6 +138,18 @@ def test_persisted_function_fails_close_without_an_engine(start_cluster):
         )
         assert "SUPPORT_IS_DISABLED" in error, error
 
+        # The stored definition has no runtime registration, but it must stay discoverable:
+        # `system.functions` is how the operator finds out which leftovers need removing.
+        assert (
+            node.query(
+                "SELECT origin FROM system.functions WHERE name = 'wasm_is_prime'"
+            ).strip()
+            == "WasmUserDefined"
+        )
+        assert "CREATE FUNCTION wasm_is_prime" in node.query(
+            "SELECT create_query FROM system.functions WHERE name = 'wasm_is_prime'"
+        )
+
         # Failing close must not lock the definition in: dropping it is what removes the
         # leftover from a server that can no longer run it.
         node.query("DROP FUNCTION wasm_is_prime")
