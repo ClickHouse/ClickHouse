@@ -8609,6 +8609,12 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
     waitMutationToFinishOnReplicas(replicas, znode_name);
 }
 
+void StorageReplicatedMergeTree::dropMutationInitialBytes(const String & mutation_id)
+{
+    std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
+    mutation_initial_bytes.erase(mutation_id);
+}
+
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
 {
     auto statuses = queue.getMutationsStatus();

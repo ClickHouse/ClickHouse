@@ -2363,6 +2363,9 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
         if (!entry.is_done)
         {
             entry.is_done = true;
+            /// The scope of a done mutation cannot grow again, so drop its per-part bookkeeping
+            /// here rather than on the next `system.mutations` read, which may never come.
+            entry.initial_bytes_to_do.finalize();
             decrementMutationsCounters(mutation_counters, *entry.commands);
         }
 

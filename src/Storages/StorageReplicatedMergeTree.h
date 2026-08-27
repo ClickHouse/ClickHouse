@@ -475,6 +475,10 @@ private:
     /// in `system.mutations` (see getMutationsStatus()).
     mutable std::mutex mutation_initial_bytes_mutex;
     mutable std::unordered_map<String, MutationScopeInitialBytes> mutation_initial_bytes;
+    /// Called by the queue when a mutation is done or leaves it: a done mutation reports progress 1
+    /// whatever the denominator was, so the bookkeeping goes at the transition, not on the next read.
+    void dropMutationInitialBytes(const String & mutation_id);
+
     String last_queue_update_exception;
     String getLastQueueUpdateException() const;
 
