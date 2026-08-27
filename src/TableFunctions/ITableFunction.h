@@ -18,6 +18,7 @@ namespace DB
 {
 
 class Context;
+struct StorageID;
 
 /** Interface for table functions.
   *
@@ -114,6 +115,11 @@ public:
     /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
     void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
 
+    /// Check the access needed to read the metadata of the objects this function derives from, as
+    /// opposed to its source kind, which `checkSourceAccess` covers. Called from both base-class
+    /// seams: resolving a structure is a `DESCRIBE` and needs `SHOW COLUMNS`, naming needs `SHOW TABLES`.
+    virtual void checkSourceObjectAccess(const ContextPtr & /*context*/, bool /*for_structure*/) const {}
+
     /// The URI of the function for permission checking. Can be an empty string if not applicable.
     /// For example, for url('https://foo.bar') the URI would be 'https://foo.bar'.
     virtual const String & getFunctionURI() const
@@ -130,6 +136,15 @@ protected:
     /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by
     /// `ITableFunctionCluster`. Protected so derived functions can branch on the cluster context.
     virtual bool isClusterFunction() const { return false; }
+
+    /// Check `access_type` on the name the function was given, before that name is resolved.
+    void checkSourceTableAccess(const ContextPtr & context, const StorageID & table_id, AccessType access_type) const;
+
+    /// Metadata of an `Alias` is its target's, so reading it also needs `access_type` on the target,
+    /// the way `DESCRIBE` of that name does. Takes the resolved storage so the check binds to the
+    /// object whose metadata is consumed.
+    void checkSourceStorageAccess(
+        const ContextPtr & context, const StoragePtr & storage, const StorageID & table_id, AccessType access_type) const;
 
 private:
     virtual StoragePtr executeImpl(

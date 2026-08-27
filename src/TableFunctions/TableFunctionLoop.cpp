@@ -117,6 +117,8 @@ namespace DB
         if (!storage)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
 
+        checkSourceStorageAccess(context, storage, StorageID{database_name, loop_table_name}, AccessType::SHOW_COLUMNS);
+
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
         return metadata_snapshot->getColumns();
     }

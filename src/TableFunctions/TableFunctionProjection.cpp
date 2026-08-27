@@ -24,6 +24,15 @@ public:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
+    void checkSourceObjectAccess(const ContextPtr & context, bool for_structure) const override
+    {
+        checkSourceTableAccess(context, source_table_id, for_structure ? AccessType::SHOW_COLUMNS : AccessType::SHOW_TABLES);
+        /// The alias target is authorized here too: `executeImpl` can run lazily under the global
+        /// context, which has no user and therefore full access.
+        if (auto source_table = DatabaseCatalog::instance().tryGetTable(source_table_id, context))
+            checkSourceStorageAccess(context, source_table, source_table_id, AccessType::SHOW_COLUMNS);
+    }
+
 private:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -66,6 +75,7 @@ void TableFunctionMergeTreeProjection::parseArguments(const ASTPtr & ast_functio
 ColumnsDescription TableFunctionMergeTreeProjection::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
+    checkSourceStorageAccess(context, source_table, source_table_id, AccessType::SHOW_COLUMNS);
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
 
     if (!metadata_snapshot->getProjections().has(projection_name))
@@ -86,6 +96,7 @@ StoragePtr TableFunctionMergeTreeProjection::executeImpl(
     bool /* is_insert_query */) const
 {
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
+    checkSourceStorageAccess(context, source_table, source_table_id, AccessType::SHOW_COLUMNS);
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
     ProjectionDescriptionRawPtr projection = &metadata_snapshot->getProjections().get(projection_name);
 
@@ -117,6 +128,8 @@ mergeTreeProjection(database, table, projection)
 | `database`   | The database name to read projection from. |
 | `table`      | The table name to read projection from.    |
 | `projection` | The projection to read from.               |
+
+Resolving the structure of the result, for example with `DESCRIBE`, requires the `SHOW COLUMNS` privilege on the source table, and reading from it requires `SELECT` on the source table.
 
 ## Returned value {#returned-value}
 

@@ -44,6 +44,15 @@ public:
 
     std::string getName() const override { return name; }
 
+    /// Both paths of this function resolve the `ELSE` function's structure and nothing else, so it
+    /// owes what resolving that structure owes no matter which seam asks. The `ELSE` function is
+    /// executed separately, where its own execution-mode checks run.
+    void checkSourceObjectAccess(const ContextPtr & context, bool /*for_structure*/) const override
+    {
+        else_table_function->checkSourceAccess(context, /*is_insert_query=*/ false);
+        else_table_function->checkSourceObjectAccess(context, /*for_structure=*/ true);
+    }
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 

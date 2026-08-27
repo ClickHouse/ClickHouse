@@ -1,0 +1,86 @@
+=== arming: the user cannot see either source table ===
+0
+0
+=== structure, no grants ===
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+=== select, no grants ===
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+=== alias, SHOW COLUMNS on the alias but not on its target ===
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+=== create as table function, no grants on the source ===
+ACCESS_DENIED
+=== static structures stay readable with no grants ===
+part_name
+token
+dictionary_compression
+cardinality
+num_posting_blocks
+has_embedded_postings
+has_raw_postings
+has_compressed_postings
+part_name
+ranges
+=== the UUID form is unchanged by this fix ===
+ACCESS_DENIED
+=== viewIfPermitted delegation is a no-op for a function with no source ===
+1
+ACCESS_DENIED
+=== the column mismatch diagnostic is unchanged (default user) ===
+requires a SELECT query with the result columns matching a table function after 'ELSE'
+=== SHOW TABLES but not SHOW COLUMNS ===
+1
+ACCESS_DENIED
+ACCESS_DENIED
+=== SHOW COLUMNS only ===
+a
+b
+part_name
+mark_number
+rows_in_granule
+a
+b
+ACCESS_DENIED
+ACCESS_DENIED
+=== SHOW COLUMNS on alias and target ===
+b
+a
+b
+=== column-only grant ===
+ACCESS_DENIED
+ACCESS_DENIED
+0
+ACCESS_DENIED
+=== table-level grant ===
+a
+b
+part_name
+mark_number
+rows_in_granule
+a
+b
+a
+b
+1
+1
+There is no index with name 'idx_none'
+There is no index with name 'idx_none'
+=== an authorized user still gets the original error for a source that does not exist ===
+UNKNOWN_TABLE
+UNKNOWN_TABLE

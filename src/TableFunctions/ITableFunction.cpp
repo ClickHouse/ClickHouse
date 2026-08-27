@@ -1,5 +1,6 @@
 #include <Access/ContextAccess.h>
 #include <TableFunctions/ITableFunction.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
 #include <Access/Common/AccessFlags.h>
@@ -13,13 +14,14 @@ namespace ProfileEvents
     extern const Event TableFunctionExecute;
 }
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;;
-}
-
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int ACCESS_DENIED;
+}
 
 const char * ITableFunction::getNonClusteredStorageEngineName() const
 {
@@ -45,10 +47,25 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
     }
 }
 
+void ITableFunction::checkSourceTableAccess(const ContextPtr & context, const StorageID & table_id, AccessType access_type) const
+{
+    context->checkAccess(access_type, table_id);
+}
+
+void ITableFunction::checkSourceStorageAccess(
+    const ContextPtr & context, const StoragePtr & storage, const StorageID & table_id, AccessType access_type) const
+{
+    if (const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
+        alias && !alias->isTargetTableGranted(context, access_type, {}))
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED, "Not enough privileges to access the table that {} points to", table_id.getNameForLogs());
+}
+
 ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const
 {
     /// Resolving table structure is always a read operation.
     checkSourceAccess(context, /*is_insert_query*/ false);
+    checkSourceObjectAccess(context, /*for_structure=*/ true);
     return getActualTableStructure(context, is_insert_query);
 }
 
@@ -59,6 +76,9 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 
     if (check_source_access)
         checkSourceAccess(context, is_insert_query);
+
+    /// Deliberately not under `check_source_access`: no caller takes over this check.
+    checkSourceObjectAccess(context, /*for_structure=*/ false);
 
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
     if (check_create_temporary_table && (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly)))
