@@ -221,23 +221,6 @@ public:
       */
     virtual bool isSpatialPredicate() const { return false; }
 
-    /** For a function where `isSpatialPredicate()` is true: does this predicate have a defined
-      * convention for combining TWO OR MORE constant geometry arguments into one shape (e.g.
-      * `pointInPolygon`'s shell+holes / MultiPolygon assembly)? Most spatial predicates don't --
-      * a UDF's `is_spatial_predicate` contract only ever promises a single constant geometry
-      * argument -- so the default is false. Call `tryGetMultiArgConstGeometryBbox` only if true.
-      */
-    virtual bool hasMultiArgConstGeometryBboxConvention() const { return false; }
-
-    /** Combine two or more constant geometry arguments into one bbox, per this predicate's own
-      * convention. Call only if `hasMultiArgConstGeometryBboxConvention()`. Returns false if the
-      * combined geometry fails to validate -- since this predicate is known to actually attempt
-      * the same combining at evaluation time, that means evaluating it is guaranteed to raise.
-      */
-    virtual bool tryGetMultiArgConstGeometryBbox(
-        const std::vector<const Field *> & /*args*/, // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        double & /*xmin*/, double & /*ymin*/, double & /*xmax*/, double & /*ymax*/) const { return false; }
-
     /** For a function where `isSpatialPredicate()` is true: does evaluating it actually validate
       * its constant geometry argument(s) with a topology check (e.g. `pointInPolygon`'s
       * `validate_polygons` setting, on by default)? If false, an invalid constant geometry is
@@ -519,12 +502,6 @@ public:
     /// See IFunctionBase::isSpatialPredicate.
     virtual bool isSpatialPredicate() const { return false; }
 
-    /// See IFunctionBase::hasMultiArgConstGeometryBboxConvention / tryGetMultiArgConstGeometryBbox.
-    virtual bool hasMultiArgConstGeometryBboxConvention() const { return false; }
-    virtual bool tryGetMultiArgConstGeometryBbox(
-        const std::vector<const Field *> & /*args*/, // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        double & /*xmin*/, double & /*ymin*/, double & /*xmax*/, double & /*ymax*/) const { return false; }
-
     /// See IFunctionBase::requiresValidConstGeometry.
     virtual bool requiresValidConstGeometry() const { return true; }
 
@@ -755,12 +732,6 @@ public:
     /// See `IFunctionBase::isVolumeReducing`.
     virtual bool isVolumeReducing() const { return false; }
     virtual bool isSpatialPredicate() const { return false; }
-
-    /// See IFunctionBase::hasMultiArgConstGeometryBboxConvention / tryGetMultiArgConstGeometryBbox.
-    virtual bool hasMultiArgConstGeometryBboxConvention() const { return false; }
-    virtual bool tryGetMultiArgConstGeometryBbox(
-        const std::vector<const Field *> & /*args*/, // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        double & /*xmin*/, double & /*ymin*/, double & /*xmax*/, double & /*ymax*/) const { return false; }
 
     /// See IFunctionBase::requiresValidConstGeometry.
     virtual bool requiresValidConstGeometry() const { return true; }

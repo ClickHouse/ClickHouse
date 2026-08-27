@@ -1,8 +1,10 @@
--- Regression test: pointInPolygon is variadic and accepts a MultiPolygon as several
--- constant polygon arguments, e.g. pointInPolygon(geom, poly1, poly2, ...).
--- The spatial_bbox skip index condition must derive the query bbox as the union of
--- ALL constant polygon arguments, not just the first one, or it will incorrectly
--- prune granules that only match a later polygon argument.
+-- Regression test: `pointInPolygon` is variadic and accepts a `MultiPolygon` as several
+-- constant polygon arguments, e.g. `pointInPolygon(geom, poly1, poly2, ...)`.
+-- The `spatial_bbox` skip index condition must not derive a query bbox from the FIRST constant
+-- polygon argument alone, or it will incorrectly prune granules that only match a later one.
+-- Deriving no bbox at all for this form (the current behaviour -- see the comment above
+-- `getReturnTypeImpl` in `src/Functions/pointInPolygon.cpp`) is fine: the query is simply not
+-- pruned. What must never happen is the wrong rows coming back.
 
 DROP TABLE IF EXISTS test_spatial_bbox_multipolygon_pruning;
 

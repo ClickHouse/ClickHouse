@@ -1,7 +1,7 @@
 -- Regression test: a constant geometry argument passed as the generic `Geometry` type (a
 -- custom-named `Variant`) is dispatched via `FunctionBaseVariantAdaptor`, which used to hardcode
--- `requiresValidConstGeometry() = true` and `hasMultiArgConstGeometryBboxConvention() = false`
--- regardless of what the underlying resolved function actually does. This made `spatial_bbox`
+-- `requiresValidConstGeometry() = true` regardless of what the underlying resolved function
+-- actually does. This made `spatial_bbox`
 -- pruning fail closed for a `Geometry`-typed constant argument even when the same argument passed
 -- as a raw array literal would prune correctly (e.g. `pointInPolygon` with `validate_polygons = 0`,
 -- or `polygonsIntersectCartesian`/`polygonsWithinCartesian`, which never validate topology at all).

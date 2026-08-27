@@ -84,13 +84,6 @@ public:
     /// ever wraps it here, so the resolver's answer is the same regardless of which Variant
     /// alternative ends up dispatched to at the row level -- there is no dependency on the concrete
     /// alternative type, only on the constant Field arguments and construction-time settings.
-    bool hasMultiArgConstGeometryBboxConvention() const override { return function_overload_resolver->hasMultiArgConstGeometryBboxConvention(); }
-    bool tryGetMultiArgConstGeometryBbox(
-        const std::vector<const Field *> & args, // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        double & xmin, double & ymin, double & xmax, double & ymax) const override
-    {
-        return function_overload_resolver->tryGetMultiArgConstGeometryBbox(args, xmin, ymin, xmax, ymax);
-    }
     bool requiresValidConstGeometry() const override { return function_overload_resolver->requiresValidConstGeometry(); }
     bool rejectsConstGeometryKind(std::string_view kind_name) const override { return function_overload_resolver->rejectsConstGeometryKind(kind_name); }
     /// A geometry kind the wrapped function rejects normally means "evaluating this argument is

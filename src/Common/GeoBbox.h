@@ -675,13 +675,12 @@ inline bool tryExtractConstGeoField(const ActionsDAG::Node & node, Field & out_f
 /// `out_col_node` is set to that node so the caller can read its `result_name`.
 ///
 /// A single constant argument is validated as a self-contained shell+holes/`MultiPolygon` by
-/// `extractBboxFromFieldValue`. Two or more constant arguments are only assembled together via
-/// `IFunctionBase::tryGetMultiArgConstGeometryBbox`, and only when
-/// `hasMultiArgConstGeometryBboxConvention()` says this specific predicate has a defined
-/// convention for it (currently only `pointInPolygon`, see its override) -- any other
-/// `isSpatialPredicate()` function (e.g. a WASM UDF) with more than one constant geometry
-/// argument could combine them under entirely different semantics, so assuming
-/// `pointInPolygon`'s shell/hole assembly for it would produce a bogus bbox.
+/// `extractBboxFromFieldValue`. Two or more constant GEOMETRY arguments never contribute a bbox:
+/// how a predicate combines them is its own business (`pointInPolygon`'s shell+holes assembly,
+/// a WASM UDF's entirely different semantics), and whether the combination is even valid can
+/// only be decided by assembling it -- see the comment above `getReturnTypeImpl` in
+/// `pointInPolygon.cpp`. Such a node yields `NoInfo`, so the query stays correct and is simply
+/// not pruned.
 template <typename AcceptInput>
 NodeBboxStatus extractSpatialPredicateNodeBbox(
     const ActionsDAG::Node & node,
@@ -838,8 +837,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     if (const_fields.empty())
         return input_child ? NodeBboxStatus::NoInfo : NodeBboxStatus::NotApplicable;
 
-    /// Two or more constant geometry arguments on a predicate with no
-    /// `hasMultiArgConstGeometryBboxConvention()` aren't assembled into one combined shape (see
+    /// Two or more constant geometry arguments aren't assembled into one combined shape (see
     /// the comment above). But it's a common signature
     /// for a `isSpatialPredicate()` UDF to take exactly ONE constant geometry argument alongside
     /// auxiliary constant scalars, e.g. `within_distance(geom_column, const_poly, 100)` -- that
@@ -857,7 +855,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     /// mode flag. Avoid raw `String` constants for non-geometry auxiliary arguments of an
     /// `is_spatial_predicate` function to keep pruning effective (see `wasm_udf.mdx`).
     std::optional<BboxAccumulator> single_geometry_field;
-    if (const_fields.size() > 1 && !node.function_base->hasMultiArgConstGeometryBboxConvention())
+    if (const_fields.size() > 1)
     {
         bool multiple_geometry_fields = false;
         for (const auto & entry : const_fields)
@@ -881,10 +879,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
 
     /// A single constant geometry argument is self-contained (shell + holes, or a full
     /// MultiPolygon, all in one literal) and is already validated as such by
-    /// extractBboxFromFieldValue. Two or more constant arguments (only reachable when
-    /// `hasMultiArgConstGeometryBboxConvention()` past the check above) must be assembled and
-    /// validated together by the predicate's own `tryGetMultiArgConstGeometryBbox` -- validating
-    /// each argument in isolation would miss e.g. a hole entirely outside its shell.
+    /// `extractBboxFromFieldValue`.
     double xmin = 0;
     double ymin = 0;
     double xmax = 0;
@@ -896,8 +891,12 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         xmax = single_geometry_field->xmax;
         ymax = single_geometry_field->ymax;
     }
-    else if (const_fields.size() == 1)
+    else
     {
+        /// Exactly one constant argument: the loop above returns for every larger `const_fields`,
+        /// and `const_fields.empty()` was rejected earlier.
+        chassert(const_fields.size() == 1);
+
         BboxAccumulator acc;
         bool extracted = extractBboxFromFieldValue(
             const_fields[0].field, acc, require_valid, node.function_base->treatsConstTupleAsPoint(const_fields[0].arg_index));
@@ -915,15 +914,6 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         ymin = acc.ymin;
         xmax = acc.xmax;
         ymax = acc.ymax;
-    }
-    else
-    {
-        std::vector<const Field *> field_ptrs;
-        field_ptrs.reserve(const_fields.size());
-        for (const auto & entry : const_fields)
-            field_ptrs.push_back(&entry.field);
-        if (!node.function_base->tryGetMultiArgConstGeometryBbox(field_ptrs, xmin, ymin, xmax, ymax))
-            return NodeBboxStatus::Failed;
     }
 
     /// Only now -- after every constant geometry argument is confirmed extractable and valid --

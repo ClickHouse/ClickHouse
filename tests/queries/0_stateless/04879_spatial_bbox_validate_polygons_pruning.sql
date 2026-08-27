@@ -1,6 +1,5 @@
--- Regression test: `GeoBbox.h`'s `extractBboxFromFieldValue` and `FunctionPointInPolygon`'s
--- `tryGetMultiArgConstGeometryBbox` used to call `boost::geometry::is_valid` on a constant
--- geometry argument unconditionally, disabling `spatial_bbox` pruning for it whenever that check
+-- Regression test: `GeoBbox.h`'s `extractBboxFromFieldValue` used to call
+-- `boost::geometry::is_valid` on a constant geometry argument unconditionally, disabling `spatial_bbox` pruning for it whenever that check
 -- failed -- even with `validate_polygons = 0`, where `pointInPolygon`'s own `executeImpl` skips
 -- that same check and never raises for an invalid polygon. Pruning must not fail closed for a
 -- predicate that is guaranteed not to throw.

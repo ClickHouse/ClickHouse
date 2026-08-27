@@ -302,125 +302,32 @@ public:
     /// it to derive a zero-area bbox from the first argument's constant instead of giving up.
     bool treatsConstTupleAsPoint(size_t arg_index) const override { return arg_index == 0; }
 
-    /// pointInPolygon(point, arg1, arg2, ...) is the only spatial predicate with a documented
-    /// convention for combining more than one constant geometry argument -- see below.
+    /// `pointInPolygon(point, arg1, arg2, ...)` -- the variadic shell+holes and `MultiPolygon`
+    /// forms -- deliberately does NOT contribute a query bbox, so those calls are never pruned by a
+    /// `spatial_bbox` index or by GeoParquet row-group filtering. The queries stay correct, just
+    /// slower; the equivalent single-literal spellings
+    /// (`pointInPolygon(geom, [shell, hole])`, `pointInPolygon(geom, [[[multipolygon]]])`) are one
+    /// constant geometry argument and do prune.
     ///
-    /// It is tempting to drop this whole mechanism by rewriting the variadic forms during query
-    /// planning instead -- `pointInPolygon(geom, shell, hole)` into
-    /// `pointInPolygon(geom, shell) AND NOT pointInPolygon(geom, hole)`, and the `MultiPolygon`
-    /// form into an `OR` of its components. That rewrite is NOT semantics-preserving, on two
-    /// independent counts:
-    ///  - `PolygonUtils.h` decides membership with `bg::covered_by`, so boundary points count as
-    ///    inside. For a point lying exactly on a hole's ring, the assembled polygon answers true
-    ///    (the ring is part of its boundary) while the rewrite answers false (the point is
-    ///    `covered_by` the hole, so `NOT` rejects it). `MultiPolygon` components that touch differ
-    ///    the same way.
-    ///  - `parseConstPolygon` validates the ASSEMBLED polygon with `bg::is_valid` and raises
-    ///    `BAD_ARGUMENTS`. A hole entirely outside its shell is invalid as an assembly although
-    ///    each ring is individually fine, so the rewrite silently drops an exception the query
-    ///    must surface (see 04510, 04841, 04927).
-    /// It would also cost performance: the grid/R-tree index below is built and cached once per
-    /// assembled constant polygon, and the rewrite builds and evaluates one per argument instead.
+    /// Deriving the bbox of the variadic forms is trivial on its own -- a polygon-with-holes has the
+    /// bbox of its shell, and a `MultiPolygon` the union of its components'. What is not trivial is
+    /// deciding whether ASSEMBLING them would fail `bg::is_valid` (see `parseConstPolygon`) and
+    /// therefore raise `BAD_ARGUMENTS`: a hole entirely outside its shell, or overlapping
+    /// `MultiPolygon` components, are invalid only once combined, while each argument is
+    /// individually fine. Pruning a granule away on such a call would hide that exception, so the
+    /// bbox could only be trusted after reproducing the whole assembly here -- which is what the
+    /// removed `tryGetMultiArgConstGeometryBbox` did, at the cost of duplicating `executeImpl`'s
+    /// shape dispatch and its validity rules. Five separate bugs came out of that duplication
+    /// (04838, 04841, 04847, 04910, 04927), so the bbox is simply not derived for these forms.
     ///
-    /// Note for anyone simplifying this: deriving the BBOX of the variadic forms is trivial on its
-    /// own -- a polygon-with-holes has the bbox of its shell, and a `MultiPolygon` the union of its
-    /// components' -- so everything below exists only to decide whether assembling would fail
-    /// `bg::is_valid` and therefore raise, which pruning must fail closed for. Under
-    /// `validate_polygons = 0` no exception is possible and the whole question collapses.
-    bool hasMultiArgConstGeometryBboxConvention() const override { return true; }
-
-    /// Combines constant geometry arguments differently depending on the shape of the first
-    /// one, exactly mirroring `executeImpl`'s `is_const_multi_polygon` decision above:
-    ///  - first argument a Polygon (an array of rings, per `isPolygonArray`): every argument is
-    ///    a separate component of one `MultiPolygon` (`parseConstMultiPolygonFromMultipleColumns`).
-    ///  - otherwise (first argument a flat Ring, per `isRingArray`): the first argument is the
-    ///    shell and the rest are holes of one `Polygon` (`parseConstPolygonWithHolesFromMultipleColumns`).
-    /// Validates the ASSEMBLED geometry with `bg::is_valid`, not each argument in isolation --
-    /// a hole entirely outside its shell, or overlapping components in a multipolygon, are only
-    /// visible once the pieces are combined, and must fail closed the same way a single-argument
-    /// invalid polygon does -- unless `validate` is false (`validate_polygons = 0`), in which case
-    /// `executeImpl` skips this same check and never raises, so pruning must not fail closed either.
-    bool tryGetMultiArgConstGeometryBbox(
-        const std::vector<const Field *> & args, // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        double & xmin, double & ymin, double & xmax, double & ymax) const override
-    {
-        using namespace GeoBboxDetail;
-
-        if (args.size() < 2)
-            return false;
-
-        for (const auto * f : args)
-            if (f->getType() != Field::Types::Array)
-                return false;
-
-        BboxAccumulator acc;
-        std::string failure_message;
-
-        if (isPolygonArray(args[0]->safeGet<Array>()))
-        {
-            DB::MultiPolygon<CartesianPoint> multi_polygon;
-            for (const auto * f : args)
-            {
-                const auto & array = f->safeGet<Array>();
-                /// `getReturnTypeImpl` below requires EVERY argument to be a depth-2 array once the
-                /// first polygon argument is one, so a flat `Ring` in a later position is not another
-                /// `MultiPolygon` component -- it raises `ILLEGAL_TYPE_OF_ARGUMENT`. Deriving a bbox
-                /// from such a call would let pruning drop every granule and answer `0`, hiding that
-                /// exception; for a `Dynamic`/`Variant` argument the raising overload is only built at
-                /// execution time, so pruning everything away hides it completely.
-                if (!isPolygonArray(array))
-                    return false;
-
-                multi_polygon.emplace_back();
-                if (!buildPolygon(array, multi_polygon.back()))
-                    return false;
-            }
-
-            boost::geometry::correct(multi_polygon);
-            if (validate && !boost::geometry::is_valid(multi_polygon, failure_message))
-                return false;
-
-            for (const auto & poly : multi_polygon)
-                acc.addAll(poly.outer());
-        }
-        else
-        {
-            DB::Polygon<CartesianPoint> polygon;
-            for (size_t i = 0; i < args.size(); ++i)
-            {
-                const auto & array = args[i]->safeGet<Array>();
-                if (!isRingArray(array))
-                    return false;
-
-                if (i == 0)
-                {
-                    if (!appendRing(array, polygon.outer()))
-                        return false;
-                }
-                else
-                {
-                    polygon.inners().emplace_back();
-                    if (!appendRing(array, polygon.inners().back()))
-                        return false;
-                }
-            }
-
-            boost::geometry::correct(polygon);
-            if (validate && !boost::geometry::is_valid(polygon, failure_message))
-                return false;
-
-            acc.addAll(polygon.outer());
-        }
-
-        if (!acc.found || !acc.valid)
-            return false;
-
-        xmin = acc.xmin;
-        ymin = acc.ymin;
-        xmax = acc.xmax;
-        ymax = acc.ymax;
-        return true;
-    }
+    /// Rewriting the forms during query planning instead -- `pointInPolygon(geom, shell, hole)` into
+    /// `pointInPolygon(geom, shell) AND NOT pointInPolygon(geom, hole)`, the `MultiPolygon` form
+    /// into an `OR` of its components -- would make them prune again, but it is not
+    /// semantics-preserving: `PolygonUtils.h` decides membership with `bg::covered_by`, so a point
+    /// lying exactly on a hole's ring is inside the assembled polygon (the ring is part of its
+    /// boundary) yet rejected by the rewrite, and the rewrite validates each ring in isolation, so
+    /// it silences the `Polygon is not valid` exception above. It would also build and evaluate one
+    /// cached grid/R-tree index per argument instead of one per assembled polygon.
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

@@ -83,13 +83,6 @@ public:
     bool isStateful() const override { return function->isStateful(); }
     bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
 
-    bool hasMultiArgConstGeometryBboxConvention() const override { return function->hasMultiArgConstGeometryBboxConvention(); }
-    bool tryGetMultiArgConstGeometryBbox(
-        const std::vector<const Field *> & args, // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        double & xmin, double & ymin, double & xmax, double & ymax) const override
-    {
-        return function->tryGetMultiArgConstGeometryBbox(args, xmin, ymin, xmax, ymax);
-    }
     bool requiresValidConstGeometry() const override { return function->requiresValidConstGeometry(); }
     bool rejectsConstGeometryKind(std::string_view kind_name) const override { return function->rejectsConstGeometryKind(kind_name); }
     bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override { return function->rejectsColumnGeometryKind(kind_name, arg_index); }
@@ -150,13 +143,6 @@ public:
     bool isInjective(const ColumnsWithTypeAndName & columns) const override { return function->isInjective(columns); }
     bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
 
-    bool hasMultiArgConstGeometryBboxConvention() const override { return function->hasMultiArgConstGeometryBboxConvention(); }
-    bool tryGetMultiArgConstGeometryBbox(
-        const std::vector<const Field *> & args, // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        double & xmin, double & ymin, double & xmax, double & ymax) const override
-    {
-        return function->tryGetMultiArgConstGeometryBbox(args, xmin, ymin, xmax, ymax);
-    }
     bool requiresValidConstGeometry() const override { return function->requiresValidConstGeometry(); }
     bool rejectsConstGeometryKind(std::string_view kind_name) const override { return function->rejectsConstGeometryKind(kind_name); }
     bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override { return function->rejectsColumnGeometryKind(kind_name, arg_index); }

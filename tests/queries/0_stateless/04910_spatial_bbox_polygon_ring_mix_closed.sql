@@ -1,4 +1,4 @@
--- Regression test: `FunctionPointInPolygon::tryGetMultiArgConstGeometryBbox` (src/Functions/pointInPolygon.cpp)
+-- Regression test: the (since removed) multi-argument bbox convention of `pointInPolygon`
 -- accepted a depth-1 `Ring` argument in a later position of the variadic `MultiPolygon` form (first
 -- polygon argument given as a depth-2 array), treating it as one more `MultiPolygon` component.
 -- `getReturnTypeImpl` is stricter: once the first polygon argument is depth-2, every later argument

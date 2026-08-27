@@ -1776,6 +1776,8 @@ The index must be defined on a single plain column (not a computed expression) o
 
 It is used to skip granules for `pointInPolygon` and other spatial predicate functions, including [WebAssembly user-defined functions](/sql-reference/functions/wasm_udf) marked with the `is_spatial_predicate` setting.
 
+A predicate prunes only when its constant geometry is a single argument, e.g. `pointInPolygon(geom, [shell, hole])` or `pointInPolygon(geom, [[[multipolygon]]])`. The variadic spellings that pass several constant geometry arguments, such as `pointInPolygon(geom, shell, hole)` or `pointInPolygon(geom, poly1, poly2)`, never contribute a bounding box: whether combining them is even valid can only be decided by assembling them, so those queries are answered correctly but without pruning. Use the single-argument spelling to get pruning.
+
 ### Functions support {#functions-support}
 
 Conditions in the `WHERE` clause contains calls of the functions that operate with columns. If the column is a part of an index, ClickHouse tries to use this index when performing the functions. ClickHouse supports different subsets of functions for using indexes.
