@@ -6,7 +6,7 @@
 #include <Storages/Kafka/AWSMSKIAMAuth.h>
 #include <IO/S3/Credentials.h>
 #include <Common/Exception.h>
-#include <Common/ScopeExit.h>
+#include <base/scope_guard.h>
 #include <IO/S3Defines.h>
 #include <Poco/Util/MapConfiguration.h>
 #include <aws/core/auth/AWSCredentials.h>
