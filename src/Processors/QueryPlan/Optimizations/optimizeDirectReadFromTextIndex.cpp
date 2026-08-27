@@ -859,9 +859,15 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
                 required_columns_by_readers.insert(name);
 
         const auto & read_header = *read_from_merge_tree_step.getOutputHeader();
+        const auto & read_column_names = read_from_merge_tree_step.getAllColumnNames();
         std::erase_if(result.removed_columns, [&](const String & column)
         {
-            if (!required_columns_by_readers.contains(column))
+            /// A removed name the reading step does not read is a filter expression, not a column:
+            /// the old analyzer names a filter DAG input after the indexed expression itself
+            /// (`mapValues(attributes)`). There is nothing to drop from the read set for it.
+            bool is_read_column = std::ranges::contains(read_column_names, column);
+
+            if (is_read_column && !required_columns_by_readers.contains(column))
                 return false;
 
             /// ActionsDAG::updateHeader appends a header column that is not an input of the DAG,
