@@ -325,6 +325,14 @@ def main():
         workdir=REPO_PATH,
     )
 
+    # Read the prepared release info once; the steps below reuse it. The fields
+    # they read (release_tag, is_tag_pushed, latest, is_bump_landed) are written by
+    # prepare and stable for the rest of the run, so a single read is enough.
+    release_info = {}
+    if ok:
+        with open(RELEASE_INFO_FILE) as f:
+            release_info = json.load(f)
+
     def _push_git_tag_for_release():
         with ReleaseContextManager(
             release_progress=ReleaseProgress.PUSH_RELEASE_TAG
@@ -382,12 +390,10 @@ def main():
     # patch pushes its changelog to master; detect whether it is already there so a rerun is idempotent. The "new" bump self-checks the master version instead.
     changelog_absent = False
     if ok and args.release_type == "patch":
-        with open(RELEASE_INFO_FILE) as f:
-            _info = json.load(f)
         if args.dry_run:
-            changelog_absent = not _info["is_tag_pushed"]
+            changelog_absent = not release_info["is_tag_pushed"]
         else:
-            changelog_path = f"docs/changelogs/{_info['release_tag']}.md"
+            changelog_path = f"docs/changelogs/{release_info['release_tag']}.md"
             on_master = bool(
                 Shell.get_output(
                     f"git ls-tree --name-only origin/master -- {shlex.quote(changelog_path)}"
@@ -400,8 +406,7 @@ def main():
             )
 
     if ok and args.release_type == "patch" and changelog_absent:
-        with open(RELEASE_INFO_FILE) as f:
-            release_tag = json.load(f)["release_tag"]
+        release_tag = release_info["release_tag"]
         uid = os.getuid()
         gid = os.getgid()
         step(
@@ -436,8 +441,7 @@ def main():
         )
 
     if ok and args.release_type == "patch" and not args.dry_run and changelog_absent:
-        with open(RELEASE_INFO_FILE) as f:
-            release_tag = json.load(f)["release_tag"]
+        release_tag = release_info["release_tag"]
 
         def push_changelog_to_master():
             commit_msg = f"Update version_date.tsv and changelogs after {release_tag}"
@@ -555,8 +559,6 @@ def main():
         and not args.dry_run
         and not args.skip_docker
     ):
-        with open(RELEASE_INFO_FILE) as f:
-            release_info = json.load(f)
         release_tag = release_info["release_tag"]
         # Branch head (bump not landed) → move floating minor/major tags; is_latest also moves `latest`. A later recovery (bump landed) leaves them as they are.
         is_bump_landed = release_info["is_bump_landed"]
