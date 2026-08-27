@@ -56,7 +56,7 @@ protected:
     };
 
     bool sendPing();
-    bool receivePing();
+    bool recievePing();
     bool canSend() const;
 
     bool isPairsFinished() const;

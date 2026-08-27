@@ -156,20 +156,12 @@ function _clickhouse_get_options()
 {
     local extra_args=()
 
-    local command_base="${1/*\/}"
-    # Some tools like client/local/benchmark --help will not print all settings, this is done only under --verbose
-    case "$command_base" in
-        chc|clickhouse-client) extra_args+=(--verbose) ;;
-        ch|clickhouse-local) extra_args+=(--verbose) ;;
-        clickhouse-benchmark) extra_args+=(--verbose) ;;
+    # By default client/local/benchmark --help will not print all settings, this is done only under --verbose
+    case "$1" in
+        *client*) extra_args+=(--verbose) ;;
+        *local*) extra_args+=(--verbose) ;;
+        *benchmark*) extra_args+=(--verbose) ;;
     esac
-    if [ "$command_base" = "clickhouse" ]; then
-        case "$2" in
-            client) extra_args+=(--verbose) ;;
-            local) extra_args+=(--verbose) ;;
-            benchmark) extra_args+=(--verbose) ;;
-        esac
-    fi
 
     "$@" --help "${extra_args[@]}" 2>&1 | LANG=c awk -F '[ ,=<>.]' '{ for (i=1; i <= NF; ++i) { if (substr($i, 1, 1) == "-" && length($i) > 1) print $i; } }' | sort -u
 }
@@ -246,11 +238,7 @@ function _complete_clickhouse_generic()
 function _complete_clickhouse_bootstrap_main()
 {
     local runtime=/usr/share/bash-completion/bash_completion
-    # BASH_COMPLETION_VERSINFO is assigned at the very top of the runtime, so
-    # it also detects a load that is still in progress (this file can be
-    # sourced by the runtime itself via BASH_COMPLETION_USER_FILE, and nested
-    # sourcing must be avoided)
-    if [[ ! -v BASH_COMPLETION_VERSINFO ]] && ! type _get_comp_words_by_ref >& /dev/null && [[ -f $runtime ]]; then
+    if ! type _get_comp_words_by_ref >& /dev/null && [[ -f $runtime ]]; then
         source $runtime
     fi
     type _get_comp_words_by_ref >& /dev/null || return 0

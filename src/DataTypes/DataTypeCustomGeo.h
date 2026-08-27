@@ -11,12 +11,6 @@ public:
     DataTypePointName() : DataTypeCustomFixedName("Point") {}
 };
 
-class DataTypeMultiPointName : public DataTypeCustomFixedName
-{
-public:
-    DataTypeMultiPointName() : DataTypeCustomFixedName("MultiPoint") {}
-};
-
 class DataTypeLineStringName : public DataTypeCustomFixedName
 {
 public:
@@ -46,12 +40,5 @@ class DataTypeMultiPolygonName : public DataTypeCustomFixedName
 public:
     DataTypeMultiPolygonName() : DataTypeCustomFixedName("MultiPolygon") {}
 };
-
-class DataTypeGeometryName : public DataTypeCustomFixedName
-{
-public:
-    DataTypeGeometryName() : DataTypeCustomFixedName("Geometry") {}
-};
-
 
 }

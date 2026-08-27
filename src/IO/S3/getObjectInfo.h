@@ -7,18 +7,17 @@
 #include <base/types.h>
 #include <IO/S3/Client.h>
 
+
 namespace DB::S3
 {
 
 struct ObjectInfo
 {
     size_t size = 0;
-    /// Checks if Content-Length was present in the HEAD response and we can rely on its result
-    bool is_size_known = true;
     time_t last_modification_time = 0;
     String etag;
-    ObjectAttributes tags; // Set only if getObjectInfo() is called with `with_tags = true`
-    ObjectAttributes metadata = {}; /// Set only if getObjectInfo() is called with `with_metadata = true`.
+
+    std::map<String, String> metadata = {}; /// Set only if getObjectInfo() is called with `with_metadata = true`.
 };
 
 /// Ignore if object does not exist
@@ -27,22 +26,14 @@ ObjectInfo getObjectInfoIfExists(
     const String & bucket,
     const String & key,
     const String & version_id = {},
-    bool with_metadata = false,
-    bool with_tags = false);
+    bool with_metadata = false);
 
 ObjectInfo getObjectInfo(
     const S3::Client & client,
     const String & bucket,
     const String & key,
     const String & version_id = {},
-    bool with_metadata = false,
-    bool with_tags = false);
-
-ObjectAttributes getObjectTags(
-    const S3::Client & client,
-    const String & bucket,
-    const String & key,
-    const String & version_id = {});
+    bool with_metadata = false);
 
 size_t getObjectSize(
     const S3::Client & client,
@@ -65,7 +56,6 @@ void checkObjectExists(
     std::string_view description = {});
 
 bool isNotFoundError(Aws::S3::S3Errors error);
-bool isAuthenticationError(Aws::S3::S3Errors error);
 
 }
 

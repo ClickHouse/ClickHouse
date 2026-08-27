@@ -12,7 +12,7 @@ Expression ((Projection + Before ORDER BY))
         Description: ngrambf_v1 GRANULARITY 1
         Parts: 0/1
         Granules: 0/8
-      Ranges: 0
+        Ranges: 0
 Expression ((Project names + Projection))
   Expression ((WHERE + (Change column names to column identifiers + Compute alias columns)))
     ReadFromMergeTree (default.t)
@@ -26,7 +26,7 @@ Expression ((Project names + Projection))
         Description: ngrambf_v1 GRANULARITY 1
         Parts: 0/1
         Granules: 0/8
-      Ranges: 0
+        Ranges: 0
 index is applied to view
 0
 0

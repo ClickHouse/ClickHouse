@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <Parsers/IAST.h>
 
 namespace DB
@@ -16,7 +15,6 @@ namespace DB
 class ASTUserNameWithHost : public IAST
 {
 public:
-    ASTUserNameWithHost() = default;
     explicit ASTUserNameWithHost(const String & name_);
     explicit ASTUserNameWithHost(ASTPtr && name_ast_, String && host_pattern_ = "");
 
@@ -26,9 +24,6 @@ public:
     String getID(char) const override { return "UserNameWithHost"; }
     ASTPtr clone() const override;
     void replace(String name_);
-
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -58,13 +53,10 @@ public:
     String getID(char) const override { return "UserNamesWithHost"; }
     ASTPtr clone() const override
     {
-        auto clone = make_intrusive<ASTUserNamesWithHost>(*this);
+        auto clone = std::make_shared<ASTUserNamesWithHost>(*this);
         clone->cloneChildren();
         return clone;
     }
-
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

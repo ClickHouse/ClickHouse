@@ -9,6 +9,8 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
+cluster = ClickHouseCluster(__file__)
+
 
 @pytest.fixture(scope="module")
 def cluster():
@@ -74,8 +76,7 @@ def create_table(node, table, replica, data_prefix="", aggressive_merge=True):
         enable_vertical_merge_algorithm=0,
         vertical_merge_algorithm_min_rows_to_activate = {vertical_merge_algorithm_min_rows_to_activate},
         vertical_merge_algorithm_min_columns_to_activate = {vertical_merge_algorithm_min_columns_to_activate},
-        compress_primary_key=0,
-        merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once=0;
+        compress_primary_key=0;
     """
     )
 
@@ -272,7 +273,7 @@ def check(
         assert "proj2" in res
 
     if do_check_command:
-        assert check_result == int(node.query(f"CHECK TABLE {table} SETTINGS check_query_single_value_result = 1"))
+        assert check_result == int(node.query(f"CHECK TABLE {table}"))
 
 
 def test_broken_ignored(cluster):

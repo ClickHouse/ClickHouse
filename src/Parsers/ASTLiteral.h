@@ -2,6 +2,12 @@
 
 #include <Core/Field.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/TokenIterator.h>
+#include <Common/FieldVisitorDump.h>
+#include <DataTypes/IDataType.h>
+
+#include <optional>
+
 
 namespace DB
 {
@@ -9,50 +15,21 @@ namespace DB
 /// Literal (atomic) - number, string, NULL
 class ASTLiteral : public ASTWithAlias
 {
-protected:
-    struct ASTLiteralFlags
-    {
-        using ParentFlags = ASTWithAliasFlags;
-        static constexpr UInt32 RESERVED_BITS = ASTWithAliasFlags::RESERVED_BITS + 2;
-
-        UInt32 _parent_reserved : ParentFlags::RESERVED_BITS;
-        UInt32 use_legacy_column_name_of_tuple : 1;
-        /// Set only by `recordLiteralTokens`: this literal's own span is in the literal token map.
-        /// A synthesized literal leaves it unset, so it cannot be taken for a recorded literal
-        /// whose freed address it reused.
-        UInt32 has_token_info : 1;
-        UInt32 unused : 29;
-    };
-
 public:
-    explicit ASTLiteral(Field value_)
-        : value(std::move(value_))
-    {
-    }
+    explicit ASTLiteral(Field value_) : value(std::move(value_)) {}
 
-    /// A copy lives at its own address, which the literal token map knows nothing about, so it
-    /// starts out with no token info however the original was built. `clone` goes through here too.
-    ASTLiteral(const ASTLiteral & other)
-        : ASTWithAlias(other)
-        , value(other.value)
-        , unique_column_name(other.unique_column_name)
+    // This methond and the custom_type are only used for Apache Gluten,
+    explicit ASTLiteral(Field value_, DataTypePtr & type_) : value(std::move(value_))
     {
-        setHasTokenInfo(false);
-    }
-
-    ASTLiteral & operator=(const ASTLiteral & other)
-    {
-        if (this != &other)
-        {
-            ASTWithAlias::operator=(other);
-            value = other.value;
-            unique_column_name = other.unique_column_name;
-            setHasTokenInfo(false);
-        }
-        return *this;
+        custom_type = type_;
     }
 
     Field value;
+    DataTypePtr custom_type;
+
+    /// For ConstantExpressionTemplate
+    std::optional<TokenIterator> begin;
+    std::optional<TokenIterator> end;
 
     /*
      * The name of the column corresponding to this literal. Only used to
@@ -63,32 +40,14 @@ public:
      */
     String unique_column_name;
 
-    void setUseLegacyColumnNameOfTuple(bool _value)
-    {
-        flags<ASTLiteralFlags>().use_legacy_column_name_of_tuple = _value;
-    }
-
-    bool getUseLegacyColumnNameOfTuple() const
-    {
-        return flags<ASTLiteralFlags>().use_legacy_column_name_of_tuple;
-    }
-
-    void setHasTokenInfo(bool _value)
-    {
-        flags<ASTLiteralFlags>().has_token_info = _value;
-    }
-
-    bool hasTokenInfo() const
-    {
-        return flags<ASTLiteralFlags>().has_token_info;
-    }
+    /// For compatibility reasons in distributed queries,
+    /// we may need to use legacy column name for tuple literal.
+    bool use_legacy_column_name_of_tuple = false;
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override;
+    String getID(char delim) const override { return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value)); }
 
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
