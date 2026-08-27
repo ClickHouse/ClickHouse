@@ -184,6 +184,16 @@ void registerDictionaryXGBoost(DictionaryFactory & factory)
         HyperParameters hyper_parameters;
         for (const auto & key : layout_keys)
         {
+            /// Poco returns a repeated XML element as `name`, `name[1]`, `name[2]`, ... A parameter written
+            /// twice in `LAYOUT(XGBOOST(...))` would otherwise reach the allowlist as `max_depth[1]` and be
+            /// reported as an unknown parameter, which hides the real mistake behind Poco's array syntax.
+            const auto bracket = key.find('[');
+            if (bracket != String::npos)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Training parameter '{}' is specified more than once",
+                    key.substr(0, bracket));
+
             hyper_parameters.emplace(key, config.getString(layout_prefix + "." + key));
         }
 

@@ -117,7 +117,7 @@ Only the parameters listed below are accepted; any other name fails the load, so
 | `seed` | Random number seed. Training is otherwise deterministic, so this only changes the model when a stochastic parameter (`subsample`, `sampling_method`, any `colsample_*`) is also set. |
 | `verbosity` | Logging verbosity: `0` (silent) to `3` (debug). Affects only XGBoost's own log output, which does not currently go through the ClickHouse logger, and never the trained model. |
 | `nthread` | Number of parallel threads used for training. Accepted and forwarded, but currently has no effect: the bundled XGBoost is built without OpenMP, so training and prediction always run on a single thread. |
-| `eta` | Step-size shrinkage applied after each boosting round. |
+| `eta` | Step-size shrinkage applied after each boosting round. Only this spelling is accepted; XGBoost's `learning_rate` alias is not. |
 | `gamma` | Minimum loss reduction required to make a further split on a leaf. |
 | `max_depth` | Maximum depth of a tree. |
 | `min_child_weight` | Minimum sum of instance weight (hessian) needed in a child. |
@@ -125,14 +125,16 @@ Only the parameters listed below are accepted; any other name fails the load, so
 | `subsample` | Fraction of the training rows sampled for each boosting round. |
 | `sampling_method` | Row sampling method: `uniform` or `gradient_based`. Has no effect unless `subsample` is set to less than `1`. |
 | `colsample_bytree` / `colsample_bylevel` / `colsample_bynode` | Fraction of columns (features) sampled per tree / per level / per split. |
-| `lambda` | L2 regularization term on weights (aliases). |
-| `alpha` | L1 regularization term on weights (aliases). |
+| `lambda` | L2 regularization term on weights. Only this spelling is accepted; XGBoost's `reg_lambda` alias is not. |
+| `alpha` | L1 regularization term on weights. Only this spelling is accepted; XGBoost's `reg_alpha` alias is not. |
 | `tree_method` | Tree construction algorithm: `auto`, `exact`, `approx`, or `hist`. |
 | `scale_pos_weight` | Balances positive and negative weights, useful for imbalanced classes. |
 | `grow_policy` | How new nodes are added to the tree: `depthwise` or `lossguide`. |
 | `max_leaves` | Maximum number of leaf nodes (used with `grow_policy` `lossguide`). |
 | `max_bin` | Maximum number of discrete bins used to bucket continuous features (used with `tree_method` `hist`). |
 | `num_parallel_tree` | Number of trees grown per boosting round (a value `> 1` trains a boosted random forest). |
+
+Parameter names are case-insensitive, and each may be given only once. Values must be a positive integer, a float, or a quoted string: a negative literal is rejected by the dictionary DDL itself, before the layout sees it, so a negative `seed` cannot be expressed.
 
 You can define the dictionary with `CREATE DICTIONARY` DDL (as in the quickstart above).
 
