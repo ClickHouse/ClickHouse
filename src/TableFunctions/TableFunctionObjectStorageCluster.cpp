@@ -40,7 +40,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
 
     /// See TableFunctionObjectStorage::executeImpl.
     const bool preserve_structure_for_reads = configuration->structure != "auto" && !is_insert_query
-        && configuration->schemaReloadIgnoresExplicitStructure();
+        && configuration->schemaReloadIgnoresExplicitStructure() && !columns.hasDefaults();
 
     auto object_storage = Base::getObjectStorage(context, !is_insert_query);
     StoragePtr storage;

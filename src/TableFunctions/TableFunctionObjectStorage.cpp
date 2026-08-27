@@ -244,8 +244,11 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     /// `getActualTableStructure` returns the explicit structure, so DESC reports it. Formats whose
     /// schema reload is not a user opt-in would then overwrite it in the storage, making DESC and
     /// SELECT disagree on the same expression. Writes keep using the authoritative lake schema.
+    /// A column default is materialized from the missing-value bitmask of one reader, so it exists
+    /// only adjacent to that reader, while a lake resolves its sorting key and its row-level deletes
+    /// from its own metadata against whatever values reach them.
     const bool preserve_structure_for_reads = configuration->structure != "auto" && !is_insert_query
-        && configuration->schemaReloadIgnoresExplicitStructure();
+        && configuration->schemaReloadIgnoresExplicitStructure() && !columns.hasDefaults();
     StoragePtr storage;
     const auto & query_settings = context->getSettingsRef();
 
@@ -1509,10 +1512,11 @@ Description of the arguments coincides with description of arguments in table fu
 
 For `icebergS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
-An explicit `structure` is used for reads, so it can select a subset of the columns or override
-their types. A declared type the data files cannot supply raises an error rather than falling back
-to the schema from the Iceberg metadata. Omit the argument to read with that schema. Inserts always
-use the schema from the metadata.
+A `structure` that declares names and types is used for reads, so it can select a subset of the
+columns or override their types. A declared type the data files cannot supply raises an error rather
+than falling back to the schema from the Iceberg metadata. A `structure` that also declares a column
+`DEFAULT` is not used for reads: the Iceberg schema is used instead. Omit the argument to read with
+that schema. Inserts always use the schema from the metadata.
 
 ### Returned value {#returned-value}
 
@@ -2267,9 +2271,11 @@ Description of the arguments coincides with description of arguments in table fu
 
 For `paimonS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
-An explicit `structure` is used for reads, so it can select a subset of the columns or override
-their types. A declared type the data files cannot supply raises an error rather than falling back
-to the schema from the Paimon metadata. Omit the argument to read with that schema.
+A `structure` that declares names and types is used for reads, so it can select a subset of the
+columns or override their types. A declared type the data files cannot supply raises an error rather
+than falling back to the schema from the Paimon metadata. A `structure` that also declares a column
+`DEFAULT` is not used for reads: the Paimon schema is used instead. Omit the argument to read with
+that schema.
 
 ### Returned value {#returned-value}
 
