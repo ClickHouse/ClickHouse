@@ -910,6 +910,7 @@ class TwoLevelRobinHoodHashMap
 {
 public:
     static constexpr size_t NUM_BUCKETS = 256;
+    static constexpr size_t numBuckets() { return NUM_BUCKETS; }
     static constexpr size_t BUCKET_SIZE_DEGREE = 14;  /// 16K cells per bucket
 
     using BucketMap = RobinHoodHashMap<Key, Mapped, Hash>;
@@ -981,6 +982,7 @@ class TwoLevelSwissTableHashMap
 {
 public:
     static constexpr size_t NUM_BUCKETS = 256;
+    static constexpr size_t numBuckets() { return NUM_BUCKETS; }
     static constexpr size_t BUCKET_SIZE_DEGREE = 14;  /// 16K slots per bucket
 
     using BucketMap = SwissTableHashMap<Key, Mapped, Hash>;
@@ -1367,7 +1369,7 @@ void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexes, Sour
                     ++found->getMapped();
                 else
                 {
-                    size_t hash_value = global_map.hash(*it);
+                    size_t hash_value = MapTwoLevel::hash(*it);
                     size_t bucket = MapTwoLevel::getBucketFromHash(hash_value);
 
                     if (mutexes[bucket].try_lock())
