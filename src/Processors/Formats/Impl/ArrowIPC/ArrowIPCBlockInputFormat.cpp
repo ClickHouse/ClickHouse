@@ -218,39 +218,6 @@ DataTypePtr alignStructFieldNamesCaseInsensitive(const DataTypePtr & from, const
     return from;
 }
 
-/// A LowCardinality dictionary must have unique values; the library reader rejects non-unique ones.
-/// Validate the common (non-nullable, contiguously-comparable) dictionary value columns.
-void checkDictionaryUnique(const ColumnPtr & values)
-{
-    const IColumn * inner = values.get();
-    const ColumnNullable * nullable = nullptr;
-    if (values->isNullable())
-    {
-        nullable = &assert_cast<const ColumnNullable &>(*values);
-        inner = &nullable->getNestedColumn();
-    }
-    /// Only validate value columns that can be compared cheaply and contiguously.
-    if (!(inner->isFixedAndContiguous() || typeid_cast<const ColumnString *>(inner)))
-        return;
-
-    UnorderedSetWithMemoryTracking<std::string_view> seen;
-    seen.reserve(values->size());
-    bool null_seen = false;
-    for (size_t i = 0; i < values->size(); ++i)
-    {
-        if (nullable && nullable->getNullMapData()[i])
-        {
-            if (null_seen)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow dictionary contains duplicate values");
-            null_seen = true;
-        }
-        else if (!seen.emplace(inner->getDataAt(i)).second)
-        {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow dictionary contains duplicate values");
-        }
-    }
-}
-
 /// Collects every Arrow dictionary id used anywhere in `field`'s type subtree (the field itself or a
 /// dictionary nested inside its Array/Map/Tuple/Union children). Used to decide which DictionaryBatch
 /// bodies a subset read actually needs.
@@ -461,14 +428,9 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
             temp_decoder->validateBatchLayout(*dict_batch->data(), value_fields);
             message_reader->readBody(*dict_batch->data(), msg.body_length, body_buffer);
             auto decoded = temp_decoder->decodeColumns(*dict_batch->data(), body_buffer, value_fields);
-            checkDictionaryUnique(decoded.at(0).column);
+            /// Arrow allows duplicate dictionary values (also across a base + delta merge); the
+            /// LowCardinality build dedups them and remaps the per-row indexes.
             dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
-            /// A delta batch merges into the existing dictionary; re-validate the merged values. The
-            /// per-batch check above only proves the delta is internally unique, but a unique delta can
-            /// still repeat a value already present in the base dictionary, which would violate the
-            /// LowCardinality dictionary uniqueness invariant the non-delta path enforces.
-            if (dict_batch->isDelta())
-                checkDictionaryUnique(dictionaries.get(id));
         }
     }
 }
@@ -986,14 +948,9 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                 decoder->validateBatchLayout(*dict_batch->data(), value_fields);
                 message_reader->readBody(*dict_batch->data(), msg.body_length, body_buffer);
                 auto decoded = decoder->decodeColumns(*dict_batch->data(), body_buffer, value_fields);
-                checkDictionaryUnique(decoded.at(0).column);
+                /// Arrow allows duplicate dictionary values (also across a base + delta merge); the
+                /// LowCardinality build dedups them and remaps the per-row indexes.
                 dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
-                /// A delta batch merges into the existing dictionary; re-validate the merged values. The
-                /// per-batch check above only proves the delta is internally unique, but a unique delta can
-                /// still repeat a value already present in the base dictionary, which would violate the
-                /// LowCardinality dictionary uniqueness invariant the non-delta path enforces.
-                if (dict_batch->isDelta())
-                    checkDictionaryUnique(dictionaries.get(id));
                 continue;
             }
             case ArrowIPC::flatbuf::MessageHeader_Schema:
