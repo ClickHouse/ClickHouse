@@ -6,7 +6,7 @@ title: '名前付きコレクション'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
@@ -79,7 +79,7 @@ DDL で 名前付きコレクション を管理するには、ユーザーに `
 名前付きコレクションの保存先を設定するには、`type` を指定する必要があります。指定できる値は `local` または `keeper`/`zookeeper` です。暗号化ストレージの場合は、
 `local_encrypted` または `keeper_encrypted`/`zookeeper_encrypted` を使用できます。
 
-ZooKeeper/Keeper を使用する場合は、configuration file の
+ZooKeeper/Keeper を使用する場合は、設定ファイルの
 `named_collections_storage` セクションに `path` (名前付きコレクションの保存先となる ZooKeeper/Keeper 内のパス) も設定する必要があります。次の例では、暗号化と ZooKeeper/Keeper を使用しています。
 
 ```xml
@@ -95,6 +95,16 @@ ZooKeeper/Keeper を使用する場合は、configuration file の
 ```
 
 省略可能な設定パラメータ `update_timeout_ms` のデフォルト値は `5000` です。
+
+有効なストレージタイプは、`system.server_settings` および `getServerSetting` で確認できます。
+
+```sql
+SELECT value, getServerSetting('named_collections_storage_type')
+FROM system.server_settings
+WHERE name = 'named_collections_storage.type';
+```
+
+保存タイプを変更するには server の再起動が必要です。`SYSTEM RELOAD CONFIG` ではアクティブな backend は変更されません。
 
 <div id="storing-named-collections-in-configuration-files">
   ## 設定ファイルに named collections を保存する
@@ -366,6 +376,8 @@ SELECT dictGet('dict', 'B', 2);
 
 * `user` の別名として `username`
 * `database` の別名として `db`
+
+[PostgreSQL table engine](/ja/reference/engines/table-engines/integrations/postgresql) の接続プール設定 (`postgresql_connection_pool_size` およびその他の `postgresql_*` 設定) も、コレクションに保存するか、`key = value` 形式のオーバーライドとして渡すことができます。これらは `PostgreSQL` テーブルエンジン、`postgresql` テーブル関数、および `PostgreSQL` データベースエンジンに適用されます。テーブルで明示的に指定した `SETTINGS` clause は、コレクション内の値よりも優先されます。
 
 パラメータ `addresses_expr` は、コレクション内では `host:port` の代わりに使用します。このパラメータは省略可能です。これは、`host`、`hostname`、`port` といった他の省略可能なパラメータがあるためです。優先順位は次の疑似コードで説明します。
 

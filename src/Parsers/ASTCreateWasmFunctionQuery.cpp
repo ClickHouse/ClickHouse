@@ -1,8 +1,11 @@
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
 
@@ -18,7 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 String ASTCreateWasmFunctionQuery::getID(char delim) const
@@ -126,12 +129,161 @@ static String getAstAsStringLiteral(const ASTPtr & ast)
 {
     if (const auto * literal = typeid_cast<const ASTLiteral *>(ast.get()))
         return literal->value.safeGet<String>();
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ASTLiteral, got '{}'", ast->formatForErrorMessage());
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ASTLiteral, got '{}'", ast->formatForErrorMessage());
 }
 
 void ASTCreateWasmFunctionQuery::setModuleHash(String hash_str)
 {
     module_hash_ast = make_intrusive<ASTLiteral>(hash_str);
+}
+
+void ASTCreateWasmFunctionQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "CreateWasmFunctionQuery");
+
+    w.writeBool("or_replace", or_replace);
+    w.writeBool("if_not_exists", if_not_exists);
+    w.writeBool("is_deterministic", is_deterministic);
+
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+
+    w.writeChild("function_name", function_name_ast);
+    w.writeChild("arguments", arguments_ast);
+    w.writeChild("result_type", result_type_ast);
+    w.writeChild("module_name", module_name_ast);
+    w.writeChild("source_function_name", source_function_name_ast);
+    w.writeChild("module_hash", module_hash_ast);
+    w.writeChild("abi", abi_ast);
+
+    if (!function_settings.empty())
+    {
+        w.writeKey("function_settings");
+        auto & o = w.getOut();
+        const auto & fs = w.getFormatSettings();
+        o << '[';
+        for (size_t i = 0; i < function_settings.size(); ++i)
+        {
+            if (i > 0) o << ',';
+            o << "{\"name\":";
+            writeJSONString(function_settings[i].name, o, fs);
+            w.writeFieldValue("value", function_settings[i].value);
+            o << '}';
+        }
+        o << ']';
+    }
+}
+
+void ASTCreateWasmFunctionQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    or_replace = r.getBool("or_replace");
+    if_not_exists = r.getBool("if_not_exists");
+    is_deterministic = r.getBool("is_deterministic");
+    cluster = r.getString("cluster");
+
+    children.clear();
+    function_name_ast = nullptr;
+    arguments_ast = nullptr;
+    result_type_ast = nullptr;
+    module_name_ast = nullptr;
+    module_hash_ast = nullptr;
+    source_function_name_ast = nullptr;
+    abi_ast = nullptr;
+    function_settings.clear();
+
+    /// All of these are parser-owned child shapes and are downcast to concrete types during
+    /// `validateAndGetDefinition`/formatting: `function_name`/`abi` via `getIdentifierName`
+    /// (must be `ASTIdentifier`), `arguments` is iterated as an `ASTExpressionList` of argument
+    /// types, and the module fields are read with `getAstAsStringLiteral` (must be string
+    /// `ASTLiteral`s). Restore them with concrete type checks so malformed `clickhouse_json`
+    /// cannot build a parser-impossible AST that silently changes semantics (e.g. an `arguments`
+    /// `Identifier` formatting as `ARGUMENTS (x)` but contributing zero argument types) or reaches
+    /// an `UNEXPECTED_AST_STRUCTURE`/`Field`-cast path later. `result_type` is parser-produced only
+    /// through `ParserDataType`, whose top-level node is always a data type (`ASTDataType` or a
+    /// subclass), so a non-type subtree there is rejected as well instead of surviving until
+    /// `validateAndGetDefinition` or formatting a parser-impossible `RETURNS` clause.
+    auto read_string_literal = [&](const char * key) -> ASTPtr
+    {
+        ASTPtr ast = r.readChildOfType<ASTLiteral>(key);
+        if (ast && ast->as<ASTLiteral &>().value.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' must be a string literal for `CreateWasmFunctionQuery` during AST JSON deserialization", key);
+        return ast;
+    };
+
+    if (auto ast = r.readChildOfType<ASTIdentifier>("function_name"))
+        setName(std::move(ast));
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'function_name' for `CreateWasmFunctionQuery` during AST JSON deserialization");
+    if (auto ast = r.readChildOfType<ASTExpressionList>("arguments"))
+    {
+        /// `ParserCreateFunctionQuery` builds `ARGUMENTS (...)` from `ParserNameTypePairList` or
+        /// `ParserTypeList` (or leaves it empty), so every child is either an `ASTNameTypePair` or a
+        /// data-type node, and the two shapes never mix within one list. Reject anything else here
+        /// so a foreign child cannot format as parser-impossible SQL (`ARGUMENTS (1)`) or reach
+        /// `DataTypeFactory::get` in `validateAndGetDefinition` as `UNEXPECTED_AST_STRUCTURE`.
+        bool has_name_type_pair = false;
+        bool has_bare_type = false;
+        for (const auto & argument : ast->children)
+        {
+            if (argument->as<ASTNameTypePair>())
+                has_name_type_pair = true;
+            else if (dynamic_cast<const ASTDataType *>(argument.get()))
+                has_bare_type = true;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Each 'arguments' child must be a name-type pair or a data type for `CreateWasmFunctionQuery` during AST JSON deserialization");
+        }
+        if (has_name_type_pair && has_bare_type)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'arguments' cannot mix name-type pairs and bare data types for `CreateWasmFunctionQuery` during AST JSON deserialization");
+        setArguments(std::move(ast));
+    }
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'arguments' for `CreateWasmFunctionQuery` during AST JSON deserialization");
+    if (auto ast = r.readChild("result_type"))
+    {
+        if (!dynamic_cast<const ASTDataType *>(ast.get()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'result_type' must be a data type for `CreateWasmFunctionQuery` during AST JSON deserialization");
+        setReturnType(std::move(ast));
+    }
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'result_type' for `CreateWasmFunctionQuery` during AST JSON deserialization");
+    if (auto ast = read_string_literal("module_name"))
+        setModuleName(std::move(ast));
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'module_name' for `CreateWasmFunctionQuery` during AST JSON deserialization");
+    if (auto ast = read_string_literal("source_function_name"))
+        setSourceFunctionName(std::move(ast));
+    if (auto ast = read_string_literal("module_hash"))
+        setModuleHash(std::move(ast));
+    if (auto ast = r.readChildOfType<ASTIdentifier>("abi"))
+        setAbi(std::move(ast));
+
+    if (r.has("function_settings"))
+    {
+        auto arr = r.getArray("function_settings");
+        if (!arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'function_settings' is not an array during AST JSON deserialization");
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            auto change_obj = arr->getObject(i);
+            if (!change_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'function_settings' array during AST JSON deserialization", i);
+            SettingChange change;
+            /// Read the name strictly so a non-string value is rejected with `BAD_ARGUMENTS`
+            /// instead of being coerced into a setting name.
+            JSONObjectReader change_reader(*change_obj);
+            change.name = change_reader.getString("name");
+            auto value_obj = change_obj->getObject("value");
+            if (!value_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' at index {} in 'function_settings' array during AST JSON deserialization", i);
+            change.value = JSONObjectReader::readFieldFromObject(*value_obj);
+            function_settings.push_back(std::move(change));
+        }
+    }
 }
 
 ASTCreateWasmFunctionQuery::Definition ASTCreateWasmFunctionQuery::validateAndGetDefinition() const

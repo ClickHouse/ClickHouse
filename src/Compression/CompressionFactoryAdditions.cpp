@@ -10,6 +10,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
@@ -20,6 +21,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/Exception.h>
 #include <Common/SetWithMemoryTracking.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -27,15 +29,21 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNEXPECTED_AST_STRUCTURE;
-    extern const int UNKNOWN_CODEC;
-    extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
+extern const int UNEXPECTED_AST_STRUCTURE;
+extern const int UNKNOWN_CODEC;
+extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+extern const SettingsBool allow_suspicious_codecs;
+extern const SettingsBool allow_experimental_codecs;
 }
 
 
 void CompressionCodecFactory::validateCodec(
-    const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const
+    const String & family_name, std::optional<int> level, const CodecValidationSettings & validation_settings) const
 {
     if (family_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compression codec name cannot be empty");
@@ -43,15 +51,22 @@ void CompressionCodecFactory::validateCodec(
     if (level)
     {
         auto literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
-        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)),
-            {}, sanity_check, allow_experimental_codecs);
+        validateCodecAndGetPreprocessedAST(
+            makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)), {}, validation_settings);
     }
     else
     {
         auto identifier = make_intrusive<ASTIdentifier>(Poco::toUpper(family_name));
-        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier),
-            {}, sanity_check, allow_experimental_codecs);
+        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier), {}, validation_settings);
     }
+}
+
+void CompressionCodecFactory::validateCodecString(
+    const String & compression_codec, const CodecValidationSettings & validation_settings) const
+{
+    ParserCodec codec_parser;
+    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    validateCodecAndGetPreprocessedASTImpl(ast, {}, validation_settings.settings, /*sanity_check=*/ false);
 }
 
 namespace
@@ -96,7 +111,14 @@ bool typeContainsMap(const DataTypePtr & type)
 }
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
-    const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs) const
+    const ASTPtr & ast, const DataTypePtr & column_type, const CodecValidationSettings & validation_settings) const
+{
+    const bool sanity_check = validation_settings.settings && !(*validation_settings.settings)[Setting::allow_suspicious_codecs];
+    return validateCodecAndGetPreprocessedASTImpl(ast, column_type, validation_settings.settings, sanity_check);
+}
+
+ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
+    const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
@@ -172,11 +194,25 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                     result_codec = getImpl(codec_family_name, codec_arguments, nullptr);
                 }
 
-                if (!allow_experimental_codecs && result_codec->isExperimental())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Codec {} is experimental and not meant to be used in production."
-                        " You can enable it with the 'allow_experimental_codecs' setting",
-                        codec_family_name);
+                if (settings && result_codec->isExperimental())
+                {
+                    const String enable_setting_name = fmt::format("enable_{}_codec", Poco::toLower(codec_family_name));
+                    Field enable_setting_value;
+                    if (!settings->tryGet(enable_setting_name, enable_setting_value))
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Experimental codec {} has no dedicated '{}' setting. Every experimental codec"
+                            " must declare one",
+                            codec_family_name,
+                            enable_setting_name);
+                    if (!enable_setting_value.safeGet<bool>() && !(*settings)[Setting::allow_experimental_codecs])
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Codec {} is experimental and not meant to be used in production."
+                            " You can enable it with the '{}' setting",
+                            codec_family_name,
+                            enable_setting_name);
+                }
 
                 /// Lossy codecs must not be applied to Map columns: a Map exposes its keys as a substream
                 /// (a float key would be accepted by a float-only codec like SZ3), and lossily compressing

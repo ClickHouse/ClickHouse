@@ -6,7 +6,7 @@ title: 'Gestión de estadísticas de columnas'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
@@ -33,7 +33,7 @@ Además, estas operaciones se replican y sincronizan los metadatos de las estad�
 Añadir dos tipos de estadísticas a dos columnas:
 
 ```sql
-ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE tdigest, uniq_v2;
 ```
 
 <Note>

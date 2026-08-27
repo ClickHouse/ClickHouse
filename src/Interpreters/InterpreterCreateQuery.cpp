@@ -1,3 +1,4 @@
+#include <array>
 #include <memory>
 
 #include <filesystem>
@@ -10,6 +11,7 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
@@ -18,7 +20,7 @@
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
-#include <Common/escapeForFileName.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -29,7 +31,6 @@
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 
-#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
 #include <Parsers/ASTAsterisk.h>
@@ -42,7 +43,7 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
 #include <Storages/MaterializedView/RefreshSet.h>
@@ -59,8 +60,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/DDLTask.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -75,15 +76,14 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/dataTypeToAST.h>
-#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/hasNullable.h>
 
+#include <Databases/DatabaseBackup.h>
 #include <Databases/DatabaseFactory.h>
-#include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/TablesLoader.h>
@@ -96,16 +96,15 @@
 
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/addTypeConversionToAST.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
-#include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Parsers/QueryParameterVisitor.h>
 
 
 namespace CurrentMetrics
@@ -121,12 +120,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
     extern const SettingsBool compatibility_ignore_auto_increment_in_create_table;
     extern const SettingsBool create_if_not_exists;
@@ -146,6 +143,7 @@ namespace Setting
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool materialized_views_populate_atomically;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsBool restore_replace_external_engines_to_null;
@@ -162,11 +160,16 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char create_or_replace_before_rename[];
+    extern const char atomic_populate_fail_before_subscription[];
+    extern const char atomic_populate_pause_before_subscription[];
+    extern const char atomic_populate_pause_after_view_publication[];
+    extern const char atomic_populate_pause_before_source_guard[];
 }
 
 namespace ErrorCodes
 {
     extern const int TABLE_ALREADY_EXISTS;
+    extern const int UNKNOWN_TABLE;
     extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int INCORRECT_QUERY;
@@ -191,6 +194,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int FAULT_INJECTED;
 }
 
 namespace fs = std::filesystem;
@@ -552,6 +556,12 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
         setVersionToAggregateFunctions(column_type, true);
+    else
+        /// Spell the state version the column is going to be written with out in the type, so that
+        /// it gets into the table metadata and the data stays readable when a newer server changes
+        /// the default: an unversioned name in stored metadata denotes the layout from before the
+        /// function became versioned (the ATTACH branch above pins it to 0).
+        pinCurrentStateVersionToAggregateFunctions(column_type);
 
     if (col_decl.null_modifier)
     {
@@ -581,14 +591,15 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns)
 {
     /// First, deduce implicit types.
 
     /** all default_expressions as a single expression list,
      *  mixed with conversion-columns for each explicitly specified type */
 
-    DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
+    DefaultExpressionsInfo default_expr_info;
+    default_expr_info.expr_list = make_intrusive<ASTExpressionList>();
     NamesAndTypesList column_names_and_types;
 
     /// On a DDL worker (ON CLUSTER / Replicated database) the query was already normalized on the initiator.
@@ -626,12 +637,16 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (!default_expr_info.expr_list->children.empty()
         && (default_expr_info.has_columns_with_default_without_type || (mode <= LoadingStrictnessLevel::CREATE)))
     {
-        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, column_names_and_types, context_);
+        /// Ordinary views never evaluate column defaults over an insert block, so a default over a
+        /// virtual column is inert there and must not be rejected.
+        NameSet insert_time_default_columns;
+        if (check_defaults_over_virtual_columns)
+            insert_time_default_columns = default_expr_info.insert_time_default_columns;
+        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, column_names_and_types, context_, insert_time_default_columns);
     }
 
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
-    bool sanity_check_compression_codecs = !skip_checks && !context_->getSettingsRef()[Setting::allow_suspicious_codecs];
-    bool allow_experimental_codecs = skip_checks || context_->getSettingsRef()[Setting::allow_experimental_codecs];
+    CodecValidationSettings codec_validation_settings = skip_checks ? CodecValidationSettings::trusted() : CodecValidationSettings(context_->getSettingsRef());
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
@@ -691,8 +706,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         {
             if (col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs);
+            column.codec
+                = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, column.type, codec_validation_settings);
         }
 
         if (auto statistics_desc = col_decl.getStatisticsDesc())
@@ -773,7 +788,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->columns)
         {
-            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), mode, is_restore_from_backup);
+            /// An ordinary view and an external-target (`TO`) materialized view never evaluate their own
+            /// column defaults over an insert block (a `TO` MV forwards inserts to the target using the
+            /// target metadata), so a default over a virtual column is inert there and must not be rejected.
+            const bool check_defaults_over_virtual_columns
+                = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
+            properties.columns = getColumnsDescription(
+                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
         }
 
         if (create.columns_list->indices)
@@ -993,7 +1014,19 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 is_refreshable_mv /* is_create_parameterized_view */);
         }
 
-        properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
+        auto columns_from_select = as_select_sample->getNamesAndTypesList();
+        if (mode < LoadingStrictnessLevel::ATTACH)
+        {
+            /// A fresh `...State(...)` result type already spells its state version out, but an
+            /// inferred type can also come from an unversioned source (a `CREATE TABLE ... AS SELECT`
+            /// over an old table), so the version is pinned into the inferred types the same way it
+            /// is pinned into explicitly declared ones (see `getColumnType`) for it to reach the
+            /// stored metadata. On ATTACH the types are re-inferred rather than read from legacy
+            /// metadata, so they keep denoting the default version, as before.
+            for (auto & column : columns_from_select)
+                pinCurrentStateVersionToAggregateFunctions(column.type);
+        }
+        properties.columns = ColumnsDescription(std::move(columns_from_select));
         properties.columns_inferred_from_select_query = true;
     }
     else if (create.as_table_function)
@@ -1795,7 +1828,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
                 data_path = (user_files / data_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+            if (!fileOrSymlinkPathStartsWith(data_path.string(), user_files.string()))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
 
@@ -1805,7 +1838,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else
         {
             fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+            if (!fileOrSymlinkPathStartsWith(data_path.string(), user_files.string()))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
         }
@@ -1828,8 +1861,27 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.select && create.isView())
     {
+        /// Query-construction settings (`select` / `filter` / `order` / `sort` / `limit` / `offset` /
+        /// `page`) shape a result and are materialized by wrapping the query as a derived table during
+        /// direct execution. A stored view definition cannot support them equivalently: its columns are
+        /// inferred (below, before any wrapping) so `select` would change the result schema versus the
+        /// stored metadata; the per-`UNION`-arm pass is not applied; and a refreshable materialized view
+        /// refreshes through `InterpreterInsertQuery`, not `executeQuery`. Reject them in a view
+        /// definition rather than shaping inconsistently — put them on the query that reads the view.
+        ///
+        /// Only a fresh, user-initiated CREATE is rejected. `ATTACH` (metadata load on startup,
+        /// upgrade, restore) and secondary replays (Replicated database DDL, ON CLUSTER, restore
+        /// from backup) must keep loading definitions that were stored before this rule existed:
+        /// `limit` and `offset` are pre-existing setting names, so `SETTINGS limit = 10` can
+        /// legitimately occur in old view metadata.
+        if (mode <= LoadingStrictnessLevel::CREATE && hasConstructionSettings(*create.select))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) "
+                "are not supported in a {} definition. Specify them on the query that reads the view instead.",
+                create.is_materialized_view ? "MATERIALIZED VIEW" : (create.is_window_view ? "WINDOW VIEW" : "VIEW"));
+
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
     }
@@ -1942,12 +1994,142 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         return doCreateOrReplaceTable(create, properties, mode);
     }
 
+    /// A plain `CREATE TABLE ... AS SELECT` (no REPLACE) on an Atomic database is executed by creating a
+    /// temporary table, running the populating INSERT SELECT into it, and only then atomically publishing it
+    /// under the final name with a RENAME. If the SELECT is denied (or fails for any other reason), the
+    /// temporary table is dropped, so a denied query leaves no empty orphan table behind (issue #26746: a
+    /// retry used to report `TABLE_ALREADY_EXISTS` instead of the access error). This reuses the same
+    /// create-temporary-then-publish machinery as CREATE OR REPLACE (doCreateOrReplaceTable). On non-Atomic
+    /// databases (getUUID() == Nil, e.g. Ordinary) we keep the previous behavior: the table is created first
+    /// and an orphan is left if the INSERT SELECT fails. Materialized/window views are excluded (they can own
+    /// an inner table and carry source-view dependencies, so they keep the previous behavior for now).
+    ///
+    /// As a consequence, the final table name is only registered by the publishing RENAME, so the populating
+    /// `SELECT` runs while the destination does not yet exist. A `SELECT` that references the destination
+    /// itself -- directly (`CREATE TABLE dst ... AS SELECT * FROM dst`) or indirectly (e.g. via
+    /// `system.tables`) -- therefore no longer observes it as an already-created empty table the way the
+    /// previous create-then-populate order did. This narrow, intentional visibility change (the table becomes
+    /// visible only once fully populated) is covered by
+    /// `04547_create_as_select_destination_not_visible_during_populate`.
+    if (create.isCreateQueryWithImmediateInsertSelect()
+        && !create.is_materialized_view && !create.is_window_view
+        && database && database->getUUID() != UUIDHelpers::Nil)
+    {
+        chassert(!ddl_guard);
+        return doCreateOrReplaceTable(create, properties, mode);
+    }
+
+    /// An atomically populated materialized view also needs the DDL guard of its *source table's name*
+    /// held across the cut (see fillMaterializedViewAtomically): the subscription registered there is
+    /// keyed by name, so a concurrent RENAME or EXCHANGE of the source between resolving it and
+    /// registering the subscription would wire the view to whatever table owns the name afterwards while
+    /// the backfill reads the table that owned it before - or leave the subscription on a name nobody
+    /// owns. The source guard also has to be held from *before* doCreateTable publishes the view: a
+    /// RENAME of the source landing between the publication and the guard acquisition would make
+    /// getValidatedAtomicPopulateSource fail the CREATE on the vanished name (rolling the view back)
+    /// even though the source is still there under its new name. Queries that take several
+    /// DDL guards (RENAME, EXCHANGE) acquire them in ascending (database, table) order, so to avoid
+    /// deadlocks both guards are taken here, before the publication, in that canonical order
+    /// (doCreateTable then sees the view's guard already held and does not re-acquire it).
+    DDLGuardPtr source_ddl_guard;
+    bool populate_atomically = shouldPopulateMaterializedViewAtomically(create);
+    if (populate_atomically && likely(need_ddl_guard))
+    {
+        if (auto populate_source_name = tryGetAtomicPopulateSourceName(create))
+        {
+            /// Validating the view's SELECT above took a storage snapshot of the source table and, under
+            /// `enable_shared_storage_snapshot_in_query`, cached it in the query-scoped snapshot cache,
+            /// where it would hold a reference to the source storage until this query ends. Blocking on
+            /// the source-name DDL guard below while holding that reference deadlocks with a concurrent
+            /// synchronous `DROP` of the source (`DROP TABLE ... SYNC`, or any `DROP` when
+            /// `database_atomic_wait_for_drop_and_detach_synchronously` is set, as in the test harness):
+            /// the `DROP` holds the guard this thread wants, and after detaching the table it waits for
+            /// every reference to the storage to be released before returning. The validation snapshot is
+            /// of no further use - the population pins its own snapshot under the source's exclusive lock
+            /// (see fillMaterializedViewAtomically) - so drop it before taking the guard.
+            if (auto metadata_cache = getContext()->getQueryMetadataCache())
+            {
+                if (auto source = DatabaseCatalog::instance().tryGetTable(
+                        StorageID{populate_source_name->database, populate_source_name->table}, getContext()))
+                {
+                    auto [snapshot_cache, snapshot_cache_lock] = metadata_cache->getStorageSnapshotCache();
+                    snapshot_cache->erase(source.get());
+                }
+            }
+
+            /// Covers the window between validating the view's SELECT (which resolved the source) and
+            /// acquiring the source-name guard below: a DROP of the source landing here must fail the
+            /// CREATE and roll the view back, not leave a half-created view behind
+            /// (see 04824_atomic_populate_materialized_view_source_dropped_before_guard).
+            FailPointInjection::pauseFailPoint(FailPoints::atomic_populate_pause_before_source_guard);
+
+            UniqueTableName view_name{create.getDatabase(), create.getTable()};
+            UniqueTableName source_name{populate_source_name->database, populate_source_name->table};
+
+            auto lock_view_name = [&]
+            {
+                chassert(!ddl_guard);
+                ddl_guard = DatabaseCatalog::instance().getDDLGuard(view_name.database_name, view_name.table_name, nullptr);
+            };
+            auto lock_source_name = [&]
+            {
+                source_ddl_guard = DatabaseCatalog::instance().getDDLGuard(source_name.database_name, source_name.table_name, nullptr);
+            };
+
+            if (source_name < view_name)
+            {
+                lock_source_name();
+                lock_view_name();
+            }
+            else if (view_name < source_name)
+            {
+                lock_view_name();
+                lock_source_name();
+            }
+            else
+            {
+                /// The view cannot select from itself - the name it is being created under owns no table
+                /// yet - so equal names mean the source does not exist and the population will fail with
+                /// its natural error. Locking the same name twice would self-deadlock, so the view's own
+                /// guard, which doCreateTable takes below, covers both roles of the name.
+            }
+        }
+    }
+
     /// Actually creates table
     bool created = doCreateTable(create, properties, ddl_guard, mode);
-    ddl_guard.reset();
 
     if (!created)   /// Table already exists
+    {
+        ddl_guard.reset();
         return {};
+    }
+
+    /// A materialized view with POPULATE subscribes to new inserts of its source table and, at the same
+    /// time, must be filled with the data that already exists in the source. Doing these two steps
+    /// independently is racy: a row inserted concurrently can be routed to the view and also appear in the
+    /// population snapshot (duplicated), or be routed nowhere and miss the snapshot (lost). To make it
+    /// atomic we register the subscription and pin a snapshot of the source together under a brief
+    /// exclusive lock, then populate from the pinned snapshot. See fillMaterializedViewAtomically.
+    ///
+    /// The view's own DDL guard is still held here and is passed down: `fillMaterializedViewAtomically`
+    /// releases it once the view is subscribed to the source. Without it, a concurrent `DROP` or `RENAME` of
+    /// the just-published view could run while we wait for the source's exclusive lock, and the subscription
+    /// registered afterwards would name a view that no longer exists there - which stops
+    /// `DatabaseCatalog::getReadyDependentViews` from returning any view of that source.
+    if (populate_atomically)
+    {
+        /// Covers the window between the view's publication above and the cut: the source's guard is
+        /// already held here, so a concurrent RENAME or EXCHANGE of the source must wait until the view
+        /// is subscribed (see 04813_atomic_populate_materialized_view_rename_after_publication).
+        FailPointInjection::pauseFailPoint(FailPoints::atomic_populate_pause_after_view_publication);
+
+        if (auto result = fillMaterializedViewAtomically(create, ddl_guard, source_ddl_guard))
+            return std::move(*result);
+    }
+
+    ddl_guard.reset();
+    source_ddl_guard.reset();
 
     /// If table has dependencies - add them to the graph
     addTableDependencies(create, query_ptr, getContext());
@@ -1957,9 +2139,16 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 namespace
 {
 
-void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context)
+void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
+
+    /// Re-check inferred column types only for a fresh, persisted table: the pre-construction check
+    /// does not see inferred columns, and ATTACH/RESTORE, temporary tables and views/dictionaries are
+    /// not subject to this check on load.
+    if (mode <= LoadingStrictnessLevel::CREATE && !is_temporary && !storage.isView() && !storage.isDictionary())
+        checkAllTypesAreAllowedInTable(metadata_snapshot->getColumns().getAll());
+
     if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(metadata_snapshot->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
@@ -1995,11 +2184,11 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
     }
 }
 
-void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context)
+void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 try
 {
     validateVirtualColumns(storage, context);
-    checkForUnsupportedColumns(storage, mode, context);
+    checkForUnsupportedColumns(storage, mode, context, is_temporary);
 }
 catch (...)
 {
@@ -2041,7 +2230,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
-            validateStorage(*res, mode, getContext());
+            validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -2080,6 +2269,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             /// Don't check dependencies during DROP of the view, because we will recreate
             /// it with the same name and all dependencies will remain valid.
             drop_context->setSetting("check_table_dependencies", false);
+            drop_context->setDDLOrOnClusterInternal(true);
             InterpreterDropQuery interpreter(drop_ast, drop_context);
             interpreter.execute();
         }
@@ -2221,6 +2411,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// and because storage lifetime is bigger than query context lifetime.
         res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true, /*is_insert_query=*/true);
         res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
+
+        /// The table is permanent, so it must hold its named collection (if any) the same way a table
+        /// engine does: `DROP NAMED COLLECTION` is blocked while the table exists.
+        if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
+            NamedCollectionFactory::instance().addDependency(collection_name, res->getStorageID());
     }
     else
     {
@@ -2241,7 +2436,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    validateStorage(*res, mode, getContext());
+    validateStorage(*res, mode, getContext(), create.isTemporary());
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
@@ -2339,6 +2534,13 @@ void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create) con
 BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                                                        const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
 {
+    /// This function creates the table under a temporary name, populates it, and then atomically publishes it
+    /// under the final name. It serves both REPLACE / CREATE OR REPLACE (publish via EXCHANGE / rename) and a
+    /// plain `CREATE TABLE ... AS SELECT` (no REPLACE; publish via a plain RENAME that fails if the target
+    /// exists). The plain-create case is routed here (only for Atomic databases) so a denied or failing
+    /// populating INSERT SELECT leaves no empty orphan table behind (issue #26746).
+    const bool is_plain_create = !create.replace_table && !create.create_or_replace && !create.replace_view;
+
     /// Replicated database requires separate contexts for each DDL query
     ContextPtr current_context = getContext();
     if (auto txn = current_context->getZooKeeperMetadataTransaction())
@@ -2347,12 +2549,17 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     create_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
 
     /// Before actually creating/replacing the table, check if it will lead to cyclic dependencies.
-    checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, create_context);
+    /// For a plain create this check runs later, after the existence fast path below: a
+    /// `CREATE TABLE IF NOT EXISTS` over an existing table must be a no-op even when the (new, unused)
+    /// definition would fail create-only validation, mirroring the check order of `doCreateTable`.
+    if (!is_plain_create)
+        checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, create_context);
 
     auto make_drop_context = [&](bool bypass_size_guard) -> ContextMutablePtr
     {
         ContextMutablePtr drop_context = Context::createCopy(current_context);
         drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+        drop_context->setDDLOrOnClusterInternal(true);
         /// Bypass = "the size guard was already enforced upstream; do not re-check or consume `force_drop_table` twice".
         if (bypass_size_guard)
         {
@@ -2360,6 +2567,43 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             drop_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
         }
         return drop_context;
+    };
+
+    /// The temporary table is an implementation detail: renaming it to the final name and dropping it on
+    /// failure are internal operations that must not require the user to hold RENAME/DROP privileges on it.
+    /// A plain `CREATE TABLE ... AS SELECT` only requires CREATE + INSERT (+ SELECT on the sources, still
+    /// checked by the populating INSERT SELECT below, which runs as the user), so those internal steps run
+    /// with a full-access context derived from the global context -- mirroring how inner tables of a
+    /// materialized view are dropped (see `InterpreterDropQuery::executeDropQuery`). Settings and any
+    /// Replicated-database ZooKeeper transaction are propagated so the operations behave and replicate
+    /// correctly. This is used only for the plain-create case; REPLACE keeps running as the user (its
+    /// required access already includes DROP).
+    ///
+    /// `bypass_size_guard` additionally zeroes `max_table_size_to_drop` / `max_partition_size_to_drop`. The
+    /// size guard is meaningful only for user-visible tables; a populated-then-abandoned temporary table can
+    /// exceed it, and its cleanup DROP must always succeed or the temporary table would be stranded. Pass it
+    /// for the cleanup DROPs; the publishing RENAME does not consult these settings, so it does not need it
+    /// (this mirrors the `bypass_size_guard` argument of `make_drop_context` used by REPLACE).
+    auto make_internal_context = [&](bool bypass_size_guard) -> ContextMutablePtr
+    {
+        ContextMutablePtr internal_context = Context::createCopy(current_context->getGlobalContext());
+        internal_context->makeQueryContext();
+        internal_context->setSettings(current_context->getSettingsRef());
+        /// The settings copied above can make the internal DROPs below wait; the element is the only way out.
+        internal_context->setProcessListElement(current_context->getProcessListElementSafe());
+        internal_context->setDDLOrOnClusterInternal(true);
+        if (bypass_size_guard)
+        {
+            internal_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+            internal_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+        }
+        if (auto txn = current_context->getZooKeeperMetadataTransaction())
+        {
+            internal_context->setQueryKindReplicatedDatabaseInternal();
+            internal_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+            internal_context->initZooKeeperMetadataTransaction(txn, /*attach_existing=*/true);
+        }
+        return internal_context;
     };
 
     auto ast_drop = make_intrusive<ASTDropQuery>();
@@ -2370,14 +2614,68 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (database->getUUID() == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} query is supported only for Atomic databases",
-                            create.create_or_replace
-                ? (create.is_materialized_view ? "CREATE OR REPLACE MATERIALIZED VIEW"
-                    : (create.isView() ? "CREATE OR REPLACE VIEW" : "CREATE OR REPLACE TABLE"))
-                : "REPLACE TABLE");
+                            is_plain_create
+                ? "CREATE ... AS SELECT via a temporary table"
+                : (create.create_or_replace
+                    ? (create.is_materialized_view ? "CREATE OR REPLACE MATERIALIZED VIEW"
+                        : (create.isView() ? "CREATE OR REPLACE VIEW" : "CREATE OR REPLACE TABLE"))
+                    : "REPLACE TABLE"));
+
+        /// For a plain create the final name must not already exist (as an active table, as a dictionary, or
+        /// reserved by a detached table). Check it up front, before the create-only validations below (table
+        /// name length, cyclic dependencies) and before authorizing or running the populating SELECT, so that
+        /// (a) an `IF NOT EXISTS` create on a taken name is a no-op that does not run (and does not require
+        /// access to) the SELECT and does not fail validations that only matter when a table is actually
+        /// created (mirroring `doCreateTable`, where the existence check precedes them), and (b) a plain
+        /// create over a taken name fails fast, with the same error `doCreateTable` reports, before the
+        /// (potentially expensive) populate. This mirrors the full existence handling of `doCreateTable`
+        /// (`isTableExist` plus the detached-name `checkMetadataFilenameAvailability` branch), not just the
+        /// active-table probe. This check is not under the table DDL guard, so it can race with a concurrent
+        /// create; the final RENAME below re-establishes correctness (it fails if the target appeared
+        /// meanwhile, which for `IF NOT EXISTS` is a no-op).
+        if (is_plain_create)
+        {
+            if (database->isTableExist(table_to_replace_name, current_context))
+            {
+                if (create.if_not_exists)
+                    return {};
+                /// Preserve the established error contract: a name already used by a dictionary reports
+                /// `DICTIONARY_ALREADY_EXISTS`, not `TABLE_ALREADY_EXISTS` (mirrors `doCreateTable` and
+                /// `02973_dictionary_table_exception_fix`).
+                if (database->getTable(table_to_replace_name, current_context)->isDictionary())
+                    throw Exception(ErrorCodes::DICTIONARY_ALREADY_EXISTS, "Dictionary {}.{} already exists",
+                        backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(table_to_replace_name));
+                throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists",
+                    backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(table_to_replace_name));
+            }
+            else if (!create.attach)
+            {
+                /// The final name may still be reserved by a table in a detached / detached-permanently state:
+                /// its metadata file is present even though `isTableExist` is false. Mirror `doCreateTable` so
+                /// that `IF NOT EXISTS` is a no-op and a plain create fails with the metadata-name availability
+                /// error -- both before the populate. Otherwise a no-op could run the SELECT, raise a source
+                /// `ACCESS_DENIED`, or trigger scalar-subquery side effects, and a plain create could surface a
+                /// source-query failure instead of the existing detached-name error, before the RENAME finally
+                /// discovers the collision.
+                try
+                {
+                    database->checkMetadataFilenameAvailability(table_to_replace_name);
+                }
+                catch (const Exception &)
+                {
+                    if (create.if_not_exists)
+                        return {};
+                    throw;
+                }
+            }
+        }
 
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(table_to_replace_name);
     }
+
+    if (is_plain_create)
+        checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, create_context);
 
     /// A non-APPEND refreshable materialized view exclusively owns its target table. The replacement is
     /// built while the view being replaced still owns it, so reject only when a different view owns it.
@@ -2427,6 +2725,21 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         ast_drop->kind = ASTDropQuery::Drop;
     }
 
+    /// The populating INSERT SELECT runs against the internal temporary table, so its (random) name is
+    /// recorded in this query's access info and would surface in `system.query_log` `tables`. The temporary
+    /// table is an implementation detail whose random name is meaningless to the user and would make the log
+    /// non-deterministic, so scrub it. This must run on every exit after the populate may have touched the
+    /// temporary table -- the successful publish, the `IF NOT EXISTS` lost-race no-op, and any failure or
+    /// rethrow -- because `executeQuery.cpp` copies the access info into the log for failed queries too, so a
+    /// denied or failing `CREATE ... AS SELECT` would otherwise leak the internal name. The final table name is
+    /// added to the log independently, from the query's target (see `IInterpreter::extendQueryLogElem`).
+    auto scrub_temp_table_from_query_log = [&]()
+    {
+        if (create.isCreateQueryWithImmediateInsertSelect() && getContext()->hasQueryContext())
+            getContext()->getQueryContext()->removeQueryAccessInfoTable(
+                StorageID{create.getDatabase(), create.getTable()}.getFullTableName());
+    };
+
     bool created = false;
     bool renamed = false;
     try
@@ -2441,8 +2754,29 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// If table has dependencies - add them to the graph
         addTableDependencies(create, query_ptr, getContext());
 
-        /// Try fill temporary table
-        BlockIO fill_io = fillTableIfNeeded(create);
+        /// For a plain `CREATE TABLE ... AS SELECT` the populate below runs against the internal temporary
+        /// table, so `InterpreterInsertQuery` would authorize `INSERT` on the random `_tmp_replace_*` name
+        /// rather than the final name. That would regress table-scoped grants: before this PR the plain-create
+        /// path checked `INSERT` on the final name directly, so `CREATE TABLE` + `INSERT ON db.dst` (not a
+        /// wildcard grant) was sufficient. To preserve that contract, authorize `INSERT` on the final name up
+        /// front -- as the user, over the columns that will be inserted -- and then skip the redundant
+        /// target-`INSERT` check on the temporary name inside the populate. The source `SELECT` access is
+        /// still checked by the populate as the user. REPLACE keeps its prior behavior: it never required
+        /// `INSERT` on the final name (only DROP/CREATE), so it does not get the up-front check or the skip.
+        if (is_plain_create && create.isCreateQueryWithImmediateInsertSelect())
+        {
+            auto temp_table = DatabaseCatalog::instance().getTable(
+                StorageID{create.getDatabase(), create.getTable(), create.uuid}, current_context);
+            auto temp_metadata = temp_table->getInMemoryMetadataPtr(current_context, false);
+            const Names insert_columns = temp_metadata->getSampleBlockNonMaterialized().getNames();
+            current_context->checkAccess(
+                AccessType::INSERT, StorageID{create.getDatabase(), table_to_replace_name}, insert_columns);
+        }
+
+        /// Try fill temporary table. Note: POPULATE here uses the legacy, non-atomic population - the
+        /// atomic path is only wired into the plain CREATE flow, not the create-or-replace flow (which
+        /// populates a temporary table and then atomically swaps it in via EXCHANGE/RENAME).
+        BlockIO fill_io = fillTableIfNeeded(create, /*skip_target_insert_access_check=*/is_plain_create);
         /// For queries like 'CREATE OR REPLACE TABLE ... AS SELECT * INSERT' might take a long time,
         /// passing this callback allows tcp sessions to send progress, stats and logs.
         /// It prevents getting socket timeout as well.
@@ -2466,7 +2800,15 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         auto ast_rename = make_intrusive<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
         ast_rename->dictionary = create.is_dictionary;
-        if (create.create_or_replace || create.replace_view)
+        if (is_plain_create)
+        {
+            /// Plain CREATE ... AS SELECT: the target must not exist. A plain RENAME asserts this and fails
+            /// with TABLE_ALREADY_EXISTS if a concurrent query created the target while we were populating the
+            /// temporary table (handled below for IF NOT EXISTS).
+            ast_rename->exchange = false;
+            ast_rename->rename_if_cannot_exchange = false;
+        }
+        else if (create.create_or_replace || create.replace_view)
         {
             /// CREATE OR REPLACE TABLE/VIEW
             /// Will execute ordinary RENAME instead of EXCHANGE if the target table does not exist
@@ -2483,20 +2825,58 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         FailPointInjection::pauseFailPoint(FailPoints::create_or_replace_before_rename);
 
         /// The size check runs once inside the rename's `DDLGuard`s via `setPreSwapCheck`.
-        /// If it throws, no rename happens and the catch block below drops the temp.
-        InterpreterRenameQuery interpreter_rename{ast_rename, current_context};
+        /// If it throws, no rename happens and the catch block below drops the temp. For a plain create the
+        /// rename publishes an internal temporary table under the final name, so it runs with a full-access
+        /// context (the user is not required to hold RENAME/DROP on the temporary table); REPLACE keeps
+        /// running as the user.
+        ContextPtr rename_context = is_plain_create ? ContextPtr{make_internal_context(/*bypass_size_guard=*/false)} : current_context;
+        InterpreterRenameQuery interpreter_rename{ast_rename, rename_context};
         interpreter_rename.setPreSwapCheck(
             [&current_context](const StorageID & to_drop_id)
             {
                 if (auto to_drop = DatabaseCatalog::instance().tryGetTable(to_drop_id, current_context))
+                {
+                    /// The replaced table is dropped after the swap, under an internal temporary name that
+                    /// grants cannot cover, so check the drop privilege for its kind here, on its real name.
+                    AccessType drop_access = AccessType::DROP_TABLE;
+                    if (to_drop->isView())
+                        drop_access = AccessType::DROP_VIEW;
+                    else if (to_drop->isDictionary())
+                        drop_access = AccessType::DROP_DICTIONARY;
+                    current_context->checkAccess(drop_access, to_drop_id);
                     to_drop->checkTableSizeBelowDropLimit(current_context);
+                }
             });
-        interpreter_rename.execute();
+        try
+        {
+            interpreter_rename.execute();
+        }
+        catch (const Exception & e)
+        {
+            /// A concurrent query created the target while we were populating the temporary table. For a plain
+            /// `CREATE TABLE IF NOT EXISTS ... AS SELECT` this is a no-op: drop the temporary table and return
+            /// without error. For a plain create without IF NOT EXISTS (and for REPLACE) the error propagates.
+            if (is_plain_create && create.if_not_exists && e.code() == ErrorCodes::TABLE_ALREADY_EXISTS)
+            {
+                InterpreterDropQuery(ast_drop, make_internal_context(/*bypass_size_guard=*/true)).execute();
+                scrub_temp_table_from_query_log();
+                create.setTable(table_to_replace_name);
+                return {};
+            }
+            throw;
+        }
         renamed = true;
 
-        if (!interpreter_rename.renamedInsteadOfExchange())
+        if (!is_plain_create && !interpreter_rename.renamedInsteadOfExchange())
         {
-            /// `pre_swap_check` already gated this; bypass to avoid double-consuming
+            /// After the exchange the temporary name holds the replaced table, which may be of a different
+            /// kind than the new one (e.g. a dictionary replaced by a view), so the drop must match its kind.
+            if (auto replaced = DatabaseCatalog::instance().tryGetTable(StorageID{create.getDatabase(), create.getTable()}, current_context))
+                ast_drop->is_dictionary = replaced->isDictionary();
+            /// `pre_swap_check` already authorized this drop against the replaced table's real name.
+            /// The temporary name cannot be covered by grants, so skip the access check on it.
+            ast_drop->no_access_check = true;
+            /// `pre_swap_check` also gated the size; bypass to avoid double-consuming
             /// the `force_drop_table` flag inside `Context::checkCanBeDropped`.
             auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
             InterpreterDropQuery(ast_drop, drop_context).execute();
@@ -2509,6 +2889,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             for (const auto & task : current_context->getRefreshSet().findTasks({create.getDatabase(), table_to_replace_name}))
                 task->start();
 
+        scrub_temp_table_from_query_log();
+
         create.setTable(table_to_replace_name);
 
         return {};
@@ -2516,10 +2898,14 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     catch (...)
     {
         /// Drop the temp table we just created if it was not renamed to the target name.
-        /// Bypassing the size guard is safe here: the temp name is unique to this call.
+        /// Bypassing the size guard is safe here: the temp name is unique to this call. For a plain create
+        /// use a full-access context (also size-guard-bypassed): the user is not required to hold DROP on the
+        /// internal temporary table (its cleanup must not turn a denied source SELECT into an ACCESS_DENIED on
+        /// the temporary table), and the cleanup must succeed even after the temporary table has grown past
+        /// `max_table_size_to_drop`, or a late failure would strand it.
         if (created && !renamed)
         {
-            auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
+            auto drop_context = is_plain_create ? make_internal_context(/*bypass_size_guard=*/true) : make_drop_context(/*bypass_size_guard=*/true);
             try
             {
                 InterpreterDropQuery(ast_drop, drop_context).execute();
@@ -2529,6 +2915,9 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                 tryLogCurrentException("InterpreterCreateQuery", "Cannot DROP temporary table");
             }
         }
+        /// The temporary name is still set on `create` here (it is reset to the final name only on the success
+        /// and lost-race-no-op paths), so scrub it before the error propagates and gets logged.
+        scrub_temp_table_from_query_log();
         throw;
     }
 }
@@ -2550,7 +2939,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
             properties.constraints,
             mode,
             is_restore_from_backup);
-        validateStorage(*res, mode, getContext());
+        validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
         return res;
     };
 
@@ -2566,7 +2955,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
     return fillTableIfNeeded(create);
 }
 
-BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
+BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create, bool skip_target_insert_access_check)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.isCreateQueryWithImmediateInsertSelect())
@@ -2581,14 +2970,15 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         else
             insert->select = create.select->clone();
 
-        return InterpreterInsertQuery(
-                   insert,
-                   getContext(),
-                   getContext()->getSettingsRef()[Setting::insert_allow_materialized_columns],
-                   /* no_squash */ false,
-                   /* no_destination */ false,
-                   /* async_isnert */ false)
-            .execute();
+        InterpreterInsertQuery interpreter(
+            insert,
+            getContext(),
+            getContext()->getSettingsRef()[Setting::insert_allow_materialized_columns],
+            /* no_squash */ false,
+            /* no_destination */ false,
+            /* async_isnert */ false);
+        interpreter.setSkipTargetInsertAccessCheck(skip_target_insert_access_check);
+        return interpreter.execute();
     }
 
     /// If the query is a CREATE TABLE .. CLONE AS ..., attach all partitions of the source table to the newly created table.
@@ -2630,6 +3020,348 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     }
 
     return {};
+}
+
+bool InterpreterCreateQuery::shouldPopulateMaterializedViewAtomically(const ASTCreateQuery & create) const
+{
+    /// `CREATE OR REPLACE` / `REPLACE` go through doCreateOrReplaceTable, which populates a temporary table
+    /// and then atomically swaps it in via EXCHANGE/RENAME. Coordinating the exclusive-lock cut with that
+    /// swap (and with the old view's still-live subscription) is not handled here, so those queries keep
+    /// the legacy non-atomic population; only the plain CREATE flow is atomic.
+    bool applies = create.isCreateQueryWithImmediateInsertSelect()
+        && create.is_materialized_view && !create.is_window_view && !create.is_clone_as && !internal
+        && !create.replace_table && !create.replace_view
+        && getContext()->getSettingsRef()[Setting::materialized_views_populate_atomically];
+
+    if (!applies)
+        return false;
+
+    /// A CREATE executed as an entry of a `Replicated` database's DDL log (`POPULATE` is allowed there
+    /// with `database_replicated_allow_heavy_create`) cannot honor the atomic path's "a failed CREATE
+    /// leaves nothing behind" contract: by the time the population fails, the entry's metadata transaction
+    /// has already been committed by the creation of the view - `DatabaseReplicated::dropTable` would try
+    /// to add a `ZooKeeper` operation to an already executed transaction (a logical error) - and even a
+    /// successful unilateral drop would diverge this replica from the replicas where the same entry
+    /// succeeded. Rather than advertising rollback-and-retry semantics that cannot be provided, fall back
+    /// to the legacy non-atomic population, the pre-existing behavior of `POPULATE` under this override.
+    if (getContext()->getZooKeeperMetadataTransaction())
+    {
+        LOG_INFO(getLogger("InterpreterCreateQuery"),
+            "Populating materialized view {}.{} non-atomically because it is created by an entry of a "
+            "replicated database DDL log, where a failed atomic population could not be rolled back. "
+            "Rows inserted into the source during the population may be missed or duplicated.",
+            backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+        return false;
+    }
+
+    return true;
+}
+
+std::optional<QualifiedTableName> InterpreterCreateQuery::tryGetAtomicPopulateSourceName(const ASTCreateQuery & create) const
+{
+    auto context = getContext();
+    QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
+    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
+
+    /// The view is fed by inserts into a single source table (its `FROM` table); that table is what we must
+    /// subscribe to and snapshot atomically. If the view has no such single source (e.g. it selects from a
+    /// subquery, a table function, or a join without a clear driving table), there is nothing to race
+    /// against, so atomic population does not apply.
+    if (!ref_dependencies.mv_from_dependency)
+        return std::nullopt;
+
+    return ref_dependencies.mv_from_dependency->getQualifiedName();
+}
+
+StoragePtr InterpreterCreateQuery::getValidatedAtomicPopulateSource(const ASTCreateQuery & create)
+{
+    auto context = getContext();
+
+    QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
+    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
+
+    if (!ref_dependencies.mv_from_dependency)
+        return nullptr;
+
+    /// The caller holds the DDL guard of the source's name, so from here until the guard is released the
+    /// name cannot be renamed, exchanged or dropped. But the per-query storage cache may already hold a
+    /// mapping for the name that was resolved *before* the guard was acquired - validating the view's
+    /// SELECT resolves the source - and a RENAME or EXCHANGE may have changed the owner of the name in
+    /// between. Drop the cache entry so the resolution below sees the current owner; it re-fills the
+    /// cache, so every later read of this query (in particular the population's SELECT) resolves the name
+    /// to the same table that is locked, subscribed and snapshotted here.
+    if (context->hasQueryContext())
+        context->getQueryContext()->dropStorageCacheEntry(*ref_dependencies.mv_from_dependency);
+
+    auto source = DatabaseCatalog::instance().tryGetTable(*ref_dependencies.mv_from_dependency, context);
+
+    /// The view's SELECT was validated against the source before the view was published, so the source
+    /// existed then; not finding it now means it was dropped, renamed or exchanged away in the window
+    /// between that validation and the acquisition of the source-name DDL guard the caller holds. The
+    /// view is already published, so falling back to the legacy population is not an option: its
+    /// INSERT ... SELECT would fail on the vanished name *outside* the rollback scope of
+    /// `fillMaterializedViewAtomically`, leaving the just-created view behind (and subscribed to a name
+    /// nobody owns), so a retry would get TABLE_ALREADY_EXISTS. Throw instead - we are inside the
+    /// rollback scope, so the view is dropped and the failed CREATE leaves nothing behind.
+    if (!source)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE,
+            "Table {} does not exist. It was dropped, renamed or exchanged concurrently with"
+            " CREATE MATERIALIZED VIEW ... POPULATE reading from it",
+            ref_dependencies.mv_from_dependency->getNameForLogs());
+
+    /// Some sources (views, `Distributed`, `Merge`, `Buffer`, `Log` family, ...) cannot provide a pinned
+    /// point-in-time snapshot, or are not in an `Atomic` database so the snapshot cannot be addressed by
+    /// UUID. We cannot populate atomically from them, so fall back to the legacy non-atomic population
+    /// (the previous behavior) instead of failing - this keeps existing `POPULATE` queries working. The
+    /// fallback is best-effort, so record in the log that rows inserted during the population may be
+    /// missed or duplicated.
+    if (!source->supportsPinnedSnapshot() || source->getStorageID().uuid == UUIDHelpers::Nil)
+    {
+        LOG_INFO(getLogger("InterpreterCreateQuery"),
+            "Populating materialized view {} non-atomically because its source table {} (engine {}) does not "
+            "support reading a pinned point-in-time snapshot. Rows inserted into the source during the "
+            "population may be missed or duplicated in the view.",
+            qualified_name.getFullName(), source->getStorageID().getNameForLogs(), source->getName());
+        return nullptr;
+    }
+
+    return source;
+}
+
+namespace
+{
+
+/// Settings that would take the population read off the pinned local snapshot, see
+/// `fillMaterializedViewAtomically`. They are forced on the population context, but query-local `SETTINGS`
+/// are reapplied on top of the context later - by the analyzer in `QueryTreeBuilder::buildSelectExpression`
+/// and by the old interpreter in `InterpreterSelectQuery::initSettings` - so a view defined as
+/// `... POPULATE AS SELECT ... SETTINGS enable_parallel_replicas = 1` would otherwise re-enable remote
+/// reads for the population. Both the setting name and its alias have to be listed, because a `SETTINGS`
+/// clause keeps the name as it was written and resolves the alias only when the change is applied.
+///
+/// `removeSettingsFromQuery` drops both the `name = value` and the `name = DEFAULT` forms - the latter
+/// matters just as much, because `InterpreterSetQuery::resetSettingsToDefaultValue` restores the built-in
+/// default, and for two of these settings that default is the dangerous value
+/// (`parallel_distributed_insert_select = 2`, `enable_shared_storage_snapshot_in_query = true`). It also
+/// detaches a `SETTINGS` clause that ends up empty, so the population query never formats to a bare
+/// `SETTINGS` keyword, which would throw on re-parse.
+constexpr std::array<std::string_view, 4> settings_incompatible_with_pinned_snapshot
+{
+    "allow_experimental_parallel_reading_from_replicas",
+    "enable_parallel_replicas",
+    "parallel_distributed_insert_select",
+    "enable_shared_storage_snapshot_in_query",
+};
+
+}
+
+std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard, DDLGuardPtr & source_ddl_guard)
+{
+    try
+    {
+        return fillMaterializedViewAtomicallyImpl(create, ddl_guard, source_ddl_guard);
+    }
+    catch (...)
+    {
+        /// The rollback `DROP` below takes the DDL guard of this very view, so the guard we still hold (when
+        /// the failure happened before the cut) has to be released first, otherwise the drop deadlocks on it.
+        /// The source's guard has to go too: holding it while acquiring the view's guard inside the drop
+        /// could invert the canonical (database, table) acquisition order and deadlock against a concurrent
+        /// RENAME or EXCHANGE, and the rollback does not need the source name to be stable.
+        ddl_guard.reset();
+        source_ddl_guard.reset();
+
+        /// doCreateTable has already created and started the view, but the atomic cut failed - most
+        /// realistically `lockExclusively` timed out on a busy source, before `addDependencies` subscribed
+        /// the view to it. Letting the exception escape as-is would leave behind a view that exists but is
+        /// not registered as a dependent of the source, so future inserts would silently never populate it.
+        /// Drop the just-created view instead, so the failed CREATE leaves behind nothing of what it
+        /// created and can simply be retried (the same no-orphan contract as the temporary-table path of
+        /// CREATE TABLE ... AS SELECT). The contract covers the objects this CREATE created: the view, its
+        /// subscription and - for the plain ENGINE form, where the view owns its data - the populated rows,
+        /// which the DROP removes with the view. For the `TO target` form the target table is a pre-existing
+        /// table that is not ours to roll back: rows the failed population already appended to it stay
+        /// there, exactly as after a failed `INSERT ... SELECT` into that table (ClickHouse inserts are not
+        /// transactional across blocks), so retrying the CREATE backfills them again. That caveat is
+        /// documented, and a test pins it down.
+        /// A failure after the subscription is rolled back the same way - the DROP also removes the
+        /// registered dependencies. That covers both building the population pipeline and running it: the
+        /// population executes eagerly inside the `try` (see fillMaterializedViewAtomicallyImpl), so a
+        /// runtime failure of the view's SELECT or of the target write - or a KILL of the CREATE - lands
+        /// here too, after `executeTrivialBlockIO` has already torn the failed pipeline down and released
+        /// its table locks. The drop runs under the global context, like the internal drop of a view's
+        /// inner table: the user needed only CREATE to get here.
+        ///
+        /// The drop is asynchronous. Everything the rollback needs - unsubscribing the view from the source,
+        /// removing it from the catalog and renaming away its metadata, so that the name is free again for a
+        /// retry - happens synchronously inside `DatabaseAtomic::dropTable`; only the removal of the (empty)
+        /// data is deferred to the background drop task, exactly as for a plain `DROP TABLE`. Waiting for
+        /// that here would buy nothing and can hang the failed `CREATE` indefinitely: `clickhouse-local`
+        /// never finishes `waitTableFinallyDropped`, so a synchronous drop turns a rollback into a hang.
+        ///
+        /// In a `Replicated` database the view would not be ours to drop - the entry's metadata transaction
+        /// is already committed and a unilateral drop would diverge this replica - which is why
+        /// `shouldPopulateMaterializedViewAtomically` never takes the atomic path for a CREATE executed as
+        /// an entry of a replicated database DDL log.
+        chassert(!getContext()->getZooKeeperMetadataTransaction());
+
+        try
+        {
+            InterpreterDropQuery::executeDropQuery(
+                ASTDropQuery::Kind::Drop,
+                getContext()->getGlobalContext(),
+                getContext(),
+                StorageID{create.getDatabase(), create.getTable(), create.uuid},
+                /* sync */ false,
+                /* ignore_sync_setting */ true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                getLogger("InterpreterCreateQuery"),
+                fmt::format(
+                    "Cannot drop materialized view {}.{} while rolling back its failed atomic population; "
+                    "the view exists but may not be subscribed to its source table",
+                    backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable())));
+        }
+        throw;
+    }
+}
+
+std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImpl(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard, DDLGuardPtr & source_ddl_guard)
+{
+    auto source = getValidatedAtomicPopulateSource(create);
+    if (!source)
+        return {};
+
+    auto context = getContext();
+    QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
+    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
+    auto source_uuid = source->getStorageID().uuid;
+
+    /// Subscribe the view to new inserts and capture a snapshot of the existing source data together, under
+    /// a brief exclusive lock on the source. An INSERT into the source holds a shared lock on it from before
+    /// it decides which views to push to until after its part is committed. So the exclusive lock drains all
+    /// in-flight inserts (their data is now in the snapshot and they did not see the view yet) and blocks new
+    /// ones (which, once we release, will see the view and will not be in the snapshot). Every concurrently
+    /// inserted row therefore lands on exactly one side of the cut.
+    ///
+    /// The snapshot is captured via `getStorageSnapshot`, which does not take the table's shared lock, so it
+    /// does not conflict with the exclusive lock we hold here. The population pipeline is built and executed
+    /// afterwards, without holding the lock, and reads the pinned snapshot.
+    ///
+    /// We must disable `enable_shared_storage_snapshot_in_query`: with it on, an earlier `getStorageSnapshot`
+    /// of the source (taken while validating the view's SELECT, before we acquire the lock) is cached on the
+    /// query and would be returned here, defeating the point of capturing under the lock. With it off the
+    /// capture below is fresh - taken under the lock, after in-flight inserts have drained. The population
+    /// read still uses the pinned snapshot (it takes priority over both the cache and a fresh capture).
+    auto populate_context = Context::createCopy(context);
+    populate_context->setSetting("enable_shared_storage_snapshot_in_query", false);
+
+    /// The pinned snapshot lives only in this server's contexts (`populate_context` and its query context,
+    /// pinned below). The population must therefore read the source locally, from that pinned snapshot. If
+    /// the internal `INSERT ... SELECT` is instead dispatched to remote replicas (parallel replicas) or
+    /// through a distributed write, those remote executions do not carry the pin: they read a fresh
+    /// snapshot of the source - which breaks the exactly-once cut, because rows inserted concurrently with
+    /// the population are then read remotely and also delivered to the view live - and they would re-send
+    /// `INSERT INTO` the just-created view on other replicas. Force the local pinned-snapshot path by
+    /// disabling `parallel_distributed_insert_select` and parallel-replica reading for this insert.
+    populate_context->setSetting("parallel_distributed_insert_select", Field{0});
+    populate_context->setSetting("enable_parallel_replicas", Field{0});
+
+    StorageSnapshotPtr snapshot;
+    {
+        /// Models the window in which the view is already published but not yet subscribed to its source -
+        /// in production it is the wait for the exclusive lock right below. A test uses it to run DDL on the
+        /// view concurrently and check that the view's DDL guard, still held here, serializes it after the
+        /// subscription.
+        FailPointInjection::pauseFailPoint(FailPoints::atomic_populate_pause_before_subscription);
+
+        auto source_lock = source->lockExclusively(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+        /// Models a failure of the cut before the view is subscribed to the source (the realistic cause is
+        /// a `lockExclusively` timeout right above, which a test cannot trigger deterministically). The
+        /// rollback in `fillMaterializedViewAtomically` must drop the just-created view.
+        fiu_do_on(FailPoints::atomic_populate_fail_before_subscription,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                "Failpoint atomic_populate_fail_before_subscription is triggered");
+        });
+
+        DatabaseCatalog::instance().addDependencies(
+            qualified_name,
+            ref_dependencies.dependencies,
+            loading_dependencies,
+            TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()});
+
+        auto source_metadata = source->getInMemoryMetadataPtr(populate_context, false);
+        snapshot = source->getStorageSnapshot(source_metadata, populate_context);
+    }
+
+    /// The cut is done: the view is published, subscribed to the source and the snapshot is pinned. Release
+    /// the view's DDL guard, which the caller kept for us across the exclusive-lock wait above, so that a
+    /// concurrent `DROP` or `RENAME` of the view could not squeeze in between publishing it and subscribing
+    /// it - that would have left a subscription naming a view that is no longer there, and
+    /// `DatabaseCatalog::getReadyDependentViews` treats a single missing dependent as "no views are ready",
+    /// silently stopping the population of *every* view of that source. The population below can take
+    /// arbitrarily long, and it does not need the guard: it is an ordinary `INSERT` into the view, so a
+    /// concurrent `DROP` of the view during the population is handled exactly as for any other insert.
+    ///
+    /// The source's DDL guard is released for the same reason: it kept the owner of the source's name
+    /// stable from resolving the source (in `getValidatedAtomicPopulateSource`) until the name-keyed
+    /// subscription right above, so the subscription is guaranteed to be registered on the table that was
+    /// locked and snapshotted. From now on a `RENAME` of the source carries the subscription along with
+    /// the name change, like for any other materialized view, so the population does not need the guard.
+    ddl_guard.reset();
+    source_ddl_guard.reset();
+
+    /// Pin the snapshot so the population's SELECT reads exactly the captured data. The population's
+    /// SELECT is analyzed and executed under contexts derived from the shared query context
+    /// (`getQueryContext()`), so the pin must live there: a pin stored only on `populate_context` (a
+    /// copy) is not seen by those reads, which would then take a fresh snapshot of the source and read
+    /// rows inserted concurrently with the population - rows that are also delivered to the view live,
+    /// duplicating them. Set it on `populate_context` too (harmless) for any read that uses it directly.
+    populate_context->setPinnedStorageSnapshot(source_uuid, snapshot);
+    if (populate_context->hasQueryContext())
+        populate_context->getQueryContext()->setPinnedStorageSnapshot(source_uuid, snapshot);
+
+    auto insert = make_intrusive<ASTInsertQuery>();
+    insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
+    insert->select = create.select->clone();
+
+    /// The settings above are forced on `populate_context`, but query-local `SETTINGS` of the view's SELECT
+    /// are applied on top of the context afterwards and could re-enable remote reads, which do not carry the
+    /// pin. Scrub them from the population query - it is a copy, so the view's stored definition (used for
+    /// the live pushes, which are not bound to a pinned snapshot) keeps them.
+    removeSettingsFromQuery(insert->select, settings_incompatible_with_pinned_snapshot);
+
+    auto populate_io = InterpreterInsertQuery(
+                           insert,
+                           populate_context,
+                           populate_context->getSettingsRef()[Setting::insert_allow_materialized_columns],
+                           /* no_squash */ false,
+                           /* no_destination */ false,
+                           /* async_insert */ false)
+                           .execute();
+
+    /// Run the population right here, eagerly, like `doCreateOrReplaceTable` runs its populating insert.
+    /// `InterpreterInsertQuery::execute` only builds the pipeline; returning the lazy `BlockIO` to the
+    /// caller would let the outer `executeQuery` drive it after the rollback scope of
+    /// `fillMaterializedViewAtomically` has already exited, so a runtime failure of the population (the
+    /// view's SELECT or the target write) would escape the rollback and leave the failed CREATE with the
+    /// view published and subscribed - breaking the no-orphan contract. Executing here, an execution-time
+    /// exception (including a KILL of the CREATE) first tears the pipeline down - `executeTrivialBlockIO`
+    /// calls `onException`, releasing the pipeline's table locks, so the rollback's DROP cannot contend
+    /// with them - and then unwinds into the rollback, which drops the just-created view.
+    ///
+    /// The interactive-cancel callback keeps TCP sessions sending progress and able to cancel the
+    /// (potentially long) population, and prevents socket timeouts, exactly as for `CREATE ... AS SELECT`.
+    /// The process-list element makes `KILL QUERY` cancel the population: on the lazy path the outer
+    /// `executeQuery` attached it to the returned pipeline, so it has to be attached by hand here.
+    populate_io.pipeline.setProcessListElement(getContext()->getProcessListElement());
+    executeTrivialBlockIO(populate_io, getContext(), /*with_interactive_cancel=*/true);
+    return BlockIO{};
 }
 
 void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr local_context, const String & cluster_name)
@@ -2710,7 +3442,15 @@ BlockIO InterpreterCreateQuery::execute()
 
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
+        {
+            /// Authorize here: this is the last point that still runs as the real user, and worker legs
+            /// run with no user by default.
+            if (is_create_database && create.storage && create.storage->engine
+                && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
+                DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
+
             return executeQueryOnCluster(create);
+        }
     }
 
     getContext()->checkAccess(getRequiredAccess());
@@ -2892,7 +3632,7 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Table engine conversion to replicated is supported only for Atomic databases");
 
-    if (!create.storage || !create.storage->engine || create.storage->engine->name.find("MergeTree") == std::string::npos)
+    if (!create.storage || !create.storage->engine || !create.storage->engine->name.contains("MergeTree"))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Table engine conversion is supported only for MergeTree family engines");
 
@@ -2904,6 +3644,11 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     }
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
+
+    /// Must precede every side effect below: neither the transaction metadata removal nor the
+    /// metadata rewrite can be rolled back. The other direction takes no Keeper path at all.
+    if (to_replicated)
+        DatabaseOrdinary::checkReplicaPathIsSafe(create, getContext());
 
     /// Ensure the old detached table instance is destroyed before we remove
     /// transaction metadata files. Otherwise the old table's parts still hold

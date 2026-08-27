@@ -43,7 +43,7 @@ FillingStep::FillingStep(
 {
 }
 
-void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     if (pipeline.getNumStreams() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FillingStep expects single input");
@@ -54,7 +54,8 @@ void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
             return std::make_shared<FillingNoopTransform>(header, fill_description);
 
         return std::make_shared<FillingTransform>(
-            header, sort_description, fill_description, std::move(interpolate_description), use_with_fill_by_sorting_prefix);
+            header, sort_description, fill_description, std::move(interpolate_description),
+            use_with_fill_by_sorting_prefix, settings.process_list_element);
     });
 }
 

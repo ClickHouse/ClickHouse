@@ -57,14 +57,14 @@ Connected to ClickHouse server version 24.12.2.
 
 필요에 따라 추가 연결 정보를 지정하십시오:
 
-| 옵션                               | 설명                                                                                                                              |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `--port <port>`                  | ClickHouse 서버가 연결을 수신하는 포트입니다. 기본 포트는 9440(TLS) 및 9000(TLS 미사용)입니다. ClickHouse Client는 HTTP(S)가 아니라 네이티브 프로토콜을 사용한다는 점에 유의하십시오. |
-| `-s [ --secure ]`                | TLS를 사용할지 여부입니다(대개 자동으로 감지됩니다).                                                                                                 |
-| `-u [ --user ] <username>`       | 연결할 때 사용할 데이터베이스 사용자입니다. 기본적으로 `default` 사용자로 연결됩니다.                                                                            |
-| `--password <password>`          | 데이터베이스 사용자의 비밀번호입니다. 연결에 사용할 비밀번호는 설정 파일에서 지정할 수도 있습니다. 비밀번호를 지정하지 않으면 클라이언트가 입력을 요청합니다.                                        |
-| `-c [ --config ] <path-to-file>` | ClickHouse Client의 설정 파일이 기본 위치 중 하나에 없을 경우 해당 설정 파일의 위치입니다. [설정 파일](#configuration_files)을 참조하십시오.                             |
-| `--connection <name>`            | [설정 파일](#connection-credentials)에 미리 구성된 연결 정보의 이름입니다.                                                                          |
+| 옵션                               | 설명                                                                                                                                                                                                                                                                    |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--port <port>`                  | ClickHouse 서버가 연결을 수신하는 포트입니다. 기본 포트는 9440(TLS) 및 9000(TLS 미사용)입니다. `--port`와 `--secure`를 모두 지정하지 않으면 두 기본 포트를 동시에 시도하고 먼저 응답하는 포트를 사용합니다. 따라서 둘 중 하나에서만 수신하는 서버에도 다른 포트의 연결 타임아웃이 만료될 때까지 기다리지 않고 연결됩니다. ClickHouse Client는 HTTP(S)가 아니라 네이티브 프로토콜을 사용한다는 점에 유의하십시오. |
+| `-s [ --secure ]`                | TLS를 사용할지 여부입니다(대개 자동으로 감지됩니다).                                                                                                                                                                                                                                       |
+| `-u [ --user ] <username>`       | 연결할 때 사용할 데이터베이스 사용자입니다. 기본적으로 `default` 사용자로 연결됩니다.                                                                                                                                                                                                                  |
+| `--password <password>`          | 데이터베이스 사용자의 비밀번호입니다. 연결에 사용할 비밀번호는 설정 파일에서 지정할 수도 있습니다. 비밀번호를 지정하지 않으면 클라이언트가 입력을 요청합니다.                                                                                                                                                                              |
+| `-c [ --config ] <path-to-file>` | ClickHouse Client의 설정 파일이 기본 위치 중 하나에 없을 경우 해당 설정 파일의 위치입니다. [설정 파일](#configuration_files)을 참조하십시오.                                                                                                                                                                   |
+| `--connection <name>`            | [설정 파일](#connection-credentials)에 미리 구성된 연결 정보의 이름입니다.                                                                                                                                                                                                                |
 
 명령줄 옵션의 전체 목록은 [명령줄 옵션](#command-line-options)을 참조하십시오.
 
@@ -164,6 +164,26 @@ ClickHouse Client는 `replxx`(`readline`과 유사)를 기반으로 하므로 �
 * `quit` 또는 `quit;`
 * `q`, `Q` 또는 `:q`
 * `logout` 또는 `logout;`
+
+<div id="getting-help">
+  ### 도움말 보기
+</div>
+
+클라이언트에서 벗어나지 않고도 함수, 테이블 엔진, 데이터 타입, 포맷, 설정 및 기타 시스템 구성 요소의 문서를 찾아볼 수 있습니다. `help` 다음에 이름을 입력하십시오(` /help`, `man`, `/man`과 같은 동일한 형식도 사용할 수 있습니다):
+
+```text
+help domainWithoutWWW
+```
+
+조회는 대소문자를 구분하지 않으며 [`system.documentation`](/ko/reference/system-tables/documentation) 테이블을 대상으로 수행됩니다. 일치하는 문서는 터미널에서 Markdown 형식으로 렌더링되며, 굵게/기울임꼴 텍스트, 표, 구문 강조가 적용된 코드 블록이 포함됩니다. 하나의 이름을 여러 구성 요소가 공유하는 경우(예를 들어 `file`은 함수이면서 테이블 엔진이기도 함) 해당 항목이 모두 표시됩니다.
+
+정확히 일치하는 항목이 없으면 클라이언트는 유사한 이름(오타 허용)과 해당 단어가 문서에 언급된 구성 요소를 나열합니다:
+
+```text
+help maxx_threads
+```
+
+`help`만 입력하면 간단한 사용법 요약이 출력됩니다.
 
 <div id="processing-info">
   ### 쿼리 처리 정보
@@ -487,7 +507,9 @@ AI 설정을 더 세밀하게 제어하려면 다음 위치에 있는 ClickHouse
             <enable_schema_access>true</enable_schema_access>
 
             {/* 생성 매개변수 */}
-            <temperature>0.0</temperature>
+            {/* 선택 사항: temperature는 여기에서 설정된 경우에만 모델로 전송됩니다.
+                 일부 모델은 이 매개변수를 허용하지 않으므로 기본적으로는 생략됩니다. */}
+            {/* <temperature>0.0</temperature> */}
             <max_tokens>1000</max_tokens>
             <timeout_seconds>30</timeout_seconds>
             <max_steps>10</max_steps>
@@ -518,7 +540,9 @@ AI 설정을 더 세밀하게 제어하려면 다음 위치에 있는 ClickHouse
       enable_schema_access: true
 
       # 생성 매개변수
-      temperature: 0.0      # 무작위성 제어(0.0 = deterministic)
+      # temperature는 여기에서 설정된 경우에만 모델로 전송되며 기본적으로는 생략됩니다
+      # 일부 모델은 이 매개변수를 허용하지 않기 때문입니다.
+      # temperature: 0.0    # 무작위성 제어(0.0 = deterministic)
       max_tokens: 1000      # 최대 응답 길이
       timeout_seconds: 30   # 요청 timeout
       max_steps: 10         # 최대 스키마 탐색 단계 수
@@ -538,23 +562,23 @@ AI 설정을 더 세밀하게 제어하려면 다음 위치에 있는 ClickHouse
 
 ```yaml
 ai:
-  provider: openai  # 호환성을 위해 'openai' 사용
+  provider: openai  # Use 'openai' for compatibility
   api_key: your-openrouter-api-key
   base_url: https://openrouter.ai/api/v1
-  model: anthropic/claude-3.5-sonnet  # OpenRouter 모델 명명 규칙 사용
+  model: anthropic/claude-3.5-sonnet  # Use OpenRouter model naming
 ```
 
 **최소 구성 예시:**
 
 ```yaml
-# 최소 설정 - API Key에 환경 변수 사용
+# Minimal config - uses environment variable for API key
 ai:
-  provider: openai  # OPENAI_API_KEY 환경 변수 사용
+  provider: openai  # Will use OPENAI_API_KEY env var
 
-# 설정 없음 - 자동 폴백
-# (ai 섹션이 비어 있거나 없는 경우 - OPENAI_API_KEY, ANTHROPIC_API_KEY 순으로 시도)
+# No config at all - automatic fallback
+# (Empty or no ai section - will try OPENAI_API_KEY then ANTHROPIC_API_KEY)
 
-# 모델만 재정의 - API Key에 환경 변수 사용
+# Only override model - uses env var for API key
 ai:
   provider: openai
   model: gpt-3.5-turbo
@@ -591,7 +615,7 @@ ai:
 </Accordion>
 
 <Accordion title="생성 매개변수">
-  * `temperature` - 무작위성을 제어합니다. 0.0 = deterministic, 1.0 = 창의적(기본값: `0.0`)
+  * `temperature` - 무작위성을 제어합니다. 0.0 = 결정적, 1.0 = 창의적입니다. 일부 모델은 이 매개변수를 허용하지 않으므로 기본적으로는 생략되며, 명시적으로 설정한 경우에만 모델에 전달됩니다.
   * `max_tokens` - tokens 기준 최대 응답 길이입니다(기본값: `1000`)
   * `system_prompt` - AI에 전달할 사용자 지정 지침입니다(선택 사항)
 </Accordion>
@@ -678,12 +702,12 @@ clickhouse://[2001:db8::1234]
 ClickHouse Client는 이 호스트들에 순서대로(왼쪽에서 오른쪽으로) 연결을 시도합니다.
 연결이 설정되면 나머지 호스트에는 연결을 시도하지 않습니다.
 
-연결 문자열은 `clickHouse-client`의 첫 번째 인수로 지정해야 합니다.
+연결 문자열은 `clickhouse-client`의 첫 번째 인수로 지정해야 합니다.
 연결 문자열은 `--host` 및 `--port`를 제외한 다른 [명령줄 옵션](#command-line-options)과 원하는 만큼 함께 사용할 수 있습니다.
 
 `query_parameters`에는 다음 키를 사용할 수 있습니다:
 
-| Key               | Description                                                                                |
+| Key               | 설명                                                                                |
 | ----------------- | ------------------------------------------------------------------------------------------ |
 | `secure` (or `s`) | 지정하면 클라이언트는 보안 연결(TLS)을 통해 서버에 연결합니다. [명령줄 옵션](#command-line-options)의 `--secure`를 참조하십시오. |
 
@@ -881,22 +905,22 @@ ClickHouse Client는 다음 경로 중 먼저 존재하는 파일을 사용합�
   ### 연결 옵션
 </div>
 
-| Option                               | Description                                                                                                                                                                                                                                      | Default                                                                                       |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `--connection <name>`                | 설정 파일에 있는 미리 구성된 연결 정보의 이름입니다. [연결 자격 증명](#connection-credentials)을 참조하세요.                                                                                                                                                                       | -                                                                                             |
-| `-d [ --database ] <database>`       | 이 연결의 기본 데이터베이스로 사용할 데이터베이스를 선택합니다.                                                                                                                                                                                                              | 서버 설정의 현재 데이터베이스(기본값은 `default`)                                                              |
-| `-h [ --host ] <host>`               | 연결할 ClickHouse 서버의 호스트명입니다. 호스트명 또는 IPv4/IPv6 주소를 사용할 수 있습니다. 여러 인수로 여러 호스트를 전달할 수도 있습니다.                                                                                                                                                        | `localhost`                                                                                   |
-| `--jwt <value>`                      | 인증에 JSON Web Token (JWT)을 사용합니다. <br /><br />서버 JWT 인증은 ClickHouse Cloud에서만 사용할 수 있습니다.                                                                                                                                                          | -                                                                                             |
-| `login`                              | IdP를 통해 인증하기 위해 device grant OAuth 흐름을 호출합니다. <br /><br />ClickHouse Cloud 호스트의 경우 OAuth 변수는 자동으로 추론되며, 그 외의 경우에는 `--oauth-url`, `--oauth-client-id`, `--oauth-audience`로 제공해야 합니다.                                                              | -                                                                                             |
-| `--no-warnings`                      | 클라이언트가 서버에 연결할 때 `system.warnings`의 경고를 표시하지 않습니다.                                                                                                                                                                                               | -                                                                                             |
-| `--no-server-client-version-message` | 클라이언트가 서버에 연결할 때 서버-클라이언트 버전 불일치 메시지를 표시하지 않습니다.                                                                                                                                                                                                 | -                                                                                             |
-| `--password <password>`              | 데이터베이스 사용자의 비밀번호입니다. 설정 파일에서 연결의 비밀번호를 지정할 수도 있습니다. 비밀번호를 지정하지 않으면 클라이언트가 비밀번호 입력을 요청합니다.                                                                                                                                                        | -                                                                                             |
-| `--port <port>`                      | 서버가 연결을 수락하는 포트입니다. 기본 포트는 9440(TLS) 및 9000(TLS 미사용)입니다. <br /><br />참고: 클라이언트는 HTTP(S)가 아니라 네이티브 프로토콜을 사용합니다.                                                                                                                                   | `--secure`가 지정되면 `9440`, 그렇지 않으면 `9000`입니다. 호스트명이 `.clickhouse.cloud`로 끝나면 항상 기본값은 `9440`입니다. |
-| `-s [ --secure ]`                    | TLS 사용 여부입니다. <br /><br />포트 9440(기본 보안 포트) 또는 ClickHouse Cloud에 연결할 때 자동으로 활성화됩니다. <br /><br />[설정 파일](#configuration_files)에서 CA 인증서를 구성해야 할 수 있습니다. 사용 가능한 구성 설정은 [서버 측 TLS 구성](/ko/reference/settings/server-settings/settings#openssl)과 동일합니다. | 포트 9440 또는 ClickHouse Cloud에 연결할 때 자동으로 활성화됨                                                  |
-| `--ssh-key-file <path-to-file>`      | 서버 인증에 사용할 SSH 개인 키가 들어 있는 파일입니다.                                                                                                                                                                                                                | -                                                                                             |
-| `--ssh-key-passphrase <value>`       | `--ssh-key-file`에 지정한 SSH 개인 키의 패스프레이스입니다.                                                                                                                                                                                                       | -                                                                                             |
-| `--tls-sni-override <server name>`   | TLS를 사용하는 경우 핸드셰이크에 전달할 서버 이름(SNI)입니다.                                                                                                                                                                                                           | `-h` 또는 `--host`로 지정한 호스트입니다.                                                                 |
-| `-u [ --user ] <username>`           | 연결에 사용할 데이터베이스 사용자입니다.                                                                                                                                                                                                                           | `default`                                                                                     |
+| Option                               | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Default                                                                                                                                                                          |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--connection <name>`                | 설정 파일에 있는 미리 구성된 연결 정보의 이름입니다. [연결 자격 증명](#connection-credentials)을 참조하세요.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | -                                                                                                                                                                                |
+| `-d [ --database ] <database>`       | 이 연결의 기본 데이터베이스로 사용할 데이터베이스를 선택합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | 서버 설정의 현재 데이터베이스(기본값은 `default`)                                                                                                                                                 |
+| `-h [ --host ] <host>`               | 연결할 ClickHouse 서버의 호스트명입니다. 호스트명 또는 IPv4/IPv6 주소를 사용할 수 있습니다. 여러 인수로 여러 호스트를 전달할 수도 있습니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `localhost`                                                                                                                                                                      |
+| `--jwt <value>`                      | 인증에 JSON Web Token (JWT)을 사용합니다. <br /><br />서버 JWT 인증은 ClickHouse Cloud에서만 사용할 수 있습니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | -                                                                                                                                                                                |
+| `--login`                            | IdP를 통해 인증하기 위해 device grant OAuth 흐름을 호출합니다. <br /><br />ClickHouse Cloud 호스트의 경우 OAuth 변수는 자동으로 추론되며, 그 외의 경우에는 `--oauth-url`, `--oauth-client-id`, `--oauth-audience`로 제공해야 합니다.                                                                                                                                                                                                                                                                                                                                                                                                    | -                                                                                                                                                                                |
+| `--no-warnings`                      | 클라이언트가 서버에 연결할 때 `system.warnings`의 경고를 표시하지 않습니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | -                                                                                                                                                                                |
+| `--no-server-client-version-message` | 클라이언트가 서버에 연결할 때 서버-클라이언트 버전 불일치 메시지를 표시하지 않습니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | -                                                                                                                                                                                |
+| `--password <password>`              | 데이터베이스 사용자의 비밀번호입니다. 설정 파일에서 연결의 비밀번호를 지정할 수도 있습니다. 비밀번호를 지정하지 않으면 클라이언트가 비밀번호 입력을 요청합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | -                                                                                                                                                                                |
+| `--port <port>`                      | 서버가 연결을 수락하는 포트입니다. 기본 포트는 9440(TLS) 및 9000(TLS 미사용)입니다. <br /><br />참고: 클라이언트는 HTTP(S)가 아니라 네이티브 프로토콜을 사용합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `--secure`가 지정되면 `9440`, 그렇지 않으면 `9000`입니다. 호스트명이 `.clickhouse.cloud`로 끝나면 항상 기본값은 `9440`입니다. `--port`와 `--secure`를 모두 지정하지 않으면 포트 `9000`과 `9440`을 동시에 프로브하고, 먼저 응답하는 포트를 사용합니다. |
+| `-s [ --secure ]`                    | TLS 사용 여부입니다. <br /><br />포트 9440(기본 보안 포트) 또는 ClickHouse Cloud에 연결할 때, 그리고 `--port`와 `--secure`를 모두 지정하지 않았고 보안 포트가 프로브에 먼저 응답하는 경우 자동으로 활성화됩니다. 이는 보안 포트에서만 응답하는 서버(예: 일반 포트가 방화벽으로 차단된 `play.clickhouse.com`)에서는 항상 해당하며, 두 포트에서 모두 수신 대기하는 서버에서도 해당할 수 있습니다. 이 경우 TLS를 요청한 것이 아니므로, 사용할 수 없는 보안 포트(예: 신뢰할 수 없는 인증서)는 오류가 아닙니다. 클라이언트는 일반 포트로 대체하며, 이는 자동 선택이 없었다면 연결했을 포트입니다. TLS를 필수로 설정하려면 `--secure`를 지정하세요. <br /><br />[설정 파일](#configuration_files)에서 CA 인증서를 구성해야 할 수 있습니다. 사용 가능한 구성 설정은 [서버 측 TLS 구성](/ko/reference/settings/server-settings/settings/other#openssl)과 동일합니다. | 포트 9440 또는 ClickHouse Cloud에 연결할 때 자동으로 활성화됨                                                                                                                                     |
+| `--ssh-key-file <path-to-file>`      | 서버 인증에 사용할 SSH 개인 키가 들어 있는 파일입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | -                                                                                                                                                                                |
+| `--ssh-key-passphrase <value>`       | `--ssh-key-file`에 지정한 SSH 개인 키의 패스프레이스입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | -                                                                                                                                                                                |
+| `--tls-sni-override <server name>`   | TLS를 사용하는 경우 핸드셰이크에 전달할 서버 이름(SNI)입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `-h` 또는 `--host`로 지정한 호스트입니다.                                                                                                                                                    |
+| `-u [ --user ] <username>`           | 연결에 사용할 데이터베이스 사용자입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `default`                                                                                                                                                                        |
 
 <Note>
   `--host`, `--port`, `--user`, `--password` 옵션 대신 [연결 문자열](#connection_string)도 사용할 수 있습니다.
@@ -906,13 +930,13 @@ ClickHouse Client는 다음 경로 중 먼저 존재하는 파일을 사용합�
   ### 쿼리 옵션
 </div>
 
-| Option                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--param_<name>=<value>`        | [매개변수가 있는 쿼리](#cli-queries-with-parameters)의 매개변수에 대한 치환 값입니다.                                                                                                                                                                                                                                                                                                                                                                                        |
-| `-q [ --query ] <query>`        | batch mode에서 실행할 쿼리입니다. 여러 번 지정할 수 있으며(`--query "SELECT 1" --query "SELECT 2"`), 세미콜론으로 구분된 여러 쿼리를 한 번에 지정할 수도 있습니다(`--query "SELECT 1; SELECT 2;"`). 후자의 경우 `VALUES` 이외의 포맷을 사용하는 `INSERT` 쿼리는 빈 줄로 구분해야 합니다. <br /><br />매개변수 없이 단일 쿼리를 지정할 수도 있습니다: `clickhouse-client "SELECT 1"` <br /><br />`--queries-file`과 함께 사용할 수 없습니다.                                                                                                                    |
-| `--queries-file <path-to-file>` | 쿼리가 들어 있는 파일의 경로입니다. `--queries-file`은 여러 번 지정할 수 있습니다. 예: `--queries-file queries1.sql --queries-file queries2.sql`. <br /><br />`--query`와 함께 사용할 수 없습니다.                                                                                                                                                                                                                                                                                           |
-| `-m [ --multiline ]`            | 지정하면 여러 줄 쿼리를 허용합니다(Enter를 눌러도 쿼리가 전송되지 않음). 쿼리는 세미콜론으로 끝날 때만 전송됩니다.                                                                                                                                                                                                                                                                                                                                                                                  |
-| `--inline-insert-data`          | 데이터를 Native 형식의 블록으로 변환하는 대신, `INSERT ... VALUES`(및 기타 인라인 포맷)를 쿼리 텍스트에 있는 그대로 전송합니다. 서버가 인라인 데이터를 직접 구문 분석하므로 테이블(table) 구조와 컬럼(column) 기본값을 클라이언트로 다시 보내는 왕복 과정을 피할 수 있습니다. 따라서 네이티브 프로토콜을 통해 많은 소규모 삽입을 수행할 때 성능이 향상될 수 있습니다. [`send_table_structure_on_insert_with_inline_data`](/ko/reference/settings/session-settings#send_table_structure_on_insert_with_inline_data)를 자동으로 `0`으로 설정합니다. 인라인 데이터와 외부 데이터(stdin 또는 `INFILE`의 데이터)는 함께 사용할 수 없습니다. |
+| Option                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--param_<name>=<value>`        | [매개변수가 있는 쿼리](#cli-queries-with-parameters)의 매개변수에 대한 치환 값입니다.                                                                                                                                                                                                                                                                                                                                                                                             |
+| `-q [ --query ] <query>`        | batch mode에서 실행할 쿼리입니다. 여러 번 지정할 수 있으며(`--query "SELECT 1" --query "SELECT 2"`), 세미콜론으로 구분된 여러 쿼리를 한 번에 지정할 수도 있습니다(`--query "SELECT 1; SELECT 2;"`). 후자의 경우 `VALUES` 이외의 포맷을 사용하는 `INSERT` 쿼리는 빈 줄로 구분해야 합니다. <br /><br />매개변수 없이 단일 쿼리를 지정할 수도 있습니다: `clickhouse-client "SELECT 1"` <br /><br />`--queries-file`과 함께 사용할 수 없습니다.                                                                                                                         |
+| `--queries-file <path-to-file>` | 쿼리가 들어 있는 파일의 경로입니다. `--queries-file`은 여러 번 지정할 수 있습니다. 예: `--queries-file queries1.sql --queries-file queries2.sql`. <br /><br />`--query`와 함께 사용할 수 없습니다.                                                                                                                                                                                                                                                                                                |
+| `-m [ --multiline ]`            | 지정하면 여러 줄 쿼리를 허용합니다(Enter를 눌러도 쿼리가 전송되지 않음). 쿼리는 세미콜론으로 끝날 때만 전송됩니다.                                                                                                                                                                                                                                                                                                                                                                                       |
+| `--inline-insert-data`          | 데이터를 Native 형식의 블록으로 변환하는 대신, `INSERT ... VALUES`(및 기타 인라인 포맷)를 쿼리 텍스트에 있는 그대로 전송합니다. 서버가 인라인 데이터를 직접 구문 분석하므로 테이블(table) 구조와 컬럼(column) 기본값을 클라이언트로 다시 보내는 왕복 과정을 피할 수 있습니다. 따라서 네이티브 프로토콜을 통해 많은 소규모 삽입을 수행할 때 성능이 향상될 수 있습니다. [`send_table_structure_on_insert_with_inline_data`](/ko/reference/settings/session-settings/send#send_table_structure_on_insert_with_inline_data)를 자동으로 `0`으로 설정합니다. 인라인 데이터와 외부 데이터(stdin 또는 `INFILE`의 데이터)는 함께 사용할 수 없습니다. |
 
 <div id="command-line-options-query-settings">
   ### 쿼리 설정
@@ -930,15 +954,17 @@ $ clickhouse-client --max_threads 1
   ### 포맷 옵션
 </div>
 
-| 옵션                                | 설명                                                                                                                                           | 기본값                                                                 |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `-f [ --format ] <format>`        | 지정한 포맷으로 결과를 출력합니다. <br /><br />지원되는 포맷 목록은 [입력 및 출력 데이터 포맷](/ko/reference/formats/index)을 참조하십시오.                                              | `TabSeparated`                                                      |
-| `--pager <command>`               | 모든 출력을 이 명령으로 전달합니다. 일반적으로 `less`(예: 가로로 긴 결과 집합을 표시하려면 `less -S`) 또는 이와 비슷한 명령을 사용합니다.                                                      | -                                                                   |
-| `-E [ --vertical ]`               | 결과를 출력할 때 [Vertical 형식](/ko/reference/formats/Vertical)을 사용합니다. 이는 `–-format Vertical`과 같습니다. 이 형식에서는 각 값이 별도의 줄에 출력되므로 열이 많은 테이블을 표시할 때 유용합니다. | -                                                                   |
-| `--echo [ <bool> ]`               | 실행 전에 각 쿼리를 출력합니다. 선택적 불리언 값을 받습니다.                                                                                                          | 대화형 모드에서는 `true`, non-interactive (batch) mode에서는 `false` |
-| `--echo-formatted [ <bool> ]`     | 출력되는 쿼리를 포맷합니다. 선택적 불리언 값을 받습니다.                                                                                                             | 대화형 모드에서는 `true`, non-interactive (batch) mode에서는 `false` |
-| `--echo-query-id [ <bool> ]`      | 실행 전에 쿼리 ID를 출력합니다. 선택적 불리언 값을 받습니다.                                                                                                      | 대화형 모드에서는 `true`, non-interactive (batch) mode에서는 `false` |
-| `--highlight [ --hilite ] <bool>` | 명령 프롬프트와 출력되는 쿼리의 구문 강조를 켜거나 끕니다.                                                                                                            | `true`                                                              |
+| 옵션                                | 설명                                                                                                                                                                                                                                                                                                                       | 기본값                                                       |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| `-f [ --format ] <format>`        | 지정한 포맷으로 결과를 출력합니다. <br /><br />지원되는 포맷 목록은 [입력 및 출력 데이터 포맷](/ko/reference/formats/index)을 참조하십시오.                                                                                                                                                                                                                          | `TabSeparated`                                            |
+| `--pager <command>`               | 모든 출력을 이 명령으로 전달합니다. 일반적으로 `less`(예: 가로로 긴 결과 집합을 표시하려면 `less -S`) 또는 이와 비슷한 명령을 사용합니다.                                                                                                                                                                                                                                  | -                                                         |
+| `-E [ --vertical ]`               | 결과를 출력할 때 [Vertical 포맷](/ko/reference/formats/Vertical)을 사용합니다. 이는 `–-format Vertical`과 같습니다. 이 포맷에서는 각 값이 별도의 줄에 출력되므로 열이 많은 테이블을 표시할 때 유용합니다.                                                                                                                                                                             | -                                                         |
+| `--echo [ <bool> ]`               | 실행 전에 각 쿼리를 출력합니다. 선택적 불리언 값을 받습니다.                                                                                                                                                                                                                                                                                      | 대화형 모드에서는 `true`, non-interactive (batch) mode에서는 `false` |
+| `--echo-formatted [ <bool> ]`     | 출력되는 쿼리를 포맷합니다. 선택적 불리언 값을 받습니다.                                                                                                                                                                                                                                                                                         | 대화형 모드에서는 `true`, non-interactive (batch) mode에서는 `false` |
+| `--echo-query-id [ <bool> ]`      | 실행 전에 쿼리 ID를 출력합니다. 선택적 불리언 값을 받습니다.                                                                                                                                                                                                                                                                                     | 대화형 모드에서는 `true`, non-interactive (batch) mode에서는 `false` |
+| `--echo-query-separator <string>` | 포맷된 에코 쿼리 앞에 이 구분자를 출력합니다(`--echo-formatted` 필요). 이렇게 하면 입력한 쿼리와 다시 포맷되어 출력된 쿼리를 더 쉽게 구분할 수 있습니다.                                                                                                                                                                                                                        | 비어 있음(비활성화)                                               |
+| `--highlight [ --hilite ] <bool>` | 명령 프롬프트와 출력되는 쿼리의 구문 강조를 켜거나 끕니다.                                                                                                                                                                                                                                                                                        | `true`                                                    |
+| `--hints <bool>`                  | 커서가 입력 끝에 있을 때 가장 잘 일치하는 제안에 대해 입력 중 자동완성 힌트(인라인 &quot;ghost&quot; 텍스트)를 표시합니다. 위/아래(또는 Ctrl-Up/Ctrl-Down)로 힌트를 탐색하고, Tab 또는 Right로 인라인 힌트를 적용합니다. `Enter`는 명시적으로 선택된 힌트가 있을 때만 해당 힌트를 적용하고, 그렇지 않으면 쿼리를 실행합니다. `Tab`은 기존 자동완성 목록도 엽니다. `--highlight`(힌트에는 색상이 필요함)와 제안 기능이 필요하므로 `--disable_suggestion`을 사용하면 힌트도 꺼집니다. | `true`                                                    |
 
 <div id="command-line-options-execution-details">
   ### 실행 세부 정보

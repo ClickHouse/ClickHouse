@@ -7,6 +7,8 @@ title: 'Recherche vectorielle exacte et approximative'
 doc_type: 'guide'
 ---
 
+import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
 Le problème qui consiste à trouver les N points les plus proches dans un espace multidimensionnel (vectoriel) pour un point donné est appelé [recherche des plus proches voisins](https://en.wikipedia.org/wiki/Nearest_neighbor_search), ou plus simplement : recherche vectorielle.
 Il existe deux grandes approches pour effectuer une recherche vectorielle :
 
@@ -24,7 +26,8 @@ ORDER BY <DistanceFunction>(vectors, reference_vector)
 LIMIT <N>
 ```
 
-Les points de l’espace vectoriel sont stockés dans une colonne `vectors` de type tableau, par exemple [Array(Float64)](/fr/reference/data-types/array), [Array(Float32)](/fr/reference/data-types/array) ou [Array(BFloat16)](/fr/reference/data-types/array).
+Les points de l’espace vectoriel sont stockés dans une colonne `vectors` de type [Array(Float64)](/fr/reference/data-types/array), [Array(Float32)](/fr/reference/data-types/array) ou [Array(BFloat16)](/fr/reference/data-types/array).
+Dans la pratique, nous recommandons généralement d’utiliser des tableaux [BFloat16](/fr/reference/data-types/float).
 Le vecteur de référence est un tableau constant, défini comme une expression de table commune.
 `<DistanceFunction>` calcule la distance entre le point de référence et tous les points stockés.
 N’importe laquelle des [fonctions de distance](/fr/reference/functions/regular-functions/distance-functions) disponibles peut être utilisée à cette fin.
@@ -35,15 +38,21 @@ N’importe laquelle des [fonctions de distance](/fr/reference/functions/regular
 </div>
 
 Une recherche vectorielle exacte peut être effectuée en utilisant telle quelle la requête SELECT ci-dessus.
-Le temps d’exécution de ces requêtes est généralement proportionnel au nombre de vecteurs stockés et à leur dimension, c’est-à-dire au nombre d’éléments du tableau.
-Par ailleurs, comme ClickHouse effectue un balayage exhaustif de tous les vecteurs, le temps d’exécution dépend également du nombre de threads utilisés par la requête (voir le paramètre [max&#95;threads](/fr/reference/settings/session-settings#max_threads)).
+Le temps d’exécution de ces requêtes est généralement proportionnel au nombre de vecteurs stockés, au nombre d’éléments vectoriels (= la dimension) et à la largeur en bits des éléments vectoriels.
+Par ailleurs, comme ClickHouse effectue un balayage exhaustif de tous les vecteurs, le temps d’exécution dépend également du nombre de threads utilisés par la requête (voir le paramètre [max&#95;threads](/fr/reference/settings/session-settings/max-threads#max_threads)).
 
 <div id="exact-nearest-neighbor-search-example">
   ### Exemple
 </div>
 
 ```sql
-CREATE TABLE tab(id Int32, vec Array(Float32)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab
+(
+    id Int32,
+    vec Array(BFloat16)
+)
+ENGINE = MergeTree
+ORDER BY id;
 
 INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
 
@@ -88,9 +97,9 @@ Un index de similarité vectorielle peut être créé sur une nouvelle table com
 ```sql
 CREATE TABLE table
 (
-  [...],
-  vectors Array(Float*),
-  INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>]
+    [...],
+    vectors Array([Float64|Float32|BFloat16]),
+    INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>]
 )
 ENGINE = MergeTree
 ORDER BY [...]
@@ -123,7 +132,7 @@ Pour les données normalisées, `L2Distance` est généralement le meilleur choi
   Par conséquent, les index vectoriels avec `L2Distance` et `cosineDistance` ne peuvent être utilisés que par des requêtes `SELECT [...] ORDER BY [...] ASC` (`ASC` est la valeur par défaut de `ORDER BY`), tandis que les index vectoriels construits pour `dotProduct` ne peuvent être utilisés que par des requêtes `SELECT [...] ORDER BY [...] DESC`.
 </Note>
 
-`<dimensions>` spécifie la cardinalité du tableau (nombre d&#39;éléments) dans la colonne sous-jacente.
+`<dimensions>` spécifie la cardinalité du tableau (nombre d&#39;éléments) dans la colonne source.
 Si ClickHouse trouve un tableau avec une cardinalité différente lors de la création de l&#39;index, l&#39;index est abandonné et une erreur est renvoyée.
 
 Le paramètre facultatif GRANULARITY `<N>` fait référence à la taille des granules d&#39;index (voir [ici](/fr/concepts/features/performance/skip-indexes/skipping-indexes)).
@@ -139,9 +148,9 @@ Si HNSW est utilisé comme type, les utilisateurs peuvent éventuellement spéci
 ```sql
 CREATE TABLE table
 (
-  [...],
-  vectors Array(Float*),
-  INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>, <dimensions>[, <quantization>, <hnsw_max_connections_per_layer>, <hnsw_candidate_list_size_for_construction>]) [GRANULARITY N]
+    [...],
+    vectors Array([Float64|Float32|BFloat16]),
+    INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>, <dimensions>[, <quantization>, <hnsw_max_connections_per_layer>, <hnsw_candidate_list_size_for_construction>]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY [...]
@@ -210,7 +219,7 @@ La formule ci-dessus ne prend pas en compte la mémoire supplémentaire dont les
 </div>
 
 <Note>
-  Pour utiliser les index de similarité vectorielle, le paramètre [compatibility](/fr/reference/settings/session-settings) doit être défini sur `''` (la valeur par défaut), `'25.1'` ou une version ultérieure.
+  Pour utiliser les index de similarité vectorielle, le paramètre [compatibility](/fr/reference/settings/session-settings/compatibility#compatibility) doit être défini sur `''` (la valeur par défaut), `'25.1'` ou une version ultérieure.
 </Note>
 
 Les index de similarité vectorielle prennent en charge les requêtes SELECT de la forme suivante :
@@ -224,15 +233,15 @@ ORDER BY <DistanceFunction>(vectors, reference_vector)
 LIMIT <N>
 ```
 
-L&#39;optimiseur de requêtes de ClickHouse tente de faire correspondre le modèle de requête ci-dessus et d&#39;exploiter les vector similarity indexes disponibles.
-Une requête ne peut utiliser un vector similarity index que si la fonction de distance dans la requête SELECT est identique à celle utilisée dans la définition de l&#39;index.
+L&#39;optimiseur de requêtes de ClickHouse tente de faire correspondre le modèle de requête ci-dessus et d&#39;exploiter les index de similarité vectorielle disponibles.
+Une requête ne peut utiliser un index de similarité vectorielle que si la fonction de distance dans la requête SELECT est identique à celle utilisée dans la définition de l&#39;index.
 
-Les utilisateurs avancés peuvent fournir une valeur personnalisée pour le paramètre [hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;search](/fr/reference/settings/session-settings#hnsw_candidate_list_size_for_search) (également connu sous le nom d&#39;hyperparamètre HNSW &quot;ef&#95;search&quot;) afin d&#39;ajuster la taille de la liste de candidats lors de la recherche (par exemple, `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
+Les utilisateurs avancés peuvent fournir une valeur personnalisée pour le paramètre [hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;search](/fr/reference/settings/session-settings/other#hnsw_candidate_list_size_for_search) (également connu sous le nom d&#39;hyperparamètre HNSW &quot;ef&#95;search&quot;) afin d&#39;ajuster la taille de la liste de candidats lors de la recherche (par exemple, `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
 La valeur par défaut du paramètre, 256, convient à la grande majorité des cas d&#39;usage.
 Des valeurs plus élevées améliorent la précision au détriment des performances.
 
 Si la requête peut utiliser un index de similarité vectorielle, ClickHouse vérifie que la valeur LIMIT `<N>` fournie dans les requêtes SELECT est dans des limites raisonnables.
-Plus précisément, une erreur est renvoyée si `<N>` est supérieur à la valeur du paramètre [max&#95;limit&#95;for&#95;vector&#95;search&#95;queries](/fr/reference/settings/session-settings#max_limit_for_vector_search_queries), dont la valeur par défaut est 100.
+Plus précisément, une erreur est renvoyée si `<N>` est supérieur à la valeur du paramètre [max&#95;limit&#95;for&#95;vector&#95;search&#95;queries](/fr/reference/settings/session-settings/max#max_limit_for_vector_search_queries), dont la valeur par défaut est 100.
 Des valeurs LIMIT trop élevées peuvent ralentir les recherches et indiquent généralement une erreur d&#39;utilisation.
 
 Pour vérifier si une requête SELECT utilise un index de similarité vectorielle, vous pouvez la préfixer avec `EXPLAIN indexes = 1`.
@@ -248,7 +257,7 @@ ORDER BY L2Distance(vec, reference_vec) ASC
 LIMIT 10;
 ```
 
-peut retourner
+peut renvoyer
 
 ```result
     ┌─explain─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -271,7 +280,7 @@ peut retourner
 ```
 
 Dans cet exemple, 1 million de vecteurs issus du [dbpedia dataset](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M), chacun de dimension 1536, sont stockés dans 575 granules, soit 1,7k lignes par granule.
-La requête demande 10 voisins et le vector similarity index les identifie dans 10 granules distincts.
+La requête demande 10 voisins et l’index de similarité vectorielle les identifie dans 10 granules distincts.
 Ces 10 granules seront lus lors de l&#39;exécution de la requête.
 
 Les index de similarité vectorielle sont utilisés si la sortie contient `Skip` ainsi que le nom et le type de l&#39;index vectoriel (dans l&#39;exemple, `idx` et `vector_similarity`).
@@ -279,7 +288,7 @@ Dans ce cas, l&#39;index de similarité vectorielle a éliminé deux des quatre 
 Plus le nombre de granules pouvant être éliminés est important, plus l&#39;utilisation de l&#39;index est efficace.
 
 <Tip>
-  Pour forcer l’utilisation de l’index, vous pouvez exécuter la requête SELECT avec le paramètre [force&#95;data&#95;skipping&#95;indexes](/fr/reference/settings/session-settings#force_data_skipping_indices) (indiquez le nom de l’index comme valeur du paramètre).
+  Pour forcer l’utilisation de l’index, vous pouvez exécuter la requête SELECT avec le paramètre [force&#95;data&#95;skipping&#95;indices](/fr/reference/settings/session-settings/force#force_data_skipping_indices) (indiquez le nom de l’index comme valeur du paramètre).
 </Tip>
 
 **Post-filtrage et pré-filtrage**
@@ -288,13 +297,13 @@ Les utilisateurs peuvent éventuellement spécifier une clause `WHERE` avec des 
 ClickHouse évaluera ces conditions de filtre selon une stratégie de post-filtrage ou de pré-filtrage.
 En résumé, les deux stratégies déterminent l&#39;ordre dans lequel les filtres sont évalués :
 
-* Le post-filtrage signifie que l’index de similarité vectorielle est évalué en premier, puis que ClickHouse évalue le ou les filtres supplémentaires spécifiés dans la clause `WHERE`.
-* Le pré-filtrage signifie que l’ordre d’évaluation des filtres est inverse.
+* Le post-filtrage signifie que l’index de similarité vectorielle est évalué en premier, puis ClickHouse évalue le ou les filtres supplémentaires spécifiés dans la clause `WHERE`.
+* Le pré-filtrage signifie que l’ordre d’évaluation des filtres est inversé.
 
-Ces stratégies présentent des compromis différents :
+Les stratégies présentent différents compromis :
 
 * Le post-filtrage présente un problème général : il peut renvoyer moins de lignes que le nombre demandé dans la clause `LIMIT <N>`. Cette situation se produit lorsqu’une ou plusieurs lignes de résultat renvoyées par l’index de similarité vectorielle ne satisfont pas les filtres supplémentaires.
-* Le pré-filtrage est généralement un problème non résolu. Certaines bases de données vectorielles spécialisées proposent des algorithmes de pré-filtrage, mais la plupart des bases de données relationnelles (y compris ClickHouse) reviennent à une recherche exacte des voisins, c’est-à-dire à un balayage brute-force sans index.
+* Le pré-filtrage est généralement un problème non résolu. Certaines bases de données vectorielles spécialisées proposent des algorithmes de pré-filtrage, mais la plupart des bases de données relationnelles (y compris ClickHouse) reviennent à une recherche exacte des voisins, c’est-à-dire à un balayage exhaustif sans index.
 
 La stratégie utilisée dépend de la condition de filtrage.
 
@@ -322,8 +331,8 @@ Si les conditions de filtre supplémentaires ne peuvent pas être évaluées à 
 
 Si les conditions de filtre supplémentaires peuvent être évaluées à l’aide de la [clé primaire](/fr/reference/engines/table-engines/mergetree-family/mergetree#primary-key) (c’est-à-dire qu’elles forment un préfixe de la clé primaire) et
 
-* la condition de filtre élimine au moins une ligne dans une partie, ClickHouse basculera vers le préfiltrage pour les plages « survivantes » au sein de la partie,
-* la condition de filtre n’élimine aucune ligne dans une partie, ClickHouse effectuera un post-filtrage pour la partie.
+* la condition de filtre élimine au moins une ligne dans une part, ClickHouse basculera vers le préfiltrage pour les plages « survivantes » au sein de la part,
+* la condition de filtre n’élimine aucune ligne dans une part, ClickHouse effectuera un post-filtrage pour la part.
 
 En pratique, ce dernier cas est plutôt peu probable.
 
@@ -334,7 +343,7 @@ Dans ce cas, l’index de similarité vectorielle est évalué en premier, car i
 
 Pour un contrôle plus fin entre post-filtrage et préfiltrage, deux paramètres peuvent être utilisés :
 
-Le paramètre [vector&#95;search&#95;filter&#95;strategy](/fr/reference/settings/session-settings#vector_search_filter_strategy) (par défaut : `auto`, qui implémente les heuristiques ci-dessus) peut être défini sur `prefilter`.
+Le paramètre [vector&#95;search&#95;filter&#95;strategy](/fr/reference/settings/session-settings/vector-search#vector_search_filter_strategy) (par défaut : `auto`, qui implémente les heuristiques ci-dessus) peut être défini sur `prefilter`.
 Cela est utile pour forcer le préfiltrage lorsque les conditions de filtre supplémentaires sont extrêmement sélectives.
 Par exemple, la requête suivante peut bénéficier du préfiltrage :
 
@@ -349,7 +358,7 @@ LIMIT 10
 En supposant que seul un très petit nombre de livres coûtent moins de 2 dollars, le post-filtrage peut ne renvoyer aucune ligne, car les 10 meilleures correspondances renvoyées par l’index vectoriel peuvent toutes avoir un prix supérieur à 2 dollars.
 En forçant le pré-filtrage (ajoutez `SETTINGS vector_search_filter_strategy = 'prefilter'` à la requête), ClickHouse trouve d’abord tous les livres dont le prix est inférieur à 2 dollars, puis exécute une recherche vectorielle brute-force sur les livres trouvés.
 
-Autre approche pour résoudre le problème ci-dessus : configurer le paramètre [vector&#95;search&#95;index&#95;fetch&#95;multiplier](/fr/reference/settings/session-settings#vector_search_index_fetch_multiplier) (par défaut : `1.0`, maximum : `1000.0`) sur une valeur &gt; `1.0` (par exemple, `2.0`).
+Autre approche pour résoudre le problème ci-dessus : configurer le paramètre [vector&#95;search&#95;index&#95;fetch&#95;multiplier](/fr/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier) sur une valeur &gt; `1.0` (par exemple, `2.0`) (par défaut : `1.0`, maximum : `1000.0`).
 Le nombre de plus proches voisins récupérés depuis l’index vectoriel est multiplié par la valeur du paramètre, puis le filtre supplémentaire est appliqué à ces lignes afin de renvoyer jusqu’à LIMIT lignes.
 Par exemple, nous pouvons exécuter à nouveau la requête, mais avec le multiplicateur `3.0` :
 
@@ -362,21 +371,23 @@ LIMIT 10
 SETTING vector_search_index_fetch_multiplier = 3.0;
 ```
 
-ClickHouse récupérera 3,0 x 10 = 30 plus proches voisins dans l’index vectoriel de chaque fragment, puis appliquera les filtres supplémentaires.
+ClickHouse récupérera 3,0 x 10 = 30 plus proches voisins dans l’index vectoriel de chaque part, puis appliquera les filtres supplémentaires.
 Seuls les dix voisins les plus proches seront renvoyés.
 À noter que le paramètre `vector_search_index_fetch_multiplier` peut atténuer ce problème, mais dans des cas extrêmes (condition WHERE très sélective), il reste possible que moins de N lignes demandées soient renvoyées.
 
-**Réévaluation du score**
+**rescoring**
 
-Les skip indexes dans ClickHouse filtrent généralement au niveau de la granule, c.-à-d. qu’une recherche dans un skip index renvoie (en interne) une liste de granules potentiellement correspondantes, ce qui réduit la quantité de données lues lors de l’analyse qui suit.
-Cela fonctionne bien pour les skip indexes en général, mais dans le cas des index de similarité vectorielle, cela crée un &quot;décalage de granularité&quot;.
-Plus précisément, l’index de similarité vectorielle détermine les numéros de ligne des N vecteurs les plus similaires pour un vecteur de référence donné, mais il doit ensuite extrapoler ces numéros de ligne en numéros de granule.
-ClickHouse charge alors ces granules depuis le disque, puis répète le calcul de distance pour tous les vecteurs qu’elles contiennent.
-Cette étape est appelée réévaluation et, bien qu’elle puisse théoriquement améliorer la précision — rappelez-vous que l’index de similarité vectorielle ne renvoie qu’un résultat *approximatif* —, elle n’est évidemment pas optimale en termes de performances.
+Les index de saut de données dans ClickHouse filtrent généralement au niveau de la granule, c.-à-d. qu’une recherche dans un index de saut de données renvoie (en interne) une liste de granules potentiellement correspondantes, ce qui réduit la quantité de données lues lors de l’analyse qui suit.
+Cela fonctionne bien pour les index de saut de données en général, mais dans le cas des index de similarité vectorielle, cela crée un &quot;décalage de granularité&quot;.
+Plus précisément, l’index de similarité vectorielle détermine les numéros de ligne des N vecteurs les plus similaires pour un vecteur de référence donné.
+Avec le paramètre `vector_search_with_rescoring = 1`, ClickHouse lit les vecteurs d’origine en pleine précision pour les lignes candidates et calcule la distance finale dans le pipeline SQL classique.
+Lorsque le plan de requête le permet, ClickHouse limite l’analyse aux lignes candidates renvoyées par l’index vectoriel avant le calcul final de la distance.
+Cette étape est appelée rescoring et peut améliorer la précision, en particulier avec les index vectoriels quantifiés, car le classement final utilise les vecteurs stockés au lieu des distances de l’index.
+Si des filtres supplémentaires éliminent trop de candidats ou si un meilleur rappel est nécessaire, augmentez le paramètre `vector_search_index_fetch_multiplier` afin que l’index vectoriel renvoie davantage de lignes candidates pour le rescoring.
 
-ClickHouse propose donc une optimisation qui désactive la réévaluation et renvoie directement depuis l’index les vecteurs les plus similaires ainsi que leurs distances.
-Cette optimisation est activée par défaut, voir le paramètre [vector&#95;search&#95;with&#95;rescoring](/fr/reference/settings/session-settings#vector_search_with_rescoring).
-Dans les grandes lignes, son fonctionnement est le suivant : ClickHouse met à disposition les vecteurs les plus similaires et leurs distances sous la forme d’une colonne virtuelle `_distances`.
+ClickHouse propose donc une optimisation qui désactive le rescoring et renvoie directement depuis l’index les vecteurs les plus similaires ainsi que leurs distances.
+Cette optimisation est activée par défaut, voir le paramètre [vector&#95;search&#95;with&#95;rescoring](/fr/reference/settings/session-settings/vector-search#vector_search_with_rescoring).
+Dans les grandes lignes, son fonctionnement est le suivant : ClickHouse met à disposition les vecteurs les plus similaires et leurs distances sous la forme d’une colonne virtuelle `_distance`.
 Pour le constater, exécutez une requête de recherche vectorielle avec `EXPLAIN header = 1` :
 
 ```sql
@@ -392,26 +403,26 @@ SETTINGS vector_search_with_rescoring = 0
 ```result
 Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 
-    ┌─explain─────────────────────────────────────────────────────────────────────────────────────────────────┐
- 1. │ Expression (Project names)                                                                              │
- 2. │ Header: id Int32                                                                                        │
- 3. │   Limit (preliminary LIMIT (without OFFSET))                                                            │
- 4. │   Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64     │
- 5. │           __table1.id Int32                                                                             │
- 6. │     Sorting (Sorting for ORDER BY)                                                                      │
- 7. │     Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64   │
- 8. │             __table1.id Int32                                                                           │
- 9. │       Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))         │
-10. │       Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64 │
-11. │               __table1.id Int32                                                                         │
-12. │         ReadFromMergeTree (default.tab)                                                                 │
-13. │         Header: id Int32                                                                                │
-14. │                 _distance Float32                                                                       │
-    └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+    ┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression (Project names)                                                                                 │
+ 2. │ Header: id Int32                                                                                           │
+ 3. │   Limit (preliminary LIMIT (without OFFSET))                                                               │
+ 4. │   Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(BFloat16), 'Array(BFloat16)'_String)) BFloat16     │
+ 5. │           __table1.id Int32                                                                                │
+ 6. │     Sorting (Sorting for ORDER BY)                                                                         │
+ 7. │     Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(BFloat16), 'Array(BFloat16)'_String)) BFloat16   │
+ 8. │             __table1.id Int32                                                                              │
+ 9. │       Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))            │
+10. │       Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(BFloat16), 'Array(BFloat16)'_String)) BFloat16 │
+11. │               __table1.id Int32                                                                            │
+12. │         ReadFromMergeTree (default.tab)                                                                    │
+13. │         Header: id Int32                                                                                   │
+14. │                 _distance BFloat16                                                                         │
+    └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <Note>
-  Une requête exécutée sans réévaluation (`vector_search_with_rescoring = 0`) et avec les réplicas parallèles activés peut revenir à la réévaluation.
+  Une requête exécutée sans rescoring (`vector_search_with_rescoring = 0`) et avec les réplicas parallèles activés peut revenir au rescoring.
 </Note>
 
 <div id="performance-tuning">
@@ -421,18 +432,24 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 **Réglage de la compression**
 
 Dans pratiquement tous les cas d’usage, les vecteurs de la colonne sous-jacente sont denses et se compressent mal.
-Par conséquent, la [compression](/fr/reference/statements/create/table#column_compression_codec) ralentit les insertions et les lectures de la colonne vectorielle.
+Par conséquent, la [compression](/fr/reference/statements/create/table/codec) ralentit les insertions et les lectures de la colonne vectorielle.
 Nous recommandons donc de désactiver la compression.
 Pour ce faire, spécifiez `CODEC(NONE)` pour la colonne vectorielle comme ceci :
 
 ```sql
-CREATE TABLE tab(id Int32, vec Array(Float32) CODEC(NONE), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab
+(
+    id Int32,
+    vec Array(BFloat16) CODEC(NONE),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)
+)
+ENGINE = MergeTree ORDER BY id;
 ```
 
 **Optimisation de la création des index**
 
-Le cycle de vie des index de similarité vectorielle est lié à celui des parties.
-Autrement dit, chaque fois qu&#39;une nouvelle partie comportant un index de similarité vectorielle défini est créée, l&#39;index l&#39;est aussi.
+Le cycle de vie des index de similarité vectorielle est lié à celui des parts.
+Autrement dit, chaque fois qu&#39;une nouvelle part comportant un index de similarité vectorielle défini est créée, l&#39;index l&#39;est aussi.
 Cela se produit généralement lorsque des données sont [insérées](/fr/concepts/features/operations/insert/inserting-data) ou lors des [fusions](/fr/concepts/core-concepts/merges).
 Malheureusement, HNSW est connu pour ses temps de création d&#39;index élevés, ce qui peut considérablement ralentir les insertions et les fusions.
 Dans l&#39;idéal, les index de similarité vectorielle ne doivent être utilisés que si les données sont immuables ou rarement modifiées.
@@ -440,14 +457,14 @@ Dans l&#39;idéal, les index de similarité vectorielle ne doivent être utilis�
 Pour accélérer la création des index, les techniques suivantes peuvent être utilisées :
 
 Premièrement, la création des index peut être parallélisée.
-Le nombre maximal de threads de création d&#39;index peut être configuré à l&#39;aide du paramètre serveur [max&#95;build&#95;vector&#95;similarity&#95;index&#95;thread&#95;pool&#95;size](/fr/reference/settings/server-settings/settings#max_build_vector_similarity_index_thread_pool_size).
+Le nombre maximal de threads de création d&#39;index peut être configuré à l&#39;aide du paramètre serveur [max&#95;build&#95;vector&#95;similarity&#95;index&#95;thread&#95;pool&#95;size](/fr/reference/settings/server-settings/settings/max#max_build_vector_similarity_index_thread_pool_size).
 Pour des performances optimales, la valeur du paramètre doit être réglée sur le nombre de cœurs CPU.
 
-Deuxièmement, pour accélérer les instructions INSERT, les utilisateurs peuvent désactiver la création des index de saut sur les parties nouvellement insérées à l&#39;aide du paramètre de session [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/fr/reference/settings/session-settings#materialize_skip_indexes_on_insert).
-Les requêtes SELECT sur ces parties reviendront alors à une recherche exacte.
-Comme les parties insérées ont tendance à être petites par rapport à la taille totale de la table, l&#39;impact sur les performances devrait être négligeable.
+Deuxièmement, pour accélérer les instructions INSERT, les utilisateurs peuvent désactiver la création des index de saut sur les parts nouvellement insérées à l&#39;aide du paramètre de session [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/fr/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert).
+Les requêtes SELECT sur ces parts reviendront alors à une recherche exacte.
+Comme les parts insérées ont tendance à être petites par rapport à la taille totale de la table, l&#39;impact sur les performances devrait être négligeable.
 
-Troisièmement, pour accélérer les fusions, les utilisateurs peuvent désactiver la création des index de saut sur les parties fusionnées à l&#39;aide du paramètre de session [materialize&#95;skip&#95;indexes&#95;on&#95;merge](/fr/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge).
+Troisièmement, pour accélérer les fusions, les utilisateurs peuvent désactiver la création des index de saut sur les parts fusionnées à l&#39;aide du paramètre de session [materialize&#95;skip&#95;indexes&#95;on&#95;merge](/fr/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge).
 Cela, associé à l&#39;instruction [ALTER TABLE [...] MATERIALIZE INDEX [...]](/fr/reference/statements/alter/skipping-index#materialize-index), fournit un contrôle explicite sur le cycle de vie des index de similarité vectorielle.
 Par exemple, la création des index peut être différée jusqu&#39;à ce que toutes les données aient été ingérées, ou jusqu&#39;à une période de faible charge du système, comme le week-end.
 
@@ -456,7 +473,7 @@ Par exemple, la création des index peut être différée jusqu&#39;à ce que to
 Les requêtes SELECT doivent charger les index de similarité vectorielle en mémoire principale pour pouvoir les utiliser.
 Pour éviter qu&#39;un même index de similarité vectorielle soit chargé de façon répétée en mémoire principale, ClickHouse fournit un cache en mémoire dédié à ces index.
 Plus ce cache est grand, moins il y aura de chargements inutiles.
-La taille maximale du cache peut être configurée à l&#39;aide du paramètre serveur [vector&#95;similarity&#95;index&#95;cache&#95;size](/fr/reference/settings/server-settings/settings#vector_similarity_index_cache_size).
+La taille maximale du cache peut être configurée à l&#39;aide du paramètre serveur [vector&#95;similarity&#95;index&#95;cache&#95;size](/fr/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size).
 Par défaut, le cache peut atteindre 5 Go.
 
 Les messages de journal suivants (`system.text_log`) indiquent que l&#39;index de similarité vectorielle est en cours de chargement.
@@ -516,7 +533,7 @@ La quantification réduit la précision des recherches vectorielles par rapport 
 Cependant, sur la plupart des jeux de données, la quantification en brain float demi-précision (`bf16`) entraîne une perte de précision négligeable ; c’est pourquoi les index de similarité vectorielle utilisent cette technique par défaut.
 La quantification en quart de précision (`i8`) et la quantification binaire (`b1`) entraînent une perte de précision notable dans les recherches vectorielles.
 Nous ne recommandons ces deux quantifications que si la taille de l’index de similarité vectorielle dépasse nettement la taille de DRAM disponible.
-Dans ce cas, nous suggérons également d’activer le rescoring ([vector&#95;search&#95;index&#95;fetch&#95;multiplier](/fr/reference/settings/session-settings#vector_search_index_fetch_multiplier), [vector&#95;search&#95;with&#95;rescoring](/fr/reference/settings/session-settings#vector_search_with_rescoring)) afin d’améliorer la précision.
+Dans ce cas, nous suggérons également d’activer le rescoring ([vector&#95;search&#95;index&#95;fetch&#95;multiplier](/fr/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier), [vector&#95;search&#95;with&#95;rescoring](/fr/reference/settings/session-settings/vector-search#vector_search_with_rescoring)) afin d’améliorer la précision.
 La quantification binaire n’est recommandée que 1) pour des embeddings normalisés (c.-à-d. longueur du vecteur = 1, les modèles OpenAI sont généralement normalisés), et 2) si la distance cosinus est utilisée comme fonction de distance.
 En interne, la quantification binaire utilise la distance de Hamming pour construire et parcourir le graphe de proximité.
 L’étape de rescoring utilise les vecteurs d’origine en pleine précision stockés dans la table pour identifier les plus proches voisins via la distance cosinus.
@@ -582,28 +599,29 @@ Exemple de sortie :
 ```
 
 <div id="differences-to-regular-skipping-indexes">
-  #### Différences par rapport aux index de saut classiques
+  #### Différences par rapport aux index de saut de données classiques
 </div>
 
-Comme tous les [index de saut](/fr/concepts/features/performance/skip-indexes/skipping-indexes) classiques, les index de similarité vectorielle sont construits sur des granules, et chaque bloc indexé se compose de `GRANULARITY = [N]` granules (`[N]` = 1 par défaut pour les index de saut classiques).
+Comme tous les [index de saut de données](/fr/concepts/features/performance/skip-indexes/skipping-indexes) classiques, les index de similarité vectorielle sont construits sur des granules, et chaque bloc indexé se compose de `GRANULARITY = [N]` granules (`[N]` = 1 par défaut pour les index de saut de données classiques).
 Par exemple, si la granularité de l&#39;index primaire de la table est de 8192 (paramètre `index_granularity = 8192`) et que `GRANULARITY = 2`, alors chaque bloc indexé contiendra 16384 lignes.
 Cependant, les structures de données et les algorithmes de recherche approximative de voisins sont intrinsèquement orientés lignes.
 Ils stockent une représentation compacte d&#39;un ensemble de lignes et renvoient également des lignes pour les requêtes de recherche vectorielle.
-Cela entraîne des différences parfois peu intuitives dans le comportement des index de similarité vectorielle par rapport aux index de saut classiques.
+Cela entraîne des différences parfois peu intuitives dans le comportement des index de similarité vectorielle par rapport aux index de saut de données classiques.
 
 Lorsqu&#39;un utilisateur définit un index de similarité vectorielle sur une colonne, ClickHouse crée en interne un « sous-index » de similarité vectorielle pour chaque bloc d&#39;index.
 Le sous-index est « local » en ce sens qu&#39;il ne connaît que les lignes du bloc d&#39;index auquel il appartient.
 Dans l&#39;exemple précédent, en supposant qu&#39;une colonne comporte 65536 lignes, on obtient quatre blocs d&#39;index (couvrant huit granules) et un sous-index de similarité vectorielle pour chaque bloc d&#39;index.
 En théorie, un sous-index peut renvoyer directement les lignes contenant les N points les plus proches dans son bloc d&#39;index.
-Cependant, comme ClickHouse charge les données du disque en mémoire à la granularité des granules, les sous-index extrapolent les lignes correspondantes à cette granularité.
-Cela diffère des index de saut classiques, qui sautent des données à la granularité des blocs d&#39;index.
+Pour les requêtes avec `vector_search_with_rescoring = 1`, ClickHouse peut utiliser ces positions de lignes pour filtrer les lignes avant de calculer la distance finale à partir des vecteurs stockés lorsque le plan de requête permet cette optimisation.
+Sans rescoring, ClickHouse utilise directement les distances de l&#39;index vectoriel via la colonne virtuelle `_distance`.
+Les deux modes utilisent toujours les plages de granules environnantes pour planifier les lectures, ce qui diffère des index de saut de données classiques, qui sautent des données à la granularité des blocs d&#39;index.
 
 Le paramètre `GRANULARITY` détermine combien de sous-index de similarité vectorielle sont créés.
 Des valeurs `GRANULARITY` plus élevées signifient des sous-index de similarité vectorielle moins nombreux, mais plus grands, jusqu&#39;au point où une colonne (ou une data part de colonne) ne possède plus qu&#39;un seul sous-index.
 Dans ce cas, le sous-index a une vue « globale » de toutes les lignes de la colonne et peut renvoyer directement tous les granules de la colonne (part) contenant des lignes pertinentes (il y a au plus `LIMIT [N]` granules de ce type).
-Dans un second temps, ClickHouse chargera ces granules et identifiera les meilleures lignes réelles en effectuant un calcul de distance en brute-force sur toutes les lignes de ces granules.
-Avec une petite valeur de `GRANULARITY`, chacun des sous-index renvoie jusqu&#39;à `LIMIT N` granules.
-Par conséquent, davantage de granules doivent être chargés puis post-filtrés.
+Avec `vector_search_with_rescoring = 1`, ClickHouse peut alors lire les positions des lignes correspondantes et calculer la distance exacte pour ces lignes.
+Avec une petite valeur de `GRANULARITY`, chaque sous-index peut renvoyer jusqu&#39;à `LIMIT N` lignes candidates.
+Par conséquent, davantage de lignes candidates peuvent devoir être lues puis post-filtrées.
 Notez que, dans les deux cas, la précision de la recherche est équivalente ; seule la performance de traitement diffère.
 Il est généralement recommandé d&#39;utiliser une valeur élevée de `GRANULARITY` pour les index de similarité vectorielle et de revenir à des valeurs plus faibles uniquement en cas de problèmes, comme une consommation mémoire excessive des structures de similarité vectorielle.
 Si aucune valeur de `GRANULARITY` n&#39;a été spécifiée pour les index de similarité vectorielle, la valeur par défaut est de 100 millions.
@@ -615,7 +633,14 @@ Si aucune valeur de `GRANULARITY` n&#39;a été spécifiée pour les index de si
 Requêtes :
 
 ```sql title="Query"
-CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab
+(
+    id Int32,
+    vec Array(BFloat16),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)
+)
+ENGINE = MergeTree
+ORDER BY id;
 
 INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
 
@@ -641,6 +666,101 @@ Autres jeux de données d’exemple pour la recherche vectorielle approximative�
 * [dbpedia](/fr/get-started/sample-datasets/dbpedia)
 * [hackernews](/fr/get-started/sample-datasets/hacker-news-vector-search)
 
+<div id="vector-search-with-quantized-codecs">
+  ### Recherche vectorielle avec des codecs quantifiés
+</div>
+
+<ExperimentalBadge />
+
+Pour activer le codec `Quantized`, activez d&#39;abord `SET allow_experimental_codecs = 1`.
+Si vous rencontrez des problèmes, veuillez ouvrir une issue sur le [dépôt ClickHouse](https://github.com/clickhouse/clickhouse/issues).
+
+<div id="quantized-codecs-introduction">
+  #### Introduction
+</div>
+
+Un [index de similarité vectorielle](#vector-similarity-index) répond à une requête de plus proches voisins en parcourant un graphe et est très performant lorsque le graphe peut être conservé en mémoire.
+Deux facteurs limitent toutefois son applicabilité :
+
+* **Coûts de construction élevés.** La création d’index de similarité vectorielle est coûteuse.
+* **Consommation de mémoire élevée.** Les index de similarité vectorielle consomment beaucoup de mémoire et, en plus des vecteurs eux-mêmes, représentent le principal coût.
+* **Filtrage.** Avec un filtre `WHERE` sélectif, le parcours du graphe devient inefficace, car il ne peut pas atteindre le petit ensemble de lignes qui satisfont le prédicat, ou doit inspecter un nombre disproportionné de candidats pour les trouver.
+
+Un balayage exhaustif ne présente aucune de ces limitations : il ne nécessite aucune structure de données auxiliaire, les parties fusionnent naturellement par concaténation et le filtrage réduit simplement le nombre de lignes à parcourir.
+Le principal inconvénient des balayages exhaustifs réside dans le volume important de données à lire : pour des vecteurs stockés avec la pleine précision `Float32` ou `BFloat16`, le balayage exhaustif est dominé par les E/S de stockage, car toute la colonne de vecteurs doit être chargée depuis le disque.
+
+Le codec de colonne `Quantized` pallie cet inconvénient.
+Il stocke chaque vecteur deux fois : les valeurs originales en pleine précision ainsi qu’une représentation quantifiée compacte.
+Une requête de recherche vectorielle parcourt d’abord les codes quantifiés à l’aide d’une fonction de distance peu coûteuse et adaptée au SIMD, afin d’établir une liste restreinte des candidats les plus prometteurs.
+Dans un second temps, elle réévalue ces candidats à l’aide des vecteurs en pleine précision.
+Le parcours initial des codes quantifiés lit beaucoup moins d’octets depuis le stockage que ne le ferait un parcours des vecteurs originaux.
+
+Ce codec convient bien à ClickHouse, car la partie coûteuse — le parcours — correspond précisément à ce que le moteur ClickHouse est conçu pour exécuter efficacement :
+
+* **Vectorisé.** Les kernels de parcours utilisent des instructions SIMD afin de réduire la consommation de CPU.
+* **Parallèle sur les cœurs et les parties.** Un parcours se parallélise trivialement : les distances sont calculées simultanément sur tous les threads disponibles et sur toutes les parties d’une table.
+* **Distribué.** Sur un cluster partitionné, le travail est réparti entre les machines : chaque segment parcourt sa propre tranche en parallèle et le coordinateur fusionne les listes restreintes.
+* **Aucun coût de construction supplémentaire.** Les codes quantifiés sont produits lors de l’écriture des vecteurs. Aucun index supplémentaire n’est à construire, à régler ou à reconstruire ; une table est donc prête à être interrogée dès l’arrivée de ses données.
+
+<div id="quantized-codecs-declaring">
+  #### Appliquer le codec
+</div>
+
+Spécifiez le codec `Quantized(...)` pour la colonne `Array(Float32)` (ou `Array(Float64)` / `Array(BFloat16)`).
+
+```sql
+SET allow_experimental_codecs = 1;
+
+CREATE TABLE vectors
+(
+    id UInt32,
+    vec Array(BFloat16) CODEC(Quantized('rabitq', 1536))
+)
+ENGINE = MergeTree
+ORDER BY ...;
+```
+
+Le codec ne peut pas être ajouté ni modifié ultérieurement avec `ALTER TABLE`.
+
+<div id="quantized-codecs-methods">
+  #### Méthodes de quantification
+</div>
+
+Chaque méthode de quantification présente différents compromis entre taille et précision.
+L&#39;argument `dimensions` correspond à la longueur du vecteur.
+
+* `Quantized('rabitq', dimensions)` — un bit de signe par coordonnée, plus un facteur de correction du cosinus non biaisé (`dimensions/8 + 4` octets). Une option par défaut solide, compacte et peu coûteuse en `popcount`. `cosineDistance` uniquement.
+* `Quantized('turboquant', dimensions)` — deux bits par coordonnée (un code MSE sur 1 bit et un code résiduel sur 1 bit) pour des candidats plus fidèles (`dimensions/4 + 4` octets). `cosineDistance` uniquement.
+* `Quantized('int8', dimensions)` — un code `Int8` par coordonnée, plus la norme du vecteur (`dimensions + 4` octets) ; c&#39;est le code plat le plus volumineux, mais aussi le plus fidèle. Prend en charge `L2Distance` et `cosineDistance`.
+* `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka : ne conserve que les `leading_dimensions` premières dimensions, en `Int8` (avec un facteur d&#39;échelle par vecteur) ou en `BFloat16`. Des codes minuscules pour les embeddings entraînés avec Matryoshka Representation Learning. Prend en charge `L2Distance` et `cosineDistance`.
+* `Quantized('product', dimensions, nbits, m)` — quantification de produit : un dictionnaire par partie entraîné avec k-means ; chaque vecteur devient `m` codes de `nbits` bits (`dimensions` doit donc être un multiple de `m`). L&#39;option la plus compacte et celle qui offre le meilleur rappel par octet, au prix d&#39;une étape d&#39;entraînement lors de l&#39;insertion. Prend en charge `L2Distance` et `cosineDistance`.
+
+`rabitq` et `turboquant` nécessitent que `dimensions` soit un multiple de 8.
+
+<div id="quantized-codecs-searching">
+  #### Utiliser le codec
+</div>
+
+Le codec est automatiquement utilisé par le format de requête top-`k` habituel (voir la [recherche exacte](#exact-nearest-neighbor-search)) :
+
+```sql
+WITH [...] AS reference_vec
+SELECT id
+FROM vectors
+ORDER BY cosineDistance(vec, reference_vec) ASC
+LIMIT 10
+SETTINGS vector_search_use_quantized_codes = 1;
+```
+
+Le réglage `vector_search_use_quantized_codes = 1` permet à l’optimiseur de réécrire la requête sous la forme d’un parcours en deux phases.
+Ce réglage est désactivé par défaut.
+Sans lui, la même requête s’exécute sous la forme d’un parcours exact classique sur les vecteurs d’origine.
+Toutes les méthodes prennent en charge la fonction de distance `cosineDistance` ; les méthodes `int8`, `prefix` et `product` prennent également en charge `L2Distance`.
+
+Le réglage `vector_search_index_fetch_multiplier` indique le nombre de candidats présélectionnés par rapport à la clause `LIMIT` de la requête.
+Des multiplicateurs plus élevés améliorent le rappel, au prix d’un rescoring plus important.
+La valeur par défaut est `1` (sans suréchantillonnage) ; il est généralement nécessaire de l’augmenter (par exemple à `10`) pour obtenir un bon rappel.
+
 <div id="approximate-nearest-neighbor-search-qbit">
   ### Quantized Bit (QBit)
 </div>
@@ -661,13 +781,14 @@ Cela est rendu possible en stockant les données dans un format groupé par bits
 Pour déclarer une colonne de type `QBit`, utilisez la syntaxe suivante :
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 Où :
 
-* `element_type` – le type de chaque élément du vecteur. Les types pris en charge sont `BFloat16`, `Float32` et `Float64`
+* `element_type` – le type de chaque élément du vecteur. Les types pris en charge sont `Int8`, `BFloat16`, `Float32` et `Float64`
 * `dimension` – le nombre d’éléments de chaque vecteur
+* `stride` – facultatif. Un diviseur de `dimension` qui partitionne les dimensions en `dimension / stride` groupes contigus stockés dans des flux distincts, de sorte qu’une recherche portant uniquement sur les premières dimensions lise moins de flux (utile pour les embeddings Matryoshka). La valeur par défaut est `dimension`, auquel cas le type est identique, octet pour octet, à un `QBit` sans stride. Voir la [page du type de données `QBit`](/fr/reference/data-types/qbit) pour plus de détails.
 
 <div id="qbit-create">
   #### Création d’une table `QBit` et ajout de données

@@ -33,7 +33,7 @@ public:
             return;
 
         auto * has_function_node = node->as<FunctionNode>();
-        if (!has_function_node || has_function_node->getFunctionName() != "has")
+        if (!has_function_node || (has_function_node->getFunctionName() != "has" && has_function_node->getFunctionName() != "notHas"))
             return;
 
         auto & has_function_arguments_nodes = has_function_node->getArguments().getNodes();
@@ -75,7 +75,7 @@ public:
         /// node's return type, which breaks parent nodes that were already resolved against UInt8
         /// (e.g. `NOT has(...)` ends up with `NOT in(...)` whose argument is LowCardinality(UInt8)).
         if (isNullableOrLowCardinalityNullable(second_arg_type) || expr_data_type.isLowCardinality() ||
-                expr_data_type.isMap() || expr_data_type.isArray() || expr_data_type.isTuple() || expr_data_type.isObject() || expr_data_type.isDynamic() || expr_data_type.isNothing())
+                expr_data_type.isMap() || expr_data_type.isArray() || expr_data_type.isTuple() || expr_data_type.isObject() || expr_data_type.isDynamic() || expr_data_type.isVariant() || expr_data_type.isNothing())
             return;
 
         /// has() on a constant array compares raw Field values (FunctionArrayIndex::executeConst uses
@@ -105,9 +105,9 @@ public:
         if (!both_native_integers && !unwrapped_element_type->equals(*unwrapped_second_arg_type))
             return;
 
-        /// Rewrite has(const_array, elem) -> in(elem, const_array)
+        /// Rewrite has(const_array, elem) -> in(elem, const_array), notHas(const_array, elem) -> notIn(elem, const_array)
         std::swap(has_function_arguments_nodes[0], has_function_arguments_nodes[1]);
-        resolveOrdinaryFunctionNodeByName(*has_function_node, "in", getContext());
+        resolveOrdinaryFunctionNodeByName(*has_function_node, has_function_node->getFunctionName() == "has" ? "in" : "notIn", getContext());
     }
 };
 

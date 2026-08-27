@@ -8,7 +8,7 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-À partir de ClickHouse 25.7, [ClickHouse Client](/fr/concepts/features/interfaces/cli) et [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local) incluent une [fonctionnalité basée sur l’IA](/fr/concepts/features/interfaces/cli#ai-sql-generation) qui convertit des descriptions en langage naturel en requêtes SQL. Cette fonctionnalité vous permet de décrire vos besoins en données en texte clair, que le système traduit ensuite en instructions SQL correspondantes.
+À partir de ClickHouse 25.7, [ClickHouse Client](/fr/concepts/features/interfaces/cli) et [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local) incluent une [fonctionnalité basée sur l’IA](/fr/concepts/features/interfaces/client#ai-sql-generation) qui convertit des descriptions en langage naturel en requêtes SQL. Cette fonctionnalité vous permet de décrire vos besoins en données en texte clair, que le système traduit ensuite en instructions SQL correspondantes.
 
 Cette fonctionnalité est particulièrement utile si vous ne maîtrisez pas la syntaxe SQL complexe ou si vous avez besoin de générer rapidement des requêtes pour l’analyse exploratoire de données. Elle fonctionne avec les tables ClickHouse standard et prend en charge les modèles de requête courants, notamment le filtrage, l’agrégation et les jointures.
 
@@ -29,7 +29,7 @@ export ANTHROPIC_API_KEY=your_api_key
 export OPENAI_API_KEY=your_api_key
 ```
 
-Vous pouvez également [fournir un fichier de configuration](/fr/concepts/features/interfaces/cli#ai-sql-generation-configuration).
+Vous pouvez également [fournir un fichier de configuration](/fr/concepts/features/interfaces/client#ai-sql-generation-configuration).
 
 <div id="connecting-to-the-clickhouse-sql-playground">
   ## Se connecter au ClickHouse SQL playground

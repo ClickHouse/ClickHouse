@@ -13,18 +13,14 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 > В этом руководстве показано, как использовать MCP-сервер ClickHouse с [Jan.ai](https://jan.ai/docs).
 
 <Steps>
-  <Step>
-    ## Установите Jan.ai
-
+  <Step title="Установите Jan.ai" id="install-janai">
     Jan.ai — это альтернатива ChatGPT с открытым исходным кодом, которая работает полностью офлайн.
-    Вы можете скачать Jan.ai для [Mac](https://jan.ai/docs/desktop/mac), [Windows](https://jan.ai/docs/desktop/windows) или [Linux](https://jan.ai/docs/desktop/linux).
+    Вы можете скачать Jan.ai для [Mac](https://jan.ai/docs/desktop/install/mac), [Windows](https://jan.ai/docs/desktop/windows) или [Linux](https://jan.ai/docs/desktop/linux).
 
     Это нативное приложение, поэтому после загрузки его можно сразу запустить.
   </Step>
 
-  <Step>
-    ## Добавьте LLM в Jan.ai
-
+  <Step title="Добавьте LLM в Jan.ai" id="add-llm-to-janai">
     Модели можно включить через меню настроек.
 
     Чтобы включить OpenAI, нужно указать API key, как показано ниже:
@@ -32,9 +28,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     <Image img="/images/use-cases/AI_ML/MCP/0_janai_openai.webp" alt="Включение моделей OpenAI" size="md" />
   </Step>
 
-  <Step>
-    ## Включите MCP-серверы
-
+  <Step title="Включите MCP-серверы" id="enable-mcp-servers">
     На момент написания MCP-серверы в Jan.ai являются экспериментальной возможностью.
     Их можно включить, активировав экспериментальные возможности:
 
@@ -43,9 +37,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     После этого в меню слева появится пункт `MCP servers`.
   </Step>
 
-  <Step>
-    ## Настройте MCP-сервер ClickHouse
-
+  <Step title="Настройте MCP-сервер ClickHouse" id="configure-clickhouse-mcp-server">
     Если открыть меню `MCP servers`, появится список MCP-серверов, к которым можно подключиться:
 
     <Image img="/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp" alt="Список MCP-серверов" size="md" />
@@ -65,9 +57,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     <Image img="/images/use-cases/AI_ML/MCP/5_jani_tools.webp" alt="Инструменты MCP-сервера ClickHouse" size="md" />
   </Step>
 
-  <Step>
-    ## Общение с MCP-сервером ClickHouse через Jan.ai
-
+  <Step title="Общение с MCP-сервером ClickHouse через Jan.ai" id="chat-to-clickhouse-mcp-server">
     Пора начать диалог с данными, хранящимися в ClickHouse!
     Давайте зададим вопрос:
 

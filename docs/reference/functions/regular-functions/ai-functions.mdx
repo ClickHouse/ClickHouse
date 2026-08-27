@@ -9,21 +9,25 @@ doc_type: 'reference'
 AI Functions are built-in functions in ClickHouse that you can use to call AI or generate embeddings to work with your data, extract information, classify data, etc...
 
 <Note>
-AI functions are experimental. Set [`allow_experimental_ai_functions`](/reference/settings/session-settings#allow_experimental_ai_functions) to enable them.
-</Note>
+AI functions are experimental. Set [`allow_experimental_ai_functions`](/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) to enable them.
 
-<Note>
 AI functions can return unpredictable outputs. The result will highly depend on the quality of the prompt and the model used.
 </Note>
 
+<Warning>
+**Prompt injection**
+
+The input text is sent to the model and can steer its output (prompt injection). Text from external, unverified, or unsanitized sources may contain instructions that make the model return attacker-controlled content, ignore the requested format, or emit malicious payloads. Treat AI function output as untrusted: validate or sanitize it before using it in downstream steps such as building SQL, shell commands, further queries, or access-control decisions.
+</Warning>
+
 All functions are sharing a common infrastructure that provides:
 
-- **Quota enforcement**: Per-query limits on tokens ([`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) and API calls ([`ai_function_max_api_calls_per_query`](/reference/settings/session-settings#ai_function_max_api_calls_per_query)).
-- **Retry with backoff**: Transient failures are retried ([`ai_function_max_retries`](/reference/settings/session-settings#ai_function_max_retries)) with exponential backoff ([`ai_function_retry_initial_delay_ms`](/reference/settings/session-settings#ai_function_retry_initial_delay_ms)).
+- **Quota enforcement**: Per-query limits on tokens ([`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) and API calls ([`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
+- **Retry with backoff**: Transient failures are retried ([`ai_function_max_retries`](/reference/settings/session-settings/ai-function#ai_function_max_retries)) with exponential backoff ([`ai_function_retry_initial_delay_ms`](/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 
 ## Configuration {#configuration}
 
-AI functions reference a **named collection** that stores provider credentials and configuration. Different named collections can be created and used for different functions or functions calls. For example you may want to define a different named collection to use with the text functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) vs the `aiEmbed` function, which require different endpoints and usually use different models.
+AI functions reference a **named collection** that stores provider credentials and configuration. Different named collections can be created and used for different functions or functions calls. For example you may want to define a different named collection to use with the text functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) vs the embedding functions (`aiEmbed`, `aiSimilarity`), which require different endpoints and usually use different models.
 
 Example statement to create a named collection with provider credentials, one with a chat endpoint and another with an embedding endpoint:
 ```sql
@@ -33,10 +37,12 @@ CREATE NAMED COLLECTION ai_text_credentials AS
     model = 'gpt-4o-mini',
     api_key = 'sk-...';
 
+-- The embedding functions (`aiEmbed`, `aiSimilarity`) do not read `model` from the named collection,
+-- pass it as a positional argument instead. Defining `model` in an embedding collection is an error,
+-- not silently ignored.
 CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
-    model = 'text-embedding-3-small',
     api_key = 'sk-...';
 ```
 
@@ -46,7 +52,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 |-----------|------|---------|-------------|
 | `provider` | String | — | Model provider. Supported: `'openai'`, `'anthropic'`. See note below. |
 | `endpoint` | String | — | API endpoint URL. |
-| `model` | String | — | Model name (e.g. `'gpt-4o-mini'`, `'text-embedding-3-small'`). |
+| `model` | String | — | Model name (e.g. `'gpt-4o-mini'`). Used by the text functions; the embedding functions (`aiEmbed`, `aiSimilarity`) require `model` as a positional argument and error if `model` is specified in the named collection. |
 | `api_key` | String | — | Authentication key for the provider. Optional: when omitted, the auth header is not sent, which allows targeting OpenAI-compatible servers that do not require authentication. |
 | `max_tokens` | UInt64 | `1024` | Maximum number of output tokens per API call. |
 | `api_version` | String | — | API version string. Used by Anthropic (`'2023-06-01'`). |
@@ -61,10 +67,10 @@ A function resolves the named collection to use from, in order:
 
 1. the `credentials` key of its parameter map, when present;
 2. otherwise the applicable default-credentials setting:
-   - [`ai_function_text_default_credentials`](/reference/settings/session-settings#ai_function_text_default_credentials) for the text functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`);
-   - [`ai_function_embedding_default_credentials`](/reference/settings/session-settings#ai_function_embedding_default_credentials) for `aiEmbed`.
+   - [`ai_function_text_default_credentials`](/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) for the text functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`);
+   - [`ai_function_embedding_default_credentials`](/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) for the embedding functions (`aiEmbed`, `aiSimilarity`).
 
-If neither is set, the call fails. The text and embedding functions use separate default settings because a chat-completions endpoint and model differ from an embeddings one.
+If neither is set, the call fails. The text and embedding functions use separate default settings because a chat-completions endpoint differs from an embeddings one.
 
 ```sql
 SET ai_function_text_default_credentials = 'ai_text_credentials';
@@ -76,16 +82,23 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.');
 SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
 ```
 
+Filter rows with a natural-language condition via `aiFilter`, which returns `UInt8` and can be used directly in `WHERE`:
+
+```sql
+SELECT * FROM reviews
+WHERE aiFilter(body, 'the customer is angry about shipping');
+```
+
 ### Parameter map {#parameter-map}
 
-Each function accepts an optional trailing `Map(String, String)` of parameters. All values are strings (quote numbers, e.g. `'0.2'`). Unknown keys are rejected. A key that is present overrides the corresponding named-collection value; a key that is absent falls back to the named collection (for `model`/`max_tokens`) or the built-in default.
+Each function accepts an optional trailing `Map(String, String)` of parameters. All values are strings (quote numbers, e.g. `'0.2'`). Unknown keys are rejected. A key that is present overrides the corresponding named-collection value; a key that is absent falls back to the named collection (for `model`/`max_tokens`) or the built-in default. The exception is the embedding functions (`aiEmbed`, `aiSimilarity`), which take `model` as a required positional argument (e.g. `aiEmbed(text, model[, params])`, `aiSimilarity(text1, text2, model[, params])`) and error if it is instead set in the parameter map or named collection. This is in order to enforce reproducible embeddings.
 
 The following parameters are common to all the AI functions:
 
 | Key | Description |
 |-----|-------------|
 | `credentials` | Named collection to use (see above). |
-| `model` | Overrides the collection's `model`. |
+| `model` | Overrides the collection's `model` (text functions only; the embedding functions (`aiEmbed`, `aiSimilarity`) take `model` as a required positional argument, not a map key). |
 
 Individual functions accept additional, function-specific parameters (such as `max_tokens`, `temperature`, `system_prompt`, `instructions`, and `dimensions`). See each function's reference below for the parameters it accepts and their defaults.
 
@@ -99,7 +112,7 @@ All AI-related settings are listed in [Settings](/reference/settings/session-set
 
 ### Restricting endpoint hosts {#restricting-endpoint-hosts}
 
-The `endpoint` URL in an AI named collection is an outbound destination the server connects to under its own identity, potentially carrying (if specified) the named collection's `api_key` in the request headers. By default, ClickHouse permits any host. To restrict functions to a specific set of providers, configure [`remote_url_allow_hosts`](/reference/settings/server-settings/settings#remote_url_allow_hosts) in the server config, e.g.:
+The `endpoint` URL in an AI named collection is an outbound destination the server connects to under its own identity, potentially carrying (if specified) the named collection's `api_key` in the request headers. By default, ClickHouse permits any host. To restrict functions to a specific set of providers, configure [`remote_url_allow_hosts`](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) in the server config, e.g.:
 
 ```xml
 <remote_url_allow_hosts>
@@ -117,7 +130,7 @@ The transport is determined solely by the scheme of the `endpoint` URL. There is
 - `https://` — the connection uses TLS. The request body (input text, prompts) and the `api_key` in the request headers are encrypted in transit, and the provider's certificate is validated. Use this for any remote provider.
 - `http://` — the connection is **not encrypted**. The request body and the `api_key` are sent in cleartext. Only use this for a trusted provider on a private network (e.g. a local `vLLM` or `Ollama` instance).
 
-AI functions do not force HTTPS: an `http://` endpoint is accepted and sends data unencrypted. There is currently no server-side setting that rejects cleartext AI endpoints — [`remote_url_allow_hosts`](/reference/settings/server-settings/settings#remote_url_allow_hosts) restricts the destination host only and does not inspect the URL scheme, so an `http://` endpoint to an allowed host still passes. To ensure encrypted transport, configure named collections with `https://` endpoints.
+By default, AI functions reject an `endpoint` that would send data in cleartext to a remote host: any non-HTTPS endpoint whose host is not loopback raises an exception. Loopback hosts (`localhost`, `127.0.0.0/8`, `::1`) are exempt, so a local `http://localhost` model server works out of the box. To allow a plaintext `http://` endpoint on a remote host, set [`ai_function_allow_insecure_endpoint`](/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) to `1`. This check is independent of [`remote_url_allow_hosts`](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts): that setting is a host allowlist and does not inspect the URL scheme, so an `http://` endpoint pointed at an allowed host still passes it.
 
 Note that in either case the provider receives the input data in cleartext after TLS termination; TLS protects the data only on the network path between the server and the provider.
 
@@ -166,26 +179,23 @@ Introduced in: v26.4.0
 
 Classifies the given text into one of the provided categories using an LLM provider.
 
-The function sends the text together with a fixed classification prompt and a JSON-schema response format
-constraining the model to return exactly one of the supplied labels. When the response is returned as a JSON
-object of the form `{"category": "..."}`, the label is unwrapped and the label string is returned.
-
-The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
+Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+are taken from the `credentials` key of the optional parameter map, or from the
+`ai_function_text_default_credentials` setting when the map omits it.
 
 **Syntax**
 
 ```sql
-aiClassify(collection, text, categories[, temperature])
+aiClassify(text, categories[, params])
 ```
 
 **Aliases**: `AIClassify`
 
 **Arguments**
 
-- `collection` — Name of a named collection containing provider credentials and configuration. [`String`](/reference/data-types/string)
 - `text` — Text to classify. [`String`](/reference/data-types/string)
 - `categories` — Constant list of candidate category labels. [`Array(String)`](/reference/data-types/array)
-- `temperature` — Sampling temperature controlling randomness. Default: `0.0`. [`Float64`](/reference/data-types/float)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
 
 **Returned value**
 
@@ -196,17 +206,21 @@ One of the provided category labels, or the default value for the column type (e
 **Classify sentiment**
 
 ```sql title=Query
-SELECT aiClassify('ai_credentials', 'I love this product!', ['positive', 'negative', 'neutral'])
+SET allow_experimental_ai_functions = 1;
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
 ```
 
 ```response title=Response
 positive
 ```
 
-**Classify a column**
+**Classify a column with explicit credentials**
 
 ```sql title=Query
-SELECT body, aiClassify('ai_credentials', body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
+SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
 ## aiEmbed {#aiEmbed}
@@ -217,24 +231,35 @@ Generates an embedding vector for the given text using the configured AI provide
 
 The function sends the text to the configured embedding endpoint and returns the resulting vector as `Array(Float32)`.
 Within a single block of rows, inputs are grouped into batches of up to
-[`ai_function_embedding_max_batch_size`](/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+[`ai_function_embedding_max_batch_size`](/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
 entries per HTTP request to reduce per-call overhead.
 
-The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
-The optional `dimensions` argument, when supported by the model (e.g. OpenAI's `text-embedding-3-*`),
+Credentials (a named collection specifying the provider, endpoint, and optionally an API key)
+are taken from the `credentials` key of the parameter map, or from the
+`ai_function_embedding_default_credentials` setting when the map omits it. Note that `aiEmbed` uses a
+separate default-credentials setting from the text functions, since an embeddings endpoint differs
+from a chat one.
+
+The `model` is a required positional argument (a constant `String`). Unlike the text functions,
+`aiEmbed` does not read `model` from the named collection or the parameter map. A named collection
+that defines `model` is rejected.
+
+The optional `dimensions` parameter, when supported by the model (e.g. OpenAI's `text-embedding-3-*`),
 requests a vector of the given size; otherwise the model's native size is returned.
 
 **Syntax**
 
 ```sql
-aiEmbed(collection, text[, dimensions])
+aiEmbed(text, model[, params])
 ```
+
+**Aliases**: `AIEmbed`
 
 **Arguments**
 
-- `collection` — Name of a named collection containing provider credentials and configuration. [`String`](/reference/data-types/string)
 - `text` — Text to embed. [`String`](/reference/data-types/string)
-- `dimensions` — Optional target dimensionality for the output vector. `0` or omitted means the model's native size. [`UInt64`](/reference/data-types/int-uint)
+- `model` — Embedding model name. [`const String`](/reference/data-types/string)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the output vector; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
 
 **Returned value**
 
@@ -242,22 +267,27 @@ The embedding vector, or an empty array if the input is NULL or empty, the reque
 
 **Examples**
 
-**Embed a single string**
+**Embed a single string (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)**
 
 ```sql title=Query
-SELECT aiEmbed('ai_credentials', 'Hello world')
+SET allow_experimental_ai_functions = 1;
+SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **With explicit dimensions**
 
 ```sql title=Query
-SELECT aiEmbed('ai_credentials', 'Hello world', 256)
+SET allow_experimental_ai_functions = 1;
+SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))
 ```
 
 **Embed a column of texts**
 
 ```sql title=Query
-SELECT aiEmbed('ai_credentials', title, 256) FROM articles LIMIT 10
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (title String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
+SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
 ## aiExtract {#aiExtract}
@@ -272,22 +302,23 @@ JSON-encoded schema of the form `'{"field_a": "description of field a", "field_b
 In instruction mode, the function returns the extracted value as a plain string, or an empty string if nothing was found.
 In schema mode, the function returns a JSON object string whose keys match the requested schema; missing fields are `null`.
 
-The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
+Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+are taken from the `credentials` key of the optional parameter map, or from the
+`ai_function_text_default_credentials` setting when the map omits it.
 
 **Syntax**
 
 ```sql
-aiExtract(collection, text, instruction_or_schema[, temperature])
+aiExtract(text, instruction_or_schema[, params])
 ```
 
 **Aliases**: `AIExtract`
 
 **Arguments**
 
-- `collection` — Name of a named collection containing provider credentials and configuration. [`String`](/reference/data-types/string)
 - `text` — Text to extract information from. [`String`](/reference/data-types/string)
 - `instruction_or_schema` — Free-form extraction instruction, or a constant JSON object describing the fields to extract. [`const String`](/reference/data-types/string)
-- `temperature` — Sampling temperature controlling randomness. Default: `0.0`. [`const Float64`](/reference/data-types/float)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
 
 **Returned value**
 
@@ -298,7 +329,8 @@ A single extracted value (instruction mode) or a JSON object string (schema mode
 **Free-form instruction**
 
 ```sql title=Query
-SELECT aiExtract('ai_credentials', 'The package arrived late and was damaged.', 'the main complaint')
+SET allow_experimental_ai_functions = 1;
+SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')
 ```
 
 ```response title=Response
@@ -308,7 +340,69 @@ late and damaged package
 **Schema extraction**
 
 ```sql title=Query
-SELECT aiExtract('ai_credentials', review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE reviews (review String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
+SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
+```
+
+## aiFilter {#aiFilter}
+
+Introduced in: v26.8.0
+
+Evaluates a natural-language condition against the given text using an LLM provider and returns a boolean (`UInt8`) suitable for `WHERE`, `PREWHERE`, and `JOIN ... ON`.
+
+The function asks the model to respond with only lowercase `true` or `false`. Any complete response other
+than `true` (including `false` and unrecognised text) maps to `0`, so the row is filtered out. A
+provider-signalled incomplete reply — truncated, content-filtered, or requiring further action — is instead
+treated as an error: with `ai_function_throw_on_error` enabled (the default) the query is aborted; with it
+disabled the row maps to `0` and is filtered out.
+
+**Warning:** Do not trust `aiFilter` results without scrutiny. LLM-based predicates can be incorrect
+or inconsistent; use them only where false positives and false negatives are acceptable.
+
+Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+are taken from the `credentials` key of the optional parameter map, or from the
+`ai_function_text_default_credentials` setting when the map omits it.
+
+Note: using `aiFilter` in `JOIN ... ON` evaluates the LLM once per candidate pair and can be expensive.
+
+**Syntax**
+
+```sql
+aiFilter(text, condition[, params])
+```
+
+**Aliases**: `AIFilter`
+
+**Arguments**
+
+- `text` — Text to evaluate. [`String`](/reference/data-types/string)
+- `condition` — Constant natural-language condition the text must satisfy. [`String`](/reference/data-types/string)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
+
+**Returned value**
+
+`1` if the text matches the condition, `0` otherwise. Returns the default value (`0`) if the request failed and `ai_function_throw_on_error` is disabled. [`UInt8`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Filter angry reviews**
+
+```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE reviews (body String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The package arrived three days late.');
+SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
+```
+
+**Filter a column with explicit credentials**
+
+```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
+SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
 ## aiGenerate {#aiGenerate}
@@ -318,25 +412,27 @@ Introduced in: v26.4.0
 Generates free-form text content from a prompt using an LLM provider.
 
 The function sends the prompt to the configured AI provider and returns the generated text.
-An optional system prompt can be provided to guide the model's behavior (e.g. tone, format, role).
-If no system prompt is given, the default system prompt is: `You are a helpful assistant. Provide a clear and concise response.`
 
-The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
+Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+are taken from the `credentials` key of the optional parameter map, or from the
+`ai_function_text_default_credentials` setting when the map omits it.
+
+The optional parameter map may also set `system_prompt` (an instruction that guides the model's
+behavior, e.g. tone, format, role), `temperature`, `max_tokens`, and `model`. If `system_prompt` is
+not set, the default is: `You are a helpful assistant. Provide a clear and concise response.`
 
 **Syntax**
 
 ```sql
-aiGenerate(collection, prompt[, system_prompt[, temperature]])
+aiGenerate(prompt[, params])
 ```
 
 **Aliases**: `AIGenerate`
 
 **Arguments**
 
-- `collection` — Name of a named collection containing provider credentials and configuration. [`String`](/reference/data-types/string)
 - `prompt` — The user prompt or question to send to the model. [`String`](/reference/data-types/string)
-- `system_prompt` — Optional constant system-level instruction that guides the model's behavior (e.g. persona, output format), sent along with each prompt. [`String`](/reference/data-types/string)
-- `temperature` — Sampling temperature controlling randomness. Default: `0.7`. [`Float64`](/reference/data-types/float)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.7`), `max_tokens` (maximum output tokens per call; default `1024`), `system_prompt` (constant system-level instruction guiding the model's behavior; default a generic assistant prompt). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
 
 **Returned value**
 
@@ -347,23 +443,164 @@ The generated text response, or the default value for the column type (empty str
 **Simple question**
 
 ```sql title=Query
-SELECT aiGenerate('ai_credentials', 'What is 2 + 2? Reply with just the number.')
+SET allow_experimental_ai_functions = 1;
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 ```
 
 ```response title=Response
 4
 ```
 
-**With system prompt**
+**With explicit credentials and system prompt**
 
 ```sql title=Query
-SELECT aiGenerate('ai_credentials', 'Explain ClickHouse', 'You are a database expert. Be concise.')
+SET allow_experimental_ai_functions = 1;
+SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))
 ```
 
 **Summarize column values**
 
 ```sql title=Query
-SELECT article_title, aiGenerate('ai_credentials', concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');
+SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+```
+
+## aiRedact {#aiRedact}
+
+Introduced in: v26.8.0
+
+Detects and redacts personally identifiable information (PII) in the given text using an LLM provider.
+
+<Warning>
+`aiRedact` performs PII detection and redaction on a best-effort basis using an LLM, and its output is not
+reliable. Whether PII is detected and removed depends on the chosen model, the prompt, and the input: the
+model can miss identifiers, redact them only partially, or alter the surrounding text. It works best with
+well-formed English text; results may be worse for other languages or for text with many spelling,
+punctuation, or grammatical errors. `aiRedact` does not guarantee that its output is free of PII and must not
+be treated as a safe or sufficient anonymization mechanism on its own. Always review the output to ensure it
+meets your organization's data privacy and compliance policies before exposing data to untrusted parties.
+</Warning>
+
+Each detected PII span is replaced with a redaction token (`[REDACTED]` by default, configurable via the
+`replacement` parameter). The `categories` array restricts which PII types are redacted; an empty array
+falls back to a default set of common categories (name, email, phone number, address, credit card, IP address).
+
+`aiRedact` instructs the model to change only the detected PII spans, but preserving the surrounding text is
+best-effort, the model may still alter it (see the warning above). Control characters other than tab,
+newline, and carriage return are also normalized to spaces before the request, so the output is not
+byte-identical to inputs that contain them.
+
+Because `aiRedact` returns the whole input text with PII replaced, the output is about as long as the input.
+Set `max_tokens` (default `1024`) above the input length in tokens; a reply truncated by a too-low limit is
+rejected with `AI_PROVIDER_RESPONSE_TRUNCATED` (or yields the column default when `ai_function_throw_on_error`
+is disabled) rather than returning partially redacted text.
+
+**Syntax**
+
+```sql
+aiRedact(text, categories[, params])
+```
+
+**Aliases**: `AIRedact`
+
+**Arguments**
+
+- `text` — Text to redact. [`String`](/reference/data-types/string)
+- `categories` — Constant list of PII categories to redact (e.g. `['name', 'ssn', 'credit_card']`). An empty array falls back to a default set of common categories (name, email, phone number, address, credit card, IP address). [`Array(String)`](/reference/data-types/array)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024` — because `aiRedact` returns the full text, set it above the input length in tokens; a reply truncated by a too-low limit is rejected rather than returning partially redacted text), `replacement` (token that replaces each detected PII span; default `[REDACTED]`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
+
+**Returned value**
+
+The text with detected PII replaced by the redaction token, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled. [`String`](/reference/data-types/string)
+
+**Examples**
+
+**Redact specific categories**
+
+```sql title=Query
+SET allow_experimental_ai_functions = 1;
+SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
+```
+
+```response title=Response
+Purchase was done by customer [REDACTED] with email [REDACTED]
+```
+
+**Redact the default PII categories with a custom token**
+
+```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE tickets (body String) ENGINE = Memory;
+INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
+SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
+```
+
+## aiSimilarity {#aiSimilarity}
+
+Introduced in: v26.8.0
+
+Computes the semantic similarity of two texts using the configured embedding provider.
+
+Calculates the vector embeddings of both texts and returns their
+[cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity). A score of `-1` is given to
+opposite embedding vectors, semantically this means texts with scores approaching `-1` are opposite in
+meaning. A score of `0` means the vectors are orthogonal: semantically unrelated. Finally, a score of `1`
+means the embedding vectors are pointing in the same direction, texts with scores approaching `1` are
+similar in meaning. This is the complement of `cosineDistance` over the same embeddings
+(`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
+
+Batching, credentials, and the `dimensions` parameter match `aiEmbed`, including the
+`ai_function_embedding_default_credentials` default-credentials setting.
+
+Like `aiEmbed`, `model` is a required positional argument (a constant `String`), not read from the
+named collection or the parameter map.
+
+**Syntax**
+
+```sql
+aiSimilarity(text1, text2, model[, params])
+```
+
+**Aliases**: `AISimilarity`
+
+**Arguments**
+
+- `text1` — First text. [`String`](/reference/data-types/string)
+- `text2` — Second text. [`String`](/reference/data-types/string)
+- `model` — Embedding model name. [`const String`](/reference/data-types/string)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the embeddings; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
+
+**Returned value**
+
+The cosine similarity in `[-1, 1]`, or NULL if either text is NULL or empty, an embedding request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled. [`Nullable(Float32)`](/reference/data-types/nullable)
+
+**Examples**
+
+**Compare two strings (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)**
+
+```sql title=Query
+SET allow_experimental_ai_functions = 1;
+SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
+```
+
+**Rank reviews by similarity to a query**
+
+```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE product_reviews (review String) ENGINE = Memory;
+INSERT INTO product_reviews VALUES ('It works well under rain.');
+SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
+```
+
+**Semantic dedup over a self-join**
+
+```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE docs (id UInt64, title String) ENGINE = Memory;
+INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');
+SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
 ## aiTranslate {#aiTranslate}
@@ -372,25 +609,25 @@ Introduced in: v26.4.0
 
 Translates the given text into the specified target language using an LLM provider.
 
-Additional style or dialect instructions may be passed as a fourth argument (e.g. `'keep technical terms untranslated'`).
+Additional style or dialect instructions may be passed via the `instructions` key of the parameter map (e.g. `'keep technical terms untranslated'`).
 
-The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
+Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+are taken from the `credentials` key of the optional parameter map, or from the
+`ai_function_text_default_credentials` setting when the map omits it.
 
 **Syntax**
 
 ```sql
-aiTranslate(collection, text, target_language[, instructions[, temperature]])
+aiTranslate(text, target_language[, params])
 ```
 
 **Aliases**: `AITranslate`
 
 **Arguments**
 
-- `collection` — Name of a named collection containing provider credentials and configuration. [`String`](/reference/data-types/string)
 - `text` — Text to translate. [`String`](/reference/data-types/string)
 - `target_language` — Target language name or BCP-47 code (e.g. `'French'`, `'es-MX'`). [`String`](/reference/data-types/string)
-- `instructions` — Optional constant additional instructions for the translator. [`String`](/reference/data-types/string)
-- `temperature` — Sampling temperature controlling randomness. Default: `0.3`. [`Float64`](/reference/data-types/float)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.3`), `max_tokens` (maximum output tokens per call; default `1024`), `instructions` (additional style or dialect instructions for the translator). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
 
 **Returned value**
 
@@ -401,7 +638,8 @@ The translated text, or the default value for the column type (empty string) if 
 **Translate to French**
 
 ```sql title=Query
-SELECT aiTranslate('ai_credentials', 'Hello, world!', 'French')
+SET allow_experimental_ai_functions = 1;
+SELECT aiTranslate('Hello, world!', 'French')
 ```
 
 ```response title=Response
@@ -411,6 +649,9 @@ Bonjour le monde!
 **Translate to Japanese with style instructions**
 
 ```sql title=Query
-SELECT aiTranslate('ai_credentials', body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');
+SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5
 ```
 {/*AUTOGENERATED_END*/}

@@ -18,7 +18,7 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 `file_name` と `type` は文字列リテラルです。サポートされている圧縮タイプは、`'none'`、`'gzip'`、`'deflate'`、`'br'`、`'xz'`、`'zstd'`、`'lz4'`、`'bz2'` です。
 
-`level` は数値リテラルです。次の範囲の正の整数がサポートされます: `lz4` タイプでは `1-12`、`zstd` タイプでは `1-22`、その他の圧縮タイプでは `1-9` です。
+`level` は数値リテラルです。次の範囲の正の整数がサポートされます: `gzip`、`deflate`、`lz4` タイプでは `1-12`、`zstd` タイプでは `1-22`、その他の圧縮タイプでは `1-9` です。`gzip` と `deflate` では、`9` を超えるレベルを使用するには `libdeflate` を含む既定のビルドが必要です。`libdeflate` を含まないビルドでは、`1-9` のレベルがサポートされます。
 
 <div id="implementation-details">
   ## 実装の詳細

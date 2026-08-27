@@ -147,9 +147,26 @@ SELECT * FROM (
 
 يؤدي عادةً تخطي أول صفّين وأخذ 3 إلى إرجاع `1, 1, 2`، لكن أُدرِجت القيمة `2` الثانية أيضًا لأنها مساوية للصف الأخير.
 
-<Note>
-  `WITH TIES` غير مدعوم مع القيم السالبة في `LIMIT`.
-</Note>
+يعمل `WITH TIES` أيضًا مع القيم السالبة في `LIMIT` و`OFFSET`. ويضمّ صفوفًا إضافية تحمل قيم `ORDER BY` نفسها التي يحملها أول صف محدد:
+
+```sql
+SELECT number % 3 AS n FROM numbers(15)
+ORDER BY n LIMIT -4 OFFSET -3 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 1 │
+│ 1 │
+│ 1 │
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+من دون `WITH TIES`، ستكون النتيجة `1, 1, 2, 2`. وعند استخدام `WITH TIES`، تُدرَج ثلاثة صفوف إضافية بالقيمة `1` لأنها تتساوى مع أول صف مُحدَّد.
 
 يمكن دمج هذا المُعدِّل مع المُعدِّل [`ORDER BY ... WITH FILL`](/ar/reference/statements/select/order-by#order-by-expr-with-fill-modifier).
 
@@ -159,7 +176,7 @@ SELECT * FROM (
 
 **نتائج غير حتمية:** من دون عبارة [`ORDER BY`](/ar/reference/statements/select/order-by)، قد تكون الصفوف المُعادة عشوائية وقد تختلف من تنفيذ استعلام إلى آخر.
 
-**حدّ على مستوى الخادم:** يمكن أيضًا أن يتأثر عدد الصفوف المُعادة بإعداد [limit](/ar/reference/settings/session-settings#limit).
+**حدّ على مستوى الخادم:** يمكن أيضًا أن يتأثر عدد الصفوف المُعادة بإعداد [limit](/ar/reference/settings/session-settings/other#limit).
 
 <div id="see-also">
   ## انظر أيضًا

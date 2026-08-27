@@ -38,8 +38,11 @@ namespace
 template <typename T>
 struct AggregateFunctionGroupUniqArrayData
 {
+    /// CRC32 for integer keys, like uniqExact.
+    using Hash = std::conditional_t<is_integer<T>, HashCRC32<T>, DefaultHash<T>>;
+
     /// When creating, the hash table must be small.
-    using Set = HashSetWithStackMemory<T, DefaultHash<T>, 4>;
+    using Set = HashSetWithStackMemory<T, Hash, 4>;
 
     Set value;
 };
@@ -71,7 +74,8 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    /// `final` devirtualizes the per-row call in addBatchSinglePlace (this class has subclasses).
+    void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
         if (limit_num_elems && this->data(place).value.size() >= max_elems)
             return;
@@ -341,7 +345,7 @@ void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
 Creates an array from different argument values.
-The memory consumption of this function is the same as for the [`uniqExact`](/sql-reference/aggregate-functions/reference/uniqexact) function.
+The memory consumption of this function is the same as for the [`uniqExact`](/reference/functions/aggregate-functions/uniqExact) function.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 groupUniqArray(x)
@@ -365,7 +369,7 @@ SELECT groupUniqArray(x) FROM t;
         )",
         R"(
 ┌─groupUniqArray(x)─┐
-│ [1,2,3,4]         │
+│ [1,4,2,3]         │
 └───────────────────┘
         )"
     },

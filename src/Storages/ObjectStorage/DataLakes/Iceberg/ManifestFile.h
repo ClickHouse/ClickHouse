@@ -56,6 +56,7 @@ struct PartitionSpecsEntry
     Int32 source_id;
     String transform_name;
     String partition_name;
+    Int32 tuple_index;
 };
 using PartitionSpecification = std::vector<PartitionSpecsEntry>;
 
@@ -76,6 +77,7 @@ struct ParsedManifestFileEntry : boost::noncopyable
 
     ManifestEntryStatus status;
     std::optional<Int64> parsed_sequence_number;
+    std::optional<Int64> parsed_file_sequence_number;
     std::optional<Int64> parsed_snapshot_id;
 
     DB::Row partition_key_value;
@@ -100,6 +102,7 @@ struct ParsedManifestFileEntry : boost::noncopyable
         Int64 row_number_,
         ManifestEntryStatus status_,
         std::optional<Int64> written_sequence_number_,
+        std::optional<Int64> written_file_sequence_number_,
         std::optional<Int64> written_snapshot_id_,
         DB::Row partition_key_value_,
         std::unordered_map<Int32, ColumnInfo> columns_infos_,
@@ -116,6 +119,7 @@ struct ParsedManifestFileEntry : boost::noncopyable
         , row_number(row_number_)
         , status(status_)
         , parsed_sequence_number(written_sequence_number_)
+        , parsed_file_sequence_number(written_file_sequence_number_)
         , parsed_snapshot_id(written_snapshot_id_)
         , partition_key_value(std::move(partition_key_value_))
         , columns_infos(std::move(columns_infos_))

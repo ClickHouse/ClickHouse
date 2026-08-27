@@ -6,8 +6,8 @@ title: 'CREATE DICTIONARY'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import CloudSupportedBadge from "/snippets/pt-BR/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudSupportedBadge } from "/snippets/pt-BR/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
 
 Um dicionário é um mapeamento (`key -> attributes`) útil para vários tipos de listas de referência.
 O ClickHouse oferece funções especiais para trabalhar com dicionários que podem ser usadas em consultas. Usar dicionários com funções é mais fácil e mais eficiente do que fazer um `JOIN` com tabelas de referência.
@@ -78,12 +78,12 @@ O arquivo de configuração do dicionário tem o seguinte formato:
 <clickhouse>
     <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
 
-    <!--Elemento opcional. Nome do arquivo com substituições-->
-    <include_from>/etc/metrika.xml</include_from>
+    <!--Optional element. File name with substitutions-->
+    <include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 
     <dictionary>
-        <!-- Configuração do dicionário. -->
-        <!-- É possível ter qualquer número de seções de dicionário em um arquivo de configuração. -->
+        <!-- Dictionary configuration. -->
+        <!-- There can be any number of dictionary sections in a configuration file. -->
     </dictionary>
 
 </clickhouse>

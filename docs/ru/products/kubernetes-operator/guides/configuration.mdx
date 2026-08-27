@@ -102,7 +102,7 @@ spec:
 </Note>
 
 Подключение дополнительных дисков в конфигурации с несколькими дисками (JBOD), работа без постоянного
-тома, увеличение емкости, пользовательские политики хранения и правила, определяющие, что нельзя
+тома, увеличение емкости, пользовательские политики хранения, шифрование данных при хранении и правила, определяющие, что нельзя
 изменить после создания, рассматриваются в отдельном
 [руководстве по хранилищу и томам](/ru/products/kubernetes-operator/guides/storage).
 
@@ -187,8 +187,8 @@ spec:
 </div>
 
 `spec.clusterDomain` задаёт DNS-суффикс Kubernetes, который оператор использует при формировании
-полных доменных имён подов, записываемых в конфигурацию сервера ClickHouse.
-По умолчанию используется `cluster.local`; этот параметр доступен как в
+полных доменных имён подов, записываемых в конфигурацию
+сервера ClickHouse. По умолчанию используется `cluster.local`; этот параметр есть как в
 `ClickHouseCluster`, так и в `KeeperCluster`.
 
 ```yaml
@@ -200,17 +200,17 @@ spec:
 `<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. Этот суффикс используется
 в двух частях сгенерированной конфигурации:
 
-* В `ClickHouseCluster` его значение используется для имён хостов реплик в
-  `remote_servers` (для межрепликового взаимодействия и запросов `Distributed`).
-* В `KeeperCluster` его значение используется для формирования имён хостов узлов Keeper,
-  которые ClickHouse применяет для координации.
+* В `ClickHouseCluster` его значение используется для имен хостов реплик в
+  `remote_servers` (межрепличные запросы и запросы `Distributed`).
+* В `KeeperCluster` его значение формирует имена хостов узлов Keeper, которые
+  ClickHouse использует для координации.
 
 <Note>
-  Переопределяйте это значение только в том случае, если `kubelet` вашего кластера запущен с `--cluster-domain`,
+  Переопределяйте это только в том случае, если `kubelet` в вашем кластере запущен с параметром `--cluster-domain`,
   отличным от `cluster.local`. Если значение не совпадает с фактическим доменом кластера,
   ClickHouse не сможет разрешить имена хостов Keeper и реплик — координация и
-  запросы `Distributed` будут завершаться ошибками DNS resolution. Укажите **одно и то же** значение в
-  `ClickHouseCluster` и в связанном с ним `KeeperCluster`.
+  запросы `Distributed` будут завершаться ошибками DNS resolution. Установите **одно и то же** значение в
+  `ClickHouseCluster` и в `KeeperCluster`, на который он ссылается.
 </Note>
 
 <div id="pod-configuration">
@@ -519,13 +519,14 @@ spec:
 
 Secret должен содержать следующие ключи:
 
-| Ключ                    | Формат                                                                      | Когда требуется                  |
-| ----------------------- | --------------------------------------------------------------------------- | -------------------------------- |
-| `interserver-password`  | пароль в открытом виде                                                      | Всегда                           |
-| `management-password`   | пароль в открытом виде                                                      | Всегда                           |
-| `keeper-identity`       | `clickhouse:<password>`                                                     | Всегда                           |
-| `cluster-secret`        | пароль в открытом виде                                                      | Всегда                           |
-| `named-collections-key` | 16-байтный ключ AES в шестнадцатеричном виде (32 шестнадцатеричных символа) | Только для ClickHouse `>= 25.12` |
+| Ключ                    | Формат                                                                      | Когда требуется                                  |
+| ----------------------- | --------------------------------------------------------------------------- | ------------------------------------------------ |
+| `interserver-password`  | пароль в открытом виде                                                      | Всегда                                           |
+| `management-password`   | пароль в открытом виде                                                      | Всегда                                           |
+| `keeper-identity`       | `clickhouse:<password>`                                                     | Всегда                                           |
+| `cluster-secret`        | пароль в открытом виде                                                      | Всегда                                           |
+| `named-collections-key` | 16-байтный ключ AES в шестнадцатеричном виде (32 шестнадцатеричных символа) | Только для ClickHouse `>= 25.12`                 |
+| `disk-encryption-key`   | 16-байтный ключ AES в шестнадцатеричном виде (32 шестнадцатеричных символа) | Только если задан параметр `settings.encryption` |
 
 Полный Secret выглядит так:
 
@@ -542,6 +543,7 @@ stringData:
   keeper-identity: "clickhouse:keeper-auth-password"
   cluster-secret: "cluster-internal-secret"
   named-collections-key: "0123456789abcdef0123456789abcdef"   # 32 hex chars = 16 bytes
+  disk-encryption-key: "00112233445566778899aabbccddeeff"     # only when settings.encryption is set
 ```
 
 <div id="external-secret-policy">
@@ -589,14 +591,14 @@ kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
 Пока Secret недействителен, оператор повторно ставит реконсиляцию в очередь, поэтому после добавления отсутствующих ключей следующая реконсиляция автоматически их подхватит — перезапускать поды не нужно.
 
 <Note>
-  Набор обязательных ключей зависит от запущенной версии ClickHouse. `named-collections-key` проверяется только после того, как проверка версии оператора обнаружит ClickHouse `25.12` или новее. В более старых версиях этот ключ может отсутствовать в Secret.
+  Набор обязательных ключей зависит от запущенной версии ClickHouse. `named-collections-key` проверяется только после того, как проверка версии оператора обнаружит ClickHouse `25.12` или новее. В более старых версиях этот ключ может отсутствовать в Secret. `disk-encryption-key` требуется только если задано `spec.settings.encryption`.
 </Note>
 
 <div id="additional-ports">
   ## Дополнительные порты
 </div>
 
-Оператор предоставляет фиксированный набор портов на каждом поде ClickHouse и в его headless Service: `8123` HTTP, `9000` native, `9009` interserver, `9001` management, `9363` метрики Prometheus, а также варианты с TLS `8443`/`9440`, если TLS включен. Чтобы ClickHouse прослушивал дополнительные протоколы — MySQL, PostgreSQL, gRPC — или любой пользовательский порт, объявите их в `spec.additionalPorts`:
+Оператор предоставляет фиксированный набор портов на каждом поде ClickHouse и в его публичном headless Service: `8123` HTTP, `9000` нативный, `9009` interserver, `9001`/`9002` management, `9363` метрики Prometheus, а также варианты с TLS `8443`/`9440`, если TLS включен. Порты `interserver` и management дополнительно предоставляются через внутренние Service каждой реплики, чтобы реплики и оператор могли взаимодействовать до того, как реплика станет готовой. Чтобы ClickHouse прослушивал дополнительные протоколы — MySQL, PostgreSQL, gRPC — или любой пользовательский порт, объявите их в `spec.additionalPorts`:
 
 ```yaml
 spec:
@@ -609,7 +611,8 @@ spec:
       port: 9100
 ```
 
-Оператор добавляет эти порты в `containerPorts` пода и в headless Service. Полный пример приведён в [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
+Оператор добавляет эти порты в `containerPorts` пода и в публичный headless Service.
+Полный пример приведён в [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
 
 <Warning>
   `additionalPorts` открывает порты только на стороне Kubernetes. Он **не** настраивает сервер ClickHouse на прослушивание этих портов. Также нужно включить соответствующий протокол в `spec.settings.extraConfig.protocols`. Иначе порт будет открыт на Service, но внутри пода на нём ничего не будет отвечать.
@@ -635,7 +638,7 @@ spec:
       requests:
         storage: 2Gi
 
-  # 1) Open the port on the Pod and the headless Service.
+  # 1) Open the port on the Pod and the public headless Service.
   additionalPorts:
     - name: mysql
       port: 9004
@@ -972,10 +975,16 @@ spec:
 ```yaml
 spec:
   settings:
-    enableDatabaseSync: true  # По умолчанию: true
+    enableDatabaseSync: true  # Default: true
 ```
 
 Когда эта настройка включена, оператор синхронизирует таблицы Replicated и интеграционные таблицы на новые реплики.
+
+Каждый под реплики имеет шлюз готовности `clickhouse.com/ReplicaInitialized`, поэтому новая реплика публикуется через публичный headless Service только после того, как оператор завершит ее инициализацию: база данных `default` преобразуется в движок Replicated, а схема синхронизируется. До этого оператор и другие реплики обращаются к ней через ее внутренний Service. При `enableDatabaseSync: false` оператор сразу помечает реплики как инициализированные, поэтому готовность определяется только проверками контейнера.
+
+Оператор никогда не удаляет заполненную нереплицируемую базу данных `default`. Такая реплика все равно начинает обслуживать клиентский трафик после подготовки схемы, но кластер сообщает `SchemaInSync=False` с причиной `DefaultDatabaseNotReplicated`, пока вы самостоятельно не устраните проблему с этой базой данных.
+
+Перед удалением реплики при масштабировании вниз оператор сначала перенаправляет клиентский трафик с нее, ожидает, пока она перестанет публиковаться, реплицирует оставшиеся данные на оставшиеся реплики и только затем удаляет ее.
 
 <div id="server-logging">
   ### Логирование сервера

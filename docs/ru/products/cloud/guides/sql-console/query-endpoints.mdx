@@ -29,9 +29,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </Info>
 
 <Steps>
-  <Step>
-    ### Создание сохраненного запроса
-
+  <Step title="Создание сохраненного запроса" id="creating-a-saved-query">
     Если у вас уже есть сохраненный запрос, этот шаг можно пропустить.
 
     Откройте новую вкладку запроса. Для примера мы будем использовать [датасет YouTube](/ru/get-started/sample-datasets/youtube-dislikes), который содержит примерно 4,5 миллиарда записей.
@@ -79,11 +77,9 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Дополнительную информацию о сохраненных запросах можно найти в разделе [&quot;Saving a query&quot;](/ru/products/cloud/features/sql-console-features/sql-console#saving-a-query).
   </Step>
 
-  <Step>
-    ### Настройка конечной точки Query API
-
-    Конечные точки Query API можно настраивать прямо из представления запроса: нажмите кнопку **Share** и выберите `API Endpoint`.
-    Затем вам будет предложено указать, какие ключ API смогут обращаться к этой конечной точке:
+  <Step title="Настройка эндпоинта Query API" id="configuring-the-query-api-endpoint">
+    Эндпоинты Query API можно настраивать прямо из представления запроса: нажмите кнопку **Share** и выберите `API Endpoint`.
+    Затем вам будет предложено указать, какие ключ API смогут обращаться к этому эндпоинту Query API:
 
     <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="Настройка конечной точки запроса" />
 
@@ -92,7 +88,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     * Выбрать роль базы данных, которая будет использоваться для выполнения запроса (`Full access`, `Read only` или `Create a custom role`)
     * Указать разрешенные домены CORS
 
-    После выбора этих параметров конечная точка Query API будет создана автоматически.
+    После выбора этих параметров эндпоинт Query API будет создан автоматически.
 
     Затем будет показан пример команды `curl`, чтобы вы могли отправить тестовый запрос:
 
@@ -105,16 +101,12 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ### Параметры Query API
-
+  <Step title="Параметры Query API" id="query-api-parameters">
     Параметры в запросе можно задавать с помощью синтаксиса `{parameter_name: type}`. Эти параметры будут автоматически обнаружены, а пример тела запроса будет содержать объект `queryVariables`, через который их можно передавать.
   </Step>
 
-  <Step>
-    ### Тестирование и мониторинг
-
-    После создания конечной точки Query API вы можете проверить его работу с помощью `curl` или любого другого HTTP-клиента:
+  <Step title="Тестирование и мониторинг" id="testing-and-monitoring">
+    После создания эндпоинта Query API вы можете проверить его работу с помощью `curl` или любого другого HTTP-клиента:
 
     <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="тест curl для конечной точки" />
 

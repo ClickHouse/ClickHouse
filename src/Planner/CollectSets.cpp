@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Planner/CollectSets.h>
 
 #include <Storages/StorageSet.h>
@@ -13,6 +14,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
+#include <Interpreters/misc.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Set.h>
 #include <Planner/Planner.h>
@@ -54,20 +56,32 @@ public:
             const auto & table_function_name = table_node->getTableFunctionName();
             const auto & context = planner_context.getQueryContext();
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, context);
-            auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(node, context);
 
             const auto & table_function_arguments = table_node->getArguments().getNodes();
-            size_t table_function_arguments_size = table_function_arguments.size();
 
-            for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
+            if (!table_function_ptr)
             {
-                const auto & table_function_argument = table_function_arguments[table_function_argument_index];
-
-                auto skip_argument_index_it = std::find(skip_analysis_arguments_indexes.begin(), skip_analysis_arguments_indexes.end(), table_function_argument_index);
-                if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
-                {
+                /// The name is not a table function: it is a parameterized view resolved as a `TableFunctionNode`.
+                /// Its arguments are view parameter values substituted into the view query, not expressions to
+                /// collect sets from, so skip all of them. This also avoids traversing into unresolved nodes.
+                for (const auto & table_function_argument : table_function_arguments)
                     skip_children.insert(table_function_argument);
-                    continue;
+            }
+            else
+            {
+                auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(node, context);
+                size_t table_function_arguments_size = table_function_arguments.size();
+
+                for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
+                {
+                    const auto & table_function_argument = table_function_arguments[table_function_argument_index];
+
+                    auto skip_argument_index_it = std::find(skip_analysis_arguments_indexes.begin(), skip_analysis_arguments_indexes.end(), table_function_argument_index);
+                    if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
+                    {
+                        skip_children.insert(table_function_argument);
+                        continue;
+                    }
                 }
             }
         }
@@ -112,7 +126,7 @@ public:
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
             auto set = getSetElementsForConstantValue(
-                in_first_argument->getResultType(), constant_node->getValue(), constant_node->getResultType(),
+                in_first_argument->getResultType(), constant_node->getColumn(), constant_node->getResultType(),
                 GetSetElementParams{
                     .transform_null_in = settings[Setting::transform_null_in],
                     .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
@@ -152,15 +166,23 @@ public:
             in_second_argument_node_type == QueryTreeNodeType::TABLE)
         {
             auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
-            if (sets.findSubquery(set_key))
+            const bool external_table_expected = isNameOfGlobalInFunction(function_node->getFunctionName());
+
+            if (auto subquery_set = sets.findSubquery(set_key))
+            {
+                if (external_table_expected)
+                    subquery_set->markExternalTableExpected();
                 return;
+            }
 
             auto subquery_to_execute = in_second_argument;
             if (in_second_argument->as<TableNode>())
-                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context.getQueryContext());
+                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(static_pointer_cast<TableNode>(subquery_to_execute), planner_context.getQueryContext());
 
             auto ast = in_second_argument->toAST({ .set_subquery_cte_name = false });
-            sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);
+            auto subquery_set = sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);
+            if (external_table_expected)
+                subquery_set->markExternalTableExpected();
         }
         else
         {
