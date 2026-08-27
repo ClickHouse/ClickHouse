@@ -613,7 +613,8 @@ struct AggregateProjectionCandidates
 ///
 /// Statistics describe the physical rows of a part as they were written, so anything that changes
 /// the visible rows or values at read time disables the optimization: lightweight deletes, pending
-/// ALTER MODIFY COLUMN mutations, the delete bitmap of a unique-key table, and masking policies.
+/// ALTER MODIFY/RENAME/DROP COLUMN mutations, the delete bitmap of a unique-key table, and masking
+/// policies.
 /// (Pending data mutations and patch parts are already rejected by canUseProjectionForReadingStep,
 /// and FINAL together with SAMPLE are rejected there as well.)
 static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
@@ -645,8 +646,13 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
     if (reading.getMergeTreeData().hasEnabledMaskingPolicies(context))
         return {};
 
+    /// Pending metadata mutations (RENAME/DROP COLUMN) are applied at read time by AlterConversions,
+    /// so the column data (and statistics) physically stored in a part may not belong to the column
+    /// the query reads: `DROP COLUMN b, ADD COLUMN b` must read as the new default, and a name freed
+    /// by a drop can be taken over by a rename (see test 04872).
     auto mutations_snapshot = reading.getMutationsSnapshot();
-    if (mutations_snapshot->hasLightweightDeletedMask() || mutations_snapshot->hasAlterMutations())
+    if (mutations_snapshot->hasLightweightDeletedMask() || mutations_snapshot->hasAlterMutations()
+        || mutations_snapshot->hasMetadataMutations())
         return {};
 
     const auto & columns = metadata->getColumns();
