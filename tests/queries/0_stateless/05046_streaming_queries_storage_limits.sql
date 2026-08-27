@@ -24,6 +24,15 @@ SETTINGS max_rows_to_read_leaf = 10, read_overflow_mode_leaf = 'break';
 SELECT sum(value) <= 499500 FROM t_streaming_storage_limits STREAM BOUNDED WATERMARK FOR event_time AS event_time
 SETTINGS max_rows_to_read = 10, read_overflow_mode = 'break';
 
+-- Sort limits must not truncate the commit-order sort inside a read round (it
+-- would break stream alignment); they are checked against the per-round read
+-- rows instead: break finishes the stream cleanly, throw fails the query.
+SELECT sum(value) <= 499500 FROM t_streaming_storage_limits STREAM BOUNDED
+SETTINGS max_rows_to_sort = 10, sort_overflow_mode = 'break';
+
+SELECT sum(value) FROM t_streaming_storage_limits STREAM BOUNDED
+SETTINGS max_rows_to_sort = 10, sort_overflow_mode = 'throw'; -- { serverError TOO_MANY_ROWS_OR_BYTES }
+
 -- Throw mode: the limit fails the query.
 SELECT sum(value) FROM t_streaming_storage_limits STREAM BOUNDED
 SETTINGS max_rows_to_read = 10, read_overflow_mode = 'throw'; -- { serverError TOO_MANY_ROWS }
