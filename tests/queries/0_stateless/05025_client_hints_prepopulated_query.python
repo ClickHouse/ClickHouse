@@ -13,6 +13,7 @@ import os
 import pty
 import select
 import shlex
+import sys
 import threading
 import time
 
@@ -21,10 +22,9 @@ TIMEOUT_SECONDS = 60
 # How long to keep reading after the last keystroke while waiting for the expected output.
 FINAL_WAIT_SECONDS = 30
 
-DEBUG_LOG = os.path.join(
-    os.environ["CLICKHOUSE_TMP"],
-    os.path.splitext(os.path.basename(os.path.abspath(__file__)))[0] + ".debuglog",
-)
+# `clickhouse-test` dumps this file into the failure report, but only under the name it derives
+# from the testcase (the `.sh` wrapper), so take the path from there.
+DEBUG_LOG = os.environ["CLICKHOUSE_TEST_DEBUG_LOG"]
 
 # The gray SGR sequence replxx uses for the as-you-type hint (Color::GRAY -> "0;90").
 HINT_COLOR = "\x1b[0;90m"
@@ -138,6 +138,26 @@ def drain(master, debug_log_fd, idle):
     return output
 
 
+def report_failure(name, shell_pid, output, debug_log_fd):
+    """A PTY case that fails prints just `FAIL`, which says nothing about why. Record what the
+    terminal actually showed and whether the client is still alive - the client dying (the read
+    loop hitting EOF) looks exactly like the expected text never being printed."""
+    try:
+        reaped_pid, wait_status = os.waitpid(shell_pid, os.WNOHANG)
+    except ChildProcessError:
+        reaped_pid, wait_status = shell_pid, -1
+    running = reaped_pid == 0
+    banner = (
+        f"=== {name}: FAIL ===\n"
+        f"client still running: {running}, wait status: {wait_status}\n"
+        f"terminal output: {output[-8000:]!r}\n"
+    )
+    debug_log_fd.write(banner)
+    debug_log_fd.flush()
+    sys.stderr.write(banner)
+    sys.stderr.flush()
+
+
 def run_case(program, argv, name, keystrokes, check, state=None, check_from=0):
     """Each keystroke is a pair of the bytes to send and an optional predicate to wait for before
     sending the next one (in place of a fixed idle drain). Only the output produced from the
@@ -175,6 +195,8 @@ def run_case(program, argv, name, keystrokes, check, state=None, check_from=0):
 
         ok = check(output)
         print(f"{name}: {'OK' if ok else 'FAIL'}")
+        if not ok:
+            report_failure(name, shell_pid, output, debug_log_fd)
         state.value = 0 if ok else 1
     finally:
         os.close(master)
@@ -197,6 +219,7 @@ def run_with_timeout(program, argv, name, keystrokes, check, check_from=0):
             return
         # transient timeout on a loaded machine - retry
     print(f"{name}: FAIL")
+    sys.stderr.write(f"=== {name}: FAIL === the case timed out on every attempt\n")
 
 
 def main():
