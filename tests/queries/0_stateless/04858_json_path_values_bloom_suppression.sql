@@ -21,23 +21,22 @@ INSERT INTO json_path_values_bloom_suppression VALUES
     (3, '{}');
 
 SELECT 'exact';
-SELECT trimLeft(explain)
+SELECT substring(explain, position(explain, 'Name:'))
 FROM (EXPLAIN indexes = 1 SELECT * FROM json_path_values_bloom_suppression WHERE data.exact = 'hit')
 WHERE explain LIKE '%Name:%';
 
 SELECT 'in';
-SELECT trimLeft(explain)
+SELECT substring(explain, position(explain, 'Name:'))
 FROM (EXPLAIN indexes = 1 SELECT * FROM json_path_values_bloom_suppression WHERE data.exact IN ('hit'))
 WHERE explain LIKE '%Name:%';
 
 SELECT 'is not null';
-SELECT trimLeft(explain)
-FROM (EXPLAIN indexes = 1 SELECT * FROM json_path_values_bloom_suppression WHERE isNotNull(data.presence))
-WHERE explain LIKE '%Name:%';
+SELECT countIf(explain LIKE '%Name: values_idx%') = 0
+FROM (EXPLAIN indexes = 1 SELECT * FROM json_path_values_bloom_suppression WHERE isNotNull(data.presence));
 SELECT arraySort(groupArray(id)) FROM json_path_values_bloom_suppression WHERE isNotNull(data.presence);
 
 SELECT 'mixed';
-SELECT trimLeft(explain)
+SELECT substring(explain, position(explain, 'Name:'))
 FROM
 (
     EXPLAIN indexes = 1
@@ -63,7 +62,7 @@ ALTER TABLE json_path_values_bloom_partial
     ADD INDEX values_idx data TYPE text(tokenizer = jsonPathValues(64)) GRANULARITY 1;
 
 SELECT 'not materialized';
-SELECT trimLeft(explain)
+SELECT substring(explain, position(explain, 'Name:'))
 FROM (EXPLAIN indexes = 1 SELECT * FROM json_path_values_bloom_partial WHERE data.exact = 'hit')
 WHERE explain LIKE '%Name:%';
 
