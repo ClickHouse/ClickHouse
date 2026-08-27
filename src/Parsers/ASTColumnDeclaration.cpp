@@ -1,23 +1,10 @@
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Common/SipHash.h>
-#include <Parsers/ASTCollation.h>
-#include <Parsers/ASTDataType.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
-#include <Parsers/ASTJSONHelpers.h>
-#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 const char * toString(ColumnDefaultSpecifier kind)
 {
@@ -40,8 +27,6 @@ ColumnDefaultSpecifier columnDefaultSpecifierFromString(std::string_view str)
     if (str == "ALIAS") return ColumnDefaultSpecifier::Alias;
     if (str == "EPHEMERAL") return ColumnDefaultSpecifier::Ephemeral;
     if (str == "AUTO_INCREMENT") return ColumnDefaultSpecifier::AutoIncrement;
-    if (!str.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown column default specifier: '{}'", str);
     return ColumnDefaultSpecifier::Empty;
 }
 
@@ -70,22 +55,6 @@ ColumnDefaultKind toColumnDefaultKind(ColumnDefaultSpecifier specifier)
     }
 }
 
-void ASTColumnDeclaration::resetChild(IndexSlot slot)
-{
-    UInt8 idx = getIndex(slot);
-    if (idx == kNotSet)
-        return;
-    children.erase(children.begin() + idx);
-    setIndex(slot, kNotSet);
-    /// After erasing at position `idx`, all greater indices must be decremented.
-    for (IndexSlot other_slot : magic_enum::enum_values<IndexSlot>())
-    {
-        UInt8 other_idx = getIndex(other_slot);
-        if (other_idx != kNotSet && other_idx > idx)
-            setIndex(other_slot, other_idx - 1);
-    }
-}
-
 ASTPtr ASTColumnDeclaration::clone() const
 {
     const auto res = make_intrusive<ASTColumnDeclaration>(*this);
@@ -100,39 +69,16 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->setComment(node->clone());
     if (auto node = getCodec())
         res->setCodec(node->clone());
-    /// `ParserColumnDeclaration` inserts `settings` right after `codec`, before `statistics_desc`,
-    /// `ttl` and `collation`; reproduce that order so the copy has the same shape - and the same
-    /// tree hash - as the original.
-    if (auto node = getSettings())
-        res->setSettings(node->clone());
     if (auto node = getStatisticsDesc())
         res->setStatisticsDesc(node->clone());
     if (auto node = getTTL())
         res->setTTL(node->clone());
     if (auto node = getCollation())
         res->setCollation(node->clone());
+    if (auto node = getSettings())
+        res->setSettings(node->clone());
 
     return res;
-}
-
-void ASTColumnDeclaration::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
-{
-    /// `name` is part of `getID`, which the default implementation hashes. The rest of the
-    /// non-child members carry meaning and must be hashed here: `x UInt8 DEFAULT 1` and
-    /// `x UInt8 MATERIALIZED 1` differ only in `default_specifier`.
-    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
-    static_assert(sizeof(void *) != 8 || sizeof(*this) == 64, "If members were added to ASTColumnDeclaration, hash them here unless they are purely cosmetic.");
-    hash_state.update(default_specifier);
-    hash_state.update(null_modifier.has_value());
-    if (null_modifier.has_value())
-        hash_state.update(*null_modifier);
-    hash_state.update(static_cast<UInt8>(ephemeral_default));
-    hash_state.update(static_cast<UInt8>(primary_key_specifier));
-    /// The role each child plays (the type, the default expression, the comment, ...) is recorded
-    /// only in `packed_indices`. Without it, `x UInt8 COMMENT 'a'` and `x UInt8 TTL 'a'` would
-    /// hash equally: both have the same literal as the only child besides the type.
-    hash_state.update(packed_indices);
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
@@ -163,13 +109,6 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
             default_expression->format(ostr, format_settings, state, nested_frame);
         }
     }
-    else if (default_specifier == ColumnDefaultSpecifier::AutoIncrement)
-    {
-        /// `AUTO_INCREMENT` is the only specifier the parser allows without an expression; it must still be
-        /// printed, otherwise formatting silently drops it — and with it the rejection of the column under
-        /// `compatibility_ignore_auto_increment_in_create_table = 0` when the formatted query is executed.
-        ostr << ' ' << toString(default_specifier);
-    }
 
     if (auto comment = getComment())
     {
@@ -198,12 +137,6 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
         ttl->format(ostr, format_settings, state, nested_frame);
     }
 
-    /// The specifier survives only where the parser does not normalize it away (`ALTER TABLE ...
-    /// ADD/MODIFY COLUMN`): `ParserCreateQuery` moves per-column PRIMARY KEY into the storage
-    /// definition and clears it. Not printing it would silently drop it from the formatted query.
-    if (primary_key_specifier)
-        ostr << ' ' << "PRIMARY KEY";
-
     if (auto collation = getCollation())
     {
         ostr << ' '  << "COLLATE"  << ' ';
@@ -216,100 +149,6 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
         settings->format(ostr, format_settings, state, frame);
         ostr << ')';
     }
-}
-
-void ASTColumnDeclaration::writeJSON(WriteBuffer & out) const
-{
-    JSONObjectWriter w(out, "ColumnDeclaration");
-    w.writeString("name", name);
-
-    if (default_specifier != ColumnDefaultSpecifier::Empty)
-        w.writeString("default_specifier", std::string_view(toString(default_specifier)));
-
-    if (null_modifier.has_value())
-        w.writeBool("null_modifier", *null_modifier);
-
-    w.writeBool("ephemeral_default", ephemeral_default);
-    w.writeBool("primary_key_specifier", primary_key_specifier);
-
-    w.writeChild("data_type", getType());
-    w.writeChild("default_expression", getDefaultExpression());
-    w.writeChild("comment", getComment());
-    w.writeChild("codec", getCodec());
-    w.writeChild("statistics_desc", getStatisticsDesc());
-    w.writeChild("ttl", getTTL());
-    w.writeChild("collation", getCollation());
-    w.writeChild("settings", getSettings());
-}
-
-void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
-{
-    JSONObjectReader r(json);
-
-    name = r.getString("name");
-
-    String spec = r.getString("default_specifier");
-    default_specifier = columnDefaultSpecifierFromString(spec);
-
-    if (r.has("null_modifier"))
-        null_modifier = r.getBool("null_modifier");
-
-    ephemeral_default = r.getBool("ephemeral_default");
-    primary_key_specifier = r.getBool("primary_key_specifier");
-
-    /// `ParserColumnDeclaration` produces this slot only through `ParserDataType`, whose top-level node
-    /// is always a data type (`ASTDataType`/`ASTEnumDataType`/`ASTTupleDataType`), and downstream code
-    /// (`InterpreterCreateQuery::getColumnType`, `AlterCommand::parse`) hands it to `DataTypeFactory`.
-    /// Reject any other subtree so malformed `clickhouse_json` fails here with `BAD_ARGUMENTS` instead of
-    /// formatting parser-impossible DDL or failing later inside the factory.
-    ASTPtr data_type = r.readChild("data_type");
-    if (data_type && !dynamic_cast<const ASTDataType *>(data_type.get()))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`ColumnDeclaration` 'data_type' must be a data type during AST JSON deserialization");
-    setType(std::move(data_type));
-
-    ASTPtr default_expression = r.readChild("default_expression");
-
-    /// Validate the (default_specifier, default_expression) pair so that it mirrors what the parser and `formatImpl` allow.
-    /// `formatImpl` emits the default clause only when a `default_expression` is present, prefixing it with the specifier keyword.
-    /// Therefore a `default_expression` without a specifier would be formatted with no keyword (e.g. `DEFAULT`/`MATERIALIZED`/`ALIAS`),
-    /// and a specifier without an expression would be silently dropped.
-    /// The only specifier the parser allows without an expression is `AUTO_INCREMENT`; for `EPHEMERAL` the parser always synthesizes
-    /// an expression (and sets `ephemeral_default`), so it requires an expression here as well.
-    if (default_expression && default_specifier == ColumnDefaultSpecifier::Empty)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "A 'default_expression' was provided without a 'default_specifier' during AST JSON deserialization");
-
-    /// The parser never combines `AUTO_INCREMENT` with an expression (it is an alternative branch to the
-    /// `DEFAULT`/`MATERIALIZED`/`ALIAS`/`EPHEMERAL` expression forms), and formatting such a pair would emit
-    /// parser-impossible DDL.
-    if (default_expression && default_specifier == ColumnDefaultSpecifier::AutoIncrement)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "A 'default_expression' cannot be combined with the `AUTO_INCREMENT` 'default_specifier' during AST JSON deserialization");
-
-    if (!default_expression
-        && default_specifier != ColumnDefaultSpecifier::Empty
-        && default_specifier != ColumnDefaultSpecifier::AutoIncrement)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "A 'default_specifier' '{}' was provided without a 'default_expression' during AST JSON deserialization",
-            toString(default_specifier));
-
-    setDefaultExpression(std::move(default_expression));
-
-    /// These sub-slots are parser-produced as fixed concrete types and are downcast later
-    /// (`InterpreterCreateQuery` reads `comment->as<ASTLiteral &>()` and `settings->as<ASTSetQuery &>()`;
-    /// the compression/statistics factories take the parser-shaped `CODEC`/`STATISTICS` `ASTFunction`s,
-    /// which `readSpecialFunctionChild` validates down to their argument list). Validate them
-    /// so malformed `clickhouse_json` fails with `BAD_ARGUMENTS` instead of a later internal cast.
-    /// `ttl`/`default_expression` are arbitrary expressions and stay untyped.
-    setComment(r.readStringLiteralChild("comment"));
-    setCodec(r.readSpecialFunctionChild("codec", "CODEC"));
-    /// `ParserColumnDeclaration` inserts `settings` right after `codec`; reproduce that order so
-    /// the restored AST has the same shape - and the same tree hash - as a parsed one.
-    setSettings(r.readChildOfType<ASTSetQuery>("settings"));
-    setStatisticsDesc(r.readSpecialFunctionChild("statistics_desc", "STATISTICS"));
-    setTTL(r.readChild("ttl"));
-    setCollation(r.readChildOfType<ASTCollation>("collation"));
 }
 
 void ASTColumnDeclaration::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)

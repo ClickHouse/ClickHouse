@@ -7,6 +7,7 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
@@ -438,10 +439,6 @@ void ColumnVariant::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t
         return;
     }
 
-    /// Include the global discriminator in the result so values of different variants get different names.
-    if (options.notFull(name_buf))
-        name_buf << static_cast<size_t>(globalDiscriminatorByLocal(discr)) << '_';
-
     variants[discr]->getValueNameImpl(name_buf, offsetAt(n), options);
 }
 
@@ -855,10 +852,8 @@ std::string_view ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena,
 void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     /// During any serialization/deserialization we should always use global discriminators.
-    Discriminator global_discr = 0;
+    Discriminator global_discr;
     readBinaryLittleEndian<Discriminator>(global_discr, in);
-
-    checkDiscriminatorValue(global_discr, variants.size(), /* allow_logical_error= */ false);
 
     Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
     getLocalDiscriminators().push_back(local_discr);
@@ -874,13 +869,11 @@ void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
 
 void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const
 {
-    Discriminator global_discr = 0;
+    Discriminator global_discr;
     readBinaryLittleEndian<Discriminator>(global_discr, in);
 
     if (global_discr == NULL_DISCRIMINATOR)
         return;
-
-    checkDiscriminatorValue(global_discr, variants.size(), /* allow_logical_error= */ true);
 
     variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(in);
 }
@@ -974,37 +967,38 @@ void ColumnVariant::updateHashWithValueRange(size_t begin, size_t end, SipHash &
     }
 }
 
-void ColumnVariant::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+WeakHash32 ColumnVariant::getWeakHash32() const
 {
+    auto s = size();
+
+    /// If we have only NULLs, keep hash unchanged.
+    if (hasOnlyNulls())
+        return WeakHash32(s);
+
+    /// Optimization for case when there is only 1 non-empty variant and no NULLs.
+    /// In this case we can just calculate weak hash for this variant.
+    if (auto non_empty_local_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
+        return variants[*non_empty_local_discr]->getWeakHash32();
+
+    /// Calculate weak hash for all variants.
+    VectorWithMemoryTracking<WeakHash32> nested_hashes;
+    for (const auto & variant : variants)
+        nested_hashes.emplace_back(variant->getWeakHash32());
+
+    /// For each row hash is a hash of corresponding row from corresponding variant.
+    WeakHash32 hash(s);
+    auto & hash_data = hash.getData();
     const auto & local_discriminators_data = getLocalDiscriminators();
     const auto & offsets_data = getOffsets();
-
-    /// Optimization for case when there is only 1 non-empty variant and no NULLs:
-    /// the per-row hash is just the hash of that variant.
-    if (auto non_empty_local_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
+    for (size_t i = 0; i != local_discriminators_data.size(); ++i)
     {
-        variants[*non_empty_local_discr]->computeHashInto(row_begin, row_end, hash_out, initial);
-        return;
+        Discriminator discr = local_discriminators_data[i];
+        /// Update hash only for non-NULL values
+        if (discr != NULL_DISCRIMINATOR)
+            hash_data[i] = nested_hashes[discr].getData()[offsets_data[i]];
     }
 
-    /// Calculate per-row hash for all variants once, then gather by discriminator.
-    /// NULL rows contribute `WEAK_HASH32_INITIAL_VALUE`, like `ColumnNullable` and the former `getWeakHash32`.
-    VectorWithMemoryTracking<PaddedPODArray<UInt32>> nested_hashes(variants.size());
-    for (size_t v = 0; v < variants.size(); ++v)
-    {
-        const size_t variant_size = variants[v]->size();
-        nested_hashes[v].resize(variant_size);
-        if (variant_size)
-            variants[v]->computeHashInto(0, variant_size, nested_hashes[v].data(), true);
-    }
-
-    for (size_t i = row_begin; i < row_end; ++i)
-    {
-        const Discriminator discr = local_discriminators_data[i];
-        const UInt32 value = discr == NULL_DISCRIMINATOR ? WEAK_HASH32_INITIAL_VALUE : nested_hashes[discr][offsets_data[i]];
-        UInt32 & out = hash_out[i - row_begin];
-        out = initial ? value : combineWeakHash32(value, out);
-    }
+    return hash;
 }
 
 void ColumnVariant::updateHashFast(SipHash & hash) const
@@ -1240,7 +1234,7 @@ ColumnPtr ColumnVariant::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnVariant::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    chassert(limit <= indexes.size());
+    assert(limit <= indexes.size());
     if (limit == 0)
         return cloneEmpty();
 
@@ -1783,9 +1777,9 @@ void ColumnVariant::applyNullMap(const ColumnVector<UInt8>::Container & null_map
     applyNullMapImpl<false>(null_map);
 }
 
-void ColumnVariant::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map, size_t offset)
+void ColumnVariant::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map)
 {
-    applyNullMapImpl<true>(null_map, offset);
+    applyNullMapImpl<true>(null_map);
 }
 
 ColumnPtr ColumnVariant::createNullMap() const
@@ -1799,26 +1793,8 @@ ColumnPtr ColumnVariant::createNullMap() const
 }
 
 template <bool inverted>
-void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map, size_t offset)
+void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map)
 {
-    if (offset + null_map.size() != size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Applying a null map to a Variant column is only supported for a suffix range, but offset {} plus "
-            "null map size {} does not reach the column size {}",
-            offset,
-            null_map.size(),
-            size());
-
-    if (offset != 0)
-    {
-        auto range = IColumn::mutate(cut(offset, null_map.size()));
-        assert_cast<ColumnVariant &>(*range).applyNullMapImpl<inverted>(null_map);
-        popBack(null_map.size());
-        insertRangeFrom(*range, 0, range->size());
-        return;
-    }
-
     if (null_map.size() != local_discriminators->size())
         throw Exception(ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT,
                         "Logical error: Sizes of discriminators column and null map data are not equal");

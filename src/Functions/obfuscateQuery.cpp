@@ -22,8 +22,6 @@
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Poco/String.h>
 #include <boost/algorithm/string/split.hpp>
 #include <string_view>
@@ -53,7 +51,7 @@ const KnownIdentifierFunc & getKnownIdentifierFunc()
     /// as-is instead of being replaced by random words.
     static const KnownIdentifierFunc func = []() -> KnownIdentifierFunc
     {
-        auto names = std::make_shared<UnorderedSetWithMemoryTracking<std::string>>();
+        auto names = std::make_shared<std::unordered_set<std::string>>();
 
         auto insert = [&](const auto & range) { names->insert(range.begin(), range.end()); };
         insert(StorageFactory::instance().getAllRegisteredNames());
@@ -68,14 +66,14 @@ const KnownIdentifierFunc & getKnownIdentifierFunc()
 
         for (const auto * it = auto_time_zones; *it; ++it)
         {
-            VectorWithMemoryTracking<std::string> split;
+            std::vector<std::string> split;
             boost::split(split, std::string(*it), [](char c) { return c == '/'; });
             for (const auto & word : split)
                 if (!word.empty())
                     names->insert(word);
         }
 
-        auto names_lowercase = std::make_shared<UnorderedSetWithMemoryTracking<std::string>>();
+        auto names_lowercase = std::make_shared<std::unordered_set<std::string>>();
         for (const auto & name : *names)
             names_lowercase->insert(Poco::toLower(name));
 
@@ -224,7 +222,7 @@ ColumnPtr ObfuscateQueryFunction::execute(const ColumnsWithTypeAndName & argumen
     return col_res;
 }
 
-class ObfuscateQueryFunctionAdaptor final : public IFunction
+class ObfuscateQueryFunctionAdaptor : public IFunction
 {
 private:
     ObfuscateQueryFunction::Mode getMode(size_t num_args) const
@@ -353,7 +351,7 @@ REGISTER_FUNCTION(obfuscateQuery)
          "SELECT a FROM b, SELECT c FROM d"},
         {"Different rows produce different results",
          "SELECT obfuscateQuery('SELECT 1') AS a, obfuscateQuery('SELECT 1') AS b",
-         "SELECT 1\tSELECT 1"}
+         "A B"}
     };
 
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
@@ -404,13 +402,13 @@ Features:
     FunctionDocumentation::Examples obfuscate_query_with_seed_examples = {
         {"Deterministic obfuscation with integer seed",
          "SELECT obfuscateQueryWithSeed('SELECT name FROM users', 42)",
-         "SELECT name FROM users"},
+         "SELECT fruit FROM table"},
         {"Deterministic obfuscation with string seed",
          "SELECT obfuscateQueryWithSeed('SELECT id, value FROM data', 'myseed')",
-         "SELECT id, value FROM data"},
+         "SELECT a, b FROM c"},
         {"Same seed produces same result",
          "SELECT obfuscateQueryWithSeed('SELECT 1', 100) = obfuscateQueryWithSeed('SELECT 1', 100)",
-         "1"}
+         "true"}
     };
 
     FunctionDocumentation obfuscate_query_with_seed_documentation = {

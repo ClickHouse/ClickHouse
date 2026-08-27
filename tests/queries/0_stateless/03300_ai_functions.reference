@@ -15,7 +15,7 @@ aiGenerate
 0
 -- Nonexistent named collection
 -- aiGenerate return type
-String
+result	String
 -- NULL input returns NULL
 1
 -- Empty string input accepted
@@ -45,7 +45,7 @@ String
 -- Setting defaults
 ai_function_embedding_default_credentials	
 ai_function_embedding_max_batch_size	100
-ai_function_max_api_calls_per_query	1000
+ai_function_max_api_calls_per_query	0
 ai_function_max_input_tokens_per_query	1000000
 ai_function_max_output_tokens_per_query	500000
 ai_function_max_retries	0
@@ -64,26 +64,10 @@ aiClassify
 -- aiClassify: wrong type for categories (Array of non-String)
 -- aiClassify: empty categories array
 -- aiClassify: return type
-String
+result	String
 -- aiClassify: empty input executes
 0
 -- aiClassify: with temperature
-0
--- aiFilter: registered
-aiFilter
--- aiFilter: too few arguments
--- aiFilter: too many arguments
--- aiFilter: non-constant condition
--- aiFilter: wrong type for condition
--- aiFilter: empty condition
--- aiFilter: empty condition on empty input
--- aiFilter: return type
-result	UInt8
--- aiFilter: Nullable return type
-result	Nullable(UInt8)
--- aiFilter: empty input executes
-0
--- aiFilter: with temperature
 0
 -- aiExtract: registered
 aiExtract
@@ -91,7 +75,7 @@ aiExtract
 -- aiExtract: too many arguments
 -- aiExtract: non-constant instruction
 -- aiExtract: return type
-String
+result	String
 -- aiExtract: JSON schema mode accepted
 0
 -- aiExtract: malformed JSON schema
@@ -107,22 +91,8 @@ aiTranslate
 -- aiTranslate: non-constant target language
 -- aiTranslate: empty target language
 -- aiTranslate: return type
-String
+result	String
 -- aiTranslate: with instructions and temperature
-0
--- aiRedact: registered
-aiRedact
--- aiRedact: too few arguments
--- aiRedact: too many arguments
--- aiRedact: non-constant categories
--- aiRedact: wrong type for categories (not array)
--- aiRedact: wrong type for categories (Array of non-String)
--- aiRedact: empty categories array accepted (default categories)
-0
-0
--- aiRedact: return type
-String
--- aiRedact: with replacement and temperature
 0
 -- aiEmbed: registered
 aiEmbed
@@ -138,9 +108,9 @@ aiEmbed
 -- aiEmbed: model supplied as a positional argument resolves
 0
 -- aiEmbed: return type
-Array(Float32)
+result	Array(Float32)
 -- aiEmbed: return type with dimensions
-Array(Float32)
+result	Array(Float32)
 -- aiEmbed: empty input executes
 0
 -- aiEmbed: empty input with dimensions
@@ -150,47 +120,17 @@ Array(Float32)
 -- aiEmbed: batch size setting default
 100
 -- aiEmbed: Nullable(String) input return type
-Array(Float32)
+result	Array(Float32)
 -- aiEmbed: NULL input → []
 0
--- aiSimilarity: registered
-aiSimilarity
--- aiSimilarity: too few arguments
--- aiSimilarity: too many arguments
--- aiSimilarity: wrong type for a text argument
--- aiSimilarity: non-constant parameter map
--- aiSimilarity: wrong type for parameter argument (not a map)
--- aiSimilarity: wrong type for model argument (not a string)
--- aiSimilarity: non-constant model argument
--- aiSimilarity: model is a required positional argument
--- aiSimilarity: model in the parameter map is rejected
--- aiSimilarity: model in the named collection is rejected
--- aiSimilarity: return type
-result	Nullable(Float32)
--- aiSimilarity: return type with Nullable(String) input
-result	Nullable(Float32)
--- aiSimilarity: empty input executes
-0
--- aiSimilarity: out-of-range dimensions on empty input
--- aiSimilarity: rejects anthropic provider
 -- aiEmbed: DEFAULT survives INSERT (no exception)
 1	0
 -- aiGenerate: DEFAULT survives INSERT (no exception)
 1	0
 -- aiClassify: DEFAULT survives INSERT (no exception)
 1	0
--- aiFilter: DEFAULT survives INSERT (no exception)
-1	0
 -- aiExtract: DEFAULT survives INSERT (no exception)
 1	0
 -- aiTranslate: DEFAULT survives INSERT (no exception)
 1	0
--- aiRedact: DEFAULT survives INSERT (no exception)
-1	0
--- aiSimilarity: NULL/empty operands and failed embeddings score NULL
-1
-1
-1
--- aiSimilarity: DEFAULT survives INSERT (no exception)
-1	1
 -- Re-disabled blocks function

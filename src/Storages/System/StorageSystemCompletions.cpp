@@ -1,5 +1,4 @@
 #include <Access/ContextAccess.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/ColumnString.h>
@@ -21,7 +20,6 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/CommonParsers.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/System/StorageSystemCompletions.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -67,7 +65,7 @@ ColumnsDescription StorageSystemCompletions::getColumnsDescription()
     return description;
 }
 
-static void fillDataWithTableColumns(
+void fillDataWithTableColumns(
     const String & database_name,
     const String & table_name,
     const StoragePtr & table,
@@ -91,15 +89,11 @@ static void fillDataWithTableColumns(
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
-    const auto snapshot = table->getInMemoryMetadataPtr(context, false);
+    StorageMetadataPtr snapshot = table->getInMemoryMetadataPtr(context, false);
     const auto & columns = snapshot->getColumns();
     for (const auto & column : columns)
     {
         if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
-            continue;
-
-        if (const auto * alias = table->as<StorageAlias>();
-            alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
             continue;
 
         res_columns[0]->insert(column.name);
@@ -108,7 +102,7 @@ static void fillDataWithTableColumns(
     }
 }
 
-static void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, const ContextPtr & context)
+void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, const ContextPtr & context)
 {
     const auto & access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
@@ -157,7 +151,7 @@ static void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, con
     }
 }
 
-static void fillDataWithFunctions(MutableColumns & res_columns, const ContextPtr & context)
+void fillDataWithFunctions(MutableColumns & res_columns, const ContextPtr & context)
 {
     auto insert_function = [&](const String & name)
     {
@@ -178,16 +172,14 @@ static void fillDataWithFunctions(MutableColumns & res_columns, const ContextPtr
         insert_function(function_name);
 }
 
-static void fillDataWithAggregateFunctionCombinatorPair(MutableColumns & res_columns)
+void fillDataWithAggregateFunctionCombinatorPair(MutableColumns & res_columns)
 {
     const auto & aggregate_functions = AggregateFunctionFactory::instance().getAllRegisteredNames();
     const auto & aggregate_function_combinators = AggregateFunctionCombinatorFactory::instance().getAllAggregateFunctionCombinators();
     for (const auto & function_name : aggregate_functions)
     {
-        for (const auto & combinator_pair : aggregate_function_combinators)
+        for (const auto & [combinator_name, combinator] : aggregate_function_combinators)
         {
-            const auto & combinator_name = combinator_pair.name;
-            const auto & combinator = combinator_pair.combinator_ptr;
             if (combinator->isForInternalUsageOnly())
                 continue;
             res_columns[0]->insert(function_name + combinator_name);
@@ -197,7 +189,7 @@ static void fillDataWithAggregateFunctionCombinatorPair(MutableColumns & res_col
     }
 }
 
-static void fillDataWithTableEngines(MutableColumns & res_columns)
+void fillDataWithTableEngines(MutableColumns & res_columns)
 {
     const auto & storage_factory = StorageFactory::instance();
     const auto & table_engines = storage_factory.getAllStorages();
@@ -209,7 +201,7 @@ static void fillDataWithTableEngines(MutableColumns & res_columns)
     }
 }
 
-static void fillDataWithFormats(MutableColumns & res_columns)
+void fillDataWithFormats(MutableColumns & res_columns)
 {
     const auto & format_factory = FormatFactory::instance();
     const auto & formats = format_factory.getAllFormats();
@@ -221,7 +213,7 @@ static void fillDataWithFormats(MutableColumns & res_columns)
     }
 }
 
-static void fillDataWithTableFunctions(MutableColumns & res_columns, const ContextPtr & context)
+void fillDataWithTableFunctions(MutableColumns & res_columns, const ContextPtr & context)
 {
     bool non_readonly_allowed = context->getSettingsRef()[Setting::readonly] == 0;
     const auto & table_functions_factory = TableFunctionFactory::instance();
@@ -229,7 +221,7 @@ static void fillDataWithTableFunctions(MutableColumns & res_columns, const Conte
     for (const auto & function_name : table_functions)
     {
         auto properties = table_functions_factory.tryGetProperties(function_name);
-        if (non_readonly_allowed || (properties && properties->allow_readonly))
+        if ((non_readonly_allowed) || (properties && properties->allow_readonly))
         {
             res_columns[0]->insert(function_name);
             res_columns[1]->insert(TABLE_FUNCTION_CONTEXT);
@@ -238,7 +230,7 @@ static void fillDataWithTableFunctions(MutableColumns & res_columns, const Conte
     }
 }
 
-static void fillDataWithDataTypeFamilies(MutableColumns & res_columns)
+void fillDataWithDataTypeFamilies(MutableColumns & res_columns)
 {
     const auto & data_type_factory = DataTypeFactory::instance();
     const auto & data_type_names = data_type_factory.getAllRegisteredNames();
@@ -250,7 +242,7 @@ static void fillDataWithDataTypeFamilies(MutableColumns & res_columns)
     }
 }
 
-static void fillDataWithMergeTreeSettings(MutableColumns & res_columns, const ContextPtr & context)
+void fillDataWithMergeTreeSettings(MutableColumns & res_columns, const ContextPtr & context)
 {
     /// Both getMergeTreeSettings() and getReplicatedMergeTreeSettings() return the same
     /// MergeTreeSettings type with identical setting names — they only differ in values
@@ -260,7 +252,7 @@ static void fillDataWithMergeTreeSettings(MutableColumns & res_columns, const Co
     merge_tree_settings.dumpToSystemCompletionsColumns(res_columns);
 }
 
-static void fillDataWithSettings(MutableColumns & res_columns, const ContextPtr & context)
+void fillDataWithSettings(MutableColumns & res_columns, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     const auto & setting_registered_names = settings.getAllRegisteredNames();
@@ -278,7 +270,7 @@ static void fillDataWithSettings(MutableColumns & res_columns, const ContextPtr 
     insertNames(setting_alias_names);
 }
 
-static void fillDataWithKeywords(MutableColumns & res_columns)
+void fillDataWithKeywords(MutableColumns & res_columns)
 {
     for (const auto & keyword : getAllKeyWords())
     {
@@ -288,7 +280,7 @@ static void fillDataWithKeywords(MutableColumns & res_columns)
     }
 }
 
-static void fillDataWithClusters(MutableColumns & res_columns, const ContextPtr & context)
+void fillDataWithClusters(MutableColumns & res_columns, const ContextPtr & context)
 {
     const auto & clusters = context->getClusters();
     for (const auto & [cluster_name, _] : clusters)
@@ -299,7 +291,7 @@ static void fillDataWithClusters(MutableColumns & res_columns, const ContextPtr 
     }
 }
 
-static void fillDataWithMacros(MutableColumns & res_columns, const ContextPtr & context)
+void fillDataWithMacros(MutableColumns & res_columns, const ContextPtr & context)
 {
     const auto & macros = context->getMacros();
     for (const auto & [macro_name, _] : macros->getMacroMap())
@@ -310,7 +302,7 @@ static void fillDataWithMacros(MutableColumns & res_columns, const ContextPtr & 
     }
 }
 
-static void fillDataWithPolicies(MutableColumns & res_columns, const ContextPtr & context)
+void fillDataWithPolicies(MutableColumns & res_columns, const ContextPtr & context)
 {
     for (const auto & [policy_name, _] : context->getPoliciesMap())
     {
@@ -320,7 +312,7 @@ static void fillDataWithPolicies(MutableColumns & res_columns, const ContextPtr 
     }
 }
 
-static void fillDataWithDictionaries(MutableColumns & res_columns, const ContextPtr & context)
+void fillDataWithDictionaries(MutableColumns & res_columns, const ContextPtr & context)
 {
     const auto & access = context->getAccess();
     const bool need_to_check_access_for_dictionaries = !access->isGranted(AccessType::SHOW_DICTIONARIES);
@@ -367,6 +359,3 @@ void StorageSystemCompletions::fillData(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemCompletions) }

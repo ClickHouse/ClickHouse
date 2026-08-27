@@ -48,6 +48,9 @@
 
 #include <base/insertAtEnd.h>
 
+#include <cassert>
+
+
 namespace DB
 {
 namespace Setting
@@ -263,7 +266,16 @@ public:
         data_out->finalize();
         data_out_compressed->finalize();
 
-        storage.saveIndicesAndFileSizes(lock);
+        /// Save the new indices.
+        storage.saveIndices(lock);
+
+        // While executing save file sizes the exception might occurs. S3::TooManyRequests for example.
+        fiu_do_on(FailPoints::stripe_log_sink_write_fallpoint,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault for inserting into StipeLog table");
+        });
+        /// Save the new file sizes.
+        storage.saveFileSizes(lock);
 
         storage.updateTotalRows(lock);
 
@@ -350,7 +362,7 @@ StorageStripeLog::~StorageStripeLog() = default;
 
 void StorageStripeLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    chassert(table_path != new_path_to_table_data);
+    assert(table_path != new_path_to_table_data);
     {
         disk->createDirectories(new_path_to_table_data);
         disk->moveDirectory(table_path, new_path_to_table_data);
@@ -371,18 +383,6 @@ static std::chrono::seconds getLockTimeout(ContextPtr local_context)
     if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
         lock_timeout = settings[Setting::max_execution_time].totalSeconds();
     return std::chrono::seconds{lock_timeout};
-}
-
-size_t StorageStripeLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)
-{
-    const auto lock_timeout = getLockTimeout(local_context);
-    loadIndices(lock_timeout);
-
-    ReadLock lock{rwlock, lock_timeout};
-    if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-
-    return std::min(num_streams, std::max(1uz, indices.blocks.size()));
 }
 
 VirtualColumnsDescription StorageStripeLog::createVirtuals()
@@ -562,33 +562,10 @@ void StorageStripeLog::removeUnsavedIndices(const WriteLock & /* already locked 
 
 void StorageStripeLog::saveFileSizes(const WriteLock & /* already locked for writing */)
 {
-    file_checker.updateAndSave({data_file_path, index_file_path});
+    file_checker.update(data_file_path);
+    file_checker.update(index_file_path);
+    file_checker.save();
     total_bytes = file_checker.getTotalSize();
-}
-
-
-void StorageStripeLog::saveIndicesAndFileSizes(const WriteLock & lock)
-{
-    /// The index file is itself one of the files whose size is recorded, so the count of saved indices
-    /// is only valid while those sizes are: repair() truncates the file back to the recorded size.
-    size_t num_indices_saved_before = num_indices_saved;
-    try
-    {
-        saveIndices(lock);
-
-        // While executing save file sizes the exception might occurs. S3::TooManyRequests for example.
-        fiu_do_on(FailPoints::stripe_log_sink_write_fallpoint,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault for inserting into StipeLog table");
-        });
-
-        saveFileSizes(lock);
-    }
-    catch (...)
-    {
-        num_indices_saved = num_indices_saved_before;
-        throw;
-    }
 }
 
 
@@ -673,10 +650,9 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, read_settings, copy_encrypted));
 
     /// columns.txt
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     backup_entries_collector.addBackupEntry(
         data_path_in_backup_fs / "columns.txt",
-        std::make_unique<BackupEntryFromMemory>(metadata_snapshot->getColumns().getAllPhysical().toString()));
+        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadataPtr(getContext(), false)->getColumns().getAllPhysical().toString()));
 
     /// count.txt
     size_t num_rows = 0;
@@ -749,7 +725,8 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
         }
 
         /// Finish writing.
-        saveIndicesAndFileSizes(lock);
+        saveIndices(lock);
+        saveFileSizes(lock);
         updateTotalRows(lock);
     }
     catch (...)
@@ -762,7 +739,6 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
 }
 
 
-void registerStorageStripeLog(StorageFactory & factory);
 void registerStorageStripeLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
@@ -788,101 +764,7 @@ void registerStorageStripeLog(StorageFactory & factory)
             args.comment,
             args.mode,
             args.getContext());
-    }, features, Documentation{
-        .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-# StripeLog table engine
-
-<CloudNotSupportedBadge/>
-
-This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](/reference/engines/table-engines/log-family/index) article.
-
-Use this engine in scenarios when you need to write many tables with a small amount of data (less than 1 million rows). For example, this table can be used to store incoming data batches for transformation where atomic processing of them is required. 100k instances of this table type are viable for a ClickHouse server. This table engine should be preferred over [Log](/reference/engines/table-engines/log-family/log) when a high number of tables are required. This is at the expense of read efficiency.
-
-## Creating a table {#table_engines-stripelog-creating-a-table}
-
-```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-(
-    column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-    column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
-    ...
-) ENGINE = StripeLog
-```
-
-See the detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
-
-## Writing the data {#table_engines-stripelog-writing-the-data}
-
-The `StripeLog` engine stores all the columns in one file. For each `INSERT` query, ClickHouse appends the data block to the end of a table file, writing columns one by one.
-
-For each table ClickHouse writes the files:
-
-- `data.bin` — Data file.
-- `index.mrk` — File with marks. Marks contain offsets for each column of each data block inserted.
-
-The `StripeLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
-
-## Reading the data {#table_engines-stripelog-reading-the-data}
-
-The file with marks allows ClickHouse to parallelize the reading of data. This means that a `SELECT` query returns rows in an unpredictable order. Use the `ORDER BY` clause to sort rows.
-
-## Example of use {#table_engines-stripelog-example-of-use}
-
-Creating a table:
-
-```sql
-CREATE TABLE stripe_log_table
-(
-    timestamp DateTime,
-    message_type String,
-    message String
-)
-ENGINE = StripeLog
-```
-
-Inserting data:
-
-```sql
-INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The first regular message')
-INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
-```
-
-We used two `INSERT` queries to create two data blocks inside the `data.bin` file.
-
-ClickHouse uses multiple threads when selecting data. Each thread reads a separate data block and returns resulting rows independently as it finishes. As a result, the order of blocks of rows in the output does not match the order of the same blocks in the input in most cases. For example:
-
-```sql
-SELECT * FROM stripe_log_table
-```
-
-```text
-┌───────────timestamp─┬─message_type─┬─message────────────────────┐
-│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
-│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
-└─────────────────────┴──────────────┴────────────────────────────┘
-┌───────────timestamp─┬─message_type─┬─message───────────────────┐
-│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message │
-└─────────────────────┴──────────────┴───────────────────────────┘
-```
-
-Sorting the results (ascending order by default):
-
-```sql
-SELECT * FROM stripe_log_table ORDER BY timestamp
-```
-
-```text
-┌───────────timestamp─┬─message_type─┬─message────────────────────┐
-│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message  │
-│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
-│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
-└─────────────────────┴──────────────┴────────────────────────────┘
-```
-)DOCS_MD",
-        .syntax = "ENGINE = StripeLog",
-        .related = {"Log", "TinyLog"}});
+    }, features);
 }
 
 }

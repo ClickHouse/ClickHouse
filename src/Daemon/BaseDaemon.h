@@ -18,7 +18,6 @@
 #include <base/getThreadId.h>
 #include <Daemon/GraphiteWriter.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/MapWithMemoryTracking.h>
 #include <Common/StatusFile.h>
 #include <Loggers/Loggers.h>
 
@@ -135,14 +134,6 @@ protected:
     /// initialize termination process and signal handlers
     virtual void initializeTerminationAndSignalProcessing();
 
-    /// Start the signal listener thread with the asynchronously delivered handled signals blocked in it.
-    void startSignalListener();
-
-    /// Ask the signal listener thread to stop and join it. The thread first drains every record already
-    /// queued in the signal pipe (they are ordered before the stop request), so after this returns no
-    /// queued signal work remains pending inside the thread. It can be started again with `startSignalListener`.
-    void stopSignalListener();
-
     /// fork the main process and watch if it was killed
     void setupWatchdog();
 
@@ -163,12 +154,9 @@ protected:
 
     /// A thread that acts on HUP and USR1 signal (close logs).
     Poco::Thread signal_listener_thread;
-    /// `Poco::Thread::isRunning` becomes false before `join` and therefore cannot tell whether its
-    /// native thread handle has already been joined.
-    bool signal_listener_thread_started = false;
     std::unique_ptr<SignalListener> signal_listener;
 
-    DB::MapWithMemoryTracking<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
+    std::map<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
 
     std::string config_path;
     DB::ConfigProcessor::LoadedConfig loaded_config;

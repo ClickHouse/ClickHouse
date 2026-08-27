@@ -31,7 +31,7 @@ namespace
 // used by `H3kRing` function. For small enough search area simple flat approximation can be used,
 // i.e. the smallest `k` that satisfies relation `3 k^2 - 3 k + 1 >= (radius / e)^2` should be
 // chosen
-class FunctionH3EdgeLengthM final : public IFunction
+class FunctionH3EdgeLengthM : public IFunction
 {
 public:
     static constexpr auto name = "h3EdgeLengthM";
@@ -118,7 +118,7 @@ Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3I
             "SELECT h3EdgeLengthM(15) AS edgeLengthM",
             R"(
 ┌─edgeLengthM─┐
-│  0.58416863 │
+│ 0.509713273 │
 └─────────────┘
             )"
         }

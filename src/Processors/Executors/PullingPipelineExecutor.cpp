@@ -133,7 +133,7 @@ ProfileInfo & PullingPipelineExecutor::getProfileInfo()
     return pulling_format->getProfileInfo();
 }
 
-PipelineExecutionStatus PullingPipelineExecutor::getExecutionStatus() const
+PipelineExecutor::ExecutionStatus PullingPipelineExecutor::getExecutionStatus() const
 {
     if (!executor)
         return PipelineExecutor::ExecutionStatus::NotStarted;

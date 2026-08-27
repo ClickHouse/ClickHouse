@@ -28,17 +28,12 @@ namespace Setting
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool load_marks_asynchronously;
-    extern const SettingsBool use_streaming_marks_compression;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
-    extern const SettingsBool merge_tree_prefetch_json_shared_data_substreams;
     extern const SettingsUInt64 filesystem_prefetches_limit;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
-    extern const SettingsUInt64 merge_tree_coarse_index_granularity;
-    extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
-    extern const SettingsUInt64 predicate_statistics_sample_rate;
 }
 
 namespace MergeTreeSetting
@@ -65,7 +60,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat map_buckets_coefficient;
     extern const MergeTreeSettingsUInt64 map_buckets_min_avg_size;
     extern const MergeTreeSettingsBool compress_per_column_in_compact_parts;
-    extern const MergeTreeSettingsBool allow_experimental_adaptive_codec_selection;
 }
 
 MergeTreeWriterSettings::MergeTreeWriterSettings(
@@ -77,8 +71,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     bool rewrite_primary_key_,
     bool save_marks_in_cache_,
     bool save_primary_index_in_memory_,
-    bool blocks_are_granules_size_,
-    bool try_adaptive_codec_)
+    bool blocks_are_granules_size_)
     : min_compress_block_size(std::min<size_t>(
         (*storage_settings)[MergeTreeSetting::min_compress_block_size] ? (*storage_settings)[MergeTreeSetting::min_compress_block_size] : global_settings[Setting::min_compress_block_size],
         MAX_COMPRESS_BLOCK_SIZE))
@@ -105,13 +98,12 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , object_shared_data_buckets(isCompactPart(data_part) ? (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] : (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_wide_part])
     , max_buckets_in_map((*storage_settings)[MergeTreeSetting::max_buckets_in_map])
     , map_buckets_strategy((*storage_settings)[MergeTreeSetting::map_buckets_strategy])
-    , map_buckets_coefficient(static_cast<double>((*storage_settings)[MergeTreeSetting::map_buckets_coefficient]))
+    , map_buckets_coefficient((*storage_settings)[MergeTreeSetting::map_buckets_coefficient])
     , map_buckets_min_avg_size((*storage_settings)[MergeTreeSetting::map_buckets_min_avg_size])
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
     , min_columns_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
     , compress_per_column_in_compact_parts((*storage_settings)[MergeTreeSetting::compress_per_column_in_compact_parts])
-    , apply_adaptive_codec(try_adaptive_codec_ && (*storage_settings)[MergeTreeSetting::allow_experimental_adaptive_codec_selection])
 {
 }
 
@@ -128,25 +120,15 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
         && (settings[Setting::max_streams_to_max_threads_ratio] > 1 || settings[Setting::max_streams_for_merge_tree_reading] > 1);
     result.enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps];
     result.force_short_circuit_execution = settings[Setting::query_plan_merge_filters];
-    /// `apply_deleted_mask = 0` reads deleted rows, so its entries and those of normal reads are not
-    /// interchangeable. The setting is a debugging aid, so such queries skip the cache instead of
-    /// getting a key space of their own. Mirrored on the read side in MergeTreeDataSelectExecutor.
-    result.use_query_condition_cache = settings[Setting::use_query_condition_cache]
-        && settings[Setting::allow_experimental_analyzer]
-        && settings[Setting::apply_deleted_mask];
+    result.use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::allow_experimental_analyzer];
     result.use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache];
     result.use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
-    result.prefetch_json_shared_data_substreams = settings[Setting::merge_tree_prefetch_json_shared_data_substreams];
     result.secondary_indices_enable_bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering];
     result.merge_tree_min_bytes_for_seek = settings[Setting::merge_tree_min_bytes_for_seek];
     result.merge_tree_min_rows_for_seek = settings[Setting::merge_tree_min_rows_for_seek];
-    result.merge_tree_coarse_index_granularity = settings[Setting::merge_tree_coarse_index_granularity];
-    result.merge_tree_generic_exclusion_search_max_steps = settings[Setting::merge_tree_generic_exclusion_search_max_steps];
     result.filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit];
     result.enable_analyzer = settings[Setting::allow_experimental_analyzer];
     result.load_marks_asynchronously = settings[Setting::load_marks_asynchronously];
-    result.use_streaming_marks_compression = settings[Setting::use_streaming_marks_compression];
-    result.collect_predicate_statistics = settings[Setting::predicate_statistics_sample_rate] > 0;
     return result;
 }
 

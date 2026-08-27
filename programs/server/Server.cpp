@@ -12,8 +12,6 @@
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
-#include <Poco/Util/LayeredConfiguration.h>
-#include <Poco/AutoPtr.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
 #include <Common/ErrorCodes.h>
@@ -29,14 +27,9 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/safeExit.h>
 #include <base/Numa.h>
-#include <base/argsToConfig.h>
 #include <Common/PoolId.h>
-#include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
-#include <Common/PerCPU.h>
-#include <Common/PerCPUMemory.h>
 #include <Common/MemoryWorker.h>
-#include <Common/OOMCanary/OOMCanary.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
@@ -55,9 +48,7 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
-#include <Common/SilkFiberScheduler.h>
 #include <Common/getMappedArea.h>
-#include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
@@ -68,10 +59,6 @@
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
-#include <Server/createServer.h>
-#include <Server/socketBindListen.h>
-#include <Server/stopServers.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -104,16 +91,14 @@
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
-#include <Parsers/registerStatements.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
+#include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/Config/ConfigReloader.h>
@@ -125,17 +110,13 @@
 #include <Server/TCPServer.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
-#include <Common/ThreadStackSize.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Server/CloudPlacementInfo.h>
-#include <Server/DistributedQuery/ExchangeConnections.h>
-#include <Server/DistributedQuery/ExchangeServer.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
-#include <Server/StatelessWorker/StatelessWorkerEndpoint.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
@@ -233,7 +214,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_move_pool_size;
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
-    extern const ServerSettingsUInt64 background_streaming_schedule_pool_size;
     extern const ServerSettingsUInt64 backups_io_thread_pool_queue_size;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
     extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
@@ -243,11 +223,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 concurrent_threads_soft_limit_num;
     extern const ServerSettingsUInt64 concurrent_threads_soft_limit_ratio_to_cores;
     extern const ServerSettingsString concurrent_threads_scheduler;
-    extern const ServerSettingsBool concurrent_threads_lazy_allocation;
     extern const ServerSettingsUInt64 config_reload_interval_ms;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsString default_database;
-    extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
@@ -262,7 +240,6 @@ namespace ServerSetting
     extern const ServerSettingsInt32 dns_cache_update_period;
     extern const ServerSettingsUInt32 dns_max_consecutive_failures;
     extern const ServerSettingsBool enable_azure_sdk_logging;
-    extern const ServerSettingsBool enable_silk_runtime;
     extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
@@ -297,10 +274,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
-    extern const ServerSettingsString paimon_metadata_files_cache_policy;
-    extern const ServerSettingsUInt64 paimon_metadata_files_cache_size;
-    extern const ServerSettingsUInt64 paimon_metadata_files_cache_max_entries;
-    extern const ServerSettingsDouble paimon_metadata_files_cache_size_ratio;
     extern const ServerSettingsString parquet_metadata_cache_policy;
     extern const ServerSettingsUInt64 parquet_metadata_cache_size;
     extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
@@ -315,12 +288,6 @@ namespace ServerSetting
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
     extern const ServerSettingsDouble mark_cache_size_ratio;
-    extern const ServerSettingsString unique_key_index_cache_policy;
-    extern const ServerSettingsUInt64 unique_key_index_cache_size_bytes;
-    extern const ServerSettingsDouble unique_key_index_cache_size_ratio;
-    extern const ServerSettingsString unique_key_bitmap_cache_policy;
-    extern const ServerSettingsUInt64 unique_key_bitmap_cache_size_bytes;
-    extern const ServerSettingsDouble unique_key_bitmap_cache_size_ratio;
     extern const ServerSettingsUInt64 max_fetch_partition_thread_pool_size;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_backups_io_thread_pool_free_size;
@@ -336,22 +303,14 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_io_thread_pool_size;
     extern const ServerSettingsUInt64 max_keep_alive_requests;
     extern const ServerSettingsUInt64 max_outdated_parts_loading_thread_pool_size;
-    extern const ServerSettingsUInt64 max_per_cpu_untracked_memory;
     extern const ServerSettingsUInt64 max_partition_size_to_drop;
     extern const ServerSettingsUInt64 max_part_num_to_warn;
     extern const ServerSettingsUInt64 max_pending_mutations_to_warn;
     extern const ServerSettingsUInt64 max_pending_mutations_execution_time_to_warn;
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
     extern const ServerSettingsUInt64 max_named_collection_num_to_warn;
-    extern const ServerSettingsUInt64 max_named_collection_num_to_throw;
-    extern const ServerSettingsUInt64 max_table_num_to_throw;
-    extern const ServerSettingsUInt64 max_replicated_table_num_to_throw;
-    extern const ServerSettingsUInt64 max_view_num_to_throw;
-    extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
-    extern const ServerSettingsUInt64 max_database_num_to_throw;
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
-    extern const ServerSettingsUInt64 max_remote_read_connections;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_server_memory_usage;
@@ -370,22 +329,15 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsBool memory_worker_use_cgroup;
-    extern const ServerSettingsDouble memory_worker_rss_speculative_reserve_ratio;
-    extern const ServerSettingsBool memory_worker_dynamic_hard_limit;
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
-    extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsString mutation_workload;
     extern const ServerSettingsString query_condition_cache_policy;
     extern const ServerSettingsUInt64 query_condition_cache_size;
     extern const ServerSettingsDouble query_condition_cache_size_ratio;
-    extern const ServerSettingsString encryption_header_cache_policy;
-    extern const ServerSettingsUInt64 encryption_header_cache_size;
-    extern const ServerSettingsDouble encryption_header_cache_size_ratio;
     extern const ServerSettingsBool prepare_system_log_tables_on_startup;
-    extern const ServerSettingsBool user_profile_events_per_cpu;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
     extern const ServerSettingsBool shutdown_wait_backups_and_restores;
     extern const ServerSettingsUInt64 shutdown_wait_unfinished;
@@ -412,12 +364,10 @@ namespace ServerSetting
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
-    extern const ServerSettingsUInt64 per_cpu_untracked_memory_thread_buffer;
     extern const ServerSettingsBool use_separate_cache_arena;
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
-    extern const ServerSettingsUInt64 point_in_polygon_cache_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool wait_dictionaries_load_at_startup;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
@@ -447,8 +397,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_open_files;
     extern const ServerSettingsString path;
     extern const ServerSettingsString user_files_path;
+    extern const ServerSettingsString dictionaries_lib_path;
     extern const ServerSettingsString user_scripts_path;
-    extern const ServerSettingsString dynamic_user_defined_executable_functions_path;
     extern const ServerSettingsString top_level_domains_path;
     extern const ServerSettingsString interserver_http_host;
     extern const ServerSettingsUInt64 interserver_http_port;
@@ -460,12 +410,6 @@ namespace ServerSetting
     extern const ServerSettingsString google_protos_path;
     extern const ServerSettingsString filesystem_caches_path;
     extern const ServerSettingsInt32 oom_score;
-    extern const ServerSettingsBool oom_canary_enable;
-    extern const ServerSettingsUInt64 oom_canary_size;
-    extern const ServerSettingsBool oom_canary_relaunch;
-    extern const ServerSettingsUInt64 oom_canary_max_rapid_relaunches;
-    extern const ServerSettingsUInt64 oom_canary_initial_backoff_seconds;
-    extern const ServerSettingsUInt64 oom_canary_max_backoff_seconds;
     extern const ServerSettingsBool remap_executable;
     extern const ServerSettingsBool mlock_executable;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
@@ -546,7 +490,6 @@ namespace ProfileEvents
 
 namespace fs = std::filesystem;
 
-int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
@@ -585,7 +528,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ABORTED;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -606,10 +548,7 @@ enum StartupScriptsExecutionState : CurrentMetrics::Value
 };
 
 
-namespace
-{
-
-std::string getCanonicalPath(std::string && path, const std::string & base = {})
+static std::string getCanonicalPath(std::string && path, const std::string & base = {})
 {
     Poco::trimInPlace(path);
     if (path.empty())
@@ -621,13 +560,11 @@ std::string getCanonicalPath(std::string && path, const std::string & base = {})
     return std::move(path);
 }
 
-Poco::Net::TCPServerParams::Ptr makeServerParams(const ServerSettings & server_settings)
+static Poco::Net::TCPServerParams::Ptr makeServerParams(const ServerSettings & server_settings)
 {
     Poco::Net::TCPServerParams::Ptr params = new Poco::Net::TCPServerParams();
     params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
     return params;
-}
-
 }
 
 Poco::Net::SocketAddress Server::socketBindListen(
@@ -637,11 +574,19 @@ Poco::Net::SocketAddress Server::socketBindListen(
     UInt16 port,
     [[maybe_unused]] bool secure) const
 {
-    return DB::socketBindListen(server_settings, socket, host, port, &logger());
-}
+    auto address = makeSocketAddress(host, port, &logger());
+    socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ server_settings[ServerSetting::listen_reuse_port]);
+    /// If caller requests any available port from the OS, discover it after binding.
+    if (port == 0)
+    {
+        address = socket.address();
+        LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
+    }
 
-namespace
-{
+    socket.listen(/* backlog = */ server_settings[ServerSetting::listen_backlog]);
+
+    return address;
+}
 
 Strings getListenHosts(const Poco::Util::AbstractConfiguration & config)
 {
@@ -664,21 +609,6 @@ Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & conf
     return getListenHosts(config);
 }
 
-bool isIntrospectionProtocol(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
-{
-    return config.getBool("protocols." + protocol + ".introspection", false);
-}
-
-bool hasIntrospectionProtocols(const Poco::Util::AbstractConfiguration & config)
-{
-    Poco::Util::AbstractConfiguration::Keys protocols;
-    config.keys("protocols", protocols);
-    return std::any_of(protocols.begin(), protocols.end(), [&](const auto & protocol)
-    {
-        return isIntrospectionProtocol(config, protocol);
-    });
-}
-
 bool getListenTry(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings)
 {
     bool listen_try = server_settings[ServerSetting::listen_try];
@@ -696,8 +626,6 @@ bool getListenTry(const Poco::Util::AbstractConfiguration & config, const Server
     return listen_try;
 }
 
-}
-
 
 void Server::createServer(
     Poco::Util::AbstractConfiguration & config,
@@ -708,17 +636,43 @@ void Server::createServer(
     std::vector<ProtocolServerAdapter> & servers,
     CreateServerFunc && func) const
 {
-    if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger()))
+    /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
+    if (config.getString(port_name, "").empty())
+        return;
+
+    /// If we already have an active server for this listen_host/port_name, don't create it again
+    for (const auto & server : servers)
     {
-        /// Register the configured port rather than the actual bound port. `getServerPort` keeps a
-        /// single value per `port_name`, so with `tcp_port=0` (OS-assigned) and several `listen_host`
-        /// values (e.g. the default `::1` + `127.0.0.1`) each host binds a distinct ephemeral port and
-        /// registering the actual port would let the last host overwrite the others, leaving
-        /// `getServerPort` pointing at a port that is not listening on the host a client uses. When the
-        /// configured port is non-zero it equals the bound port anyway, so this preserves the previous
-        /// behavior in all cases. (`clickhouse-local` registers the actual bound port because it needs
-        /// the OS-assigned value, but it rejects the ambiguous `port=0` + multiple `listen_host` combo.)
-        global_context->registerServerPort(port_name, static_cast<UInt16>(config.getInt(port_name)));
+        if (!server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == port_name)
+            return;
+    }
+
+    auto port = config.getInt(port_name);
+    try
+    {
+        servers.push_back(func(static_cast<UInt16>(port)));
+        if (start_server)
+        {
+            servers.back().start();
+            LOG_INFO(&logger(), "Listening for {}", servers.back().getDescription());
+        }
+        global_context->registerServerPort(port_name, static_cast<UInt16>(port));
+    }
+    catch (const Poco::Exception &)
+    {
+        if (listen_try)
+        {
+            LOG_WARNING(&logger(), "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "
+                "then consider to "
+                "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
+                "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
+                " Example for disabled IPv4: <listen_host>::</listen_host>",
+                listen_host, port, getCurrentExceptionMessage(false));
+        }
+        else
+        {
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Listen [{}]:{} failed: {}", listen_host, port, getCurrentExceptionMessage(false));
+        }
     }
 }
 
@@ -809,7 +763,7 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
 }
 
 
-[[maybe_unused]] static void checkForUsersNotInMainConfig(
+void checkForUsersNotInMainConfig(
     const Poco::Util::AbstractConfiguration & config,
     const ServerSettings & server_settings,
     const std::string & config_path,
@@ -846,7 +800,7 @@ String readLine(const String & path)
 int readNumber(const String & path)
 {
     ReadBufferFromFile in(path);
-    int result = {};
+    int result;
     readText(result, in);
     return result;
 }
@@ -884,21 +838,6 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     {
     }
 
-    if (!PerCPU::haveRSeq())
-        server.context()->addOrUpdateWarningMessage(
-            Context::WarningType::LINUX_RSEQ_UNAVAILABLE,
-            PreformattedMessage::create(
-                "The Linux 'restartable sequences' (rseq) feature is not enabled for this process. "
-                "ClickHouse uses it to cheaply detect which CPU core a thread is running on, which keeps "
-                "per-CPU performance counters (used for internal profiling and statistics) fast to update. "
-                "Without it, a slower fallback is used (a real system call on some platforms, such as AArch64), "
-                "making these counters more expensive and slightly degrading performance. "
-                "This means the runtime C library or the kernel did not register a usable rseq area for this process. "
-                "Possible causes: the kernel does not support rseq (it was introduced in Linux 4.18); "
-                "the C library does not register it (glibc does so automatically since version 2.35, so upgrading glibc may help; "
-                "other libraries, such as musl, do not register it); "
-                "or registration was disabled or failed at startup (with glibc, see the 'glibc.pthread.rseq' tunable)."));
-
     try
     {
         const char * filename = "/proc/sys/vm/overcommit_memory";
@@ -914,7 +853,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     try
     {
         const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
-        if (readLine(filename).contains("[always]"))
+        if (readLine(filename).find("[always]") != std::string::npos)
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
                 PreformattedMessage::create("Linux transparent hugepages are set to \"always\". Check {}", String(filename)));
@@ -1077,9 +1016,6 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
 
 }
 
-namespace
-{
-
 void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings, ContextMutablePtr context, Poco::Logger * log)
 {
     try
@@ -1182,7 +1118,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
     }
 }
 
-void initializeAzureSDKLogger(
+static void initializeAzureSDKLogger(
     [[ maybe_unused ]] const ServerSettings & server_settings,
     [[ maybe_unused ]] int server_logs_level)
 {
@@ -1221,12 +1157,8 @@ void initializeAzureSDKLogger(
 #endif
 }
 
-}
-
 #if defined(SANITIZER)
-namespace
-{
-std::vector<String> getSanitizerNames()
+static std::vector<String> getSanitizerNames()
 {
     std::vector<String> names;
 
@@ -1244,7 +1176,6 @@ std::vector<String> getSanitizerNames()
 #endif
 
     return names;
-}
 }
 #endif
 
@@ -1288,122 +1219,14 @@ try
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
 
-    /// Fail closed if an operator is still on a legacy insert deduplication version. This build only
-    /// writes the unified deduplication hash, so silently ignoring the setting would break the
-    /// mixed-version deduplication contract; refuse to start and explain how to migrate. This must run
-    /// after every server-settings load, not just this first one: the ZooKeeper-include reload below
-    /// and the runtime config reloader re-read the settings, so a legacy value could otherwise slip in
-    /// through a ZK-backed config or a `SYSTEM RELOAD CONFIG`.
-    auto validate_insert_deduplication_version = [](const ServerSettings & settings)
-    {
-        const String dedup_version = settings[ServerSetting::insert_deduplication_version];
-        if (dedup_version != "new_unified_hash")
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Server setting 'insert_deduplication_version' is set to '{}', but this version of ClickHouse "
-                "supports only the unified insert deduplication hash ('new_unified_hash'). Remove the setting from "
-                "the configuration (or set it to 'new_unified_hash'). To migrate from a version that used "
-                "'old_separate_hashes' or 'compatible_double_hashes', first run on a release that supports "
-                "'compatible_double_hashes' (writing both the legacy and unified hashes), then upgrade to this "
-                "version. For replicated tables run it for at least 'replicated_deduplication_window_seconds' "
-                "(one hour by default); the default windows retain the unified hashes of all inserts for that "
-                "one-hour window, which is considered long enough to cover an insert retry loop. For "
-                "non-replicated tables with 'non_replicated_deduplication_window' > 0 that window is count-based, "
-                "not time-based, so run 'compatible_double_hashes' for at least that many inserts before "
-                "upgrading; otherwise stale legacy block ids can survive the upgrade and a retried insert may be "
-                "accepted as new.",
-                dedup_version);
-    };
-    validate_insert_deduplication_version(server_settings);
-
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
     /// Remap before creating other threads to prevent crashes
     if (server_settings[ServerSetting::remap_executable])
     {
         LOG_DEBUG(log, "Will remap executable in memory.");
-        /// remapExecutable rewrites the whole code segment in place; any other thread executing code during
-        /// the window faults (and the signal handler's code is unmapped too, so it dies silently).
-        ///
-        /// Restart the async logging threads even if remapExecutable throws, so the exception unwinding
-        /// through Server::main is logged by a fully running logger (a stopped channel falls back to
-        /// synchronous delivery, but anything already queued waits until the threads run again).
-        /// The remap exception is stashed rather than rethrown directly, so the restart happens outside the
-        /// signal-blocking scope: the mask is restored first, and the logging threads get the same mask as
-        /// during a normal startup.
-        std::exception_ptr remap_exception;
-        size_t remapped_size = 0;
-#if USE_JEMALLOC
-        bool jemalloc_background_threads_were_enabled = false;
-#endif
-        {
-            /// `BaseDaemon::initializeTerminationAndSignalProcessing` has already installed the signal handlers
-            /// and started the signal listener thread. Block the asynchronously delivered handled signals in this
-            /// thread first, so that no new record can be queued into the signal pipe from here on. Nothing is
-            /// lost: the signal stays pending for the process and is delivered once the mask is restored below.
-            BlockSignalsScope block_signals(asynchronousHandledSignals());
-
-#if USE_JEMALLOC
-            /// `Jemalloc::setup` in `BaseDaemon::initialize` has already started jemalloc background threads
-            /// (`jemalloc_enable_background_threads` defaults to true). They execute allocator code from the text
-            /// segment, and they were created with an unblocked signal mask, so they could also take a handled
-            /// signal inside the remap window. Writing `false` into the `background_thread` mallctl stops *and
-            /// joins* every background thread before returning, so after this call they are fully quiesced.
-            /// They are restarted below, after the remap. `max_background_threads` is a separate mallctl and is
-            /// left untouched, so re-enabling restores the configured limit.
-            if (Jemalloc::tryGetValue("background_thread", jemalloc_background_threads_were_enabled)
-                && jemalloc_background_threads_were_enabled)
-                Jemalloc::setBackgroundThreads(false);
-#endif
-
-            /// Blocking the signals is not enough by itself: a signal that arrived just before the mask was set
-            /// may already have written a record into the signal pipe, and the listener thread would execute the
-            /// corresponding callback at an arbitrary later moment - possibly inside the remap window. Stop and
-            /// join the listener thread: it drains every record already queued (they are ordered in the pipe
-            /// before the stop request) while the code is still mapped, and then exits. It is restarted below.
-            stopSignalListener();
-
-            /// The async logging threads poll rather than block, so join them for the duration and restart afterwards.
-            /// This fails closed: if any logging thread cannot be joined, the exception propagates and the remap
-            /// is aborted, instead of rewriting the text segment under a thread that may still execute from it.
-            stopAsyncLoggingThreads();
-
-            /// At this point the process is single-threaded again and all handled signals are blocked,
-            /// so no code other than this thread can possibly run while the text segment is rewritten.
-            try
-            {
-                remapped_size = remapExecutable();
-            }
-            catch (...)
-            {
-                remap_exception = std::current_exception();
-            }
-        }
-
-#if USE_JEMALLOC
-        /// Restarted outside the signal-blocking scope, so the new background threads inherit the same
-        /// (unblocked) signal mask they had before the remap. Restarted even if remapExecutable threw,
-        /// for the same reason the logging threads are: the allocator must be back in its configured
-        /// state while the exception unwinds. `verifySetup` below cross-checks the state against the
-        /// server settings, so a failure to restore would not go unnoticed.
-        if (jemalloc_background_threads_were_enabled)
-            Jemalloc::setBackgroundThreads(true);
-#endif
-
-        /// Fail closed if the restart itself throws: continuing with only part of the logging threads
-        /// running would keep accepting messages into queues that no consumer drains. open() tears the
-        /// partially opened channel back down before rethrowing, and a stopped channel delivers messages
-        /// synchronously, so the exception propagating out of Server::main still reaches the log.
-        startAsyncLoggingThreads();
-
-        /// Restarted after the logging threads, so that if this throws, the exception is still logged normally.
-        /// A pending signal delivered when the mask was restored above only writes a record into the signal
-        /// pipe; the record waits there until the restarted listener thread picks it up, so it is not lost.
-        startSignalListener();
-
-        if (remap_exception)
-            std::rethrow_exception(remap_exception);
-        LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(remapped_size));
+        size_t size = remapExecutable();
+        LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
     }
 
     if (server_settings[ServerSetting::mlock_executable])
@@ -1497,8 +1320,6 @@ try
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
 
-    ProfileEvents::setUserPerCPUEnabled(server_settings[ServerSetting::user_profile_events_per_cpu]);
-
 #if USE_HDFS
     /// This will point libhdfs3 to the right location for its config.
     /// Note: this has to be done once at server initialization, because 'setenv' is not thread-safe.
@@ -1528,7 +1349,6 @@ try
 #endif
 
     registerInterpreters();
-    registerStatements();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
@@ -1538,6 +1358,7 @@ try
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
+    registerSchedulerNodes();
 
     QueryPlanStepRegistry::registerPlanSteps();
 
@@ -1588,18 +1409,16 @@ try
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
 #endif
 
-    /// Under thread sanitizer we use frame-pointer-based unwinding (via abseil) which does not
-    /// call dl_iterate_phdr in the signal handler, so the PHDR cache is not needed.
-#if defined(THREAD_SANITIZER)
-    bool has_trace_collector = config().has("trace_log");
-    LOG_INFO(log, "Query Profiler will use frame-pointer-based stack unwinding under sanitizers.");
-#else
-    bool has_trace_collector = hasAsyncSignalSafeUnwind() && config().has("trace_log");
-    if (!hasAsyncSignalSafeUnwind())
-        LOG_INFO(log, "Query Profiler and TraceCollector are disabled because async-signal-safe stack unwinding"
-            " is not available in this build (on Linux this requires the lock-free PHDR cache, otherwise"
-            " 'dl_iterate_phdr' is not lock free and not async-signal safe).");
+    bool has_trace_collector = hasPHDRCache() && config().has("trace_log");
+
+#if defined(SANITIZER)
+    LOG_INFO(log, "Query Profiler is disabled because it cannot work under sanitizers"
+        " when two different stack unwinding methods will interfere with each other.");
 #endif
+
+    if (!hasPHDRCache())
+        LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
+            " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 
     // Settings validation for page cache. Ensure that page_cache_max_size is > page_cache_min_size.
     // Otherwise, crash might happen during cache resizing in src/Common/PageCache.cpp::autoResize
@@ -1631,13 +1450,6 @@ try
         has_trace_collector ? server_settings[ServerSetting::global_profiler_real_time_period_ns].value : 0,
         has_trace_collector ? server_settings[ServerSetting::global_profiler_cpu_time_period_ns].value : 0);
 
-#if USE_SILK
-    if (server_settings[ServerSetting::enable_silk_runtime])
-    {
-        Silk::initializeFiberScheduler(config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE));
-    }
-#endif
-
     if (has_trace_collector)
     {
         global_context->createTraceCollector();
@@ -1654,9 +1466,6 @@ try
 
         if (server_settings[ServerSetting::total_memory_profiler_sample_max_allocation_size])
             total_memory_tracker.setSampleMaxAllocationSize(server_settings[ServerSetting::total_memory_profiler_sample_max_allocation_size]);
-
-        if (current_thread)
-            current_thread->resolveMemorySampleConfig();
     }
 
     total_memory_tracker.setJemallocFlushProfileInterval(server_settings[ServerSetting::jemalloc_flush_profile_interval_bytes]);
@@ -1667,35 +1476,20 @@ try
         /* minCapacity */3,
         /* maxCapacity */server_settings[ServerSetting::max_connections],
         /* idleTime */60,
-        /* stackSize */DEFAULT_THREAD_STACK_SIZE ? static_cast<int>(DEFAULT_THREAD_STACK_SIZE) : POCO_THREAD_STACK_SIZE,
+        /* stackSize */POCO_THREAD_STACK_SIZE,
         server_settings[ServerSetting::global_profiler_real_time_period_ns],
         server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
-
-    std::unique_ptr<Poco::ThreadPool> introspection_server_pool;
 
     std::mutex servers_lock;
     std::vector<ProtocolServerAdapter> servers;
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
-    std::vector<ProtocolServerAdapter> introspection_servers;
 
-    auto stop_silk_fiber_scheduler = [&]{
-#if USE_SILK
-        if (server_settings[ServerSetting::enable_silk_runtime])
-        {
-            LOG_INFO(log, "Stopping silk fiber scheduler");
-            Silk::destroyFiberScheduler();
-        }
-#endif
-    };
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT_SAFE({
         Stopwatch watch;
         LOG_INFO(log, "Waiting for background threads");
-        DB::StaticThreadPool::shutdownAll();
         GlobalThreadPool::instance().shutdown();
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
-
-        stop_silk_fiber_scheduler();
     });
 
     if (page_cache_max_size != 0)
@@ -1718,10 +1512,6 @@ try
         .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
         .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
         .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
-        .rss_speculative_reserve_ratio = server_settings[ServerSetting::memory_worker_rss_speculative_reserve_ratio],
-        .dynamic_hard_limit_ratio = server_settings[ServerSetting::memory_worker_dynamic_hard_limit]
-            ? static_cast<double>(server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio])
-            : 0.0,
     };
 
     MemoryWorker memory_worker(memory_worker_config, global_context->getPageCache());
@@ -1734,15 +1524,12 @@ try
         std::vector<ProtocolServerMetrics> metrics;
 
         std::lock_guard lock(servers_lock);
-        metrics.reserve(servers_to_start_before_tables.size() + servers.size() + introspection_servers.size());
+        metrics.reserve(servers_to_start_before_tables.size() + servers.size());
 
         for (const auto & server : servers_to_start_before_tables)
             metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
 
         for (const auto & server : servers)
-            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
-
-        for (const auto & server : introspection_servers)
             metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
         return metrics;
     };
@@ -1779,20 +1566,6 @@ try
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT_SAFE({
-        /// Required for the startup exception case where the termination block that should set is_cancelled=true never runs.
-        is_cancelled = true;
-
-        /// Stop accepting connections on the regular servers. In the normal shutdown path they are
-        /// already stopped, but on startup failure some of them can still be running: the Prometheus
-        /// endpoint is started before tables are loaded. Otherwise `server_pool.joinAll()` below
-        /// would wait forever for their listener threads.
-        {
-            std::lock_guard lock(servers_lock);
-            for (auto & server : servers)
-                if (!server.isStopping())
-                    server.stop();
-        }
-
         async_metrics->stop();
 
         /** Ask to cancel background jobs all table engines,
@@ -1973,17 +1746,9 @@ try
     }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
-    /// Validate the loaded XML config directly (not the layered config) so that command-line
-    /// options injected by `argsToConfig` (`--config-file`, `--daemon`, `-C`, ...) and Poco-internal
-    /// layers (`system`, `application`) are not mistaken for unknown top-level config keys.
-    /// The `skip_check_for_incorrect_settings` escape hatch is resolved from the layered `config()`,
-    /// so it works when supplied from the command line as well as from the config file.
-    ServerSettings::checkUnknownSettings(
-        *loaded_config.configuration, config_path, config().getBool("skip_check_for_incorrect_settings", false));
 
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
-    validate_insert_deduplication_version(server_settings);
     global_context->configureServerWideThrottling();
 
     /// Create the dedicated MergeTree metadata arena pool. Placed after the ZooKeeper-include reload
@@ -2086,27 +1851,6 @@ try
         setOOMScore(oom_score, log);
 #endif
 
-#if defined(OS_LINUX)
-    std::optional<OOMCanary> oom_canary;
-    if (server_settings[ServerSetting::oom_canary_enable])
-    {
-        OOMCanary::Config canary_config;
-        canary_config.size_bytes = server_settings[ServerSetting::oom_canary_size];
-        canary_config.relaunch = server_settings[ServerSetting::oom_canary_relaunch];
-        canary_config.max_rapid_relaunches = server_settings[ServerSetting::oom_canary_max_rapid_relaunches];
-        canary_config.initial_backoff_seconds = server_settings[ServerSetting::oom_canary_initial_backoff_seconds];
-        canary_config.max_backoff_seconds = server_settings[ServerSetting::oom_canary_max_backoff_seconds];
-        oom_canary.emplace(global_context, std::move(canary_config));
-    }
-    else
-    {
-        LOG_INFO(log, "OOM canary is disabled");
-    }
-#else
-    if (server_settings[ServerSetting::oom_canary_enable])
-        LOG_WARNING(log, "OOM canary is only supported on Linux, ignoring");
-#endif
-
     std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> cancellation_task;
 
     SCOPE_EXIT({
@@ -2116,7 +1860,7 @@ try
 
     if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
     {
-        auto cancellation_task_holder = global_context->getSchedulePool()->createTask(
+        auto cancellation_task_holder = global_context->getSchedulePool().createTask(
             StorageID::createEmpty(), "CancellationChecker",
             [] { CancellationChecker::getInstance().workerFunction(); }
         );
@@ -2129,7 +1873,7 @@ try
 
     /// Try to increase limit on number of open files.
     {
-        rlimit rlim{};
+        rlimit rlim;
         if (getrlimit(RLIMIT_NOFILE, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -2152,7 +1896,7 @@ try
 #if defined(RLIMIT_NPROC)
     /// Try to increase limit on number of threads.
     {
-        rlimit rlim{};
+        rlimit rlim;
         if (getrlimit(RLIMIT_NPROC, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -2218,18 +1962,17 @@ try
     }
 
     {
+        const auto & dictionaries_lib_path_setting = server_settings[ServerSetting::dictionaries_lib_path];
+        std::string dictionaries_lib_path = dictionaries_lib_path_setting.changed
+            ? getCanonicalPath(String(dictionaries_lib_path_setting.value), path_str) : String(path / "dictionaries_lib/");
+        global_context->setDictionariesLibPath(dictionaries_lib_path);
+    }
+
+    {
         const auto & user_scripts_path_setting = server_settings[ServerSetting::user_scripts_path];
         std::string user_scripts_path = user_scripts_path_setting.changed
             ? getCanonicalPath(String(user_scripts_path_setting.value), path_str) : String(path / "user_scripts/");
         global_context->setUserScriptsPath(user_scripts_path);
-    }
-
-    {
-        const auto & dynamic_udf_path_setting = server_settings[ServerSetting::dynamic_user_defined_executable_functions_path];
-        std::string dynamic_udf_path = dynamic_udf_path_setting.changed
-            ? getCanonicalPath(String(dynamic_udf_path_setting.value), path_str) : String(path / "dynamic_user_defined_executable_functions/");
-        global_context->setDynamicUserDefinedExecutableFunctionsPath(dynamic_udf_path);
-        fs::create_directories(dynamic_udf_path);
     }
 
     /// top_level_domains_lists
@@ -2283,89 +2026,6 @@ try
     LOG_DEBUG(log, "Initializing interserver credentials.");
     global_context->updateInterserverCredentials(config());
 
-    std::shared_ptr<StatelessWorkerEndpoint> stateless_worker_endpoint_ptr{nullptr};
-    String stateless_worker_endpoint_name;
-    if (config().getBool("stateless_worker_server.enabled", false))
-    {
-        String stateless_worker_endpoint = config().getString("stateless_worker_server.endpoint", "localhost");
-        size_t stateless_worker_max_threads = config().getUInt64("stateless_worker_server.max_threads", 1000);
-        if (stateless_worker_max_threads == 0)
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                "`stateless_worker_server.max_threads` must be at least 1");
-        stateless_worker_endpoint_ptr = std::make_shared<StatelessWorkerEndpoint>(
-            stateless_worker_max_threads,
-            config().getUInt64("stateless_worker_server.max_free_threads", 0),
-            config().getUInt64("stateless_worker_server.queue_size", 3000));
-        stateless_worker_endpoint_name = stateless_worker_endpoint_ptr->getId(stateless_worker_endpoint);
-        global_context->getInterserverIOHandler().addEndpoint(stateless_worker_endpoint_name, stateless_worker_endpoint_ptr);
-        LOG_DEBUG(log, "Added stateless worker endpoint '{}'.", stateless_worker_endpoint_name);
-    }
-
-    SCOPE_EXIT({
-        if (stateless_worker_endpoint_ptr)
-        {
-            /// Remove the same endpoint that was registered (the configured name may differ from "localhost").
-            LOG_DEBUG(log, "Shutting down stateless worker endpoint '{}'.", stateless_worker_endpoint_name);
-            global_context->getInterserverIOHandler().removeEndpointIfExists(stateless_worker_endpoint_name);
-
-            stateless_worker_endpoint_ptr->blocker.cancelForever();
-            stateless_worker_endpoint_ptr->shutdown();
-            /// Acquire the lock to wait for all in-flight requests to finish.
-            std::lock_guard lock(stateless_worker_endpoint_ptr->rwlock);
-        }
-        stateless_worker_endpoint_ptr.reset();
-    });
-
-    #if defined(OS_LINUX) || defined(OS_DARWIN)
-    ExchangeConnectionsPtr exchange_connections_ptr = ExchangeConnections::instance();
-    std::vector<std::shared_ptr<ExchangeServer>> exchange_servers;
-    if (auto streaming_exchange_port = config().getUInt("distributed_query.streaming_exchange_port", 0))
-    {
-        if (streaming_exchange_port > 65535)
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                "`distributed_query.streaming_exchange_port` must be in range 1..65535, got {}", streaming_exchange_port);
-
-        /// The exchange handshake is unauthenticated, so the listener is never bound to all interfaces
-        /// implicitly: the streaming exchange is enabled only when explicit listen host(s) are given.
-        Strings exchange_listen_hosts = DB::getMultipleValuesFromConfig(config(), "distributed_query", "streaming_exchange_listen_host");
-        if (exchange_listen_hosts.empty())
-        {
-            LOG_ERROR(log, "`distributed_query.streaming_exchange_port` is set but no "
-                "`distributed_query.streaming_exchange_listen_host` is configured; the streaming exchange "
-                "server is not started. Specify a listen host to enable it.");
-        }
-        else
-        {
-            for (const auto & listen_host : exchange_listen_hosts)
-            {
-                try
-                {
-                    exchange_servers.emplace_back(std::make_shared<ExchangeServer>(listen_host, streaming_exchange_port, exchange_connections_ptr));
-                    exchange_servers.back()->start();
-                }
-                catch (Poco::Exception & e)
-                {
-                    LOG_INFO(log, "Failed to start exchange server on {}:{}: {}",
-                        listen_host, streaming_exchange_port, e.displayText());
-                }
-            }
-            if (exchange_servers.empty())
-                throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to start ExchangeServer on port {}", streaming_exchange_port);
-        }
-    }
-
-    SCOPE_EXIT({
-        for (auto & exchange_server_ptr : exchange_servers)
-        {
-            exchange_server_ptr->stop();
-            exchange_server_ptr.reset();
-        }
-    });
-    #else
-    if (config().getUInt("distributed_query.streaming_exchange_port", 0))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ExchangeServer is not supported on this platform");
-    #endif
-
     /// Set up caches.
 
     JemallocCacheArena::setEnabled(server_settings[ServerSetting::use_separate_cache_arena]);
@@ -2391,27 +2051,6 @@ try
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
-
-    String unique_key_index_cache_policy_name = server_settings[ServerSetting::unique_key_index_cache_policy];
-    size_t unique_key_index_cache_size = server_settings[ServerSetting::unique_key_index_cache_size_bytes];
-    double unique_key_index_cache_size_ratio = server_settings[ServerSetting::unique_key_index_cache_size_ratio];
-    if (unique_key_index_cache_size > max_cache_size)
-    {
-        unique_key_index_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered UNIQUE KEY index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(unique_key_index_cache_size));
-    }
-    global_context->setUniqueKeyIndexCache(unique_key_index_cache_policy_name, unique_key_index_cache_size, unique_key_index_cache_size_ratio);
-
-    /// UNIQUE KEY delete-bitmap cache. Zero size disables.
-    String unique_key_bitmap_cache_policy_name = server_settings[ServerSetting::unique_key_bitmap_cache_policy];
-    size_t unique_key_bitmap_cache_size = server_settings[ServerSetting::unique_key_bitmap_cache_size_bytes];
-    double unique_key_bitmap_cache_size_ratio = server_settings[ServerSetting::unique_key_bitmap_cache_size_ratio];
-    if (unique_key_bitmap_cache_size > max_cache_size)
-    {
-        unique_key_bitmap_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered UNIQUE KEY delete-bitmap cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(unique_key_bitmap_cache_size));
-    }
-    global_context->setDeleteBitmapCache(unique_key_bitmap_cache_policy_name, unique_key_bitmap_cache_size, unique_key_bitmap_cache_size_ratio);
 
     String primary_index_cache_policy = server_settings[ServerSetting::primary_index_cache_policy];
     size_t primary_index_cache_size = server_settings[ServerSetting::primary_index_cache_size];
@@ -2506,17 +2145,6 @@ try
         LOG_INFO(log, "Lowered Iceberg metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(iceberg_metadata_files_cache_size));
     }
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
-
-    String paimon_metadata_files_cache_policy = server_settings[ServerSetting::paimon_metadata_files_cache_policy];
-    size_t paimon_metadata_files_cache_size = server_settings[ServerSetting::paimon_metadata_files_cache_size];
-    size_t paimon_metadata_files_cache_max_entries = server_settings[ServerSetting::paimon_metadata_files_cache_max_entries];
-    double paimon_metadata_files_cache_size_ratio = server_settings[ServerSetting::paimon_metadata_files_cache_size_ratio];
-    if (paimon_metadata_files_cache_size > max_cache_size)
-    {
-        paimon_metadata_files_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered Paimon metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(paimon_metadata_files_cache_size));
-    }
-    global_context->setPaimonMetadataFilesCache(paimon_metadata_files_cache_policy, paimon_metadata_files_cache_size, paimon_metadata_files_cache_max_entries, paimon_metadata_files_cache_size_ratio);
 #endif
 #if USE_PARQUET
     String parquet_metadata_cache_policy = server_settings[ServerSetting::parquet_metadata_cache_policy];
@@ -2545,16 +2173,6 @@ try
     }
     global_context->setQueryConditionCache(query_condition_cache_policy, query_condition_cache_size, query_condition_cache_size_ratio);
 
-    String encryption_header_cache_policy = server_settings[ServerSetting::encryption_header_cache_policy];
-    size_t encryption_header_cache_size = server_settings[ServerSetting::encryption_header_cache_size];
-    double encryption_header_cache_size_ratio = server_settings[ServerSetting::encryption_header_cache_size_ratio];
-    if (encryption_header_cache_size > max_cache_size)
-    {
-        encryption_header_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered encryption header cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(encryption_header_cache_size));
-    }
-    global_context->setEncryptionHeaderCache(encryption_header_cache_policy, encryption_header_cache_size, encryption_header_cache_size_ratio);
-
     size_t query_result_cache_max_size_in_bytes = server_settings[ServerSetting::query_cache_max_size_in_bytes];
     size_t query_result_cache_max_entries = server_settings[ServerSetting::query_cache_max_entries];
     size_t query_result_cache_max_entry_size_in_bytes = server_settings[ServerSetting::query_cache_max_entry_size_in_bytes];
@@ -2572,16 +2190,7 @@ try
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
-    size_t point_in_polygon_cache_size = server_settings[ServerSetting::point_in_polygon_cache_size];
-    if (point_in_polygon_cache_size > max_cache_size)
-    {
-        point_in_polygon_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered point in polygon cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(point_in_polygon_cache_size));
-    }
-    setPointInPolygonCacheMaxSizeInBytes(point_in_polygon_cache_size);
-
     NamedCollectionFactory::instance().loadIfNot();
-    SQLDefinedHandlersFactory::instance().loadIfNot();
     FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
 
     /// Initialize main config reloader.
@@ -2653,22 +2262,6 @@ try
         dns_cache_updater->start();
     }
 
-    /// Whether `--skip_check_for_incorrect_settings=1` was passed on the *command line*, captured
-    /// independently of any config file layer. Reusing the layered `config()` here would conflate
-    /// the command-line value with whatever the *previously loaded* file set: a config that once
-    /// contained `<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>` would
-    /// leave that flag live in `config()`, so a reload that *removes* the flag while adding an
-    /// unknown key would still be skipped — diverging from a fresh startup with the same file,
-    /// which would reject it. Re-parsing `argv()` with `argsToConfig` (exactly as `BaseDaemon`
-    /// populates the command-line layer) reproduces the command-line-only view; the priority is
-    /// irrelevant because the throwaway config has a single layer.
-    bool command_line_skip_check = false;
-    {
-        Poco::AutoPtr<Poco::Util::LayeredConfiguration> command_line_config(new Poco::Util::LayeredConfiguration);
-        argsToConfig(argv(), *command_line_config, PRIO_DEFAULT);
-        command_line_skip_check = command_line_config->getBool("skip_check_for_incorrect_settings", false);
-    }
-
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
@@ -2677,31 +2270,9 @@ try
         main_config_zk_changed_event,
         [&](ConfigurationPtr loaded_config, bool initial_loading)
         {
-            /// Validate the new config BEFORE installing it into the global layered config, so a
-            /// failed reload does not leave `config()` partially mutated with unvalidated changes.
-            /// The escape hatch is honored when it is either passed on the command line (persisted
-            /// across reloads) or present in the *new* file being validated — never inherited from
-            /// the previously loaded file layer (see `command_line_skip_check` above). This matches
-            /// startup: validating the same file fresh must reach the same accept/reject decision.
-            const bool skip_check
-                = command_line_skip_check || loaded_config->getBool("skip_check_for_incorrect_settings", false);
-            if (!skip_check)
-                Settings::checkNoSettingNamesAtTopLevel(*loaded_config, config_path);
-            /// Same as on initial load: validate the reloaded XML config rather than the layered
-            /// view, so CLI-injected and Poco-internal top-level keys do not need an allowlist.
-            ServerSettings::checkUnknownSettings(*loaded_config, config_path, skip_check);
-
-            /// Fail closed on a legacy insert_deduplication_version arriving via a runtime reload.
-            /// Validate the incoming config BEFORE config().replace below: validating after would mutate
-            /// the live config even for a rejected reload (ConfigReloader has no rollback hook), leaving
-            /// system.server_settings reporting an unsupported value. Reject first, then replace.
-            {
-                ServerSettings incoming_server_settings;
-                incoming_server_settings.loadSettingsFromConfig(*loaded_config);
-                validate_insert_deduplication_version(incoming_server_settings);
-            }
-
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
+
+            Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
@@ -2733,29 +2304,9 @@ try
                     max_server_memory_usage_to_ram_ratio);
             }
 
+            total_memory_tracker.setHardLimit(max_server_memory_usage);
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
-
-            /// Inform `MemoryWorker` of the configured ceiling and the ratio so its dynamic
-            /// adjustment (which only sees `MemAvailable` or cgroup memory) cannot exceed
-            /// the explicit `max_server_memory_usage`, and so a config-reload change to
-            /// `max_server_memory_usage_to_ram_ratio` takes effect on the next worker tick.
-            /// `setDynamicHardLimitSettings` also installs `max_server_memory_usage` as the
-            /// new hard limit atomically with the settings update; doing it outside that call
-            /// would re-open a reload race against the worker tick.
-            /// A zero ratio disables the runtime adjustment, keeping only the static cap;
-            /// `memory_worker_dynamic_hard_limit = 0` requests exactly that.
-            memory_worker.setDynamicHardLimitSettings(
-                static_cast<Int64>(max_server_memory_usage),
-                new_server_settings[ServerSetting::memory_worker_dynamic_hard_limit]
-                    ? max_server_memory_usage_to_ram_ratio
-                    : 0.0);
-
-            CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
-                new_server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
-
-            per_cpu_memory.setBudgetCapacity(new_server_settings[ServerSetting::max_per_cpu_untracked_memory]);
-            per_cpu_memory.setThreadBuffer(new_server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);
 
             size_t merges_mutations_memory_usage_soft_limit = new_server_settings[ServerSetting::merges_mutations_memory_usage_soft_limit];
 
@@ -2804,7 +2355,6 @@ try
                 /// It does not make sense to reload anything before server has started.
                 /// Moreover, it may break initialization order.
                 global_context->loadOrReloadDictionaries(config());
-                global_context->loadUserDefinedExecutableFunctionDrivers(config());
                 global_context->loadOrReloadUserDefinedExecutableFunctions(config());
             }
 
@@ -2819,26 +2369,15 @@ try
             global_context->setMaxDictionaryNumToWarn(new_server_settings[ServerSetting::max_dictionary_num_to_warn]);
             global_context->setMaxDatabaseNumToWarn(new_server_settings[ServerSetting::max_database_num_to_warn]);
             global_context->setMaxPartNumToWarn(new_server_settings[ServerSetting::max_part_num_to_warn]);
-            global_context->setMaxNamedCollectionNumToThrow(new_server_settings[ServerSetting::max_named_collection_num_to_throw]);
-            global_context->setMaxTableNumToThrow(new_server_settings[ServerSetting::max_table_num_to_throw]);
-            global_context->setMaxReplicatedTableNumToThrow(new_server_settings[ServerSetting::max_replicated_table_num_to_throw]);
-            global_context->setMaxViewNumToThrow(new_server_settings[ServerSetting::max_view_num_to_throw]);
-            global_context->setMaxDictionaryNumToThrow(new_server_settings[ServerSetting::max_dictionary_num_to_throw]);
-            global_context->setMaxDatabaseNumToThrow(new_server_settings[ServerSetting::max_database_num_to_throw]);
             global_context->setMaxPendingMutationsToWarn(new_server_settings[ServerSetting::max_pending_mutations_to_warn]);
             global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
             global_context->setUsersToIgnoreEarlyMemoryLimitCheck(new_server_settings[ServerSetting::users_to_ignore_early_memory_limit_check]);
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
 
-            global_context->setMutationsUseAnalyzerOverride(
-                config().has("use_analyzer_for_mutations")
-                    ? std::make_optional(config().getBool("use_analyzer_for_mutations"))
-                    : std::nullopt);
-
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
 
-            global_context->setOSCPUOverloadSettings(static_cast<double>(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection]), static_cast<double>(new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]));
+            global_context->setOSCPUOverloadSettings(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection], new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]);
 
             size_t remote_read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
             size_t remote_write_bandwidth = new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server];
@@ -2854,10 +2393,6 @@ try
             LOG_INFO(log, "Setting max_local_read_bandwidth_for_server was set to {}", local_read_bandwidth);
             LOG_INFO(log, "Setting max_local_write_bandwidth_for_server was set to {}", local_write_bandwidth);
 
-            size_t max_remote_read_connections = new_server_settings[ServerSetting::max_remote_read_connections];
-            global_context->reloadLongConnectionLimitConfig(max_remote_read_connections);
-            LOG_INFO(log, "Setting max_remote_read_connections was set to {}", max_remote_read_connections);
-
 #if ENABLE_DISTRIBUTED_CACHE
             for (const auto & distr_cache_instance : distr_cache_instances)
                 distr_cache_instance->updateConfig(config());
@@ -2869,8 +2404,7 @@ try
             auto [concurrent_threads_soft_limit, concurrency_control_scheduler] = global_context->setConcurrentThreadsSoftLimit(
                 new_server_settings[ServerSetting::concurrent_threads_soft_limit_num],
                 new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores],
-                new_server_settings[ServerSetting::concurrent_threads_scheduler],
-                new_server_settings[ServerSetting::concurrent_threads_lazy_allocation]);
+                new_server_settings[ServerSetting::concurrent_threads_scheduler]);
             LOG_INFO(log, "ConcurrencyControl limit is set to {} CPU slots with '{}' scheduler",
                 concurrent_threads_soft_limit == UnlimitedSlots ? std::string("UNLIMITED") : std::to_string(concurrent_threads_soft_limit),
                 concurrency_control_scheduler);
@@ -2882,6 +2416,10 @@ try
 
             if (config().has("keeper_server"))
             {
+#if USE_NURAFT
+                if (config().getBool("keeper_server.standalone_keeper", false))
+                    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
+#endif
                 global_context->updateKeeperConfiguration(config());
             }
 
@@ -2893,7 +2431,7 @@ try
             {
                 const auto & new_pool_size = new_server_settings[ServerSetting::background_pool_size];
                 const auto & new_ratio = new_server_settings[ServerSetting::background_merges_mutations_concurrency_ratio];
-                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(static_cast<double>(new_pool_size) * static_cast<double>(new_ratio)));
+                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(static_cast<double>(new_pool_size) * new_ratio));
                 global_context->getMergeMutateExecutor()->updateSchedulingPolicy(new_server_settings[ServerSetting::background_merges_mutations_scheduling_policy].toString());
             }
 
@@ -2915,11 +2453,10 @@ try
                 global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
-            global_context->getBufferFlushSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_buffer_flush_schedule_pool_size]);
-            global_context->getSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_schedule_pool_size]);
-            global_context->getMessageBrokerSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_message_broker_schedule_pool_size]);
-            global_context->getDistributedSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_distributed_schedule_pool_size]);
-            global_context->getStreamingSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_streaming_schedule_pool_size]);
+            global_context->getBufferFlushSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_buffer_flush_schedule_pool_size]);
+            global_context->getSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_schedule_pool_size]);
+            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_message_broker_schedule_pool_size]);
+            global_context->getDistributedSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_distributed_schedule_pool_size]);
 
             global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, new_server_settings[ServerSetting::tables_loader_foreground_pool_size]);
             global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, new_server_settings[ServerSetting::tables_loader_background_pool_size]);
@@ -2978,16 +2515,13 @@ try
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
 
-            if (config().has("resources") || config().has("workload_classifiers"))
+            if (config().has("resources"))
             {
-                LOG_WARNING(
-                    &logger(),
-                    "Config-based resource scheduling ('resources' and 'workload_classifiers' configuration sections) "
-                    "has been removed and is ignored. Use 'CREATE RESOURCE' and 'CREATE WORKLOAD' queries instead.");
+                global_context->getResourceManager()->updateConfiguration(config());
             }
 
             /// Load WORKLOADs and RESOURCEs.
-            global_context->getWorkloadEntityStoragePtr()->loadEntities(config());
+            global_context->getWorkloadEntityStorage().loadEntities(config());
 
             if (!initial_loading)
             {
@@ -3015,8 +2549,6 @@ try
 
                 global_context->updateUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateMarkCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updateUniqueKeyIndexCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updateDeleteBitmapCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updatePrimaryIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexMarkCacheConfiguration(config(), max_cache_size_in_bytes);
@@ -3027,12 +2559,8 @@ try
                 global_context->updateMMappedFileCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updateEncryptionHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
-                setPointInPolygonCacheMaxSizeInBytes(
-                    std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));
 #if USE_AVRO
                 global_context->updateIcebergMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updatePaimonMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);
 #endif
 #if USE_PARQUET
                 global_context->updateParquetMetadataCacheConfiguration(config(), max_cache_size_in_bytes);
@@ -3087,7 +2615,7 @@ try
 
             /// Update core dump size limit.
             {
-                rlimit rlim{};
+                rlimit rlim;
                 if (getrlimit(RLIMIT_CORE, &rlim) == 0)
                 {
                     rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
@@ -3221,40 +2749,6 @@ try
                         socket,
                         http_params));
             });
-
-            /// HTTPS control endpoints
-            port_name = "keeper_server.http_control.secure_port";
-            createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
-            servers_to_start_before_tables,
-            [&](UInt16 port) -> ProtocolServerAdapter
-            {
-#if USE_SSL
-                auto http_context = httpContext();
-                Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].totalSeconds(), 0);
-                Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-                http_params->setTimeout(http_context->getReceiveTimeout());
-                http_params->setKeepAliveTimeout(keep_alive_timeout);
-
-                Poco::Net::SecureServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(http_context->getReceiveTimeout());
-                socket.setSendTimeout(http_context->getSendTimeout());
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "HTTPS Control: https://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        std::move(http_context),
-                        createKeeperHTTPHandlerFactory(
-                            *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPSHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
-#else
-                UNUSED(port);
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS control protocol is disabled because Poco library was built without NetSSL support.");
-#endif
-            });
         }
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
@@ -3358,17 +2852,6 @@ try
         throw;
     }
 
-    auto disable_config_reload_callbacks = [&]
-    {
-        global_context->setConfigReloadCallback([]
-        {
-            throw Exception(ErrorCodes::ABORTED, "Cannot reload config because the server is shutting down");
-        });
-        if (cgroups_memory_usage_observer)
-            cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([] {});
-    };
-    SCOPE_EXIT({ disable_config_reload_callbacks(); });
-
     if (cgroups_memory_usage_observer)
     {
         cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([&]() { main_config_reloader->reload(); });
@@ -3391,10 +2874,6 @@ try
     global_context->setStartServersCallback([&](const ServerType & server_type)
     {
         std::lock_guard lock(servers_lock);
-        /// Introspection server can run SYSTEM START LISTEN before other servers' startup or after other servers' shutdown.
-        /// In either case, we need to return an error.
-        if (is_cancelled || !global_context->isServerCompletelyStarted())
-            throw Exception(ErrorCodes::ABORTED, "Cannot start listeners because the server is starting up or shutting down");
         createServers(
             config(),
             server_settings,
@@ -3452,21 +2931,10 @@ try
     {
         /// All settings can be changed in the global config
         bool allowed_experimental = true;
-        bool allowed_private_preview = true;
         bool allowed_beta = true;
         size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
-        global_context->getMergeTreeSettings().sanityCheck(
-            background_pool_tasks,
-            allowed_experimental,
-            allowed_private_preview,
-            allowed_beta,
-            global_context->wasBackgroundPoolAutoLowered());
-        global_context->getReplicatedMergeTreeSettings().sanityCheck(
-            background_pool_tasks,
-            allowed_experimental,
-            allowed_private_preview,
-            allowed_beta,
-            global_context->wasBackgroundPoolAutoLowered());
+        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, global_context->wasBackgroundPoolAutoLowered());
+        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, global_context->wasBackgroundPoolAutoLowered());
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
@@ -3479,40 +2947,6 @@ try
     if (default_database.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
-
-    /// Start collecting asynchronous metrics before loading tables, so that the Prometheus endpoint
-    /// (started below) exposes meaningful values during the potentially long metadata loading phase.
-    /// This includes the OS/jemalloc metrics and the per-table metrics such as
-    /// `TotalIndexGranularityBytesInMemoryAllocated`, which let one observe memory growth as tables
-    /// are loaded. The metric computation skips not-yet-loaded tables (just like with
-    /// `async_load_databases`), and writing to `system.asynchronous_metric_log` is skipped until the
-    /// system logs are initialized below. The asynchronous metrics thread reads the `servers` lists
-    /// under `servers_lock`, so it is safe to start before the main `servers` exist.
-    async_metrics->start();
-    global_context->setAsynchronousMetrics(async_metrics.get());
-
-    /// Start the Prometheus endpoint before loading tables, so that metrics stay observable during
-    /// the potentially long metadata loading phase. Only do it for metrics-only configurations:
-    /// custom `prometheus.handlers` may serve queries (`remote_write`, `remote_read`, `query`,
-    /// `api_v1`) and must follow the regular `servers` lifecycle. The server is created in the
-    /// regular `servers` list, so runtime reconfiguration and `SYSTEM START/STOP LISTEN` handle it
-    /// as usual. The later `createServers` call skips it (`createServer` does not recreate a live
-    /// server), and the start loop for `servers` skips it too (`ProtocolServerAdapter::start` does
-    /// nothing for an already started server).
-    if (!config().has("prometheus.handlers"))
-    {
-        std::lock_guard lock(servers_lock);
-        createServers(
-            config(),
-            server_settings,
-            listen_hosts,
-            listen_try,
-            server_pool,
-            *async_metrics,
-            servers,
-            /* start_servers= */ true,
-            ServerType(ServerType::Type::PROMETHEUS));
-    }
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
@@ -3528,72 +2962,6 @@ try
         // Waits for all currently running jobs to finish and do not run any other pending jobs.
         global_context->getAsyncLoader().shutdown();
     );
-
-    /// The introspection servers accept TCP connections while the server is otherwise unreachable:
-    /// before attaching and after detaching of tables.
-    if (hasIntrospectionProtocols(config()))
-    {
-        global_context->setStopIntrospectionServersCallback([&]
-        {
-            if (introspection_servers.empty())
-                return;
-
-            LOG_DEBUG(log, "Waiting for current connections to introspection servers to finish.");
-            size_t current_connections = 0;
-            {
-                std::lock_guard lock(servers_lock);
-                for (auto & server : introspection_servers)
-                {
-                    server.stop();
-                    current_connections += server.currentConnections();
-                }
-            }
-
-            if (current_connections)
-                LOG_INFO(log, "Closed all introspection listening sockets. Waiting for {} outstanding connections.", current_connections);
-            else
-                LOG_INFO(log, "Closed all introspection listening sockets.");
-
-            global_context->getProcessList().killAllQueries();
-
-            if (current_connections)
-                current_connections = waitServersToFinish(
-                    introspection_servers, servers_lock, server_settings[ServerSetting::shutdown_wait_unfinished]);
-
-            if (current_connections)
-            {
-                dumpCoverageReportIfPossible();
-                LOG_WARNING(log, "Closed connections to introspection servers. But {} remain. Will shutdown forcefully.", current_connections);
-                /// No leak check: remaining connection handlers still own memory it would report as
-                /// leaked. Reported, because here stderr is the server log.
-                safeExit(0, LeakCheck::SkipAndReport);
-            }
-
-            LOG_INFO(log, "Closed connections to introspection servers.");
-            introspection_server_pool->joinAll();
-        });
-
-        introspection_server_pool = std::make_unique<Poco::ThreadPool>(
-            /* minCapacity */ 1,
-            /* maxCapacity */ server_settings[ServerSetting::max_connections],
-            /* idleTime */ 60,
-            /* stackSize */ DEFAULT_THREAD_STACK_SIZE ? static_cast<int>(DEFAULT_THREAD_STACK_SIZE) : POCO_THREAD_STACK_SIZE,
-            server_settings[ServerSetting::global_profiler_real_time_period_ns],
-            server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
-
-        std::lock_guard lock(servers_lock);
-        createServers(
-            config(),
-            server_settings,
-            listen_hosts,
-            listen_try,
-            *introspection_server_pool,
-            *async_metrics,
-            introspection_servers,
-            /* start_servers= */ true,
-            ServerType(ServerType::Type::QUERIES_ALL),
-            /* only_introspection_protocols= */ true);
-    }
 
     try
     {
@@ -3616,14 +2984,6 @@ try
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
 
-        if (has_trace_collector)
-            global_context->initializeTraceCollector();
-
-#if defined(OS_LINUX)
-        if (oom_canary)
-            oom_canary->start();
-#endif
-
         global_context->handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded();
 
         /// Build loggers before tables startup to make log messages from tables
@@ -3631,11 +2991,7 @@ try
         buildLoggers(config(), logger());
         initializeAzureSDKLogger(server_settings, logger().getLevel());
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
-        bool has_keeper_server = false;
-#if USE_NURAFT
-        has_keeper_server = global_context->tryGetKeeperDispatcher() != nullptr;
-#endif
-        attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper, has_keeper_server);
+        attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         /// Firstly remove partially dropped databases, to avoid race with Materialized...SyncThread,
@@ -3651,13 +3007,7 @@ try
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
-        global_context->loadUserDefinedExecutableFunctionDrivers(config());
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
-
-        /// For driver-based executable UDFs persisted as ATTACH FUNCTION queries, ensure the
-        /// dynamic configuration files exist; re-run their drivers if they are missing.
-        UserDefinedSQLFunctionFactory::instance().reloadDriverBasedFunctions(
-            global_context, global_context->getUserDefinedSQLObjectsStorage());
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }
@@ -3670,6 +3020,9 @@ try
     DatabaseCatalog::instance().startReplicatedDDLQueries();
 
     LOG_DEBUG(log, "Loaded metadata.");
+
+    if (has_trace_collector)
+        global_context->initializeTraceCollector();
 
 #if defined(OS_LINUX)
     auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();
@@ -3718,6 +3071,10 @@ try
         CertificateReloader::instance().tryLoad(config());
         CertificateReloader::instance().tryLoadClient(config());
 #endif
+
+        /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
+        async_metrics->start();
+        global_context->setAsynchronousMetrics(async_metrics.get());
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();
@@ -3797,16 +3154,6 @@ try
 #endif
         };
 
-        /// Wrapping the call to OOM canary stop in a lambda lets us write
-        /// the OS_LINUX guard outside the SCOPE_EXIT_SAFE macro argument list,
-        /// avoiding -Wembedded-directive.
-        auto stop_oom_canary = [&]{
-#if defined(OS_LINUX)
-            if (oom_canary)
-                oom_canary->stop();
-#endif
-        };
-
         SCOPE_EXIT_SAFE({
             const auto & logger_shutdown_level_setting = server_settings[ServerSetting::logger_shutdown_level];
             if (logger_shutdown_level_setting.changed && !logger_shutdown_level_setting.value.empty())
@@ -3836,7 +3183,6 @@ try
             /// Stop reloading of the main config. This must be done before everything else because it
             /// can try to access/modify already deleted objects.
             /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
-            disable_config_reload_callbacks();
             main_config_reloader.reset();
             access_control.stopPeriodicReloading();
 
@@ -3856,7 +3202,6 @@ try
                 }
             }
 
-            global_context->getBackgroundQueryPool().finish();
             global_context->getRefreshSet().setRefreshesStopped(true);
 
             if (current_connections)
@@ -3872,34 +3217,27 @@ try
             else
                 global_context->cancelAllBackupsAndRestores();
 
-            stop_oom_canary();
-
             /// Killing remaining queries.
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
                 global_context->getProcessList().killAllQueries();
 
             size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
             auto wait_start = std::chrono::steady_clock::now();
-            auto shutdown_deadline = wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000);
 
             if (current_connections)
                 current_connections = waitServersToFinish(servers, servers_lock, wait_limit_seconds);
 
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."
-                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>300</shutdown_wait_unfinished>", current_connections);
+                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>", current_connections);
             else
                 LOG_INFO(log, "Closed connections.");
 
-            bool joined_refresh_tasks = global_context->getRefreshSet().joinBackgroundTasks(shutdown_deadline);
-            bool joined_background_queries = global_context->getBackgroundQueryPool().waitUntil(shutdown_deadline);
-
-            if (!joined_background_queries)
-                LOG_WARNING(log, "{} background queries remain.", global_context->getBackgroundQueryPool().active());
+            bool joined_refresh_tasks = global_context->getRefreshSet().joinBackgroundTasks(wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000));
 
             dns_cache_updater.reset();
 
-            if (current_connections || !joined_refresh_tasks || !joined_background_queries)
+            if (current_connections || !joined_refresh_tasks)
             {
                 /// There is no better way to force connections to close in Poco.
                 /// Otherwise connection handlers will continue to live
@@ -3909,9 +3247,7 @@ try
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_WARNING(log, "Will shutdown forcefully.");
-                /// No leak check: remaining connection handlers, refresh tasks or background queries still own memory
-                /// it would report as leaked. Reported, because here stderr is the server log.
-                safeExit(0, LeakCheck::SkipAndReport);
+                safeExit(0);
             }
         });
 
@@ -3999,89 +3335,6 @@ catch (...)
     return static_cast<UInt8>(code) ? code : -1;
 }
 
-namespace
-{
-
-/// Walk a composable protocol's `impl` chain and return the effective `default_session_user`:
-/// the value closest to the endpoint wins. Used both when the protocol stack is built and when it is
-/// decided whether a configuration reload has to restart the endpoint.
-/// Returns an empty optional if no module in the chain sets it (the handlers then fall back to the
-/// `default_session_user` server setting).
-std::optional<String> getEffectiveDefaultSessionUser(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
-{
-    std::string conf_name = protocol;
-    std::string prefix = protocol + ".";
-    std::unordered_set<std::string> pset {conf_name};
-    while (true)
-    {
-        if (config.has(prefix + "default_session_user"))
-            return config.getString(prefix + "default_session_user");
-
-        if (!config.has(prefix + "impl"))
-            return {};
-
-        conf_name = "protocols." + config.getString(prefix + "impl");
-        prefix = conf_name + ".";
-
-        /// A malformed loop is rejected when the stack is built; here we just stop to avoid spinning.
-        if (!pset.insert(conf_name).second)
-            return {};
-    }
-}
-
-/// Resolve the `http_handlers`-style section a composable `http` endpoint serves: the
-/// `handlers` key of the module carrying `type = http`, found by walking the `impl` chain
-/// (mirrors `buildProtocolStackFromConfig`). Returns an empty optional when the chain does
-/// not reach an `http` module in this configuration (e.g. the endpoint did not exist or had
-/// a different type before a reload).
-std::optional<String> resolveHTTPHandlersKey(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
-{
-    std::string conf_name = protocol;
-    std::string prefix = protocol + ".";
-    std::unordered_set<std::string> pset {conf_name};
-    while (true)
-    {
-        if (config.getString(prefix + "type", "") == "http")
-            return config.getString(conf_name + ".handlers", "http_handlers");
-
-        if (!config.has(prefix + "impl"))
-            return {};
-
-        conf_name = "protocols." + config.getString(prefix + "impl");
-        prefix = conf_name + ".";
-
-        /// A malformed loop is rejected when the stack is built; here we just stop to avoid spinning.
-        if (!pset.insert(conf_name).second)
-            return {};
-    }
-}
-
-/// Whether a non-keeper `prometheus` endpoint (serving the global `prometheus` section)
-/// consults the default session user. Only the time-series handlers without a fixed `user`
-/// authenticate; the plain metrics exposition served without a `handlers` section does not.
-bool prometheusHandlersConsumeDefaultSessionUser(const Poco::Util::AbstractConfiguration & config)
-{
-    if (!config.has("prometheus.handlers"))
-        return false;
-
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys("prometheus.handlers", keys);
-    for (const auto & key : keys)
-    {
-        const std::string handler_prefix = "prometheus.handlers." + key + ".handler";
-        const std::string type = config.getString(handler_prefix + ".type", "");
-        /// The metrics exposition aliases accepted by `parseHandlerType`.
-        if (type == "prometheus" || type == "metrics" || type == "expose_metrics"
-            || type == "prometheus_metrics" || type == "prometheus_expose_metrics")
-            continue;
-        if (!config.has(handler_prefix + ".user"))
-            return true;
-    }
-    return false;
-}
-
-}
-
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const ServerSettings & server_settings,
@@ -4090,19 +3343,10 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     AsynchronousMetrics & async_metrics,
     bool & is_secure)
 {
-    /// The default session user for the endpoint: the `default_session_user` key looked up
-    /// from the endpoint's protocol module towards the referenced (`impl`) modules; the value
-    /// closest to the endpoint wins. If not set anywhere in the chain, the handlers fall back
-    /// to the `default_session_user` server setting.
-    /// It is resolved for the whole `impl` chain up front, because a module can be both typed
-    /// (so its handler factory is created while walking the chain) and inherit the setting from
-    /// a module it references, which the walk reaches only later.
-    const std::optional<String> default_session_user = getEffectiveDefaultSessionUser(config, "protocols." + protocol);
-
     auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
     {
         if (type == "tcp")
-            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes, default_session_user));
+            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes));
 
         if (type == "tls")
 #if USE_SSL
@@ -4114,12 +3358,12 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (type == "proxy1")
             return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this, conf_name));
         if (type == "mysql")
-            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, server_settings[ServerSetting::mysql_require_secure_transport], ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes, default_session_user));
+            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, server_settings[ServerSetting::mysql_require_secure_transport], ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes));
         if (type == "postgres")
 #if USE_SSL
-            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], conf_name + ".", ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes, default_session_user));
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], conf_name + ".", ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
 #else
-            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes, default_session_user));
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
 #endif
         if (type == "http")
         {
@@ -4129,14 +3373,14 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             if (config.has(conf_name + ".handlers"))
                 handlers_config_key = config.getString(conf_name + ".handlers");
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key, protocol, default_session_user), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
             );
         }
         if (type == "prometheus")
         {
             const std::string handler_name = server_settings[ServerSetting::prometheus_keeper_metrics_only] ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, handler_name, /* http_handlers_key= */ {}, protocol, default_session_user), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, handler_name), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
             );
         }
         if (type == "interserver")
@@ -4151,12 +3395,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     std::string prefix = conf_name + ".";
     std::unordered_set<std::string> pset {conf_name};
 
-    const bool is_introspection = isIntrospectionProtocol(config, protocol);
-    std::string innermost_type;
-
-    auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name, is_introspection);
-
-    bool has_interserver = false;
+    auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
 
     while (true)
     {
@@ -4170,16 +3409,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
                     throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' contains more than one TLS layer", protocol);
                 is_secure = true;
             }
-            if (type == "interserver")
-                has_interserver = true;
 
-            if (is_introspection && type != "tcp" && type != "tls" && type != "proxy1")
-                throw Exception(
-                    ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "Introspection protocol '{}' contains a '{}' layer, but only 'tcp' optionally wrapped "
-                    "into 'tls' and 'proxy1' layers is supported", protocol, type);
-
-            innermost_type = type;
             stack->append(create_factory(type, conf_name));
         }
 
@@ -4192,17 +3422,6 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (!pset.insert(conf_name).second)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
     }
-
-    /// Interserver connections are authenticated by the cluster secret and the initial user
-    /// and never use the default session user, so such a configuration is an error.
-    if (has_interserver && default_session_user)
-        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-            "Protocol '{}': 'default_session_user' cannot be used with the 'interserver' protocol", protocol);
-
-    if (is_introspection && innermost_type != "tcp")
-        throw Exception(
-            ErrorCodes::INVALID_CONFIG_PARAMETER,
-            "Introspection protocol '{}' must end in a 'tcp' layer", protocol);
 
     return stack;
 }
@@ -4221,8 +3440,7 @@ void Server::createServers(
     AsynchronousMetrics & async_metrics,
     std::vector<ProtocolServerAdapter> & servers,
     bool start_servers,
-    const ServerType & server_type,
-    bool only_introspection_protocols)
+    const ServerType & server_type)
 {
     const Settings & settings = global_context->getSettingsRef();
 
@@ -4245,10 +3463,6 @@ void Server::createServers(
 
     for (const auto & protocol : protocols)
     {
-        const bool is_introspection = isIntrospectionProtocol(config, protocol);
-        if (is_introspection != only_introspection_protocols)
-            continue;
-
         if (!server_type.shouldStart(ServerType::Type::CUSTOM, protocol))
             continue;
 
@@ -4291,18 +3505,14 @@ void Server::createServers(
                         server_pool,
                         socket,
                         makeServerParams(server_settings),
-                        is_introspection ? TCPServerConnectionFilter::Ptr() : connection_filter));
+                        connection_filter));
             });
         }
     }
 
-    /// Introspection ports can only be configured in the protocols config section.
-    if (only_introspection_protocols)
-        return;
-
     for (const auto & listen_host : listen_hosts)
     {
-        const char * port_name = nullptr;
+        const char * port_name;
 
         if (server_type.shouldStart(ServerType::Type::HTTP))
         {
@@ -4589,7 +3799,7 @@ void Server::createInterserverServers(
     /// Now iterate over interserver_listen_hosts
     for (const auto & interserver_listen_host : interserver_listen_hosts)
     {
-        const char * port_name = nullptr;
+        const char * port_name;
 
         if (server_type.shouldStart(ServerType::Type::INTERSERVER_HTTP))
         {
@@ -4653,7 +3863,36 @@ void Server::stopServers(
     std::vector<ProtocolServerAdapter> & servers,
     const ServerType & server_type) const
 {
-    DB::stopServers(servers, server_type, &logger());
+    LoggerRawPtr log = &logger();
+
+    /// Remove servers once all their connections are closed
+    auto check_server = [&log](const char prefix[], auto & server)
+    {
+        if (!server.isStopping())
+            return false;
+        size_t current_connections = server.currentConnections();
+        LOG_DEBUG(log, "Server {}{}: {} ({} connections)",
+            server.getDescription(),
+            prefix,
+            !current_connections ? "finished" : "waiting",
+            current_connections);
+        return !current_connections;
+    };
+
+    std::erase_if(servers, std::bind_front(check_server, " (from one of previous remove)"));
+
+    for (auto & server : servers)
+    {
+        if (!server.isStopping())
+        {
+            const std::string server_port_name = server.getPortName();
+
+            if (server_type.shouldStop(server_port_name))
+                server.stop();
+        }
+    }
+
+    std::erase_if(servers, std::bind_front(check_server, ""));
 }
 
 void Server::updateServers(
@@ -4703,23 +3942,11 @@ void Server::updateServers(
             std::string port_name = server->getPortName();
             bool has_host = false;
             bool is_http = false;
-            bool is_non_keeper_prometheus = false;
-            bool is_prometheus = false;
-            bool default_session_user_changed = false;
             String handlers_key = "http_handlers";
-            String previous_handlers_key = handlers_key;
             if (port_name.starts_with("protocols."))
             {
                 std::string protocol = port_name.substr(0, port_name.find_last_of('.'));
                 has_host = config.has(protocol + ".host");
-
-                /// Whether any handler in the `impl` chain actually consumes the default session
-                /// user, so that a `default_session_user` change does not restart listeners that
-                /// ignore it: keeper-metrics-only `prometheus` listeners serve metrics without
-                /// authentication (`KeeperPrometheusHandler-factory` only exposes `MetricsImpl`),
-                /// and `prometheus` endpoints whose configured handler set consists only of
-                /// fixed-user and non-authenticating handlers never consult the setting either.
-                bool consumes_default_session_user = false;
 
                 std::string conf_name = protocol;
                 std::string prefix = protocol + ".";
@@ -4734,40 +3961,7 @@ void Server::updateServers(
                             is_http = true;
                             if (config.has(conf_name + ".handlers"))
                                 handlers_key = config.getString(conf_name + ".handlers");
-                            /// This reload may re-point the endpoint at a different `<handlers>` section
-                            /// (through the endpoint's `handlers` reference or its `impl` chain), while
-                            /// the running factory still serves the previously referenced section. Resolve
-                            /// the old reference too: the consumer check must consider the old *or* the
-                            /// new handler set, and the changed-configuration check below must notice the
-                            /// reference switch itself — comparing only the new section on both sides of
-                            /// the reload would miss a switch between two sections that are themselves
-                            /// unchanged.
-                            previous_handlers_key = resolveHTTPHandlersKey(previous_config, protocol).value_or(handlers_key);
-                            /// `SQLDefinedHTTPHandlerFactory` is appended to every HTTP handler
-                            /// factory. It caches the endpoint override, while the SQL handler
-                            /// registry itself is read on every request, so an SQL-defined handler
-                            /// can start consuming the setting after the listener was created even
-                            /// when all XML handlers have fixed users.
-                            consumes_default_session_user = true;
                             break;
-                        }
-                        if (type == "tcp" || type == "mysql" || type == "postgres")
-                            consumes_default_session_user = true;
-                        /// The running listener still serves the handler set of the *previous*
-                        /// configuration (the shared `prometheus.handlers` section), so consider the
-                        /// setting consumed when either the old or the new set consumes it. A change
-                        /// of the section itself forces a restart below, like a change of an `http`
-                        /// endpoint's `handlers` section.
-                        if (type == "prometheus")
-                        {
-                            is_prometheus = true;
-                            if (!server_settings[ServerSetting::prometheus_keeper_metrics_only])
-                            {
-                                is_non_keeper_prometheus = true;
-                                consumes_default_session_user = consumes_default_session_user
-                                    || prometheusHandlersConsumeDefaultSessionUser(previous_config)
-                                    || prometheusHandlersConsumeDefaultSessionUser(config);
-                            }
                         }
                     }
 
@@ -4780,15 +3974,6 @@ void Server::updateServers(
                     if (!pset.insert(conf_name).second)
                         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
                 }
-
-                /// The per-endpoint default session user is fixed in the protocol handler factory,
-                /// so the endpoint must be restarted when its effective value changes. Compare the
-                /// effective value (the one closest to the endpoint wins, as in
-                /// `buildProtocolStackFromConfig`) rather than every node in the `impl` chain, so
-                /// that editing a shadowed base module does not force a needless restart.
-                default_session_user_changed = consumes_default_session_user
-                    && getEffectiveDefaultSessionUser(previous_config, protocol)
-                        != getEffectiveDefaultSessionUser(config, protocol);
             }
             else
             {
@@ -4796,58 +3981,14 @@ void Server::updateServers(
                 /// dynamic_cast<> since HTTPServer is also used for prometheus and
                 /// internal replication communications.
                 is_http = server->getPortName() == "http_port" || server->getPortName() == "https_port";
-                is_prometheus = server->getPortName() == "prometheus.port";
-                /// The standalone `prometheus.port` listener is built from the same shared
-                /// `prometheus.handlers` section as a composable `type = prometheus` endpoint
-                /// (`createPrometheusMainHandlerFactory` bakes it into the handler factory), and
-                /// there is no other reconfiguration hook for it, so it needs the same restart
-                /// check. In keeper-metrics-only mode the section is not served at all, and a
-                /// change of the mode itself is handled by the check below.
-                is_non_keeper_prometheus = is_prometheus && !server_settings[ServerSetting::prometheus_keeper_metrics_only];
             }
 
             if (!has_host)
                 has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server->getListenHost()) != listen_hosts.end();
             bool has_port = !config.getString(port_name, "").empty();
-            bool force_restart = false;
-            if (is_http && previous_handlers_key != handlers_key)
-            {
-                force_restart = true;
-                LOG_TRACE(log, "The handlers reference had been changed from <{}> to <{}>, will reload {}",
-                    previous_handlers_key, handlers_key, server->getDescription());
-            }
-            else if (is_http && !isSameConfiguration(previous_config, config, handlers_key))
-            {
-                force_restart = true;
+            bool force_restart = is_http && !isSameConfiguration(previous_config, config, handlers_key);
+            if (force_restart)
                 LOG_TRACE(log, "<{}> had been changed, will reload {}", handlers_key, server->getDescription());
-            }
-            /// A non-keeper `prometheus` listener (a composable `type = prometheus` endpoint as well
-            /// as the standalone `prometheus.port` one) serves the shared `prometheus.handlers`
-            /// section, which is baked into its handler factory, so the listener must be restarted
-            /// when the section changes (a fixed `user`, a route, or a handler type may have changed).
-            if (is_non_keeper_prometheus && !isSameConfiguration(previous_config, config, "prometheus.handlers"))
-            {
-                force_restart = true;
-                LOG_TRACE(log, "<prometheus.handlers> had been changed, will reload {}", server->getDescription());
-            }
-            /// `prometheus.keeper_metrics_only` selects the handler factory baked into a `prometheus`
-            /// listener: `KeeperPrometheusHandler-factory` exposes the keeper metrics without
-            /// authentication, while `PrometheusHandler-factory` also serves the authenticating
-            /// time-series handlers of `prometheus.handlers`. A change of the mode itself must restart
-            /// the listener in either direction — the port and the handler section may well stay the
-            /// same, and neither of the checks above can notice the switched factory then.
-            if (is_prometheus
-                && previous_config.getBool("prometheus.keeper_metrics_only", false)
-                    != server_settings[ServerSetting::prometheus_keeper_metrics_only])
-            {
-                force_restart = true;
-                LOG_TRACE(log, "<prometheus.keeper_metrics_only> had been changed, will reload {}", server->getDescription());
-            }
-            if (default_session_user_changed)
-            {
-                force_restart = true;
-                LOG_TRACE(log, "<default_session_user> had been changed, will reload {}", server->getDescription());
-            }
 
             if (!has_host || !has_port || config.getInt(server->getPortName()) != server->portNumber() || force_restart)
             {

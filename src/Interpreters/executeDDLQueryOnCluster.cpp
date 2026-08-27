@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLOnClusterQueryStatusSource.h>
 #include <Interpreters/DDLTask.h>
@@ -52,7 +51,7 @@ extern const int LOGICAL_ERROR;
 
 bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
 {
-    chassert(type != ASTAlterCommand::NO_TYPE);
+    assert(type != ASTAlterCommand::NO_TYPE);
     static const std::unordered_set<int> unsupported_alter_types{
         /// It's dangerous, because it may duplicate data if executed on multiple replicas. We can allow it after #18978
         ASTAlterCommand::ATTACH_PARTITION,
@@ -153,7 +152,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         }
         ::sort(host_default_databases.begin(), host_default_databases.end());
         host_default_databases.erase(std::unique(host_default_databases.begin(), host_default_databases.end()), host_default_databases.end());
-        chassert(use_local_default_database || !host_default_databases.empty());
+        assert(use_local_default_database || !host_default_databases.empty());
 
         if (use_local_default_database && !host_default_databases.empty())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mixed local default DB and shard default DB in DDL query");
@@ -188,11 +187,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
-    /// Strip the initiator-only settings from the queued DDL query text too — the `DDLLogEntry` settings
-    /// packet is stripped separately (in `setSettingsIfRequired`), but a worker parses `entry.query` before
-    /// applying that packet, so an initiator-only setting written in the statement itself would otherwise
-    /// reach an older worker as `UNKNOWN_SETTING` or be re-applied on a newer worker.
-    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_ptr);
     entry.query = query_ptr->formatWithSecretsOneLine();
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);

@@ -78,7 +78,7 @@ enum class RootDataType
 
 struct DataType
 {
-    RootDataType root_type{};
+    RootDataType root_type;
     String raw_type;
     DataTypePtr clickhouse_data_type;
     static DataType parse(const Poco::JSON::Object::Ptr & json_object, const String & key)
@@ -280,7 +280,7 @@ struct DataType
             }
             else
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported Paimon type: {}", real_type);
+                throw Exception();
             }
             /// ClickHouse forbids Nullable(Array) and Nullable(Map), so a nullable composite is kept
             /// unwrapped; the reader maps a NULL composite to an empty one.

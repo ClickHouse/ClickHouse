@@ -147,7 +147,7 @@ WHERE
         database,
         table);
 
-    if (query.has_like)
+    if (!query.like.empty())
     {
         rewritten_query += " AND field ";
         if (query.not_like)
@@ -183,7 +183,6 @@ BlockIO InterpreterShowColumnsQuery::execute()
     return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }
 
-void registerInterpreterShowColumnsQuery(InterpreterFactory & factory);
 void registerInterpreterShowColumnsQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
