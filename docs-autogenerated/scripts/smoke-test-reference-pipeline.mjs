@@ -6,7 +6,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { rewriteGeneratedCodeBlocksInSource } from '../src/markdown/rewrite-generated-code-blocks.mjs';
-import { entityAliases, splitEntitySections } from './export-reference-docs.mjs';
+import {
+  entityAliases,
+  referenceDescription,
+  splitEntitySections,
+} from './export-reference-docs.mjs';
 import { resolveStatementPages } from './lib/statement-metadata.mjs';
 import { loadStatementRegistrations } from './lib/statement-source.mjs';
 
@@ -44,6 +48,17 @@ function findNavigationNode(node, id) {
 }
 
 async function main() {
+  requireValue(
+    referenceDescription('statement', 'SELECT')
+      === 'Reference documentation for the `SELECT` statement in ClickHouse.',
+    'Statement descriptions are not deterministic',
+  );
+  requireValue(
+    referenceDescription('system-table', 'system.query_log')
+      === 'Reference documentation for the `system.query_log` system table in ClickHouse.',
+    'System table descriptions are not deterministic',
+  );
+
   const splitSections = splitEntitySections(
     [
       'Grouped aggregate functions.',
@@ -199,6 +214,13 @@ async function main() {
     const searchTitles = new Set(search.map((record) => record.title));
     const redirectMap = new Map(redirects.map(({ from, to }) => [from, to]));
 
+    requireValue(
+      documents.every((document) => (
+        document.description === referenceDescription(document.entityKind, document.title)
+      )),
+      'A generated page description still depends on source prose or handwritten frontmatter',
+    );
+
     requireValue(searchTitles.has('openSSL.client.requireTLSv1'), 'Dotted setting headings were not split');
     requireValue(searchTitles.has('PaimonS3'), 'Aliases from an unsplit page were not indexed');
     requireValue(
@@ -258,6 +280,7 @@ async function main() {
     requireValue(
       selectPage.includes('title: "SELECT"')
         && selectPage.includes('sidebarTitle: "Overview"')
+        && selectPage.includes('description: "Reference documentation for the `SELECT` statement in ClickHouse."')
         && selectPage.includes('keywords: []')
         && selectPage.includes('doc_type: "reference"')
         && selectPage.includes('stableId: "reference:statement:select"')

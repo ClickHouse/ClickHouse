@@ -10,11 +10,11 @@ directly from their version-pinned `StatementFactory` registrations instead;
 the files currently materialized under `docs/reference/statements` are not an
 export input for those pages. Their metadata is derived without a per-page
 catalog: the registered name supplies the stable ID and title, `parent`
-supplies route ancestry, the first source paragraph supplies the description,
-and normalized SQL names and source terms supply search keywords. Navigation
-labels are relative to their resolved group; a group's sole root document is
-labelled `Overview`. A new source registration therefore produces a complete
-page without a corresponding Markdown file or metadata entry.
+supplies route ancestry, the entity type and title supply a deterministic
+description, and normalized SQL names and source terms supply search keywords.
+Navigation labels are relative to their resolved group; a group's sole root
+document is labelled `Overview`. A new source registration therefore produces
+a complete page without a corresponding Markdown file or metadata entry.
 
 `legacy-statement-routes.json` is deliberately limited to redirects for URLs
 which predate these deterministic rules. It does not control page existence,
