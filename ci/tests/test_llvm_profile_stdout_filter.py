@@ -12,8 +12,10 @@ import pytest
 _CT = Path(__file__).resolve().parents[2] / "tests" / "clickhouse-test"
 # runpy loads clickhouse-test without running __main__; only the pure helper is used.
 _strip = runpy.run_path(str(_CT))["strip_llvm_profile_errors_in_file"]
-_MERGE = b"LLVM Profile Error: Profile Merging of file cl-0_0.profraw failed: Success"
-_WRITE = b'LLVM Profile Error: Failed to write file "cl-0_0.profraw": Invalid argument'
+_MERGE_FMT = b"LLVM Profile Error: Profile Merging of file cl-0_0.profraw failed: "
+_WRITE_FMT = b'LLVM Profile Error: Failed to write file "cl-0_0.profraw": '
+_MERGE = _MERGE_FMT + b"Success"
+_WRITE = _WRITE_FMT + b"Invalid argument"
 _BAD_ERRNO = b'LLVM Profile Error: Failed to write file "x": Not an errno\n'
 _WARNING = b"LLVM Profile Warning: merging\n200\n"
 _STRERROR = {os.strerror(e) for e in range(256)}
@@ -48,22 +50,33 @@ def test_span_stripped_and_real_output_preserved(tmp_path, stdout, expected):
 
 
 @pytest.mark.parametrize("short,long_", _PREFIX_PAIRS)
-def test_prefix_pair_does_not_eat_real_output(tmp_path, short, long_):
-    # The runtime printed the shorter errno and the test's own output happens to begin
-    # with the rest of the longer one, so the bytes are identical to the noise case.
-    # Matching the longer value here would silently delete `200` and pass the test.
+@pytest.mark.parametrize("kind", [_MERGE_FMT, _WRITE_FMT])
+def test_ambiguous_errno_tail_is_left_whole(tmp_path, kind, short, long_):
+    # Two readings of one byte stream: the runtime printed `long_`, or it printed `short`
+    # and the test's own output opens with the rest. Stripping either eats the other's
+    # output, so the message survives intact and the diff stays loud.
+    data = kind + long_.encode() + b"\n200\n"
+    path = tmp_path / "stdout"
+    path.write_bytes(data)
+    _strip(str(path))
+    assert path.read_bytes() == data
+
+
+@pytest.mark.parametrize("short,long_", _PREFIX_PAIRS)
+@pytest.mark.parametrize("kind", [_MERGE_FMT, _WRITE_FMT])
+def test_delimited_errno_tail_is_still_stripped(tmp_path, kind, short, long_):
+    # A newline after the shorter value settles which reading applies, so the guard above
+    # must not fire and the noise must still go.
     real = long_[len(short) :].encode() + b"\n200\n"
     path = tmp_path / "stdout"
-    path.write_bytes(
-        b'LLVM Profile Error: Failed to write file "x": ' + short.encode() + real
-    )
+    path.write_bytes(kind + short.encode() + b"\n" + real)
     _strip(str(path))
     assert path.read_bytes() == real
 
 
 def test_libc_still_reports_prefix_pairs(tmp_path):
-    # Without a pair the arm above matches nothing and proves nothing.
-    assert _PREFIX_PAIRS, "libc reports no prefix pairs; the arm above is vacuous"
+    # Without a pair the two arms above match nothing and prove nothing.
+    assert _PREFIX_PAIRS, "libc reports no prefix pairs; the arms above are vacuous"
 
 
 def test_called_after_the_other_stdout_rewrites():
