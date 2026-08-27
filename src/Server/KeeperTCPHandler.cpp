@@ -1,5 +1,6 @@
 #include <Server/KeeperTCPHandler.h>
 #include <Common/ErrnoException.h>
+#include <Common/saturatedWaitDuration.h>
 
 #if USE_NURAFT
 
@@ -250,8 +251,14 @@ KeeperTCPHandler::KeeperTCPHandler(
     , log(getLogger("KeeperTCPHandler"))
     , keeper_dispatcher(keeper_dispatcher_)
     , keeper_context(keeper_dispatcher->getKeeperContext())
-    , min_session_timeout(config_ref.getInt64("keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS) * 1000)
-    , max_session_timeout(config_ref.getInt64("keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS) * 1000)
+    /// Poco::Timespan counts microseconds, so the ms value is multiplied by 1000. Saturate that
+    /// product: this value is the session TTL and is reported to the client, so its magnitude is
+    /// preserved up to the full Poco::Timespan::TimeDiff (Int64) range rather than clamped to a
+    /// wait bound. The wait itself is bounded inside KeeperDispatcher::getSessionID.
+    , min_session_timeout(saturatedMicrosecondsFromMilliseconds(
+          config_ref.getInt64("keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS)))
+    , max_session_timeout(saturatedMicrosecondsFromMilliseconds(
+          config_ref.getInt64("keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS)))
     , poll_wrapper(std::make_shared<SocketInterruptablePollWrapper>(socket_))
     , send_timeout(send_timeout_)
     , receive_timeout(receive_timeout_)
