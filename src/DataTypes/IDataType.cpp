@@ -1,8 +1,6 @@
 #include <cstddef>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnSparse.h>
-#include <Columns/ColumnReplicated.h>
 
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
@@ -88,17 +86,10 @@ MutableColumnPtr IDataType::createUninitializedColumnWithSize(size_t size) const
 
 MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
 {
-    auto kind_stack = serialization.getKindStack();
-    auto column = createColumn();
-    for (auto kind : kind_stack)
-    {
-        if (kind == ISerialization::Kind::SPARSE)
-            column = ColumnSparse::create(std::move(column));
-        else if (kind == ISerialization::Kind::REPLICATED)
-            column = ColumnReplicated::create(std::move(column), ColumnUInt8::create());
-    }
-
-    return column;
+    /// Let the serialization wrap the base column into the layout it deserializes into: ColumnSparse for the
+    /// Sparse kind, ColumnReplicated for Replicated, ColumnBLOB for Detached, and any custom wrapping such as
+    /// the ColumnConst produced by the quantized-vector codebook serialization.
+    return serialization.wrapColumnForDeserialization(createColumn());
 }
 
 MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & field) const
@@ -346,13 +337,15 @@ MutableSerializationInfoPtr IDataType::createSerializationInfo(const Serializati
 
 SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) const
 {
-    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
-        return getSerializationInfo(column_const->getDataColumn());
+    return getSerializationInfo(column, SerializationInfoSettings::enableAllSupportedSerializations());
+}
 
-    /// Enable all supported serialization features when deriving info from an existing column. Since the column
-    /// reflects the actual in-memory state, the serialization info must accept any variant that the column may contain.
-    return std::make_shared<SerializationInfo>(
-        ISerialization::getKindStack(column), SerializationInfoSettings::enableAllSupportedSerializations());
+SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
+{
+    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
+        return getSerializationInfo(column_const->getDataColumn(), settings);
+
+    return std::make_shared<SerializationInfo>(ISerialization::getKindStack(column), settings);
 }
 
 SerializationPtr IDataType::getDefaultSerialization() const

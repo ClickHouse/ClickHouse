@@ -16,7 +16,7 @@ The range of supported types allows you to optimize both storage space and query
 
 * The [`Date`](/reference/data-types/date) type should be sufficient in most cases. This type requires 2 bytes to store a date and limits the range to `[1970-01-01, 2149-06-06]`. 
 
-* [`Date32`](/reference/data-types/date32) covers a wider range of dates. It requires 4 bytes to store a date and limits the range to `[1900-01-01, 2299-12-31]`
+* [`Date32`](/reference/data-types/date32) covers a wider range of dates. It requires 4 bytes to store a date and limits the range to `[0000-01-01, 9999-12-31]`
 
 * [`DateTime`](/reference/data-types/datetime) stores date time values with second precision and a range of `[1970-01-01 00:00:00, 2106-02-07 06:28:15]` It requires 4 bytes per value.
 

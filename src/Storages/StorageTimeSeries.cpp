@@ -9,6 +9,8 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -20,7 +22,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
+#include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
@@ -84,8 +88,13 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
     }
 
     std::vector<Target> targets;
-    for (auto target_kind : getTargetKinds())
+    for (auto target_kind : getAllTargetKinds())
     {
+        /// The recent samples target exists only if the normalized create query has a RECENT SAMPLES clause.
+        if ((target_kind == ViewTarget::RecentSamples)
+            && (!create_query.targets || !create_query.targets->tryGetTarget(target_kind)))
+            continue;
+
         Target target;
         target.kind = target_kind;
 
@@ -117,6 +126,7 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
 
         targets.emplace_back(std::move(target));
     }
+
     return targets;
 }
 
@@ -161,6 +171,33 @@ StorageTimeSeries::StorageTimeSeries(
 StorageTimeSeries::~StorageTimeSeries() = default;
 
 
+std::vector<ViewTarget::Kind> StorageTimeSeries::getTargetKinds() const
+{
+    std::vector<ViewTarget::Kind> kinds;
+    kinds.reserve(targets.size());
+    for (const auto & target : targets)
+        kinds.push_back(target.kind);
+    return kinds;
+}
+
+
+const StorageTimeSeries::Target * StorageTimeSeries::tryGetTarget(ViewTarget::Kind target_kind) const
+{
+    for (const auto & target : targets)
+    {
+        if (target.kind == target_kind)
+            return &target;
+    }
+    return nullptr;
+}
+
+
+bool StorageTimeSeries::hasTarget(ViewTarget::Kind target_kind) const
+{
+    return tryGetTarget(target_kind) != nullptr;
+}
+
+
 StoragePtr StorageTimeSeries::getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const
 {
     return getTargetTableImpl(target_kind, local_context, /* throw_if_not_found = */ true);
@@ -173,11 +210,20 @@ StoragePtr StorageTimeSeries::tryGetTargetTable(ViewTarget::Kind target_kind, co
 
 StoragePtr StorageTimeSeries::getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const
 {
-    /// `targets` is populated in the `getTargetKinds()` order.
-    auto index = static_cast<size_t>(target_kind - ViewTarget::Samples);
-    if (index >= targets.size() || targets[index].kind != target_kind)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {} (index={})", target_kind, index);
-    const auto & target = targets[index];
+    const auto * target_ptr = tryGetTarget(target_kind);
+    if (!target_ptr)
+    {
+        /// The recent samples target is optional.
+        if (target_kind == ViewTarget::RecentSamples)
+        {
+            if (throw_if_not_found)
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries table {} has no {} target table",
+                                getStorageID().getNameForLogs(), target_kind);
+            return nullptr;
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {}", target_kind);
+    }
+    const auto & target = *target_ptr;
 
     auto lookup = [&](const StorageID & id) -> StoragePtr
     {
@@ -250,11 +296,15 @@ StorageID StorageTimeSeries::tryGetTargetTableID(ViewTarget::Kind target_kind, c
 
 bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
 {
-    /// `targets` is populated in the `getTargetKinds()` order.
-    auto index = static_cast<size_t>(target_kind - ViewTarget::Samples);
-    if (index >= targets.size() || targets[index].kind != target_kind)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {} (index={})", target_kind, index);
-    return targets[index].is_inner_table;
+    const auto * target = tryGetTarget(target_kind);
+    if (!target)
+    {
+        /// The recent samples target is optional.
+        if (target_kind == ViewTarget::RecentSamples)
+            return false;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {}", target_kind);
+    }
+    return target->is_inner_table;
 }
 
 
@@ -277,8 +327,8 @@ void StorageTimeSeries::dropInnerTableIfAny(bool sync, ContextPtr local_context)
         {
             if (auto inner_table_id = tryGetTargetTableID(target_kind, local_context))
             {
-                /// Best-effort to make them work: the inner table name is almost always less than the TimeSeries name (so it's safe to lock DDLGuard).
-                /// (See the comment in StorageMaterializedView::dropInnerTableIfAny.)
+                /// DDLGuards must be locked in order of increasing table name, so the inner guard
+                /// may be requested only when this table's name sorts first.
                 bool may_lock_ddl_guard = getStorageID().getQualifiedName() < inner_table_id.getQualifiedName();
                 InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
                                                     sync, /* ignore_sync_setting= */ true, may_lock_ddl_guard);
@@ -323,6 +373,8 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
 }
 
 
+/// TODO: Return the row count of the inner "tags" table instead of the sum over all the inner tables:
+/// it matches `SELECT count()` without FINAL, allowing the trivial count optimization.
 std::optional<UInt64> StorageTimeSeries::totalRows(ContextPtr query_context) const
 {
     if (!hasInnerTables())
@@ -600,16 +652,27 @@ VirtualColumnsDescription StorageTimeSeries::createVirtuals()
 }
 
 void StorageTimeSeries::readImpl(
-    QueryPlan & /* query_plan */,
-    const Names & /* column_names */,
+    QueryPlan & query_plan,
+    const Names & column_names,
     const StorageSnapshotPtr & /* storage_snapshot */,
-    SelectQueryInfo & /* query_info */,
-    ContextPtr /* local_context */,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SELECT is not supported by storage {} yet", getName());
+    /// Run the generated read query on a child context with a few settings pinned so its results
+    /// don't depend on the caller's session/profile (see getSettingsForSelectFromTimeSeries).
+    auto read_context = Context::createCopy(local_context);
+    read_context->applySettingsChanges(getSettingsForSelectFromTimeSeries(query_info.isFinal()));
+
+    NameSet requested_columns{column_names.begin(), column_names.end()};
+    auto select_query = makeASTSelectFromTimeSeries(*this, requested_columns, query_info, read_context);
+    auto options = SelectQueryOptions(QueryProcessingStage::Complete, /* subquery_depth_ = */ 0, /* is_subquery_ = */ false,
+                                      query_info.settings_limit_offset_done);
+    InterpreterSelectQueryAnalyzer interpreter(select_query, read_context, options, column_names);
+    interpreter.addStorageLimits(*query_info.storage_limits);
+    query_plan = std::move(interpreter).extractQueryPlan();
 }
 
 
@@ -713,8 +776,8 @@ CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
 Then this table can be used with the following protocols (a port must be assigned in the server configuration):
-- [prometheus remote-write](/interfaces/prometheus#remote-write)
-- [prometheus remote-read](/interfaces/prometheus#remote-read)
+- [prometheus remote-write](/concepts/features/interfaces/prometheus#remote-write)
+- [prometheus remote-read](/concepts/features/interfaces/prometheus#remote-read)
 
 ### Outer columns {#outer-columns}
 
@@ -766,7 +829,7 @@ This is equivalent to declaring the timestamp and value column types in the samp
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32, value Float32)
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 If both forms are used in the same `CREATE TABLE` statement, the declared types must match.
@@ -793,9 +856,14 @@ The _samples_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
-| `id` | [x] | `UUID` | any | Identifies a combination of a metric names and tags |
+| `id` | [x] | `Tuple(UInt64, UUID)` | any | Identifies a combination of a metric names and tags |
 | `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
+
+Columns the engine creates itself get time-series compression codecs:
+`timestamp CODEC(DoubleDelta, ZSTD(1))` and `value CODEC(ZSTD(3))`. Near-monotonic timestamps barely
+compress under generic codecs and can otherwise dominate the on-disk size of the samples table.
+See also [Adjusting types of columns](#adjusting-column-types).
 
 ### Tags table {#tags-table}
 
@@ -805,11 +873,10 @@ The _tags_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
-| `id` | [x] | `UUID` | any (must match the type of `id` in the [samples](#samples-table) table) | An `id` identifies a combination of a metric name and tags. The DEFAULT expression specifies how to calculate such an identifier |
+| `id` | [x] | `Tuple(UInt64, UUID)` | any (must match the type of `id` in the [samples](#samples-table) table) | An `id` identifies a combination of a metric name and tags. The DEFAULT expression specifies how to calculate such an identifier |
 | `metric_name` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The name of a metric |
 | `<tag_value_column>` | [ ] | `String` | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))` | The value of a specific tag, the tag's name and the name of a corresponding column are specified in the [tags_to_columns](#settings) setting |
-| `tags` | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Map of tags excluding the tag `__name__` containing the name of a metric and excluding tags with names enumerated in the [tags_to_columns](#settings) setting |
-| `all_tags` | [ ] | `Map(String, String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Ephemeral column, each row is a map of all the tags excluding only the tag `__name__` containing the name of a metric. The only purpose of that column is to be used while calculating `id` |
+| `tags` | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Map of all the tags, including the tag `__name__` containing the name of a metric and including the tags with names enumerated in the [tags_to_columns](#settings) setting. Tables created by older versions of ClickHouse stored in this column only the tags without dedicated columns and without the metric name; reading handles both cases |
 | `min_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Minimum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` |
 | `max_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Maximum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` |
 
@@ -851,21 +918,20 @@ CREATE TABLE my_table
 ENGINE = TimeSeries
 SAMPLES INNER COLUMNS
 (
-    `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
 )
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
 (
-    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
-    `all_tags` Map(String, String) EPHEMERAL,
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
-TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1
+TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRICS INNER COLUMNS
 (
     `metric_family_name` String,
@@ -886,28 +952,28 @@ and each target table has its own set of columns:
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
+SETTINGS index_granularity = 32768
 ```
 
 ```sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
-    `all_tags` Map(String, String) EPHEMERAL,
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
 ORDER BY (metric_name, id)
-SETTINGS allow_dimensions_outside_sorting_key = 1
+SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 ```
 
 ```sql
@@ -920,6 +986,7 @@ CREATE TABLE default.`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 )
 ENGINE = ReplacingMergeTree
 ORDER BY metric_family_name
+SETTINGS index_granularity = 8192
 ```
 
 ## Creating a table AS existing table {#create-as}
@@ -935,18 +1002,18 @@ The outer column list is regenerated and not copied.
 
 ## Adjusting types of columns {#adjusting-column-types}
 
-You can adjust the types of columns in the inner target tables using the `INNER COLUMNS` clause. For example, to store timestamps in microseconds and values as `Float32`:
+You can adjust the types of columns in the inner target tables using the `INNER COLUMNS` clause. For example, to store timestamps in microseconds and values as `Float32` use:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+```
+
+Specifying inner columns without codecs means using the default codec for them:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
-```
-
-The same clause can be used to specify codecs and other column attributes:
-
-```sql
-CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(DoubleDelta))
 ```
 
 ## The `id` column {#id-column}
@@ -956,25 +1023,28 @@ The type and the `DEFAULT` expression used to generate identifiers can be custom
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, all_tags))
+TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(tags))
 ```
 
-The `id` column type must be one of `UUID`, `UInt64`, `UInt128`, or `FixedString(16)`. If no `DEFAULT` expression is given, ClickHouse will choose it automatically based on the `id` type. The `id` types declared in the samples and tags inner tables must match.
+The `id` column can be of any comparable non-Nullable type. The `id` types declared in the samples and tags inner tables must match.
+
+If no `DEFAULT` expression is given for the `id` column and the `id_generator` setting is not set, ClickHouse will choose the `DEFAULT` expression automatically based on the `id` type, but only if the `id` type is one of `UUID`, `UInt64`, `UInt128`, `FixedString(16)`, or a tuple of two of those types. For such a tuple the automatically chosen expression calculates a hash of the metric name in the first component and a hash of all the tags in the second component.
 
 The `id_generator` setting offers the same customization without using the `INNER COLUMNS` clause:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SETTINGS id_generator = 'sipHash64(metric_name, all_tags)'
+SETTINGS id_generator = 'sipHash64(tags)'
 ```
 
 If the setting is set, it's used to generate `id` even if the column's `DEFAULT` contains a different expression.
 
-## The `tags` and `all_tags` columns {#tags-and-all-tags}
+## The `tags` column {#tags-column}
 
-There are two columns containing maps of tags - `tags` and `all_tags`. In this example they mean the same, however they can be different
-if setting `tags_to_columns` is used. This setting allows to specify that a specific tag should be stored in a separate column instead of storing
-in a map inside the `tags` column:
+The `tags` column contains all the tags of a time series, including the `__name__` tag with the name of a metric.
+
+The `tags_to_columns` setting allows to specify that a specific tag should also be stored in a separate column
+in addition to the map inside the `tags` column:
 
 ```sql
 CREATE TABLE my_table
@@ -983,9 +1053,13 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
 ```
 
 This statement will add columns `instance` and `job` to the inner [tags](#tags-table) target table.
-In this case the `tags` column will not contain tags `instance` and `job`,
-but the `all_tags` column will contain them. The `all_tags` column is ephemeral and its only purpose to be used in the DEFAULT expression
-for the `id` column.
+The values of the tags `instance` and `job` will be stored both in those columns and in the `tags` column.
+
+:::note
+In tables created by older versions of ClickHouse the `tags` column contains only the tags without dedicated
+columns and without the metric name, and the `all_tags` column is an ephemeral column which was filled on insertion
+with all the tags except the metric name.
+:::
 
 ## Table engines of inner target tables {#inner-table-engines}
 
@@ -1005,7 +1079,7 @@ TAGS ENGINE=ReplicatedAggregatingMergeTree
 METRICS ENGINE=ReplicatedReplacingMergeTree
 ```
 
-The [tags](#tags-table) table keeps the tag columns (and the `tags`/`all_tags` Maps) outside its sorting key,
+The [tags](#tags-table) table keeps the tag columns (and the `tags` Map) outside its sorting key,
 which `AggregatingMergeTree` rejects by default (see [`allow_dimensions_outside_sorting_key`](/reference/engines/table-engines/mergetree-family/aggregatingmergetree)).
 This is safe here because those columns are functionally dependent on `id`, which is part of the sorting key, so all
 rows that a background merge collapses together share the same values. When the inner tags table is generated or its
@@ -1045,7 +1119,7 @@ Two settings can be changed after `CREATE`:
 - `filter_by_min_time_and_max_time`
 
 ```sql
-ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(metric_name, all_tags)';
+ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 ```
 
@@ -1061,10 +1135,15 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 |---|---|---|---|
 | `id_generator` | Expression | depends on `id` type | Expression that computes the identifier (fingerprint) of a time series from its tags. If unset, the default expression for the `id` column is used. If the default expression for the `id` column is also unset then the expression is chosen automatically |
 | `tags_to_columns` | Map | {} | Map specifying which tags should be put to separate columns in the [tags](#tags-table) table. Syntax: `{'tag1': 'column1', 'tag2' : column2, ...}` |
-| `use_all_tags_column_to_generate_id` | Bool | true | When generating an expression to calculate an identifier of a time series, this flag enables using the `all_tags` column in that calculation |
+| `use_all_tags_column_to_generate_id` | Bool | false | Obsolete setting, does nothing |
 | `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series |
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column |
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
+| `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
+| `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
+| `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
+| `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. Requires `recent_samples_ttl_seconds` to be non-zero |
+| `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. Requires `recent_samples_ttl_seconds` to be non-zero |
 
 # Functions {#functions}
 

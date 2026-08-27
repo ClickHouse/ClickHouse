@@ -1,0 +1,6 @@
+preflight: 1
+preflight authorization: 1
+preflight method: 1
+query: 1
+no origin: 0
+custom origin: 1

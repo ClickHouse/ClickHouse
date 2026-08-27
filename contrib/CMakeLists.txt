@@ -185,6 +185,13 @@ add_contrib (idna-cmake idna)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
+option(ENABLE_CHINESE_TOKENIZER "Enable the Chinese tokenizer (jieba-style segmentation in contrib/Jieba-CPP)" ${ENABLE_LIBRARIES})
+if (ENABLE_CHINESE_TOKENIZER)
+    # The dictionary ships little- and big-endian variants and is #embed-ed per host byte order, so no s390x guard is needed.
+    add_contrib (darts-clone-cmake darts-clone)
+    add_contrib (Jieba-CPP-cmake Jieba-CPP)
+endif()
+
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
 if (USE_MONGODB)
     add_contrib (mongo-c-driver-cmake mongo-c-driver) # requires: zlib
@@ -198,6 +205,11 @@ if (ENABLE_NLP)
     add_contrib (wordnet-blast-cmake wordnet-blast)
     add_contrib (lemmagen-c-cmake lemmagen-c)
     add_contrib (cld2-cmake cld2)
+endif()
+
+option(ENABLE_MECAB "Enable MeCab (Japanese morphological analyzer) support" ${ENABLE_LIBRARIES})
+if (ENABLE_MECAB)
+    add_contrib (MeCab-cmake MeCab)
 endif()
 
 add_contrib (sqlite-cmake sqlite-amalgamation)
