@@ -24,6 +24,7 @@
 - [ ] <!---ci_exclude_integration--> Integration Tests
 - [ ] <!---ci_exclude_stateless--> Stateless tests
 - [ ] <!---ci_exclude_stateful--> Stateful tests
+- [ ] <!---ci_exclude_unit--> Unit tests
 - [ ] <!---ci_exclude_performance--> Performance tests
 - [x] <!---ci_exclude_aarch64|arm-->  Aarch64 tests
 - [ ] <!---ci_exclude_asan--> All with ASAN
