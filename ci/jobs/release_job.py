@@ -23,6 +23,7 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
+from ci.jobs.scripts.create_release import ReleaseContextManager, ReleaseProgress
 
 _GH_TOKEN_SECRET = Secret.Config(
     name="/github-tokens/robot-1",
@@ -324,44 +325,68 @@ def main():
         workdir=REPO_PATH,
     )
 
-    # Prepare decides whether this run creates a new release (push tag, bump
-    # version, changelog PR) or only re-publishes artifacts for an existing /
-    # out-of-order ref. The creation steps below run only when it does; a
-    # recovery (skip-repo/skip-docker) or an out-of-order full run skips them
-    # without erroring and just re-exports repos / rebuilds docker.
-    # If a prior step failed (ok is False) the prepared flags are unread; default both landmarks to "already done" so no creation step fires.
-    is_tag_pushed = True
-    is_bump_landed = True
-    if ok:
-        with open(RELEASE_INFO_FILE) as f:
-            _prepared = json.load(f)
-        is_tag_pushed = _prepared["is_tag_pushed"]
-        is_bump_landed = _prepared["is_bump_landed"]
-
-    # skip-repo / skip-docker mark a partial run that only re-publishes artifacts
-    # for an already-created release (repo/Docker recovery). If the ref resolves
-    # to a new release, they would otherwise fall through to the creation steps
-    # below (push tag, bump version, PRs) and produce a partial new release, so
-    # reject that misuse and require the release tag instead.
-    if not is_tag_pushed and (args.skip_repo or args.skip_docker):
-
-        def _require_recovery_ref():
-            raise RuntimeError(
+    def _push_git_tag_for_release():
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.PUSH_RELEASE_TAG
+        ) as release_info:
+            assert release_info.is_tag_pushed or not (args.skip_repo or args.skip_docker), (
                 "skip-repo/skip-docker re-publish an existing release and must be "
                 "run against its release tag (recovery); the given ref resolves to "
                 "a new release. Pass the release tag as the ref."
             )
+            release_info.push_release_tag(dry_run=args.dry_run)
 
-        step(name="Validate Recovery Ref", command=_require_recovery_ref)
+    def _push_new_release_branch():
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
+        ) as release_info:
+            release_info.push_new_release_branch(dry_run=args.dry_run)
+
+    def _bump_version():
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.BUMP_VERSION
+        ) as release_info:
+            release_info.update_version_and_contributors_list(dry_run=args.dry_run)
+
+    # Fail-fast: verify the release packages exist (this downloads them) before
+    # pushing the tag, so a missing-artifacts run aborts without leaving a tag behind.
+    if args.release_type == "patch" and not args.skip_repo:
+        step(
+            name="Download All Release Artifacts",
+            command=[
+                f"python3 ./ci/jobs/scripts/create_release.py --download-packages"
+                f" {dry_run_flag}".strip()
+            ],
+            workdir=REPO_PATH,
+        )
+
+    step(
+        name="Push Git Tag for the Release",
+        command=_push_git_tag_for_release,
+        workdir=REPO_PATH,
+    )
+
+    if args.release_type == "new":
+        step(
+            name="Push New Release Branch",
+            command=_push_new_release_branch,
+            workdir=REPO_PATH,
+        )
+        # "new" bumps master here (idempotent — it self-checks master's version). "patch" defers its branch bump to the end of the run for recovery-safety; see the deferred step near the end of main.
+        step(
+            name="Bump CH Version and Update Contributors' List",
+            command=_bump_version,
+            workdir=REPO_PATH,
+        )
 
     # patch pushes its changelog to master; detect whether it is already there so a rerun is idempotent. The "new" bump self-checks the master version instead.
     changelog_absent = False
-    if args.release_type == "patch":
+    if ok and args.release_type == "patch":
+        with open(RELEASE_INFO_FILE) as f:
+            _info = json.load(f)
         if args.dry_run:
-            changelog_absent = not is_tag_pushed
-        elif ok:
-            with open(RELEASE_INFO_FILE) as f:
-                _info = json.load(f)
+            changelog_absent = not _info["is_tag_pushed"]
+        else:
             changelog_path = f"docs/changelogs/{_info['release_tag']}.md"
             on_master = bool(
                 Shell.get_output(
@@ -374,51 +399,7 @@ def main():
                 + ("yes — skipping" if on_master else "no — will push")
             )
 
-    # Fail-fast: verify the release packages exist (this downloads them) before
-    # pushing the tag or opening the changelog PR, so a missing-artifacts run
-    # aborts without leaving a tag / PR behind.
-    if args.release_type == "patch" and not args.skip_repo:
-        step(
-            name="Download All Release Artifacts",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --download-packages"
-                f" {dry_run_flag}".strip()
-            ],
-            workdir=REPO_PATH,
-        )
-
-    if not is_tag_pushed:
-        step(
-            name="Push Git Tag for the Release",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --push-release-tag"
-                f" {dry_run_flag}".strip()
-            ],
-            workdir=REPO_PATH,
-        )
-
-    if args.release_type == "new" and not is_tag_pushed:
-        step(
-            name="Push New Release Branch",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --push-new-release-branch"
-                f" {dry_run_flag}".strip()
-            ],
-            workdir=REPO_PATH,
-        )
-
-    # "new" bumps master here (idempotent — it self-checks master's version). "patch" defers its branch bump to the end of the run for recovery-safety; see the deferred step near the end of main.
-    if args.release_type == "new":
-        step(
-            name="Bump CH Version and Update Contributors' List",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --create-bump-version-pr"
-                f" {dry_run_flag}".strip()
-            ],
-            workdir=REPO_PATH,
-        )
-
-    if args.release_type == "patch" and changelog_absent:
+    if ok and args.release_type == "patch" and changelog_absent:
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
         uid = os.getuid()
@@ -454,7 +435,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "patch" and not args.dry_run and changelog_absent:
+    if ok and args.release_type == "patch" and not args.dry_run and changelog_absent:
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
 
@@ -569,22 +550,23 @@ def main():
             )
 
     if (
-        args.release_type == "patch"
+        ok
+        and args.release_type == "patch"
         and not args.dry_run
         and not args.skip_docker
     ):
+        with open(RELEASE_INFO_FILE) as f:
+            release_info = json.load(f)
+        release_tag = release_info["release_tag"]
+        # Branch head (bump not landed) → move floating minor/major tags; is_latest also moves `latest`. A later recovery (bump landed) leaves them as they are.
+        is_bump_landed = release_info["is_bump_landed"]
+        is_latest = release_info["latest"]
 
         def _make_docker_build(
             image: str,
             build_configs: List[Tuple[str, str, str]],
         ):
             def build():
-                with open(RELEASE_INFO_FILE) as f:
-                    release_info = json.load(f)
-                release_tag = release_info["release_tag"]
-                # Branch head (bump not landed) → move floating minor/major tags; is_latest also moves `latest`. A later recovery (bump landed) leaves them as they are.
-                is_bump_landed = release_info["is_bump_landed"]
-                is_latest = release_info["latest"]
                 Shell.check(f"git checkout {release_tag}", strict=True)
 
                 m = re.match(r"^v(\d+\.\d+\.\d+\.\d+)", release_tag)
@@ -743,14 +725,11 @@ def main():
     if results[-1].status != Result.Status.OK:
         ok = False
 
-    # Deferred to the end so a rerun before it sees an un-bumped branch and prepare recovers the release; `not is_bump_landed` completes an unfinished bump once and never rewrites a landed one.
-    if not is_bump_landed and args.release_type == "patch":
+    # Deferred to the end so a rerun before it sees an un-bumped branch and prepare recovers the release; the step self-skips a landed bump (late recovery), so it completes an unfinished bump once and never rewrites a landed one.
+    if args.release_type == "patch":
         step(
             name="Bump CH Version and Update Contributors' List",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --create-bump-version-pr"
-                f" {dry_run_flag}".strip()
-            ],
+            command=_bump_version,
             workdir=REPO_PATH,
         )
 

@@ -40,6 +40,26 @@ RELEASE_JOB = os.path.join(REPO_ROOT, "ci/jobs/release_job.py")
 WORKFLOW_DEF = os.path.join(REPO_ROOT, "ci/workflows/create_release.py")
 WORKFLOW_YML = os.path.join(REPO_ROOT, ".github/workflows/create_release.yml")
 
+# release_job.py now drives these two steps in-process via ReleaseContextManager, not a CLI flag.
+_INPROCESS_STEPS = {
+    "--push-release-tag": ("PUSH_RELEASE_TAG", "push_release_tag"),
+    "--create-bump-version-pr": ("BUMP_VERSION", "update_version_and_contributors_list"),
+}
+
+
+def _create_release_cmd(flags, script):
+    spec = _INPROCESS_STEPS.get(flags[0] if flags else "")
+    if spec is None:
+        return [sys.executable, script, *flags]
+    progress, method = spec
+    dry = "--dry-run" in flags
+    driver = (
+        "from ci.jobs.scripts.create_release import ReleaseContextManager, ReleaseProgress\n"
+        f"with ReleaseContextManager(release_progress=ReleaseProgress.{progress}) as ri:\n"
+        f"    ri.{method}(dry_run={dry})\n"
+    )
+    return [sys.executable, "-c", driver]
+
 
 def _read(path):
     with open(path, encoding="utf-8") as f:
@@ -172,14 +192,12 @@ def test_new_bump_is_early_and_patch_bump_is_deferred():
     enqueue/merge step.
     """
     text = _read(RELEASE_JOB)
-    # Match the actual create_release.py invocations, not prose in comments.
-    bump_positions = [
-        m.start()
-        for m in re.finditer(r"create_release\.py --create-bump-version-pr", text)
-    ]
+    # The bump is now an in-process ReleaseContextManager call, not a CLI flag;
+    # match the actual `command=_bump_version` step wiring, not prose in comments.
+    bump_positions = [m.start() for m in re.finditer(r"command=_bump_version", text)]
     changelog_pos = text.find('name="Push ChangeLog to master"')
     assert len(bump_positions) >= 2, (
-        "expected a separate 'new' and deferred 'patch' --create-bump-version-pr"
+        "expected a separate 'new' and deferred 'patch' _bump_version step"
     )
     assert changelog_pos != -1, "release_job.py should have the Push ChangeLog step"
     assert "Merge Created PRs" not in text, "the merge/enqueue step must be gone"
@@ -410,7 +428,7 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
 
     def step(*flags):
         result = subprocess.run(
-            [sys.executable, script, *flags],
+            _create_release_cmd(flags, script),
             cwd=repo,
             env=env,
             capture_output=True,
@@ -602,7 +620,7 @@ def test_recovery_of_unbumped_branch_bumps_version(tmp_path):
 
     def step(*flags):
         result = subprocess.run(
-            [sys.executable, script, *flags], cwd=repo, env=env,
+            _create_release_cmd(flags, script), cwd=repo, env=env,
             capture_output=True, text=True,
         )
         assert result.returncode == 0, (
@@ -1389,7 +1407,7 @@ def test_bump_resyncs_onto_advanced_branch_tip(tmp_path):
 
     def step(*flags):
         result = subprocess.run(
-            [sys.executable, script, *flags], cwd=repo, env=env,
+            _create_release_cmd(flags, script), cwd=repo, env=env,
             capture_output=True, text=True,
         )
         assert result.returncode == 0, (
