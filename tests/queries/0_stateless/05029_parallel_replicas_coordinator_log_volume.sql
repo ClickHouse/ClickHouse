@@ -47,14 +47,20 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
 
 -- Messages of the coordinator and of the parallel replicas read pools must not grow with the size of the working set.
 -- The `Test` level is excluded on purpose: the detailed listing is still allowed there.
+-- Without a local plan the read pool messages are logged by the parallel replica worker queries, and
+-- `system.text_log` only stores their own `query_id`, so the filter has to cover every query whose
+-- `initial_query_id` points to the two top-level queries, not just the top-level queries themselves.
 SELECT count() > 0, max(length(message)) < 1000
 FROM system.text_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND query_id IN (
         SELECT query_id FROM system.query_log
         WHERE event_date >= yesterday() AND event_time >= now() - 600
-            AND current_database = currentDatabase()
-            AND log_comment IN ('05029_9bd90c3e-1fd4-4d0c-8a4a-0f0f1bd6d5a9_default', '05029_9bd90c3e-1fd4-4d0c-8a4a-0f0f1bd6d5a9_inorder'))
+            AND initial_query_id IN (
+                SELECT query_id FROM system.query_log
+                WHERE event_date >= yesterday() AND event_time >= now() - 600
+                    AND current_database = currentDatabase()
+                    AND log_comment IN ('05029_9bd90c3e-1fd4-4d0c-8a4a-0f0f1bd6d5a9_default', '05029_9bd90c3e-1fd4-4d0c-8a4a-0f0f1bd6d5a9_inorder')))
     AND (logger_name LIKE '%Coordinator%' OR logger_name LIKE 'MergeTreeReadPoolParallelReplicas%')
     AND level != 'Test';
 
