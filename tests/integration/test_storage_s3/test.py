@@ -802,6 +802,16 @@ def test_remote_host_filter(started_cluster):
     )
     assert "not allowed in configuration file" in instance.query_and_get_error(query)
 
+    query = "DESCRIBE TABLE icebergS3('http://{}:{}/{}/')".format(
+        "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket
+    )
+    assert "not allowed in configuration file" in instance.query_and_get_error(query)
+
+    query = "SELECT count() FROM icebergS3Cluster('cluster', 'http://{}:{}/{}/')".format(
+        "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket
+    )
+    assert "not allowed in configuration file" in instance.query_and_get_error(query)
+
     query = "select *, column1*column2*column3 from s3('http://{}:{}/{}/test.csv', 'CSV', '{}')".format(
         "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket, format
     )

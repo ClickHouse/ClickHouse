@@ -83,6 +83,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     , object_storage(object_storage_)
 {
     configuration->initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_);
+    configuration->check(context_);
     /// We allow exceptions to be thrown on update(),
     /// because Cluster engine can only be used as table function,
     /// so no lazy initialization is allowed.
@@ -90,7 +91,6 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
-    configuration->check(context_);
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
 
     if (sample_path.empty()
