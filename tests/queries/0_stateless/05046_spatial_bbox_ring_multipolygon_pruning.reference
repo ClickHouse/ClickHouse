@@ -1,0 +1,8 @@
+ring	1
+ring	Granules: 1/2
+ring far	0
+ring far	Granules: 0/2
+multipolygon	1
+multipolygon	Granules: 1/2
+multipolygon far	0
+multipolygon far	Granules: 0/2
