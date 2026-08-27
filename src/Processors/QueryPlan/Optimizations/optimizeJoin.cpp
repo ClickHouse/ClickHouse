@@ -92,41 +92,92 @@ static bool isValuePassThroughFunction(std::string_view function_name)
         || function_name == "CAST" || function_name == "toNullable";
 }
 
-/// How a node relates its output NDV to the NDV of its first child's source column.
+static bool isConstantExpression(const ActionsDAG::Node * node)
+{
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(node);
+    while (!nodes.empty())
+    {
+        const auto * current = nodes.top();
+        nodes.pop();
+
+        if (current->column)
+            continue;
+
+        if (current->type == ActionsDAG::ActionType::ALIAS && current->children.size() == 1)
+        {
+            nodes.push(current->children[0]);
+            continue;
+        }
+
+        if (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base
+            && current->function_base->isDeterministicInScopeOfQuery())
+        {
+            for (const auto * child : current->children)
+                nodes.push(child);
+
+            continue;
+        }
+
+        return false;
+    }
+
+    return true;
+}
+
+/// How a node relates its output NDV to the NDV of one of its children's source columns.
 struct ValueHop
 {
-    bool propagates = false;  /// output inherits the source NDV of children[0]
-    UInt64 ndv_delta = 0;     /// extra distinct values the hop can introduce over the source
-    bool preserves_width = false;  /// output value bytes equal the source's (relabel or same-type hop)
+    std::pair<bool, size_t> source_child = {false, 0}; /// whether NDV propagates, and from which child
+    UInt64 ndv_delta = 0; /// extra distinct values the hop can introduce over the source
+    bool preserves_width = false; /// output value bytes equal the source's (relabel or same-type hop)
 };
 
 /// A node propagates a source column's NDV when it just relabels (ALIAS) or applies a value-
-/// preserving transform to its first argument. `ndv_delta` is how much the output NDV can exceed it.
+/// preserving transform to one argument. `ndv_delta` is how much the output NDV can exceed it.
 static ValueHop describeValueHop(const ActionsDAG::Node & node)
 {
     if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-        return {.propagates = true, .preserves_width = true};
+        return {.source_child = {true, 0}, .preserves_width = true};
 
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
         return {};
 
-    /// A deterministic single-argument function has at most as many distinct values as its argument
-    /// (e.g. `toYear(date)`); the whitelisted functions pass their first argument's value through.
-    const bool propagates = isValuePassThroughFunction(node.function_base->getName())
-        || (node.children.size() == 1 && node.function_base->isDeterministic());
-    if (!propagates)
-        return {};
+    /// Child 0 always exists and is used as the NDV source by default. The block below replaces it with
+    /// the only non-const child of a deterministic function, or returns without propagating NDV.
+    size_t source_child_index = 0;
 
-    /// NDV counts only non-null values. A hop turning a Nullable first argument into a non-Nullable
+    if (!isValuePassThroughFunction(node.function_base->getName()))
+    {
+        if (!node.function_base->isDeterministicInScopeOfQuery())
+            return {};
+
+        std::optional<size_t> non_constant_child;
+        for (size_t i = 0; i < node.children.size(); ++i)
+        {
+            if (isConstantExpression(node.children[i]))
+                continue;
+
+            if (non_constant_child)
+                return {};
+            non_constant_child = i;
+        }
+
+        if (!non_constant_child)
+            return {};
+        source_child_index = *non_constant_child;
+    }
+
+    /// NDV counts only non-null values. A hop turning a Nullable source argument into a non-Nullable
     /// result (e.g. `isNull`, or `CAST` dropping nullability) maps NULL to one extra counted value.
-    const bool collapses_null = isNullableOrLowCardinalityNullable(node.children[0]->result_type)
+    const bool collapses_null = isNullableOrLowCardinalityNullable(node.children[source_child_index]->result_type)
         && !isNullableOrLowCardinalityNullable(node.result_type);
     /// NDV can survive a value-changing hop (`toString(k)` has k's NDV), but the value bytes cannot;
     /// only a hop that keeps the underlying type keeps the width. `Nullable`/`LowCardinality`
     /// wrapping (the analyzer's `toNullable`/`CAST` around join keys) leaves the value bytes intact.
     const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
-        ->equals(*removeLowCardinalityAndNullable(node.children[0]->result_type));
-    return {.propagates = true, .ndv_delta = collapses_null ? 1u : 0u, .preserves_width = preserves_width};
+        ->equals(*removeLowCardinalityAndNullable(node.children[source_child_index]->result_type));
+    return {.source_child = {true, source_child_index}, .ndv_delta = collapses_null ? 1u : 0u, .preserves_width = preserves_width};
 }
 
 /// How an output column relates to the source input column it traces back to.
@@ -173,17 +224,18 @@ static std::unordered_map<String, BackTrackedColumn> backTrackColumnsInDag(const
             }
 
             ValueHop hop = describeValueHop(*node);
-            if (hop.propagates && !child_pushed)
+            const auto [propagates, source_child_index] = hop.source_child;
+            if (propagates && !child_pushed)
             {
                 nodes_to_process.top().second = true;
-                nodes_to_process.push({node->children[0], false});
+                nodes_to_process.push({node->children[source_child_index], false});
                 continue;
             }
 
             std::optional<BackTrackedColumn> result;
-            if (hop.propagates)
+            if (propagates)
             {
-                if (auto source_path = path_to_input[node->children[0]])
+                if (auto source_path = path_to_input[node->children[source_child_index]])
                     result = BackTrackedColumn{
                         .ndv_offset = source_path->ndv_offset + hop.ndv_delta,
                         .preserves_width = source_path->preserves_width && hop.preserves_width};
