@@ -38,6 +38,7 @@
 #include <Interpreters/GlobalSubqueriesVisitor.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/MergeJoin.h>
@@ -85,6 +86,7 @@ namespace Setting
     extern const SettingsBool compile_sort_description;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool enable_early_constant_folding;
+    extern const SettingsBool enable_hash_join_row_store;
     extern const SettingsBool enable_positional_arguments;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsUInt64 max_bytes_in_set;
@@ -92,6 +94,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
+    extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_read_in_order;
@@ -1009,6 +1012,10 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     ContextPtr context,
     std::optional<UInt64> rhs_size_estimation)
 {
+    if (context->getSettingsRef()[Setting::enable_hash_join_row_store]
+        && context->getSettingsRef()[Setting::min_rows_ratio_for_hash_join_row_store] == 0.0)
+        analyzed_join->setRowStoreEnabled(true);
+
     if (analyzed_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);
 
@@ -1067,7 +1074,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     context->getTempDataOnDisk(),
                     settings[Setting::grace_hash_join_initial_buckets],
                     settings[Setting::grace_hash_join_max_buckets],
-                    StatsCollectingParams{},
+                    HashJoinStatsCollectingParams{},
                     /*any_take_last_row_=*/false,
                     settings[Setting::max_threads],
                     use_parallel_layout);
@@ -1080,7 +1087,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             /*any_take_last_row_=*/false,
             /*reserve_num_=*/0,
             /*instance_id_=*/"",
-            StatsCollectingParams{},
+            HashJoinStatsCollectingParams{},
             settings[Setting::max_threads],
             use_parallel_layout);
     }
@@ -1136,7 +1143,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     context->getTempDataOnDisk(),
                     settings[Setting::grace_hash_join_initial_buckets],
                     settings[Setting::grace_hash_join_max_buckets],
-                    StatsCollectingParams{},
+                    HashJoinStatsCollectingParams{},
                     /*any_take_last_row_=*/false,
                     settings[Setting::max_threads],
                     use_parallel_layout);
@@ -1148,7 +1155,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 analyzed_join,
                 right_sample_block,
                 /*any_take_last_row_=*/false,
-                StatsCollectingParams{},
+                HashJoinStatsCollectingParams{},
                 settings[Setting::max_threads],
                 use_parallel_layout);
         return std::make_shared<HashJoin>(
@@ -1157,7 +1164,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             /*any_take_last_row_=*/false,
             /*reserve_num_=*/0,
             /*instance_id_=*/"",
-            StatsCollectingParams{},
+            HashJoinStatsCollectingParams{},
             settings[Setting::max_threads],
             use_parallel_layout);
     }

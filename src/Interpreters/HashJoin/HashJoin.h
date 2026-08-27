@@ -10,6 +10,7 @@
 
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/RowDataStore.h>
 #include <Interpreters/RowRefs.h>
 
 #include <Core/Block_fwd.h>
@@ -198,7 +199,7 @@ public:
         bool any_take_last_row_ = false,
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
-        const StatsCollectingParams & stats_collecting_params_ = {},
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
         size_t max_threads_ = 1,
         bool use_parallel_layout_ = true);
 
@@ -223,7 +224,7 @@ public:
             any_take_last_row,
             reserve_num,
             instance_id,
-            StatsCollectingParams{},
+            HashJoinStatsCollectingParams{},
             max_threads,
             use_parallel_layout);
     }
@@ -242,7 +243,7 @@ public:
             any_take_last_row,
             reserve_num,
             instance_id,
-            StatsCollectingParams{},
+            HashJoinStatsCollectingParams{},
             /*max_threads=*/1,
             /*use_parallel_layout=*/false);
     }
@@ -311,6 +312,11 @@ public:
         size_t num_streams) const override;
 
     void onBuildPhaseFinish() override;
+    void onProbePhaseFinish(size_t matched_right_rows) override
+    {
+        hash_table_matches = matched_right_rows;
+        probe_phase_finished = true;
+    }
 
     bool hasPostBuildPhase() const override;
     void runPostBuildPhase() override;
@@ -682,6 +688,13 @@ public:
     using NullmapList = std::deque<NullMapHolder>;
     using StoredBlocksList = std::list<StoredBlock>;
 
+    enum class RowStoreState : uint8_t
+    {
+        Disabled,
+        Enabled,
+        Initialized,
+    };
+
     /// Owned by exactly one build thread, which is why these lists need no mutex; the maps are
     /// shared and go through `bucket_locks`.
     struct WorkerStoredData
@@ -714,6 +727,8 @@ public:
         /// join tab2 on [not_joined(t1.x = t2.x)] and t1.y = t2.y
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
+        /// Track index of "right" table columns in columns list or row store.
+        ColumnAccessIndexes column_access_indexes;
 
         std::vector<WorkerStoredData> workers;
 
@@ -746,6 +761,9 @@ public:
 
         /// Whether the right table reranged by key
         bool sorted = false;
+        /// Whether row-major storage is used or not and its layout if it is.
+        RowStoreState row_store_state = RowStoreState::Enabled;
+        RowDataStore::RowLayoutPtr row_store_layout;
 
         /// For range types: the minimum key value and the range size from min_key to max_key.
         struct KeyRange
@@ -817,6 +835,19 @@ public:
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
 
+    struct RowStoreLayoutWithAccessIndexes
+    {
+        RowDataStore::RowLayoutPtr layout;
+        ColumnAccessIndexes access_indexes;
+    };
+
+    /// Derives the row store layout from the first right block.
+    std::optional<RowStoreLayoutWithAccessIndexes> initRowStore(const Block & block);
+    /// Takes a pre-computed row store layout.
+    void initRowStore(const std::optional<RowStoreLayoutWithAccessIndexes> & layout_with_access_indexes);
+    /// Creates a row store based on the already initialized layout and fills from block columns.
+    RowDataStorePtr createRowStoreForBlock(const Block & block) const;
+
     size_t getAndSetRightTableKeys() const;
 
     const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
@@ -836,7 +867,7 @@ private:
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate> // NOLINT(readability-identifier-naming)
     friend class HashJoinMethods;
 
-    bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, size_t worker_id, bool check_limits);
+    bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, size_t worker_id, bool check_limits, RowDataStorePtr row_store = nullptr);
 
     std::shared_ptr<TableJoin> table_join;
     JoinKind kind;
@@ -919,8 +950,12 @@ private:
     /// Track if shared runtime filters were already published to keep publication one-shot.
     bool shared_runtime_filters_publish_attempted = false;
 
-    const StatsCollectingParams stats_collecting_params;
+    const HashJoinStatsCollectingParams stats_collecting_params;
     bool build_phase_finished = false;
+    bool probe_phase_finished = false;
+
+    /// Rows emitted from hash-table matches across all probe threads (excludes default/miss rows).
+    size_t hash_table_matches = 0;
 
     /// Identifier to distinguish different HashJoin instances in logs
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
@@ -957,6 +992,7 @@ private:
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 
+    bool isRightTableRerangeEnabled() const;
     bool rightTableCanBeReranged() const;
     void tryRerangeRightTableData();
 
@@ -974,6 +1010,8 @@ private:
     void tryConvertToFixedHashMapImpl(MapsTemplate & maps, SourcePtr & source_ptr);
 
     void freezeMapsForProbing();
+
+    bool isRowStoreSupported() const;
 
     void reinitUsedFlags();
 

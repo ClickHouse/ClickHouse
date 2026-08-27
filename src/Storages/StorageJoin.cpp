@@ -74,7 +74,7 @@ HashJoinPtr makeStorageJoinHashJoin(std::shared_ptr<TableJoin> table_join, Block
         overwrite,
         /*reserve_num_=*/0,
         /*instance_id_=*/"",
-        StatsCollectingParams{},
+        HashJoinStatsCollectingParams{},
         /*max_threads_=*/1,
         /*use_parallel_layout_=*/false);
 }

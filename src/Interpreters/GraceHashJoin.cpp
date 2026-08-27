@@ -850,7 +850,7 @@ GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bu
         any_take_last_row,
         reserve_num,
         bucket_id,
-        StatsCollectingParams{},
+        HashJoinStatsCollectingParams{},
         max_threads,
         /*use_parallel_layout=*/false);
 }

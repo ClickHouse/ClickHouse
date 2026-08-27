@@ -36,7 +36,7 @@ SpillingHashJoin::SpillingHashJoin(
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t initial_num_buckets_,
     size_t max_num_buckets_,
-    const StatsCollectingParams & stats_collecting_params_,
+    const HashJoinStatsCollectingParams & stats_collecting_params_,
     bool any_take_last_row_,
     size_t max_threads_,
     bool use_parallel_layout_)
@@ -201,6 +201,11 @@ void SpillingHashJoin::onBuildPhaseFinish()
     }
 
     chosen_join->onBuildPhaseFinish();
+}
+
+void SpillingHashJoin::onProbePhaseFinish(size_t matched_right_rows)
+{
+    chosen_join->onProbePhaseFinish(matched_right_rows);
 }
 
 bool SpillingHashJoin::hasPostBuildPhase() const

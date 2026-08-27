@@ -38,7 +38,7 @@ JoinSwitcher::JoinSwitcher(
     std::shared_ptr<TableJoin> table_join_,
     SharedHeader right_sample_block_,
     const bool any_take_last_row_,
-    const StatsCollectingParams & stats_collecting_params_,
+    const HashJoinStatsCollectingParams & stats_collecting_params_,
     size_t max_threads_,
     bool use_parallel_layout_)
     : limits(table_join_->sizeLimits())
