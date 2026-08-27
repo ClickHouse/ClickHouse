@@ -2,8 +2,10 @@
 
 # The live IO meter of https://github.com/ClickHouse/ClickHouse/issues/116565, asserted on the
 # rendered progress line itself (ClientBase::onProfileEvents -> ProgressIndication::writeProgress).
-# Network throughput is part of the IO sum, so the assertion needs no disk, O_DIRECT, or taskstats;
-# the disk-side counters behind the same meter are pinned by 05026_client_disk_io_progress_streaming.sql.
+# Network throughput is part of the IO sum, so this assertion needs no disk, O_DIRECT, or taskstats
+# and runs on every platform; the disk carrier is asserted through the same client path by
+# 05026_client_io_progress_line_disk.expect, and its server-side counter flow by
+# 05026_client_disk_io_progress_streaming.sql.
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -38,6 +40,7 @@ expect ":) "
 # FORMAT Null would not do: the server sends no data for it, and the IO meter would stay at zero.
 send -- "SELECT randomString(100000) AS s, sleepEachRow(0.01) FROM numbers(300) INTO OUTFILE '/dev/null' APPEND FORMAT TSV SETTINGS max_block_size = 10\r"
 expect -re {[0-9.]+ [A-Za-z]*B/s IO}
+expect "rows in set."
 expect ":) "
 
 send -- "\4"

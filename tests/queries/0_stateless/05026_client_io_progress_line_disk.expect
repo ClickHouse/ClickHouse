@@ -1,0 +1,61 @@
+#!/usr/bin/expect -f
+# Tags: no-darwin, no-object-storage, no-parallel-replicas
+# no-darwin: min_bytes_to_use_direct_io relies on O_DIRECT, and OSReadBytes comes from Linux
+#   taskstats only. no-object-storage: the table must sit on local disk for the direct-IO read.
+
+# The disk leg of the IO meter of https://github.com/ClickHouse/ClickHouse/issues/116565, asserted
+# end-to-end through the client path: OSReadBytes -> streamed ProfileEvents ->
+# ClientBase::onProfileEvents -> ProgressIndication::writeProgress. The direct-IO read is throttled
+# to ~10 MB/s while FORMAT Null keeps network traffic at a few KB/s, so the MB-scale rate the test
+# expects can only come from the disk byte counters, not from the network ones covered by
+# 05026_client_io_progress_line.expect.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+# The profiling suffix `(... CPU, ... IO)` is dropped when it does not fit next to the progress bar,
+# and the width is re-read from the pty on every render - so make the pty wide.
+set stty_init "rows 60 columns 300"
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# CLICKHOUSE_CLIENT_EXPECT_OPT is not used because it forces --progress no.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --no-warnings --progress-table off --enable-progress-table-toggle 0 --highlight 0 --history_file=$history_file"
+expect ":) "
+
+# ~44 MB of incompressible data: big enough that the throttler's initial burst leaves the read
+# under 50% done at the 0.5 s mark, before which writeProgress does not render the suffix at all.
+# Wait for "Ok." before the prompt: the echo of a sent query redraws ":) ", so a bare prompt
+# match would fire early and race the next send against the still-running statement.
+send -- "CREATE TABLE client_io_progress_disk (key UInt32, val String) ENGINE = MergeTree ORDER BY key SETTINGS min_bytes_for_full_part_storage = 0 AS SELECT number, randomPrintableASCII(40) FROM numbers(1000000)\r"
+expect "Ok."
+expect ":) "
+
+# A direct-IO read bypasses the page cache, so OSReadBytes increments regardless of cache warmth,
+# and the local read throttle paces it so the meter has several ProfileEvents packets to warm up on.
+send -- "SELECT * FROM client_io_progress_disk FORMAT Null SETTINGS local_filesystem_read_method = 'pread_threadpool', min_bytes_to_use_direct_io = 1, use_uncompressed_cache = 0, max_local_read_bandwidth = 10000000\r"
+expect -re {[0-9.]+ [MGT]B/s IO}
+expect "rows in set."
+expect ":) "
+
+send -- "DROP TABLE client_io_progress_disk\r"
+expect "Ok."
+expect ":) "
+
+send -- "\4"
+expect eof

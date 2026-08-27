@@ -8,7 +8,8 @@
 -- per-interval deltas into the live `<rate>/s IO` in the progress line.
 -- This pins the disk-side counter increment the meter rides on; the rendering path itself
 -- (ClientBase::onProfileEvents -> ProgressIndication::writeProgress) is asserted by
--- 05026_client_io_progress_line.expect.
+-- 05026_client_io_progress_line.expect (network carrier) and
+-- 05026_client_io_progress_line_disk.expect (disk carrier).
 
 SET log_queries = 1, log_query_threads = 1;
 
