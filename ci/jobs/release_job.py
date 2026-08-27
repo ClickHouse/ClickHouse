@@ -9,7 +9,6 @@ reuse. The repo is always shallow at the start (hence the unconditional
 """
 
 import argparse
-import json
 import os
 import re
 import shlex
@@ -23,6 +22,11 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
+from ci.jobs.scripts.create_release import (
+    ReleaseContextManager,
+    ReleaseInfo,
+    ReleaseProgress,
+)
 
 _GH_TOKEN_SECRET = Secret.Config(
     name="/github-tokens/robot-1",
@@ -324,11 +328,6 @@ def main():
         )
 
     def prepare_release_info():
-        from ci.jobs.scripts.create_release import (
-            ReleaseContextManager,
-            ReleaseProgress,
-        )
-
         with ReleaseContextManager(
             release_progress=ReleaseProgress.STARTED, commit_sha=args.ref
         ) as release_info:
@@ -345,6 +344,7 @@ def main():
         command=prepare_release_info,
         workdir=REPO_PATH,
     )
+    release_info = ReleaseInfo.from_file() if ok else None
 
     # Fail-fast: verify the release packages exist (this downloads them) before
     # pushing the tag, so a missing-artifacts run aborts without leaving a tag behind.
@@ -359,11 +359,6 @@ def main():
         )
 
     def push_git_tag():
-        from ci.jobs.scripts.create_release import (
-            ReleaseContextManager,
-            ReleaseProgress,
-        )
-
         with ReleaseContextManager(
             release_progress=ReleaseProgress.PUSH_RELEASE_TAG
         ) as release_info:
@@ -376,22 +371,12 @@ def main():
     )
 
     def push_new_release_branch():
-        from ci.jobs.scripts.create_release import (
-            ReleaseContextManager,
-            ReleaseProgress,
-        )
-
         with ReleaseContextManager(
             release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
         ) as release_info:
             release_info.push_new_release_branch(dry_run=args.dry_run)
 
     def bump_version():
-        from ci.jobs.scripts.create_release import (
-            ReleaseContextManager,
-            ReleaseProgress,
-        )
-
         with ReleaseContextManager(
             release_progress=ReleaseProgress.BUMP_VERSION
         ) as release_info:
@@ -410,23 +395,20 @@ def main():
             workdir=REPO_PATH,
         )
 
-    def changelog_absent(release_tag):
+    def changelog_absent():
         # Absent iff the changelog isn't on master yet; on a dry run, proxied by is_tag_pushed.
         if args.dry_run:
-            with open(RELEASE_INFO_FILE) as f:
-                return not json.load(f)["is_tag_pushed"]
-        path = f"docs/changelogs/{release_tag}.md"
+            return not release_info.is_tag_pushed
+        path = f"docs/changelogs/{release_info.release_tag}.md"
         return not Shell.get_output(
             f"git ls-tree --name-only origin/master -- {shlex.quote(path)}"
         ).strip()
 
-    if args.release_type == "patch":
-        with open(RELEASE_INFO_FILE) as f:
-            release_tag = json.load(f)["release_tag"]
+    if ok and args.release_type == "patch":
         uid = os.getuid()
         gid = os.getgid()
         # Regenerate only when the changelog is not on master yet, so a recovery / rerun does not re-dirty the tree.
-        if changelog_absent(release_tag):
+        if changelog_absent():
             step(
                 name="Bump Docker Versions, Changelog, Security",
                 command=[
@@ -448,8 +430,8 @@ def main():
                     f" ./tests/ci/changelog.py -v --debug-helpers"
                     f' --gh-user-or-token "$GH_TOKEN"'
                     f" --jobs=5"
-                    f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
-                    f"git add ./docs/changelogs/{release_tag}.md",
+                    f" --output=./docs/changelogs/{release_info.release_tag}.md {release_info.release_tag}",
+                    f"git add ./docs/changelogs/{release_info.release_tag}.md",
                     "echo 'Generate Security'",
                     "python3 ./utils/security-generator/generate_security.py"
                     " > SECURITY.md",
@@ -458,18 +440,18 @@ def main():
                 workdir=REPO_PATH,
             )
 
-    if args.release_type == "patch":
+    if ok and args.release_type == "patch":
 
         def push_changelog_to_master():
             if args.dry_run:
                 print("Dry-run: skipping ChangeLog push to master")
                 return
-            with open(RELEASE_INFO_FILE) as f:
-                release_tag = json.load(f)["release_tag"]
-            if not changelog_absent(release_tag):
-                print(f"ChangeLog for {release_tag} already on master — skipping")
+            if not changelog_absent():
+                print(
+                    f"ChangeLog for {release_info.release_tag} already on master — skipping"
+                )
                 return
-            commit_msg = f"Update version_date.tsv and changelogs after {release_tag}"
+            commit_msg = f"Update version_date.tsv and changelogs after {release_info.release_tag}"
             Shell.check(
                 "git config user.email robot-clickhouse@users.noreply.github.com"
                 " && git config user.name robot-clickhouse",
@@ -479,7 +461,7 @@ def main():
             pathspec = " ".join(
                 [
                     "utils/list-versions/version_date.tsv",
-                    "docs/changelogs/" + shlex.quote(release_tag) + ".md",
+                    "docs/changelogs/" + shlex.quote(release_info.release_tag) + ".md",
                     "SECURITY.md",
                     "docker/keeper/Dockerfile",
                     "docker/keeper/Dockerfile.distroless",
@@ -578,26 +560,23 @@ def main():
                 workdir=REPO_PATH,
             )
 
-    if args.release_type == "patch" and not args.skip_docker:
+    if ok and args.release_type == "patch" and not args.skip_docker:
 
         def _make_docker_build(
             image: str,
             build_configs: List[Tuple[str, str, str]],
         ):
             def build():
+                # Building pushes images to the registry, so skip it on a dry run.
                 if args.dry_run:
-                    print("Dry-run: skipping docker image build")
                     return
-                with open(RELEASE_INFO_FILE) as f:
-                    release_info = json.load(f)
-                release_tag = release_info["release_tag"]
                 # Branch head (bump not landed) → move floating minor/major tags; is_latest also moves `latest`. A later recovery (bump landed) leaves them as they are.
-                is_bump_landed = release_info["is_bump_landed"]
-                is_latest = release_info["latest"]
-                Shell.check(f"git checkout {release_tag}", strict=True)
+                is_bump_landed = release_info.is_bump_landed
+                is_latest = release_info.latest
+                Shell.check(f"git checkout {release_info.release_tag}", strict=True)
 
-                m = re.match(r"^v(\d+\.\d+\.\d+\.\d+)", release_tag)
-                assert m, f"Cannot parse version from tag {release_tag}"
+                m = re.match(r"^v(\d+\.\d+\.\d+\.\d+)", release_info.release_tag)
+                assert m, f"Cannot parse version from tag {release_info.release_tag}"
                 version_string = m.group(1)
                 parts = version_string.split(".")
                 version_minor = ".".join(parts[:3])
@@ -661,10 +640,9 @@ def main():
 
             return build
 
-        def setup_buildx():
-            if args.dry_run:
-                return
-            for cmd in [
+        step(
+            name="Set up Docker buildx (multi-arch)",
+            command=[
                 # The ephemeral runner is not pre-provisioned for multi-arch
                 # docker builds (the legacy dedicated runner was). The release
                 # images are built for both linux/amd64 and linux/arm64 in one
@@ -688,12 +666,7 @@ def main():
                 "docker buildx create --name release-builder --driver docker-container"
                 " --driver-opt network=host --use",
                 "docker buildx inspect --bootstrap",
-            ]:
-                Shell.check(cmd, strict=True, verbose=True)
-
-        step(
-            name="Set up Docker buildx (multi-arch)",
-            command=setup_buildx,
+            ],
             workdir=REPO_PATH,
         )
 
