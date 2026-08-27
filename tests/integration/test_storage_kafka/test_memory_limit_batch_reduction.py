@@ -33,19 +33,17 @@ instance = cluster.add_instance(
 
 SERVER_LOG = "/var/log/clickhouse-server/clickhouse-server.log"
 REDUCTION_LINE = "Reading with reduced batch sizes after a memory limit error"
+MEMORY_LIMIT_CONFIG = "/etc/clickhouse-server/config.d/memory_limit.xml"
 
-# Must match `max_server_memory_usage` in `configs/memory_limit.xml`. The headroom is pinned
-# relative to what the server already tracks, so the fixture does not depend on the memory
-# baseline of a particular build.
-SERVER_MEMORY_LIMIT = 2000000000
-HEADROOM_BYTES = 200 * 1024 * 1024
-
-# Rows stay under the broker's ~1 MB per-message limit. A full block of `BLOCK_SIZE` of them needs
-# several times the headroom, so the block has to shrink before the data can pass.
+# Rows stay under the broker's ~1 MB per-message limit.
 ROW_BYTES = 512 * 1024
 MESSAGES = 256
 BLOCK_SIZE = 256
 POLL_SIZE = 64
+
+# Half of what a full block of rows holds, so a full block cannot fit whatever a build flavour adds
+# on top of the payload, while a halved one soon does and the reduction converges.
+HEADROOM_BYTES = BLOCK_SIZE * ROW_BYTES // 2
 
 # While the memory is pinned the server has no room for the test's own queries, so every
 # observation made in that window is read from the server log instead.
@@ -62,10 +60,10 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    instance.query("SYSTEM FREE MEMORY")
+    release_memory()
     k.clean_test_database_and_topics(instance, cluster)
     yield
-    instance.query("SYSTEM FREE MEMORY")
+    release_memory()
 
 
 def produce_wide_messages(kafka_cluster, topic_name, count=MESSAGES):
@@ -77,18 +75,78 @@ def produce_wide_messages(kafka_cluster, topic_name, count=MESSAGES):
     )
 
 
-def pin_memory_to_headroom():
-    """Leaves only `HEADROOM_BYTES` of the server memory limit free, so a full-size Kafka block
-    cannot fit. Call it last: the server cannot serve much of anything afterwards."""
-    tracked = int(
+def server_memory_limit():
+    """The limit the server is enforcing. A configured `0` is reported as what it resolved to."""
+    return int(
         instance.query(
-            "SELECT value FROM system.metrics WHERE metric = 'MemoryTracking'"
+            "SELECT value FROM system.server_settings WHERE name = 'max_server_memory_usage'"
         ).strip()
     )
-    ballast = SERVER_MEMORY_LIMIT - tracked - HEADROOM_BYTES
-    assert ballast > 0, f"nothing left to pin: tracked={tracked}"
-    logging.debug("Pinning %s bytes on top of %s tracked", ballast, tracked)
-    instance.query(f"SYSTEM ALLOCATE MEMORY {ballast}")
+
+
+_pinned_limit = 0  # Matches `max_server_memory_usage` in `configs/memory_limit.xml`.
+
+
+def set_server_memory_limit(limit):
+    """`max_server_memory_usage` is applied on `SYSTEM RELOAD CONFIG`, and `0` asks for the
+    automatic limit. The reload is served even while the server is over its limit, which is what
+    makes releasing a pin possible at all. The new limit is asserted to be live, so an edit that
+    matched nothing cannot leave the case measuring an unpinned server."""
+    global _pinned_limit
+    previous = _pinned_limit
+    if limit == previous:
+        return
+    instance.replace_in_config(
+        MEMORY_LIMIT_CONFIG,
+        f"<max_server_memory_usage>{previous}</max_server_memory_usage>",
+        f"<max_server_memory_usage>{limit}</max_server_memory_usage>",
+    )
+    _pinned_limit = limit
+    instance.query("SYSTEM RELOAD CONFIG")
+    live = server_memory_limit()
+    assert (live == limit) if limit else (live > previous), (live, limit, previous)
+
+
+def settled_memory_usage(samples=8, interval=1):
+    """The lowest of several readings of whichever of tracked and resident memory is larger. An
+    allocator holds pages for a few seconds after a case releases them, so a single reading taken
+    right afterwards can be several times the settled figure and would pin a limit far too high to
+    squeeze a block. Taking the lowest reading also errs on the tight side where memory only grows,
+    which is what a sanitizer build does."""
+    readings = []
+    for _ in range(samples):
+        readings.append(
+            int(
+                instance.query(
+                    "SELECT greatest("
+                    "(SELECT value FROM system.metrics WHERE metric = 'MemoryTracking'),"
+                    "(SELECT toInt64(value) FROM system.asynchronous_metrics WHERE metric = 'MemoryResident')"
+                    ")"
+                ).strip()
+            )
+        )
+        time.sleep(interval)
+    logging.debug("Memory usage readings: %s", readings)
+    return min(readings)
+
+
+def pin_memory_to_headroom():
+    """Leaves only `HEADROOM_BYTES` of the server memory limit free, so a full-size Kafka block
+    cannot fit. Call it last: the server cannot serve much of anything afterwards.
+
+    The limit is pinned over what the server is using rather than set to a fixed value, because it
+    is enforced against resident memory as well as against the tracked amount, and resident memory
+    of a sanitizer build neither starts where a release build's does nor comes back down once the
+    pressure is over."""
+    usage = settled_memory_usage()
+    logging.debug("Pinning the memory limit to %s over a usage of %s", usage + HEADROOM_BYTES, usage)
+    set_server_memory_limit(usage + HEADROOM_BYTES)
+
+
+def release_memory():
+    """Back to the automatic limit. Every query the test makes for itself needs this first: a limit
+    tight enough to shrink a block is also tight enough to refuse an ordinary `SELECT`."""
+    set_server_memory_limit(0)
 
 
 def create_kafka_pipeline(
@@ -235,8 +293,8 @@ def reductions_event():
 
 
 def drain_topic(expected_rows, retry_count=180):
-    """Releases the pinned memory and waits for the reduced cycles to consume everything."""
-    instance.query("SYSTEM FREE MEMORY")
+    """Releases the pinned limit and waits for the reduced cycles to consume everything."""
+    release_memory()
     got = instance.query_with_retry(
         "SELECT count() FROM test.dst",
         retry_count=retry_count,
@@ -273,11 +331,11 @@ def test_batch_size_is_reduced_after_memory_limit(kafka_cluster):
         # size that fits. Without this the arm would only show that a reduction was logged and that
         # everything arrived once the pressure was gone, which a reduction that shrinks nothing
         # satisfies as well.
-        # This has to stay the first case in the file: the limit is enforced on resident memory, and
-        # the later cases leave it at the ceiling, where no block of any size completes.
         delivered = wait_for_delivery_at_reduced_size(after=REDUCTION_LINE)
         assert delivered, "no cycle delivered rows at a reduced size while memory was pinned"
-        assert max(delivered) <= BLOCK_SIZE // 2, delivered
+        # A block is only checked against its size once the polled batch it is filling is drained,
+        # so it can overshoot by up to one batch short of a whole one.
+        assert max(delivered) < BLOCK_SIZE // 2 + POLL_SIZE // 2, delivered
 
         # The input is not lost, which is what makes retrying a smaller unit sufficient.
         drain_topic(MESSAGES)
@@ -394,7 +452,7 @@ def test_commit_every_batch_is_excluded(kafka_cluster):
         assert wait_for_memory_errors(1) >= 1
         time.sleep(10)
         assert reduced_block_sizes() == []
-        instance.query("SYSTEM FREE MEMORY")
+        release_memory()
         assert reductions_event() == events_before
 
 
@@ -425,7 +483,7 @@ def test_commit_every_batch_keeps_previous_error_handling(kafka_cluster):
         # reaching a memory error is what the arm needs, not a block that got through.
         assert wait_for_memory_errors(1) >= 1
 
-        instance.query("SYSTEM FREE MEMORY")
+        release_memory()
 
         # The load-bearing assertion. The rethrow sits immediately ahead of this increment, so a
         # rethrown memory error leaves `KafkaMessagesFailed` untouched, and `on_error` is its only
@@ -439,11 +497,11 @@ def test_commit_every_batch_keeps_previous_error_handling(kafka_cluster):
 
         # Deliberately not asserted, so that a later reader does not "strengthen" this arm into
         # flakiness. That a cycle delivered rows, or that a substituted error row reached the
-        # table: both need a block to complete while the memory is pinned, and the limit is
-        # enforced on resident memory, which the arms before this one leave near the ceiling. That
-        # no cycle ended with a memory error: one still can, raised by the materialized-view push
-        # outside `on_error`. An exact delivered row count: this mode loses a committed prefix
-        # whenever that push throws. All three predate this change.
+        # table: both need a full-size block to complete inside the headroom, and this mode is
+        # excluded from the reduction that would make one fit. That no cycle ended with a memory
+        # error: one still can, raised by the materialized-view push outside `on_error`. An exact
+        # delivered row count: this mode loses a committed prefix whenever that push throws. All
+        # three predate this change.
 
 
 @pytest.mark.parametrize("mode", ["stream", "dead_letter_queue"])
@@ -481,7 +539,7 @@ def test_memory_error_is_not_a_bad_message(kafka_cluster, mode):
         # Read once the ballast is gone but before the drain: in `dead_letter_queue` mode a
         # swallowed message produces no row at all, so the drain would time out first and hide
         # which of the two properties broke.
-        instance.query("SYSTEM FREE MEMORY")
+        release_memory()
         assert messages_failed_event() == failed_before, messages_failed_event() - failed_before
 
         drain_topic(MESSAGES)

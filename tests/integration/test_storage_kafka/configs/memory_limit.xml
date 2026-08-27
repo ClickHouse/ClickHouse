@@ -1,9 +1,12 @@
 <clickhouse>
-    <max_server_memory_usage>2000000000</max_server_memory_usage>
+    <!-- Pinned by the test to a headroom over what the server is using, and back to `0`. -->
+    <max_server_memory_usage>0</max_server_memory_usage>
     <memory_worker_use_cgroup>false</memory_worker_use_cgroup>
     <cgroups_memory_usage_observer_wait_time>0</cgroups_memory_usage_observer_wait_time>
-    <!-- The test fills the memory tracker up to a known headroom with SYSTEM ALLOCATE MEMORY, and
-         still needs to run its own small queries against the nearly-full server. -->
-    <allow_system_allocate_memory>1</allow_system_allocate_memory>
+    <!-- The dynamic adjustment recomputes the limit every tick and would drop the pinned one. -->
+    <memory_worker_dynamic_hard_limit>0</memory_worker_dynamic_hard_limit>
+    <!-- Resident memory is published as observed, so a pin means the same on every build. -->
+    <memory_worker_rss_speculative_reserve_ratio>0</memory_worker_rss_speculative_reserve_ratio>
+    <!-- The test still runs its own small queries against the nearly-full server. -->
     <users_to_ignore_early_memory_limit_check>default</users_to_ignore_early_memory_limit_check>
 </clickhouse>
