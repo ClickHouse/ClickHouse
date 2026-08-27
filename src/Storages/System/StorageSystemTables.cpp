@@ -405,8 +405,10 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
         /// Keep last: the temporary-table branch below identifies this column by position.
         {"is_loaded", std::make_shared<DataTypeUInt8>(),
-            "Whether the table engine exists in memory. With `lazy_load_tables` it is 0 until the "
-            "first access, and the structure and size columns are unknown while it is."
+            "Whether the table engine exists in memory. With `lazy_load_tables` it is 0 until the first "
+            "access, and while it is the sorting, primary, partition and sampling key columns are empty, "
+            "the row and byte counts are NULL, and `system.columns`, `system.data_skipping_indices` and "
+            "`system.projections` report nothing for the table."
         },
     };
 
@@ -980,7 +982,7 @@ protected:
                     ++res_index;
                 }
 
-                    auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(resolveStorageProxy(table));
+                auto table_merge_tree = castStorage<MergeTreeData>(table, StorageResolution::Peek);
                 if (columns_mask[src_index++])
                 {
                     if (table_merge_tree)

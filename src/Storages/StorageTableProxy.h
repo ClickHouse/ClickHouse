@@ -16,20 +16,26 @@ namespace DB
 class StorageTableProxy final : public StorageProxy
 {
 public:
-    StorageTableProxy(const StorageID & table_id_, std::function<StoragePtr()> get_nested_, StorageInMemoryMetadata cached_metadata)
+    StorageTableProxy(
+        const StorageID & table_id_, std::function<StoragePtr()> get_nested_, ColumnsDescription cached_columns, String engine_name_)
         : StorageProxy(table_id_)
         , get_nested(std::move(get_nested_))
+        , engine_name(std::move(engine_name_))
         , log(getLogger("StorageTableProxy (" + table_id_.getFullTableName() + ")"))
     {
+        StorageInMemoryMetadata cached_metadata;
+        cached_metadata.setColumns(std::move(cached_columns));
         setInMemoryMetadata(cached_metadata);
     }
 
+    /// The proxy is an implementation detail, so report the engine from the `CREATE` query until
+    /// the real storage can answer for itself.
     std::string getName() const override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
             return nested->getName();
-        return "TableProxy";
+        return engine_name;
     }
 
     /// Forward the metadata query to the nested storage once it has been materialized.
@@ -231,6 +237,7 @@ public:
 private:
     mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
+    const String engine_name; /// Engine from the `CREATE` query, reported until the real storage exists.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
     LoggerPtr log;
 };

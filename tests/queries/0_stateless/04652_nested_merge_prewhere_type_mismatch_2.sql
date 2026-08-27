@@ -140,7 +140,7 @@ ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 SELECT '-- only the re-attached MergeTree is a lazy proxy --';
-SELECT name, engine FROM system.tables WHERE database = currentDatabase() ORDER BY name;
+SELECT name, engine, is_loaded FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 
 SELECT '-- the proxy must still reject the mismatched column, not abort --';
 SELECT x, y FROM lazy_outer PREWHERE x != 0 ORDER BY x LIMIT 3; -- { serverError ILLEGAL_PREWHERE }

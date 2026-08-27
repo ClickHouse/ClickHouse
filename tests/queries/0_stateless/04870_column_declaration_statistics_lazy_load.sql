@@ -22,7 +22,7 @@ ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- Pin that both tables are still unloaded proxies at the moment of the ALTER.
-SELECT name, engine FROM system.tables WHERE database = currentDatabase() ORDER BY name;
+SELECT name, engine, is_loaded FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 
 -- One ALTER carrying both gated modifiers: both are validated against the proxy in the same call.
 ALTER TABLE t_lazy MODIFY COLUMN v Float64 STATISTICS(tdigest), MODIFY COLUMN s String TTL d + INTERVAL 1 MONTH;
@@ -32,7 +32,7 @@ SHOW CREATE TABLE t_lazy;
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
-SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 't_lazy';
+SELECT engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't_lazy';
 ALTER TABLE t_lazy ADD COLUMN v2 Float64 STATISTICS(uniq);
 SHOW CREATE TABLE t_lazy;
 

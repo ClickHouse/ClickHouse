@@ -472,10 +472,9 @@ void DatabaseOrdinary::loadTableLazy(
 
     /// The proxy reports only the columns. The rest of the structure is unknown until the real
     /// storage exists, which `system.tables.is_loaded` reflects.
-    StorageInMemoryMetadata metadata;
+    ColumnsDescription columns;
     if (query.columns_list && query.columns_list->columns)
-        metadata.setColumns(InterpreterCreateQuery::getColumnsDescription(
-            *query.columns_list->columns, local_context, mode));
+        columns = InterpreterCreateQuery::getColumnsDescription(*query.columns_list->columns, local_context, mode);
 
     StorageID table_id(name.database, query.getTable(), query.uuid);
     String table_data_path = getTableDataPath(query);
@@ -503,7 +502,7 @@ void DatabaseOrdinary::loadTableLazy(
     };
 
     auto proxy = std::make_shared<StorageTableProxy>(
-        table_id, std::move(get_nested), std::move(metadata));
+        table_id, std::move(get_nested), std::move(columns), query.storage->engine->name);
 
     attachTable(local_context, query.getTable(), proxy, table_data_path);
 }

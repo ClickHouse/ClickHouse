@@ -32,9 +32,9 @@
 10
 10
 -- only the re-attached MergeTree is a lazy proxy --
-lazy_inner	Merge
-lazy_leaf	TableProxy
-lazy_outer	Merge
+lazy_inner	Merge	1
+lazy_leaf	MergeTree	0
+lazy_outer	Merge	1
 -- the proxy must still reject the mismatched column, not abort --
 -- a matching column still supports PREWHERE through the proxy --
 10
