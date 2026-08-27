@@ -10,9 +10,8 @@ namespace DB
 /// separate function the compiler aligns the loop independently.
 /// (Previously the multi-target dispatch mechanism achieved this implicitly.)
 ///
-/// LLVM defaults AArch64's `MaxInterleaveFactor` to 2 and Neoverse-N1/V1 do not raise it, so on
-/// Linux aarch64 these fills need an explicit interleave hint to get the four accumulators that
-/// x86-64-v3 and Apple silicon already choose.
+/// LLVM's default interleave factor on AArch64 is 2, and a portable build (no `-mcpu=`) keeps that
+/// default. x86-64 and Darwin AArch64 already interleave these fills four ways.
 
 template <iota_supported_types T>
 void NO_INLINE iota(T * begin, size_t count, T first_value)
