@@ -737,6 +737,15 @@ void StorageMemory::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 }
 
+std::optional<NameSet> StorageMemory::supportedPrewhereColumns() const
+{
+    const auto metadata_snapshot = getInMemoryMetadataPtr(nullptr, false);
+    NameSet supported_columns;
+    for (const auto & column : metadata_snapshot->getColumns().getAll())
+        supported_columns.insert(column.name);
+    return supported_columns;
+}
+
 IStorage::ColumnSizeByName StorageMemory::getColumnSizes() const
 {
     auto current_data = data.get();

@@ -75,6 +75,11 @@ public:
     /// `compress = true` this skips decompression of the remaining columns.
     bool supportsPrewhere() const override { return true; }
 
+    /// Only the table's own columns: virtual columns (e.g. `_table`) are materialized outside
+    /// the reading source, so the in-source filter cannot read them.
+    std::optional<NameSet> supportedPrewhereColumns() const override;
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override { return true; }
+
     /// Real per-column in-memory sizes (compressed sizes when `compress = true`), so the
     /// WHERE -> PREWHERE query plan optimization can order conditions by the cost of reading
     /// their columns. Also shown in `system.columns`.
