@@ -363,6 +363,32 @@ std::string getTablePath(const std::string & table_dir_path, const std::string &
     return table_dir_path + "/data." + escapeForFileName(format_name);
 }
 
+/// Splits `path` at its last `..`, resolves the head (up to and including that `..`) physically and
+/// appends the tail as written: a `..` resolves against the target of a preceding symlink, while a
+/// symlink in the tail must stay unresolved to stay reachable. `ec` is set only if resolving fails.
+fs::path resolveDotDotForContainmentCheck(const fs::path & path, std::error_code & ec)
+{
+    fs::path head;
+    fs::path tail;
+    for (const auto & component : path)
+    {
+        tail /= component;
+        if (component == "..")
+        {
+            head /= tail;
+            tail.clear();
+        }
+    }
+
+    if (head.empty())
+        return path;
+
+    head = fs::weakly_canonical(head, ec);
+    if (ec)
+        return {};
+    return tail.empty() ? head : head / tail;
+}
+
 /// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
 void checkCreationIsAllowed(
     ContextPtr context_global,
@@ -461,7 +487,16 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     }
 
     for (const auto & path : paths)
-        checkCreationIsAllowed(context, user_files_absolute_path, path, can_be_directory);
+    {
+        /// Brace expansion runs after the normalization above, so a matched path can still carry a `..`.
+        std::error_code ec;
+        const fs::path checked_path = resolveDotDotForContainmentCheck(path, ec);
+        if (ec)
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot check whether file `{}` is inside `{}`: {}",
+                path, user_files_absolute_path.string(), ec.message());
+
+        checkCreationIsAllowed(context, user_files_absolute_path, checked_path, can_be_directory);
+    }
 
     return paths;
 }
@@ -1563,18 +1598,12 @@ void StorageFileSource::beforeDestroy()
                 file_path.replace_filename(new_filename);
 
                 // Checking access rights. A `..` is resolved through any preceding symlink first,
-                // because the check folds it lexically while the rename below does not, and the
-                // two would otherwise disagree about where the file lands. Paths without `..`
-                // are passed as written, so a symlink out of `user_files` still works.
-                auto checked_path = file_path;
-                for (const auto & component : file_path)
-                {
-                    if (component == "..")
-                    {
-                        checked_path = fs::weakly_canonical(file_path.parent_path()) / file_path.filename();
-                        break;
-                    }
-                }
+                // because the check folds it lexically while the rename below does not.
+                std::error_code ec;
+                const auto checked_path = resolveDotDotForContainmentCheck(file_path, ec);
+                if (ec)
+                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot check whether file `{}` is inside `{}`: {}",
+                        file_path.string(), getContext()->getUserFilesPath(), ec.message());
                 checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), checked_path, true);
 
                 // Checking an existing of new file

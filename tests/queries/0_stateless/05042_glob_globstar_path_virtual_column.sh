@@ -99,18 +99,19 @@ SETTINGS rename_files_after_processing = 'processed_%f%e';
 [ -f "${WREN_DIR}/deep/processed_x.csv" ] && echo "renamed beside the file that was read"
 [ -f "${WREN_DIR}/x.csv" ] && echo "the lexical sibling was left alone"
 
-# The rename must not reach outside user_files either. A wildcard keeps the `..`, so the file read
-# here lives under the symlink's target; the access check resolves the directory before approving
-# it. The row count shows the read happened, which is what selects the rename path, so the outside
-# file keeping its name is not just a query that never ran.
-# The refusal is reported by the reader's destructor, which cannot throw, so it reaches the client
-# as a forwarded server log rather than as a query error.
+# A `..` behind a symlink must not widen the sandbox. `escw` points outside user_files, so a `..`
+# that survives expansion names the target's parent there. The check resolves the `..` through the
+# symlink before comparing, so the read is refused; the marker names the file it resolved to, so an
+# unrelated failure cannot pass as a denial.
 ln -s "${OUTSIDE_DIR}/inner" "${DATA_DIR}/escw"
-$CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level=fatal -q "
-SELECT count() FROM file('${DATA_DIR}/escw/{..,missing}/*.csv', 'CSV', 'id UInt64')
-SETTINGS rename_files_after_processing = 'processed_%f%e';
-"
-[ -f "${OUTSIDE_DIR}/secret.csv" ] && echo "the file outside user_files kept its name"
+REFUSED=$($CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level=fatal -q "
+SELECT count() FROM file('${DATA_DIR}/escw/{..,missing}/*.csv', 'CSV', 'id UInt64');
+" 2>&1 | sed -n "s|.*File \`\([^\`]*\)\` is not inside.*|\1|p")
+# The path the check refused has to be the resolved one, so neither the `..` nor `escw/` may be
+# left in it; asserting their absence needs no knowledge of where the temporary directory really is.
+if [[ "${REFUSED}" == */secret.csv && "${REFUSED}" != *"/.."* && "${REFUSED}" != *"/escw/"* ]]; then
+    echo "refused: resolved outside user_files (secret.csv)"
+fi
 
 # A directory symlink leaving user_files stays readable and renameable, which is what the check
 # above must not take away: without a `..` the path is passed to it exactly as written.
@@ -122,3 +123,32 @@ SELECT id FROM file('${DATA_DIR}/out/*.csv', 'CSV', 'id UInt64')
 SETTINGS rename_files_after_processing = 'processed_%f%e';
 "
 [ -f "${OUTSIDE_DIR}/plain/processed_f.csv" ] && echo "the symlinked directory is still renameable"
+
+# A `..` resolving back inside user_files must not dereference a symlink that follows it: `dummy/..`
+# is the directory itself, so this names the same file as the arm above, and both the read and the
+# post-read rename land on the symlink's target.
+mkdir -p "${DATA_DIR}/dummy"
+$CLICKHOUSE_CLIENT -q "
+SELECT id FROM file('${DATA_DIR}/dummy/{..,missing}/out/*.csv', 'CSV', 'id UInt64')
+SETTINGS rename_files_after_processing = 'processed_%f%e';
+"
+[ -f "${OUTSIDE_DIR}/plain/processed_processed_f.csv" ] && echo "renamed through the symlink after the .."
+
+# Two `..` in one path: only the last one may end the physically resolved prefix, or a later `..`
+# escapes behind the symlink it follows. Same marker shape as the single-`..` arm above.
+REFUSED2=$($CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level=fatal -q "
+SELECT count() FROM file('${DATA_DIR}/dummy/{..,missing}/escw/{..,missing}/*.csv', 'CSV', 'id UInt64');
+" 2>&1 | sed -n "s|.*File \`\([^\`]*\)\` is not inside.*|\1|p")
+if [[ "${REFUSED2}" == */secret.csv && "${REFUSED2}" != *"/.."* && "${REFUSED2}" != *"/escw/"* ]]; then
+    echo "two dot-dots: refused, resolved outside user_files"
+fi
+
+# The check must accept a path that folds lexically outside user_files but physically resolves back
+# inside: four `..` behind a symlink four levels deep land on `pin` itself. Each `..` needs its own
+# brace group; a `/` inside one is folded away with it before expansion.
+mkdir -p "${DATA_DIR}/pin/a/b/c/d"
+printf '77\n' > "${DATA_DIR}/pin/y.csv"
+ln -s "${DATA_DIR}/pin/a/b/c/d" "${DATA_DIR}/pin/link3"
+$CLICKHOUSE_CLIENT -q "
+SELECT id FROM file('${DATA_DIR}/pin/link3/{..,q}/{..,q}/{..,q}/{..,q}/*.csv', 'CSV', 'id UInt64');
+"
