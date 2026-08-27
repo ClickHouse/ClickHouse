@@ -12,6 +12,8 @@ const reference = defineCollection({
     title: z.string(),
     sidebarTitle: z.string(),
     description: z.string(),
+    keywords: z.array(z.string()),
+    doc_type: z.literal('reference'),
     route: z.string(),
     stableId: z.string(),
     entityKind: z.string(),

@@ -546,6 +546,8 @@ function frontmatter(document, sidebarTitle) {
     `title: ${JSON.stringify(document.title)}`,
     `sidebarTitle: ${JSON.stringify(sidebarTitle)}`,
     `description: ${JSON.stringify(document.description)}`,
+    `keywords: ${JSON.stringify(document.keywords ?? [])}`,
+    'doc_type: "reference"',
     `route: ${JSON.stringify(document.route)}`,
     `stableId: ${JSON.stringify(document.id)}`,
     `entityKind: ${JSON.stringify(document.entityKind)}`,

@@ -226,13 +226,13 @@
     {
       "id": "reference.statements",
       "label": "Statements",
-      "match": { "sourcePrefix": "statements/" },
+      "match": { "entityKinds": ["statement"] },
       "documentsPosition": "after",
       "groups": [
         {
           "id": "reference.statements.alter",
           "label": "ALTER",
-          "match": { "sourcePrefix": "statements/alter/" },
+          "match": { "routePrefix": "/docs/reference/statements/alter" },
           "documentIds": ["reference:statements/alter/index"],
           "childrenOrder": [
             "reference:statements/alter/index",
@@ -243,7 +243,7 @@
               "id": "reference.statements.alter.table",
               "label": "ALTER TABLE",
               "match": {
-                "sourcePrefix": "statements/alter/",
+                "routePrefix": "/docs/reference/statements/alter/",
                 "titlePrefix": "ALTER TABLE"
               },
               "stripDocumentTitlePrefix": "ALTER TABLE "
@@ -253,12 +253,12 @@
         {
           "id": "reference.statements.check",
           "label": "CHECK",
-          "match": { "sourcePrefix": "statements/check-" }
+          "match": { "routePrefix": "/docs/reference/statements/check-" }
         },
         {
           "id": "reference.statements.create",
           "label": "CREATE",
-          "match": { "sourcePrefix": "statements/create/" },
+          "match": { "routePrefix": "/docs/reference/statements/create" },
           "documentIds": ["reference:statements/create/index"],
           "childrenOrder": [
             "reference:statements/create/index",
@@ -292,7 +292,7 @@
             {
               "id": "reference.statements.create-table",
               "label": "CREATE TABLE",
-              "match": { "sourcePrefix": "statements/create/table" },
+              "match": { "routePrefix": "/docs/reference/statements/create/table" },
               "documentIds": ["reference:statements/create/table"],
               "childrenOrder": ["reference:statements/create/table"]
             }
@@ -301,14 +301,14 @@
         {
           "id": "reference.statements.select",
           "label": "SELECT",
-          "match": { "sourcePrefix": "statements/select/" },
+          "match": { "routePrefix": "/docs/reference/statements/select" },
           "documentIds": ["reference:statements/select/index"],
           "childrenOrder": ["reference:statements/select/index"]
         },
         {
           "id": "reference.statements.set",
           "label": "SET",
-          "match": { "sourcePrefix": "statements/set" },
+          "match": { "routePrefix": "/docs/reference/statements/set" },
           "documentIds": [
             "reference:statements/set",
             "reference:statements/set-role"
@@ -321,7 +321,7 @@
         {
           "id": "reference.statements.system",
           "label": "SYSTEM",
-          "match": { "sourcePrefix": "statements/system.mdx" },
+          "match": { "routePrefix": "/docs/reference/statements/system" },
           "groupBySourcePage": true
         }
       ]

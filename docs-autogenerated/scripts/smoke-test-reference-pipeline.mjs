@@ -160,7 +160,12 @@ async function main() {
     const documents = (await readJson(path.join(artifactDirectory, 'documents.json'))).documents;
     const search = (await readJson(path.join(artifactDirectory, 'search.json'))).records;
     const navigation = await readJson(path.join(artifactDirectory, 'navigation.json'));
+    const statementPageDefinition = await readJson(path.join(projectDirectory, 'statement-pages.json'));
     const redirects = (await readJson(path.join(generatedDirectory, 'data/redirects.json'))).redirects;
+    const selectPage = await readFile(
+      path.join(generatedDirectory, 'mintlify/docs/reference/statements/select.mdx'),
+      'utf8',
+    );
     const alterModifyQueryPage = await readFile(
       path.join(generatedDirectory, 'mintlify/docs/reference/statements/alter/view.mdx'),
       'utf8',
@@ -179,6 +184,11 @@ async function main() {
       redirectMap.has('/docs/operations/system-tables/delta_lake_metadata_log'),
       'A legacy frontmatter route was not materialized',
     );
+    requireValue(
+      redirectMap.get('/docs/reference/statements/select/index')
+        === '/docs/reference/statements/select',
+      'The legacy `SELECT` index route was not retained after removing its Markdown source',
+    );
 
     const generatedStatements = documents.filter(
       (document) => document.sourcePath.startsWith('statements/'),
@@ -195,6 +205,25 @@ async function main() {
     requireValue(
       searchTitles.has('SYSTEM RELOAD DICTIONARIES'),
       'Individual `SYSTEM` statements are missing from search',
+    );
+    const documentById = new Map(documents.map((document) => [document.id, document]));
+    const sourceStatementDocuments = Object.values(statementPageDefinition.pages)
+      .map(({ id }) => documentById.get(id));
+    requireValue(
+      sourceStatementDocuments.length === 100
+        && sourceStatementDocuments.every((document) => (
+          document?.sourcePath.startsWith('src/Parsers/')
+          && document.content.length > 0
+        )),
+      'Statement pages still depend on generated Markdown under `docs/reference/statements`',
+    );
+    requireValue(
+      selectPage.includes('title: "SELECT"')
+        && selectPage.includes('sidebarTitle: "Overview"')
+        && selectPage.includes('keywords: []')
+        && selectPage.includes('doc_type: "reference"')
+        && selectPage.includes('sourcePath: "src/Parsers/ParserSelectQuery.cpp"'),
+      'The source-generated `SELECT` page is missing generated frontmatter or provenance',
     );
     requireValue(
       findNavigationNode(navigation.root, 'reference.statements.system')?.children.length > 1,

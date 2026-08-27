@@ -48,7 +48,10 @@ const {
   showGeneratedBanner = true,
 } = Astro.props;
 const canonical = new URL(document.route, Astro.site);
-const sourceUrl = `https://github.com/ClickHouse/ClickHouse/blob/${manifest.sourceRevision}/docs/reference/${document.sourcePath}`;
+const sourceRepositoryPath = document.sourcePath.startsWith('src/')
+  ? document.sourcePath
+  : `docs/reference/${document.sourcePath}`;
+const sourceUrl = `https://github.com/ClickHouse/ClickHouse/blob/${manifest.sourceRevision}/${sourceRepositoryPath}`;
 const routeSegments = document.route
   .replace('/docs/reference', '')
   .split('/')
