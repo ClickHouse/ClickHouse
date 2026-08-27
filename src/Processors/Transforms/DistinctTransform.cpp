@@ -601,6 +601,10 @@ void DistinctTransform::transform(Chunk & chunk)
         if (!keep.empty())
         {
             const auto num_kept = countBytesInFilter(keep);
+            /// Whether the soft timeout was already latched by an upstream stage (e.g. the `skip_null_keys`
+            /// null-marking prepass) before this materialization began. When pre-latched, the committed
+            /// prefix must not be truncated here; only a soft timeout that fires *during* this pass may.
+            const bool filter_pre_latched = time_limit_exceeded;
 
             if (isCancelled() && !isCancelledBySoftTimeout())
             {
@@ -615,10 +619,13 @@ void DistinctTransform::transform(Chunk & chunk)
             /// cancellation between columns and within each column's materialization so a KILL arriving
             /// during the copy is honored promptly rather than only after the whole chunk is materialized.
             /// Each column is filtered in chunks of `filter_chunk_rows` rows (producing the same result as
-            /// a single `column->filter(keep, num_kept)` call) so a cancellation check can run between
-            /// chunks, including for the common single-column `IN (subquery)` set build where there is only
-            /// one column to materialize.
+            /// a single `column->filter(keep, num_kept)` call) so a cancellation check can also run between
+            /// chunks, including for the common single-column `IN (subquery)` set build. A soft timeout that
+            /// fires *during* the pass truncates every column at the same source row (`truncated_at`) so the
+            /// key columns stay aligned; a soft timeout already latched upstream must not truncate here,
+            /// otherwise the already-committed prefix would be dropped.
             constexpr size_t filter_chunk_rows = 1u << 13; /// 8192
+            size_t truncated_at = num_rows;
             for (auto & column : columns)
             {
                 FailPointInjection::pauseFailPoint("distinct_transform_filter_pause");
@@ -639,7 +646,8 @@ void DistinctTransform::transform(Chunk & chunk)
 
                 auto filtered = column->cloneEmpty();
                 size_t offset = 0;
-                while (offset < num_rows)
+                const size_t limit = truncated_at;
+                while (offset < limit)
                 {
                     if (isCancelled() && !isCancelledBySoftTimeout())
                     {
@@ -649,7 +657,12 @@ void DistinctTransform::transform(Chunk & chunk)
                         stopReading();
                         return;
                     }
-                    const size_t len = std::min(filter_chunk_rows, num_rows - offset);
+                    if (offset > 0 && !filter_pre_latched && isSoftTimeout())
+                    {
+                        truncated_at = offset; /// break-mode: stop materializing, emit the processed prefix
+                        break;
+                    }
+                    const size_t len = std::min(filter_chunk_rows, limit - offset);
                     IColumn::Filter sub_keep(keep.begin() + offset, keep.begin() + offset + len);
                     const auto sub_kept = countBytesInFilter(sub_keep);
                     auto sub = column->cut(offset, len)->filter(sub_keep, sub_kept);
@@ -658,7 +671,8 @@ void DistinctTransform::transform(Chunk & chunk)
                 }
                 column = std::move(filtered);
             }
-            num_rows = num_kept;
+
+            num_rows = columns[0]->size();
 
             if (num_rows == 0)
             {
@@ -710,6 +724,14 @@ void DistinctTransform::transform(Chunk & chunk)
             processed_prefix = time_limit_exceeded ? processed_rows : 0;
         }
     }
+
+    /// The `LowCardinality` fast path above sets `processed_prefix`; for the plain `Nullable`
+    /// (non-LowCardinality) `IN (subquery)` set build that path is skipped, so set it here from the
+    /// committed prefix (`num_rows`). Otherwise a soft timeout discards the whole chunk in `buildFilter`
+    /// (it would see the timeout at row 0 with `processed_prefix == 0` and zero the entire filter),
+    /// dropping the null-marking prepass's already-committed prefix instead of preserving it.
+    if (time_limit_exceeded && processed_prefix == 0)
+        processed_prefix = num_rows;
 
     if (data->empty())
         data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));

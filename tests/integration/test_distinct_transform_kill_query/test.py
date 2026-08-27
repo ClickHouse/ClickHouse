@@ -847,6 +847,105 @@ SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_indep
     assert query_error[0] == "", f"break-mode soft timeout raised an error: {query_error[0]}"
 
 
+def test_null_keys_break_prefix(started_cluster):
+    """Break-mode soft timeout must preserve the whole committed prefix for a plain `Nullable` (non-LowCardinality)
+    `IN (subquery)` set build. This is the path where `processed_prefix` is set from the null-marking prepass's
+    committed prefix rather than from `buildLowCardinalityMask`.
+
+    Mirror of `test_lc_null_keys_break_prefix` but on a plain `Nullable` key, so the `LowCardinality` fast path is
+    skipped and the `processed_prefix` fix for the plain path is exercised.
+    """
+    node1.query(
+        "CREATE TABLE IF NOT EXISTS null_keys_mt_plain (k Nullable(UInt64)) "
+        "ENGINE = MergeTree PARTITION BY (CAST(if(k IS NULL, toUInt64(0), k) AS UInt64) % 4) ORDER BY tuple()"
+    )
+    node1.query("TRUNCATE TABLE IF EXISTS null_keys_mt_plain")
+    ## Partition 0 large enough to reach the second 4096-row sub-range (and therefore the failpoint); the
+    ## `skip_null_keys` null-map scan is the stage that observes the timeout. Rows must contain real NULLs so
+    ## the null-map scan loop actually runs (the failpoint sits inside the `!memoryIsZero(null_map)` branch).
+    node1.query("INSERT INTO null_keys_mt_plain SELECT if(number % 9 = 0, NULL, number % 100) FROM numbers(1000000)")
+    node1.query("INSERT INTO null_keys_mt_plain SELECT toNullable(1) FROM numbers(100)")
+    node1.query("INSERT INTO null_keys_mt_plain SELECT toNullable(2) FROM numbers(100)")
+    node1.query("INSERT INTO null_keys_mt_plain SELECT toNullable(3) FROM numbers(100)")
+
+    query = """SELECT count() FROM numbers(1000000)
+WHERE number IN (SELECT k FROM null_keys_mt_plain)
+FORMAT Null
+SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
+         max_execution_time=5, timeout_overflow_mode='break'"""
+
+    query_id = str(uuid.uuid4())
+    node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+
+    thread_error = [None]
+    query_error = [None]
+
+    def execute_query():
+        try:
+            _, error = node1.query_and_get_answer_with_error(
+                query,
+                settings={"interactive_delay": 0},
+                query_id=query_id,
+            )
+            query_error[0] = error
+        except Exception as e:
+            thread_error[0] = e
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fault_name, timeout=60):
+        wait_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE")
+        done, _ = concurrent.futures.wait([wait_future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fault_name} not triggered within {timeout} s"
+        wait_future.result()
+
+    try:
+        ## First 4096-row boundary: the null-marking prepass pauses after committing the first slice.
+        wait_failpoint(NULL_FAULT_NAME)
+        ## Re-arm and resume so the prepass commits a second 4096-row slice (multi-slice committed prefix),
+        ## then latch the real soft timeout and release; `processed_prefix` must preserve the whole prefix.
+        node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {NULL_FAULT_NAME}")
+
+        second_pause_future = pool.submit(
+            node1.query,
+            f"SYSTEM WAIT FAILPOINT {NULL_FAULT_NAME} PAUSE",
+        )
+        done, _ = concurrent.futures.wait([second_pause_future], timeout=15)
+        if not done:
+            assert False, "prepass did not reach the second 4096-row boundary: multi-slice prefix path not exercised"
+        second_pause_future.result()
+
+        ## Hold past the deadline so the soft timeout latches while two slices are committed, then release.
+        time.sleep(6)
+        node1.query(f"SYSTEM ENABLE FAILPOINT {NULL_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {NULL_FAULT_NAME}")
+
+        ## With the fix the prepass breaks at the paused row and never pauses a third time.
+        third_pause_future = pool.submit(
+            node1.query,
+            f"SYSTEM WAIT FAILPOINT {NULL_FAULT_NAME} PAUSE",
+        )
+        done, _ = concurrent.futures.wait([third_pause_future], timeout=10)
+        if done:
+            third_pause_future.result()
+            assert False, "prepass reached a third boundary: soft-timeout latch is broken"
+    finally:
+        node1.query(f"SYSTEM DISABLE FAILPOINT {NULL_FAULT_NAME}")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    query_thread.join(timeout=60)
+    assert not query_thread.is_alive(), "query did not terminate after the soft timeout"
+    if thread_error[0] is not None:
+        raise thread_error[0]
+    ## Break mode must not surface an error to the client.
+    assert query_error[0] == "", f"break-mode soft timeout raised an error: {query_error[0]}"
+
+
 def test_null_keys_filter_kill(started_cluster):
     """A `KILL QUERY` arriving during the monolithic `column->filter(keep, ...)` pass of the
     `skip_null_keys` prepass must be honored promptly, not after the whole chunk is materialized.
