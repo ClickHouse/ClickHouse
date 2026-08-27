@@ -26,6 +26,20 @@ namespace
         changed |= maskPresignedURLParameters(url);
         return changed;
     }
+
+    bool maskDispatchedAzureURLCredentials(String & url)
+    {
+        const size_t scheme_end = url.find("://");
+        if (scheme_end == String::npos)
+            return false;
+
+        const String scheme = url.substr(0, scheme_end);
+        if (!equalsCaseInsensitive(scheme, "az") && !equalsCaseInsensitive(scheme, "azure")
+            && !equalsCaseInsensitive(scheme, "abfss") && !equalsCaseInsensitive(scheme, "abfs"))
+            return false;
+
+        return maskAzureSASSignature(url);
+    }
 }
 
 void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argument_is_named)
@@ -699,7 +713,9 @@ void FunctionSecretArgumentsFinder::findURLSecretArguments(size_t url_offset)
                 String url;
                 if (equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
                 {
-                    if (maskURIPassword(&url))
+                    bool changed = maskURIPassword(&url);
+                    changed |= maskDispatchedAzureURLCredentials(url);
+                    if (changed)
                         result.replaced_arguments[i] = "url = " + quoteString(url);
                 }
                 else
@@ -718,7 +734,9 @@ void FunctionSecretArgumentsFinder::findURLSecretArguments(size_t url_offset)
     if (tryGetStringFromArgument(url_offset, &uri, /* allow_identifier= */ false))
     {
         /// A readable url literal: mask only its userinfo password, keeping the host and path visible.
-        if (maskURIPassword(&uri))
+        bool changed = maskURIPassword(&uri);
+        changed |= maskDispatchedAzureURLCredentials(uri);
+        if (changed)
             result.replaced_arguments[url_offset] = quoteString(uri);
     }
     else
