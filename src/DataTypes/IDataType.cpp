@@ -334,7 +334,10 @@ MutableSerializationInfoPtr IDataType::createSerializationInfo(const Serializati
 
 SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) const
 {
-    return getSerializationInfo(column, SerializationInfoSettings::enableAllSupportedSerializations());
+    auto settings = SerializationInfoSettings::enableAllSupportedSerializations();
+    if (hasSparseSerializationSubcolumns(settings))
+        settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+    return getSerializationInfo(column, settings);
 }
 
 SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
