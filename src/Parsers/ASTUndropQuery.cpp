@@ -1,7 +1,6 @@
 #include <Parsers/ASTUndropQuery.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
-#include <Core/UUID.h>
 
 
 namespace DB

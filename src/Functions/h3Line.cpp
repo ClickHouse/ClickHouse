@@ -24,7 +24,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3Line final : public IFunction
+class FunctionH3Line : public IFunction
 {
 public:
     static constexpr auto name = "h3Line";
@@ -89,10 +89,10 @@ public:
         const auto & data_end_index = col_end_index->getData();
 
 
-        auto dst_data_column = ColumnUInt64::create();
-        auto dst_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
-        auto & dst_data = *dst_data_column;
-        auto & dst_offsets = dst_offsets_column->getData();
+        auto dst = ColumnArray::create(ColumnUInt64::create());
+        auto & dst_data = typeid_cast<ColumnUInt64 &>(dst->getData());
+        auto & dst_offsets = dst->getOffsets();
+        dst_offsets.resize(input_rows_count);
 
         /// First calculate array sizes for all rows and save them in Offsets
         UInt64 current_offset = 0;
@@ -108,13 +108,12 @@ public:
                 continue;
             }
 
-            int64_t size = 0;
-            H3Error err = gridPathCellsSize(start, end, &size);
-            if (err)
+            auto size = gridPathCellsSize(start, end);
+            if (size < 0)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
-                    "Line cannot be computed between start H3 index {} and end H3 index {}, error: {}",
-                    start, end, err);
+                    "Line cannot be computed between start H3 index {} and end H3 index {}",
+                    start, end);
 
             current_offset += size;
             dst_offsets[row] = current_offset;
@@ -139,7 +138,7 @@ public:
             current_offset += size;
         }
 
-        return ColumnArray::create(std::move(dst_data_column), std::move(dst_offsets_column));
+        return dst;
     }
 };
 

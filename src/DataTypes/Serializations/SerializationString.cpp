@@ -1,5 +1,3 @@
-#include <Common/SipHash.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationString.h>
 
 #include <Columns/ColumnString.h>
@@ -9,7 +7,6 @@
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationStringSize.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/ParseError.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
@@ -32,19 +29,6 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
-UInt128 SerializationString::getHash(MergeTreeStringSerializationVersion version_)
-{
-    SipHash hash;
-    hash.update("String");
-    hash.update(static_cast<int>(version_));
-    return hash.get128();
-}
-
-SerializationPtr SerializationString::create(MergeTreeStringSerializationVersion version_)
-{
-    return ISerialization::pooled(getHash(version_), [=] { return new SerializationString(version_); });
-}
-
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const String & s = field.safeGet<String>();
@@ -63,7 +47,7 @@ void SerializationString::serializeBinary(const Field & field, WriteBuffer & ost
 
 void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    UInt64 size = 0;
+    UInt64 size;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
@@ -102,7 +86,7 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();
 
-    UInt64 size = 0;
+    UInt64 size;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
@@ -168,16 +152,15 @@ try
         if (istr.eof())
             break;
 
-        UInt64 size = 0;
+        UInt64 size;
         readVarUInt(size, istr);
 
-        static constexpr size_t max_string_size = 16_GiB;   /// Arbitrary value to prevent logical errors and overflows, but large enough.
-        if (size > max_string_size)
+        if (size > SerializationString::MAX_STRING_SIZE)
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
                 "Too large string size: {}. The maximum is: {}.",
                 size,
-                max_string_size);
+                SerializationString::MAX_STRING_SIZE);
 
         offset += size;
         if (unlikely(offset > data.size()))
@@ -226,7 +209,7 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
     /// Skip certain number of values if requested
     for (size_t i = 0; i < rows_offset; ++i)
     {
-        UInt64 size = 0;
+        UInt64 size;
         readVarUInt(size, istr);
         istr.ignore(size);
     }
@@ -335,7 +318,7 @@ void SerializationString::enumerateStreamsWithoutSize(
     {
         const auto * type_string = data.type ? &assert_cast<const DataTypeString &>(*data.type) : nullptr;
 
-        auto sizes_serialization = SerializationStringSize::create(version);
+        auto sizes_serialization = std::make_shared<SerializationStringSize>(version);
 
         /// Inlined size stream. The column is not computed eagerly; instead a
         /// lazy column creator is attached so that `createFromPath` can derive it
@@ -387,11 +370,6 @@ void SerializationString::deserializeBinaryBulkWithoutSizeStream(
     ISerialization::deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, cache);
 }
 
-void SerializationString::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
-{
-    writeString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
-}
-
 void SerializationString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
@@ -439,9 +417,7 @@ static inline ReturnType read(IColumn & column, Reader && reader)
         restore_column();
         if constexpr (throw_exception)
             throw;
-        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
-        rethrowIfNotParseError();
-        if constexpr (!throw_exception)
+        else
             return false;
     }
 }
@@ -526,9 +502,9 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
     {
         String field;
         readJSONField(field, istr, settings.json);
-        Float64 tmp = 0;
+        Float64 tmp;
         ReadBufferFromString buf(field);
-        if (tryReadFloatTextPrecise(tmp, buf) && buf.eof())
+        if (tryReadFloatText(tmp, buf) && buf.eof())
             read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON String value here: {}", field);
@@ -571,9 +547,9 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
         if (!tryReadJSONField(field, istr, settings.json))
             return false;
 
-        Float64 tmp = 0;
+        Float64 tmp;
         ReadBufferFromString buf(field);
-        if (tryReadFloatTextPrecise(tmp, buf) && buf.eof())
+        if (tryReadFloatText(tmp, buf) && buf.eof())
         {
             read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
             return true;
@@ -685,7 +661,7 @@ void SerializationString::enumerateStreamsWithSize(
 {
     const auto * type_string = data.type ? &assert_cast<const DataTypeString &>(*data.type) : nullptr;
 
-    auto sizes_serialization = SerializationStringSize::create(version);
+    auto sizes_serialization= std::make_shared<SerializationStringSize>(version);
 
     /// Size stream. Same lazy pattern as in `enumerateStreamsWithoutSize`.
     settings.path.push_back(Substream::StringSizes);
@@ -758,12 +734,6 @@ struct DeserializeBinaryBulkStateStringWithSizeStream : public ISerialization::D
         res->size_column = size_column;
         return res;
     }
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (size_column)
-            callback(size_column);
-    }
 };
 
 void SerializationString::deserializeBinaryBulkStatePrefix(
@@ -833,7 +803,7 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
             string_state->size_column = ColumnUInt64::create();
 
         size_t prev_size = string_state->size_column->size();
-        SerializationNumber<UInt64>::create()->deserializeBinaryBulk(
+        SerializationNumber<UInt64>().deserializeBinaryBulk(
             *string_state->size_column->assumeMutable(), *size_stream, 0, rows_offset + limit, 0);
         num_read_rows = string_state->size_column->size() - prev_size;
         /// We are not going to apply rows_offsets to sizes column here, so we can put it as is in the cache.
@@ -868,13 +838,10 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     size_t initial_size = data.size();
     data.resize(initial_size + bytes_to_read);
     stream->ignore(bytes_to_skip);
-    stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
-    data.resize(initial_size + bytes_to_read);
+    size_t size = stream->readBig(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
+    data.resize(initial_size + size);
     column = std::move(mutable_column);
-    /// Unlike the sizes column above, `column` never receives the skipped `rows_offset` rows (they were
-    /// only skipped over in the data stream, not inserted), so it only grew by `num_read_rows - rows_offset`
-    /// rows in this call — that is what a later cache lookup must be able to take off its tail.
-    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows - rows_offset);
+    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows);
     settings.path.pop_back();
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ProtocolDefines.h>
 #include <base/types.h>
 
 #include <vector>

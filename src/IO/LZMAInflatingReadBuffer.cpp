@@ -42,7 +42,7 @@ bool LZMAInflatingReadBuffer::nextImpl()
         return false;
 
     lzma_action action = LZMA_RUN;
-    lzma_ret ret = {};
+    lzma_ret ret;
 
     do
     {

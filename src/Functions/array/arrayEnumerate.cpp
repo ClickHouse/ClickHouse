@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 /// arrayEnumerate(arr) - Returns the array [1,2,3,..., length(arr)]
-class FunctionArrayEnumerate final : public IFunction
+class FunctionArrayEnumerate : public IFunction
 {
 public:
     static constexpr auto name = "arrayEnumerate";
