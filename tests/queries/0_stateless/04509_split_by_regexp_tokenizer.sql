@@ -27,6 +27,9 @@ SELECT tokens('a,b,c', 'splitByRegexp', ',');
 -- A capture group in the separator is inert in the default mode (captures are tracked internally
 -- regardless of mode, but only read when extract = true)
 SELECT tokens('a,b,c', 'splitByRegexp', '(,)');
+-- The default mode keeps RE2's leftmost-first semantics: the first-listed alternative wins even if a
+-- later one would match more, so 'a' is the separator here, not 'ab'
+SELECT tokens('ab', 'splitByRegexp', 'a|ab');
 -- Leading, trailing and consecutive separators do not produce empty tokens
 SELECT tokens(',a,,b,', 'splitByRegexp', ',');
 -- No match: the whole string is a single token
