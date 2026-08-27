@@ -6,6 +6,9 @@
 #include <gtest/gtest.h>
 #include <Common/Exception.h>
 
+#include <bit>
+#include <cmath>
+
 using namespace DB;
 
 template <typename T>
@@ -125,6 +128,51 @@ TEST(ColumnLowCardinality, InsertRangeFromChecksBoundsAfterSharingDictionary)
     ASSERT_EQ(low_cardinality_destination.getSizeOfIndexType(), sizeof(UInt16));
     EXPECT_THROW(destination->insertRangeFrom(*source, source->size(), 1), Exception);
     EXPECT_TRUE(destination->empty());
+}
+
+static void testEmptyDestinationPreservesFloatingPointCanonicalization(MutableColumnPtr keys, const DataTypePtr & nested_type)
+{
+    SCOPED_TRACE(nested_type->getName());
+    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*nested_type, std::move(keys));
+    auto indexes = ColumnUInt8::create();
+    indexes->getData().assign({1, 2, 3});
+    auto source = ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/true);
+    auto destination = std::make_shared<DataTypeLowCardinality>(nested_type)->createColumn();
+
+    destination->insertRangeFrom(*source, 0, source->size());
+
+    const auto & low_cardinality_destination = assert_cast<const ColumnLowCardinality &>(*destination);
+    EXPECT_FALSE(low_cardinality_destination.isSharedDictionary());
+    EXPECT_NE(&low_cardinality_destination.getDictionary(), &source->getDictionary());
+    ASSERT_EQ(low_cardinality_destination.getDictionary().size(), 2);
+    ASSERT_EQ(destination->size(), 3);
+    EXPECT_EQ(low_cardinality_destination.getIndexes().getUInt(0), 0);
+    EXPECT_EQ(low_cardinality_destination.getIndexes().getUInt(1), 1);
+    EXPECT_EQ(low_cardinality_destination.getIndexes().getUInt(2), 1);
+    EXPECT_FALSE(std::signbit(destination->getFloat64(0)));
+    EXPECT_TRUE(std::isnan(destination->getFloat64(1)));
+    EXPECT_TRUE(std::isnan(destination->getFloat64(2)));
+}
+
+TEST(ColumnLowCardinality, EmptyDestinationPreservesFloatingPointCanonicalization)
+{
+    auto float64_keys = ColumnFloat64::create();
+    auto & float64_key_data = float64_keys->getData();
+    float64_key_data.push_back(0.0);
+    float64_key_data.push_back(-0.0);
+    float64_key_data.push_back(std::bit_cast<Float64>(UInt64{0x7ff8000000000001ULL}));
+    float64_key_data.push_back(std::bit_cast<Float64>(UInt64{0x7ff8000000000002ULL}));
+    testEmptyDestinationPreservesFloatingPointCanonicalization(
+        std::move(float64_keys), std::make_shared<DataTypeFloat64>());
+
+    auto bfloat16_keys = ColumnBFloat16::create();
+    auto & bfloat16_key_data = bfloat16_keys->getData();
+    bfloat16_key_data.push_back(BFloat16::fromBits(0x0000));
+    bfloat16_key_data.push_back(BFloat16::fromBits(0x8000));
+    bfloat16_key_data.push_back(BFloat16::fromBits(0x7fc1));
+    bfloat16_key_data.push_back(BFloat16::fromBits(0x7fc2));
+    testEmptyDestinationPreservesFloatingPointCanonicalization(
+        std::move(bfloat16_keys), std::make_shared<DataTypeBFloat16>());
 }
 
 TEST(ColumnLowCardinality, EmptyDictionaryEmptyIndexes)
