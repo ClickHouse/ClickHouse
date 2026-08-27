@@ -25,12 +25,10 @@ struct ThreadEventData
     UInt64 memory_usage = 0;
     UInt64 temp_data_on_disk_usage = 0;
 
-    /// Per-packet byte deltas for the live IO/network rates. IO covers block-device reads/writes
-    /// (`OSReadBytes`/`OSWriteBytes`) and object-storage reads/writes (S3, Azure); network covers
-    /// ClickHouse's own network traffic (`NetworkReceiveBytes`/`NetworkSendBytes`).
+    /// Per-packet byte deltas for the live IO rate. IO sums block-device reads/writes
+    /// (`OSReadBytes`/`OSWriteBytes`), object-storage reads/writes (S3, Azure), and ClickHouse's own
+    /// network traffic (`NetworkReceiveBytes`/`NetworkSendBytes`).
     UInt64 io_bytes = 0;
-    UInt64 net_read_bytes  = 0;
-    UInt64 net_write_bytes = 0;
 
     // -1 used as flag 'is not shown for old servers'
     Int64 peak_memory_usage = -1;
@@ -102,11 +100,9 @@ public:
 
 private:
     double getCPUUsage();
-    /// IO (disk + object storage) and network read/write rates in bytes per second
+    /// IO (disk + object storage + network) rate in bytes per second
     /// (0 when the server does not report the underlying counters).
     double getIORate();
-    double getNetReadRate();
-    double getNetWriteRate();
 
     UInt64 getElapsedNanoseconds() const;
 
@@ -128,9 +124,7 @@ private:
     bool write_progress_on_update = false;
 
     EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average cpu utilization last 2 second, skip first 4 points
-    EventRateMeter io_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average IO (disk + object storage) rate last 2 seconds
-    EventRateMeter net_read_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average network read rate last 2 seconds
-    EventRateMeter net_write_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average network write rate last 2 seconds
+    EventRateMeter io_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average IO (disk + object storage + network) rate last 2 seconds
     HostToTimesMap hosts_data;
     /// In case of all of the above:
     /// - clickhouse-local
