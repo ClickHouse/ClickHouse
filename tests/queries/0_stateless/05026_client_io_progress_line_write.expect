@@ -1,14 +1,16 @@
 #!/usr/bin/expect -f
-# Tags: no-darwin, no-object-storage
-# no-darwin: OSWriteBytes comes from Linux taskstats only.
-# no-object-storage: the parts must land on local disk so the writes show up in OSWriteBytes.
+# Tags: no-fasttest
+# no-fasttest: needs the minio endpoint at localhost:11111.
 
 # The write leg of the IO meter of https://github.com/ClickHouse/ClickHouse/issues/116565, asserted
-# end-to-end through the client path: OSWriteBytes -> streamed ProfileEvents ->
-# ClientBase::onProfileEvents -> ProgressIndication::writeProgress. The INSERT below runs entirely
-# server-side, so the client connection stays at a few KB/s and the MB-scale rate the test expects
-# can only come from the write byte counters. The read and network legs are covered by
-# 05026_client_io_progress_line_disk.expect and 05026_client_io_progress_line.expect.
+# end-to-end through the client path: WriteBufferFromS3Bytes -> streamed ProfileEvents ->
+# ClientBase::onProfileEvents -> ProgressIndication::writeProgress. The S3 upload does not go
+# through the native-protocol socket buffers, so the client connection stays at a few KB/s and the
+# MB-scale rate the test expects can only come from the object-storage write counter.
+# WriteBufferFromS3Bytes is counted per part as the query uploads, unlike OSWriteBytes, whose own
+# contract allows buffered local writes to be accounted only after the query has finished.
+# The read and network legs are covered by 05026_client_io_progress_line_disk.expect and
+# 05026_client_io_progress_line.expect.
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -38,22 +40,13 @@ expect_after {
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --no-warnings --progress-table off --enable-progress-table-toggle 0 --highlight 0 --history_file=$history_file"
 expect ":) "
 
-# Wait for "Ok." before the prompt: the echo of a sent query redraws ":) ", so a bare prompt
-# match would fire early and race the next send against the still-running statement.
-send -- "CREATE TABLE client_io_progress_write (s String, x UInt8) ENGINE = MergeTree ORDER BY tuple()\r"
-expect "Ok."
-expect ":) "
-
-# ~30 MB of incompressible parts written at ~10 MB/s: the sleeps pace the source to one 1 MB block
-# per 0.1 s, and disabled squashing flushes each block as its own part, so OSWriteBytes deltas
-# stream steadily while the paced source also keeps the query under 50% done at the 0.5 s mark
-# (before which writeProgress does not render the profiling suffix at all).
-send -- "INSERT INTO client_io_progress_write SELECT randomString(100000) AS s, sleepEachRow(0.01) AS x FROM numbers(300) SETTINGS max_block_size = 10, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1\r"
+# ~40 MB uploaded as 5 MB multipart parts: the sleeps pace the source to one 1 MB block per 0.1 s,
+# so a part uploads every ~0.5 s and WriteBufferFromS3Bytes deltas stream while the paced source
+# also keeps the query under 50% done at the 0.5 s mark (before which writeProgress does not
+# render the profiling suffix at all). Forcing multipart matters: a single PutObject at finalize
+# would be one burst delta, which the rate meter's heating discards.
+send -- "INSERT INTO FUNCTION s3('http://localhost:11111/test/05026_client_io_progress_' || currentDatabase() || '.tsv', 'test', 'testtest', 'TSV', 's String, x UInt8') SELECT randomString(100000) AS s, sleepEachRow(0.01) AS x FROM numbers(400) SETTINGS max_block_size = 10, s3_min_upload_part_size = 5000000, s3_max_single_part_upload_size = 1000000, s3_truncate_on_insert = 1\r"
 expect -re {[0-9.]+ [MGT]B/s IO}
-expect "Ok."
-expect ":) "
-
-send -- "DROP TABLE client_io_progress_write\r"
 expect "Ok."
 expect ":) "
 
