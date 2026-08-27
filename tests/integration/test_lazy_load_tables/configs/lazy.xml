@@ -1,4 +1,5 @@
 <clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
     <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
 
     <rabbitmq>
@@ -34,10 +35,8 @@
         </single_shard_cluster>
     </remote_servers>
 
-    <macros>
-        <shard>1</shard>
-        <replica>r1</replica>
-    </macros>
+    <!-- Lets the tests write `ENGINE = ReplicatedMergeTree` with no arguments. -->
+    <default_replica_path>/clickhouse/test_lazy/{database}/{table}/{shard}</default_replica_path>
 
     <graphite_rollup>
         <default>
