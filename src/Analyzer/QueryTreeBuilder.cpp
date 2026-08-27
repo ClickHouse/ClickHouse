@@ -301,31 +301,16 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         set_query.changes.removeSetting("limit");
         set_query.changes.removeSetting("offset");
 
-        /// Without this a `SETTINGS` clause inside a subquery, a CTE, or a view's inner query is
-        /// applied to the per-node context unchecked, which lets a user override a setting an
-        /// administrator locked with `CONST`, `readonly`, `MIN`/`MAX` or a feature tier - for example
-        /// `additional_table_filters`, which the Planner later reads from this very context.
-        ///
-        /// The nested form is *clamped* rather than rejected: a change that violates a `CONST` or
-        /// `readonly` constraint is dropped, a value outside its `MIN`/`MAX` bounds is clamped into
-        /// them, and the rest of the clause applies. That is how settings crossing into another
-        /// execution context are already treated - a `SQL SECURITY DEFINER` switch
-        /// (`getSQLSecurityOverriddenContext`), a secondary query (`TCPHandler`), a distributed DDL
-        /// replay (`DDLTask`) - and it keeps an existing view whose inner clause violates the reading
-        /// session's constraints readable: the clause loses to the constraint, which is exactly what
-        /// the constraint promises. A clause on the outer query is checked by
-        /// `InterpreterSetQuery::applySettingsFromQuery` before the tree is built and still throws,
-        /// as does the legacy interpreter for the nested form in `InterpreterSelectQuery`.
-        ///
-        /// The clamp works on a copy: the `QueryNode` records the clause as written, so the tree's
-        /// AST round-trip and hash are unchanged, and a node that executes the subquery elsewhere
-        /// clamps it against its own constraints when it builds its own tree. Nothing reads the
-        /// recorded changes back into a context without going through this function.
-        ///
-        /// `SETTINGS name = DEFAULT` (`default_settings`) is not handled here: this path has always
-        /// ignored it, and applying it needs a `default_settings` carrier on `QueryNode` plus
-        /// constraint filtering for resets. Tracked in
-        /// https://github.com/ClickHouse/ClickHouse/issues/115415.
+        /// A nested `SETTINGS` clause (a subquery, a CTE, a view's inner query) used to be applied to
+        /// the per-node context unchecked, letting a user override `readonly`, `CONST` and `MIN`/`MAX`
+        /// constraints - e.g. `additional_table_filters`, which the Planner reads from this context.
+        /// Clamp it instead of throwing, as done for other settings crossing execution contexts
+        /// (`getSQLSecurityOverriddenContext`, secondary queries, DDL replay): violating changes are
+        /// dropped, out-of-bounds values are clamped, so a view whose inner clause violates the
+        /// reader's constraints keeps working. A top-level clause still throws
+        /// (`applySettingsFromQuery`). Clamp a copy: the `QueryNode` keeps the clause as written, so
+        /// the tree's AST and hash are unchanged, and every node executing the subquery clamps it
+        /// against its own constraints. `SETTINGS name = DEFAULT` stays ignored here - see #115415.
         if (!set_query.changes.empty())
         {
             auto checked_changes = set_query.changes;
