@@ -421,48 +421,42 @@ def main():
         ).strip()
 
     if args.release_type == "patch":
-
-        def bump_docker_changelog_security():
-            with open(RELEASE_INFO_FILE) as f:
-                release_tag = json.load(f)["release_tag"]
-            if not changelog_absent(release_tag):
-                print(f"ChangeLog for {release_tag} already on master — skipping")
-                return
-            uid = os.getuid()
-            gid = os.getgid()
-            for cmd in [
-                "echo 'List versions'",
-                "./utils/list-versions/list-versions.sh"
-                " > ./utils/list-versions/version_date.tsv",
-                "echo 'Update docker version'",
-                "./utils/list-versions/update-docker-version.sh",
-                "echo 'Generate ChangeLog'",
-                "docker pull clickhouse/style-test:latest",
-                # changelog.py runs inside the container, which cannot see the
-                # host gh session, so pass the robot token in via `-e GH_TOKEN`
-                # (inherited from the job-wide export) and `--gh-user-or-token`.
-                # The command string carries `$GH_TOKEN`, not its value, so
-                # verbose logging never prints the token.
-                f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
-                f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
-                f" clickhouse/style-test:latest"
-                f" ./tests/ci/changelog.py -v --debug-helpers"
-                f' --gh-user-or-token "$GH_TOKEN"'
-                f" --jobs=5"
-                f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
-                f"git add ./docs/changelogs/{release_tag}.md",
-                "echo 'Generate Security'",
-                "python3 ./utils/security-generator/generate_security.py"
-                " > SECURITY.md",
-                "git diff HEAD",
-            ]:
-                Shell.check(cmd, strict=True, verbose=True)
-
-        step(
-            name="Bump Docker Versions, Changelog, Security",
-            command=bump_docker_changelog_security,
-            workdir=REPO_PATH,
-        )
+        with open(RELEASE_INFO_FILE) as f:
+            release_tag = json.load(f)["release_tag"]
+        uid = os.getuid()
+        gid = os.getgid()
+        # Regenerate only when the changelog is not on master yet, so a recovery / rerun does not re-dirty the tree.
+        if changelog_absent(release_tag):
+            step(
+                name="Bump Docker Versions, Changelog, Security",
+                command=[
+                    "echo 'List versions'",
+                    "./utils/list-versions/list-versions.sh"
+                    " > ./utils/list-versions/version_date.tsv",
+                    "echo 'Update docker version'",
+                    "./utils/list-versions/update-docker-version.sh",
+                    "echo 'Generate ChangeLog'",
+                    "docker pull clickhouse/style-test:latest",
+                    # changelog.py runs inside the container, which cannot see the
+                    # host gh session, so pass the robot token in via `-e GH_TOKEN`
+                    # (inherited from the job-wide export) and `--gh-user-or-token`.
+                    # The command string carries `$GH_TOKEN`, not its value, so
+                    # verbose logging never prints the token.
+                    f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
+                    f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
+                    f" clickhouse/style-test:latest"
+                    f" ./tests/ci/changelog.py -v --debug-helpers"
+                    f' --gh-user-or-token "$GH_TOKEN"'
+                    f" --jobs=5"
+                    f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
+                    f"git add ./docs/changelogs/{release_tag}.md",
+                    "echo 'Generate Security'",
+                    "python3 ./utils/security-generator/generate_security.py"
+                    " > SECURITY.md",
+                    "git diff HEAD",
+                ],
+                workdir=REPO_PATH,
+            )
 
     if args.release_type == "patch":
 
