@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class ReadState;
+class StreamReadState;
 
 struct ClassifiedPartitions
 {
@@ -17,6 +17,6 @@ struct ClassifiedPartitions
     std::set<std::string> idle_partitions;
 };
 
-ClassifiedPartitions classifyPartitions(const ReadState & state, const std::map<String, Int64> & safe_block_numbers, const StreamSettings & stream_settings);
+ClassifiedPartitions classifyPartitions(const StreamReadState & state, const std::map<String, Int64> & safe_block_numbers, const StreamSettings & stream_settings);
 
 }

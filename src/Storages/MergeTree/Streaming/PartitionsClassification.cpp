@@ -4,7 +4,7 @@
 namespace DB
 {
 
-ClassifiedPartitions classifyPartitions(const ReadState & state, const std::map<String, Int64> & safe_block_numbers, const StreamSettings & stream_settings)
+ClassifiedPartitions classifyPartitions(const StreamReadState & state, const std::map<String, Int64> & safe_block_numbers, const StreamSettings & stream_settings)
 {
     ClassifiedPartitions classification;
     for (const auto & [partition_id, safe_block_number] : safe_block_numbers)

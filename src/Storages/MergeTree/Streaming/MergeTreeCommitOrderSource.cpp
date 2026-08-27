@@ -11,7 +11,6 @@
 #include <Parsers/IAST.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <Interpreters/Streaming/Utils.h>
 
 #include <QueryPipeline/QueryPipeline.h>
@@ -147,33 +146,28 @@ Names filterStreamingVirtualColumns(Names columns)
     return columns;
 }
 
-bool isReadLimitReached(const std::shared_ptr<const StorageLimitsList> & storage_limits, const ContextPtr & context)
+bool isReadLimitReached(const StorageLimitsListPtr & storage_limits, const StreamReadProgress & read_progress)
 {
     if (!storage_limits)
         return false;
 
-    const auto process_list_elem = context->getProcessListElement();
-    if (!process_list_elem)
-        return false;
-
-    const auto progress = process_list_elem->getProgressIn();
     for (const auto & limits : *storage_limits)
     {
         if (limits.local_limits.mode == LimitsMode::LIMITS_TOTAL)
         {
             const bool within_limits = limits.local_limits.size_limits.check(
-                progress.read_rows, progress.read_bytes, "rows or bytes to read",
+                read_progress.read_rows, read_progress.read_bytes, "rows or bytes to read",
                 ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES);
 
             if (!within_limits)
                 return true;
         }
 
-        const bool within_limits = limits.leaf_limits.check(
-            progress.read_rows, progress.read_bytes, "rows or bytes to read on leaf node",
+        const bool within_leaf_limits = limits.leaf_limits.check(
+            read_progress.read_rows, read_progress.read_bytes, "rows or bytes to read on leaf node",
             ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES);
 
-        if (!within_limits)
+        if (!within_leaf_limits)
             return true;
     }
 
@@ -212,7 +206,7 @@ MergeTreeCommitOrderSource::MergeTreeCommitOrderSource(
 {
 }
 
-IProcessor::Status MergeTreeCommitOrderSource::handleReadRoundStep()
+IProcessor::Status MergeTreeCommitOrderSource::handleRunningPipeline()
 {
     auto & output = outputs.front();
     auto & input = inputs.front();
@@ -227,6 +221,7 @@ IProcessor::Status MergeTreeCommitOrderSource::handleReadRoundStep()
     }
 
     auto chunk = input.pull(/*set_not_needed=*/true);
+    read_progress.accountChunk(chunk);
 
     if (!input.isFinished())
         input.setNeeded();
@@ -253,21 +248,7 @@ IProcessor::Status MergeTreeCommitOrderSource::handleReadRoundStep()
     return Status::PortFull;
 }
 
-IProcessor::Status MergeTreeCommitOrderSource::handleReadRoundShutdown()
-{
-    read_state.finalizeReadRound();
-    finished_rounds += 1;
-    LOG_TEST(log, "Finished read round #{}", finished_rounds);
-
-    if (!isReadLimitReached(storage_limits, reading_context.context))
-        return Status::Ready;
-
-    LOG_DEBUG(log, "The read limit is reached - finishing the stream after {} read rounds", finished_rounds);
-    outputs.front().finish();
-    return handleUpstreamShutdown();
-}
-
-IProcessor::Status MergeTreeCommitOrderSource::handleUpstreamShutdown()
+IProcessor::Status MergeTreeCommitOrderSource::handleShutdown()
 {
     auto & output = outputs.front();
     chassert(output.isFinished());
@@ -311,7 +292,7 @@ IProcessor::Status MergeTreeCommitOrderSource::handleBoundedReconfiguration(cons
     const auto result = handleReconfiguration(partitions, subscription_updated);
 
     // Finish after the first completed read round, or once the first enrichment shows nothing (more) to read.
-    if (subscription_updated && (finished_rounds > 0 || result == Status::Async))
+    if (subscription_updated && (read_progress.finished_rounds > 0 || result == Status::Async))
     {
         outputs.front().finish();
         return Status::Finished;
@@ -356,17 +337,27 @@ IProcessor::Status MergeTreeCommitOrderSource::prepare()
 
     const bool is_upstream_finished = outputs.front().isFinished();
     if (is_upstream_finished)
-        return handleUpstreamShutdown();
+        return handleShutdown();
+
+    const bool limits_reached = isReadLimitReached(storage_limits, read_progress);
+    if (limits_reached)
+    {
+        outputs.front().finish();
+        return handleShutdown();
+    }
 
     const bool has_running_sub_pipeline = !inputs.empty() && inputs.front().isConnected() && !inputs.front().isFinished();
     if (has_running_sub_pipeline)
-        if (const auto sub_pipeline_status = handleReadRoundStep(); sub_pipeline_status != Status::Finished)
+        if (auto sub_pipeline_status = handleRunningPipeline(); sub_pipeline_status != Status::Finished)
             return sub_pipeline_status;
 
     const bool has_unfinalized_pipeline = !pending_round.has_value() && read_state.readRoundInProgress();
     if (has_unfinalized_pipeline)
-        if (const auto shutdown_status = handleReadRoundShutdown(); shutdown_status != Status::Ready)
-            return shutdown_status;
+    {
+        read_state.finalizeReadRound();
+        read_progress.accountRound();
+        LOG_TEST(log, "Finished read round #{}", read_progress.finished_rounds);
+    }
 
     const auto [safe_block_numbers, subscription_updated] = subscription->snapshot();
     const auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);

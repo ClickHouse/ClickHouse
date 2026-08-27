@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/buildReadRoundPipeline.h>
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
+#include <Storages/MergeTree/Streaming/ReadProgress.h>
 #include <Storages/MergeTree/Streaming/ReadState.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -24,9 +25,8 @@ namespace DB
 /// Read-round loop streaming source.
 class MergeTreeCommitOrderSource final : public IProcessor
 {
-    Status handleReadRoundStep();
-    Status handleReadRoundShutdown();
-    Status handleUpstreamShutdown();
+    Status handleRunningPipeline();
+    Status handleShutdown();
     Status handleReconfiguration(const ClassifiedPartitions & partitions, bool subscription_updated);
     Status handleBoundedReconfiguration(const ClassifiedPartitions & partitions, bool subscription_updated);
 
@@ -63,8 +63,8 @@ private:
     const LoggerPtr log;
 
     /// Runtime information
-    ReadState read_state;
-    int64_t finished_rounds = 0;
+    StreamReadState read_state;
+    StreamReadProgress read_progress;
 
     /// Reconfiguration
     std::optional<ReadRoundPipeline> current_round;

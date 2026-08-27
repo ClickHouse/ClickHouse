@@ -39,7 +39,7 @@ struct ReadRoundContext
 /// Builds the reading pipeline for the next reading round, covering all readable partitions.
 std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     const ReadRoundContext & reading_context,
-    const ReadState & state,
+    const StreamReadState & state,
     const std::map<String, Int64> & safe_block_numbers);
 
 }

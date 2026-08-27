@@ -17,10 +17,10 @@ namespace DB
 struct ClassifiedPartitions;
 
 /// Dynamically changed state of data reading from the read round loop.
-class ReadState
+class StreamReadState
 {
 public:
-    explicit ReadState(const StreamSettings & stream_settings);
+    explicit StreamReadState(const StreamSettings & stream_settings);
 
     void startReadRound(const ClassifiedPartitions & partitions, const std::map<std::string, Int64> & safe_block_numbers);
     void finalizeReadRound();

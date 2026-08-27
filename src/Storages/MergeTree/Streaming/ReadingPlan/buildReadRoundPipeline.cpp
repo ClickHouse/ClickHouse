@@ -91,7 +91,7 @@ Names dataStreamColumns(Names columns, const PrewhereInfoPtr & prewhere_info, co
 /// Read the partition in commit order.
 QueryPlanPtr buildPartitionCommitOrderReadPlan(
     const ReadRoundContext & reading_context,
-    const ReadState & state,
+    const StreamReadState & state,
     const String & partition_id,
     const Int64 & safe_block_number,
     const StorageSnapshotPtr & storage_snapshot,
@@ -142,7 +142,7 @@ QueryPlanPtr buildPartitionCommitOrderReadPlan(
 
 Pipe buildPartitionReadingPipeline(
     const ReadRoundContext & reading_context,
-    const ReadState & state,
+    const StreamReadState & state,
     const String & partition_id,
     const Int64 & safe_block_number,
     const StorageSnapshotPtr & storage_snapshot,
@@ -227,7 +227,7 @@ Pipe makePlaceholderPipe(const SharedHeader & output_header, Chunk chunk)
 
 std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     const ReadRoundContext & reading_context,
-    const ReadState & state,
+    const StreamReadState & state,
     const std::map<String, Int64> & safe_block_numbers)
 {
     const auto & stream_settings = reading_context.stream_settings;
