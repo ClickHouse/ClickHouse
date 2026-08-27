@@ -280,7 +280,9 @@ def _find_release_baseline(
     branch_ref: str, repo: str, cwd: str | None
 ) -> tuple[str | None, str | None, str | None]:
     """Return (tag_name, tag_sha, published_date YYYY-MM-DD) for the latest
-    non-draft release tag that is an ancestor of branch_ref."""
+    non-draft release tag that is an ancestor of branch_ref.
+    Version-tag refs skip the matching release so the range is previous→this tag.
+    """
     if not GITHUB_TOKEN:
         return None, None, None
     headers = {
@@ -295,6 +297,8 @@ def _find_release_baseline(
         raise Exception(
             f"GitHub API request failed: {response.status_code} {response.text}"
         )
+    parsed = _parse_release_ref(branch_ref)
+    skip_current = parsed is not None and parsed[2] is not None
     for rel in response.json():
         if rel.get("draft"):
             continue
@@ -305,6 +309,8 @@ def _find_release_baseline(
         if not tag_sha:
             continue
         if not _git_is_ancestor(tag_sha, branch_ref, cwd):
+            continue
+        if skip_current and _git_is_ancestor(branch_ref, tag_sha, cwd):
             continue
         published_at = rel.get("published_at") or rel.get("created_at") or ""
         published_date = published_at[:10] if published_at else None
@@ -387,11 +393,18 @@ def get_prs_in_release_dataframe(
         check=False,
     )
 
+    parsed = _parse_release_ref(branch_ref)
+    fetch_ref = (
+        f"refs/tags/{branch_ref}"
+        if parsed is not None and parsed[2] is not None
+        else branch_ref
+    )
+
     baseline_sha = None
     baseline_date = None
     for _ in range(DEEPEN_CAP // DEEPEN_STEP):
         subprocess.run(
-            ["git", "fetch", f"--deepen={DEEPEN_STEP}", "origin", branch_ref],
+            ["git", "fetch", f"--deepen={DEEPEN_STEP}", "origin", fetch_ref],
             cwd=cwd,
             capture_output=True,
             text=True,
