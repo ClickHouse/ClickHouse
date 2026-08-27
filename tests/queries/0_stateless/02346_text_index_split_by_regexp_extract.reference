@@ -1,13 +1,13 @@
-extract: tokens of each row
+match_tokens: tokens of each row
 1	['red','green']
 2	['blue']
 3	[]
 4	['green','yellow']
-extract: hasAnyTokens([green]) -> 1, 4
+match_tokens: hasAnyTokens([green]) -> 1, 4
 1
 4
-extract: hasAnyTokens([tag]) -> (none, the prefix is not indexed)
-extract: hasAllTokens([red, green]) -> 1
+match_tokens: hasAnyTokens([tag]) -> (none, the prefix is not indexed)
+match_tokens: hasAllTokens([red, green]) -> 1
 1
 nogroup: tokens of each row
 1	['1','22','333']

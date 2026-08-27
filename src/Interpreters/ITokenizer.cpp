@@ -317,26 +317,28 @@ String SplitByStringTokenizer::getDescription() const
     return result + "])";
 }
 
-SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_, bool extract_)
+SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_, bool match_tokens_)
     : ITokenizerHelper(Type::SplitByRegexp)
     , regexp_str(regexp_)
-    , extract(extract_)
-    /// Captures are tracked in both modes for simplicity. `RE_LONGEST_MATCH` avoids `nextExtractedMatch`
-    /// getting stuck on an empty-matching alternative listed before a non-empty one, e.g. `|a`.
+    , match_tokens(match_tokens_)
+    /// Captures are tracked in both modes for simplicity. `RE_LONGEST_MATCH` is `match_tokens`-only: it
+    /// fixes `nextMatchedToken` getting stuck on an empty alternative before a non-empty one (e.g. `|a`),
+    /// but would also change which separator wins for overlapping patterns like `a|ab` in the default mode.
     , regexp(std::make_shared<OptimizedRegularExpression>(
-          regexp_, OptimizedRegularExpression::RE_DOT_NL | OptimizedRegularExpression::RE_LONGEST_MATCH))
+          regexp_,
+          OptimizedRegularExpression::RE_DOT_NL | (match_tokens_ ? OptimizedRegularExpression::RE_LONGEST_MATCH : 0)))
     /// A pattern with capture groups is never "trivial" (a plain substring search), so whenever
     /// `getNumberOfSubpatterns()` is non-zero the RE2 path runs and fills `number_of_subpatterns + 1`
     /// entries - i.e. index 1 is always populated. See the `chassert` in `nextInStringImpl`.
-    , token_group(extract_ && regexp->getNumberOfSubpatterns() > 0 ? 1 : 0)
+    , token_group(match_tokens_ && regexp->getNumberOfSubpatterns() > 0 ? 1 : 0)
 {
 }
 
 bool SplitByRegexpTokenizer::nextInStringImpl(
     const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const
 {
-    if (extract)
-        return nextExtractedMatch(data, length, pos, token_start, token_length, matches);
+    if (match_tokens)
+        return nextMatchedToken(data, length, pos, token_start, token_length, matches);
 
     while (pos <= length)
     {
@@ -372,7 +374,7 @@ bool SplitByRegexpTokenizer::nextInStringImpl(
     return false;
 }
 
-bool SplitByRegexpTokenizer::nextExtractedMatch(
+bool SplitByRegexpTokenizer::nextMatchedToken(
     const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const
 {
     while (pos <= length)
@@ -440,7 +442,7 @@ void SplitByRegexpTokenizer::substringToTokens(const char *, size_t, VectorWithM
 
 String SplitByRegexpTokenizer::getDescription() const
 {
-    if (extract)
+    if (match_tokens)
         return fmt::format("{}({}, true)", getName(), quoteString(regexp_str));
     return fmt::format("{}({})", getName(), quoteString(regexp_str));
 }

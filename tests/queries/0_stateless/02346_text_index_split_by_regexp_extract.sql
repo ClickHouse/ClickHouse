@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
 
--- Tests the `extract` argument of the `splitByRegexp` tokenizer for text indexes.
+-- Tests the `match_tokens` argument of the `splitByRegexp` tokenizer for text indexes.
 -- `force_data_skipping_indices` ensures every search below is actually served by the index.
 
 -- 1. Capture group 1 becomes the token; the 'tag:' prefix is not indexed.
@@ -19,16 +19,16 @@ SETTINGS index_granularity = 2;
 
 INSERT INTO tab_regex_extract VALUES (1, 'tag:red tag:green'), (2, 'tag:blue'), (3, 'no tags here'), (4, 'tag:green tag:yellow');
 
-SELECT 'extract: tokens of each row';
+SELECT 'match_tokens: tokens of each row';
 SELECT id, tokens(doc, $$splitByRegexp('tag:(\\w+)', 1)$$) FROM tab_regex_extract ORDER BY id;
 
-SELECT 'extract: hasAnyTokens([green]) -> 1, 4';
+SELECT 'match_tokens: hasAnyTokens([green]) -> 1, 4';
 SELECT id FROM tab_regex_extract WHERE hasAnyTokens(doc, ['green']) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 
-SELECT 'extract: hasAnyTokens([tag]) -> (none, the prefix is not indexed)';
+SELECT 'match_tokens: hasAnyTokens([tag]) -> (none, the prefix is not indexed)';
 SELECT id FROM tab_regex_extract WHERE hasAnyTokens(doc, ['tag']) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 
-SELECT 'extract: hasAllTokens([red, green]) -> 1';
+SELECT 'match_tokens: hasAllTokens([red, green]) -> 1';
 SELECT id FROM tab_regex_extract WHERE hasAllTokens(doc, ['red', 'green']) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE tab_regex_extract;
@@ -62,7 +62,7 @@ SELECT id FROM tab_regex_extract_nogroup WHERE hasAnyTokens(doc, ['a']) ORDER BY
 DROP TABLE tab_regex_extract_nogroup;
 
 -- 3. `hasPhrase` on a `splitByRegexp` index combined with a postprocessor stays rejected regardless of
--- `extract` - the row-level rewrite still assumes whitespace-splitting, `splitByNonAlpha`-style tokens.
+-- `match_tokens` - the row-level rewrite still assumes whitespace-splitting, `splitByNonAlpha`-style tokens.
 
 DROP TABLE IF EXISTS tab_extract_phrase_pp;
 
@@ -82,13 +82,13 @@ SELECT id FROM tab_extract_phrase_pp WHERE hasPhrase(doc, 'red green') SETTINGS 
 
 DROP TABLE tab_extract_phrase_pp;
 
--- 4. DDL-time validation of `extract`, and the `true`/`false` literal form (section 1 already covers 1).
+-- 4. DDL-time validation of `match_tokens`, and the `true`/`false` literal form (section 1 already covers 1).
 
 SELECT 'DDL validation';
 
 DROP TABLE IF EXISTS tab_bad_extract;
 
--- extract must be a Bool or an integer (truthy/falsy); a non-numeric type is rejected
+-- match_tokens must be a Bool or an integer (truthy/falsy); a non-numeric type is rejected
 CREATE TABLE tab_bad_extract (id UInt64, doc String, INDEX idx doc TYPE text(tokenizer = splitByRegexp('a', 'x'))) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 -- splitByRegexp accepts at most 2 parameters
 CREATE TABLE tab_bad_extract (id UInt64, doc String, INDEX idx doc TYPE text(tokenizer = splitByRegexp('a', 1, 1))) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }

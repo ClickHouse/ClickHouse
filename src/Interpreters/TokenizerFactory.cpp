@@ -250,11 +250,11 @@ static void registerTokenizers(TokenizerFactory & factory)
                 "Incorrect parameter of tokenizer '{}': the regular expression cannot be empty",
                 tokenizer_name);
 
-        bool extract = false;
+        bool match_tokens = false;
         if (args.size() > 1)
-            extract = castAs<bool>(args[1], "extract");
+            match_tokens = castAs<bool>(args[1], "match_tokens");
 
-        return std::make_unique<SplitByRegexpTokenizer>(regexp, extract);
+        return std::make_unique<SplitByRegexpTokenizer>(regexp, match_tokens);
     };
 
     factory.registerTokenizer(SplitByRegexpTokenizer::getName(), ITokenizer::Type::SplitByRegexp, split_by_regexp_creator);

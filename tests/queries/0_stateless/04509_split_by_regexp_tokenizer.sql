@@ -1,7 +1,7 @@
 -- Detailed test of the `splitByRegexp` tokenizer through the `tokens` function.
 -- The regular expression plays the role of the separator; the tokens are the (non-empty) pieces of text
--- between successive matches. With `extract` set to true (or any nonzero integer), this is reversed:
--- `re` matches the tokens themselves (capture group 1, or the whole match if `re` has none).
+-- between successive matches. With `match_tokens` set to true (or any nonzero integer), this is
+-- reversed: `regexp` matches the tokens themselves (capture group 1, or the whole match if it has none).
 
 SELECT 'Negative tests';
 -- The regular expression argument is mandatory
@@ -13,7 +13,7 @@ SELECT tokens('a', 'splitByRegexp', ['c']); -- { serverError ILLEGAL_TYPE_OF_ARG
 SELECT tokens('a', 'splitByRegexp', materialize('c')); -- { serverError ILLEGAL_COLUMN }
 -- and must not be empty
 SELECT tokens('a', 'splitByRegexp', ''); -- { serverError BAD_ARGUMENTS }
--- `extract` must be a const Bool or an unsigned integer (see positive tests below)
+-- `match_tokens` must be a const Bool or an unsigned integer (see positive tests below)
 SELECT tokens('a', 'splitByRegexp', 'a', 'x'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'splitByRegexp', 'a', materialize(true)); -- { serverError ILLEGAL_COLUMN }
 -- A signed integer is rejected too, not silently misrouted into the Array(String) branch
@@ -25,7 +25,7 @@ SELECT tokens('a', 'splitByRegexp', 'a', 1, 1); -- { serverError NUMBER_OF_ARGUM
 -- Simple literal separator
 SELECT tokens('a,b,c', 'splitByRegexp', ',');
 -- A capture group in the separator is inert in the default mode (captures are tracked internally
--- regardless of mode, but only read when extract = true)
+-- regardless of mode, but only read when match_tokens = true)
 SELECT tokens('a,b,c', 'splitByRegexp', '(,)');
 -- The default mode keeps RE2's leftmost-first semantics: the first-listed alternative wins even if a
 -- later one would match more, so 'a' is the separator here, not 'ab'
@@ -79,7 +79,7 @@ SELECT tokens('Built with C# and React', 'splitByRegexp', '[^\\p{L}\\p{N}#+]+');
 -- Result type and constness
 SELECT tokens('a,b,c', 'splitByRegexp', ',') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 
--- extract = 1: capture group 1 becomes the token; the surrounding context ('tag:') is discarded
+-- match_tokens = 1: capture group 1 becomes the token; the surrounding context ('tag:') is discarded
 SELECT tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', 1);
 -- true is equivalent to 1, and is the recommended, self-documenting form
 SELECT tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', true) = tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', 1);
@@ -87,7 +87,7 @@ SELECT tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', true) = toke
 SELECT tokens('a', 'splitByRegexp', 'a', 2);
 -- No capture groups: falls back to the whole RE2 match
 SELECT tokens('a1b22c333', 'splitByRegexp', '[0-9]+', 1);
--- Contrast with extract = 0 (separator mode) on the same pattern: the text *between* matches
+-- Contrast with match_tokens = 0 (separator mode) on the same pattern: the text *between* matches
 SELECT tokens('a1b22c333', 'splitByRegexp', '[0-9]+', 0);
 -- A match whose capture group did not participate is skipped: only the 'foo' branch has a group,
 -- so 'bar' matches contribute no token
@@ -115,7 +115,7 @@ SELECT tokens('a', 'splitByRegexp', '|a', 1);
 SELECT tokens('k:héllo k:wörld', 'splitByRegexp', 'k:(\\p{L}+)', 1);
 -- `\w` is ASCII-only in RE2, so it stops at the first multi-byte character
 SELECT tokens('k:héllo', 'splitByRegexp', 'k:(\\w+)', 1);
--- Result type and constness with extract = 1
+-- Result type and constness with match_tokens = 1
 SELECT tokens('tag:hello', 'splitByRegexp', 'tag:(\\w+)', 1) AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 -- { echoOff }
 
@@ -132,7 +132,7 @@ SELECT id, tokens(str, 'splitByRegexp', '[0-9,]+') AS tokenized, isConstant(toke
 
 DROP TABLE tab;
 
-SELECT 'Column values with extract = 1: tokens should be non-constant';
+SELECT 'Column values with match_tokens = 1: tokens should be non-constant';
 
 CREATE TABLE tab (
     id Int64,
