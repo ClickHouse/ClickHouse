@@ -1,0 +1,14 @@
+--- Arrow: in-range date64 reads exactly ---
+1	1970-01-04 00:00:00
+2	2001-02-03 00:00:00
+3	2105-12-31 00:00:00
+--- ArrowStream: in-range date64 reads exactly ---
+1	1970-01-04 00:00:00
+2	2001-02-03 00:00:00
+3	2105-12-31 00:00:00
+--- out-of-range date64 throws by default ---
+is out of the allowed DateTime range
+--- out-of-range date64 clamps with date_time_overflow_behavior = saturate ---
+1	1970-01-01 00:00:00
+2	2001-02-03 00:00:00
+3	2106-02-07 06:28:15

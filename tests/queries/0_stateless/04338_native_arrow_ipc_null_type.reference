@@ -6,9 +6,12 @@ stream, explicit structure
 \N	1
 \N	2
 \N	3
-schema inference skips the null column
-1
-2
-3
-schema inference fails without the skip setting
-1
+schema inference maps the null column to Nullable(Nothing)
+x	Nullable(Nothing)					
+n	Nullable(Int64)					
+select * with the inferred schema
+\N	1
+\N	2
+\N	3
+a file whose only column is null-typed reads too
+\N	4

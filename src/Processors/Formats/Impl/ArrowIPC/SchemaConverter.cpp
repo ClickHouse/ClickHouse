@@ -1134,17 +1134,17 @@ DataTypePtr fieldToCHType(
             break;
         }
         case TypeKind::Null:
-            /// An Arrow `null`-typed field is an all-null column. For the data reader map it to
-            /// `Nullable(Nothing)` (the library reader wraps its `Nothing` column the same way because the
-            /// field's null count is non-zero); the all-null `Nullable` then casts to the requested target
-            /// as NULLs (or column DEFAULTs with `null_as_default`). Return directly — it is already
-            /// nullable. Schema inference keeps the flag off and, matching the library reader, treats it as
-            /// an unsupported type (`UNKNOWN_TYPE`, so `*_skip_columns_*_in_schema_inference` can drop it).
+            /// An Arrow `null`-typed field is an all-null column. Both the data reader and schema
+            /// inference map it to `Nullable(Nothing)` (the library reader wraps its `Nothing` column the
+            /// same way because the field's null count is non-zero); the all-null `Nullable` then casts to
+            /// the requested target as NULLs (or column DEFAULTs with `null_as_default`). Return directly —
+            /// it is already nullable. Callers that keep the flag off get `UNKNOWN_TYPE`, which
+            /// `*_skip_columns_*_in_schema_inference` can drop.
             if (allow_null_type)
                 return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             throw Exception(
                 ErrorCodes::UNKNOWN_TYPE,
-                "Native Arrow IPC reader does not support the `null` type in schema inference (field '{}')",
+                "Native Arrow IPC reader does not support the `null` type here (field '{}')",
                 field.name);
         case TypeKind::Interval:
             throw Exception(

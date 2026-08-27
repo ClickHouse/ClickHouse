@@ -145,7 +145,10 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         DataTypePtr type;
         try
         {
-            type = ArrowIPC::fieldToCHType(field, format_settings, make_nullable);
+            /// `allow_null_type`: an Arrow `null`-typed field is inferred as `Nullable(Nothing)` (an
+            /// all-null column), matching what the data reader decodes and what the Apache Arrow library
+            /// based reader used to infer, instead of failing inference on a valid Arrow file.
+            type = ArrowIPC::fieldToCHType(field, format_settings, make_nullable, /*allow_null_type=*/true);
         }
         catch (const Exception & e)
         {

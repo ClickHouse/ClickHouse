@@ -307,7 +307,9 @@ ColumnPtr RecordBatchDecoder::buildNullMap(const Slice & validity, size_t rows, 
     return null_map;
 }
 
-ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path)
+ColumnPtr RecordBatchDecoder::decodeInner(
+    const ArrowField & field, size_t rows, const Slice & validity, Int64 null_count,
+    const DataTypePtr & target_hint, const String & path)
 {
     const ArrowType & type = field.type;
     DataTypePtr inner_type = fieldToCHType(field, settings, /*make_nullable=*/false, /*allow_null_type=*/true);
@@ -481,13 +483,30 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
             }
             else
             {
-                /// date64: milliseconds since the epoch, maps to DateTime (UInt32 seconds).
+                /// date64: milliseconds since the epoch, maps to DateTime (UInt32 seconds). The raw values
+                /// are untrusted and may fall outside the DateTime range; a plain narrowing cast would
+                /// silently wrap modulo 2^32 and return a wrong-but-plausible value, so out-of-range values
+                /// throw (or clamp with `date_time_overflow_behavior = 'saturate'`), like the date32 branch.
                 checkBufferSize(values, requiredBytes(rows, sizeof(Int64)), "date64");
                 auto & data = assert_cast<ColumnUInt32 &>(*column).getData();
                 data.resize(rows);
                 const auto * src = reinterpret_cast<const Int64 *>(values.ptr);
+                constexpr Int64 max_seconds = std::numeric_limits<UInt32>::max();
+                const bool saturate = settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate;
                 for (size_t i = 0; i < rows; ++i)
-                    data[i] = static_cast<UInt32>(src[i] / 1000);
+                {
+                    Int64 seconds = src[i] / 1000;
+                    if (seconds < 0 || seconds > max_seconds)
+                    {
+                        if (saturate)
+                            seconds = seconds < 0 ? 0 : max_seconds;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Arrow IPC date64 value {} ms is out of the allowed DateTime range", src[i]);
+                    }
+                    data[i] = static_cast<UInt32>(seconds);
+                }
             }
             break;
         }
@@ -689,8 +708,32 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                     "Arrow IPC fixed-size-list child has {} rows, expected {}", child->size(), expected_child);
             auto offsets_col = ColumnUInt64::create(rows);
             auto & offs = offsets_col->getData();
-            for (size_t i = 0; i < rows; ++i)
-                offs[i] = (i + 1) * list_size;
+            /// The list's own validity cannot survive as a null map (ClickHouse Array is not Nullable) and,
+            /// unlike List/LargeList where a null slot has equal offsets and reads back empty, every
+            /// fixed-size slot spans `list_size` child elements whose values Arrow leaves unspecified for
+            /// null slots. Emit an empty array for a null slot and drop its child range, so unspecified
+            /// child memory is never exposed as values; a valid slot keeps its `list_size` elements.
+            if (null_count != 0)
+            {
+                ColumnPtr null_map_col = buildNullMap(validity, rows, null_count);
+                const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_col).getData();
+                IColumn::Filter keep(child->size(), 1);
+                UInt64 kept = 0;
+                for (size_t i = 0; i < rows; ++i)
+                {
+                    if (null_map[i])
+                        std::fill_n(keep.begin() + i * list_size, list_size, 0);
+                    else
+                        kept += list_size;
+                    offs[i] = kept;
+                }
+                child = child->filter(keep, kept);
+            }
+            else
+            {
+                for (size_t i = 0; i < rows; ++i)
+                    offs[i] = (i + 1) * list_size;
+            }
             return ColumnArray::create(child, std::move(offsets_col));
         }
         case TypeKind::Struct:
@@ -1054,6 +1097,16 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
 
     if (dense)
     {
+        /// Compact each Variant element to only the rows the union references. Passing the children
+        /// through as-is would require every child to hold exactly its referenced values in row order,
+        /// but Arrow only requires the offsets to be monotonic per child: a child may legitimately hold
+        /// MORE values than the union references (e.g. a shared or sliced child), and a referenced null
+        /// in a nullable child is translated to the Variant NULL discriminator, leaving its value behind.
+        /// Either case would fail `ColumnVariant`'s size-per-discriminator invariant.
+        MutableColumns dense_compact;
+        dense_compact.reserve(variant_columns.size());
+        for (const auto & col : variant_columns)
+            dense_compact.push_back(col->cloneEmpty());
         for (size_t row = 0; row < rows; ++row)
         {
             auto local_it = type_id_to_local.find(type_ids[row]);
@@ -1077,10 +1130,11 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
                 continue;
             }
             discr_data[row] = static_cast<ColumnVariant::Discriminator>(local);
-            off_data[row] = static_cast<ColumnVariant::Offset>(off);
+            off_data[row] = static_cast<ColumnVariant::Offset>(dense_compact[local]->size());
+            dense_compact[local]->insertFrom(*variant_columns[local], off);
         }
         return ColumnVariant::create(
-            std::move(local_discriminators), std::move(offsets), Columns(variant_columns), local_to_global);
+            std::move(local_discriminators), std::move(offsets), std::move(dense_compact), local_to_global);
     }
 
     /// Sparse union: every child holds `rows` values; compact each Variant element to only its own rows.
@@ -1201,7 +1255,7 @@ ColumnPtr RecordBatchDecoder::decodeField(
     if (field.dictionary)
         return decodeDictionary(field, rows, validity, node.null_count(), allow_low_cardinality);
 
-    ColumnPtr inner = decodeInner(field, rows, target_hint, path);
+    ColumnPtr inner = decodeInner(field, rows, validity, node.null_count(), target_hint, path);
 
     /// Only wrap in Nullable when the type allows it; Array/Map cannot be inside Nullable in ClickHouse, so
     /// (matching the Apache Arrow library reader) their outer validity is dropped. A Struct (Tuple) is only
