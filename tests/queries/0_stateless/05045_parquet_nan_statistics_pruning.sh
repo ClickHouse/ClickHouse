@@ -52,8 +52,9 @@ ${CLICKHOUSE_CLIENT} --query "
 
 # Both arms of every correctness check are printed. Pushdown off is the oracle, so a fixture that
 # stopped holding a readable NaN would change the reference instead of silently passing.
-# input_format_parquet_dictionary_filter_push_down is pinned because the test runner randomizes it,
-# and its 0 value takes the dictionary pruning site out of the run entirely.
+# input_format_parquet_dictionary_filter_push_down is pinned because the test runner randomizes it.
+SQL=""
+
 arm() {
     local label="$1"
     local file="$2"
@@ -63,18 +64,15 @@ arm() {
     local source="file('${file}', Parquet)"
     [ -n "${structure}" ] && source="file('${file}', Parquet, '${structure}')"
 
-    local on off
-    on=$(${CLICKHOUSE_CLIENT} --query "
-        SELECT count() FROM ${source} WHERE ${predicate}
+    SQL+="
+        SELECT '${label} on=' || toString(count()) FROM ${source} WHERE ${predicate}
         SETTINGS input_format_parquet_filter_push_down = 1, max_threads = 1,
                  input_format_parquet_page_filter_push_down = 1,
-                 input_format_parquet_dictionary_filter_push_down = 1048576${extra:+, ${extra}}")
-    off=$(${CLICKHOUSE_CLIENT} --query "
-        SELECT count() FROM ${source} WHERE ${predicate}
+                 input_format_parquet_dictionary_filter_push_down = 1048576${extra:+, ${extra}};
+        SELECT 'off=' || toString(count()) FROM ${source} WHERE ${predicate}
         SETTINGS input_format_parquet_filter_push_down = 0, max_threads = 1,
                  input_format_parquet_page_filter_push_down = 0,
-                 input_format_parquet_dictionary_filter_push_down = 1048576${extra:+, ${extra}}")
-    echo "${label} on=${on} off=${off}"
+                 input_format_parquet_dictionary_filter_push_down = 1048576${extra:+, ${extra}};"
 }
 
 # Same, with row group pushdown disabled, so only the page statistics can prune.
@@ -83,16 +81,20 @@ arm_page_only() {
     local file="$2"
     local predicate="$3"
 
-    local on off
-    on=$(${CLICKHOUSE_CLIENT} --query "
-        SELECT count() FROM file('${file}', Parquet) WHERE ${predicate}
+    SQL+="
+        SELECT '${label} on=' || toString(count()) FROM file('${file}', Parquet) WHERE ${predicate}
         SETTINGS input_format_parquet_filter_push_down = 0, max_threads = 1,
-                 input_format_parquet_page_filter_push_down = 1")
-    off=$(${CLICKHOUSE_CLIENT} --query "
-        SELECT count() FROM file('${file}', Parquet) WHERE ${predicate}
+                 input_format_parquet_page_filter_push_down = 1;
+        SELECT 'off=' || toString(count()) FROM file('${file}', Parquet) WHERE ${predicate}
         SETTINGS input_format_parquet_filter_push_down = 0, max_threads = 1,
-                 input_format_parquet_page_filter_push_down = 0")
-    echo "${label} on=${on} off=${off}"
+                 input_format_parquet_page_filter_push_down = 0;"
+}
+
+# Each arm queues exactly two statements, on before off, and the batch keeps that order, so the two
+# counts rejoined into one line are always the two arms of the same check.
+run_arms() {
+    ${CLICKHOUSE_CLIENT} --query "${SQL}" | paste -d' ' - -
+    SQL=""
 }
 
 echo '-- a negated range predicate must still see the NaN row'
@@ -104,10 +106,12 @@ arm not_equals_low_cardinality "${NAN}" 'val != 5.' 'allow_suspicious_low_cardin
 # LowCardinality(Nullable(Float64)) is the only structure that needs both wrappers stripped, and in
 # that order: removeNullable alone cannot see through LowCardinality.
 arm not_equals_lc_nullable "${NAN_NULLABLE}" 'val != 5.' 'allow_suspicious_low_cardinality_types = 1' 'val LowCardinality(Nullable(Float64))'
+run_arms
 
 echo '-- and so must a negated set predicate'
 arm not_in_one "${NAN}" 'val NOT IN (5.)'
 arm not_in_two "${NAN}" 'val NOT IN (5., 6.)'
+run_arms
 
 # Set membership treats NaN as equal to NaN (nan IN (nan) is 1 while nan = nan is 0), so a NaN
 # outside the bounds can match the set. This is the direction that needs can_be_true, not can_be_false.
@@ -119,22 +123,26 @@ arm in_nan_and_null "${NAN}" 'val IN (nan, NULL)'
 arm in_nan_and_null_nullable "${NAN_WITH_NULL}" 'val IN (nan, NULL)'
 arm in_null_and_nan_nullable "${NAN_WITH_NULL}" 'val IN (NULL, nan)'
 arm in_nan_lc_nullable "${NAN_NULLABLE}" 'val IN (nan)' 'allow_suspicious_low_cardinality_types = 1' 'val LowCardinality(Nullable(Float64))'
+run_arms
 
 # A tuple set is ordered lexicographically, so a NaN in a non-leading position is not the last
 # element of its own column: here the val column of the set sorts to [nan, 7].
 echo '-- a NaN in a non-leading tuple position must match too'
 arm in_tuple_nan "${NAN_TUPLE}" '(i, val) IN ((1, nan), (2, 7.))'
+run_arms
 
 # With transform_null_in the NULL stays in the set and sorts after the NaN, so finding the NaN
 # means looking past it.
 echo '-- a set ending in NULL still has to find the NaN'
 arm in_nan_null_transform "${NAN_WITH_NULL}" 'val IN (nan, NULL)' 'transform_null_in = 1'
 arm in_null_nan_transform "${NAN_WITH_NULL}" 'val IN (NULL, nan)' 'transform_null_in = 1'
+run_arms
 
 echo '-- page statistics prune the same way, with row group pushdown disabled'
 arm_page_only page_not_equals "${NAN}" 'val != 5.'
 arm_page_only page_not_in "${NAN}" 'val NOT IN (5.)'
 arm_page_only page_in_nan "${NAN}" 'val IN (nan)'
+run_arms
 
 echo '-- already correct before, must stay correct'
 arm equals "${NAN}" 'val = 5.'
@@ -146,11 +154,15 @@ arm is_nan "${NAN}" 'isNaN(val)'
 arm self_inequality "${NAN}" 'val != val'
 arm in_finite_and_null "${NAN_WITH_NULL}" 'val IN (5., NULL)'
 arm is_null "${NAN_WITH_NULL}" 'val IS NULL'
+run_arms
 
 # rows_read is the pruning oracle: a pruned row group or page is never read, so a file that is
 # still pruned reports fewer rows than it holds. Every arm below must keep pruning everything,
 # which is what makes this a check on lost pruning rather than on wrong results.
 # input_format_parquet_dictionary_filter_push_down is pinned because the test runner randomizes it.
+PRUNE_SQL=""
+PRUNE_LABELS=()
+
 prune() {
     local label="$1"
     local file="$2"
@@ -158,13 +170,22 @@ prune() {
     local row_group="${4:-1}"
     local page="${5:-1}"
 
-    ${CLICKHOUSE_CLIENT} --query "
+    PRUNE_LABELS+=("${label}")
+    PRUNE_SQL+="
         SELECT count() FROM file('${file}', Parquet) WHERE ${predicate}
         SETTINGS input_format_parquet_filter_push_down = ${row_group}, max_threads = 1,
                  input_format_parquet_page_filter_push_down = ${page},
                  input_format_parquet_dictionary_filter_push_down = 1048576
-        FORMAT JSON" \
-        | jq -c --arg name "${label}" '{label: $name, result: .data, rows_read: .statistics.rows_read}'
+        FORMAT JSON;"
+}
+
+# transpose pads the shorter side with null, so a batch that lost a statement prints a null field
+# instead of silently relabelling the surviving ones.
+run_prunes() {
+    ${CLICKHOUSE_CLIENT} --query "${PRUNE_SQL}" \
+        | jq -cs --args '[$ARGS.positional, .] | transpose[]
+              | {label: .[0], result: .[1].data, rows_read: .[1].statistics.rows_read}' \
+              "${PRUNE_LABELS[@]}"
 }
 
 echo '-- pruning is preserved: nothing below may read a row'
@@ -174,5 +195,6 @@ prune float_above_max_rowgroup "${MANY}" 'val > 1e9' 1 0
 prune integer_not_equals "${INTEGER}" 'i != 5'
 prune integer_not_in "${INTEGER}" 'i NOT IN (5, 6)'
 prune finite_float_in "${FINITE}" 'val IN (6.)'
+run_prunes
 
 rm -f "${USER_FILES_PATH}/${PREFIX}"_*.parquet
