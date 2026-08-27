@@ -95,14 +95,19 @@ is enabled:
 
 ## Multiple constraint profiles {#multiple-constraint-profiles}
 
-If there are multiple profiles active for a user, then constraints are merged. 
-The Merge process depends on `settings_constraints_replace_previous`:
-- **true** (recommended): constraints for the same setting are replaced during 
-  merge, such that the last constraint is used and all previous ones are ignored.
-  This includes fields that are not set in new constraint.
-- **false** (default): constraints for the same setting are merged in a way that
-  every unset type of constraint is taken from the previous profile and every 
-  set type of constraint is replaced by the value from the new profile.
+If several profiles apply to a user, their constraints are merged. How they merge
+depends on `settings_constraints_replace_previous`:
+- **true** (recommended): the last constraint for a setting replaces the earlier
+  one, including the fields the new constraint does not set.
+- **false** (default): the last constraint replaces only the fields it sets, and
+  the remaining fields are kept from the earlier one.
+
+A profile applied with [`SET profile`](/sql-reference/statements/set) follows a
+stricter rule, whatever `settings_constraints_replace_previous` is set to. It can
+only narrow what is already in effect: raise a `min`, lower a `max`, add
+`disallowed` values, or make a setting `readonly`. It cannot lift a constraint or
+grant `changeable_in_readonly`. Any user can run `SET profile` with any profile,
+so a session profile is not a way around the constraints in your configuration.
 
 ## Read-only mode {#read-only}
 

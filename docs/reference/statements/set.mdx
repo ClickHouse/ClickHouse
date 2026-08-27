@@ -18,6 +18,10 @@ You can also set all the values from the specified settings profile in a single 
 SET profile = 'profile-name-from-the-settings-file'
 ```
 
+The constraints of that profile can only narrow the ones already in effect for
+the session. A profile applied this way cannot lift a constraint which comes from
+your configuration. See [Constraints on settings](/operations/settings/constraints-on-settings).
+
 For boolean settings set to true, you can use a shorthand syntax by omitting the value assignment. When only the setting name is specified, it is automatically set to `1` (true).
 
 ```sql

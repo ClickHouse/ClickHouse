@@ -154,7 +154,14 @@ def get_constraints(setting_name, user="default"):
     )
 
 
-def test_removing_constraint_from_default_profile():
+# `SYSTEM RELOAD USERS` and `SYSTEM RELOAD CONFIG` are different entrypoints: the first one calls
+# `AccessControl::reload(ALL)`, the second one reloads the main config and then reloads access
+# control with `USERS_CONFIG_ONLY`. The issue this test covers was reported against
+# `SYSTEM RELOAD USERS`, so run both.
+@pytest.mark.parametrize(
+    "reload_statement", ["SYSTEM RELOAD USERS", "SYSTEM RELOAD CONFIG"]
+)
+def test_removing_constraint_from_default_profile(reload_statement):
     uptime_before = int(node_with_constraints.query("SELECT uptime()"))
 
     # The constraints are in effect. Adding them was never broken, but assert it so that a fix which
@@ -175,7 +182,7 @@ def test_removing_constraint_from_default_profile():
 
     # Now remove them. Every query() opens a new connection, so these are all new sessions.
     remove_the_constraints()
-    node_with_constraints.query("SYSTEM RELOAD CONFIG")
+    node_with_constraints.query(reload_statement)
 
     assert get_constraints("alter_sync") == "\\N\t\\N\t0\n"
     assert get_constraints("max_memory_usage") == "\\N\t\\N\t0\n"
