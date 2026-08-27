@@ -70,3 +70,5 @@ NaN and infinity in a float fill column stay accepted
 5
 nan
 5
+the runtime check covers a trailing fill column as well
+162	254

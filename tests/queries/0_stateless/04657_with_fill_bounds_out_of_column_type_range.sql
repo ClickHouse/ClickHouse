@@ -256,3 +256,12 @@ SELECT b FROM (SELECT 0. AS b UNION ALL SELECT nan UNION ALL SELECT 5.) ORDER BY
 -- A NaN border itself (here as a literal TO) generates nothing instead of filling until the step stagnates
 -- in the float precision.
 SELECT b FROM (SELECT 5. AS b) ORDER BY b WITH FILL TO nan STEP 1;
+
+SELECT 'the runtime check covers a trailing fill column as well';
+
+-- While the fill of a leading column advances, a trailing fill column is refilled towards its own TO from an
+-- anchor taken from the data, so the per-generated-value check must fire in that branch too: anchored at 13,
+-- the trailing fill below reaches 256 (which the column would store as 0) before stopping under TO 257.
+SELECT a, b FROM (SELECT 1 AS a, toUInt8(13) AS b UNION ALL SELECT 3, toUInt8(20)) ORDER BY a WITH FILL, b WITH FILL TO 257 STEP 3 FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- Anchored at 11 it stops at 254 and stays an ordinary fill.
+SELECT count(), max(b) FROM (SELECT a, b FROM (SELECT 1 AS a, toUInt8(11) AS b UNION ALL SELECT 3, toUInt8(20)) ORDER BY a WITH FILL, b WITH FILL TO 257 STEP 3);
