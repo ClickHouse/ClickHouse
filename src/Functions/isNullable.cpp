@@ -105,11 +105,11 @@ INSERT INTO tab (ordinary_col, nullable_col) VALUES (1,1), (2, 2), (3,3);
 SELECT isNullable(ordinary_col), isNullable(nullable_col) FROM tab;
         )",
         R"(
-┌───isNullable(ordinary_col)──┬───isNullable(nullable_col)──┐
-│                           0 │                           1 │
-│                           0 │                           1 │
-│                           0 │                           1 │
-└─────────────────────────────┴─────────────────────────────┘
+┌─isNullable(ordinary_col)─┬─isNullable(nullable_col)─┐
+│                        0 │                        1 │
+│                        0 │                        1 │
+│                        0 │                        1 │
+└──────────────────────────┴──────────────────────────┘
         )"
     }
     };

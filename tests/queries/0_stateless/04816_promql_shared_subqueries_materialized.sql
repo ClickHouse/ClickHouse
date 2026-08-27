@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-replicated-database, no-parallel-replicas
+-- Tags: no-fasttest, no-parallel-replicas
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 -- Tag no-parallel-replicas: the test asserts on the query plan shape (the number of reads of the samples table).
 

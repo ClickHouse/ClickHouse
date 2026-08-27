@@ -399,7 +399,7 @@ void StorageTimeSeries::maintainRecentSamples(bool throw_on_error)
         if (rebuild_version)
         {
             auto rebuilt_horizon = select_max(ViewTarget::Samples, TimeSeriesColumnNames::Timestamp);
-            bool invalidated_during_rebuild;
+            bool invalidated_during_rebuild = false;
             {
                 std::lock_guard lock(recent_samples_horizon_mutex);
                 invalidated_during_rebuild = recent_samples_horizon_invalidation_version != *rebuild_version;
