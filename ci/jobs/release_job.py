@@ -253,9 +253,6 @@ def main():
     if args.release_type == "patch" and not args.skip_repo:
 
         def verify_release_tools():
-            # Skipped on dry-run (local convenience).
-            if args.dry_run:
-                return
             # The tools are baked into the release-maker image; fail closed rather than fetch third-party code on a credentialed host.
             Shell.check(
                 "geesefs --version"
