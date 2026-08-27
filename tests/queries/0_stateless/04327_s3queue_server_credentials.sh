@@ -15,16 +15,17 @@ DB="$CLICKHOUSE_DATABASE"
 TABLE="s3queue_creds_${DB}"
 NC="s3queue_creds_nc_${DB}"
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${TABLE} SYNC"
-
 # A named collection that asks for the server's environment credentials (`use_environment_credentials = 1`
 # overrides the global default). The setting is explicit so the test does not depend on the server's global
-# `use_environment_credentials` value.
+# `use_environment_credentials` value. A leftover collection is reused rather than recreated: dropping it
+# is refused while a leftover table still references it.
 $CLICKHOUSE_CLIENT -q "
-    CREATE NAMED COLLECTION ${NC} AS
+    CREATE NAMED COLLECTION IF NOT EXISTS ${NC} AS
         url = 'http://localhost:11111/test/${DB}_q/',
         use_environment_credentials = 1
 "
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${TABLE} SYNC"
 
 # Without the override the S3Queue would resolve the server's environment credentials, so it is rejected.
 $CLICKHOUSE_CLIENT -q "
@@ -41,5 +42,5 @@ $CLICKHOUSE_CLIENT -q "
 "
 echo "s3queue_override: created"
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${TABLE} SYNC"
-$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${NC}"
+# Chained so the collection outlives the table: metadata must never reference a missing collection.
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${TABLE} SYNC" && $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${NC}"

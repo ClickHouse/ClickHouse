@@ -16,8 +16,8 @@ If you prefer to use an existing VPC to deploy ClickHouse BYOC instead of having
 <Steps>
 <Step title="Configure your existing VPC" id="configure-existing-vpc">
 1. Tag the VPC with `clickhouse-byoc="true"`.
-2. Allocate at least 3 private subnets across 3 different availability zones for ClickHouse Cloud to use.
-3. Ensure each subnet has a minimum CIDR range of `/23` (e.g., 10.0.0.0/23) to provide sufficient IP addresses for the ClickHouse deployment.
+2. Allocate exactly 3 private subnets across 3 different availability zones for ClickHouse Cloud to use.
+3. Ensure each subnet has a minimum CIDR range of `/25` (e.g., 10.0.0.0/25). A `/25` supports roughly 10 ClickHouse server nodes per availability zone; `/24` is recommended for most deployments, and larger subnets for deployments you expect to grow. Pod IP addresses are allocated from the subnet itself, so every replica consumes subnet addresses.
 4. Add the tag `kubernetes.io/role/internal-elb=1` and `clickhouse-byoc="true"` to each subnet to enable proper load balancer configuration.
 
 <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="BYOC VPC Subnet" />
@@ -72,6 +72,9 @@ The module was previously distributed as a tarball at `https://s3.us-east-2.amaz
 </Note>
 </Step>
 <Step title="Set up BYOC infrastructure" id="set-up-byoc-infrastructure">
+<Note>
+When you click **Set up Infrastructure**, ClickHouse Cloud automatically runs [pre-flight validation](/products/bring-your-own-cloud/onboarding/standard#preflight-validation) before provisioning. If your customized VPC or account doesn't meet the requirements, setup is halted with the specific issues to fix.
+</Note>
 In the ClickHouse Cloud console, configure the following when setting up new infrastructure:
 
 1. Under **VPC configuration**, select **Use existing VPC**.

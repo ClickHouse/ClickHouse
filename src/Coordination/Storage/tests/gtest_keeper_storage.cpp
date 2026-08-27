@@ -1,16 +1,21 @@
 #include <gtest/gtest.h>
 
+#include <Coordination/Storage/BackgroundWork.h>
 #include <Coordination/Storage/Node.h>
 #include <Coordination/Storage/Memtable.h>
 #include <Coordination/Storage/NodeStream.h>
+#include <Coordination/Storage/SortedFile.h>
+#include <Coordination/Storage/SortedRun.h>
 #include <Coordination/Storage/StorageState.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/SharedMutex.h>
+#include <Disks/DiskLocal.h>
 
 #include <fmt/format.h>
 
 #include <chrono>
+#include <filesystem>
 #include <mutex>
 #include <set>
 #include <shared_mutex>
@@ -23,9 +28,12 @@ using namespace Coordination::Storage;
 
 namespace DB::CoordinationSetting
 {
+    extern const CoordinationSettingsBool storage_memory_only;
+    extern const CoordinationSettingsUInt64 block_cache_size;
     extern const CoordinationSettingsUInt64 committed_memtable_size;
     extern const CoordinationSettingsUInt64 memtable_block_size;
     extern const CoordinationSettingsUInt64 file_block_size;
+    extern const CoordinationSettingsUInt64 file_block_group_compressed_size;
     extern const CoordinationSettingsUInt64 sorted_file_uncompressed_size;
     extern const CoordinationSettingsUInt64 min_files_to_merge;
     extern const CoordinationSettingsUInt64 max_files_to_merge;
@@ -39,6 +47,29 @@ namespace DB::CoordinationSetting
 
 namespace
 {
+
+/// Temporary directory for the data disk of on-disk tests. Removed on destruction.
+struct TestDataDir
+{
+    std::string path;
+
+    explicit TestDataDir(std::string path_) : path(std::move(path_))
+    {
+        std::filesystem::remove_all(path);
+        std::filesystem::create_directories(path);
+    }
+
+    ~TestDataDir() { std::filesystem::remove_all(path); }
+};
+
+/// Number of files at the root of the disk.
+size_t countDiskFiles(const DB::DiskPtr & disk)
+{
+    size_t count = 0;
+    for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
+        ++count;
+    return count;
+}
 
 FullNode makeNode(
     NodeAction action,
@@ -198,6 +229,79 @@ TEST(KeeperStorage, NodeSerializationRoundTrip)
     EXPECT_EQ(out.digest, 0);
 }
 
+/// After appendNode, the input node's data pointer must point at the serialized copy inside the
+/// block, not at the caller's buffer. The caller's buffer may be short-lived (e.g. request data
+/// that doesn't survive from prepare until commit), while a FullNode kept alongside its NodeRef
+/// (e.g. in LSMTDelta) must stay valid as long as the block is pinned.
+TEST(KeeperStorage, AppendRepointsDataIntoBlock)
+{
+    const std::string path = "/test/data_repoint";
+    const std::string data_copy = "columns format version: 1";
+
+    FullNode node;
+    NodeRef ref;
+    {
+        std::string transient_data = data_copy;
+        node = makeNode(
+            NodeAction::Create, 2, path, transient_data, /*acl_id*/ 0, /*version*/ 0, /*num_children*/ 0,
+            /*is_ephemeral*/ false, DB::KeeperNodeStats{.czxid = 1, .mzxid = 1, .pzxid = 1});
+
+        BlockPtr block = BlockData::create(16);
+        block->compatible_digest = true;
+        ref = BlockData::appendNode(block, node);
+
+        /// The data view now points into the (possibly reallocated) block that `ref` pins.
+        const char * block_begin = ref.block->data();
+        const char * block_end = block_begin + ref.block->size;
+        EXPECT_GE(node.getData().data(), block_begin);
+        EXPECT_LE(node.getData().data() + node.getData().size(), block_end);
+
+        /// Clobber and destroy the original buffer; the node must be unaffected.
+        std::fill(transient_data.begin(), transient_data.end(), '*');
+    }
+    EXPECT_EQ(node.getData(), data_copy);
+}
+
+/// A node that is created and then removed is dropped from `node_cache`. The map is a `HashMap`,
+/// whose `erase` zeroes the cell without running the value's destructor, so the entry's weak
+/// reference to the node's block has to be released by hand - otherwise the block's control block
+/// is leaked (LeakSanitizer catches this in every Keeper run).
+TEST(KeeperStorage, NodeCacheEraseReleasesBlockRef)
+{
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(/*standalone_keeper*/ true, settings);
+    DB::SharedMutex storage_mutex;
+    StorageState storage(keeper_context, &storage_mutex);
+    storage.memory_only = true;
+    storage.startup();
+
+    auto append = [&](NodeAction action, const std::string & path, std::string_view data)
+    {
+        FullNode node;
+        node.action = action;
+        node.path = NodePath(path);
+        node.data_ptr = data.data();
+        node.stats.data_size = static_cast<uint32_t>(data.size());
+        return storage.appendCommittedNode(node);
+    };
+
+    /// The lock has to be released before `shutdown`: the flush and merge threads take
+    /// `storage_mutex` in shared mode at the top of their loops, and `shutdown` joins them.
+    {
+        std::lock_guard lock(storage_mutex);
+        const NodeRef created = append(NodeAction::Create, "/erase_ref", "X");
+        BlockPtrControlBlock * control = created.block.control;
+        ASSERT_TRUE(control != nullptr);
+        const uint32_t weak_after_create = control->weak.load();
+
+        /// Create + Remove cancel out, so the `node_cache` entry (and its weak ref) goes away.
+        append(NodeAction::Remove, "/erase_ref", "");
+        EXPECT_EQ(control->weak.load(), weak_after_create - 1);
+    }
+
+    storage.shutdown();
+}
+
 /// End-to-end stress of the background flush/merge pipeline: insert a large committed dataset (with
 /// removals and a nested subtree) with tiny memtable/file thresholds, so it goes through many flushes
 /// and merges that incrementally publish their output and trim their (fully consumed) inputs. Then
@@ -294,6 +398,22 @@ TEST(KeeperStorage, BackgroundFlushAndMerge)
         total_node_count_delta += storage.mutable_memtable->node_count_delta;
     EXPECT_EQ(total_node_count_delta, int64_t(2 + (num_k - num_removed) + num_c));
 
+    /// The run's total_entries must stay equal to the sum of per-file num_entries through merges
+    /// and trims.
+    size_t run_entries = 0;
+    for (const SortedFilePtr & file : storage.sorted_runs[0]->files)
+        run_entries += file->num_entries;
+    EXPECT_EQ(storage.sorted_runs[0]->total_entries, run_entries);
+
+    /// Each surviving node contributes one entry to the run or the remaining memtable; a removed
+    /// node contributes zero, one, or two entries (Create and Remove tombstone), depending on
+    /// which of them got combined away.
+    size_t total_entries = run_entries;
+    if (storage.mutable_memtable)
+        total_entries += storage.mutable_memtable->num_entries;
+    EXPECT_GE(total_entries, size_t(2 + (num_k - num_removed) + num_c));
+    EXPECT_LE(total_entries, size_t(2 + num_k + num_removed + num_c));
+
     std::string buf;
     for (int i = 0; i < num_removed; ++i)
         EXPECT_FALSE(bool(storage.getCommittedNode(NodePath(numbered("/a/k", i)).withCalculatedHash())))
@@ -311,6 +431,226 @@ TEST(KeeperStorage, BackgroundFlushAndMerge)
     for (int i = 0; i < num_c; ++i)
         EXPECT_TRUE(bool(storage.getCommittedNode(NodePath(numbered("/a/b/c", i)).withCalculatedHash())))
             << "grandchild " << numbered("/a/b/c", i) << " is missing";
+
+    storage.shutdown();
+}
+
+/// Same flush/merge pipeline as above, but on disk: sorted files are written to a local disk in
+/// compressed block groups, the tiny block cache forces reads to load groups back from disk, and
+/// files that became obsolete after merges are deleted from disk.
+TEST(KeeperStorage, BackgroundFlushAndMergeOnDisk)
+{
+    TestDataDir data_dir("./keeper_storage_on_disk_test");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::storage_memory_only] = false;
+    /// Tiny thresholds: many small files with several block groups per file.
+    (*settings)[DB::CoordinationSetting::committed_memtable_size] = 2048;
+    (*settings)[DB::CoordinationSetting::memtable_block_size] = 256;
+    (*settings)[DB::CoordinationSetting::file_block_size] = 256;
+    (*settings)[DB::CoordinationSetting::file_block_group_compressed_size] = 256;
+    (*settings)[DB::CoordinationSetting::sorted_file_uncompressed_size] = 2048;
+    (*settings)[DB::CoordinationSetting::min_files_to_merge] = 2;
+    (*settings)[DB::CoordinationSetting::max_files_to_merge] = 8;
+    (*settings)[DB::CoordinationSetting::max_size_ratio] = 1.0f; // always merge, so it converges to one run
+    /// Tiny block cache: most blocks get evicted, so the reads below have to hit the disk.
+    (*settings)[DB::CoordinationSetting::block_cache_size] = 8192;
+
+    auto data_disk = std::make_shared<DB::DiskLocal>("DataDisk", data_dir.path);
+    auto keeper_context = std::make_shared<DB::KeeperContext>(/*standalone_keeper*/ true, settings);
+    keeper_context->setDataDisk(data_disk);
+
+    DB::SharedMutex storage_mutex;
+    StorageState storage(keeper_context, &storage_mutex);
+    storage.startup();
+
+    /// startup() wrote the info file and read it back through readBigAt.
+    EXPECT_TRUE(data_disk->existsFile("info"));
+
+    auto append = [&](NodeAction action, const std::string & path, std::string_view data)
+    {
+        FullNode node;
+        node.action = action;
+        node.path = NodePath(path);
+        node.data_ptr = data.data();
+        node.stats.data_size = static_cast<uint32_t>(data.size());
+        storage.appendCommittedNode(node);
+    };
+    auto numbered = [](std::string_view prefix, int i)
+    {
+        return fmt::format("{}{:05}", prefix, i);
+    };
+
+    constexpr int num_k = 1200; // direct children /a/k*
+    constexpr int num_removed = 400; // first num_removed of them get removed
+    constexpr int num_c = 600; // grandchildren /a/b/c*
+
+    {
+        std::lock_guard lock(storage_mutex);
+        append(NodeAction::Create, "/a", "A");
+        append(NodeAction::Create, "/a/b", "B");
+        for (int i = 0; i < num_k; ++i)
+            append(NodeAction::Create, numbered("/a/k", i), "K");
+        for (int i = 0; i < num_removed; ++i)
+            append(NodeAction::Remove, numbered("/a/k", i), "");
+        for (int i = 0; i < num_c; ++i)
+            append(NodeAction::Create, numbered("/a/b/c", i), "C");
+    }
+
+    /// Wait for background flushes and merges to converge to a single sorted run.
+    bool converged = false;
+    for (int attempt = 0; attempt < 4000 && !converged; ++attempt)
+    {
+        {
+            std::shared_lock lock(storage_mutex);
+            converged = storage.immutable_memtables.empty() && storage.sorted_runs.size() == 1;
+        }
+        if (!converged)
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    ASSERT_TRUE(converged);
+
+    size_t final_run_files = 0;
+    {
+        std::shared_lock lock(storage_mutex);
+
+        EXPECT_FALSE(storage.sorted_runs[0]->min_path_cutoff.has_value());
+        EXPECT_GT(storage.sorted_runs[0]->files.size(), 1u);
+        final_run_files = storage.sorted_runs[0]->files.size();
+
+        /// Blocks are not pinned; block group metadata was assigned by the writer. The dataset is
+        /// much bigger than the group and file thresholds, so both multi-block groups and
+        /// multi-group files must have been produced.
+        size_t blocks_not_first_in_group = 0;
+        size_t files_with_multiple_groups = 0;
+        for (const SortedFilePtr & file : storage.sorted_runs[0]->files)
+        {
+            EXPECT_TRUE(file->pinned_blocks.empty());
+            EXPECT_TRUE(file->read_buffer != nullptr);
+            EXPECT_GT(file->file_size, 0u);
+            EXPECT_TRUE(data_disk->existsFile(file->file_path));
+            for (const SortedFile::BlockInfo & info : file->blocks)
+            {
+                EXPECT_GT(info.block_size, 0u);
+                EXPECT_GT(info.group_compressed_size, 0u);
+                blocks_not_first_in_group += info.offset_in_group != 0;
+            }
+            files_with_multiple_groups += file->blocks.back().group_offset_in_file != 0;
+        }
+        EXPECT_GT(blocks_not_first_in_group, 0u);
+        EXPECT_GT(files_with_multiple_groups, 0u);
+
+        auto count_living_children = [&](const std::string & parent)
+        {
+            DB::Arena arena;
+            ChildrenSet2 children;
+            storage.listCommittedChildrenNames(NodePath(parent).withCalculatedHash(), children, arena);
+            size_t count = 0;
+            for (const auto & entry : children.set)
+                count += entry.action != NodeAction::Remove;
+            return count;
+        };
+
+        EXPECT_EQ(count_living_children("/a"), size_t(num_k - num_removed + 1));
+        EXPECT_EQ(count_living_children("/a/b"), size_t(num_c));
+
+        std::string buf;
+        for (int i = 0; i < num_removed; ++i)
+            EXPECT_FALSE(bool(storage.getCommittedNode(NodePath(numbered("/a/k", i)).withCalculatedHash())))
+                << "removed node " << numbered("/a/k", i) << " is still present";
+
+        for (int i = num_removed; i < num_k; ++i)
+        {
+            NodeRef ref = storage.getCommittedNode(NodePath(numbered("/a/k", i)).withCalculatedHash());
+            ASSERT_TRUE(bool(ref)) << "survivor " << numbered("/a/k", i) << " is missing";
+            FullNode out;
+            ref.read(out, buf);
+            EXPECT_EQ(out.getData(), "K");
+        }
+
+        for (int i = 0; i < num_c; ++i)
+        {
+            NodeRef ref = storage.getCommittedNode(NodePath(numbered("/a/b/c", i)).withCalculatedHash());
+            ASSERT_TRUE(bool(ref)) << "grandchild " << numbered("/a/b/c", i) << " is missing";
+            FullNode out;
+            ref.read(out, buf);
+            EXPECT_EQ(out.getData(), "C");
+        }
+    }
+
+    /// Files that fell out of the visible set (merge inputs) delete themselves from disk when the
+    /// last reference is dropped; the background threads drain the delete queue on their next
+    /// iteration. Eventually the disk contains exactly the info file plus the final run's files.
+    const size_t expected_files_on_disk = 1 + final_run_files;
+    size_t files_on_disk = 0;
+    for (int attempt = 0; attempt < 400; ++attempt)
+    {
+        files_on_disk = countDiskFiles(data_disk);
+        if (files_on_disk == expected_files_on_disk)
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    EXPECT_EQ(files_on_disk, expected_files_on_disk);
+    EXPECT_TRUE(data_disk->existsFile("info"));
+
+    storage.shutdown();
+}
+
+/// Files written by an unfinished SortedRunWriter (like after a failed or cancelled flush/merge)
+/// still have delete_when_destroyed set, so they enqueue themselves for deletion when the writer
+/// lets go of them, and a background thread deletes them from disk.
+TEST(KeeperStorage, OnDiskWriterCleanup)
+{
+    TestDataDir data_dir("./keeper_storage_writer_cleanup_test");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::storage_memory_only] = false;
+    (*settings)[DB::CoordinationSetting::file_block_size] = 256;
+    (*settings)[DB::CoordinationSetting::file_block_group_compressed_size] = 256;
+    (*settings)[DB::CoordinationSetting::sorted_file_uncompressed_size] = 512;
+
+    auto data_disk = std::make_shared<DB::DiskLocal>("DataDisk", data_dir.path);
+    auto keeper_context = std::make_shared<DB::KeeperContext>(/*standalone_keeper*/ true, settings);
+    keeper_context->setDataDisk(data_disk);
+
+    DB::SharedMutex storage_mutex;
+    StorageState storage(keeper_context, &storage_mutex);
+    storage.startup();
+
+    {
+        SortedRunWriter writer(std::make_shared<SortedRun>(1, 1), &storage);
+        for (int i = 0; i < 200; ++i)
+        {
+            static constexpr std::string_view data = "some data";
+            const std::string path = fmt::format("/w/n{:05}", i);
+            FullNode node;
+            node.action = NodeAction::Create;
+            node.path = NodePath(path);
+            node.data_ptr = data.data();
+            node.stats.data_size = static_cast<uint32_t>(data.size());
+            writer.appendNode(node);
+            writer.finishFileIfBigEnough();
+        }
+
+        /// Several files were finished and written to disk, in addition to the info file.
+        EXPECT_GT(countDiskFiles(data_disk), 1u);
+
+        /// The writer is destroyed without finish(), as if the flush failed.
+    }
+
+    /// Wake up a flush thread; it drains the file delete queue before looking for work.
+    storage.background->maybeStartFlush();
+
+    size_t files_on_disk = 0;
+    for (int attempt = 0; attempt < 400; ++attempt)
+    {
+        files_on_disk = countDiskFiles(data_disk);
+        if (files_on_disk == 1)
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    EXPECT_EQ(files_on_disk, 1u); // only the info file survives
+    EXPECT_TRUE(data_disk->existsFile("info"));
 
     storage.shutdown();
 }
