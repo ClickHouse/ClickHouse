@@ -47,6 +47,9 @@ source trailing construction settings are rejected
 0
 session construction settings are rejected in returning
 1
+session construction settings reset to default is accepted
+1
+1
 source custom setting does not leak into returning
 unset
 1

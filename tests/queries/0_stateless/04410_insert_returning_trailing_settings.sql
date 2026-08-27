@@ -124,6 +124,17 @@ SET limit = DEFAULT;
 
 SELECT count() FROM t_ret_settings;
 
+-- Explicit reset to neutral construction values must stay accepted.
+SELECT 'session construction settings reset to default is accepted';
+TRUNCATE TABLE t_ret_settings;
+SET limit = 2;
+SET limit = 0;
+INSERT INTO t_ret_settings SELECT 1
+RETURNING (SELECT count() FROM t_ret_settings);
+SET limit = DEFAULT;
+
+SELECT count() FROM t_ret_settings;
+
 -- Source-only custom settings must not leak into RETURNING settings context.
 SELECT 'source custom setting does not leak into returning';
 TRUNCATE TABLE t_ret_settings;

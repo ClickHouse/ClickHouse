@@ -24,7 +24,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
-#include <array>
 #include <functional>
 #include <string_view>
 #include <unordered_set>
@@ -41,6 +40,13 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsString filter;
+    extern const SettingsDouble limit;
+    extern const SettingsDouble offset;
+    extern const SettingsString order;
+    extern const SettingsDouble page;
+    extern const SettingsString select;
+    extern const SettingsString sort;
     extern const SettingsBool use_query_cache;
 }
 
@@ -92,19 +98,39 @@ namespace
 
         /// The delayed RETURNING path does not run the query-construction rewriting pipeline
         /// (`applyQueryConstructionSettings` / `wrapNestedConstructionSettings`). For standalone
-        /// `SELECT`, these settings shape the result, so inherited non-default values (session/profile/
-        /// outer query context) must be rejected fail-close here.
-        static constexpr std::array<std::string_view, 7> unsupported_construction_settings = {
-            "select", "filter", "order", "sort", "limit", "offset", "page"};
-
-        for (const auto setting_name : unsupported_construction_settings)
-        {
-            if (settings.isChanged(setting_name))
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Setting '{}' is not supported for INSERT ... RETURNING because delayed RETURNING does not apply query-construction rewrites",
-                    setting_name);
-        }
+        /// `SELECT`, these settings shape the result, so inherited non-default effective values
+        /// (session/profile/outer query context) must be rejected fail-close here.
+        ///
+        /// Check the effective value, not only the `changed` bit, so explicit resets to neutral
+        /// values like `SET limit = 0` or `SET filter = ''` remain accepted.
+        if (!settings[Setting::select].empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'select' is not supported for INSERT ... RETURNING because delayed RETURNING does not apply query-construction rewrites");
+        if (!settings[Setting::filter].empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'filter' is not supported for INSERT ... RETURNING because delayed RETURNING does not apply query-construction rewrites");
+        if (!settings[Setting::order].empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'order' is not supported for INSERT ... RETURNING because delayed RETURNING does not apply query-construction rewrites");
+        if (!settings[Setting::sort].empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'sort' is not supported for INSERT ... RETURNING because delayed RETURNING does not apply query-construction rewrites");
+        if (settings[Setting::limit] != 0)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'limit' is not supported for INSERT ... RETURNING because delayed RETURNING does not apply query-construction rewrites");
+        if (settings[Setting::offset] != 0)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'offset' is not supported for INSERT ... RETURNING because delayed RETURNING does not apply query-construction rewrites");
+        if (settings[Setting::page] != 0)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'page' is not supported for INSERT ... RETURNING because delayed RETURNING does not apply query-construction rewrites");
     }
 
     /// The INSERT and RETURNING phases share one query, one `ProcessListElement`, one thread-group `MemoryTracker`,
