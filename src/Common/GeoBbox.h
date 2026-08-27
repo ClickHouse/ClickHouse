@@ -21,10 +21,12 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
@@ -514,6 +516,55 @@ inline const IDataType & unwrapGeoKindWrappers(const IDataType & type)
     return *inner;
 }
 
+/// The geometry kind an UNNAMED type resolves to, structurally, exactly as `callOnGeometryDataType`
+/// does: it compares the type with `IDataType::equals`, which ignores custom names, so a raw
+/// `Tuple(Float64, Float64)` is read as a `Point`, `Array(Tuple(Float64, Float64))` as a `Ring`, and
+/// one more `Array` level each as a `Polygon` and a `MultiPolygon`. `geoKindNameOfType` reports no
+/// kind for those types -- they carry no custom name -- yet the overload built for them at execution
+/// time is perfectly well determined, so the predicate can be asked about it after all. Without
+/// this, every unnamed `Dynamic`/`Variant` alternative had to be treated as an unknown kind and fail
+/// closed, which cost pruning for queries that are guaranteed not to raise, e.g.
+/// `pointInPolygon(CAST((0., 0.), 'Tuple(Float64, Float64)')::Dynamic, indexed_polygon_column)`.
+/// Returns an empty name for anything that is not one of those shapes (`Ring`/`LineString` and
+/// `Polygon`/`MultiLineString` are told apart only by a custom name, which by construction is absent
+/// here, and `callOnGeometryDataType` resolves the unnamed shapes to `Ring`/`Polygon`).
+inline std::string_view structuralGeoKindName(const IDataType & type)
+{
+    const IDataType * inner = &unwrapGeoKindWrappers(type);
+    if (inner->getCustomName())
+        return {};
+
+    /// `Point`, `Ring`, `Polygon`, `MultiPolygon` -- one `Array` level apart each.
+    static constexpr std::array kind_names = {"Point", "Ring", "Polygon", "MultiPolygon"};
+    size_t depth = 0;
+    while (const auto * array_type = typeid_cast<const DataTypeArray *>(inner))
+    {
+        if (++depth >= kind_names.size())
+            return {};
+        inner = &unwrapGeoKindWrappers(*array_type->getNestedType());
+    }
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(inner);
+    if (!tuple_type || tuple_type->hasExplicitNames() || tuple_type->getElements().size() != 2)
+        return {};
+    for (const auto & element : tuple_type->getElements())
+        if (!WhichDataType(*element).isFloat64())
+            return {};
+
+    return kind_names[depth];
+}
+
+/// Whether the predicate rejects `type` at `arg_index` when `type` carries no kind name of its own:
+/// by the structural kind it resolves to, if it resolves to one at all, and only otherwise by the
+/// blanket "rejects any kind" test.
+inline bool rejectsUnnamedGeometryType(const IDataType & type, const IFunctionBase & function, size_t arg_index)
+{
+    const auto structural_kind_name = structuralGeoKindName(type);
+    if (!structural_kind_name.empty())
+        return function.rejectsColumnGeometryKind(structural_kind_name, arg_index);
+    return rejectsAnyGeometryKind(function, arg_index);
+}
+
 /// Whether `type` resolves its geometry kind only at execution time -- a `Dynamic`, or a `Variant`
 /// (`Geometry` is a `Variant` over the geometry kinds).
 inline bool isDeferredGeometryKindType(const IDataType & type)
@@ -534,7 +585,9 @@ inline bool hasDeferredGeometryKindRejection(const IDataType & type, const IFunc
         {
             const auto kind_name = geoKindNameOfType(*alternative);
             /// An unnamed alternative is an unknown kind, not an absent one: see the note above.
-            if (kind_name.empty() ? GeoBboxDetail::rejectsAnyGeometryKind(function, arg_index)
+            /// It is unknown only where it does not resolve structurally, though -- see
+            /// `structuralGeoKindName`.
+            if (kind_name.empty() ? GeoBboxDetail::rejectsUnnamedGeometryType(*alternative, function, arg_index)
                                   : function.rejectsColumnGeometryKind(kind_name, arg_index))
                 return true;
         }
@@ -550,15 +603,18 @@ inline bool hasDeferredGeometryKindRejection(const IDataType & type, const IFunc
     return false;
 }
 
-inline std::string constGeoKindName(const ActionsDAG::Node & node)
+/// The concrete type actually stored in a constant `Dynamic`/`Variant` node's single row -- the
+/// alternative whose overload will be built at execution time. Returns `nullptr` when the node is
+/// not such a constant, or when the stored alternative cannot be determined.
+inline DataTypePtr constGeoStoredType(const ActionsDAG::Node & node)
 {
+    if (!node.result_type)
+        return nullptr;
+
     const auto * variant_type = typeid_cast<const DataTypeVariant *>(node.result_type.get());
     const auto * dynamic_type = variant_type ? nullptr : typeid_cast<const DataTypeDynamic *>(node.result_type.get());
-    if (!variant_type && !dynamic_type)
-        return geoKindNameOfType(*node.result_type);
-
-    if (!node.column)
-        return {};
+    if ((!variant_type && !dynamic_type) || !node.column)
+        return nullptr;
 
     const IColumn * data_col = node.column.get();
     if (const auto * const_col = typeid_cast<const ColumnConst *>(data_col))
@@ -568,24 +624,31 @@ inline std::string constGeoKindName(const ActionsDAG::Node & node)
     {
         const auto * dynamic_col = typeid_cast<const ColumnDynamic *>(data_col);
         if (!dynamic_col || dynamic_col->size() != 1)
-            return {};
+            return nullptr;
 
-        const auto row_type = dynamic_col->getTypeAt(0);
-        if (!row_type)
-            return {};
-
-        return geoKindNameOfType(*row_type);
+        return dynamic_col->getTypeAt(0);
     }
 
     const auto * variant_col = typeid_cast<const ColumnVariant *>(data_col);
     if (!variant_col || variant_col->size() != 1)
-        return {};
+        return nullptr;
 
     const auto discr = variant_col->globalDiscriminatorAt(0);
     if (discr == ColumnVariant::NULL_DISCRIMINATOR || discr >= variant_type->getVariants().size())
-        return {};
+        return nullptr;
 
-    return geoKindNameOfType(*variant_type->getVariants()[discr]);
+    return variant_type->getVariants()[discr];
+}
+
+inline std::string constGeoKindName(const ActionsDAG::Node & node)
+{
+    const auto stored_type = constGeoStoredType(node);
+    if (stored_type)
+        return geoKindNameOfType(*stored_type);
+    if (typeid_cast<const DataTypeVariant *>(node.result_type.get())
+        || typeid_cast<const DataTypeDynamic *>(node.result_type.get()))
+        return {};
+    return geoKindNameOfType(*node.result_type);
 }
 
 /// Extract the (single) `Field` value of a constant `ActionsDAG` `COLUMN` node, for combining
@@ -738,11 +801,22 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         /// per-row overload `ExecutableFunctionDynamicAdaptor`/`ExecutableFunctionVariantAdaptor`
         /// builds resolves that same tuple as a `Point` through `callOnGeometryDataType` and raises.
         /// Pruned away by a sibling conjunct, that exception never surfaces. Fail closed instead.
-        if (kind_name.empty() && child->result_type && GeoBboxDetail::isDeferredGeometryKindType(*child->result_type)
-            && GeoBboxDetail::rejectsAnyGeometryKind(*node.function_base, this_arg_index))
+        /// Unless the stored alternative resolves structurally after all -- `constGeoStoredType`
+        /// gives the concrete type whose overload will be built, and `structuralGeoKindName` reads
+        /// the raw tuple as a `Point` exactly as `callOnGeometryDataType` does -- in which case the
+        /// predicate can be asked about that kind directly, and only a kind it rejects at this
+        /// position fails closed.
+        if (kind_name.empty() && child->result_type && GeoBboxDetail::isDeferredGeometryKindType(*child->result_type))
         {
-            any_deferred_kind_rejection = true;
-            continue;
+            const auto stored_type = constGeoStoredType(*child);
+            const bool rejected = stored_type
+                ? GeoBboxDetail::rejectsUnnamedGeometryType(*stored_type, *node.function_base, this_arg_index)
+                : GeoBboxDetail::rejectsAnyGeometryKind(*node.function_base, this_arg_index);
+            if (rejected)
+            {
+                any_deferred_kind_rejection = true;
+                continue;
+            }
         }
 
         const_fields.push_back({this_arg_index, std::move(field)});
