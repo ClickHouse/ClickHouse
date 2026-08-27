@@ -113,8 +113,14 @@ public:
 
     bool hasPartitions() const { return !partition_by_description.empty(); }
     const SortDescription & getPartitionByDescription() const { return partition_by_description; }
+    Names getPartitionByColumnNames() const;
 
     size_t getScatterPartitions() const { return scatter_partitions; }
+
+    /// Do not reshuffle the input by the hash of the partition columns before sorting: the input streams
+    /// already carry disjoint sets of the partition key values, so sorting each stream independently is
+    /// enough to keep every partition contiguous and sorted.
+    void skipScatterByPartition() { skip_scatter_by_partition = true; }
 
     bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
 
@@ -216,6 +222,7 @@ private:
     /// When > 0, `scatterByPartitionIfNeeded` scatters into exactly this many partitions (instead of the
     /// pipeline's thread count), so both sides of a hash-sharded merge join get the same shard count.
     size_t scatter_partitions = 0;
+    bool skip_scatter_by_partition = false;
 
     /// See `findQueryForParallelReplicas`
     bool is_sorting_for_merge_join = false;
