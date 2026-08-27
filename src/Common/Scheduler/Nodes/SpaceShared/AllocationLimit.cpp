@@ -86,14 +86,18 @@ void AllocationLimit::approveIncrease()
 {
     SCHED_DBG("{} -- approveIncrease({})", getPath(), increase->allocation.id);
     chassert(increase);
+    chassert(increase->approval_epoch > 0);
     if (increase == suspended_growth)
         clearMemoryGrowthSuspension();
-    else if (suspended_growth && increase->allocation.allocated == 0)
+    else if (suspended_growth
+        && increase->allocation.last_increase_approval_epoch <= memory_growth_suspension_start_epoch)
     {
-        /// A zero-sized allocation became productive while growth was parked. Positive allocations
-        /// already belonged to the suspension's active set, including fitting regular winners.
+        /// This allocation made its first approved progress during the current suspension.
+        /// The approval epoch is written to the allocation only at the leaf, after every stacked
+        /// limit has independently observed the previous value.
         ++memory_growth_suspension_beneficiaries;
     }
+    last_seen_approval_epoch = increase->approval_epoch;
     apply(*increase);
     increase = nullptr;
     child->approveIncrease();
@@ -114,7 +118,8 @@ void AllocationLimit::approveDecrease()
     const bool beneficiary_became_inactive = suspended_growth
         && &decreased_allocation != &suspended_growth->allocation
         && decrease->size > 0
-        && decrease->size == decreased_allocation.allocated;
+        && decrease->size == decreased_allocation.allocated
+        && decreased_allocation.last_increase_approval_epoch > memory_growth_suspension_start_epoch;
 
     // Check if allocation being killed released all its resources
     if (&decrease->allocation == allocation_to_kill && decrease->removing_allocation)
@@ -176,6 +181,7 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
         allocation_to_kill = nullptr;
         suspended_growth = nullptr;
         suspended_growth_retry_pending = false;
+        memory_growth_suspension_start_epoch = 0;
         memory_growth_suspension_beneficiaries = 0;
         reapply_constraint = true;
     }
@@ -258,12 +264,11 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                     if (suspended)
                     {
                         suspended_growth = new_increase;
-                        /// Every other allocation already holding resources can make progress and
-                        /// release memory. Count them without per-limit pointer bookkeeping, which
-                        /// remains correct when AllocationLimits are stacked.
-                        const size_t suspended_is_active = new_increase->allocation.allocated > 0 ? 1 : 0;
-                        chassert(active_allocations >= suspended_is_active);
-                        memory_growth_suspension_beneficiaries = active_allocations - suspended_is_active;
+                        /// Only allocations whose requests are approved after this point are
+                        /// beneficiaries. Existing holders do not postpone the last-resort path merely
+                        /// by staying alive. Approval epochs keep this hierarchy-safe for stacked limits.
+                        memory_growth_suspension_start_epoch = last_seen_approval_epoch;
+                        memory_growth_suspension_beneficiaries = 0;
                     }
                 }
                 else if (new_increase == suspended_growth)
@@ -312,6 +317,7 @@ void AllocationLimit::clearMemoryGrowthSuspension()
 {
     suspended_growth = nullptr;
     suspended_growth_retry_pending = false;
+    memory_growth_suspension_start_epoch = 0;
     memory_growth_suspension_beneficiaries = 0;
     if (child)
         child->retrySuspendedIncreases();
