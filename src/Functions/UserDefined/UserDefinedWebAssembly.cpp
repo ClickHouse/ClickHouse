@@ -1015,18 +1015,24 @@ private:
         return total + perBatchWireOverhead(arguments);
     }
 
-    /// Fixed per-batch structural bytes the wire adds on top of the column payload, independent
-    /// of the row count. `ColumnBinary` writes a frame header plus one descriptor per column
-    /// before any data (see ColumnBinaryOutputFormat::precomputeSerializedSize), which the
-    /// per-column estimates above do not model at all: a 1000-column, 1-row `UInt8` block is
-    /// about 1000 bytes of payload but over 40 KB on the wire, so omitting this lets the
-    /// splitter skip a needed split and then fail allocating a batch larger than `input_budget`.
-    /// The other supported formats are row-oriented and carry no such per-batch schema block.
+    /// Fixed per-batch structural bytes the block-based wires add on top of the column payload,
+    /// independent of the row count. The per-column estimates above do not model them at all,
+    /// so omitting them lets the splitter skip a needed split on a wide block and then fail
+    /// allocating a batch larger than `input_budget`. The remaining supported formats are
+    /// row-oriented and carry no such per-batch block.
     size_t perBatchWireOverhead(const ColumnsWithTypeAndName & arguments) const
     {
-        if (buffered_serialization_format != "ColumnBinary")
-            return 0;
-        return ColumnBinaryWire::FRAME_HEADER_BYTES + arguments.size() * ColumnBinaryWire::COL_DESC_BYTES;
+        const String & format = buffered_serialization_format;
+        /// A frame header plus one descriptor per column precede any data; see
+        /// ColumnBinaryOutputFormat::precomputeSerializedSize. A 1000-column, 1-row `UInt8`
+        /// block is about 1000 bytes of payload but over 40 KB on the wire.
+        if (format == "ColumnBinary")
+            return ColumnBinaryWire::FRAME_HEADER_BYTES + arguments.size() * ColumnBinaryWire::COL_DESC_BYTES;
+        /// BuffersWriter::write emits two uint64 block fields (column count, row count) and
+        /// then one uint64 byte-size prefix per column before that column's payload.
+        if (format == "Buffers")
+            return 2 * sizeof(uint64_t) + arguments.size() * sizeof(uint64_t);
+        return 0;
     }
 
     /// Recursively estimate the serialized byte size of a single row of a COL_COMPLEX-shaped
