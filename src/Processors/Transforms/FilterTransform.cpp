@@ -51,13 +51,12 @@ auto incrementProfileEvents = [](size_t num_rows, const Columns & columns)
     ProfileEvents::increment(ProfileEvents::FilterTransformPassedBytes, num_bytes);
 };
 
-Block FilterTransform::transformHeader(
-    const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column)
+/// The part of transformHeader after the expression: validate the filter column type
+/// and remove the filter column if requested.
+static Block checkAndRemoveFilterColumn(Block result, const String & filter_column_name, bool remove_filter_column)
 {
-    Block result = expression ? expression->updateHeader(header) : header;
-
     auto filter_type = result.getByName(filter_column_name).type;
-    if (!canUseType(filter_type))
+    if (!FilterTransform::canUseType(filter_type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Illegal type {} of column {} for filter. Must be native integer or float type",
             filter_type->getName(), filter_column_name);
@@ -66,6 +65,15 @@ Block FilterTransform::transformHeader(
         result.erase(filter_column_name);
 
     return result;
+}
+
+Block FilterTransform::transformHeader(
+    const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column)
+{
+    /// updateHeader (dry-run evaluation) correctly handles constant propagation,
+    /// unlike expression->execute() which would fail with not-ready sets.
+    return checkAndRemoveFilterColumn(
+        expression ? expression->updateHeader(header) : header, filter_column_name, remove_filter_column);
 }
 
 FilterTransform::FilterTransform(
@@ -77,9 +85,33 @@ FilterTransform::FilterTransform(
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
     std::optional<std::pair<UInt64, String>> condition_,
     bool update_row_numbers_info_)
+    : FilterTransform(
+            header_,
+            std::make_shared<const Block>(expression_ ? expression_->getActionsDAG().updateHeader(*header_) : *header_),
+            expression_, /// Deliberately a copy, not a move: the previous argument reads expression_,
+                         /// and the evaluation order of arguments is unspecified.
+            std::move(filter_column_name_),
+            remove_filter_column_,
+            on_totals_,
+            std::move(rows_filtered_),
+            std::move(condition_),
+            update_row_numbers_info_)
+{
+}
+
+FilterTransform::FilterTransform(
+    SharedHeader header_,
+    SharedHeader transformed_header_,
+    ExpressionActionsPtr expression_,
+    String filter_column_name_,
+    bool remove_filter_column_,
+    bool on_totals_,
+    std::shared_ptr<std::atomic<size_t>> rows_filtered_,
+    std::optional<std::pair<UInt64, String>> condition_,
+    bool update_row_numbers_info_)
     : ISimpleTransform(
             header_,
-            std::make_shared<const Block>(transformHeader(*header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_)),
+            std::make_shared<const Block>(checkAndRemoveFilterColumn(*transformed_header_, filter_column_name_, remove_filter_column_)),
             true)
     , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))
@@ -88,13 +120,8 @@ FilterTransform::FilterTransform(
     , update_row_numbers_info(update_row_numbers_info_)
     , rows_filtered(rows_filtered_)
     , condition(condition_)
+    , transformed_header(*transformed_header_)
 {
-    /// Use transformHeader (which calls ActionsDAG::updateHeader) to compute the header.
-    /// This correctly handles constant propagation through dry-run evaluation,
-    /// unlike expression->execute() which would fail with not-ready sets.
-    const auto * dag = expression ? &expression->getActionsDAG() : nullptr;
-    transformed_header = transformHeader(getInputPort().getHeader(), dag, filter_column_name, /*remove_filter_column=*/false);
-
     if (expression)
     {
         /// Special check to stop queries like "WHERE ignore(...)"
