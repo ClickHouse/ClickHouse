@@ -20,6 +20,8 @@ NamesAndTypes getTimeSeriesHistogramPayloadColumns()
 {
     auto float64 = std::make_shared<DataTypeFloat64>();
     auto float64_array = std::make_shared<DataTypeArray>(float64);
+    auto uint64 = std::make_shared<DataTypeUInt64>();
+    auto uint64_array = std::make_shared<DataTypeArray>(uint64);
     auto spans = getTimeSeriesHistogramSpansType();
 
     return NamesAndTypes{
@@ -34,6 +36,10 @@ NamesAndTypes getTimeSeriesHistogramPayloadColumns()
         {TimeSeriesColumnNames::NegativeSpans, spans},
         {TimeSeriesColumnNames::NegativeValues, float64_array},
         {TimeSeriesColumnNames::CustomValues, float64_array},
+        {TimeSeriesColumnNames::CountInt, uint64},
+        {TimeSeriesColumnNames::ZeroCountInt, uint64},
+        {TimeSeriesColumnNames::PositiveValuesInt, uint64_array},
+        {TimeSeriesColumnNames::NegativeValuesInt, uint64_array},
     };
 }
 

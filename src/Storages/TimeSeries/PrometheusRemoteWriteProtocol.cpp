@@ -99,20 +99,11 @@ size_t getTotalSpanLength(const google::protobuf::RepeatedPtrField<prometheus::B
     return total;
 }
 
-/// Counts of the integer flavor are stored in a Float64 column, which represents every integer up to
-/// 2^53 exactly. Reject anything above rather than let the round trip quietly return a rounded count.
-constexpr UInt64 MAX_EXACT_INTEGER_COUNT = 1ULL << 53;
-
-void checkIntegerCountIsExact(UInt64 count, std::string_view what)
-{
-    if (count > MAX_EXACT_INTEGER_COUNT)
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Native histogram has an integer {} of {}, which is above the largest value ({}) that can be "
-            "stored without losing precision", what, count, MAX_EXACT_INTEGER_COUNT);
-}
-
 /// Appends decoded bucket values (absolute counts) of one direction of a native histogram.
 /// Int histograms carry deltas which are decoded to absolutes here; float histograms carry absolutes.
+/// The absolute counts are also appended verbatim to `out_int_values`, which provides an exact
+/// carrier for integers above 2^53 (where Float64 loses precision); that column stays empty
+/// for the rows of float histograms, whose counts are fractional by design.
 void appendHistogramBuckets(
     const google::protobuf::RepeatedPtrField<prometheus::BucketSpan> & spans,
     const google::protobuf::RepeatedField<Int64> & deltas,
@@ -123,7 +114,9 @@ void appendHistogramBuckets(
     ColumnUInt32 & out_span_lengths,
     ColumnArray::ColumnOffsets & out_spans_offsets,
     ColumnFloat64 & out_values,
-    ColumnArray::ColumnOffsets & out_values_offsets)
+    ColumnArray::ColumnOffsets & out_values_offsets,
+    ColumnUInt64 & out_int_values,
+    ColumnArray::ColumnOffsets & out_int_values_offsets)
 {
     size_t total_span_length = getTotalSpanLength(spans, what);
     size_t num_values = is_float ? counts.size() : deltas.size();
@@ -163,11 +156,12 @@ void appendHistogramBuckets(
             if (running < 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Native histogram has a negative {} bucket count after delta decoding: {}", what, running);
-            checkIntegerCountIsExact(static_cast<UInt64>(running), fmt::format("{} bucket count", what));
             out_values.insertValue(static_cast<Float64>(running));
+            out_int_values.insertValue(static_cast<UInt64>(running));
         }
     }
     out_values_offsets.insertValue(out_values.size());
+    out_int_values_offsets.insertValue(out_int_values.size());
 }
 
 /// Returns true if `value` carries the Prometheus stale-marker NaN payload.
@@ -195,6 +189,10 @@ ColumnPtr makeHistogramsColumn(
     auto sums = ColumnFloat64::create();
     auto zero_counts = ColumnFloat64::create();
 
+    /// Exact integer carriers of the counts of an integer-flavor histogram; see TimeSeriesHistogramsTupleIndex.
+    auto counts_int = ColumnUInt64::create();
+    auto zero_counts_int = ColumnUInt64::create();
+
     auto make_spans_column = []
     {
         return std::tuple{ColumnInt32::create(), ColumnUInt32::create(), ColumnArray::ColumnOffsets::create()};
@@ -207,6 +205,10 @@ ColumnPtr makeHistogramsColumn(
     auto negative_values_offsets = ColumnArray::ColumnOffsets::create();
     auto custom_values = ColumnFloat64::create();
     auto custom_values_offsets = ColumnArray::ColumnOffsets::create();
+    auto positive_int_values = ColumnUInt64::create();
+    auto positive_int_values_offsets = ColumnArray::ColumnOffsets::create();
+    auto negative_int_values = ColumnUInt64::create();
+    auto negative_int_values_offsets = ColumnArray::ColumnOffsets::create();
 
     auto histograms_offsets = ColumnArray::ColumnOffsets::create();
 
@@ -235,12 +237,6 @@ ColumnPtr makeHistogramsColumn(
                     "Native histogram is an integer histogram but carries float bucket counts");
 
             insertTimestamp(histogram.timestamp(), timestamp_scale, *timestamps);
-
-            if (!is_float)
-            {
-                checkIntegerCountIsExact(histogram.count_int(), "count");
-                checkIntegerCountIsExact(histogram.zero_count_int(), "zero count");
-            }
 
             Float64 count = is_float ? histogram.count_float() : static_cast<Float64>(histogram.count_int());
             Float64 zero_count = is_float ? histogram.zero_count_float() : static_cast<Float64>(histogram.zero_count_int());
@@ -274,14 +270,20 @@ ColumnPtr makeHistogramsColumn(
             sums->insertValue(sum);
             zero_counts->insertValue(zero_count);
 
+            /// The exact carriers stay zero/empty for float histograms: their counts are not integers.
+            counts_int->insertValue(is_float ? 0 : histogram.count_int());
+            zero_counts_int->insertValue(is_float ? 0 : histogram.zero_count_int());
+
             appendHistogramBuckets(
                 histogram.positive_spans(), histogram.positive_deltas(), histogram.positive_counts(), is_float, "positive",
                 *positive_span_offsets, *positive_span_lengths, *positive_spans_offsets,
-                *positive_values, *positive_values_offsets);
+                *positive_values, *positive_values_offsets,
+                *positive_int_values, *positive_int_values_offsets);
             appendHistogramBuckets(
                 histogram.negative_spans(), histogram.negative_deltas(), histogram.negative_counts(), is_float, "negative",
                 *negative_span_offsets, *negative_span_lengths, *negative_spans_offsets,
-                *negative_values, *negative_values_offsets);
+                *negative_values, *negative_values_offsets,
+                *negative_int_values, *negative_int_values_offsets);
 
             for (double custom_value : histogram.custom_values())
                 custom_values->insertValue(custom_value);
@@ -322,6 +324,12 @@ ColumnPtr makeHistogramsColumn(
         = ColumnArray::create(std::move(negative_values), std::move(negative_values_offsets));
     tuple_columns[TimeSeriesHistogramsTupleIndex::CustomValues]
         = ColumnArray::create(std::move(custom_values), std::move(custom_values_offsets));
+    tuple_columns[TimeSeriesHistogramsTupleIndex::CountInt] = std::move(counts_int);
+    tuple_columns[TimeSeriesHistogramsTupleIndex::ZeroCountInt] = std::move(zero_counts_int);
+    tuple_columns[TimeSeriesHistogramsTupleIndex::PositiveValuesInt]
+        = ColumnArray::create(std::move(positive_int_values), std::move(positive_int_values_offsets));
+    tuple_columns[TimeSeriesHistogramsTupleIndex::NegativeValuesInt]
+        = ColumnArray::create(std::move(negative_int_values), std::move(negative_int_values_offsets));
 
     out_num_histograms = num_histograms;
     return ColumnArray::create(ColumnTuple::create(std::move(tuple_columns)), std::move(histograms_offsets));

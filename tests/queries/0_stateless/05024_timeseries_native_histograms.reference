@@ -4,7 +4,7 @@
 -- a pre-histogram definition survives DETACH/ATTACH unchanged
 0
 -- store_native_histograms = 1 creates the histograms target and the outer column
-Array(Tuple(timestamp DateTime64(3), flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64)))
+Array(Tuple(timestamp DateTime64(3), flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64), count_int UInt64, zero_count_int UInt64, positive_values_int Array(UInt64), negative_values_int Array(UInt64)))
 1
 -- the inner histograms table schema
 id	Tuple(UInt64, UUID)
@@ -20,11 +20,15 @@ positive_values	Array(Float64)
 negative_spans	Array(Tuple(offset Int32, length UInt32))
 negative_values	Array(Float64)
 custom_values	Array(Float64)
+count_int	UInt64
+zero_count_int	UInt64
+positive_values_int	Array(UInt64)
+negative_values_int	Array(UInt64)
 MergeTree	id, timestamp
 0
 -- INSERT through the outer histograms column, read back via timeSeriesHistograms()
-2024-01-01 00:00:01.000	0	3	0.001	10	25.5	2	[(0,2),(1,1)]	[3,2,3]	[]	[]	[]
-2024-01-01 00:00:02.000	1	-53	0	6.5	12.25	0	[(0,2)]	[4.5,2]	[]	[]	[0.1,0.5]
+2024-01-01 00:00:01.000	0	3	0.001	10	25.5	2	[(0,2),(1,1)]	[3,2,3]	[]	[]	[]	10	2	[3,2,3]	[2]
+2024-01-01 00:00:02.000	1	-53	0	6.5	12.25	0	[(0,2)]	[4.5,2]	[]	[]	[0.1,0.5]	0	0	[]	[]
 -- histogram rows share the series id with the tags table
 test_histogram_seconds	test	2
 -- min_time and max_time in the tags table come from histogram timestamps too
