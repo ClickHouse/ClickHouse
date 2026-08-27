@@ -1198,6 +1198,13 @@ void WorkloadEntityStorageBase::restoreEntitiesAccumulatedFromBackup(
     /// `system.workloads` while a workload depends on a SQL-defined RESOURCE -- resources are not pulled into a
     /// workloads-only backup, so the two system tables must be backed up and restored together. Fail early with
     /// a clear, actionable message before creating anything.
+    ///
+    /// Only for non-replicated storage, where the in-memory maps are the authoritative single-node state. On
+    /// replicated (Keeper-backed) storage the local caches can lag Keeper until a watch fires, so this
+    /// pre-check could wrongly reject a dependency that is actually committed; there we leave `storeEntity` to
+    /// enforce references as before. Validating the replicated path against authoritative Keeper state is a
+    /// separate change.
+    if (!isReplicated())
     {
         std::lock_guard lock{mutex};
         for (const auto & entry : to_restore)
