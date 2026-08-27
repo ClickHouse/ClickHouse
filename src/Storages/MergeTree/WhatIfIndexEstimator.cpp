@@ -83,7 +83,9 @@ StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & contex
     return joined_tables.getLeftTableStorage();
 }
 
-/// projections are stored but not estimated yet, so report them instead of dropping them
+/// projections are stored but not estimated yet, so report them instead of dropping them.
+/// whoever adds the estimate must also require SELECT on the projection's columns, the way
+/// evaluateIndex does, since it will read them
 void appendProjectionCandidates(
     WhatIfResult & result, const HypotheticalObjectStore & store, const MergeTreeData & data, const ContextPtr & context)
 {

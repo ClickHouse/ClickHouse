@@ -99,11 +99,6 @@ BlockIO createHypotheticalProjection(
     auto projection_desc = ProjectionDescription::getProjectionFromAST(
         query.projection_decl, metadata->getColumns(), &metadata->partition_key, context, LoadingStrictnessLevel::CREATE);
 
-    /// Estimation reads the projection's source columns, so require column-level SELECT, otherwise
-    /// a user with table-level access could infer a restricted column's distribution
-    if (!projection_desc.required_columns.empty())
-        context->checkAccess(AccessType::SELECT, table_id, projection_desc.required_columns);
-
     /// run the engine's own ADD PROJECTION validation rather than copying its checks, so a
     /// definition that could not be materialized is rejected here too
     checkProjectionIsAddable(merge_tree, metadata, query, context);

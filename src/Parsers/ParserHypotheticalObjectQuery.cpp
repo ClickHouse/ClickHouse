@@ -310,7 +310,7 @@ Hypothetical projections are virtual, session-scoped projections that you can at
 
 ```sql
 CREATE HYPOTHETICAL PROJECTION [IF NOT EXISTS] name
-    ON [db.]table_name (SELECT <columns> [GROUP BY ...] [ORDER BY ...]) [WITH SETTINGS (...)]
+    ON [db.]table_name (SELECT <columns> [WHERE ...] [GROUP BY ...] [ORDER BY ...]) [WITH SETTINGS (...)]
 
 CREATE HYPOTHETICAL PROJECTION [IF NOT EXISTS] name
     ON [db.]table_name INDEX <expression> TYPE <projection_index_type> [WITH SETTINGS (...)]
@@ -319,7 +319,7 @@ CREATE HYPOTHETICAL PROJECTION [IF NOT EXISTS] name
 The syntax mirrors `ALTER TABLE ... ADD PROJECTION`, and the definition is validated exactly the same way, so a projection rejected here could not have been materialized either. Nothing is built or written — only the description is stored, in the current session.
 
 - `name` — projection name; must be unique within `(database, table)` for this session, and must not collide with a real projection on the table.
-- The body accepts the same forms as a real projection: a reordering projection with `ORDER BY`, an aggregating one with `GROUP BY`, or the projection-index form `INDEX <expression> TYPE <projection_index_type>`.
+- The body accepts the same forms as a real projection: a reordering projection with `ORDER BY`, an aggregating one with `GROUP BY`, a filtered one with `WHERE`, or the projection-index form `INDEX <expression> TYPE <projection_index_type>`.
 - `WITH SETTINGS (...)` is accepted and preserved; the settings are visible in `system.hypothetical_projections`.
 
 The target table must be a `MergeTree` family table in an `Atomic` database (it must have a UUID), because the session store keys entries by table UUID. The restrictions a real `ADD PROJECTION` enforces apply here too: tables with `UNIQUE KEY`, non-`Ordinary` merging modes under `deduplicate_merge_projection_mode = throw`, old-syntax `MergeTree`, and immutable disks are rejected.
@@ -367,7 +367,7 @@ Clears every hypothetical projection defined in the current session, regardless 
 - [Projections](/reference/engines/table-engines/mergetree-family/mergetree#projections)
 )DOCS_MD",
         .syntax = R"(
-CREATE HYPOTHETICAL PROJECTION [IF NOT EXISTS] name ON [db.]table_name (SELECT ...) [WITH SETTINGS (...)]
+CREATE HYPOTHETICAL PROJECTION [IF NOT EXISTS] name ON [db.]table_name (SELECT ... [WHERE ...]) [WITH SETTINGS (...)]
 CREATE HYPOTHETICAL PROJECTION [IF NOT EXISTS] name ON [db.]table_name INDEX expression TYPE type [WITH SETTINGS (...)]
 DROP HYPOTHETICAL PROJECTION [IF EXISTS] name ON [db.]table_name
 DROP ALL HYPOTHETICAL PROJECTIONS
