@@ -45,6 +45,7 @@ SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_pl
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_force_exchange_kind = 'Streaming',
     max_block_size = 1000, max_threads = 2, join_algorithm = 'hash',
     query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
+    query_plan_optimize_join_order_algorithm = 'greedy',
     min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, max_rows_to_group_by = 0, max_execution_time = 25;
 
 DROP TABLE t_dp_idle_sink;
