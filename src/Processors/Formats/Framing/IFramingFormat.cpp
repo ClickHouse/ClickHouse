@@ -193,8 +193,11 @@ void IFramingFormat::extractAndWritePayload(FramedPacketKind kind)
 
     /// `payload.str()` finalized the buffer, so it has to be restarted for the output format to write
     /// into it again - also when there was nothing to write, in which case nothing was emitted and the
-    /// fail-close window below is not needed.
-    if (data.empty())
+    /// fail-close window below is not needed. A `preview` packet is the exception: every preview
+    /// replaces the previous one, so a preview whose document is empty (the intermediate result is
+    /// currently empty, e.g. `HAVING` filtered every row out) still has to be delivered, as an empty
+    /// packet - dropping it would leave the previous, stale preview as the last one the client saw.
+    if (data.empty() && kind != FramedPacketKind::Preview)
     {
         payload.restart(DBMS_DEFAULT_BUFFER_SIZE);
         return;

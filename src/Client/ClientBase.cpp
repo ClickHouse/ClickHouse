@@ -835,11 +835,23 @@ void ClientBase::onPreviewData(Block & block)
     /// below the progress bar and fully replace one another; the region is cleared before any real
     /// output. Non-interactive runs ignore them. The progress table occupies the same band of the
     /// terminal, so previews stay hidden while it is toggled on.
-    if (!is_interactive || !tty_buf || block.rows() == 0)
+    /// Previews precede the result: once the real output has started, a preview is stale and
+    /// rendering it would resurrect rows that the result has already replaced.
+    if (!is_interactive || !tty_buf || written_first_block)
         return;
 
     if (need_render_progress_table && progress_table_toggle_on.load())
         return;
+
+    /// An empty preview says the intermediate result is empty at the moment (e.g. `HAVING`
+    /// filtered every row out); it replaces the previous preview, which has to leave the screen.
+    if (block.rows() == 0)
+    {
+        std::unique_lock lock(tty_mutex);
+        query_result_preview_display.clearPreviewOutput(*tty_buf, lock);
+        query_result_preview_display.resetPreview();
+        return;
+    }
 
     query_result_preview_display.setPreview(block, client_context);
 
@@ -2189,7 +2201,7 @@ void ClientBase::onProfileEvents(Block & block)
         }
         /// The query result preview shares the terminal band below the progress bar with the
         /// progress table and its toggle hint; repaint it on top unless the table is toggled on.
-        if (tty_buf && !cancelled && !(need_render_progress_table && progress_table_toggle_on.load()))
+        if (tty_buf && !cancelled && !written_first_block && !(need_render_progress_table && progress_table_toggle_on.load()))
         {
             std::unique_lock lock(tty_mutex);
             query_result_preview_display.writePreview(*tty_buf, lock);

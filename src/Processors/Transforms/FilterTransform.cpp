@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
+#include <Processors/QueryResultPreview.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
@@ -191,9 +192,17 @@ void FilterTransform::removeFilterIfNeed(Columns & columns) const
 void FilterTransform::transform(Chunk & chunk)
 {
     auto chunk_rows_before = chunk.getNumRows();
+    const bool is_preview = isQueryResultPreview(chunk);
     doTransform(chunk);
     if (rows_filtered)
         *rows_filtered += chunk_rows_before - chunk.getNumRows();
+
+    /// A preview replaces the previous one, so a preview that the filter (e.g. `HAVING`) empties
+    /// has to be delivered as well - dropping it would leave the previous, stale rows on the
+    /// screen. `ISimpleTransform` skips a chunk without columns, so give the empty preview the
+    /// columns of the output header; the chunk keeps its `QueryResultPreviewInfo`.
+    if (is_preview && !chunk.hasColumns())
+        chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
 }
 
 namespace

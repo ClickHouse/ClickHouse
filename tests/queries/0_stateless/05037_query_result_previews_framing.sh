@@ -105,6 +105,22 @@ print('previews carry their own window maximum' if ok else 'wrong window values 
 "
 echo "${WINDOW_RESPONSE}" | grep '"packet":"data"'
 
+echo '--- a preview emptied by HAVING is still delivered'
+# A preview replaces the previous one, so a preview that `HAVING` empties must arrive as an empty
+# preview instead of being dropped, which would leave the previous rows on the screen.
+HAVING_QUERY="SELECT intDiv(number, 250000) AS k, count() AS c FROM numbers(1000000) GROUP BY k HAVING c > 1000000 ORDER BY k FORMAT JSONCompactEachRow"
+HAVING_RESPONSE=$(${CLICKHOUSE_CURL} -sS "${URL}${BLOCKS}${PREVIEWS}&framing_output_format=JSONEachPacketString" -d "${HAVING_QUERY}")
+HAVING_PREVIEWS=$(echo "${HAVING_RESPONSE}" | grep -c '"packet":"preview"')
+if [ "${HAVING_PREVIEWS}" -ge 1 ]; then echo "has previews"; else echo "no previews: ${HAVING_RESPONSE}"; fi
+echo "${HAVING_RESPONSE}" | grep '"packet":"preview"' | python3 -c "
+import json, sys
+ok = True
+for line in sys.stdin:
+    if json.loads(line)['data'] != '':
+        ok = False
+print('previews are empty' if ok else 'non-empty previews')
+"
+
 echo '--- the state-size threshold in bytes stops previews'
 # `query_result_previews_max_result_bytes` is compared with the memory the aggregation really
 # holds, which for 100000 keys is megabytes - far above the 1 KiB threshold below and far below
