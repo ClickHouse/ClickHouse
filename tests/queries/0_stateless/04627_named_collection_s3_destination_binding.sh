@@ -397,13 +397,14 @@ FORGE_SQL="ATTACH TABLE ${CLICKHOUSE_DATABASE}_mem.forged (a String) ENGINE = S3
 # TabSeparatedRaw: the default JSON envelope escapes the slashes, and the escaped payload then fails
 # upstream with `Host is empty in S3 URI` on both arms.
 flush
+# The flag is never written, so it is inserted ahead of the key that follows it in the payload.
 FORGE_JSON=$(${CLICKHOUSE_CLIENT} --format=TabSeparatedRaw -q \
-    "SELECT replace(parseQueryToJSON('${FORGE_SQL//\'/\\\'}'), '\"attach_short_syntax\":false', '\"attach_short_syntax\":true')")
+    "SELECT replace(parseQueryToJSON('${FORGE_SQL//\'/\\\'}'), '\"replace_table\":false', '\"attach_short_syntax\":true,\"replace_table\":false')")
 # The flag has to be in the payload for the arm to assert anything.
 echo "flagset $(grep -c '"attach_short_syntax":true' <<< "$FORGE_JSON")"
 flush
 ${CLICKHOUSE_CLIENT} --enable_json_ast_dialect=1 --dialect=clickhouse_json --query="$FORGE_JSON" 2>&1 \
-    | grep -qF "'attach_short_syntax' is not accepted" && echo refused || echo allowed
+    | grep -qF "'attach_short_syntax' is internal-only" && echo refused || echo allowed
 raw "SELECT 'created ' || toString(count()) FROM system.tables
     WHERE database = '${CLICKHOUSE_DATABASE}_mem' AND name = 'forged'"
 
