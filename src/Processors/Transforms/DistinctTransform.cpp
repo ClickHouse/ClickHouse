@@ -382,12 +382,25 @@ bool DistinctTransform::isCancelledBySoftTimeout() const
 
     /// The break-mode `max_execution_time` may be observed by the executor poll loop
     /// (`PipelineExecutor::checkTimeLimitSoft`), which cancels the whole pipeline with
-    /// `CancelledByTimeout` without setting a user-facing cancel reason: `isCancelled()` is true
+    /// `CancelledByTimeout` without setting a user-facing cancel reason: `is_cancelled` is true
     /// while `cancel_reason` is still `UNDEFINED`. Recognizing that as a soft timeout keeps the
     /// already-committed chunk prefix instead of dropping it. `checkTimeLimitSoft` never throws (it
     /// uses `OverflowMode::BREAK` semantics internally), so it is safe here after the hot loops.
-    time_limit_exceeded = !process_list_element->checkTimeLimitSoft();
-    return time_limit_exceeded;
+    ///
+    /// `checkTimeLimitSoft` short-circuits on `is_killed` and returns false for a concurrent
+    /// `KILL QUERY` as well as for a real timeout. Without a re-check a hard kill landing between the
+    /// `cancel_reason` test above and this call would be misclassified as a soft timeout and the chunk
+    /// prefix would be preserved instead of dropped. Re-test `cancel_reason` so a hard kill wins
+    /// immediately and only a genuine soft timeout is latched.
+    if (!process_list_element->checkTimeLimitSoft())
+    {
+        if (process_list_element->getCancelReason() != DB::CancelReason::UNDEFINED)
+            return false;
+        time_limit_exceeded = true;
+        return true;
+    }
+
+    return false;
 }
 
 bool DistinctTransform::timeoutShouldThrow() const
