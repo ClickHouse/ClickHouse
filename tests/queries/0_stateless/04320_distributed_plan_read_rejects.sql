@@ -22,8 +22,13 @@ SET distributed_plan_fallback_to_local_execution = 0;
 
 -- A distributed read cannot reproduce the coordinator's part ordering, so the part-order virtual
 -- columns are rejected at planning time (rather than silently returning worker-local values).
-SELECT _part_index FROM t_read_rejects; -- { serverError SUPPORT_IS_DISABLED }
-SELECT _part_starting_offset FROM t_read_rejects; -- { serverError SUPPORT_IS_DISABLED }
+-- Strict mode is pinned per query, not session-wide: a session-wide `SET` would also apply to the
+-- queries below that must succeed, and `SELECT count()` there becomes a `ReadFromPreparedSource`
+-- (not distributable) whenever randomized settings enable implicit projections.
+SELECT _part_index FROM t_read_rejects
+SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
+SELECT _part_starting_offset FROM t_read_rejects
+SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 -- Bucket counts size the exchange fan-out, so they are capped to limit memory consumption: an
 -- oversized value is rejected at planning time instead of allocating that many tasks and ports.
