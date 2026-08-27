@@ -59,6 +59,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"reattach_tables_before_query_execution", false, false, "New setting for testing table reattachment before query execution."},
+            {"reattach_tables_before_query_execution_probability", 0., 0., "New setting for testing table reattachment before query execution."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -86,8 +88,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_insert_threads", 1, 0, "Changed the default from 1 (no parallel execution) to auto (0), which resolves to the number of CPU cores available to the server, reduced under memory pressure via `max_insert_threads_min_free_memory_per_thread`. This parallelizes `INSERT SELECT` by default. Set to 1 to restore the previous single-threaded behavior."},
             {"join_algorithm", "direct,parallel_hash,hash", "direct,parallel_hash,hash,ie_join", "Appended `ie_join` to the default list, so a join whose `ON` section has only inequality conditions is executed with IEJoin instead of a `CROSS JOIN` with a filter. Being last, it is used only when the other algorithms do not apply."},
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
-            {"reattach_tables_before_query_execution", false, false, "New setting for testing table reattachment before query execution."},
-            {"reattach_tables_before_query_execution_probability", 0., 0., "New setting for testing table reattachment before query execution."},
             {"statistics_max_set_size_for_exact_selectivity_estimation", 0, 10000, "New setting to bound the cost of estimating the selectivity of `IN` with a large set: above the limit the estimator uses the size of the set and its bounding range instead of the exact ranges. Before 26.8 the estimation was uncapped, so the previous value is 0 (no limit) and `compatibility` with an earlier version restores the exact ranges for sets of any size."},
             {"enable_adaptive_aggregator", false, true, "New setting to enable adaptive `GROUP BY` aggregation that freezes each thread's local hash table once it reaches `adaptive_aggregator_freeze_threshold` keys, so frequent keys keep aggregating in the small local tables while rare keys are routed by their hash into per-bucket backlogs and aggregated exactly once, inside the bucket-parallel merge; this stores and processes rare keys once instead of once per thread."},
             {"adaptive_aggregator_freeze_threshold", 16384, 16384, "New setting to set the number of keys at which the adaptive aggregator (`enable_adaptive_aggregator`) freezes a thread's local hash table."},
