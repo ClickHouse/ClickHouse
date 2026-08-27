@@ -39,14 +39,10 @@ namespace ErrorCodes
 }
 
 
-std::optional<AccessTypeObjects::Source> TableFunctionMergeTreeParts::getSourceAccessObject() const
+/// The kind of source a disk with the given data source reads from; the same kinds that the
+/// `file`, `s3`, ... table functions check access for.
+static std::optional<AccessTypeObjects::Source> getSourceForDataSource(const DataSourceDescription & data_source)
 {
-    /// `parseArguments` has already created the disk by the time access is checked.
-    if (!read_from_parts_info.disk)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments of table function `{}` are not parsed yet", getName());
-
-    const auto data_source = read_from_parts_info.disk->getDataSourceDescription();
-
     if (data_source.type == DataSourceType::Local)
         return AccessTypeObjects::Source::FILE;
 
@@ -64,9 +60,16 @@ std::optional<AccessTypeObjects::Source> TableFunctionMergeTreeParts::getSourceA
             return AccessTypeObjects::Source::FILE;
         case ObjectStorageType::None:
         case ObjectStorageType::Max:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function `{}` cannot read from a disk of type `{}`",
-                            getName(), data_source.toString());
+            return std::nullopt;
     }
+}
+
+std::optional<AccessTypeObjects::Source> TableFunctionMergeTreeParts::getSourceAccessObject() const
+{
+    if (!source_access)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments of table function `{}` are not parsed yet", getName());
+
+    return source_access;
 }
 
 VectorWithMemoryTracking<size_t> TableFunctionMergeTreeParts::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
@@ -87,8 +90,21 @@ StoragePtr TableFunctionMergeTreeParts::executeImpl(
 {
     auto columns = getActualTableStructure(context, is_insert_query);
 
+    /// The access and readonly checks have passed by now, so the disk may be created. It is not
+    /// registered in the context: it lives only as long as the storage, so a query cannot grow the
+    /// global disk map or leave directories behind by merely being parsed.
+    auto info = read_from_parts_info;
+    info.disk = DiskFromAST::createTransientDisk(disk_function_ast, context);
+
+    /// The access check trusted the literal `type` of the disk description; make sure the disk that
+    /// came out of it reads from the same kind of source.
+    if (getSourceForDataSource(info.disk->getDataSourceDescription()) != source_access)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "The disk of table function `{}` reads from a different kind of source ({}) than access was checked for",
+                        getName(), info.disk->getDataSourceDescription().toString());
+
     auto storage = std::make_shared<StorageMergeTreeParts>(
-        read_from_parts_info,
+        info,
         StorageID(getDatabaseName(), table_name),
         columns,
         ConstraintsDescription{},
@@ -371,7 +387,9 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
     if (!disk_function)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument `disk` is required, but was not found.\n{}", help_message);
 
-    /// Create the disk object.
+    /// Prepare the description of the disk. The disk itself is created in `executeImpl`: creating a
+    /// disk starts it (a local disk creates its directory right away), which must not happen before
+    /// the access and readonly checks have passed.
     {
         ASTs disk_args = get_function_args(disk_arg_num, disk_function, {"disk"});
 
@@ -404,11 +422,63 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
         for (const auto & forced_setting : forced_disk_settings)
             disk_function_to_create->arguments->children.push_back(make_setting(forced_setting, 1));
 
-        /// Go through the same path as `SETTINGS disk = disk(...)` of a table definition, so that the
-        /// restrictions on dynamically configured disks (server-managed credentials, the base directory of
-        /// custom local disks) are applied here as well.
-        auto disk_name = DiskFromAST::createCustomDisk(disk_function_to_create, context, /* attach */false);
-        read_from_parts_info.disk = context->getDisk(disk_name);
+        disk_function_ast = disk_function_to_create;
+
+        /// Access is checked before the disk exists, so the source to check it for has to be readable
+        /// from the description itself: the `type` (and `object_storage_type`) must be given literally.
+        /// A substitution (`from_env`, `from_zk`, `include`) or a wrapper disk cannot tell what kind of
+        /// source the query is going to read, so they are rejected here, before any of it is resolved.
+        std::string type;
+        std::string object_storage_type;
+        for (const auto & disk_arg : disk_args)
+        {
+            const auto * equals = disk_arg->as<ASTFunction>();
+            if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
+                continue;
+            const auto * key = equals->arguments->children[0]->as<ASTIdentifier>();
+            if (!key || (key->name() != "type" && key->name() != "object_storage_type"))
+                continue;
+
+            const auto & value_ast = equals->arguments->children[1];
+            if (!value_ast->as<ASTLiteral>() && !value_ast->as<ASTIdentifier>())
+                throw_bad_argument(disk_arg_num, fmt::format("expected the `{}` of the disk to be a literal", key->name()));
+
+            auto value_literal = evaluateConstantExpressionOrIdentifierAsLiteral(value_ast, context);
+            auto value = checkAndGetLiteralArgument<String>(value_literal, key->name());
+            if (value.starts_with("from_env") || value.starts_with("from_zk"))
+                throw_bad_argument(disk_arg_num, fmt::format(
+                    "the `{}` of the disk must be a literal value, not a substitution", key->name()));
+
+            if (key->name() == "type")
+                type = value;
+            else
+                object_storage_type = value;
+        }
+
+        if (type.empty())
+            throw_bad_argument(disk_arg_num, "the disk description requires an explicit `type`");
+
+        auto source_for_type = [&](const std::string & disk_type) -> std::optional<AccessTypeObjects::Source>
+        {
+            if (disk_type == "local")
+                return AccessTypeObjects::Source::FILE;
+            if (disk_type == "s3" || disk_type.starts_with("s3_"))
+                return AccessTypeObjects::Source::S3;
+            if (disk_type == "azure_blob_storage" || disk_type == "azure")
+                return AccessTypeObjects::Source::AZURE;
+            if (disk_type == "hdfs")
+                return AccessTypeObjects::Source::HDFS;
+            if (disk_type == "web")
+                return AccessTypeObjects::Source::URL;
+            return std::nullopt;
+        };
+
+        /// `object_storage` is only a wrapper whose backend is chosen by `object_storage_type`.
+        source_access = type == "object_storage" ? source_for_type(object_storage_type) : source_for_type(type);
+        if (!source_access)
+            throw_bad_argument(disk_arg_num, fmt::format(
+                "table function `{}` cannot read from a disk of type `{}`",
+                getName(), type == "object_storage" ? type + ", object_storage_type = " + object_storage_type : type));
     }
 }
 
@@ -479,6 +549,9 @@ requested parts. `PREWHERE` is supported and is pushed down to the part readers.
 The function configures a disk from its arguments, so it is not allowed in readonly mode, and the
 restrictions on dynamically configured disks apply: a local disk must live under
 `custom_local_disks_base_directory`, and an S3 disk must not resolve the server's own credentials.
+The `type` of the disk (and `object_storage_type` when `type = object_storage`) must be a literal
+value: it decides what kind of source the access of the query is checked for, and the disk is only
+created after that check passes. The disk is local to the query and is not registered on the server.
 
 ## Usage example {#usage-example}
 

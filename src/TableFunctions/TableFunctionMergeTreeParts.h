@@ -24,7 +24,8 @@ public:
     VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
     /// The data is read from the disk described by the query, so the source to check access for is the
-    /// kind of that disk, the same one that `file`, `s3`, ... check.
+    /// kind of that disk, the same one that `file`, `s3`, ... check. It is derived from the literal
+    /// `type` of the disk description: access is checked before the disk may be created.
     std::optional<AccessTypeObjects::Source> getSourceAccessObject() const override;
 
 protected:
@@ -46,6 +47,13 @@ protected:
 private:
     std::string structure;
     StorageMergeTreeParts::ReadFromPartsInfo read_from_parts_info;
+
+    /// The sanitized description of the disk. The disk itself is created in `executeImpl`, after the
+    /// access and readonly checks have passed, and it is never registered in the context: creating a
+    /// disk starts it (a local disk creates its directory right away), so a query must not be able to
+    /// do that before it is authorized, nor grow the global disk map by varying the disk description.
+    ASTPtr disk_function_ast;
+    std::optional<AccessTypeObjects::Source> source_access;
 };
 
 }

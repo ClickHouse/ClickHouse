@@ -26,7 +26,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static std::string getOrCreateCustomDisk(
+/// Build the resolved configuration of a dynamically described disk and run every AST-level and
+/// post-resolution validation on it (the `dynamic_disk_allow_*` gates, the server-managed S3
+/// credential restriction). Shared by the registered (`getOrCreateCustomDisk`) and the transient
+/// (`createTransientDisk`) creation paths.
+static Poco::AutoPtr<Poco::Util::XMLConfiguration> getValidatedDiskConfig(
     const ASTs & disk_args,
     const std::string & serialization,
     ContextPtr context,
@@ -84,6 +88,41 @@ static std::string getOrCreateCustomDisk(
             "Disk function `{}` must have other arguments apart from `name`, which describe disk configuration. Invalid disk description.",
             serialization);
 
+    return config;
+}
+
+/// A custom disk that is not remote must live inside `custom_local_disks_base_directory`: it is the only
+/// thing that keeps a user-described disk from exposing an arbitrary server path.
+static void checkCustomLocalDiskIsInsideBaseDirectory(const DiskPtr & disk, ContextPtr context)
+{
+    if (!disk->isRemote() && disk->getName() != "backup")
+    {
+        static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
+        auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
+
+        if (disk_path_expected_prefix.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Base path for custom local disks must be defined in config file by `{}`",
+                custom_local_disks_base_dir_in_config);
+
+        if (!pathStartsWith(disk->getPath(), disk_path_expected_prefix))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Path of the custom local disk must be inside `{}` directory",
+                disk_path_expected_prefix);
+    }
+}
+
+static std::string getOrCreateCustomDisk(
+    const ASTs & disk_args,
+    const std::string & serialization,
+    ContextPtr context,
+    bool attach,
+    bool for_system_database)
+{
+    auto config = getValidatedDiskConfig(disk_args, serialization, context, attach, for_system_database);
+
     auto disk_settings_hash = sipHash128(serialization.data(), serialization.size());
 
     std::string disk_name;
@@ -119,23 +158,8 @@ static std::string getOrCreateCustomDisk(
                 "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
                 disk_name);
 
-    if (!attach && !disk->isRemote() && disk->getName() != "backup")
-    {
-        static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
-        auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
-
-        if (disk_path_expected_prefix.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Base path for custom local disks must be defined in config file by `{}`",
-                custom_local_disks_base_dir_in_config);
-
-        if (!pathStartsWith(disk->getPath(), disk_path_expected_prefix))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Path of the custom local disk must be inside `{}` directory",
-                disk_path_expected_prefix);
-    }
+    if (!attach)
+        checkCustomLocalDiskIsInsideBaseDirectory(disk, context);
 
     return disk_name;
 }
@@ -253,6 +277,39 @@ std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, Cont
     FlattenDiskConfigurationVisitor{data}.visit(ast);
 
     return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
+}
+
+DiskPtr DiskFromAST::createTransientDisk(const ASTPtr & disk_function_ast, ContextPtr context)
+{
+    if (!isDiskFunction(disk_function_ast))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
+
+    const auto * function = disk_function_ast->as<ASTFunction>();
+    const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function->arguments.get());
+    const auto & disk_args = function_args_expr->children;
+    auto serialization = function->formatWithSecretsOneLine();
+
+    auto config = getValidatedDiskConfig(
+        disk_args, serialization, context, /* attach */ false, /* for_system_database */ false);
+
+    /// A transient disk is not registered anywhere, so there is nothing a `name` could refer to later,
+    /// and nothing checks it against the disks of the server configuration.
+    if (config->has("name"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The description of a query-local disk cannot have a `name`");
+
+    auto disk_settings_hash = sipHash128(serialization.data(), serialization.size());
+    auto disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
+
+    /// The disk is created the same way as a registered custom disk, but it is not put into the
+    /// `DiskSelector` of the context: it lives only as long as the returned pointer, so a query
+    /// cannot grow the global disk map.
+    auto disk = DiskFactory::instance().create(
+        disk_name, *config, /* config_path */"", context, context->getDisksMap(), /* attach */false, /* custom_disk */true);
+    disk->markDiskAsCustom(disk_settings_hash);
+
+    checkCustomLocalDiskIsInsideBaseDirectory(disk, context);
+
+    return disk;
 }
 
 void DiskFromAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPtr context)
