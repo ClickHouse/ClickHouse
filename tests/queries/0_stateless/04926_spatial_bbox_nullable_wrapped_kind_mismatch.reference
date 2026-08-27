@@ -1,8 +1,0 @@
-=== pointInPolygon: a Nullable-wrapped WKB String must raise, not prune every granule ===
-must contain a tuple
-=== polygonsIntersectCartesian: same, via a Nullable-wrapped WKB String ===
-Unknown geometry type String
-=== polygonsWithinCartesian: same, via a Nullable-wrapped WKB String ===
-Unknown geometry type String
-=== a Nullable-wrapped geometry constant of an ACCEPTED kind must still prune ===
-4

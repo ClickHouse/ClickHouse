@@ -1,8 +1,0 @@
-=== a constant polygon with an empty hole must raise, not prune every granule ===
-Polygon is not valid
-=== a constant multipolygon with an empty polygon must raise too ===
-not valid
-=== an empty Ring constant must fail closed, so a sibling conjunct cannot hide it ===
-Polygon is not valid
-=== a well-formed polygon with a real hole must still prune ===
-0

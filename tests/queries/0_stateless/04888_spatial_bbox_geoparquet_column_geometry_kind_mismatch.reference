@@ -1,6 +1,0 @@
-=== toTypeName(geometry) is Point -- concrete, single-kind GeoParquet column ===
-Point
-=== polygonsIntersectCartesian: the Point row group must still raise, not be pruned away ===
-must not be Point
-=== sanity: pointInPolygon still prunes/evaluates a concrete Point column correctly ===
-4

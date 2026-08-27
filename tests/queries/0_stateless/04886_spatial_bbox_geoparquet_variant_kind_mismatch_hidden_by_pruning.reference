@@ -1,8 +1,0 @@
-=== toTypeName(geometry) is Geometry (Variant) -- mixed-kind GeoParquet column ===
-Geometry
-=== polygonsIntersectCartesian: row group 1 (Point) must still raise, not be pruned away ===
-must not be Point
-=== pointInPolygon: row group 2 (Polygon) must still raise, not be pruned away ===
-must contain a tuple
-=== sanity: reading the mixed-kind column without a spatial predicate is unaffected ===
-4

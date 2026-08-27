@@ -1,8 +1,0 @@
-strict variant	Parts: 1 | Granules: 1
-lenient variant	Parts: 0 | Granules: 0
-lenient variant	Granules: 0/1
-0
-strict dynamic	Parts: 1 | Granules: 1
-lenient dynamic	Parts: 0 | Granules: 0
-lenient dynamic	Granules: 0/1
-0
