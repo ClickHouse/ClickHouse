@@ -8,3 +8,4 @@ String index used, String constant	1
 FixedString index used, narrower FixedString constant	1
 FixedString index used, equal width FixedString constant	1
 FixedString index used, plain String constant	1
+FixedString index prunes, equal width FixedString constant	1

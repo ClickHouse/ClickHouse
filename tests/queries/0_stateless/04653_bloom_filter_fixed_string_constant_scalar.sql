@@ -1,5 +1,5 @@
 -- Checks that a `bloom_filter` index skips no matching row when a `String` or `FixedString` constant
--- compares zero-padded, and that it stays usable where padding gives the one value that can match.
+-- compares zero-padded, and that it stays usable and prunes where padding gives the one value that can match.
 
 DROP TABLE IF EXISTS t_str;
 DROP TABLE IF EXISTS t_fs3;
@@ -27,3 +27,4 @@ SELECT 'String index used, String constant', count() FROM t_str WHERE v = 'V0' S
 SELECT 'FixedString index used, narrower FixedString constant', count() FROM t_fs3 WHERE v = toFixedString('V0', 2) SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'FixedString index used, equal width FixedString constant', count() FROM t_fs3 WHERE v = toFixedString('V0', 3) SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'FixedString index used, plain String constant', count() FROM t_fs3 WHERE v = 'V0' SETTINGS force_data_skipping_indices = 'idx';
+SELECT 'FixedString index prunes, equal width FixedString constant', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_fs3 WHERE v = toFixedString('V0', 3)) WHERE explain ILIKE '%Granules: 1/3%';
