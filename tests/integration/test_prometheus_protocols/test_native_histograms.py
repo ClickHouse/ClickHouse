@@ -423,6 +423,87 @@ def test_invalid_histograms_rejected():
             timestamp=1704067221000,
         )
     )
+    # A custom-bucket histogram whose spans reach past the bounds they declare: storing it would
+    # fail only later, when writeHistogram renders it and finds no bound for its buckets.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=2,
+            sum=0.0,
+            schema=-53,
+            positive_spans=[types_pb2.BucketSpan(offset=0, length=2)],
+            positive_deltas=[1, 1],
+            timestamp=1704067222000,
+        )
+    )
+    # A custom-bucket histogram with a negative bucket index (no -Inf lower bound exists there).
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=1,
+            sum=0.0,
+            schema=-53,
+            positive_spans=[types_pb2.BucketSpan(offset=-1, length=1)],
+            positive_deltas=[1],
+            timestamp=1704067223000,
+        )
+    )
+    # A custom-bucket histogram carrying negative buckets: custom buckets are positive-side only.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=1,
+            sum=0.0,
+            schema=-53,
+            negative_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+            negative_deltas=[1],
+            timestamp=1704067224000,
+        )
+    )
+    # Custom bucket bounds on an exponential schema, where no reader knows what to do with them.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=1,
+            sum=0.0,
+            schema=0,
+            custom_values=[1.0, 2.0],
+            timestamp=1704067225000,
+        )
+    )
+    # An undefined bucket schema in the gap between the exponential range and custom buckets.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=1,
+            sum=0.0,
+            schema=-20,
+            timestamp=1704067226000,
+        )
+    )
+
+
+# Valid custom-bucket payloads are accepted: their spans stay within the declared bounds
+# (one past the last bound is allowed, its upper limit is +Inf).
+def test_nhcb_accepted():
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS store_native_histograms = 1"
+    )
+    send(
+        make_write_request(
+            {"__name__": "test_hist_nhcb_bounds"},
+            [
+                types_pb2.Histogram(
+                    count_int=4,
+                    sum=2.0,
+                    schema=-53,
+                    positive_spans=[types_pb2.BucketSpan(offset=0, length=3)],
+                    positive_deltas=[2, 1, 0],  # decoded to absolute values [2, 3, 3]
+                    custom_values=[0.5, 1.0],  # buckets 0..1 bounded, bucket 2 unbounded (+Inf)
+                    timestamp=1704067227000,
+                )
+            ],
+        )
+    )
+
+    assert node.query(
+        "SELECT count FROM timeSeriesHistograms(prometheus)"
+    ) == TSV([["4"]])
 
 
 # The HTTP JSON rendering of a coarse exponential schema: bucket indexes are negative on both
