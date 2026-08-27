@@ -912,6 +912,14 @@ Field readFieldBinary(ReadBuffer & buf);
 
 String fieldToString(const Field & x);
 
+/// Rewrite every `Bool`-tagged `Field` inside `field`, recursively through `Tuple`/`Array`/`Map`, as
+/// the `UInt64` form `IColumn::get` produces: a boolean has both representations, and `Field`
+/// comparison and hashing read the tag before the value, so the two forms neither compare equal nor
+/// hash alike. An `Object` is deliberately not entered, because its paths disagree: a dynamic path
+/// keeps the `Bool` form on both sides, since `ColumnDynamic::get` rebuilds it, while a typed path is
+/// read from its declared column as `UInt64`. Entering it needs path-aware handling, not this rewrite.
+void normalizeBoolFields(Field & field);
+
 /// Check if a Field contains a NaN value.
 /// Float32 is stored as Float64 internally, so checking Float64 is sufficient.
 inline bool isNaNField(const Field & f)

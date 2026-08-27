@@ -4181,6 +4181,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         out.monotonic_functions_chain = std::move(chain);
         out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
+        /// Outside an `Object` the key side carries the `UInt64` form of a boolean that `IColumn::get`
+        /// produces. `Field` comparison inside a container reads the tag before the value, so a
+        /// `Bool`-tagged element would order against the whole key domain, not against the booleans it holds.
+        normalizeBoolFields(const_value);
+
         return atom_it->second(out, const_value);
     }
     if (node.tryGetConstant(const_value, const_type))
