@@ -37,15 +37,6 @@ REVIEW_THREADS_STATUS_NAME = "Review Threads"
 KV_UNRESOLVED_COUNT = "unresolved_review_threads"
 KV_OVERRIDE = "unresolved_review_threads_override"
 KV_FORCE_ALL = "unresolved_review_threads_force_all"
-# Stored in `KV_FORCE_ALL` when the live-label read failed. The consumers in
-# `ci/praktika/native_jobs.py` treat it as `ci-force-all` only for the
-# stale-sensitive decisions (changed-file filtering and the CI cache lookup,
-# where trusting stale state could let old green results survive a
-# `ci-force-all` rerun), but not for the workflow filter hooks, whose bypass
-# would *widen* the workflow past a normal full PR run (opt-in jobs such as
-# `Build Toolchain (PGO, BOLT)`, ignored `do not test` / `ci-build` labels).
-# Also hard-coded in `ci/praktika/native_jobs.py` - keep them in sync.
-FORCE_ALL_UNKNOWN = "unknown"
 # This is written by the workflow filter after it has made the actual
 # limited/full decision. The config pre-hook cannot determine this by itself:
 # `ci-force-all` bypasses workflow filters altogether.
@@ -157,33 +148,23 @@ def store_gate_state(info):
     hooks, the changed-file filtering and the CI cache lookup enabled on a
     re-run that was meant to bypass all of them.
     """
-    try:
-        labels = fetch_live_labels(info)
-    except Exception as e:
-        # There is no live label state to record. Leaving the kv data unset
-        # would make `native_jobs.py` fall back to the event payload, which is
-        # stale on re-runs and therefore misses a `ci-force-all` added after
-        # the original run - the changed-file filtering and the CI cache
-        # lookup would stay enabled on a re-run that was meant to bypass them,
-        # letting old green results survive it. Record the explicit "unknown"
-        # sentinel instead of impersonating the label: `native_jobs.py` then
-        # distrusts stale state (fail toward redoing work) without bypassing
-        # the workflow filter hooks, which would widen the workflow past a
-        # normal full PR run (opt-in jobs, ignored `do not test` / `ci-build`).
-        print(
-            f"WARNING: failed to fetch the live PR labels [{e}] - no filtering "
-            f"or cached result is trusted, as if '{Labels.CI_FORCE_ALL}' was set"
-        )
-        labels = None
-        info.store_kv_data(KV_FORCE_ALL, FORCE_ALL_UNKNOWN)
-        info.store_kv_data(KV_OVERRIDE, False)
-    else:
-        override = review_threads_gate_bypassed(labels)
-        force_all = Labels.CI_FORCE_ALL in labels
-        # All later config decisions must use this live value. `info.pr_labels`
-        # comes from the original workflow event and is stale on GitHub reruns.
-        info.store_kv_data(KV_FORCE_ALL, force_all)
-        info.store_kv_data(KV_OVERRIDE, override)
+    # No graceful degradation when the live labels cannot be fetched (the
+    # fetch already retries): there is no safe default. Falling back to the
+    # event payload keeps labels that are stale on re-runs, so a rerun that
+    # removed `do not test` and added `ci-force-all` would still skip most
+    # jobs and could finish green without ever running the full suite; and
+    # any invented value either lets stale narrowing labels filter the run
+    # (unset / `False`) or impersonates `ci-force-all` and *widens* it past
+    # a normal full PR run (`True`: opt-in jobs such as `Build Toolchain
+    # (PGO, BOLT)`, ignored `do not test` / `ci-build`). Fail the config run
+    # instead and let a re-run retry the fetch.
+    labels = fetch_live_labels(info)
+    override = review_threads_gate_bypassed(labels)
+    force_all = Labels.CI_FORCE_ALL in labels
+    # All later config decisions must use this live value. `info.pr_labels`
+    # comes from the original workflow event and is stale on GitHub reruns.
+    info.store_kv_data(KV_FORCE_ALL, force_all)
+    info.store_kv_data(KV_OVERRIDE, override)
 
     try:
         unresolved_count = get_unresolved_review_threads_count(
@@ -196,12 +177,6 @@ def store_gate_state(info):
         print(
             f"WARNING: failed to fetch the review threads state [{e}] - the full CI suite will run"
         )
-        return
-
-    if labels is None:
-        # The gate cannot be evaluated without the label state - the override
-        # label may be set and invisible here. Fail toward more testing.
-        print("WARNING: the live PR labels are unknown - the full CI suite will run")
         return
 
     print(

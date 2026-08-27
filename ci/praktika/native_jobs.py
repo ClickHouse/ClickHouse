@@ -780,12 +780,11 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         sw_ = Utils.Stopwatch()
         try:
             force_all_kv = Info().get_kv_data("unresolved_review_threads_force_all")
-            # The "unknown" sentinel (the live-label read failed, see
-            # `ci/jobs/scripts/workflow_hooks/review_threads.py`) must not
-            # impersonate a real `ci-force-all` here: bypassing the filter
-            # hooks *widens* the workflow past a normal full PR run (opt-in
-            # jobs such as `Build Toolchain (PGO, BOLT)`, ignored `do not
-            # test` / `ci-build` labels), instead of merely redoing work.
+            # The kv data is the live label state recorded by the
+            # `ci/jobs/scripts/workflow_hooks/review_threads.py` pre-hook,
+            # which fails the config run when it cannot be fetched; the
+            # `Info().pr_labels` fallback (stale on re-runs) is only for
+            # workflows without that pre-hook.
             force_all = (
                 Settings.CI_FORCE_ALL_LABEL in Info().pr_labels
                 if force_all_kv is None
@@ -845,14 +844,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 
         def check_affected_jobs():
             force_all_kv = Info().get_kv_data("unresolved_review_threads_force_all")
-            # The "unknown" sentinel (the live-label read failed) counts as
-            # forced here: skipping the changed-file filtering only redoes
-            # work, while trusting stale state could keep the filtering in
-            # effect on a `ci-force-all` rerun that was meant to bypass it.
+            # Live label state from the review_threads.py pre-hook (see the
+            # workflow filter hooks pass above).
             force_all = (
                 Settings.CI_FORCE_ALL_LABEL in Info().pr_labels
                 if force_all_kv is None
-                else force_all_kv is True or force_all_kv == "unknown"
+                else force_all_kv is True
             )
             if force_all:
                 print(
@@ -891,14 +888,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         info = ""
         try:
             force_all_kv = Info().get_kv_data("unresolved_review_threads_force_all")
-            # The "unknown" sentinel (the live-label read failed) counts as
-            # forced here: skipping the cache lookup only redoes work, while
-            # trusting stale state could let old green results survive a
-            # `ci-force-all` rerun.
+            # Live label state from the review_threads.py pre-hook (see the
+            # workflow filter hooks pass above).
             force_all = (
                 Settings.CI_FORCE_ALL_LABEL in Info().pr_labels
                 if force_all_kv is None
-                else force_all_kv is True or force_all_kv == "unknown"
+                else force_all_kv is True
             )
             skip_lookup = force_all
             if not skip_lookup:

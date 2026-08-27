@@ -37,7 +37,6 @@ from ci.jobs.scripts.workflow_hooks import filter_job
 from ci.defs.defs import JobNames
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.jobs.scripts.workflow_hooks.review_threads import (
-    FORCE_ALL_UNKNOWN,
     KV_FORCE_ALL,
     KV_OVERRIDE,
     KV_PIPELINE_LIMITED,
@@ -225,12 +224,36 @@ def test_limited_pipeline_keeps_builds_and_preliminary_jobs(fake_info):
     for job_name in (
         "Build (amd_debug)",
         "Build (arm_tidy)",
+        "Build (wasm_parser)",
         "Style check",
         "Fast test",
         "Code Review",
     ):
         skip, reason = filter_job.should_skip_job(job_name)
         assert not skip, f"{job_name}: {reason}"
+
+
+def test_limited_pipeline_allowlist_covers_every_pr_build_job():
+    """`REVIEW_THREADS_BUILD_JOBS` must cover every build lane of the PR
+    workflow - a lane missing from the allowlist (as `Build (wasm_parser)`
+    once was) silently defers its breakage past the limited pipeline. The
+    allowlist is job-config based on purpose, so the non-build `Build profile
+    diff` job stays out; this cross-checks it against the workflow by name.
+    """
+    from ci.workflows.pull_request import workflow as pr_workflow
+
+    build_jobs = [
+        job.name
+        for job in pr_workflow.jobs
+        if job.name.startswith("Build (") or job.name.startswith("Build Toolchain")
+    ]
+    assert build_jobs, "no build jobs found in the PR workflow - update this test"
+    missing = [
+        name
+        for name in build_jobs
+        if name not in filter_job.REVIEW_THREADS_BUILD_JOBS
+    ]
+    assert not missing, f"build jobs missing from REVIEW_THREADS_BUILD_JOBS: {missing}"
 
 
 @pytest.mark.parametrize(
@@ -419,8 +442,17 @@ def test_live_force_all_survives_a_failing_thread_count(monkeypatch):
     assert native_jobs.count("if force_all_kv is None") == 3
 
 
-def test_gate_is_skipped_when_the_label_state_is_unknown(monkeypatch):
-    """Without the live labels the override may be invisible - run everything."""
+def test_config_run_fails_when_the_label_state_is_unknown(monkeypatch):
+    """Without the live labels there is no safe default - fail the config run.
+
+    The event payload is stale on re-runs, so consulting it can keep narrowing
+    labels (`do not test`, `ci-build`) that were removed and miss a
+    `ci-force-all` / `ignore-unresolved-threads` that was added - the run could
+    finish green without ever running the full suite. Impersonating
+    `ci-force-all` instead would *widen* the run (opt-in jobs, ignored
+    narrowing labels). The pre-hook must therefore propagate the error and no
+    stale-consultable state may be left behind.
+    """
     info = FakeInfo(labels=[])
 
     def failing_labels(*args, **kwargs):
@@ -428,47 +460,38 @@ def test_gate_is_skipped_when_the_label_state_is_unknown(monkeypatch):
 
     monkeypatch.setattr(GH, "get_output_with_retries", failing_labels)
     monkeypatch.setattr(
-        GH, "list_pr_review_threads", lambda **kwargs: [{"isResolved": False}]
+        GH,
+        "list_pr_review_threads",
+        lambda **kwargs: pytest.fail("must not query threads without the labels"),
     )
     monkeypatch.setattr(
         GH, "post_commit_status", lambda **_: pytest.fail("must not post a marker")
     )
 
-    store_gate_state(info)
+    with pytest.raises(RuntimeError, match="GitHub API is down"):
+        store_gate_state(info)
 
     assert info.get_kv_data(KV_UNRESOLVED_COUNT) is None
-    # `ci-force-all` may have been added after the original run and is
-    # invisible here, so the stale event payload must not be consulted. But
-    # the state must not impersonate a real `ci-force-all` either - that would
-    # bypass the workflow filter hooks and *widen* the workflow (opt-in jobs,
-    # ignored `do not test` / `ci-build` labels). Record the explicit sentinel
-    # instead: only the stale-sensitive changed-file filtering and cache
-    # lookup treat it as forced.
-    assert info.get_kv_data(KV_FORCE_ALL) == FORCE_ALL_UNKNOWN
-    assert info.get_kv_data(KV_OVERRIDE) is False
+    assert info.get_kv_data(KV_FORCE_ALL) is None
+    assert info.get_kv_data(KV_OVERRIDE) is None
 
 
-def test_unknown_label_state_only_bypasses_the_stale_sensitive_checks():
-    """The "unknown" sentinel must not act as `ci-force-all` everywhere.
-
-    `native_jobs.py` resolves `force_all` in three places. The workflow filter
-    hooks must keep running on the sentinel (bypassing them widens the
-    workflow: opt-in jobs like `Build Toolchain (PGO, BOLT)` would start and
-    `do not test` / `ci-build` would be ignored), while the changed-file
-    filtering and the CI cache lookup must treat it as forced (trusting stale
-    state could let old green results survive a `ci-force-all` rerun).
+def test_force_all_resolution_is_strict_at_every_site():
+    """`native_jobs.py` resolves `force_all` in three places (the workflow
+    filter hooks, the changed-file filtering and the CI cache lookup). Each
+    must trust the kv data recorded from the live labels by the
+    `review_threads.py` pre-hook - which fails the config run when the fetch
+    fails, so no "unknown" sentinel handling may reappear - and fall back to
+    the event payload only when the kv data is missing (workflows without the
+    pre-hook).
     """
     native_jobs = (
         Path(__file__).resolve().parents[2] / "ci/praktika/native_jobs.py"
     ).read_text()
     strict = "else force_all_kv is True\n"
-    stale_sensitive = f'else force_all_kv is True or force_all_kv == "{FORCE_ALL_UNKNOWN}"\n'
-    assert native_jobs.count(strict) == 1
-    assert native_jobs.count(stale_sensitive) == 2
-    # The strict resolution belongs to the workflow filter hooks pass, which
-    # runs before the changed-file filtering and the cache lookup.
-    assert native_jobs.index(strict) < native_jobs.index(stale_sensitive)
-    # No site is left with the old sentinel-agnostic resolution.
+    assert native_jobs.count(strict) == 3
+    assert "unknown" not in native_jobs
+    # No site is left with a truthiness-based resolution.
     assert "else bool(force_all_kv)" not in native_jobs
 
 
