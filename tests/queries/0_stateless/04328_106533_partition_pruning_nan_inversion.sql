@@ -77,7 +77,8 @@ SELECT countIf(explain LIKE '%Parts: 0/1%') FROM (EXPLAIN indexes = 1 SELECT cou
 
 -- The part-level bound is also read as a semantic extremum: _minmax_count_projection answers
 -- min()/max() straight out of it without reading any data.
-SELECT max(val), min(val) FROM t_106533_partlevel;
+SELECT max(val), min(val) FROM t_106533_partlevel
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SELECT max(val), min(val) FROM t_106533_partlevel SETTINGS optimize_use_implicit_projections = 0;
 
 DROP TABLE t_106533_partlevel;
@@ -114,7 +115,7 @@ OPTIMIZE TABLE t_106533_sparse FINAL;
 
 SELECT count() FROM t_106533_sparse WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_statistics_for_part_pruning = 0;
 SELECT count() FROM t_106533_sparse WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0, use_statistics_for_part_pruning = 0;
-SELECT countIf(explain LIKE '%Parts: 0/1%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_sparse WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_statistics_for_part_pruning = 0);
+SELECT countIf(explain LIKE '%Parts: 1/1%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_sparse WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_statistics_for_part_pruning = 0);
 
 DROP TABLE t_106533_sparse;
 

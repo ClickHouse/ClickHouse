@@ -49,6 +49,9 @@ CREATE TABLE t_106533_stats_basic (id UInt64, val Float32 STATISTICS(basic))
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
+-- Two parts are what make the pruning unsafe: a merged part's finite bound is kept by the unfixed code too.
+SYSTEM STOP MERGES t_106533_stats_basic;
+
 INSERT INTO t_106533_stats_basic VALUES (1, 1.0), (2, nan), (3, 3.0);
 INSERT INTO t_106533_stats_basic VALUES (4, 100.0), (5, 150.0), (6, 200.0);
 
@@ -56,13 +59,15 @@ SELECT count() FROM t_106533_stats_basic WHERE NOT ((val >= 0.) AND (val <= 3.))
 
 DROP TABLE t_106533_stats_basic;
 
--- Auto statistics left at the default auto_statistics_types ('basic, uniq_v2'): materialize_statistics_on_insert = 1
--- builds them without any statistics clause on the column, so the same bug must not recur out of the box.
+-- Auto statistics with auto_statistics_types pinned to its default ('basic, uniq_v2') so randomization
+-- cannot remove it: built with no statistics clause on the column, the bug must not recur out of the box.
 DROP TABLE IF EXISTS t_106533_stats_auto;
 
 CREATE TABLE t_106533_stats_auto (id UInt64, val Float64)
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+SETTINGS auto_statistics_types = 'basic, uniq_v2', index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+SYSTEM STOP MERGES t_106533_stats_auto;
 
 INSERT INTO t_106533_stats_auto VALUES (1, 1.0), (2, nan), (3, 3.0);
 INSERT INTO t_106533_stats_auto VALUES (4, 100.0), (5, 150.0), (6, 200.0);

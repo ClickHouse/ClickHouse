@@ -1661,7 +1661,7 @@ void KeyCondition::relaxAtomsOverNaNHidingColumns(const DataTypes & key_types)
 
                 /// Without a prepared set there is nothing to inspect: assume the worst rather than
                 /// keep an unverified `can_be_true`.
-                if (!element.set_index || element.set_index->getIndexesMapping().size() != element.set_index->getOrderedSet().size())
+                if (!element.set_index)
                 {
                     element.function = RPNElement::FUNCTION_UNKNOWN;
                     break;

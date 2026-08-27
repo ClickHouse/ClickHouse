@@ -61,8 +61,9 @@ SELECT count() FROM t_minmax_nan_mixed WHERE val = 1.0 SETTINGS use_skip_indexes
 -- The stored bound is a semantic extremum, so a consumer that reads it as one gets the true maximum.
 -- `ORDER BY val DESC LIMIT 1` reaches two independently gated TopK mechanisms: plan-time granule
 -- ordering and the read-time threshold tracker. Both are admitted if either gate is on, so the oracle
--- has to turn off both.
-SELECT val FROM t_minmax_nan_mixed ORDER BY val DESC LIMIT 1;
+-- has to turn off both, and pin both on for the other arm because both gates are randomized.
+SELECT val FROM t_minmax_nan_mixed ORDER BY val DESC LIMIT 1
+SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1;
 SELECT val FROM t_minmax_nan_mixed ORDER BY val DESC LIMIT 1
 SETTINGS use_skip_indexes_for_top_k = 0, use_top_k_dynamic_filtering = 0;
 
