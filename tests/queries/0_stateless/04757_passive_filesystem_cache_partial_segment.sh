@@ -2,10 +2,6 @@
 # Tags: no-fasttest
 # - no-fasttest: uses a filesystem cache disk
 
-# Regression test: under `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` (passive mode)
-# a PARTIALLY_DOWNLOADED file segment used to be bypassed unconditionally, so a read that lies
-# entirely inside the already-downloaded prefix was re-fetched from the object storage.
-#
 # `boundary_alignment = max_file_segment_size` is load-bearing: it makes
 # `roundUpToMultiple(downloaded_size, boundary_alignment)` reach the whole segment range, so
 # `FileSegment::shrinkFileSegmentToDownloadedSize` early-returns and the segment stays
@@ -46,8 +42,7 @@ settings max_insert_block_size = 200000;
 "
 
 # The cache is freshly created with a per-database unique name, so it starts empty (no need to drop
-# it -- an unqualified `system drop filesystem cache` would wipe other tests' caches too).
-# Fill a prefix only: the LIMIT read stops in the middle of a 32Mi segment.
+# it). Fill a prefix only: the LIMIT read stops in the middle of a 32Mi segment.
 ${CLICKHOUSE_CLIENT} --query "
 select sum(length(b)) from (select b from test order by a limit 60000) format Null
 settings read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0, ${READ_SETTINGS};
@@ -62,9 +57,8 @@ where cache_name = '${CLICKHOUSE_TEST_UNIQUE_NAME}'
   and state = 'PARTIALLY DOWNLOADED' and downloaded_size > 0;
 "
 
-# The same read again, now in passive mode. Before the fix this served 14212 bytes from the cache and
-# re-fetched 20971520 from the source; after it, the source read is gone. Compare the two counters
-# instead of printing them: the raw values depend on the block size and the build.
+# The same read again, now in passive mode. Compare the two counters instead of printing them: the
+# raw values depend on the block size and the build.
 query_id="04757-${CLICKHOUSE_DATABASE}-passive"
 ${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "
 select sum(length(b)) from (select b from test order by a limit 60000) format Null
