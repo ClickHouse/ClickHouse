@@ -21,6 +21,7 @@ string array indexed	1
 string array no index	1
 mixed leaves indexed	1
 mixed leaves no index	1
+mixed leaves still prunes	1
 bool leaf indexed	1
 bool leaf no index	1
 bool leaf still prunes	1

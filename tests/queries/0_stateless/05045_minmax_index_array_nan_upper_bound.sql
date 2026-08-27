@@ -115,6 +115,11 @@ WHERE a > [(500., 'a', toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'), toLowCard
 SELECT 'mixed leaves no index', count() FROM t_mixed
 WHERE a > [(500., 'a', toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'), toLowCardinality('x'), toIPv6('::1'), toDate('2020-01-01'))]
 SETTINGS use_skip_indexes = 0;
+SELECT 'mixed leaves still prunes', count() > 0 FROM (
+    EXPLAIN indexes = 1 SELECT sum(id) FROM t_mixed
+    WHERE a > [(500., 'a', toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'), toLowCardinality('x'), toIPv6('::1'), toDate('2020-01-01'))]
+    SETTINGS use_skip_indexes_on_data_read = 0, optimize_use_implicit_projections = 0
+) WHERE explain LIKE '%Granules: 1/2%';
 
 DROP TABLE IF EXISTS t_bool;
 CREATE TABLE t_bool (id UInt64, a Array(Tuple(Float64, Bool)), INDEX idx_a a TYPE minmax GRANULARITY 1)
