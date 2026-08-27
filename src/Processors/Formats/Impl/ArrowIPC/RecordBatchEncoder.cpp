@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int DECIMAL_OVERFLOW;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 }
 
@@ -143,6 +144,26 @@ int arrowTimeUnitForScale(UInt32 scale)
     return flatbuf::TimeUnit_NANOSECOND;
 }
 
+/// Number of raw column units in one day for a `Time`/`Time64(scale)` column (86400 * 10^scale).
+/// Arrow time32/time64 values are a time of day and must lie in [0, units_per_day).
+Int64 timeUnitsPerDay(UInt32 scale)
+{
+    Int64 units_per_day = 86400;
+    for (UInt32 i = 0; i < scale; ++i)
+        units_per_day *= 10;
+    return units_per_day;
+}
+
+[[noreturn]] void throwArrowTimeOutOfRange(Int64 value, Int64 units_per_day)
+{
+    throw Exception(
+        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+        "Cannot convert value {} to an Arrow time type: it is outside the valid time-of-day range [0, {}). "
+        "Arrow time types represent a time of day, so negative or >= 24h ClickHouse Time/Time64 values cannot be represented.",
+        value,
+        units_per_day);
+}
+
 }
 
 void RecordBatchEncoder::encodeValues(
@@ -223,9 +244,24 @@ void RecordBatchEncoder::encodeValues(
             return;
         }
         case TypeIndex::Time:
+        {
             /// ClickHouse `Time` is seconds-of-day stored as Int32 → Arrow `time32[s]` (4-byte values).
+            /// Arrow `time32[s]` represents a time of day in [0, 86400); reject negative or >= 24h values
+            /// instead of writing out-of-spec Arrow data. A null row carries an arbitrary value masked by
+            /// the validity bitmap, so skip it.
+            const auto & data = assert_cast<const ColumnInt32 &>(column).getData();
+            const NullMap * null_map
+                = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
+            for (size_t i = 0; i < num_rows; ++i)
+            {
+                if (null_map && (*null_map)[i])
+                    continue;
+                if (data[i] < 0 || data[i] >= 86400)
+                    throwArrowTimeOutOfRange(data[i], 86400);
+            }
             appendFixedWidth<ColumnInt32>(*this, column, num_rows);
             return;
+        }
         case TypeIndex::Time64:
         {
             /// `Time64(scale)` → Arrow `time32` (scale <= 3) or `time64`, rescaling the value up to the
@@ -236,6 +272,10 @@ void RecordBatchEncoder::encodeValues(
             Int64 factor = 1;
             for (UInt32 i = scale; i < target_scale; ++i)
                 factor *= 10;
+            /// Validate the raw value (in the column's own scale) against the valid time-of-day range
+            /// [0, 86400 * 10^scale) before rescaling, so out-of-range inputs report a consistent
+            /// VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE instead of writing invalid Arrow data.
+            const Int64 source_units_per_day = timeUnitsPerDay(scale);
             const bool to_time32 = (unit == flatbuf::TimeUnit_SECOND || unit == flatbuf::TimeUnit_MILLISECOND);
             const auto & data = assert_cast<const ColumnDecimal<Time64> &>(column).getData();
             const NullMap * null_map
@@ -253,6 +293,8 @@ void RecordBatchEncoder::encodeValues(
                         continue;
                     }
                     Int64 value = data[i].value;
+                    if (value < 0 || value >= source_units_per_day)
+                        throwArrowTimeOutOfRange(value, source_units_per_day);
                     if (common::mulOverflow(value, factor, value)
                         || value > std::numeric_limits<Int32>::max() || value < std::numeric_limits<Int32>::min())
                         throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
@@ -270,6 +312,8 @@ void RecordBatchEncoder::encodeValues(
                         values[i] = 0;
                         continue;
                     }
+                    if (data[i].value < 0 || data[i].value >= source_units_per_day)
+                        throwArrowTimeOutOfRange(data[i].value, source_units_per_day);
                     if (common::mulOverflow(data[i].value, factor, values[i]))
                         throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
                 }

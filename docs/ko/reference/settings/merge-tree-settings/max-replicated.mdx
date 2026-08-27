@@ -20,7 +20,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 [복제된](/ko/reference/engines/table-engines/mergetree-family/replication)
 fetch 작업에 대해 네트워크를 통한 데이터 전송의 최대 속도를 초당 바이트 단위로 제한합니다. 이 설정은 서버에 적용되는
-[`max_replicated_fetches_network_bandwidth_for_server`](/ko/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth)
+[`max_replicated_fetches_network_bandwidth_for_server`](/ko/reference/settings/server-settings/settings/max-replicated#max_replicated_fetches_network_bandwidth_for_server)
 설정과 달리 특정 테이블에 적용됩니다.
 
 서버 네트워크와 특정 테이블의 네트워크를 모두 제한할 수 있지만, 이 경우
@@ -88,7 +88,7 @@ ReplicatedMergeTree 큐에서 뮤테이션이 진행 중인 파트에 대한 작
 [복제된](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree)
 전송 시 네트워크를 통한 데이터 교환의 최대 속도를 초당 바이트 수로
 제한합니다. 이 설정은 서버에 적용되는
-[`max_replicated_sends_network_bandwidth_for_server`](/ko/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth)
+[`max_replicated_sends_network_bandwidth_for_server`](/ko/reference/settings/server-settings/settings/max-replicated#max_replicated_sends_network_bandwidth_for_server)
 설정과 달리 특정 테이블에 적용됩니다.
 
 서버 네트워크와 특정 테이블의 네트워크를 모두 제한할 수 있지만,
