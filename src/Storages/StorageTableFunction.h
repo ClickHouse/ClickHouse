@@ -64,6 +64,56 @@ public:
     bool storesDataOnDisk() const override { return false; }
     bool supportsReplication() const override { return false; }
 
+    /// A table function that has not been resolved yet holds no data and has started no background
+    /// activity, so size and lock queries have a correct answer that does not require resolving it.
+    ActionLock getActionLock(StorageActionBlockType action_type) override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->getActionLock(action_type);
+        return {};
+    }
+
+    Strings getDataPaths() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->getDataPaths();
+        return {};
+    }
+
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->totalRows(query_context);
+        return std::nullopt;
+    }
+
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->totalBytes(query_context);
+        return std::nullopt;
+    }
+
+    std::optional<UInt64> lifetimeRows() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->lifetimeRows();
+        return std::nullopt;
+    }
+
+    std::optional<UInt64> lifetimeBytes() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->lifetimeBytes();
+        return std::nullopt;
+    }
+
     void startup() override { }
     void shutdown(bool is_drop) override
     {
