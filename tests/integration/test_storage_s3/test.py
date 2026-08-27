@@ -791,46 +791,21 @@ def test_multipart(started_cluster, maybe_auth, positive):
 def test_remote_host_filter(started_cluster):
     instance = started_cluster.instances["restricted_dummy"]
     format = "column1 UInt32, column2 UInt32, column3 UInt32"
-
-    query = "DESCRIBE TABLE s3('http://{}:{}/{}/test.csv', 'CSV')".format(
-        "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket
-    )
-    assert "not allowed in configuration file" in instance.query_and_get_error(query)
-
-    query = "SELECT count() FROM s3Cluster('cluster', 'http://{}:{}/{}/test.csv', 'CSV')".format(
-        "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket
-    )
-    assert "not allowed in configuration file" in instance.query_and_get_error(query)
-
-    query = "DESCRIBE TABLE icebergS3('http://{}:{}/{}/')".format(
-        "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket
-    )
-    assert "not allowed in configuration file" in instance.query_and_get_error(query)
-
-    query = "SELECT count() FROM icebergS3('http://{}:{}/{}/')".format(
-        "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket
-    )
-    assert "not allowed in configuration file" in instance.query_and_get_error(query)
-
-    query = "SELECT count() FROM icebergS3Cluster('cluster', 'http://{}:{}/{}/')".format(
-        "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket
-    )
-    assert "not allowed in configuration file" in instance.query_and_get_error(query)
-
-    query = "select *, column1*column2*column3 from s3('http://{}:{}/{}/test.csv', 'CSV', '{}')".format(
-        "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket, format
-    )
-    assert "not allowed in configuration file" in instance.query_and_get_error(query)
-
     other_values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
-    query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format(
-        "invalid_host",
-        MINIO_INTERNAL_PORT,
-        started_cluster.minio_bucket,
-        format,
-        other_values,
+    blocked_url = f"http://invalid_host:{MINIO_INTERNAL_PORT}/{started_cluster.minio_bucket}"
+    queries = (
+        f"DESCRIBE TABLE s3('{blocked_url}/test.csv', 'CSV')",
+        f"SELECT count() FROM s3Cluster('cluster', '{blocked_url}/test.csv', 'CSV')",
+        f"DESCRIBE TABLE icebergS3('{blocked_url}/')",
+        f"SELECT count() FROM icebergS3('{blocked_url}/')",
+        f"SELECT count() FROM icebergS3Cluster('cluster', '{blocked_url}/')",
+        f"CREATE TABLE remote_host_filter_iceberg (x UInt32) ENGINE = IcebergS3('{blocked_url}/')",
+        f"select *, column1*column2*column3 from s3('{blocked_url}/test.csv', 'CSV', '{format}')",
+        f"insert into table function s3('{blocked_url}/test.csv', 'CSV', '{format}') values {other_values}",
     )
-    assert "not allowed in configuration file" in instance.query_and_get_error(query)
+
+    for query in queries:
+        assert "UNACCEPTABLE_URL" in instance.query_and_get_error(query), query
 
 
 def test_wrong_s3_syntax(started_cluster):
