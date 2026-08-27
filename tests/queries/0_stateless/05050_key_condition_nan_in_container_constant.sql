@@ -59,6 +59,7 @@ SELECT 'scalar', count() FROM t_scalar WHERE NOT (i < nan);
 CREATE TABLE t_stored_nan (t Tuple(Float64, Float64)) ENGINE = MergeTree ORDER BY t SETTINGS index_granularity = 1;
 INSERT INTO t_stored_nan VALUES ((nan, 1.)), ((2., 2.));
 SELECT 'stored nan notEquals', count() FROM t_stored_nan WHERE t != (nan, 1.);
+SELECT 'stored nan greaterOrEquals', count() FROM t_stored_nan WHERE NOT (t >= (nan, 1.));
 
 -- Array equality does follow the total order, so the matching row must survive: folding the atom
 -- instead of declining it would drop it.
