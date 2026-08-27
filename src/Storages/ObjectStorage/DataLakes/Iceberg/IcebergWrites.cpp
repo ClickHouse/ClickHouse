@@ -171,11 +171,30 @@ template <typename DecimalType>
 std::vector<uint8_t> dumpDecimalValue(const Field & field)
 {
     using NativeType = typename DecimalType::NativeType;
-    const NativeType unscaled_value = field.safeGet<DecimalField<DecimalType>>().getValue().value;
 
-    std::vector<uint8_t> bytes(sizeof(NativeType));
-    for (size_t i = 0; i < sizeof(NativeType); ++i)
-        bytes[sizeof(NativeType) - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & NativeType(0xFF)));
+    std::vector<uint8_t> bytes;
+    if (field.getType() == Field::Types::String)
+    {
+        /// A decimal read back from an existing manifest during a manifest rewrite: ClickHouse parses
+        /// the Avro `fixed` of a decimal as a `String`, so the value is already the unscaled value in
+        /// two's-complement big-endian form; it only needs re-trimming to the minimum number of bytes.
+        const auto & str = field.safeGet<String>();
+        if (str.empty() || str.size() > sizeof(NativeType))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg decimal value read back from a manifest is {} bytes long, which does not fit into {} bytes of the declared type",
+                str.size(),
+                sizeof(NativeType));
+        bytes.assign(str.begin(), str.end());
+    }
+    else
+    {
+        const NativeType unscaled_value = field.safeGet<DecimalField<DecimalType>>().getValue().value;
+
+        bytes.resize(sizeof(NativeType));
+        for (size_t i = 0; i < sizeof(NativeType); ++i)
+            bytes[sizeof(NativeType) - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & NativeType(0xFF)));
+    }
 
     size_t first = 0;
     while (first + 1 < bytes.size()
@@ -189,7 +208,6 @@ template <typename DecimalType>
 avro::GenericDatum makeDecimalFixedDatum(const Field & field, const avro::NodePtr & schema)
 {
     using NativeType = typename DecimalType::NativeType;
-    const NativeType unscaled_value = field.safeGet<DecimalField<DecimalType>>().getValue().value;
 
     if (schema->type() != avro::AVRO_FIXED)
         throw Exception(
@@ -198,9 +216,29 @@ avro::GenericDatum makeDecimalFixedDatum(const Field & field, const avro::NodePt
             avro::toString(schema->type()));
 
     const size_t size = schema->fixedSize();
-    std::vector<uint8_t> bytes(size, unscaled_value < 0 ? 0xFF : 0x00);
-    for (size_t i = 0; i < size && i < sizeof(NativeType); ++i)
-        bytes[size - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & NativeType(0xFF)));
+    std::vector<uint8_t> bytes;
+    if (field.getType() == Field::Types::String)
+    {
+        /// A partition value read back from an existing manifest during a manifest rewrite:
+        /// ClickHouse parses an Avro `fixed` as a `String`, so the value is already the unscaled
+        /// value in two's-complement big-endian form; re-pad it to this schema's width.
+        const auto & str = field.safeGet<String>();
+        if (str.empty() || str.size() > size)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg decimal partition value read back from a manifest is {} bytes long, which does not fit into the {}-byte `fixed` of the manifest schema",
+                str.size(),
+                size);
+        bytes.assign(size, (str[0] & 0x80) ? 0xFF : 0x00);
+        std::copy(str.begin(), str.end(), bytes.end() - str.size());
+    }
+    else
+    {
+        const NativeType unscaled_value = field.safeGet<DecimalField<DecimalType>>().getValue().value;
+        bytes.assign(size, unscaled_value < 0 ? 0xFF : 0x00);
+        for (size_t i = 0; i < size && i < sizeof(NativeType); ++i)
+            bytes[size - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & NativeType(0xFF)));
+    }
 
     avro::GenericDatum datum(schema);
     datum.value<avro::GenericFixed>().value() = std::move(bytes);
@@ -791,7 +829,7 @@ void generateManifestList(
                             upper.selectBranch(1);
                             upper.value<std::vector<uint8_t>>() = bound;
                         }
-                        /// else: a partition type whose bounds we cannot serialize (e.g. Decimal); leave the bounds null, matching the data-file statistics path.
+                        /// else: a partition type whose bounds we cannot serialize (e.g. `Float`); leave the bounds null, matching the data-file statistics path.
                     }
                     summaries.value().push_back(summary_datum);
                 }
