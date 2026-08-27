@@ -22,6 +22,7 @@
 #include <Processors/Port.h>
 #include <Processors/Streaming/Markers.h>
 
+#include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Core/Block.h>
 #include <Core/Streaming/Settings.h>
@@ -40,10 +41,18 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 max_rows_to_sort;
+    extern const SettingsUInt64 max_bytes_to_sort;
+    extern const SettingsOverflowMode sort_overflow_mode;
+}
+
 namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
+    extern const int TOO_MANY_ROWS_OR_BYTES;
 }
 
 namespace
@@ -148,6 +157,13 @@ Names filterStreamingVirtualColumns(Names columns)
     return columns;
 }
 
+bool isSortLimitReached(const SizeLimits & sort_limits, const StreamReadProgress & read_progress)
+{
+    return !sort_limits.check(
+        read_progress.round_read_rows, read_progress.round_read_bytes, "rows or bytes to sort",
+        ErrorCodes::TOO_MANY_ROWS_OR_BYTES);
+}
+
 bool isReadLimitReached(const StorageLimitsListPtr & storage_limits, const StreamReadProgress & read_progress)
 {
     if (!storage_limits)
@@ -192,6 +208,10 @@ MergeTreeCommitOrderSource::MergeTreeCommitOrderSource(
     , subscription(std::move(subscription_))
     , stream_settings(*query_info_.table_expression_modifiers->getStreamSettings())
     , storage_limits(query_info_.storage_limits)
+    , sort_limits(
+          context_->getSettingsRef()[Setting::max_rows_to_sort],
+          context_->getSettingsRef()[Setting::max_bytes_to_sort],
+          context_->getSettingsRef()[Setting::sort_overflow_mode])
     , reading_context{
           .storage = storage_,
           .query_info = makeStreamingSelectQueryInfo(query_info_),
@@ -341,7 +361,7 @@ IProcessor::Status MergeTreeCommitOrderSource::prepare()
     if (is_upstream_finished)
         return handleShutdown();
 
-    const bool limits_reached = isReadLimitReached(storage_limits, read_progress);
+    const bool limits_reached = isReadLimitReached(storage_limits, read_progress) || isSortLimitReached(sort_limits, read_progress);
     if (limits_reached)
     {
         outputs.front().finish();

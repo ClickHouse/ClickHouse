@@ -59,6 +59,7 @@ private:
     const MergeTreeBoundsSubscriptionPtr subscription;
     const StreamSettings stream_settings;
     const StorageLimitsListPtr storage_limits;
+    const SizeLimits sort_limits;
     const ReadRoundContext reading_context;
     const LoggerPtr log;
 

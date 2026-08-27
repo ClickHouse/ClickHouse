@@ -11,6 +11,8 @@ struct StreamReadProgress
     int64_t finished_rounds = 0;
     int64_t read_rows = 0;
     int64_t read_bytes = 0;
+    int64_t round_read_rows = 0;
+    int64_t round_read_bytes = 0;
 
 public:
     void accountChunk(const Chunk & data);
