@@ -28,3 +28,25 @@ without a JOIN
 1
 2
 3
+postprocessor, predicate stranded above the JOIN
+hasToken
+1
+1
+1
+hasAnyTokens on an array-tokenizer index
+1
+1
+1
+hasPhrase
+1
+1
+the same predicates without a JOIN
+1
+1
+1
+pass-through steps between the JOIN and the stranded predicate
+1
+1
+a text-search function in the SELECT list above the JOIN
+1	1
+2	0

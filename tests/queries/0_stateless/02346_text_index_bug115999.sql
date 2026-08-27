@@ -142,3 +142,90 @@ ORDER BY record_id;
 
 DROP TABLE t_115999_a;
 DROP TABLE t_115999_b;
+
+-- An index whose postprocessor normalises the stored tokens: a predicate stranded above the JOIN must be
+-- rewritten with the postprocessor too, not only the tokenizer, or it answers a different question than the
+-- index does. Each arm is followed by the two executions that cannot use the index at all, which must agree.
+SELECT 'postprocessor, predicate stranded above the JOIN';
+
+CREATE TABLE t_115999_pp
+(
+    id UInt64,
+    group_id UInt64,
+    val String,
+    tokens Array(String),
+    INDEX idx_val(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val)),
+    INDEX idx_tokens(tokens) TYPE text(tokenizer = 'array', postprocessor = lower(tokens))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE t_115999_pb (group_id UInt64, category String) ENGINE = MergeTree ORDER BY group_id;
+
+INSERT INTO t_115999_pp VALUES (1, 1, 'HELLO world', ['ALPHA BETA']), (2, 2, 'other text', ['gamma delta']);
+INSERT INTO t_115999_pb VALUES (1, 'x'), (2, 'y');
+
+SELECT 'hasToken';
+SELECT p.id FROM t_115999_pp AS p INNER JOIN t_115999_pb AS b ON p.group_id = b.group_id
+WHERE hasToken(p.val, 'hello') OR b.category = 'nonexistent' ORDER BY p.id;
+SELECT p.id FROM t_115999_pp AS p INNER JOIN t_115999_pb AS b ON p.group_id = b.group_id
+WHERE hasToken(p.val, 'hello') OR b.category = 'nonexistent' ORDER BY p.id SETTINGS use_skip_indexes = 0;
+SELECT p.id FROM t_115999_pp AS p INNER JOIN t_115999_pb AS b ON p.group_id = b.group_id
+WHERE hasToken(p.val, 'hello') OR b.category = 'nonexistent' ORDER BY p.id
+SETTINGS query_plan_direct_read_from_text_index = 0;
+
+SELECT 'hasAnyTokens on an array-tokenizer index';
+SELECT p.id FROM t_115999_pp AS p INNER JOIN t_115999_pb AS b ON p.group_id = b.group_id
+WHERE hasAnyTokens(p.tokens, ['alpha beta']) OR b.category = 'nonexistent' ORDER BY p.id;
+SELECT p.id FROM t_115999_pp AS p INNER JOIN t_115999_pb AS b ON p.group_id = b.group_id
+WHERE hasAnyTokens(p.tokens, ['alpha beta']) OR b.category = 'nonexistent' ORDER BY p.id SETTINGS use_skip_indexes = 0;
+SELECT p.id FROM t_115999_pp AS p INNER JOIN t_115999_pb AS b ON p.group_id = b.group_id
+WHERE hasAnyTokens(p.tokens, ['alpha beta']) OR b.category = 'nonexistent' ORDER BY p.id
+SETTINGS query_plan_direct_read_from_text_index = 0;
+
+SELECT 'hasPhrase';
+SELECT p.id FROM t_115999_pp AS p INNER JOIN t_115999_pb AS b ON p.group_id = b.group_id
+WHERE hasPhrase(p.val, 'hello world') OR b.category = 'nonexistent' ORDER BY p.id;
+SELECT p.id FROM t_115999_pp AS p INNER JOIN t_115999_pb AS b ON p.group_id = b.group_id
+WHERE hasPhrase(p.val, 'hello world') OR b.category = 'nonexistent' ORDER BY p.id SETTINGS use_skip_indexes = 0;
+
+-- The same predicate without a JOIN, which the rewrite has always reached: the arms above must match it.
+SELECT 'the same predicates without a JOIN';
+SELECT id FROM t_115999_pp WHERE hasToken(val, 'hello') ORDER BY id;
+SELECT id FROM t_115999_pp WHERE hasAnyTokens(tokens, ['alpha beta']) ORDER BY id;
+SELECT id FROM t_115999_pp WHERE hasPhrase(val, 'hello world') ORDER BY id;
+
+-- Row-preserving steps between the JOIN and the stranded predicate (the projection folds into the filter,
+-- leaving Sorting and Limit): the walk must carry the indexed column through them.
+SELECT 'pass-through steps between the JOIN and the stranded predicate';
+
+SELECT id FROM
+(
+    SELECT p.id AS id, p.tokens AS tokens, b.category AS category
+    FROM t_115999_pp AS p INNER JOIN t_115999_pb AS b ON p.group_id = b.group_id
+    ORDER BY id
+    LIMIT 10
+)
+WHERE hasAnyTokens(tokens, ['alpha beta']) OR category = 'nonexistent'
+ORDER BY id;
+
+SELECT id FROM
+(
+    SELECT p.id AS id, p.tokens AS tokens, b.category AS category
+    FROM t_115999_pp AS p INNER JOIN t_115999_pb AS b ON p.group_id = b.group_id
+    ORDER BY id
+    LIMIT 10
+)
+WHERE hasAnyTokens(tokens, ['alpha beta']) OR category = 'nonexistent'
+ORDER BY id
+SETTINGS use_skip_indexes = 0;
+
+-- A post-JOIN Expression that carries the indexed column only as a header pass-through, which the walk has
+-- to follow as well: this is the shape where tracking the DAG outputs alone loses the column.
+SELECT 'a text-search function in the SELECT list above the JOIN';
+SELECT p.id, hasAnyTokens(p.tokens, ['alpha beta']) AS m
+FROM t_115999_pp AS p INNER JOIN t_115999_pb AS b ON p.group_id = b.group_id
+ORDER BY p.id;
+
+DROP TABLE t_115999_pp;
+DROP TABLE t_115999_pb;
